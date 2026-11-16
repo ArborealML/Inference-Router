@@ -95,6 +95,7 @@ public sealed class RouterCore : IInferenceRouter
         var ticket = new RouterTicket(NewTicketId(), threadId, canonical, DateTimeOffset.UtcNow);
         var prio = opts.Priority ?? thread.Priority;
         var node = new PrioritizedRequest(ticket, prio, Interlocked.Increment(ref _seq));
+        var promptChars = PromptCharsProbe(request.Body);
         var queued = new QueuedRequest
         {
             Ticket = ticket,
@@ -102,7 +103,10 @@ public sealed class RouterCore : IInferenceRouter
             PriorityNode = node,
             Thread = thread,
             EnqueuedSeq = node.Sequence,
-            PromptChars = PromptCharsProbe(request.Body),
+            PromptChars = promptChars,
+            RequiredContextTokens = opts.RequiredContext is { } rc && rc > 0
+                ? rc
+                : EstimateContextTokens(promptChars, _config.Scheduler.CharsPerTokenEstimate),
         };
         ticket.State = TicketState.Queued;
         lock (_gate) _tickets[ticket.Id] = ticket;
@@ -155,6 +159,9 @@ public sealed class RouterCore : IInferenceRouter
                 LoadedModels = e.LoadedModels,
                 Inflight = e.Inflight,
                 SwitchingToward = e.SwitchingToward,
+                ActiveProfile = e.ActiveProfile,
+                ActiveContextWindow = e.ActiveContextWindow,
+                ActiveSlots = e.ActiveSlots,
             }).ToArray();
             var queues = _queues.Values.ToDictionary(q => q.Model, q => q.Depth, StringComparer.Ordinal);
             var threads = _threads.Values.Select(t => new ThreadStats
@@ -250,6 +257,7 @@ public sealed class RouterCore : IInferenceRouter
         QueuedRequest? candidate = null;
         EngineRuntime? engine = null;
         bool switchRequired = false;
+        string? targetProfile = null;
 
         lock (_gate)
         {
@@ -271,6 +279,7 @@ public sealed class RouterCore : IInferenceRouter
                 candidate = popped;
                 engine = e;
                 switchRequired = decision.SwitchRequired;
+                targetProfile = decision.TargetProfile;
                 popped.Thread.IncrementInflight();
                 engine.BeginRequest(popped.PromptChars);   // reserve engine capacity now:
                 break;                                     // the drain loop must not over-dispatch
@@ -290,7 +299,7 @@ public sealed class RouterCore : IInferenceRouter
             Engine = engine.Name,
             Model = ticket.Model,
         });
-        _ = Task.Run(() => ExecuteAsync(candidate, engine, switchRequired), _shutdown.Token);
+        _ = Task.Run(() => ExecuteAsync(candidate, engine, switchRequired, targetProfile), _shutdown.Token);
         return true;
     }
 
@@ -311,6 +320,8 @@ public sealed class RouterCore : IInferenceRouter
                 Healthy = e.Healthy,
                 Switching = e.Switching,
                 MatchedPrefixChars = e.MatchedPrefixChars(messages),
+                ActiveContextWindow = e.ActiveContextWindow,
+                ServingProfiles = e.ProfilesForModel(head.Ticket.Model),
             });
         }
         return list.ToArray();
@@ -328,10 +339,11 @@ public sealed class RouterCore : IInferenceRouter
 
     // ── execution ───────────────────────────────────────────────────────────
 
-    private async Task ExecuteAsync(QueuedRequest candidate, EngineRuntime engine, bool switchRequired)
+    private async Task ExecuteAsync(QueuedRequest candidate, EngineRuntime engine, bool switchRequired, string? targetProfileName)
     {
         var ticket = candidate.Ticket;
         var thread = candidate.Thread;
+        var targetProfile = engine.GetProfile(ticket.Model, targetProfileName);
         ticket.ExecCts = new CancellationTokenSource();
         var decremented = false;
         var ended = false;
@@ -350,14 +362,18 @@ public sealed class RouterCore : IInferenceRouter
         try
         {
 
-            if (switchRequired && _config.AutoSwitch)
+            if ((switchRequired || targetProfile is not null) && _config.AutoSwitch)
             {
                 ticket.State = TicketState.WaitingForModel;
-                var loaded = await engine.WaitForModelAsync(ticket.Model,
-                    Timeout.InfiniteTimeSpan, ticket.ExecCts.Token).ConfigureAwait(false);
-                if (!loaded)
+                var ready = targetProfile is null
+                    ? await engine.WaitForModelAsync(ticket.Model,
+                        Timeout.InfiniteTimeSpan, ticket.ExecCts.Token).ConfigureAwait(false)
+                    : await engine.WaitForProfileAsync(ticket.Model, targetProfile,
+                        Timeout.InfiniteTimeSpan, ticket.ExecCts.Token).ConfigureAwait(false);
+                if (!ready)
                 {
-                    Fail(ticket, "switch_failed", $"engine {engine.Name} could not load {ticket.Model}");
+                    var what = targetProfile is null ? ticket.Model : $"{ticket.Model} @ {targetProfile.Name}";
+                    Fail(ticket, "switch_failed", $"engine {engine.Name} could not serve {what}");
                     return;
                 }
                 ticket.State = TicketState.Executing;
@@ -565,7 +581,19 @@ public sealed class RouterCore : IInferenceRouter
         });
     }
 
-    /// <summary>Token-proxy: total prompt chars (messages content or legacy prompt), from the raw body.</summary>
+    /// <summary>Cheap context-demand estimate when the client does not declare one:
+    /// prompt chars / chars_per_token_estimate, rounded up (excludes requested output; the
+    /// scheduler ladder decision is deliberately conservative on the prompt side).</summary>
+    internal static long EstimateContextTokens(long promptChars, double charsPerToken)
+    {
+        if (promptChars <= 0) return 0;
+        var divisor = charsPerToken < 1.0 ? 1.0 : charsPerToken;
+        var estimate = promptChars / divisor;
+        if (estimate >= long.MaxValue) return long.MaxValue;
+        return (long)Math.Ceiling(estimate);
+    }
+
+        /// <summary>Token-proxy: total prompt chars (messages content or legacy prompt), from the raw body.</summary>
     internal static long PromptCharsProbe(ReadOnlyMemory<byte> body)
     {
         try
@@ -649,6 +677,12 @@ public sealed record EngineStats
     public required string[] LoadedModels { get; init; }
     public required int Inflight { get; init; }
     public required string? SwitchingToward { get; init; }
+    /// <summary>Serving profile inferred from the live context window (null = unknown).</summary>
+    public string? ActiveProfile { get; init; }
+    /// <summary>Context window the engine currently serves in tokens (0 = unreported).</summary>
+    public long ActiveContextWindow { get; init; }
+    /// <summary>Slots the engine advertises (0 = fall back to max_inflight_per_engine).</summary>
+    public int ActiveSlots { get; init; }
 }
 
 public sealed record ThreadStats

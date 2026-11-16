@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text;
 using System.Text.Json;
 using System.Diagnostics;
 
@@ -22,9 +23,24 @@ public sealed class EngineRuntime : IAsyncDisposable
     private volatile string[] _loadedModels = [];
     private SwitchState _switchState = new();   // accessed via Volatile.Read/Write
 
+    // ── serving-profile state (context-window escalation) ───────────────────
+    // Active context window in tokens (0 = engine does not report it → no constraint),
+    // active slot count (0 = unknown → fall back to configured max_inflight), and the
+    // catalog profile name inferred from the window.
+    private long _activeContextWindow;
+    private int _activeSlots;
+    private string? _activeProfileName;
+
+    public long ActiveContextWindow => Volatile.Read(ref _activeContextWindow);
+    public int ActiveSlots => Volatile.Read(ref _activeSlots);
+    public string? ActiveProfile => Volatile.Read(ref _activeProfileName);
+
     private sealed class SwitchState
     {
         public string? Model;
+        /// <summary>Set when the switch targets a serving profile (context-window escalation)
+        /// rather than a model load; carries "profile:<name>" for observability.</summary>
+        public string? Profile;
         public TaskCompletionSource<bool> Ready = new(TaskCreationOptions.None);
         public DateTimeOffset StartedAt;
         public override string ToString() => Model is null ? "none" : Model;
@@ -91,6 +107,8 @@ public sealed class EngineRuntime : IAsyncDisposable
                 _loadedModels = models;
                 _healthy = true;
                 Emit("engine.health", value: models.Length);
+                // Same payload family feeds the serving gauges (context window, slots).
+                await ProbeStateAsync(cts.Token).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
@@ -143,7 +161,11 @@ public sealed class EngineRuntime : IAsyncDisposable
     }
 
     /// <summary>Run the configured health probe (GET path + Expect DSL), returns true when satisfied.</summary>
-    internal async Task<bool> ProbeAsync(CancellationToken ct)
+    internal Task<bool> ProbeAsync(CancellationToken ct) => ProbeStateAsync(ct);
+
+    /// <summary>One probe fetch that both evaluates the Expect DSL and refreshes the serving
+    /// gauges (active context window, slot count, inferred profile name) from the same payload.</summary>
+    internal async Task<bool> ProbeStateAsync(CancellationToken ct)
     {
         var path = _def.Health?.Path ?? "/props";
         try
@@ -153,23 +175,111 @@ public sealed class EngineRuntime : IAsyncDisposable
             if (!res.IsSuccessStatusCode) return false;
             var probeBytes = await res.Content.ReadAsByteArrayAsync(ct).ConfigureAwait(false);
             using var doc = JsonDocument.Parse(probeBytes);
+            UpdateServingGauges(doc.RootElement);
             return _def.Health?.Expect is { } expect ? ProbeExpect.Evaluate(doc.RootElement, expect) : true;
         }
         catch
         {
-            return false;
+            return false;   // unreachable or malformed payload
         }
+    }
+
+    private void UpdateServingGauges(JsonElement root)
+    {
+        var window = TryReadGauge(root, _def.Health?.ContextPath ?? "n_ctx", out var ctx) ? ctx : 0;
+        var slots = TryReadGauge(root, _def.Health?.SlotsPath ?? "total_slots", out var sl) ? sl : 0;
+        var previousWindow = ActiveContextWindow;
+        if (window > 0) Volatile.Write(ref _activeContextWindow, window);
+        if (slots > 0) Volatile.Write(ref _activeSlots, (int)Math.Min(int.MaxValue, slots));
+        var name = InferProfileName(window);
+        Volatile.Write(ref _activeProfileName, name);
+        if (window > 0 && window != previousWindow)
+            Emit("engine.profile", reason: name ?? "unrecognized_window", value: window);
+    }
+
+    private static bool TryReadGauge(JsonElement root, string dottedPath, out long value)
+    {
+        value = 0;
+        if (!ProbeExpect.TryResolvePath(root, dottedPath, out var leaf)) return false;
+        if (leaf.ValueKind == JsonValueKind.Number)
+        {
+            value = (long)leaf.GetDouble();
+            return value > 0;
+        }
+        if (leaf.ValueKind == JsonValueKind.String &&
+            long.TryParse(leaf.GetString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed) &&
+            parsed > 0)
+        {
+            value = parsed;
+            return true;
+        }
+        return false;
+    }
+
+    /// <summary>Catalog profile whose MaxContext equals the live window (null when unrecognized).</summary>
+    private string? InferProfileName(long window)
+    {
+        if (window <= 0) return null;
+        foreach (var md in _def.Catalog.Values)
+            foreach (var p in md.ServingProfiles)
+                if (p.MaxContext == window) return p.Name;
+        return null;
+    }
+
+    public IReadOnlyList<ServingProfile> ProfilesForModel(string canonical)
+        => _def.Catalog.TryGetValue(canonical, out var md) ? md.ServingProfiles : [];
+
+    /// <summary>Smallest declared serving profile that fits requiredTokens (null: no ladder, or none fits).</summary>
+    public ServingProfile? FindProfile(string canonical, long requiredTokens)
+    {
+        ServingProfile? best = null;
+        foreach (var p in ProfilesForModel(canonical))
+        {
+            if (p.MaxContext < requiredTokens) continue;
+            if (best is null || p.MaxContext < best.MaxContext) best = p;
+        }
+        return best;
+    }
+
+    public ServingProfile? GetProfile(string canonical, string? name)
+    {
+        if (name is null) return null;
+        foreach (var p in ProfilesForModel(canonical))
+            if (p.Name.Equals(name, StringComparison.Ordinal)) return p;
+        return null;
     }
 
     /// <summary>Ensure the model is loaded on this engine: no-op when loaded; otherwise performs
     /// (or waits for) the configured switch. Resolves true when loaded, false when it cannot.</summary>
-    public async Task<bool> WaitForModelAsync(string model, TimeSpan timeout, CancellationToken ct)
-    {
-        if (_loadedModels.Contains(model, StringComparer.OrdinalIgnoreCase)) return true;
-        if (_def.Remote) return false; // remote peers switch themselves; we only route
+    public Task<bool> WaitForModelAsync(string model, TimeSpan timeout, CancellationToken ct)
+        => EnsureLoadedAsync(model, null, timeout, ct);
 
+    /// <summary>Ensure the model is loaded AND served under a context window that fits the profile.
+    /// Exceeding the active window queues behind a profile switch instead of compacting.</summary>
+    public Task<bool> WaitForProfileAsync(string model, ServingProfile profile, TimeSpan timeout, CancellationToken ct)
+        => EnsureLoadedAsync(model, profile, timeout, ct);
+
+    /// <summary>Loaded, and (when a profile is required) serving a window that fits it.
+    /// An engine that reports no window (gauge 0) is never escalated blind.</summary>
+    public bool IsReadyFor(string canonical, ServingProfile? profile)
+    {
+        if (!_loadedModels.Contains(canonical, StringComparer.OrdinalIgnoreCase)) return false;
+        return WindowFits(profile);
+    }
+
+    /// <summary>Live window fits the profile (gauge 0 = unknown → never block on it).</summary>
+    private bool WindowFits(ServingProfile? profile)
+    {
+        if (profile is null) return true;
+        var window = ActiveContextWindow;
+        return window == 0 || window >= profile.MaxContext;
+    }
+
+    private async Task<bool> EnsureLoadedAsync(string model, ServingProfile? profileOverride, TimeSpan timeout, CancellationToken ct)
+    {
         var canonical = CanonicalModel(model) ?? model;
-        if (_loadedModels.Contains(canonical, StringComparer.OrdinalIgnoreCase)) return true;
+        if (IsReadyFor(canonical, profileOverride)) return true;
+        if (_def.Remote) return false; // remote peers switch themselves; we only route
 
         await _switchLock.WaitAsync(ct).ConfigureAwait(false);
         try
@@ -177,10 +287,10 @@ public sealed class EngineRuntime : IAsyncDisposable
             var state = Volatile.Read(ref _switchState);
             if (state.Model is null)
             {
-                var newState = new SwitchState { Model = canonical, StartedAt = DateTimeOffset.UtcNow };
+                var newState = new SwitchState { Model = canonical, Profile = profileOverride?.Name, StartedAt = DateTimeOffset.UtcNow };
                 newState.Ready = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
                 Volatile.Write(ref _switchState, newState);
-                _ = Task.Run(() => RunSwitchAsync(newState, canonical, ct), ct);
+                _ = Task.Run(() => RunSwitchAsync(newState, canonical, profileOverride, ct), ct);
             }
         }
         finally
@@ -194,11 +304,11 @@ public sealed class EngineRuntime : IAsyncDisposable
         {
             await st.Ready.Task.WaitAsync(timeout, ct).ConfigureAwait(false);
         }
-        catch (TimeoutException) { return _loadedModels.Contains(canonical, StringComparer.OrdinalIgnoreCase); }
-        return _loadedModels.Contains(canonical, StringComparer.OrdinalIgnoreCase);
+        catch (TimeoutException) { return IsReadyFor(canonical, profileOverride); }
+        return IsReadyFor(canonical, profileOverride);
     }
 
-    private async Task RunSwitchAsync(SwitchState state, string model, CancellationToken ct)
+    private async Task RunSwitchAsync(SwitchState state, string model, ServingProfile? profileOverride, CancellationToken ct)
     {
         try
         {
@@ -209,15 +319,16 @@ public sealed class EngineRuntime : IAsyncDisposable
                 Emit("engine.switch_failed", model: model, reason: "no_select_command");
                 return;
             }
-            Emit("engine.switch_started", model: model);
+            var profileName = profileOverride?.Name ?? md.Profile;
+            Emit("engine.switch_started", model: model, reason: profileName is null ? null : $"profile={profileName}");
             var cmd = md.Select;
-            var args = ExpandArgs(cmd.Args, model, md.Profile);
+            var args = ExpandArgs(cmd.Args, model, profileName);
             using var proc = new Process
             {
                 StartInfo = new ProcessStartInfo
                 {
                     FileName = cmd.Exec,
-                    Arguments = args.Length == 1 ? args[0] : string.Join(' ', args),
+                    Arguments = BuildArgumentString(args),
                     UseShellExecute = false,
                     RedirectStandardOutput = true,
                     RedirectStandardError = true,
@@ -226,13 +337,33 @@ public sealed class EngineRuntime : IAsyncDisposable
             using var exitCts = new CancellationTokenSource(cmd.WaitTimeoutMs);
             using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, exitCts.Token);
             if (!proc.Start()) throw new IOException($"failed to start {cmd.Exec}");
-            await proc.WaitForExitAsync(linked.Token).ConfigureAwait(false);
+            // Drain both pipes concurrently: chatty lifecycle commands (select-model prints progress)
+            // must not block on a full pipe buffer while we wait for exit.
+            var stdoutTask = proc.StandardOutput.ReadToEndAsync(CancellationToken.None);
+            var stderrTask = proc.StandardError.ReadToEndAsync(CancellationToken.None);
+            var exited = true;
+            try { await proc.WaitForExitAsync(linked.Token).ConfigureAwait(false); }
+            catch (OperationCanceledException) { exited = false; }
+            if (!exited)
+            {
+                try { proc.Kill(entireProcessTree: true); } catch (InvalidOperationException) { }   // already exited
+                state.Ready.TrySetResult(false);
+                Emit("engine.switch_failed", model: model, reason: $"timeout_after_{cmd.WaitTimeoutMs}ms");
+                Volatile.Write(ref _switchState, new SwitchState());
+                return;
+            }
+            var stderr = string.Empty;
+            try { stderr = await stderrTask.WaitAsync(TimeSpan.FromSeconds(5), CancellationToken.None).ConfigureAwait(false); }
+            catch (TimeoutException) { /* pipe held by a grandchild: proceed without stderr */ }
+            try { await stdoutTask.WaitAsync(TimeSpan.FromSeconds(5), CancellationToken.None).ConfigureAwait(false); }
+            catch (TimeoutException) { /* stdout is only drained to avoid pipe deadlock */ }
             if (proc.ExitCode != 0)
             {
-                var stderr = await proc.StandardError.ReadToEndAsync(CancellationToken.None).ConfigureAwait(false);
                 state.Ready.TrySetResult(false);
                 var tail = stderr.Trim();
-                Emit("engine.switch_failed", model: model, reason: $"exit={proc.ExitCode} {tail}"[..Math.Min(168, tail.Length + 10)]);
+                if (tail.Length > 140) tail = tail[..140];
+                Emit("engine.switch_failed", model: model, reason: $"exit={proc.ExitCode} {tail}");
+                Volatile.Write(ref _switchState, new SwitchState());
                 return;
             }
             if (cmd.WaitHealth)
@@ -240,12 +371,17 @@ public sealed class EngineRuntime : IAsyncDisposable
                 var deadline = DateTimeOffset.UtcNow + TimeSpan.FromMilliseconds(cmd.WaitTimeoutMs);
                 while (DateTimeOffset.UtcNow < deadline && !linked.IsCancellationRequested)
                 {
-                    if ((await ProbeAsync(ct).ConfigureAwait(false)) &&
-                        (await FetchLoadedModelsAsync(ct).ConfigureAwait(false)).Contains(model, StringComparer.OrdinalIgnoreCase))
+                    // Probe first: it refreshes the window gauge that the profile check below reads.
+                    var healthy = await ProbeStateAsync(ct).ConfigureAwait(false);
+                    var modelsNow = await FetchLoadedModelsAsync(ct).ConfigureAwait(false);
+                    if (healthy && modelsNow.Contains(model, StringComparer.OrdinalIgnoreCase) &&
+                        WindowFits(profileOverride))
                     {
                         state.Ready.TrySetResult(true);
-                        _loadedModels = await FetchLoadedModelsAsync(ct).ConfigureAwait(false);
-                        Emit("engine.switch_completed", model: model, value: (DateTimeOffset.UtcNow - state.StartedAt).TotalMilliseconds);
+                        _loadedModels = modelsNow;
+                        Emit("engine.switch_completed", model: model,
+                            reason: state.Profile is null ? null : $"profile={state.Profile}",
+                            value: (DateTimeOffset.UtcNow - state.StartedAt).TotalMilliseconds);
                         Volatile.Write(ref _switchState, new SwitchState());
                         return;
                     }
@@ -258,8 +394,20 @@ public sealed class EngineRuntime : IAsyncDisposable
             }
             try { _loadedModels = await FetchLoadedModelsAsync(ct).ConfigureAwait(false); }
             catch { /* best-effort refresh; the switch itself succeeded */ }
+            // wait_health=false: trust the exec, but still verify the window when a profile was requested
+            // (the gauge may already reflect the new window, e.g. an engine that reloads in place).
+            if (!WindowFits(profileOverride))
+            {
+                state.Ready.TrySetResult(false);
+                Emit("engine.switch_failed", model: model,
+                    reason: $"window_{ActiveContextWindow}_lt_{profileOverride!.MaxContext}");
+                Volatile.Write(ref _switchState, new SwitchState());
+                return;
+            }
             state.Ready.TrySetResult(true);
-            Emit("engine.switch_completed", model: model, value: (DateTimeOffset.UtcNow - state.StartedAt).TotalMilliseconds);
+            Emit("engine.switch_completed", model: model,
+                reason: state.Profile is null ? null : $"profile={state.Profile}",
+                value: (DateTimeOffset.UtcNow - state.StartedAt).TotalMilliseconds);
             Volatile.Write(ref _switchState, new SwitchState());
         }
         catch (Exception ex)
@@ -281,6 +429,54 @@ public sealed class EngineRuntime : IAsyncDisposable
                 .Replace("{{suffixCache}}", "", StringComparison.Ordinal);
         }
         return expanded;
+    }
+
+    /// <summary>Build the single argument string that .NET re-splits into argv. Args are quoted with
+    /// CommandLineToArgvW rules (the parser .NET uses on Unix too) so lifecycle commands can carry
+    /// spaces, e.g. exec=/bin/sh args=["-c", "select-model strata {{profile}}"].</summary>
+    internal static string BuildArgumentString(string[] args)
+    {
+        var sb = new StringBuilder();
+        foreach (var a in args)
+        {
+            if (sb.Length > 0) sb.Append(' ');
+            AppendQuoted(sb, a);
+        }
+        return sb.ToString();
+    }
+
+    private static void AppendQuoted(StringBuilder sb, string arg)
+    {
+        if (arg.Length == 0)
+        {
+            sb.Append("\"\"");
+            return;
+        }
+        var needsQuotes = false;
+        foreach (var c in arg)
+        {
+            if (c is ' ' or '\t' or '"' or '\\') { needsQuotes = true; break; }
+        }
+        if (!needsQuotes)
+        {
+            sb.Append(arg);
+            return;
+        }
+        sb.Append('"');
+        var backslashes = 0;
+        foreach (var c in arg)
+        {
+            if (c == '\\')
+            {
+                backslashes++;
+                continue;
+            }
+            if (c == '"') sb.Append('\\', backslashes * 2 + 1).Append('"');
+            else { if (backslashes > 0) sb.Append('\\', backslashes); sb.Append(c); }
+            backslashes = 0;
+        }
+        if (backslashes > 0) sb.Append('\\', backslashes * 2);
+        sb.Append('"');
     }
 
     public string? CanonicalModel(string requested)
@@ -327,7 +523,12 @@ public sealed class EngineRuntime : IAsyncDisposable
         Interlocked.Add(ref _tokenProxy, -promptChars);
     }
 
-    public bool HasCapacity => Inflight < _maxInflight;
+    public bool HasCapacity => Inflight < EffectiveSlotLimit;
+
+    /// <summary>Admission ceiling: the tighter of the configured max_inflight_per_engine and the
+    /// slots the engine currently advertises (profile switches change the advertised count).
+    /// Unknown advertised slots → configured ceiling alone.</summary>
+    private int EffectiveSlotLimit => ActiveSlots > 0 ? Math.Max(1, Math.Min(_maxInflight, ActiveSlots)) : _maxInflight;
 
     public HttpClient Http => _http;
     public string? ApiKey => _apiKey;
@@ -416,7 +617,7 @@ public static class ProbeExpect
         return found;
     }
 
-    private static bool TryResolvePath(JsonElement root, string dottedPath, out JsonElement value)
+    public static bool TryResolvePath(JsonElement root, string dottedPath, out JsonElement value)
     {
         value = default;
         var cur = root;

@@ -54,6 +54,86 @@ public class ServerWireTests
         return http;
     }
 
+    private static async Task<int> FreePortAsync()
+    {
+        using var latch = new TcpListener(IPAddress.Loopback, 0);
+        latch.Start();
+        var port = ((IPEndPoint)latch.LocalEndpoint).Port;
+        latch.Stop();
+        return port;
+    }
+
+    private static RouterConfig WireConfig(int listenPort, FakeEngineHandler fake)
+    {
+        var cfg = new RouterConfig
+        {
+            Listen = $"http://127.0.0.1:{listenPort}",
+            DefaultModel = "test-model",
+            Scheduler = new SchedulerConfig { MaxInflightPerEngine = 8, MaxQueuePerModel = 8 },
+            HttpHandlerFactory = _ => fake,
+        };
+        cfg.Engines = new Dictionary<string, EngineDefinition>
+        {
+            ["fake"] = new EngineDefinition
+            {
+                Name = "fake",
+                Kind = EngineKind.OpenAiCompatible,
+                Endpoint = new Uri("http://127.0.0.1:9/v1"),
+                Catalog = new Dictionary<string, EngineModelDefinition>
+                {
+                    ["test-model"] = new EngineModelDefinition { Name = "test-model" },
+                },
+            },
+        };
+        return cfg;
+    }
+
+    /// <summary>An explicit --urls (CLI --listen) replaces the config listen address, not adds to it.</summary>
+    [Fact]
+    public async Task CommandLine_Urls_Override_Config_Listen()
+    {
+        var configPort = await FreePortAsync();
+        var urlPort = await FreePortAsync();
+        using var fake = new FakeEngineHandler();
+        var app = ServerApp.Build([$"--urls=http://127.0.0.1:{urlPort}"], configOverride: WireConfig(configPort, fake));
+        await app.StartAsync();
+        await using var _ = app;
+        using var http = Client(urlPort);
+        using var res = await http.GetAsync("/healthz");
+        Assert.Equal(HttpStatusCode.OK, res.StatusCode);
+        using var probe = new TcpClient();
+        await Assert.ThrowsAnyAsync<Exception>(() => probe.ConnectAsync(IPAddress.Loopback, configPort).WaitAsync(TimeSpan.FromSeconds(2)));
+    }
+
+    /// <summary>/admin/status carries the live serving gauges read from the engine probe (§7.6).</summary>
+    [Fact]
+    public async Task Status_Exports_Serving_Gauges()
+    {
+        var port = await FreePortAsync();
+        using var fake = new FakeEngineHandler { NCtx = 131_072, TotalSlots = 3 };
+        var app = ServerApp.Build([], configOverride: WireConfig(port, fake));
+        await app.StartAsync();
+        await using var _ = app;
+        using var http = Client(port);
+
+        long window = 0;
+        var deadline = DateTimeOffset.UtcNow + TimeSpan.FromSeconds(5);
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            using var res = await http.GetAsync("/admin/status");
+            res.EnsureSuccessStatusCode();
+            using var doc = JsonDocument.Parse(await res.Content.ReadAsStringAsync());
+            var engine = doc.RootElement.GetProperty("Engines")[0];
+            Assert.True(engine.TryGetProperty("ActiveContextWindow", out var w));
+            Assert.True(engine.TryGetProperty("ActiveSlots", out var sl));
+            window = w.GetInt64();
+            Assert.Equal(3, sl.GetInt32());
+            if (window > 0) break;
+            await Task.Delay(50);
+        }
+        Assert.Equal(131_072, window);
+    }
+
     [Fact]
     public async Task Chat_Passthrough_Completes()
     {

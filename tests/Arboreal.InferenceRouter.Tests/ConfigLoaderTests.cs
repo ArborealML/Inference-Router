@@ -31,10 +31,23 @@ public class ConfigLoaderTests
         path = "/props"
         expect = "total_slots>0"
         interval_ms = 500
+        context_path = "n_ctx"
+        slots_path = "slots.active"
 
         [engine.fake.catalog.m1]
         aliases = ["one"]
         profiles = ["max"]
+        default_profile = "small"
+
+        [[engine.fake.catalog.m1.serving]]
+        name = "small"
+        max_context = 131072
+        max_slots = 2
+
+        [[engine.fake.catalog.m1.serving]]
+        name = "big"
+        max_context = 1048576
+        max_slots = 1
 
         [engine.fake.catalog.m2]
         select.exec = "/bin/echo"
@@ -64,9 +77,17 @@ public class ConfigLoaderTests
               "endpoint": "http://127.0.0.1:9/v1",
               "api_key": "secret",
               "loaded_requires_status_loaded": true,
-              "health_probe": { "path": "/props", "expect": "total_slots>0", "interval_ms": 500 },
+              "health_probe": { "path": "/props", "expect": "total_slots>0", "interval_ms": 500, "context_path": "n_ctx", "slots_path": "slots.active" },
               "catalog": {
-                "m1": { "aliases": ["one"], "profiles": ["max"] },
+                "m1": {
+                  "aliases": ["one"],
+                  "profiles": ["max"],
+                  "default_profile": "small",
+                  "serving": [
+                    { "name": "small", "max_context": 131072, "max_slots": 2 },
+                    { "name": "big", "max_context": 1048576, "max_slots": 1 }
+                  ]
+                },
                 "m2": { "select": { "exec": "/bin/echo", "args": ["{{model}}"], "wait_health": false, "wait_timeout_ms": 30000 } }
               },
               "capabilities": { "vision": true, "max_context": 4096 }
@@ -95,11 +116,21 @@ public class ConfigLoaderTests
         Assert.Equal("/props", e.Health!.Path);
         Assert.Equal("total_slots>0", e.Health.Expect);
         Assert.Equal(500, e.Health.IntervalMs);
+        Assert.Equal("n_ctx", e.Health.ContextPath);
+        Assert.Equal("slots.active", e.Health.SlotsPath);
 
         var m1 = e.Catalog["m1"];
         Assert.Equal(["one"], m1.Aliases);
         Assert.Equal(["max"], m1.Profiles);
         Assert.Null(m1.Select);
+        Assert.Equal("small", m1.Profile);
+        Assert.Equal(2, m1.ServingProfiles.Count);
+        Assert.Equal("small", m1.ServingProfiles[0].Name);
+        Assert.Equal(131072, m1.ServingProfiles[0].MaxContext);
+        Assert.Equal(2, m1.ServingProfiles[0].MaxSlots);
+        Assert.Equal("big", m1.ServingProfiles[1].Name);
+        Assert.Equal(1048576, m1.ServingProfiles[1].MaxContext);
+        Assert.Equal(1, m1.ServingProfiles[1].MaxSlots);
 
         var m2 = e.Catalog["m2"];
         Assert.NotNull(m2.Select);
@@ -133,9 +164,56 @@ public class ConfigLoaderTests
         Assert.Equal(te.ApiKey, je.ApiKey);
         Assert.Equal(te.LoadedRequiresStatusLoaded, je.LoadedRequiresStatusLoaded);
         Assert.Equal(te.Health!.Path, je.Health!.Path);
+        Assert.Equal(te.Health.ContextPath, je.Health.ContextPath);
+        Assert.Equal(te.Health.SlotsPath, je.Health.SlotsPath);
+        Assert.Equal(te.Catalog["m1"].Profile, je.Catalog["m1"].Profile);
+        Assert.Equal(
+            te.Catalog["m1"].ServingProfiles.Select(p => (p.Name, p.MaxContext, p.MaxSlots)),
+            je.Catalog["m1"].ServingProfiles.Select(p => (p.Name, p.MaxContext, p.MaxSlots)));
         Assert.Equal(te.Catalog.Keys, je.Catalog.Keys);
         Assert.Equal(te.Capabilities.MaxContext, je.Capabilities.MaxContext);
         Assert.Equal(te.Capabilities.Vision, je.Capabilities.Vision);
+    }
+
+    /// <summary>The shipped samples must load as written: dotted model ids quoted (TOML table
+    /// separators otherwise silently create bogus catalog entries) and the smoke config inert.</summary>
+    [Fact]
+    public void Shipped_Sample_Configs_Load_As_Written()
+    {
+        var path = RepoFile("samples/router.toml");
+        var smoke = RepoFile("samples/router.safe-smoke.toml");
+        Assert.NotNull(path);
+        Assert.NotNull(smoke);
+
+        var cfg = RouterConfigLoader.LoadFile(path!);
+        var strata = cfg.Engines["strata"];
+        Assert.Contains("qwen-3.8-flash-next", strata.Catalog.Keys);
+        Assert.DoesNotContain("qwen-3", strata.Catalog.Keys);
+        var model = strata.Catalog["qwen-3.8-flash-next"];
+        Assert.Equal(3, model.ServingProfiles.Count);
+        Assert.Equal("1m", model.ServingProfiles[2].Name);
+        Assert.Equal(1_048_576, model.ServingProfiles[2].MaxContext);
+        Assert.Equal("128k-2", model.Profile);
+        Assert.NotNull(model.Select);
+        Assert.Equal("n_ctx", strata.Health!.ContextPath);
+
+        var smokeCfg = RouterConfigLoader.LoadFile(smoke!);
+        Assert.Contains("qwen-3.8-flash-next", smokeCfg.Engines["strata"].Catalog.Keys);
+        Assert.All(smokeCfg.Engines.Values, e => Assert.True(e.Remote));
+        Assert.All(smokeCfg.Engines.Values, e => Assert.All(e.Catalog.Values, m => Assert.Null(m.Select)));
+    }
+
+    /// <summary>Walk up from the test assembly to the repo root and return the file, else null.</summary>
+    private static string? RepoFile(string relative)
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null)
+        {
+            var candidate = Path.Combine(dir.FullName, relative);
+            if (File.Exists(candidate)) return candidate;
+            dir = dir.Parent;
+        }
+        return null;
     }
 
     [Fact]
@@ -156,6 +234,39 @@ public class ConfigLoaderTests
             [engine.fake]
             kind = "openai-compatible"
             endpoint = "not-a-uri"
+            """, "bad.toml"));
+    }
+
+    [Fact]
+    public void Rejects_Serving_Default_Not_In_Ladder()
+    {
+        var ex = Assert.Throws<RouterConfigException>(() => RouterConfigLoader.Load(
+            """
+            [engine.fake]
+            kind = "openai-compatible"
+            endpoint = "http://127.0.0.1:9/v1"
+
+            [engine.fake.catalog.m1]
+            default_profile = "huge"
+
+            [[engine.fake.catalog.m1.serving]]
+            name = "small"
+            max_context = 131072
+            """, "bad.toml"));
+        Assert.Contains("huge", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Rejects_Serving_Missing_MaxContext()
+    {
+        Assert.Throws<RouterConfigException>(() => RouterConfigLoader.Load(
+            """
+            [engine.fake]
+            kind = "openai-compatible"
+            endpoint = "http://127.0.0.1:9/v1"
+
+            [[engine.fake.catalog.m1.serving]]
+            name = "small"
             """, "bad.toml"));
     }
 

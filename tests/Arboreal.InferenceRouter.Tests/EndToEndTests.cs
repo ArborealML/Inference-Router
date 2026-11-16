@@ -15,6 +15,22 @@ public class FakeEngineHandler : HttpMessageHandler
     public string[] LoadedModels { get; set; } = ["test-model", "other-model"];
     /// <summary>Block every completion until <see cref="ReleaseGate"/> (for ordering tests).</summary>
     public bool HoldCompletions { get; set; }
+    /// <summary>Context window reported by /props (0 = omit the field entirely).</summary>
+    public long NCtx { get; set; }
+    /// <summary>Slots reported by /props; also the engine's physical concurrency ceiling.</summary>
+    public int TotalSlots { get; set; } = 4;
+    /// <summary>When set, /props re-reads the window from this file (lets a lifecycle command
+    /// change the advertised window mid-test, which is what a profile switch does).</summary>
+    public string? NCtxFile { get; set; }
+
+    private long ActiveContextTokens()
+    {
+        if (NCtxFile is { Length: > 0 } path && File.Exists(path) &&
+            long.TryParse(File.ReadAllText(path).Trim(), System.Globalization.NumberStyles.Integer,
+                System.Globalization.CultureInfo.InvariantCulture, out var v))
+            return v;
+        return NCtx;
+    }
     /// <summary>First user-message content per executed completion, in execution order.</summary>
     public List<string> ExecutionOrder { get; } = [];
 
@@ -27,7 +43,10 @@ public class FakeEngineHandler : HttpMessageHandler
         if (path.StartsWith("models", StringComparison.Ordinal))
             return Ok("{\"data\":[{\"id\":\"test-model\"},{\"id\":\"other-model\"}]}");
         if (path.StartsWith("props", StringComparison.Ordinal))
-            return Ok("{\"total_slots\": 4}");
+        {
+            var nctx = ActiveContextTokens();
+            return Ok($@"{{""total_slots"": {TotalSlots}{(nctx > 0 ? $",\"n_ctx\": {nctx}" : "")}}}");
+        }
         if (path.StartsWith("chat/completions", StringComparison.Ordinal) || path.StartsWith("completions", StringComparison.Ordinal))
         {
             var body = ReadBody(request);
@@ -109,7 +128,7 @@ public class EndToEndTests
     }
 
     private static InferenceRequest Request(string tag, bool stream = false, string? model = null,
-        ThreadPriority? priority = null)
+        ThreadPriority? priority = null, long requiredContext = 0)
         => new()
         {
             Model = model,
@@ -117,7 +136,11 @@ public class EndToEndTests
             Body = Encoding.UTF8.GetBytes($$"""
                 {"model":"{{model ?? "test-model"}}","stream":{{(stream ? "true" : "false")}},"messages":[{"role":"user","content":"{{tag}}"}]}
                 """),
-            Options = new RouterRequestOptions { Priority = priority },
+            Options = new RouterRequestOptions
+            {
+                Priority = priority,
+                RequiredContext = requiredContext > 0 ? requiredContext : null,
+            },
         };
 
     private static async Task<(RouterCore, FakeEngineHandler)> WithHealthyRouterAsync(int maxInflight = 8, int maxQueue = 8)
@@ -286,5 +309,91 @@ public class EndToEndTests
         Assert.Equal(TicketState.Completed, ticket.State);
         // the lifecycle command ran and the completion went through afterwards
         Assert.Contains("ping", fake.ExecutionOrder);
+    }
+
+    /// <summary>Context-window escalation (§7.6): the model is loaded but serving a smaller window
+    /// than the request needs, so the request queues behind a profile switch instead of compacting.</summary>
+    [Fact]
+    public async Task Escalation_Queues_Behind_Profile_Switch()
+    {
+        var windowFile = Path.Combine(Path.GetTempPath(), $"air-escalation-{Guid.NewGuid():N}.txt");
+        File.WriteAllText(windowFile, "131072");
+        try
+        {
+            using var fake = new FakeEngineHandler { NCtxFile = windowFile, TotalSlots = 2 };
+            var cfg = new RouterConfig
+            {
+                DefaultModel = "test-model",
+                Scheduler = new SchedulerConfig { MaxInflightPerEngine = 8, CharsPerTokenEstimate = 4.0 },
+                HttpHandlerFactory = _ => fake,
+            };
+            cfg.Engines = new Dictionary<string, EngineDefinition>
+            {
+                ["fake"] = new EngineDefinition
+                {
+                    Name = "fake",
+                    Kind = EngineKind.OpenAiCompatible,
+                    Endpoint = new Uri("http://127.0.0.1:9/v1"),
+                    Health = new HealthProbeDefinition { Path = "/props", IntervalMs = 50 },
+                    Catalog = new Dictionary<string, EngineModelDefinition>
+                    {
+                        ["test-model"] = new EngineModelDefinition
+                        {
+                            Name = "test-model",
+                            Profile = "small",
+                            ServingProfiles =
+                            [
+                                new ServingProfile { Name = "small", MaxContext = 131_072, MaxSlots = 2 },
+                                new ServingProfile { Name = "big", MaxContext = 1_048_576, MaxSlots = 1 },
+                            ],
+                            Select = new LifecycleCommand
+                            {
+                                // The lifecycle command is what widens the window: it rewrites the
+                                // file the fake engine reports as n_ctx.
+                                Exec = "/bin/sh",
+                                Args = ["-c", $"printf 1048576 > {windowFile}"],
+                                WaitHealth = true,
+                                WaitTimeoutMs = 15_000,
+                            },
+                        },
+                    },
+                },
+            };
+            await using var router = new RouterCore(cfg, events: new EventRing());
+            router.Start();
+            await WaitHealthyAsync(router);
+
+            // Small request first: served on the existing profile, no switch.
+            var small = await router.EnqueueAsync("t-small", Request("ping-small", requiredContext: 1_000));
+            await small.CompletionTask.WaitAsync(TimeSpan.FromSeconds(10));
+            Assert.Equal(131_072, router.Engines["fake"].ActiveContextWindow);
+            Assert.Equal("small", router.Engines["fake"].ActiveProfile);
+            Assert.False(router.Engines["fake"].Switching);
+
+            // Oversized request: must escalate before executing.
+            var big = await router.EnqueueAsync("t-big", Request("ping-big", requiredContext: 200_000));
+            var body = await big.CompletionTask.WaitAsync(TimeSpan.FromSeconds(20));
+            Assert.Contains("pong", Encoding.UTF8.GetString(body));
+            Assert.Equal(1_048_576, router.Engines["fake"].ActiveContextWindow);
+            Assert.Equal("big", router.Engines["fake"].ActiveProfile);
+            Assert.Equal(TicketState.Completed, big.State);
+
+            var events = router.Events.Replay(0);
+            Assert.Contains(events, e => e.Kind == "engine.profile" && e.Value == 1_048_576 && e.Reason == "big");
+            Assert.Contains(events, e => e.Kind == "engine.switch_started" && e.Reason == "profile=big");
+            Assert.DoesNotContain(events, e => e.TicketId == small.Id && e.Kind == "request.failed");
+
+            var stats = router.GetStats();
+            var eng = stats.Engines.Single(e => e.Engine == "fake");
+            Assert.Equal("big", eng.ActiveProfile);
+            Assert.Equal(1_048_576, eng.ActiveContextWindow);
+            // the fake advertises a constant slot count; a real engine would report the
+            // profile's capacity here and admission would follow it (min with max_inflight).
+            Assert.Equal(2, eng.ActiveSlots);
+        }
+        finally
+        {
+            File.Delete(windowFile);
+        }
     }
 }

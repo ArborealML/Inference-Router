@@ -70,6 +70,7 @@ public static class RouterConfigLoader
             if (sched.MaxQueuePerModel is { } v4) sc.MaxQueuePerModel = v4;
             if (sched.MaxInflightPerEngine is { } v5) sc.MaxInflightPerEngine = v5;
             if (sched.PrefixTrieMaxNodes is { } v6) sc.PrefixTrieMaxNodes = v6;
+            if (sched.CharsPerTokenEstimate is { } v7) sc.CharsPerTokenEstimate = v7;
             cfg.Scheduler = sc;
         }
 
@@ -135,6 +136,8 @@ public static class RouterConfigLoader
                 Expect = hp.Expect,
                 IntervalMs = hp.IntervalMs ?? 2_000,
                 TimeoutMs = hp.TimeoutMs ?? 5_000,
+                ContextPath = hp.ContextPath ?? "n_ctx",
+                SlotsPath = hp.SlotsPath ?? "total_slots",
             };
         }
 
@@ -149,6 +152,31 @@ public static class RouterConfigLoader
                 if (m.Profiles is { } profiles)
                     def = def with { Profiles = profiles.ToArray() };
                 if (m.Profile is { } profile) def = def with { Profile = profile };
+                if (m.DefaultProfile is { } dp) def = def with { Profile = dp };
+                if (m.Serving is { } serving)
+                {
+                    var ladder = new ServingProfile[serving.Count];
+                    for (var i = 0; i < serving.Count; i++)
+                    {
+                        var s = serving[i];
+                        if (s.Name is not { Length: > 0 } sname)
+                            throw new RouterConfigException($"engine.{name}.catalog.{modelName}.serving[{i}].name is required");
+                        if (s.MaxContext is not { } mc || mc <= 0)
+                            throw new RouterConfigException($"engine.{name}.catalog.{modelName}.serving[{i}].max_context must be a positive token count");
+                        ladder[i] = new ServingProfile
+                        {
+                            Name = sname,
+                            MaxContext = mc,
+                            MaxSlots = s.MaxSlots ?? 1,
+                        };
+                        if (ladder[i].MaxSlots < 1)
+                            throw new RouterConfigException($"engine.{name}.catalog.{modelName}.serving[{i}].max_slots must be >= 1");
+                    }
+                    def = def with { ServingProfiles = ladder };
+                    if (def.Profile is { } p && Array.Find(ladder, x => x.Name == p) is null)
+                        throw new RouterConfigException(
+                            $"engine.{name}.catalog.{modelName}.profile '{p}' is not one of the declared serving profiles");
+                }
                 if (m.Select is { } sel)
                 {
                     def = def with

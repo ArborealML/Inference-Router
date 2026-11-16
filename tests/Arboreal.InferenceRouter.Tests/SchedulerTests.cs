@@ -4,7 +4,7 @@ namespace Arboreal.InferenceRouter.Tests;
 
 public class SchedulerTests
 {
-    private static QueuedRequest Make(string model, ThreadPriority priority, long seq)
+    private static QueuedRequest Make(string model, ThreadPriority priority, long seq, long requiredContext = 0)
     {
         var ticket = new RouterTicket($"t{seq}", "th", model, DateTimeOffset.UtcNow);
         var thread = new RouterThread("th", priority, 1.0, null);
@@ -22,11 +22,20 @@ public class SchedulerTests
             Thread = thread,
             EnqueuedSeq = seq,
             PromptChars = 100,
+            RequiredContextTokens = requiredContext,
         };
     }
 
+    private static readonly ServingProfile[] Ladder =
+    [
+        new ServingProfile { Name = "small", MaxContext = 131_072, MaxSlots = 2 },
+        new ServingProfile { Name = "mid", MaxContext = 262_144, MaxSlots = 2 },
+        new ServingProfile { Name = "big", MaxContext = 1_048_576, MaxSlots = 1 },
+    ];
+
     private static EngineRuntimeInfo Info(string name, string[] loaded, string[] catalog,
-        int inflight = 0, bool healthy = true, long matched = 0, bool switching = false)
+        int inflight = 0, bool healthy = true, long matched = 0, bool switching = false,
+        long activeContextWindow = 0, IReadOnlyList<ServingProfile>? profiles = null)
         => new()
         {
             Name = name,
@@ -38,6 +47,8 @@ public class SchedulerTests
             Healthy = healthy,
             Switching = switching,
             MatchedPrefixChars = matched,
+            ActiveContextWindow = activeContextWindow,
+            ServingProfiles = profiles ?? Array.Empty<ServingProfile>(),
         };
 
     private static RouterConfig Config(bool autoSwitch = true)
@@ -117,5 +128,85 @@ public class SchedulerTests
         var view = new SchedulerView(new[] { Info("a", ["m1"], ["m1"], switching: true) }, DateTimeOffset.UtcNow);
         var decision = new PrefixAwareScheduler().SelectNext(Make("m1", ThreadPriority.Normal(), 1), view, Config());
         Assert.Null(decision.Engine);
+        Assert.Equal("no_available_engine", decision.RejectReason);
+    }
+
+    // ── serving-profile escalation (§7.6) ────────────────────────────────────
+
+    [Fact]
+    public void Escalates_Loaded_Engine_When_Context_Exceeds_Window()
+    {
+        var view = new SchedulerView(
+            new[] { Info("a", ["m1"], ["m1"], activeContextWindow: 131_072, profiles: Ladder) },
+            DateTimeOffset.UtcNow);
+        var decision = new PrefixAwareScheduler().SelectNext(
+            Make("m1", ThreadPriority.Normal(), 1, requiredContext: 200_000), view, Config());
+        Assert.Equal("a", decision.Engine);
+        Assert.True(decision.SwitchRequired);
+        Assert.Equal("mid", decision.TargetProfile);
+    }
+
+    [Fact]
+    public void Prefers_Idle_Window_Match_Over_Engine_Needing_Escalation()
+    {
+        var view = new SchedulerView(new[]
+        {
+            Info("busy", ["m1"], ["m1"], inflight: 1, activeContextWindow: 1_048_576, profiles: Ladder),
+            Info("small-window", ["m1"], ["m1"], activeContextWindow: 131_072, profiles: Ladder),
+        }, DateTimeOffset.UtcNow);
+        var decision = new PrefixAwareScheduler().SelectNext(
+            Make("m1", ThreadPriority.Normal(), 1, requiredContext: 200_000), view, Config());
+        Assert.Equal("busy", decision.Engine);
+        Assert.False(decision.SwitchRequired);
+        Assert.Null(decision.TargetProfile);
+    }
+
+    [Fact]
+    public void Chooses_Smallest_Fitting_Profile_On_Escalation()
+    {
+        var view = new SchedulerView(
+            new[] { Info("a", ["m1"], ["m1"], activeContextWindow: 131_072, profiles: Ladder) },
+            DateTimeOffset.UtcNow);
+        var decision = new PrefixAwareScheduler().SelectNext(
+            Make("m1", ThreadPriority.Normal(), 1, requiredContext: 131_073), view, Config());
+        Assert.Equal("mid", decision.TargetProfile);
+    }
+
+    [Fact]
+    public void Never_Escalates_When_Window_Unreported()
+    {
+        var view = new SchedulerView(
+            new[] { Info("a", ["m1"], ["m1"], activeContextWindow: 0, profiles: Ladder) },
+            DateTimeOffset.UtcNow);
+        var decision = new PrefixAwareScheduler().SelectNext(
+            Make("m1", ThreadPriority.Normal(), 1, requiredContext: 200_000), view, Config());
+        Assert.Equal("a", decision.Engine);
+        Assert.False(decision.SwitchRequired);
+    }
+
+    [Fact]
+    public void Skips_Engine_Whose_Ladder_Cannot_Fit()
+    {
+        var view = new SchedulerView(new[]
+        {
+            Info("small-only", ["m1"], ["m1"], activeContextWindow: 131_072, profiles: [Ladder[0]]),
+            Info("ladderless", ["m1"], ["m1"]),
+        }, DateTimeOffset.UtcNow);
+        var decision = new PrefixAwareScheduler().SelectNext(
+            Make("m1", ThreadPriority.Normal(), 1, requiredContext: 200_000), view, Config());
+        Assert.Equal("ladderless", decision.Engine);
+        Assert.False(decision.SwitchRequired);
+    }
+
+    [Fact]
+    public void No_Escalation_When_AutoSwitch_Off()
+    {
+        var view = new SchedulerView(
+            new[] { Info("a", ["m1"], ["m1"], activeContextWindow: 131_072, profiles: Ladder) },
+            DateTimeOffset.UtcNow);
+        var decision = new PrefixAwareScheduler().SelectNext(
+            Make("m1", ThreadPriority.Normal(), 1, requiredContext: 200_000), view, Config(autoSwitch: false));
+        Assert.Null(decision.Engine);
+        Assert.Equal("no_available_engine", decision.RejectReason);
     }
 }

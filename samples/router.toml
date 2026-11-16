@@ -1,6 +1,11 @@
 # Arboreal inference router — sample config.
 # Matches this machine's select-model backends (strata / hyperqwen / glm / deepseek).
 # TOML is human-friendly; the same schema works as JSON (config .json → JSON loader).
+#
+# NOTE: dotted model ids are TOML table separators, so they MUST be quoted:
+#   [engine.strata.catalog."qwen-3.8-flash-next"]   (correct)
+#   [engine.strata.catalog.qwen-3.8-flash-next]     (wrong: nests under "qwen-3")
+# Check any edit with:  arboreal config --config samples/router.toml
 
 listen = "http://127.0.0.1:8321"
 default_model = "qwen-3.8-flash-next"
@@ -16,8 +21,9 @@ prefix_affinity_threshold_chars = 512
 affinity_weight = 1.5
 prefill_cost_alpha = 1.0
 max_queue_per_model = 64
-max_inflight_per_engine = 8
+max_inflight_per_engine = 8        # router-side ceiling; never admits more than this
 prefix_trie_max_nodes = 8192
+chars_per_token_estimate = 4.0    # used when a client doesn't declare required context
 
 [threads.interactive-ui]
 priority = { class = "interactive", sub = 128 }
@@ -26,7 +32,7 @@ model_affinity = "qwen-3.8-flash-next"
 [threads.background-indexer]
 priority = { class = "background" }
 
-# ── strata: qwen-3.8 models on port 18021 (sufix-cache capable) ──────────────
+# ── strata: qwen-3.8 models on port 18021 (suffix-cache capable) ─────────────
 [engine.strata]
 kind = "openai-compatible"
 endpoint = "http://127.0.0.1:18021/v1"
@@ -39,20 +45,49 @@ path = "/props"
 expect = "total_slots>0"
 interval_ms = 2000
 timeout_ms = 5000
+context_path = "n_ctx"            # live context window (tokens) — drives escalation
+slots_path = "total_slots"        # live slots — admission = min(this, max_inflight_per_engine)
 
-[engine.strata.catalog.qwen-3.8-flash-next]
+# Serving ladder: context tier -> concurrency it affords. A request whose required context
+# exceeds the active tier queues behind a profile switch instead of being truncated.
+# THESE NUMBERS MUST MATCH WHAT select-model ACTUALLY LOADS; verify with
+#   curl -s http://127.0.0.1:18021/v1/props
+[engine.strata.catalog."qwen-3.8-flash-next"]
 aliases = ["flash-next", "qwen"]
-profiles = ["max", "128k-2", "64k-4"]
-select.exec = "select-model"
-select.args = ["{{model}}", "--profile", "{{profile}}"]
+profiles = ["max", "128k-2", "1m"]
+default_profile = "128k-2"
 
-[engine.strata.catalog.qwen-3.8-flash-next-coder]
+[[engine.strata.catalog."qwen-3.8-flash-next".serving]]
+name = "max"
+max_context = 98304
+max_slots = 4
+
+[[engine.strata.catalog."qwen-3.8-flash-next".serving]]
+name = "128k-2"
+max_context = 131072
+max_slots = 2
+
+[[engine.strata.catalog."qwen-3.8-flash-next".serving]]
+name = "1m"
+max_context = 1048576
+max_slots = 1
+
+[engine.strata.catalog."qwen-3.8-flash-next".select]
+exec = "select-model"
+args = ["{{model}}", "--profile", "{{profile}}"]
+wait_health = true
+wait_timeout_ms = 7200000
+
+[engine.strata.catalog."qwen-3.8-flash-next-coder"]
 aliases = ["coder"]
 profiles = ["max"]
-select.exec = "select-model"
-select.args = ["{{model}}", "--profile", "{{profile}}"]
+default_profile = "max"
 
-# ── hyperqwen: swift/qwen-3.8-27b on port 18020 ─────────────────────────────
+[engine.strata.catalog."qwen-3.8-flash-next-coder".select]
+exec = "select-model"
+args = ["{{model}}", "--profile", "{{profile}}"]
+
+# ── hyperqwen: qwen-3.8-27b on port 18020 ───────────────────────────────────
 [engine.hyperqwen]
 kind = "openai-compatible"
 endpoint = "http://127.0.0.1:18020/v1"
@@ -62,18 +97,19 @@ capabilities = { max_context = 32768, max_slots = 2 }
 [engine.hyperqwen.health_probe]
 path = "/v1/models"
 
-[engine.hyperqwen.catalog.qwen-3.8-27b]
+# No serving ladder: this engine is routed to as-is (no profile escalation).
+[engine.hyperqwen.catalog."qwen-3.8-27b"]
 aliases = ["qwen-27b"]
 
-# ── glm / deepseek via select-model shims (example: remote=false, lifecycle) ─
+# ── glm: health + routing only (no lifecycle commands from this router) ─────
 [engine.glm]
 kind = "openai-compatible"
 endpoint = "http://127.0.0.1:18060/v1"
-remote = true                           # no lifecycle commands; health only
+remote = true                           # remote peers switch themselves; we only route
 
 [engine.glm.health_probe]
 path = "/v1/models"
 expect = "glm"
 
-[engine.glm.catalog.glm-5.3-flash]
+[engine.glm.catalog."glm-5.3-flash"]
 aliases = ["glm-flash"]

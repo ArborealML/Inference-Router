@@ -64,6 +64,9 @@ public sealed record RouterRequestOptions
     public TimeSpan? MaxQueueTime { get; init; }
     /// <summary>Client-supplied affinity hint (normalized prefix hash) for sticky routing.</summary>
     public string? CacheAffinityHash { get; init; }
+    /// <summary>Context tokens this request needs. When absent the router estimates from prompt
+    /// chars (scheduler.chars_per_token_estimate); a value above the active window escalates.</summary>
+    public long? RequiredContext { get; init; }
 }
 
 public enum TicketState : byte { Queued, WaitingForModel, Executing, Completed, Cancelled, Failed }

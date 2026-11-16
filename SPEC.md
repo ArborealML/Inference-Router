@@ -1,6 +1,6 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.6)
+Status: draft, continuously revised (v0.8)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `~/src/arboreal/inference-router` (git, this repo).
 
@@ -12,6 +12,8 @@ Repository: `~/src/arboreal/inference-router` (git, this repo).
 - v0.4 — ASP.NET-under-Native-AOT research folded into §9 (RDG, CreateSlimBuilder, STJ mode guidance, SSE via TypedResults.ServerSentEvents, HttpClient type-info overloads, trim-warning discipline); added §13 Pi integration (mid-session model switching, intelligent wait protocol, design pass dispatched as a deep research question).
 - v0.5 — implementation landed: core library (threads/priority, per-model priority queues, prefix trie + suffix extents, prefix-aware scheduler, engine runtime with health/lifecycle, TOML+JSON config), Server (passthrough minimal APIs, SSE keepalive while queued/switching, admin surface), CLI (serve/chat/complete/models/status/events/threads/switch/tickets), 41 passing tests incl. end-to-end dispatch against stubbed engines.
 - v0.6 — Native AOT achieved end-to-end: TOML config via Tomlyn's Roslyn source generator over typed DTOs (ConfigTomlContext; no reflection/DOM), JSON twin via STJ source-generated context over the same DTOs, `IsAotCompatible` clean, `PublishAot` smoke produces a working stripped native binary with zero analyzer warnings (RDG intercepts Map* lambdas at publish, so compile-time IL2026/IL3050 on Map* are expected noise under IsAotCompatible builds only). Dispatch correctness hardening: engine capacity is reserved at dispatch time (drain loop cannot over-dispatch); capacity release re-wakes dispatch after EndEngineOnce; ModelQueue head-first ordering fixed (priority desc, FIFO asc, index 0 = next dispatch); scheduler compares canonical Ticket.Model, not the raw requested alias; engine health loop bootstraps an immediate probe at startup; wait_health=false switch refreshes loaded models before resolving ready; streaming chunks are copied out of the read buffer before channel write. samples/router.safe-smoke.toml added: inert (remote) engines for smoke tests so auto-switch never spawns real lifecycle commands.
+- v0.7 — research dispositions folded in: Cysharp-style performance conventions (§9.1), TOML binder comparison (confirms the Tomlyn source-gen choice; CsToml is prozolic, not Cysharp), scheduling prior art (§12.2/§12.3/§12.4 with the score shape and the causal-suffix caveat), Pi extension design (§13.1 requirements P1–P10, §13.2 two-phase wait, §13.3 AIR surface delta), analyzer stack integrated (§9.2: central packages, banned-API policy, warnings-as-errors, 0-warning build + 0-warning AOT publish), Tomlyn DOM confirmation. New feature per owner: **serving profiles + context-window escalation** (§7.6) — per-model context tiers with slot counts, requests that outgrow the active window queue behind a profile switch rather than compaction; `health_probe.context_path`/`slots_path` gauges drive admission (`max_slots`) and escalation.
+- v0.8 — **serving profiles + context-window escalation implemented** (§7.6): ladder in TOML/JSON (`serving`, `default_profile`), probe gauges (`n_ctx`/`total_slots`) refreshed by the health loop and by switch readiness, `EngineStats.active_profile/active_context_window/active_slots`, `engine.profile` events, scheduler escalation (smallest fitting tier, never blind when the window is unreported, engine skipped when its ladder cannot fit), admission = `min(max_inflight_per_engine, reported slots)`, `X-Inference-Required-Context` header, declared-context estimate via `scheduler.chars_per_token_estimate`, `/admin/switch {profile}`. Lifecycle exec hardened: argv re-quoted for the shell (spaces in one arg), stdout/stderr drained concurrently (chatty select-model no longer deadlocks a full pipe), timeout kills the process tree, and every failure path resets switch state (a failed switch could previously wedge an engine as "switching" forever). Bug found while testing: unquoted dotted model ids in the shipped samples silently nested into bogus catalog entries — samples fixed, quoting documented (§7), and a test now asserts the samples load as written. New `arboreal config` dry-run verb (§11). 62 tests green, build clean under warnings-as-errors, AOT publish trim-clean.
 
 ## 1. Overview
 
@@ -209,6 +211,24 @@ argument-template expansion (`{{model}}`, `{{profile}}`, `{{gpu}}`,
 wait-for-ready loop against the health probe (configurable timeout, default
 7200s to match select-model's strata wait).
 
+Lifecycle exec contract (implementation notes, since these are the failure
+modes that bite real `select-model` runs):
+
+- Args are re-quoted with `CommandLineToArgvW` rules before being handed to
+  `ProcessStartInfo.Arguments` (the parser .NET uses on Unix too), so a single
+  configured arg may contain spaces — e.g. `args = ["-c", "select-model {{model}}"]`.
+- stdout and stderr are drained **concurrently** with the exit wait: chatty
+  commands (select-model prints progress) would otherwise block on a full pipe
+  buffer while the router waits for exit.
+- Timeout kills the process tree (`Kill(entireProcessTree: true)`) and emits
+  `engine.switch_failed reason=timeout_after_<ms>ms`.
+- Every failure path resets the engine's switch state, so one failed switch can
+  never wedge the engine in "switching" (which would exclude it from scheduling
+  forever).
+- When the switch targets a serving profile, readiness requires the reported
+  context window to fit it, not merely that the model id appears in the models
+  list (§7.6).
+
 ### 5.4 Scheduler (pluggable; v1 policy included)
 
 ```csharp
@@ -280,7 +300,9 @@ Admin/control (not OpenAI-compatible, our own contract):
 - `POST /admin/threads` register/update thread (priority API over HTTP):
   body `{ threadId, priority: {class, sub}, weight?, modelAffinity? }`.
 - `POST /admin/switch` — request model switch: `{engine, model, profile?}`;
-  refuses if a switch is in flight unless `force`.
+  refuses if a switch is in flight unless `force`. `profile` names a declared
+  serving tier; the ack echoes it and the wait-for-ready loop requires the
+  reported window to fit.
 - `GET /admin/status` — engines, loaded models, queue depths, in-flight,
   stats per thread/model/engine.
 - `GET /admin/events?since=<seq>` — SSE feed of `RouterEvent`s (see §10),
@@ -289,11 +311,18 @@ Admin/control (not OpenAI-compatible, our own contract):
 - `POST /admin/queue` — future listener/host enqueue path (spec'd but
   hostless in v1; returns 501 until §12.1 ships).
 
+Admin JSON naming is currently **PascalCase** (the source-gen context's default;
+tests assert `"ThreadId"`, `"State"`, `"TicketId"`). That is a live wire contract,
+so the casing must be pinned deliberately before the Pi extension and the Blazor
+client start parsing it (§15 open question).
+
 **Threading through HTTP**: clients convey thread + priority via headers:
 `X-Inference-Thread: agent-42`, `X-Inference-Priority: high:200`
 (`class[:sub]`), `X-Inference-Affinity: <normalized-prefix-hash>` (optional,
-server-side prefix normalization is authoritative anyway). Body-only callers
-(default thread `anon`, priority Normal) work unchanged.
+server-side prefix normalization is authoritative anyway (§7.6),
+`X-Inference-Required-Context: <tokens>` (declares the context the request must
+be served under; absent ⇒ the router estimates from prompt chars, §7.6). Body-only
+callers (default thread `anon`, priority Normal) work unchanged.
 
 ## 7. Configuration (TOML)
 
@@ -328,13 +357,13 @@ health_probe = { path = "/props", expect = "total_slots>0", interval_ms = 2000, 
 models_endpoint = "/v1/models"     # loaded models + status
 capabilities = { vision = true, suffix_cache = false, max_context = 65536 }
 
-[engine.strata.catalog.qwen-3.8-flash-next]
+[engine.strata.catalog."qwen-3.8-flash-next"]
 aliases = ["flash-next", "default"]
 profiles = ["max", "coder"]
 select = { exec = "select-model", args = ["{{model}}", "--profile", "{{profile}}"],
            wait_health = true, wait_timeout_ms = 7200000 }
 
-[engine.strata.catalog.qwen-3.8-flash-next-coder]
+[engine.strata.catalog."qwen-3.8-flash-next-coder"]
 aliases = ["flash-next-coder", "coder"]
 profiles = ["max-coder"]
 select = { exec = "select-model", args = ["{{model}}"], wait_health = true }
@@ -344,7 +373,7 @@ kind = "openai-compatible"
 endpoint = "http://127.0.0.1:18020/v1"
 api_key_file = "/etc/arboreal/keys/hyperqwen-api-key"
 capabilities = { vision = false, suffix_cache = true, max_context = 131072 }
-[engine.hyperqwen.catalog.qwen-3.8-27b]
+[engine.hyperqwen.catalog."qwen-3.8-27b"]
 aliases = ["classic"]
 select = { exec = "select-model", args = ["{{model}}"], wait_health = true }
 
@@ -357,6 +386,58 @@ remote = true
 Requirements: comments preserved for round-tripping is **not** required;
 schema errors fail fast at boot with path-precise messages; unknown engine
 kinds rejected. Config binding is source-generated (§9) — no reflection.
+
+**Dotted model ids must be quoted.** TOML treats `.` as a table separator, so
+`[engine.strata.catalog.qwen-3.8-flash-next]` silently nests under a `qwen-3`
+table and yields a bogus catalog entry; write
+`[engine.strata.catalog."qwen-3.8-flash-next"]`. `arboreal config --config <path>`
+validates a file and prints the resolved engine/model/serving-ladder plan without
+opening sockets or running lifecycle commands — the check to run after any edit
+(a test asserts the shipped samples load as written).
+
+### 7.6 Serving profiles and context-window escalation
+
+GPU memory per slot scales with `n_ctx`, so a fixed engine that always serves the maximum
+window costs concurrency. AIR therefore models each model as a ladder of **serving
+profiles** — a context-window tier plus the slots it affords — and switches tier on demand
+instead of permanently paying for the largest window:
+
+```toml
+[engine.strata.catalog."qwen-3.8-flash-next"]
+aliases = ["flash-next", "default"]
+default_profile = "128k-2"            # profile used for a plain model switch
+serving = [
+  { name = "max",    max_context = 98304,  max_slots = 4 },
+  { name = "128k-2", max_context = 131072, max_slots = 2 },
+  { name = "1m",     max_context = 1048576, max_slots = 1 },
+]
+select = { exec = "select-model", args = ["{{model}}", "--profile", "{{profile}}"], wait_health = true }
+
+[engine.strata.health_probe]          # gauges read from the probe body
+path = "/props"
+context_path = "n_ctx"               # active context window (tokens); empty string → engine doesn't report
+slots_path = "total_slots"           # active concurrent slots; empty → fall back to max_inflight_per_engine
+```
+
+Semantics:
+
+- **Demand estimate**: a request's required context is `options.required_context` when the
+  client declares it (the Pi extension can compute it exactly), else
+  `ceil(prompt_chars / scheduler.chars_per_token_estimate)` (default 4.0).
+- **Admission**: an engine's live capacity is the *tighter* of
+  `scheduler.max_inflight_per_engine` and the slots it reports (`total_slots`);
+  until the gauge is known the configured ceiling alone applies. A profile
+  switch therefore lowers admission as soon as the engine reports fewer slots.
+- **Escalation**: when `required > engine.active_context_window` (only when the engine
+  reports a window — a blind engine is never escalated), the scheduler selects the
+  *smallest* profile with `max_context >= required`, emits `TargetProfile`, and the ticket
+  queues behind a lifecycle switch to that profile (`{{profile}}` expansion) instead of
+  being compacted or rejected. `auto_switch = false`, no fitting profile, or a
+  `wait_health` timeout ⇒ the ticket fails with `switch_failed` (never silently truncated).
+- **Observability**: `engine.profile` events fire when the inferred active profile changes;
+  `EngineStats` carries `active_profile` / `active_context_window` / `active_slots`.
+- **Non-goal for now**: automatic *de*-escalation (shrinking a window when big-context
+  demand goes away). Escalation is demand-driven; release policy is an open question (§15).
 
 ## 8. Prefix normalization & affinity
 
@@ -413,7 +494,46 @@ kinds rejected. Config binding is source-generated (§9) — no reflection.
   (`[LoggerMessage]`), no reflection fallback providers.
 - **Process/exec** lifecycle uses `Process` — AOT-safe (no AppDomain hacks).
 - **CI check**: `dotnet publish -r linux-x64 -c Release /p:PublishAot=true`
-  for all three shipping projects must exit 0 with **zero trim warnings**.
+  for all three shipping projects must exit 0 with **zero trim warnings**
+  (run with `-p:TrimmerSingleWarn=false` so nothing is folded away).
+
+### 9.1 Performance/style conventions (CySharp-adjacent)
+
+The digest below is drawn from the public evidence base of the Cysharp-style libraries
+(MessagePack-CSharp, ZLogger) plus general .NET high-performance and API-design guidance.
+Applied here:
+
+- **Wire/config schemas compile-time explicit**: parse + validate config at boot into
+  immutable domain types; never parse on the request hot path.
+- **Emit bytes, not transient strings**: request bodies are forwarded as raw
+  `ReadOnlyMemory<byte>`/`PipeReader`/`PipeWriter` frames; no UTF-8↔UTF-16 round trips on
+  token deltas; never retain a borrowed span across an `await` (streaming chunks are copied
+  out of the read buffer before the channel write).
+- **No avoidable allocation in the loop**: pooled/stack buffers in the prefix normalizer and
+  trie chain hashing (FNV-1a over a `Span<byte>` instead of MD5 + a UTF-8 array per message).
+- **Logging is bounded I/O**: generated `LoggerMessage` delegates (CA1848 on), redact
+  prompts/tokens/keys; disabled-level fast path.
+- **Operational discipline**: bounded channels, explicit capacity reservation at dispatch,
+  cancellation/deadlines on every wait, immutable route snapshots, backpressure by queue cap.
+- **Benchmarks gate claims**: allocations/request, allocations/token, tail latency, and
+  streaming throughput under realistic concurrency (not yet wired — see §15).
+
+### 9.2 Analyzer stack (integrated)
+
+Root: `global.json` (SDK 11.0.100), `Directory.Build.props` (`AnalysisLevel=latest`,
+`AnalysisMode=Recommended`, `EnforceCodeStyleInBuild`, `TreatWarningsAsErrors`,
+`CheckForOverflowUnderflow`, `Nullable`), `Directory.Packages.props` (central versions —
+the SDK already ships `Microsoft.CodeAnalysis.NetAnalyzers`, so it is *not* installed
+again), `BannedSymbols.txt` + `.editorconfig` (`RS0030 = error`: `Activator`,
+`Reflection.Emit`, and the reflection-based `JsonSerializer`/`TomlSerializer` overloads).
+Per shipping project: BannedApiAnalyzers 5.6.0, Meziantou.Analyzer 3.0.341,
+IDisposableAnalyzers 4.0.8, AsyncFixer 2.1.0, CSharpIsNullAnalyzer 0.2.19; tests add
+xunit.analyzers 2.3.0. Severities tuned once, in `.editorconfig`, each with a reason
+(`CA1865`/`MA0001` collide on single-char prefix tests; `IDISP004` is dominated by
+`JsonElement`-enumerator false positives, so `CA2000`/`IDISP001` stay errors).
+Status: **0 warnings / 0 errors with warnings-as-errors, and an AOT publish with
+`TrimmerSingleWarn=false` reports no trim warnings.** Narrow, commented `#pragma` /
+`[SuppressMessage]` sites are the only suppressions.
 
 ## 10. Observability
 
@@ -444,7 +564,13 @@ inference-router enqueue --server url --thread id --model m --payload f.json
 inference-router models [--server url]
 inference-router select-model <name> [--server url | --engine e] [--profile p]
 inference-router status [--server url] [--watch]
+inference-router config [--config f.toml]
 ```
+
+`config` is the dry run: parse + validate + print the resolved engine / model /
+serving-ladder plan, with no sockets and no lifecycle commands (safe on a machine
+whose engines are down). `status` reports each engine's active profile, context
+window and slot count alongside health, loaded models and in-flight count.
 
 Library-first: every CLI verb is a thin wrapper over `IInferenceRouter` or
 `RouterHttpClient`; no logic lives in the CLI layer.
@@ -464,15 +590,52 @@ Scheduler gains a peer-level trie: prefer the peer whose trie already holds
 the longest prefix match, before load balancing (mirrors §5.4 step 4 at host
 granularity).
 
+Prior art: SGLang's router uses longest-prefix affinity with a **match floor**
+(default ≈1,024 matched tokens) and a `balanced` mode that compares the warm worker against
+a power-of-two load candidate, breaking affinity only when *both* a relative (~2×) and an
+absolute overload threshold fire. Preble/E2 formalizes it as *exploit the cached owner only
+when matched-prefix tokens exceed the uncached remainder, else explore* using recent
+prefill/decode work, and puts quotas on cache-hit routing to prevent starvation. Adopted
+shape: keep stickiness only above a provisional gate (≥1,024 matched tokens **or** ≥20% of
+the prompt), and break it with SGLang-style hysteresis rather than a raw score tie.
+
 ### 12.3 Global impact-aware scheduling
 `SchedulerView.Engines` gains `remotePrefillCost` (uncached prefill stalls
 others) — the β term in §5.4 becomes per-engine, learned from observed TTFT
 regressions (EWMA), no interface change.
 
+Prior art: production routers do not agree on one "busy" scalar, and request count is
+the worst of the candidates. SGLang ranks prefill workers by estimated prefill queue time,
+then waiting *uncached* tokens, then waiting/running/in-flight; decode workers weight
+waiting/running + KV usage; NVIDIA Dynamo's KV router scores active prefill + incoming
+uncached prefill + active decode KV blocks − a tunable cache-overlap credit that **decays
+when the owner is busy**. Target score shape:
+
+`score_i = queued_prefill_ms_i + prefill_ms(prompt_tokens − reusable_prefix_i) + λ·added_decode_stall_ms_i + μ·eviction_recompute_ms_i`
+
+with λ/μ calibrated empirically. v1's `Inflight*32 + InflightTokenProxy*α + prefill_miss`
+is the deliberately crude stand-in for that expression. Also from that prior art: Sarathi-Serve-style
+chunked prefills mean a router should penalize long uncached prefills on engines that cannot
+chunk, and vLLM may *preempt and recompute* when KV runs out — penalize that risk (the μ
+term) instead of assuming preemption is free. Telemetry to expose later: queue age, queued
+miss tokens, active decoding sequences/blocks, KV free space, preemption/eviction counts,
+observed prefill ms/token and token-step latency.
+
 ### 12.4 Suffix-cache scheduling
 Capability-gated scorer (§5.4); engines advertise `suffix_cache` + extent
 query; scheduler prefers reuse-capable engines with matching suffix extents
 subject to the fork's ordering constraints (unspecified here, by design).
+
+Prior art — the constraint that keeps this capability-gated: in a causal transformer,
+identical suffix *text* does not imply identical KV, because the suffix's hidden states
+depend on earlier tokens. RoPE repositioning (Meta's suffix-cache-reuse work; llama.cpp's
+`--cache-reuse` KV shifting) fixes positions, not changed contextual dependencies, so these
+forks retain stale states and **quality must be benchmarked explicitly**, and fallback to
+recompute when private cache slots are unavailable. CacheBlend shows non-prefix RAG chunks
+can be reused by selectively recomputing context-sensitive token states rather than
+concatenating KV. Router-side bookkeeping required: valid reusable spans, cache
+owner/session, lifetime, relocation and repair cost — and never credit overlapping
+prefix/suffix tokens twice.
 
 ### 12.5 Blazor web client
 Reads `/admin/events` (SSE) + `/admin/stats`; static SSR + selective
@@ -481,38 +644,100 @@ view = request log stream + per-engine gauges + queue depths.
 
 ## 13. Pi integration (session-scoped model switching)
 
-Pi (the coding agent harness) is a first-class client of AIR. Goals:
-(1) Pi talks to AIR as an OpenAI-compatible provider; (2) **mid-session
-model switching** — the same Pi session can move between AIR models;
-(3) **intelligent wait** — AIR loading a model for 1–15 min must not kill
-Pi's request. Design pass R5 (the research service, deepest tier) is pending; the committed
-constraints it must respect:
+Pi (the coding agent harness) is a first-class client of AIR. This section records
+(13.1) what we require from the Pi side, (13.2) the design that satisfies it (a design pass rooted in the current Pi
+extension API and a dated Pi fork snapshot — unverified external analysis), and
+(13.3) what AIR must expose to make it work.
 
-- **Provider shape**: models.json-compatible endpoint is the baseline
-  (`baseUrl: http://127.0.0.1:8321/v1`, `api: "openai-completions"`);
-  a Pi **extension** (`registerProvider` + `refreshModels`) is the
-  mechanism for dynamic catalogs and switch UX. Pi's `/model` reloads
-  models.json — acceptable fallback, not the primary path.
-- **Thread mapping**: Pi session id → AIR thread id via
-  `X-Inference-Thread`; priority via `X-Inference-Priority` (config per
-  Pi model entry).
-- **Wait protocol**: AIR streams SSE keepalive comment frames
-  (`: keepalive`) plus a *status chunk* signaling "model switching"
-  before real deltas, so Pi's idle timeout (`httpIdleTimeoutMs`, default
-  300 s) never fires; non-streaming paths use `Retry-After` + a documented
-  retryable error code. Final protocol decided by R5.
-- **AIR additions required**: `GET /admin/status` exposes `switching:{engine,model,etaMs}`;
-  events feed carries `engine.switch_*` (already in §10); `/v1/models`
-  marks switching models with a `status` extension field.
+### 13.1 Requirements (what we want out of the Pi extension)
+
+| # | Requirement | Verifiable when |
+|---|---|---|
+| P1 | Pi treats AIR as one OpenAI-compatible provider; no per-engine config in Pi | `pi --provider air --model <id>` streams a completion |
+| P2 | Mid-session model switching keeps the transcript/session (`/model air/<id>`, `pi.setModel`, or an `air_switch_model` tool) | switching models mid-conversation does not start a new session or lose history |
+| P3 | Model loading of 1–15 min never produces a spurious timeout in Pi | a cold model load surfaces as *waiting* state, then a normal completion |
+| P4 | The extension shows why Pi is waiting (queued position, engine, currently loaded model, and for escalation: the context-window tier being loaded) | status line, e.g. `Waiting for strata/coder — 2 ahead; serving qwen-flash` |
+| P5 | Context-window escalation (§7.6) is a first-class wait reason, not an error: a session whose context outgrows the active profile queues behind a profile switch and Pi keeps waiting patiently | a request over the active `n_ctx` escalates profile and completes |
+| P6 | Cancellation propagates: aborting in Pi cancels the ticket, and a model load with no remaining claimant is abandoned | abort during queue/switch leaves no orphaned engine work |
+| P7 | Catalog is live: `/v1/models` drives Pi's model list, with availability + loaded/switching state | `refreshModels` reflects an engine that just loaded a model |
+| P8 | Thread identity + priority ride every request (Pi session → AIR chat thread) | admin `/admin/threads` shows the Pi thread and its priority |
+| P9 | Failure modes are distinguishable and actionable (model unavailable, switch failed, engine died, ticket expired) | error `code`s are stable, terminal ones do not retry-storm |
+| P10 | No Pi core patch required: built on the shipped extension API only | extension loads against current pi + the vendored fork package |
+
+### 13.2 Design (research-pass disposition)
+
+- **Shape**: a **native Pi provider extension** (not a models.json entry alone).
+  `models.json` carries URL/key, metadata overrides, and emergency static fallback;
+  the extension owns discovery, thread identity, switching, waiting, cancellation, and UI.
+  Suggested layout: `.pi/extensions/air/{index,provider,air-client,wait-registry,types}.ts`.
+- **Provider wrapper**: `streamSimple` performs the AIR control-plane work, then delegates
+  the *ready* request to Pi's built-in `openai-completions` stream. It returns immediately
+  but emits Pi's `start` only after readiness, so preparation failures become precise
+  pre-stream `error` events instead of post-200 breakage.
+- **Two-phase wait (the answer to P3/P4/P5)** — never hold a chat completion open while a
+  model loads:
+  1. `POST /admin/switch {thread, engine, model, profile, priority, requestId}` →
+     `200 {ticket, state:"ready", seq, leaseExpiresAt}` or `202 {ticket, state:"queued"|"switching", seq}`.
+  2. On 202: `GET /admin/events?ticket=<id>&after=<seq>` — replayable SSE (`id`,
+     `event: ticket`, JSON `{state, model, queuePosition, message}`) with `: keepalive`
+     every ~15 s; reconnect with the last sequence; after 3 failures fall back to polling
+     `GET /admin/status?ticket=<id>` every 5 s.
+  3. At `ready`, call streaming `/v1/chat/completions` carrying the ticket; AIR atomically
+     validates the short reservation and emits normal OpenAI chunks.
+  State machine: `IDLE → PREPARING → QUEUED|SWITCHING → READY → STREAMING → DONE`.
+- **Headers**: `X-Inference-Thread: pi:<sessionId>`, `X-Inference-Priority`,
+  `X-Inference-Request`, and `X-Inference-Ticket` once ready.
+- **Switch semantics**: switching applies to the *next* provider call; neither the fork nor
+  current Pi replaces an in-flight completion (P2 constraint).
+- **Anti-thrash (server-side, visible to Pi)**: schedule **model cohorts** — never preempt
+  active generation, drain the loaded-model cohort, enforce minimum residency/hysteresis,
+  then switch once to the highest effective-priority/oldest cohort. Thread stickiness
+  remembers a target without reserving the GPU.
+- **Errors**: `{"error":{"type":"air_error","code":"model_unavailable|switch_failed|engine_died|ticket_expired","message":"…"}}`;
+  terminal codes fail once, `ticket_not_ready` re-enters the wait exactly once.
+- **Rejected in that pass** (kept as fallbacks only): SSE comment frames on a *held* completion
+  (defeats `httpIdleTimeoutMs` but not the OpenAI SDK's `retry.provider.timeoutMs`, and a
+  post-200 failure is awkward); returning 202 from `/v1/chat/completions` (not a stock
+  completion, and Pi does not retry 202); long-holding non-streaming calls (cap briefly,
+  then return a standard OpenAI error). Optional in-band status frames must be no-op
+  `chat.completion.chunk` objects with `choices: []` — never text deltas.
+- **Fork note**: the dated Pi fork snapshot reviewed here (2026-09-06) already has
+  `registerProvider`, `refreshModels`, `before_provider_headers`, `pi.setModel`, and UI
+  status hooks; it lacks `provider_stream_event`, so do not plan to parse control chunks
+  through that hook.
+
+### 13.3 AIR surface still needed (delta from what ships today)
+
+Implemented: `/v1/chat/completions|/v1/completions|/v1/models` passthrough, SSE ticket
+stream with keepalive frames, `/admin/{status,events,threads,switch,tickets/{id}}`
+(GET + DELETE cancel), ticket snapshots, `engine.switch_*` events, `switching:{engine,
+model,eta}` in stats, `X-Inference-Required-Context` (declared context demand), and
+`/admin/switch` accepting `profile` (echoed in the ack, window-checked in the
+wait-for-ready loop).
+
+Still to add for the Pi extension (P1–P10): ticket-filtered replay on `/admin/events?ticket=&after=`;
+`/admin/switch` accepting `priority` + `requestId` and returning the ticket
+with `seq`/`leaseExpiresAt`; ready-ticket validation at inference time (atomic lease
+consume); `X-Inference-Request` / `X-Inference-Ticket` header plumbing; `POST
+/admin/tickets/{id}/cancel` alias (today cancellation is `DELETE`); `/v1/models`
+enriched with `air:{engine,profile,availability,loaded}`; the stable `air_error` codes;
+and cohort/residency hysteresis in the scheduler (§12.3 hook).
 
 ## 14. Testing & acceptance
 
 - **Unit**: priority comparability, queue ordering/overflow, scheduler
-  scoring (affinity vs busy), TOML binding (valid/invalid/unknown kinds),
-  prefix trie match/eviction, DTO round-trips.
+  scoring (affinity vs busy), serving-profile escalation decisions (fit, smallest
+  tier, unreported window, ladder cannot fit, `auto_switch=false`), TOML binding
+  (valid/invalid/unknown kinds, serving ladder + `default_profile` validation,
+  shipped samples load as written), lifecycle argv quoting (incl. a round trip
+  through a real shell), probe gauge path resolution, prefix trie match/eviction,
+  DTO round-trips.
 - **Integration** (in-memory fake engine serving recorded OpenAI SSE):
   end-to-end enqueue → select → stream → complete; cancellation;
-  switch-while-queued (request waits for model load); health probe failure.
+  switch-while-queued (request waits for model load); context-window escalation
+  (small request served, oversized request queues behind a profile switch that
+  widens the engine's reported window, then completes); health probe failure;
+  real HTTP through Kestrel against the stub engine.
 - **AOT**: full AOT publish of Server + Cli with zero trim warnings on CI.
 - **Compat test**: `curl` with stock `openai` python client against the
   server (chat, stream, models) — must pass unchanged.
@@ -521,14 +746,29 @@ constraints it must respect:
 
 | Question | Disposition |
 |---|---|
-| Cysharp-style performance guidance for this codebase | pending |
-| AOT-safe TOML: CsToml vs Tomlyn on .NET 11 | superseded locally: Tomlyn 2.11.1 ships a Roslyn source generator (`TomlSerializerContext`, `[TomlSerializable]`, `[TomlPropertyName]`) — used in §9/§ConfigDto; the research service result still pending as confirmation |
-| ASP.NET minimal APIs under Native AOT on .NET 11; STJ source-gen for streaming | pending |
-| Prefix/suffix-aware scheduling prior art (SGLang router, Llumnix, vLLM) | pending |
-| Pi mid-session model switching + wait protocol design | pending |
+| Cysharp-style performance guidance for this codebase | **completed** — no prior packet existed; the result is the style digest in §9.1. |
+| AOT-safe TOML: CsToml vs Tomlyn on .NET 11 | **completed, confirms shipped choice**: Tomlyn 2.11.1 ships a Roslyn source generator (`TomlSerializerContext`, `[TomlSerializable]`, `[TomlPropertyName]`) — what §9/`ConfigDto` use. CsToml + CsToml.Generator 1.8.6 (prozolic, *not* Cysharp) is the alternative with per-property annotations. |
+| ASP.NET minimal APIs under Native AOT on .NET 11; STJ source-gen for streaming | completed; dispositioned in §9 |
+| Prefix/suffix-aware scheduling prior art (SGLang router, Llumnix, vLLM) | **completed**; distilled into §12.2/§12.3/§12.4 |
+| Pi mid-session model switching + wait protocol design | **completed**; folded into §13.2/§13.3 |
+| Recommended Roslyn analyzer stack for code quality on .NET 11 AOT | **completed, integrated** (§9.2) |
+| Tomlyn DOM vs source-generated binding API on .NET 11 | **completed**: keep Tomlyn 2.11.1 source-gen; untyped `TomlSerializer.Deserialize<TomlTable>` is reflection-free/AOT-safe if a DOM path is ever needed (not needed today) |
 
 Findings feed §7 (TOML binding choice), §9 (AOT strategy), §5.4 (scheduler
 heuristics). Spec revisions cite them.
+
+### 15.1 Open questions (unresolved)
+
+1. **Admin wire casing** — `/admin/*` JSON is PascalCase today (§6). Pin one
+   convention (camelCase vs snake_case) before the Pi extension (§13) and the
+   Blazor client (§12.5) start depending on it; a change is a breaking wire edit,
+   so decide once.
+2. **De-escalation / release policy** — when may the router shrink a context
+   window back to a cheaper tier (§7.6 non-goal today)? Needs hysteresis: a
+   switch is expensive, and the window also invalidates prefix caches.
+3. **Cohort + residency policy** — how long a model/profile stays loaded for a
+   thread cohort that may return, and how that interacts with priority classes
+   (§12.3 hook; the Pi design pass flagged it as the missing piece for Pi's wait protocol).
 
 ## 16. Repository layout
 

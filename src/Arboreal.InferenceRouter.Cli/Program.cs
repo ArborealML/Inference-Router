@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
@@ -30,6 +31,7 @@ public static class Program
             "events" => await RunEventsAsync(args[1..]).ConfigureAwait(false),
             "threads" => await RunThreadAsync(args[1..]).ConfigureAwait(false),
             "switch" => await RunSwitchAsync(args[1..]).ConfigureAwait(false),
+            "config" => await RunConfigCommandAsync(args[1..]).ConfigureAwait(false),
             "tickets" => await RunTicketAsync(args[1..]).ConfigureAwait(false),
             "help" or "-h" or "--help" => await RunHelpAsync().ConfigureAwait(false),
             _ => await RunHelpAsync().ConfigureAwait(false),
@@ -53,18 +55,68 @@ public static class Program
               threads -i threadId [-p prio]             register a chat thread (admin)
               switch -e engine -m model [-s url]        start a model switch on an engine
               tickets <id> [-s server-url]              inspect one ticket
+              config [--config path]                    validate a config file and print the plan
+                                                      (no sockets, no lifecycle commands)
             """);
         return Task.FromResult(0);
     }
 
     // ── serve ───────────────────────────────────────────────────────────────
-
     private static async Task<int> RunServeAsync(string[] args)
     {
         string? config = GetOpt(args, ["--config", "-c"]);
         string? listen = GetOpt(args, ["--listen", "-l"]);
         var runArgs = listen is { Length: > 0 } ? new[] { $"--urls={listen}" } : [];
         return await ServerApp.RunAsync(runArgs, config).ConfigureAwait(false);
+    }
+
+    // ── config (dry run) ────────────────────────────────────────────────────
+
+    /// <summary>Parse + validate a config file and print the resolved engine / model /
+    /// serving-profile plan. Deliberately touches nothing: no sockets, no lifecycle commands.</summary>
+    private static Task<int> RunConfigCommandAsync(string[] args)
+    {
+        var path = GetOpt(args, ["--config", "-c"])
+            ?? Environment.GetEnvironmentVariable("AIRBODAL_ROUTER_CONFIG")
+            ?? "router.toml";
+        try
+        {
+            var cfg = RouterConfigLoader.LoadFile(path);
+            var s = cfg.Scheduler;
+            Console.WriteLine($"config ok: {path}");
+            Console.WriteLine($"  listen={cfg.Listen}  default_model={cfg.DefaultModel}  " +
+                $"auto_switch={cfg.AutoSwitch}  switch_cooldown_ms={cfg.SwitchCooldownMs}");
+            Console.WriteLine($"  scheduler: max_inflight_per_engine={s.MaxInflightPerEngine}  " +
+                $"max_queue_per_model={s.MaxQueuePerModel}  " +
+                $"chars_per_token_estimate={s.CharsPerTokenEstimate.ToString(CultureInfo.InvariantCulture)}  " +
+                $"prefix_affinity_threshold_chars={s.PrefixAffinityThresholdChars}");
+            foreach (var (name, e) in cfg.Engines)
+            {
+                var key = e.ApiKey is { Length: > 0 } ? "inline" : e.ApiKeyFile is { Length: > 0 } ? $"file:{e.ApiKeyFile}" : "none";
+                Console.WriteLine($"engine {name}: kind={e.Kind} endpoint={e.Endpoint} remote={e.Remote} " +
+                    $"health={(e.Health?.Path ?? "/props (default)")} ctx={(e.Health?.ContextPath ?? "n_ctx (default)")} " +
+                    $"slots={(e.Health?.SlotsPath ?? "total_slots (default)")} key={key}");
+                foreach (var (model, md) in e.Catalog)
+                {
+                    var ladder = md.ServingProfiles.Count == 0
+                        ? "-"
+                        : string.Join(", ", md.ServingProfiles.Select(p =>
+                            $"{p.Name}({p.MaxContext}tok/{p.MaxSlots}slot)"));
+                    var select = md.Select is null ? "none" : $"{md.Select.Exec} {string.Join(' ', md.Select.Args)}";
+                    Console.WriteLine($"  model {model}: aliases=[{string.Join(", ", md.Aliases)}] " +
+                        $"default_profile={(md.Profile ?? "-")} serving=[{ladder}] select={select}");
+                }
+            }
+            foreach (var (id, t) in cfg.Threads)
+                Console.WriteLine($"thread {id}: priority={t.Priority.Class}/{t.Priority.Sub} " +
+                    $"weight={t.Weight.ToString(CultureInfo.InvariantCulture)} affinity={(t.ModelAffinity ?? "-")}");
+            return Task.FromResult(0);
+        }
+        catch (RouterConfigException ex)
+        {
+            Console.Error.WriteLine($"config invalid: {ex.Message}");
+            return Task.FromResult(1);
+        }
     }
 
     // ── chat ────────────────────────────────────────────────────────────────

@@ -1,5 +1,6 @@
 # Safe smoke-test config: engines are marked remote (health + routing only).
 # No lifecycle (select-model) commands — auto-switch cannot spawn processes.
+# Dotted model ids must be quoted (TOML table separators).
 
 listen = "http://127.0.0.1:8399"
 default_model = "qwen-3.8-flash-next"
@@ -13,13 +14,24 @@ kind = "openai-compatible"
 endpoint = "http://127.0.0.1:18021/v1"
 remote = true
 
-[engine.strata.catalog.qwen-3.8-flash-next]
+[engine.strata.catalog."qwen-3.8-flash-next"]
 aliases = ["flash-next"]
+default_profile = "128k"
+
+[[engine.strata.catalog."qwen-3.8-flash-next".serving]]
+name = "128k"
+max_context = 131072
+max_slots = 8
+
+[[engine.strata.catalog."qwen-3.8-flash-next".serving]]
+name = "256k"
+max_context = 262144
+max_slots = 4
 
 [engine.hyperqwen]
 kind = "openai-compatible"
 endpoint = "http://127.0.0.1:18020/v1"
 remote = true
 
-[engine.hyperqwen.catalog.qwen-3.8-27b]
+[engine.hyperqwen.catalog."qwen-3.8-27b"]
 aliases = ["qwen-27b"]

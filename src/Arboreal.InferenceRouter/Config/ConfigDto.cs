@@ -32,6 +32,7 @@ public sealed class SchedulerDto
     [JsonPropertyName("max_queue_per_model")][TomlPropertyName("max_queue_per_model")] public int? MaxQueuePerModel { get; set; }
     [JsonPropertyName("max_inflight_per_engine")][TomlPropertyName("max_inflight_per_engine")] public int? MaxInflightPerEngine { get; set; }
     [JsonPropertyName("prefix_trie_max_nodes")][TomlPropertyName("prefix_trie_max_nodes")] public int? PrefixTrieMaxNodes { get; set; }
+    [JsonPropertyName("chars_per_token_estimate")][TomlPropertyName("chars_per_token_estimate")] public double? CharsPerTokenEstimate { get; set; }
 }
 
 public sealed class ThreadDto
@@ -61,6 +62,8 @@ public sealed class HealthProbeDto
     [JsonPropertyName("expect")][TomlPropertyName("expect")] public string? Expect { get; set; }
     [JsonPropertyName("interval_ms")][TomlPropertyName("interval_ms")] public int? IntervalMs { get; set; }
     [JsonPropertyName("timeout_ms")][TomlPropertyName("timeout_ms")] public int? TimeoutMs { get; set; }
+    [JsonPropertyName("context_path")][TomlPropertyName("context_path")] public string? ContextPath { get; set; }
+    [JsonPropertyName("slots_path")][TomlPropertyName("slots_path")] public string? SlotsPath { get; set; }
 }
 
 public sealed class CapabilitiesDto
@@ -76,7 +79,18 @@ public sealed class ModelDto
     [JsonPropertyName("aliases")][TomlPropertyName("aliases")] public List<string>? Aliases { get; set; }
     [JsonPropertyName("profiles")][TomlPropertyName("profiles")] public List<string>? Profiles { get; set; }
     [JsonPropertyName("profile")][TomlPropertyName("profile")] public string? Profile { get; set; }
+    [JsonPropertyName("default_profile")][TomlPropertyName("default_profile")] public string? DefaultProfile { get; set; }
+    [JsonPropertyName("serving")][TomlPropertyName("serving")] public List<ServingDto>? Serving { get; set; }
     [JsonPropertyName("select")][TomlPropertyName("select")] public SelectDto? Select { get; set; }
+}
+
+/// <summary>One context-window tier a model can be served under, with the concurrency it costs.
+/// Small windows buy more slots; a request needing more context queues behind a profile switch.</summary>
+public sealed class ServingDto
+{
+    [JsonPropertyName("name")][TomlPropertyName("name")] public string? Name { get; set; }
+    [JsonPropertyName("max_context")][TomlPropertyName("max_context")] public long? MaxContext { get; set; }
+    [JsonPropertyName("max_slots")][TomlPropertyName("max_slots")] public int? MaxSlots { get; set; }
 }
 
 public sealed class SelectDto
@@ -93,6 +107,7 @@ public sealed class SelectDto
 [TomlSerializable(typeof(ConfigDto))]
 [TomlSerializable(typeof(ThreadDto))]
 [TomlSerializable(typeof(EngineDto))]
+[TomlSerializable(typeof(ServingDto))]
 internal sealed partial class ConfigTomlContext : TomlSerializerContext;
 
 /// <summary>JSON twin parser (same DTOs, STJ source generation).</summary>

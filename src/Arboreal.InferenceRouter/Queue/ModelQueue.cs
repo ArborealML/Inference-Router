@@ -9,6 +9,9 @@ public sealed class QueuedRequest
     public required RouterThread Thread { get; init; }
     public required long EnqueuedSeq { get; init; }
     public required long PromptChars { get; init; }
+    /// <summary>Context tokens the request must be served under (client hint or char estimate).
+    /// Drives serving-profile escalation in the scheduler (§7.6).</summary>
+    public long RequiredContextTokens { get; init; }
 }
 
 /// <summary>Per-model FIFO priority queue. Ordering: thread class, then sub, then seq.

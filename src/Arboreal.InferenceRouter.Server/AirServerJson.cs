@@ -72,4 +72,6 @@ internal sealed record SwitchAck
     public required string Engine { get; init; }
     public required string Model { get; init; }
     public bool Switching { get; init; }
+    /// <summary>Serving profile the switch targets (context-window tier), when requested.</summary>
+    public string? Profile { get; init; }
 }

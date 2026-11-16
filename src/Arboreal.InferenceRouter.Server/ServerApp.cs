@@ -31,7 +31,10 @@ public static class ServerApp
         builder.Services.AddSingleton(router);
 
         var app = builder.Build();
-        app.Urls.Add(config.Listen);
+        // Explicit --urls / ASPNETCORE_URLS win over the config's listen address; setting
+        // app.Urls at all replaces the host's address list, so only do it when needed.
+        if (string.IsNullOrWhiteSpace(builder.Configuration["urls"]))
+            app.Urls.Add(config.Listen);
 
         // Request-delegate lambdas: under PublishAot the RDG source generator rewrites every
         // Map* call into generated reflection-free invocation code, so the compile-time
@@ -116,7 +119,12 @@ public static class ServerApp
                 Model = requestedModel,
                 Stream = stream,
                 Body = payload,
-                Options = new RouterRequestOptions { Priority = priority, CacheAffinityHash = affinity },
+                Options = new RouterRequestOptions
+                {
+                    Priority = priority,
+                    CacheAffinityHash = affinity,
+                    RequiredContext = RequiredContextFromHeader(ctx),
+                },
             }, ct).ConfigureAwait(false);
         }
         catch (RouterRequestException ex)
@@ -142,6 +150,15 @@ public static class ServerApp
                 await WriteErrorAsync(ctx, MapStatus(ex.Code), ex.Code, ex.Message).ConfigureAwait(false);
             }
         }
+    }
+
+    /// <summary>X-Inference-Required-Context: context tokens the client must be served under.
+    /// Absent → the router estimates from prompt chars. Exceeds the active window → profile switch.</summary>
+    private static long? RequiredContextFromHeader(HttpContext ctx)
+    {
+        var raw = ctx.Request.Headers["X-Inference-Required-Context"].ToString();
+        if (raw.Length == 0) return null;
+        return long.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var v) && v > 0 ? v : null;
     }
 
     /// <summary>SSE passthrough: upstream frames verbatim; SSE keepalive comment frames while the
@@ -365,6 +382,7 @@ public static class ServerApp
             using var doc = JsonDocument.Parse(body.ToArray());
             var engineName = doc.RootElement.TryGetProperty("engine", out var e) ? e.GetString() : null;
             var model = doc.RootElement.TryGetProperty("model", out var m) ? m.GetString() : null;
+            var profileName = doc.RootElement.TryGetProperty("profile", out var p) ? p.GetString() : null;
             if (engineName is null || model is null || !router.Engines.TryGetValue(engineName, out var engine))
             {
                 await WriteErrorAsync(ctx, 400, "invalid_request", "engine and model are required (engine must exist)")
@@ -377,13 +395,27 @@ public static class ServerApp
                     $"engine {engineName} is switching to {engine.SwitchingToward}").ConfigureAwait(false);
                 return;
             }
+            var profile = engine.GetProfile(model!, profileName);
+            if (profileName is { Length: > 0 } && profile is null)
+            {
+                await WriteErrorAsync(ctx, 400, "unknown_profile",
+                    $"engine {engineName} has no serving profile '{profileName}' for {model}").ConfigureAwait(false);
+                return;
+            }
             // Fire-and-forget by design: the switch continues after the 202 ack is written;
             // its lifetime is bounded by engine shutdown, not by this request.
 #pragma warning disable IDISP013 // await-in-using not applicable: intentionally detached Task
-            _ = Task.Run(() => engine.WaitForModelAsync(model, Timeout.InfiniteTimeSpan, CancellationToken.None));
+            if (profile is null)
+            {
+                _ = Task.Run(() => engine.WaitForModelAsync(model!, Timeout.InfiniteTimeSpan, CancellationToken.None));
+            }
+            else
+            {
+                _ = Task.Run(() => engine.WaitForProfileAsync(model!, profile, Timeout.InfiniteTimeSpan, CancellationToken.None));
+            }
 #pragma warning restore IDISP013
             ctx.Response.StatusCode = 202;
-            var ack = new SwitchAck { Engine = engineName!, Model = model!, Switching = true };
+            var ack = new SwitchAck { Engine = engineName!, Model = model!, Profile = profile?.Name, Switching = true };
             await AirJson.WriteAsync(ctx.Response, ack,
                 AirServerJson.AirServerContext.Default.SwitchAck, ctx.RequestAborted).ConfigureAwait(false);
         }
