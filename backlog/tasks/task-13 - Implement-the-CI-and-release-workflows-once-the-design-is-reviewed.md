@@ -1,7 +1,7 @@
 ---
 id: TASK-13
 title: Implement the CI and release workflows once the design is reviewed
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-11-16T20:50:00Z'
 labels:
@@ -24,3 +24,9 @@ Implement exactly what the reviewed design specifies, then prove it: a push run,
 - [ ] #2 release.yml refuses a duplicate tag before any build work starts
 - [ ] #3 All four RID artifacts build, verify, and only then publish
 <!-- AC:END -->
+
+Implemented on `main`: `.github/workflows/ci.yml`, `.github/workflows/release.yml`,
+`tools/ci/smoke.sh`, `tools/ci/fake-upstream.py`, `samples/router.ci-smoke.toml`. The Linux AOT
+binary passes the full smoke sequence locally. Remaining before this can be checked off: a green CI
+run on `main`, and one real tag run of `release.yml` (the win-x64/osx legs cannot be exercised
+locally) — which means cutting a first release, an owner decision.

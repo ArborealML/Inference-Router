@@ -35,3 +35,8 @@ TASK-1), then security and tests. Durability, fairness and version pins follow.
 - [ ] #7 Telemetry bounded (event ring, request journal) with consumer-detectable sequence gaps
 - [ ] #8 Each fix ships with a fake-backed test; suite green, zero analyzer warnings, zero-warning AOT publish
 <!-- AC:END -->
+- [ ] #9 The catalogue probe path is configurable (today it asks `/models` while inference goes to
+  `/v1/models`); shipped configs and the fake engine stop relying on that asymmetry
+- [ ] #10 When every engine is unhealthy the OpenAI surface returns a prompt no-capacity error
+  instead of queueing forever, with the deadline visible to the client
+- [ ] #11 The test fake honours `LoadedModels` so availability logic is actually under test
