@@ -1,0 +1,29 @@
+{
+  "scanners": [
+    {
+      "id": "csharp",
+      "source": "@groma/scanner-csharp@0.2.3",
+      "include": [
+        "**/*.[cC][sS]",
+        "**/*.[cC][sS][pP][rR][oO][jJ]",
+        "**/*.[sS][lL][nN]",
+        "**/*.[sS][lL][nN][xX]",
+        "**/*.[pP][rR][oO][pP][sS]",
+        "**/*.[tT][aA][rR][gG][eE][tT][sS]"
+      ],
+      "exclude": [
+        "[bB][iI][nN]/",
+        "[oO][bB][jJ]/",
+        "[tT]est/",
+        "[tT]ests/",
+        "*Tests/",
+        "*.Test/",
+        "*.[dD]esigner.cs",
+        "*.g.cs",
+        "*.g.i.cs",
+        "*.generated.cs"
+      ]
+    }
+  ],
+  "workSources": []
+}

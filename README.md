@@ -116,6 +116,12 @@ already holding a shared prefix · global scheduling that accounts for the cost 
 prefill imposes on the others · suffix-cache reuse · a Blazor dashboard with live queue,
 engine and per-request state. Details and open questions: SPEC §12, §13, §15.
 
+## Working in the repo
+
+Planned work lives as Markdown tasks under `backlog/`, and the architecture map lives under
+`groma/` — both are plain files reviewed alongside the code. The two CLIs are `backlog` and
+`groma`; `AGENTS.md` says how agents use them.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).

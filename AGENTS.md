@@ -53,3 +53,19 @@ infrastructure and say so in your report.
 - Commit spec + code + tests together when they form one feature, and add a line to the
   SPEC revision log.
 - New dependencies go in `Directory.Packages.props` (central package management).
+
+<!-- backlog:start -->
+## Backlog
+
+Work is tracked as Markdown tasks under `backlog/` (`backlog` CLI). Before starting or continuing
+repo work, run `backlog task list` and `backlog decision list`. Put the implementation plan in the
+task (`backlog task edit <id> --plan`) before writing code for it, and record anything that changes
+the shape of the system as a decision rather than in a commit message. Task and decision text is
+public: the hygiene rule below applies to it.
+<!-- backlog:end -->
+
+<!-- groma:start -->
+## Groma
+
+This project uses Groma. Before you scan, inspect, or curate architecture, or change files for a Backlog task, run `groma agent-instructions` and read the guide it names for that job. When it reports a first scan, ask the user whether they want you to curate the architecture. Do not edit Groma-owned architecture files directly.
+<!-- groma:end -->
