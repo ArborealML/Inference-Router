@@ -38,3 +38,5 @@ dry run. The two macOS legs never started — they sat queued with no runner pic
 artifacts are **designed but not yet demonstrated**. That is a runner-availability question for the
 account, tracked as TASK-15; nothing in the pipeline needs changing for it.
 The dry-run tag was deleted afterwards; no release exists yet.
+
+COMMIT REVIEW in flight (deep tier) over be69d2a^..9e08e65; findings dispositioned here when it lands.

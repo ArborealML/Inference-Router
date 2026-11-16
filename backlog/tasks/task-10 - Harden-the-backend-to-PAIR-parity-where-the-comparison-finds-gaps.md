@@ -79,3 +79,5 @@ Progress: #9 and #11 are done (the probe path was already configurable via `mode
 now pinned by `samples/router.toml`, `samples/router.ci-smoke.toml` and a loader test; the fake engine
 now reports a mutable loaded set, which made the auto-switch test prove that a lifecycle command
 changes what the engine serves). #10 remains open.
+
+PLAN REVIEW in flight (deep tier) against 9e08e65; findings will be reconciled into this plan before implementation starts.
