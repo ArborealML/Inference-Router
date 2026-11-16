@@ -1,6 +1,6 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.8.6)
+Status: draft, continuously revised (v0.8.7)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
@@ -41,7 +41,15 @@ Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
   each of them needs.
 - v0.8.3 — history rewritten (force-pushed) so the published history contains neither the machine-specific paths above nor the unpublished working notes: the two commits that only added working notes were dropped, and every remaining commit's spec/sample blobs were scrubbed with the same rules as v0.8.1–v0.8.2. Keep it that way: nothing internal, personal or service-specific goes in tracked files.
 
-## 1. Overview
+- v0.8.7 — CI and tagged releases wired: `ci.yml` (build + tests + trim-clean AOT publish on every
+  `main` push and PR), `release.yml` (tag preflight that refuses an existing tag/release **before
+  any build**, four stripped Native-AOT assets built on native runners, per-platform smoke test as
+  a hard gate, draft release published only after all assets upload, draft cleanup on failure),
+  `tools/ci/smoke.sh` + `tools/ci/fake-upstream.py` + `samples/router.ci-smoke.toml` as the smoke
+  harness, and the CLI executable renamed to `air`. Two CLI defects found while building the smoke
+  harness are fixed: POST commands handed `HttpClient` a relative URI (every `chat`/`threads`/
+  `switch` call failed before reaching the router) and the config environment variable was
+  misspelled (`AIRBODAL_ROUTER_CONFIG` → `ARBOREAL_ROUTER_CONFIG`).## 1. Overview
 
 The Arboreal Inference Router ("AIR") is a .NET library + CLI that sits between
 callers (agents, CLIs, tools, web clients) and one or more LLM inference
@@ -875,6 +883,15 @@ and cohort/residency hysteresis in the scheduler (§12.3 hook).
   fake engine; the gate for any §9.1 claim and the regression net for streaming handoff
   stalls. See `docs/benchmarks.md`.
 - **AOT**: full AOT publish of Server + Cli with zero trim warnings on CI.
+- **Binary smoke test** (`tools/ci/smoke.sh` against `tools/ci/fake-upstream.py` and
+  `samples/router.ci-smoke.toml`): a published binary must validate a config without opening
+  sockets, serve the OpenAI-compatible surface against a fake engine, relay every streamed frame
+  (the §6 handoff), and map an engine failure to `502 engine_error`. Runs on the machine whose
+  architecture the binary targets, before any release exists.
+- **CI** (`.github/workflows/ci.yml`): restore, build with warnings-as-errors, the full test
+  suite, then a Native-AOT publish (Cli, which carries the Server) that must emit no trim/AOT
+  warnings — on every push to `main` and every pull request. Tests are POSIX-aware today, so CI
+  runs on Linux; each platform binary is still exercised natively at release time.
 - **Compat test**: `curl` with stock `openai` python client against the
   server (chat, stream, models) — must pass unchanged.
 

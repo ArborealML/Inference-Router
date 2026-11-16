@@ -19,7 +19,7 @@ public static class ServerApp
         Justification = "Owned by the DI container: disposed (async) when the WebApplication is disposed in RunAsync.")]
     public static WebApplication Build(string[] args, string? configPath = null, RouterConfig? configOverride = null)
     {
-        configPath ??= Environment.GetEnvironmentVariable("AIRBODAL_ROUTER_CONFIG")
+        configPath ??= Environment.GetEnvironmentVariable("ARBOREAL_ROUTER_CONFIG")
                        ?? Environment.GetEnvironmentVariable("AIR_CONFIG")
                        ?? "router.toml";
         var config = configOverride ?? RouterConfigLoader.LoadFile(configPath);

@@ -6,7 +6,7 @@
 # NOTE: dotted model ids are TOML table separators, so they MUST be quoted:
 #   [engine.strata.catalog."qwen-3.8-flash-next"]   (correct)
 #   [engine.strata.catalog.qwen-3.8-flash-next]     (wrong: nests under "qwen-3")
-# Check any edit with:  arboreal config --config samples/router.toml
+# Check any edit with:  air config --config samples/router.toml
 
 listen = "http://127.0.0.1:8321"
 default_model = "qwen-3.8-flash-next"

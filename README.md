@@ -15,7 +15,7 @@ Design and decisions live in [`SPEC.md`](SPEC.md); the README is the entry point
 
 ## Status
 
-Working and tested (64 tests, warning-free build under `TreatWarningsAsErrors`, clean
+Working and tested (66 tests, warning-free build under `TreatWarningsAsErrors`, clean
 `PublishAot` with zero trim warnings). This is an early-stage internal tool: the request
 path, priority queue, scheduler, config and lifecycle handling are implemented; the
 router-host/listener split, multi-host scheduling and the live web dashboard are
@@ -71,12 +71,37 @@ Native AOT:
 
 ```bash
 dotnet publish src/Arboreal.InferenceRouter.Server -c Release -r linux-x64 /p:PublishAot=true
+# the CLI (which also serves) publishes as a single executable named `air`
+dotnet publish src/Arboreal.InferenceRouter.Cli -c Release -r linux-x64 \
+  /p:PublishAot=true /p:StripSymbols=true /p:DebugSymbols=false /p:DebugType=None
 ```
+
+Smoke-test a built binary against a fake engine (starts nothing real, no keys needed):
+
+```bash
+tools/ci/smoke.sh ./src/Arboreal.InferenceRouter.Cli/bin/Release/net11.0/linux-x64/publish/air
+```
+
 
 `samples/router.toml` is a reference config modelled on one developer's machine — the
 endpoints, model ids, serving tiers and key paths are examples, not defaults. Point it at
 your own engines. `samples/router.safe-smoke.toml` is an inert config (engines marked
 `remote`, no lifecycle commands) for testing without starting or stopping anything.
+`samples/router.ci-smoke.toml` is the self-contained config `tools/ci/smoke.sh` uses.
+
+## CI and releases
+
+`ci.yml` builds (warnings are errors), runs the tests and performs a trim-warning-free Native-AOT
+publish on every push to `main` and every pull request.
+
+`release.yml` runs on a tag such as `v0.1.0`. It first refuses the tag if its format is wrong, it
+does not resolve to a commit, or **any release (draft or published) already uses it** — that check
+runs before any build. It then builds a stripped Native-AOT `air` for `linux-x64`, `win-x64`,
+`osx-arm64` and `osx-x64` on native runners, smoke-tests each binary on its own operating system
+(`tools/ci/smoke.sh`), and only then creates the release: a draft with the four archives and
+`SHA256SUMS`, published once every asset is uploaded. A failed publish removes the draft that run
+created. To exercise the whole pipeline without releasing, run the workflow manually with
+`dry_run` checked.
 
 ## Configuration shape
 

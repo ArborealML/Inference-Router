@@ -1,0 +1,30 @@
+# CI smoke-test config: one engine, served by tools/ci/fake-upstream.py.
+# No lifecycle commands at all, so `air serve` cannot spawn anything: the smoke test
+# only proves the binary parses config, serves HTTP, relays a completion and reports errors.
+# Dotted model ids must be quoted (TOML table separators).
+
+listen = "http://127.0.0.1:18321"
+default_model = "fixture-model"
+auto_switch = false
+
+[default_priority]
+class = "normal"
+
+[scheduler]
+max_inflight_per_engine = 2
+max_queue_per_model = 8
+
+[engine.fixture]
+kind = "openai-compatible"
+endpoint = "http://127.0.0.1:18123/v1"
+remote = true
+capabilities = { max_context = 8192, max_slots = 2 }
+
+[engine.fixture.catalog."fixture-model"]
+aliases = ["fixture"]
+default_profile = "8k"
+
+[[engine.fixture.catalog."fixture-model".serving]]
+name = "8k"
+max_context = 8192
+max_slots = 2

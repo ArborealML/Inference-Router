@@ -1,0 +1,80 @@
+# Continuous integration: every push to main and every pull request.
+#
+# The gate is the same one the release workflow uses, minus packaging: build with
+# warnings-as-errors (Directory.Build.props), run the test suite, and prove the Native-AOT
+# publish stays trim-clean. Windows/macOS coverage is not run here — the test suite currently
+# spawns POSIX helpers, and the release workflow smoke-tests every platform binary natively.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_NOLOGO: "true"
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: "true"
+
+jobs:
+  build-test:
+    name: build + test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the .NET SDK pinned by global.json
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+          dotnet-quality: preview
+
+      - name: Restore
+        run: dotnet restore
+
+      # TreatWarningsAsErrors is set repo-wide, so a warning fails the build.
+      - name: Build
+        run: dotnet build --no-restore -c Release -v minimal
+
+      - name: Test
+        run: dotnet test --no-build -c Release -v minimal
+
+      # AOT publish must be trim/AOT-warning free; the analyser reports those as build
+      # warnings, which TreatWarningsAsErrors turns into build errors. Belt and braces:
+      # the log is grepped too, so a warning that slips past the error gate still fails CI.
+      - name: Native AOT publish (linux-x64)
+        run: |
+          set -euo pipefail
+          dotnet publish src/Arboreal.InferenceRouter.Cli -c Release -r linux-x64 \
+            /p:PublishAot=true /p:StripSymbols=true /p:DebugSymbols=false /p:DebugType=None \
+            -v minimal 2>&1 | tee aot-publish.log
+          if grep -E "warning (IL|TRIM)" aot-publish.log; then
+            echo "::error::AOT publish produced trim/AOT warnings"
+            exit 1
+          fi
+
+      - name: Smoke-test the AOT binary (config validation, no sockets)
+        run: |
+          ./src/Arboreal.InferenceRouter.Cli/bin/Release/net11.0/linux-x64/publish/Arboreal.InferenceRouter.Cli \
+            config --config samples/router.ci-smoke.toml
+
+      - name: Upload build log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-logs-${{ matrix.os }}
+          path: |
+            aot-publish.log
+          retention-days: 5
+          if-no-files-found: ignore

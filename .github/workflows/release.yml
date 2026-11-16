@@ -1,0 +1,231 @@
+# Tagged releases: build a stripped Native-AOT `air` binary per platform, smoke-test each one
+# on its own operating system, and only then create the GitHub Release.
+#
+# Tag pattern: v<major>.<minor>.<patch> (optionally with a -prerelease suffix), e.g. v0.1.0.
+# Pushing such a tag runs this workflow. A tag that already has a release — published or draft —
+# is rejected in `preflight`, before any checkout, build or runner time is spent.
+#
+# Debugging without publishing: Actions → Release → Run workflow, with `dry_run` checked.
+# All four platform legs build and smoke-test; no release is created.
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to build (e.g. v0.1.0)"
+        required: true
+      dry_run:
+        description: "Build and smoke-test without creating a release"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  DOTNET_NOLOGO: "true"
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: "true"
+
+jobs:
+  # ── preflight: refuse to do any real work for a tag we cannot release ─────────────
+  preflight:
+    name: preflight (tag exists, is well formed, has no release)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      tag: ${{ steps.resolve.outputs.tag }}
+      commit: ${{ steps.resolve.outputs.commit }}
+      dry_run: ${{ steps.resolve.outputs.dry_run }}
+    steps:
+      - name: Resolve the tag and its commit
+        id: resolve
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            tag="${{ inputs.tag }}"
+            dry="true"
+          else
+            tag="${GITHUB_REF_NAME}"
+            dry="false"
+          fi
+          if ! printf '%s' "$tag" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'; then
+            echo "::error::'$tag' is not a release tag (expected vMAJOR.MINOR.PATCH[-prerelease])"
+            exit 1
+          fi
+          # Resolves annotated and lightweight tags alike; also proves the tag is on this repo.
+          commit="$(gh api "repos/{owner}/{repo}/commits/$tag" --jq .sha 2>/dev/null || true)"
+          if [ -z "$commit" ]; then
+            echo "::error::tag $tag does not exist in this repository (or does not resolve to a commit)"
+            exit 1
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+          echo "dry_run=$dry" >> "$GITHUB_OUTPUT"
+          echo "will build $tag at $commit (dry_run=$dry)"
+
+      - name: Refuse if a release already exists for this tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.resolve.outputs.tag }}
+        run: |
+          set -euo pipefail
+          if gh api "repos/{owner}/{repo}/releases/tags/$TAG" --jq .draft > draft.txt 2>/dev/null; then
+            if [ "$(cat draft.txt)" = "true" ]; then kind=draft; else kind=published; fi
+            echo "::error::refusing to build: a $kind release for $TAG already exists (delete it first if a re-release is intended)"
+            exit 1
+          fi
+          echo "no existing release for $TAG"
+
+  # ── one native build + smoke test per platform ────────────────────────────────────
+  build:
+    name: build + smoke (${{ matrix.rid }})
+    needs: preflight
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - rid: linux-x64
+            os: ubuntu-24.04
+            exe: air
+          - rid: win-x64
+            os: windows-2022
+            exe: air.exe
+          - rid: osx-arm64
+            os: macos-14
+            exe: air
+          - rid: osx-x64
+            os: macos-13
+            exe: air
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Always build the exact commit the tag points at, so a dispatch run cannot drift
+          # onto the default branch.
+          ref: ${{ needs.preflight.outputs.commit }}
+      - name: Install the .NET SDK pinned by global.json
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+          dotnet-quality: preview
+
+      - name: Publish stripped Native AOT (${{ matrix.rid }})
+        run: |
+          set -euo pipefail
+          dotnet publish src/Arboreal.InferenceRouter.Cli -c Release -r ${{ matrix.rid }} \
+            /p:PublishAot=true /p:StripSymbols=true /p:DebugSymbols=false /p:DebugType=None \
+            /p:InvariantGlobalization=true -v minimal 2>&1 | tee aot-${{ matrix.rid }}.log
+          if grep -E "warning (IL|TRIM)" "aot-${{ matrix.rid }}.log"; then
+            echo "::error::AOT publish produced trim/AOT warnings for ${{ matrix.rid }}"
+            exit 1
+          fi
+        shell: bash
+
+      - name: Stage the binary
+        run: |
+          set -euo pipefail
+          src="src/Arboreal.InferenceRouter.Cli/bin/Release/net11.0/${{ matrix.rid }}/publish/${{ matrix.exe }}"
+          test -f "$src" || { echo "::error::$src missing"; exit 1; }
+          mkdir -p dist
+          cp "$src" "dist/${{ matrix.exe }}"
+          ls -l dist
+        shell: bash
+
+      # The same script runs on every platform, on the machine that will run the binary.
+      # It proves the binary starts, validates config without touching sockets, serves the
+      # OpenAI-compatible surface against a fake engine, relays every streamed frame, and maps
+      # an engine failure to 502/engine_error.
+      - name: Smoke-test the binary on ${{ matrix.os }}
+        run: bash tools/ci/smoke.sh "dist/${{ matrix.exe }}"
+        shell: bash
+
+      - name: Package
+        run: |
+          set -euo pipefail
+          tar -czf "air-${{ matrix.rid }}.tar.gz" -C dist "${{ matrix.exe }}"
+          sha256sum "air-${{ matrix.rid }}.tar.gz" > "air-${{ matrix.rid }}.tar.gz.sha256"
+          ls -l "air-${{ matrix.rid }}.tar.gz"
+        shell: bash
+
+      - name: Upload release asset
+        uses: actions/upload-artifact@v4
+        with:
+          name: asset-${{ matrix.rid }}
+          path: |
+            air-${{ matrix.rid }}.tar.gz
+            air-${{ matrix.rid }}.tar.gz.sha256
+          retention-days: 14
+          if-no-files-found: error
+
+      - name: Upload smoke logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-logs-${{ matrix.rid }}
+          path: |
+            aot-*.log
+            /tmp/air-router.log
+            /tmp/air-fixture.log
+          retention-days: 5
+          if-no-files-found: ignore
+
+  # ── create the release only after every platform binary passed its smoke test ─────
+  release:
+    name: publish release
+    needs: [preflight, build]
+    if: needs.preflight.outputs.dry_run != 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      TAG: ${{ needs.preflight.outputs.tag }}
+    steps:
+      - name: Collect assets
+        uses: actions/download-artifact@v4
+        with:
+          pattern: "asset-*"
+          path: out
+          merge-multiple: true
+      - name: Verify all four assets and write checksums
+        run: |
+          set -euo pipefail
+          for rid in linux-x64 win-x64 osx-arm64 osx-x64; do
+            f="out/air-${rid}.tar.gz"
+            test -f "$f" || { echo "::error::missing $f — a platform leg did not produce an asset"; exit 1; }
+          done
+          (cd out && sha256sum air-*.tar.gz > SHA256SUMS && cat SHA256SUMS)
+        shell: bash
+      - name: Create and publish the release
+        run: |
+          set -euo pipefail
+          gh release create "$TAG" --draft --verify-tag --generate-notes \
+            out/air-*.tar.gz out/air-*.tar.gz.sha256 out/SHA256SUMS
+          gh release edit "$TAG" --draft=false
+          gh release view "$TAG" --json name,assets,url
+        shell: bash
+      # Preflight already refused any pre-existing release, so a draft that exists here can only
+      # be this run's half-finished one — safe to remove so the next run is not blocked.
+      - name: Remove a half-finished draft
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.preflight.outputs.tag }}
+        run: |
+          if gh api "repos/{owner}/{repo}/releases/tags/$TAG" --jq .draft 2>/dev/null | grep -qx true; then
+            gh release delete "$TAG" --yes
+            echo "deleted draft release for $TAG"
+          fi
+        shell: bash

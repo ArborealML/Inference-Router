@@ -19,6 +19,11 @@ public static class Program
     private static string DefaultServer =>
         Environment.GetEnvironmentVariable("AIR_ROUTER_URL") ?? "http://127.0.0.1:8321";
 
+    /// <summary>Absolutises a router path against the configured server. HttpClient rejects relative
+    /// request URIs, so every call site goes through here (regression: the POST commands used to
+    /// hand <c>HttpClient</c> a bare path and fail before reaching the router).</summary>
+    private static string Url(string server, string path) => server.TrimEnd('/') + path;
+
     public static async Task<int> Main(string[] args)
     {
         if (args.Length == 0) return await RunHelpAsync().ConfigureAwait(false);
@@ -77,7 +82,7 @@ public static class Program
     private static Task<int> RunConfigCommandAsync(string[] args)
     {
         var path = GetOpt(args, ["--config", "-c"])
-            ?? Environment.GetEnvironmentVariable("AIRBODAL_ROUTER_CONFIG")
+            ?? Environment.GetEnvironmentVariable("ARBOREAL_ROUTER_CONFIG")
             ?? "router.toml";
         try
         {
@@ -159,7 +164,7 @@ public static class Program
         }
 
         using var http = new HttpClient();
-        using var req = new HttpRequestMessage(HttpMethod.Post, "/v1/chat/completions");
+        using var req = new HttpRequestMessage(HttpMethod.Post, Url(server, "/v1/chat/completions"));
         req.Content = new ByteArrayContent(body.ToArray());
         req.Content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
         req.Headers.TryAddWithoutValidation("X-Inference-Thread", thread);
@@ -294,7 +299,7 @@ public static class Program
             w.WriteEndObject();
         }
         using var http = new HttpClient();
-        using var req = new HttpRequestMessage(HttpMethod.Post, "/admin/threads");
+        using var req = new HttpRequestMessage(HttpMethod.Post, Url(server, "/admin/threads"));
         req.Content = new ByteArrayContent(body.ToArray());
         req.Content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
         using var res = await http.SendAsync(req).ConfigureAwait(false);
@@ -321,7 +326,7 @@ public static class Program
             w.WriteEndObject();
         }
         using var http = new HttpClient();
-        using var req = new HttpRequestMessage(HttpMethod.Post, "/admin/switch");
+        using var req = new HttpRequestMessage(HttpMethod.Post, Url(server, "/admin/switch"));
         req.Content = new ByteArrayContent(body.ToArray());
         req.Content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
         using var res = await http.SendAsync(req).ConfigureAwait(false);
