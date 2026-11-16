@@ -190,9 +190,12 @@ public class ConfigLoaderTests
         Assert.Contains("qwen-3.8-flash-next", strata.Catalog.Keys);
         Assert.DoesNotContain("qwen-3", strata.Catalog.Keys);
         var model = strata.Catalog["qwen-3.8-flash-next"];
-        Assert.Equal(3, model.ServingProfiles.Count);
-        Assert.Equal("1m", model.ServingProfiles[2].Name);
-        Assert.Equal(1_048_576, model.ServingProfiles[2].MaxContext);
+        Assert.Equal(4, model.ServingProfiles.Count);
+        var measured = model.ServingProfiles.Single(p => p.Name == "512k-1");
+        Assert.Equal(524_288, measured.MaxContext);
+        Assert.Equal(1, measured.MaxSlots);
+        Assert.Equal("1m", model.ServingProfiles[^1].Name);
+        Assert.Equal(1_048_576, model.ServingProfiles[^1].MaxContext);
         Assert.Equal("128k-2", model.Profile);
         Assert.NotNull(model.Select);
         Assert.Equal("n_ctx", strata.Health!.ContextPath);

@@ -17,7 +17,17 @@ Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 - v0.8 — **serving profiles + context-window escalation implemented** (§7.6): ladder in TOML/JSON (`serving`, `default_profile`), probe gauges (`n_ctx`/`total_slots`) refreshed by the health loop and by switch readiness, `EngineStats.active_profile/active_context_window/active_slots`, `engine.profile` events, scheduler escalation (smallest fitting tier, never blind when the window is unreported, engine skipped when its ladder cannot fit), admission = `min(max_inflight_per_engine, reported slots)`, `X-Inference-Required-Context` header, declared-context estimate via `scheduler.chars_per_token_estimate`, `/admin/switch {profile}`. Lifecycle exec hardened: argv re-quoted for the shell (spaces in one arg), stdout/stderr drained concurrently (chatty select-model no longer deadlocks a full pipe), timeout kills the process tree, and every failure path resets switch state (a failed switch could previously wedge an engine as "switching" forever). Bug found while testing: unquoted dotted model ids in the shipped samples silently nested into bogus catalog entries — samples fixed, quoting documented (§7), and a test now asserts the samples load as written. New `arboreal config` dry-run verb (§11). 64 tests green, build clean under warnings-as-errors, AOT publish trim-clean.
 - v0.8.1 — public-repo hygiene: handoff/session notes moved to gitignored `.local/`, personal absolute paths and key-file locations replaced with neutral `/etc/arboreal/keys/...` in the §7 sketch and `samples/router.toml`, README.md added as the entry point. No secret material was ever committed (checked across full history).
 - v0.8.2 — public hygiene: internal research-service names and request identifiers are gone from the spec (§15 now lists questions and dispositions by question only), personal machine paths use neutral placeholders, MIT licence added, AGENTS.md documents build/test/AOT conventions and safe smoke testing.
-- v0.8.4 — performance claims put behind a harness: `bench/Arboreal.InferenceRouter.Benchmarks` measures engine-direct / router-enqueue / router-http at concurrency 1 and 4, non-stream and 65-frame stream, with one shared in-process fake engine so each delta is router work. Results and caveats in `docs/benchmarks.md`; §9.1 now quotes them instead of promising them. The harness caught a real defect: the SSE relay polled every 200 ms for the ticket's stream channel, so time-to-first-token could stall a whole interval. The channel is now created at admission (before `Executing` is published) and `RouterTicket.StreamReady` resolves it for the HTTP relay, which emits keepalives every 4 s instead of polling; two regression tests added. 66 tests green.
+- v0.8.4 — performance claims put behind a harness: `bench/Arboreal.InferenceRouter.Benchmarks`
+  measures engine-direct / router-enqueue / router-http at concurrency 1, 4 and 16, non-stream and
+  65-frame stream, with one shared in-process fake engine so each delta is router work. Results and
+  caveats in `docs/benchmarks.md`; §9.1 now quotes them instead of promising them. The harness
+  caught a real defect: the SSE relay polled every 200 ms for the ticket's stream channel, so
+  time-to-first-token could stall a whole interval. The channel is now created at admission (before
+  `Executing` is published) and `RouterTicket.StreamReady` resolves it for the HTTP relay, which
+  emits keepalives every 4 s instead of polling; two regression tests added. 66 tests green. Sample
+  serving ladder probed against a live engine (`n_ctx` 524288 / `total_slots` 1 → measured `512k-1`
+  tier added to `samples/router.toml`); the remaining tiers are annotated UNVERIFIED with the probe
+  each of them needs.
 - v0.8.3 — history rewritten (force-pushed) so the published history contains neither the machine-specific paths above nor the unpublished working notes: the two commits that only added working notes were dropped, and every remaining commit's spec/sample blobs were scrubbed with the same rules as v0.8.1–v0.8.2. Keep it that way: nothing internal, personal or service-specific goes in tracked files.
 
 ## 1. Overview
@@ -529,11 +539,13 @@ Applied here:
   cancellation/deadlines on every wait, immutable route snapshots, backpressure by queue cap.
 - **Benchmarks gate claims**: allocations/request, allocations/token, tail latency, and
   streaming throughput under realistic concurrency. Wired: `bench/Arboreal.InferenceRouter.Benchmarks`
-  (JIT Release harness, one shared fake engine per layer) with results and caveats in
-  `docs/benchmarks.md`. As of the 2026-11-16 run: routing adds **54–87 µs p50 and ~15 KB/req**,
-  the full HTTP path **213–314 µs p50 and 26–29 KB/req**, the SSE relay **54–96 µs p50 and
-  ~25 KB/req**. Not yet measured: allocations per output token, AOT-published binaries, real
-  engines (prefill interference, slot exhaustion, §7.6 escalation under load).
+  (JIT Release harness, one shared fake engine per layer, concurrency 1/4/16) with results and
+  caveats in `docs/benchmarks.md`. As of the 2026-11-16 run: routing adds **58–91 µs p50 and
+  ~15 KB/req** (flat from concurrency 4 to 16), the full HTTP path **217–996 µs p50 and
+  26–32 KB/req** (the top of that range is Kestrel/SSE framing saturating, not routing), the SSE
+  relay **58–102 µs p50 and ~25 KB/req**. Not yet measured: allocations per output token,
+  AOT-published binaries, real engines (prefill interference, slot exhaustion, §7.6 escalation
+  under load).
 
 ### 9.2 Analyzer stack (integrated)
 

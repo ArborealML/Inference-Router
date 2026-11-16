@@ -51,11 +51,19 @@ slots_path = "total_slots"        # live slots — admission = min(this, max_inf
 
 # Serving ladder: context tier -> concurrency it affords. A request whose required context
 # exceeds the active tier queues behind a profile switch instead of being truncated.
-# THESE NUMBERS MUST MATCH WHAT select-model ACTUALLY LOADS; verify with
-#   curl -s http://127.0.0.1:18021/v1/props
+# The tiers below must match what this engine can actually be loaded with. Probe it and read
+# `meta.n_ctx` from /v1/models plus `total_slots` from /props:
+#   curl -s -H "Authorization: Bearer $(cat /etc/arboreal/keys/strata-api-key)" \
+#     http://127.0.0.1:18021/v1/models ; curl -s -H "Authorization: Bearer $(...)" \
+#     http://127.0.0.1:18021/props
+# Measured on the reference box (2026-11-16): active window 524288 tokens, total_slots 1, input
+# modalities text+image — so a 512k/1 tier really exists and is what the engine is running now;
+# confirm its *name* against the selector's profile list before switching to it. The other three
+# tiers and `capabilities` above are still UNVERIFIED: written from expectation, each needs a
+# probe of that profile.
 [engine.strata.catalog."qwen-3.8-flash-next"]
 aliases = ["flash-next", "qwen"]
-profiles = ["max", "128k-2", "1m"]
+profiles = ["max", "128k-2", "512k-1", "1m"]
 default_profile = "128k-2"
 
 [[engine.strata.catalog."qwen-3.8-flash-next".serving]]
@@ -67,6 +75,11 @@ max_slots = 4
 name = "128k-2"
 max_context = 131072
 max_slots = 2
+
+[[engine.strata.catalog."qwen-3.8-flash-next".serving]]
+name = "512k-1"              # measured 2026-11-16: n_ctx 524288, total_slots 1
+max_context = 524288
+max_slots = 1
 
 [[engine.strata.catalog."qwen-3.8-flash-next".serving]]
 name = "1m"

@@ -133,8 +133,9 @@ dotnet run -c Release --project bench/Arboreal.InferenceRouter.Benchmarks -- 400
 ```
 
 The harness runs the same in-process fake engine behind every layer, so each row's difference
-is router work. Latest run on a 24-core desktop box: routing adds ~54–87 µs p50 and ~15 KB per
-request; the full HTTP path ~213–314 µs and ~26–29 KB; the SSE relay ~54–96 µs and ~25 KB. All
+is router work. Latest run on a 24-core desktop box: routing adds ~58–91 µs p50 and ~15 KB per
+request (flat from concurrency 4 to 16); the full HTTP path ~217–996 µs and ~26–32 KB — the top
+of that range is HTTP framing saturated, not routing; the SSE relay ~58–102 µs and ~25 KB. All
 figures, caveats, and what is still unmeasured: [`docs/benchmarks.md`](docs/benchmarks.md).
 
 ## License

@@ -23,6 +23,9 @@ internal static class Program
     private const int ThreadCount = 8;
     private const string AnswerText = "chatcmpl-bench";
 
+    /// <summary>Concurrency levels every scenario is measured at (SPEC 14 asks for 1, 4 and 16).</summary>
+    private static readonly int[] Concurrencies = [1, 4, 16];
+
     private static async Task<int> Main(string[] args)
     {
         var requests = args.Length > 0 ? int.Parse(args[0], CultureInfo.InvariantCulture) : 3000;
@@ -39,7 +42,7 @@ internal static class Program
         using var directHandler = new BenchEngineHandler();
         using (var http = new HttpClient(directHandler) { BaseAddress = new Uri("http://engine.invalid/v1/") })
         {
-            foreach (var concurrency in new[] { 1, 4 })
+            foreach (var concurrency in Concurrencies)
             {
                 await AddAsync(results, "engine direct (non-stream)", concurrency, warmup, requests,
                     DirectNonStream(http, RequestJson(stream: false))).ConfigureAwait(false);
@@ -58,7 +61,7 @@ internal static class Program
         }
 
         await WaitAsync(() => library.Engines["fake"].Healthy, "engine health probe").ConfigureAwait(false);
-        foreach (var concurrency in new[] { 1, 4 })
+        foreach (var concurrency in Concurrencies)
         {
             await AddAsync(results, "router enqueue (non-stream)", concurrency, warmup, requests,
                 RouterEnqueue(library, stream: false)).ConfigureAwait(false);
@@ -96,7 +99,7 @@ internal static class Program
                 }
             }, "router HTTP surface").ConfigureAwait(false);
 
-            foreach (var concurrency in new[] { 1, 4 })
+            foreach (var concurrency in Concurrencies)
             {
                 await AddAsync(results, "router http (non-stream)", concurrency, warmup, requests,
                     RouterHttp(http, "v1/chat/completions", RequestJson(stream: false), stream: false)).ConfigureAwait(false);
@@ -379,7 +382,7 @@ internal static class Program
         }
 
         Console.WriteLine();
-        foreach (var concurrency in new[] { 1, 4 })
+        foreach (var concurrency in Concurrencies)
         {
             var floor = Find(results, "engine direct (non-stream)", concurrency);
             var enqueue = Find(results, "router enqueue (non-stream)", concurrency);
