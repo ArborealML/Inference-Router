@@ -1,6 +1,6 @@
 ---
 type: C4 System
-title: model-loader
+title: Model loader (select-model script)
 status: stable
 groma:
   id: model-loader

@@ -1,6 +1,6 @@
 ---
 type: C4 System
-title: inference-engine
+title: Inference engine
 status: stable
 groma:
   id: inference-engine
