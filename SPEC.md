@@ -1,6 +1,6 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.8.5)
+Status: draft, continuously revised (v0.8.6)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
@@ -17,6 +17,16 @@ Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 - v0.8 — **serving profiles + context-window escalation implemented** (§7.6): ladder in TOML/JSON (`serving`, `default_profile`), probe gauges (`n_ctx`/`total_slots`) refreshed by the health loop and by switch readiness, `EngineStats.active_profile/active_context_window/active_slots`, `engine.profile` events, scheduler escalation (smallest fitting tier, never blind when the window is unreported, engine skipped when its ladder cannot fit), admission = `min(max_inflight_per_engine, reported slots)`, `X-Inference-Required-Context` header, declared-context estimate via `scheduler.chars_per_token_estimate`, `/admin/switch {profile}`. Lifecycle exec hardened: argv re-quoted for the shell (spaces in one arg), stdout/stderr drained concurrently (chatty select-model no longer deadlocks a full pipe), timeout kills the process tree, and every failure path resets switch state (a failed switch could previously wedge an engine as "switching" forever). Bug found while testing: unquoted dotted model ids in the shipped samples silently nested into bogus catalog entries — samples fixed, quoting documented (§7), and a test now asserts the samples load as written. New `arboreal config` dry-run verb (§11). 64 tests green, build clean under warnings-as-errors, AOT publish trim-clean.
 - v0.8.1 — public-repo hygiene: handoff/session notes moved to gitignored `.local/`, personal absolute paths and key-file locations replaced with neutral `/etc/arboreal/keys/...` in the §7 sketch and `samples/router.toml`, README.md added as the entry point. No secret material was ever committed (checked across full history).
 - v0.8.2 — public hygiene: internal research-service names and request identifiers are gone from the spec (§15 now lists questions and dispositions by question only), personal machine paths use neutral placeholders, MIT licence added, AGENTS.md documents build/test/AOT conventions and safe smoke testing.
+- v0.8.6 — native-lifecycle design review ingested (§5.3.1): lifecycle is one host transaction with
+  proven ownership/assets/image pins, admission close, cohort drain, exact-target launch, layered
+  readiness proof, no automatic retry/rollback/readiness fallback, single-flight per target with latched
+  failures, advisory journal and no adoption of unowned resources; ids not names. Seam decided:
+  `IEngineLifecycleProvider` + coordinator, first Docker provider is raw Engine HTTP over the socket
+  (the CLI-first preference of the design review is recorded and declined, with the CLI kept as an
+  operator fallback); `select.exec` survives as a mutually-exclusive delegated provider. Also recorded:
+  a switch must be a *lifecycle* reservation, not inference capacity, once the router drains cohorts
+  itself — today's code holds an engine slot across the switch, which is fine for a single-model engine
+  and would misreport busyness later.
 - v0.8.5 — two external reviews ingested. **Docker access under AOT**: no client library; raw Docker Engine HTTP over the socket with source-generated JSON, pinned API version, exec frame demux, and strict error fidelity (404 = absent, transport failure = daemon unavailable) — disposition in §15, seam in §5.3. **Robustness comparison** against a mature local-inference router: we are not yet as robust single-host, so §14.1 records the parity bar and its ordering, §10 records the event/admin-feed prerequisites a live view needs, and §12.5 records which UI ideas to borrow, change or skip. Sample ladder probe results in §0/v0.8.4.
 - v0.8.4 — performance claims put behind a harness: `bench/Arboreal.InferenceRouter.Benchmarks`
   measures engine-direct / router-enqueue / router-http at concurrency 1, 4 and 16, non-stream and
@@ -291,6 +301,25 @@ pinned (verify `Id`, `RepoDigests`, platform, layer digests); the router never p
 “the container is gone”, because acting on that confusion deletes other people's
 containers. `409` is surfaced as a conflict, `304` treated as idempotent success, and an
 uncertain outcome is re-inspected by immutable id.
+
+**Transaction order (what a switch actually is).** A lifecycle change is one host transaction, not a
+command: prove ownership and admissibility → prove asset/receipt/qualification/image-pin/privilege →
+close admission for the engine group → let the admitted cohort drain → re-validate preflight resource
+versions → stop **only owned** peers → launch the exact target → prove readiness (liveness, loaded
+non-alias model, exact context, exact slots, required modalities, provider-exec verification) → publish
+readiness and reopen admission. There is **no automatic retry, rollback or readiness fallback**; a
+timeout leaves the target in place for inspection, and a failure on an exact target is latched so a
+dispatcher wake-up cannot silently turn it into a retry. Same-target callers join one operation
+(cancelling one detaches only that waiter); a competing target gets a transient busy result and its
+request stays queued. Recovery treats any journal as advisory and re-derives truth from runtime state
+plus probes — it never resumes an interrupted mutation and never adopts or relabels a resource it does
+not own. All mutations bind **immutable container ids**, never names.
+
+**Reservation semantics.** Today a dispatched ticket holds its engine-slot reservation across a model
+switch (`RouterCore` reserves at dispatch and releases in the `finally` after the engine call). That is
+defensible while an engine serves exactly one model — there is nothing else it could answer — but once
+the router performs the drain itself the switch must be an explicit *lifecycle* reservation, not
+inference capacity, or the scheduler will read a switching engine as a busy one.
 
 Config additions (§7 sketch): `image`, `container_name`, `labels`, `entrypoint`/`cmd`
 template, `env`, `mounts`, `ports`, `gpu` (device requests / `count = -1` /
@@ -882,6 +911,7 @@ rather than assumed; dispatch progress that cannot spin or starve.
 | Tomlyn DOM vs source-generated binding API on .NET 11 | **completed**: keep Tomlyn 2.11.1 source-gen; untyped `TomlSerializer.Deserialize<TomlTable>` is reflection-free/AOT-safe if a DOM path is ever needed (not needed today) |
 | AOT-safe Docker access from .NET 11 (client library vs raw engine API) | **completed**: no client library — Docker.DotNet needs reflection roots (`DynamicDependency`, IL2026/IL3050 risk). Go raw: `SocketsHttpHandler.ConnectCallback` over `UnixDomainSocketEndPoint` (npipe on Windows), `HttpClient` based at `http://docker/`, STJ **source-generated** DTOs, API version pinned with `/_ping` + `/version` negotiation, exec demux of the 8-byte frame header, and error fidelity where **inspect 404 means absent and nothing else** while transport failure means *daemon unavailable*. Seam: `IEngineLifecycle` over a fakeable `IContainerRuntime` (§5.3) |
 | Robustness and UI comparison against NVIDIA Personal-AI-Router | **completed**: verdict + ordering in §14.1, feed prerequisites in §10, UI borrow/change/skip in §12.5. Where that router leads on robustness we have tasks; where we lead (priority, admission, profiles, prefix, generic endpoints, engine keys, per-engine instances) is not a gap to close |
+| Native engine-lifecycle design (transaction shape + container seam) | **completed**, adopted in §5.3.1: provider seam (`IEngineLifecycleProvider` over a coordinator), transaction order, single-flight per target with latched failures, ownership gate with no adoption of unowned resources, advisory journal, preflight as a validate-only verb, `select.exec` kept as a mutually-exclusive delegated provider. It preferred the docker CLI as the first Docker provider (smaller safety-critical surface); we keep **raw Engine HTTP** instead, because "no client library" from the review above is about reflection-rooted SDKs rather than `HttpClient` — the CLI stays as an operator fallback |
 
 Findings feed §7 (TOML binding choice), §9 (AOT strategy), §5.4 (scheduler
 heuristics). Spec revisions cite them.

@@ -3,7 +3,7 @@ id: TASK-1
 title: >-
   Native engine-lifecycle provider: talk to Docker directly, replace the
   shell-out selector
-status: To Do
+status: Blocked
 assignee: []
 created_date: '2026-11-16T20:39:00Z'
 updated_date: '2026-11-16T20:46:00Z'
@@ -18,7 +18,18 @@ ordinal: 1000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Implements the select-model logic inside AIR as a configuration-driven engine provisioning subsystem: container identity/ownership labels, preflight with no side effects, stop-other-backends policy, proven readiness (loaded model, exact context window, exact slot count, modality, in-container verification), staged-asset receipt checks, qualification manifests for experimental serving features, cross-process locks, and explicit privilege policy. The router calls the Docker API itself rather than shelling out to the docker CLI; the existing select.exec path remains as an escape hatch.
+Replace the shell-out selector with a provider seam the router drives itself.
+
+Approved shape (reconciled from two external reviews, digested in unpublished notes):
+`IEngineLifecycleProvider` over an `EngineLifecycleCoordinator` that runs the transaction in the order
+ownership-proof -> admission close -> cohort drain -> preflight revalidation -> stop owned peers ->
+launch exact target -> readiness proof -> admission reopen, with campaign/selection locks,
+single-flight per target, latched failures, an advisory journal, and no adoption of unowned resources.
+First Docker provider: raw Docker Engine HTTP over the socket with **source-generated** JSON, pinned
+API version, exec frame demux, image pin verification and **no pulls**; the CLI stays as an operator
+fallback, and nothing in the router ever re-execs sudo. Serve `engines preflight` as a validate-only
+verb before any mutation. Keep `select.exec` working as a delegated-proof provider, mutually exclusive
+per model with native lifecycle.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -35,3 +46,11 @@ Implements the select-model logic inside AIR as a configuration-driven engine pr
 <!-- SECTION:NOTES:BEGIN -->
 Blocked on two decisions (decision-1 authorization model, decision-2 launch-tuning boundary) and one external design review whose result is held outside this repository; the plan will be written into this task before implementation starts.
 <!-- SECTION:NOTES:END -->
+
+## Dependencies still open (decisions, not work)
+
+Owner must record: (a) the posture when the container socket is unreachable or permission is denied —
+recommended: refuse and report as `lifecycle_privilege_denied`, never elevate; (b) where engine launch
+tuning lives — recommended hybrid: the router owns identity, ports, mounts, GPU device requests and
+readiness, the image entrypoint owns engine flags and surfaces them through the health probe. Both are
+written as SPEC 15.1 items 4 and 5 so the answer lands in the repo.
