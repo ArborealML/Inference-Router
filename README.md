@@ -105,7 +105,7 @@ generators**; there is no runtime reflection, and the build bans reflection-only
 | --- | --- |
 | `src/Arboreal.InferenceRouter/` | library: `RouterCore`, priority, queues, scheduler, prefix trie, engine runtime, config loader, event ring |
 | `src/Arboreal.InferenceRouter.Server/` | HTTP surface (Minimal APIs, AOT JSON context) |
-| `src/Arboreal.InferenceRouter.Cli/` | `serve`, `chat`, `status`, `threads`, `switch`, `models`, `cancel`, `events`, `config` |
+| `src/Arboreal.InferenceRouter.Cli/` | `serve`, `chat`, `models`, `status`, `events`, `threads`, `switch`, `tickets`, `config` |
 | `tests/` | xUnit suite, including real-HTTP wire tests and shell round-trip tests for lifecycle argv |
 | `SPEC.md` | specification and revision log |
 
