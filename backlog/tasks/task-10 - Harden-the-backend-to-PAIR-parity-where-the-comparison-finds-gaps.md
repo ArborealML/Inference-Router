@@ -81,3 +81,16 @@ now reports a mutable loaded set, which made the auto-switch test prove that a l
 changes what the engine serves). #10 remains open.
 
 PLAN REVIEW in flight (deep tier) against 9e08e65; findings will be reconciled into this plan before implementation starts.
+
+## Finding while documenting the agent surface (a3eb704)
+
+Admission does **not** clamp a caller's claimed priority: `X-Inference-Priority` and
+`POST /admin/threads` accept any class (RouterCore.cs:89,96 take `opts.Priority` verbatim), and the
+admin surface has no authentication at all. So an untrusted local process can promote itself to
+`interactive` and take the queue share a foreground agent was promised. This belongs with AC #5:
+
+- Pin a ceiling at the HTTP edge (config `thread_priority.ceiling`, default = `default_priority`),
+  clamping class **and** sub, and record `thread.priority_clamped` on the ring when it happens.
+- Cover it in the error-contract table test: same header path, both the accepted and clamped value.
+- Documented honestly in SPEC §6.1 and `docs/ai-integration.md` until then (loopback-or-proxy).
+
