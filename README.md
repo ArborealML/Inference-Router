@@ -118,5 +118,4 @@ engine and per-request state. Details and open questions: SPEC §12, §13, §15.
 
 ## License
 
-No licence file yet — the repository is public, and until one is added the default
-"all rights reserved" applies.
+MIT — see [LICENSE](LICENSE).

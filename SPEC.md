@@ -16,6 +16,7 @@ Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 - v0.7 — research dispositions folded in: Cysharp-style performance conventions (§9.1), TOML binder comparison (confirms the Tomlyn source-gen choice; CsToml is prozolic, not Cysharp), scheduling prior art (§12.2/§12.3/§12.4 with the score shape and the causal-suffix caveat), Pi extension design (§13.1 requirements P1–P10, §13.2 two-phase wait, §13.3 AIR surface delta), analyzer stack integrated (§9.2: central packages, banned-API policy, warnings-as-errors, 0-warning build + 0-warning AOT publish), Tomlyn DOM confirmation. New feature per owner: **serving profiles + context-window escalation** (§7.6) — per-model context tiers with slot counts, requests that outgrow the active window queue behind a profile switch rather than compaction; `health_probe.context_path`/`slots_path` gauges drive admission (`max_slots`) and escalation.
 - v0.8 — **serving profiles + context-window escalation implemented** (§7.6): ladder in TOML/JSON (`serving`, `default_profile`), probe gauges (`n_ctx`/`total_slots`) refreshed by the health loop and by switch readiness, `EngineStats.active_profile/active_context_window/active_slots`, `engine.profile` events, scheduler escalation (smallest fitting tier, never blind when the window is unreported, engine skipped when its ladder cannot fit), admission = `min(max_inflight_per_engine, reported slots)`, `X-Inference-Required-Context` header, declared-context estimate via `scheduler.chars_per_token_estimate`, `/admin/switch {profile}`. Lifecycle exec hardened: argv re-quoted for the shell (spaces in one arg), stdout/stderr drained concurrently (chatty select-model no longer deadlocks a full pipe), timeout kills the process tree, and every failure path resets switch state (a failed switch could previously wedge an engine as "switching" forever). Bug found while testing: unquoted dotted model ids in the shipped samples silently nested into bogus catalog entries — samples fixed, quoting documented (§7), and a test now asserts the samples load as written. New `arboreal config` dry-run verb (§11). 64 tests green, build clean under warnings-as-errors, AOT publish trim-clean.
 - v0.8.1 — public-repo hygiene: handoff/session notes moved to gitignored `.local/`, personal absolute paths and key-file locations replaced with neutral `/etc/arboreal/keys/...` in the §7 sketch and `samples/router.toml`, README.md added as the entry point. No secret material was ever committed (checked across full history); the pre-v0.8.1 commits do still contain the old personal paths and the handoff text.
+- v0.8.2 — public hygiene: internal research-service names and request identifiers are gone from the spec (§15 now lists questions and dispositions by question only), personal machine paths use neutral placeholders, MIT licence added, AGENTS.md documents build/test/AOT conventions and safe smoke testing.
 
 ## 1. Overview
 
@@ -647,9 +648,9 @@ view = request log stream + per-engine gauges + queue depths.
 ## 13. Pi integration (session-scoped model switching)
 
 Pi (the coding agent harness) is a first-class client of AIR. This section records
-(13.1) what we require from the Pi side, (13.2) the design that satisfies it (a design pass rooted in the current Pi
-extension API and a dated Pi fork snapshot — unverified external analysis), and
-(13.3) what AIR must expose to make it work.
+(13.1) what we require from the Pi side, (13.2) the design that satisfies it (a
+design pass rooted in the current Pi extension API and a dated Pi fork snapshot —
+unverified external analysis), and (13.3) what AIR must expose to make it work.
 
 ### 13.1 Requirements (what we want out of the Pi extension)
 
@@ -775,7 +776,9 @@ heuristics). Spec revisions cite them.
 ## 16. Repository layout
 
 ```
-SPEC.md, README.md, AGENTS.md (build/test conventions)
+SPEC.md, README.md, AGENTS.md (build/test conventions), LICENSE (MIT)
+.local/ — gitignored: working notes, handoffs, anything machine- or
+service-specific. Never published.
 dotnet-tool-manifest? no — Cli ships as normal tool
 src/Arboreal.InferenceRouter/{AirJson.cs, ...}
 src/Arboreal.InferenceRouter.Server/
