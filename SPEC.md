@@ -52,6 +52,7 @@ Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
   misspelled (`AIRBODAL_ROUTER_CONFIG` → `ARBOREAL_ROUTER_CONFIG`).
 - v0.8.8 — release pipeline exercised on Actions: a dry run built stripped Native-AOT `air` for
 - v0.8.9 — agent integration surface documented and pinned to the code: `docs/ai-integration.md` (thread identity, context-demand header, keepalive/abort framing, admin surface, error-code table, worked context-overflow session) and `samples/pi/inference-router-tools.json` (descriptive tool manifest; nothing reads it). New: every admitted request returns `X-Inference-Ticket`, so a client can `GET|DELETE /admin/tickets/{id}` without scraping the event stream. §6 text corrected to the shipped framing (`data: [router keepalive seq=N status="…"]` every 4 s, status only on change; a failed stream ends `data: {"error":…}` then `data: [DONE]`). §6.1 now states the ingress posture honestly: priority is **not** clamped to the configured default and the admin surface is unauthenticated, so deployment is loopback-or-behind-a-proxy until the v0.1 ingress work. A new wire test replays every path/method in the manifest against a live `ServerApp`, so a renamed route or a phantom tool fails the build. 69 tests green.
+- v0.9 — engine URI composition made coherent (§7.5): one join rule for completion calls, the health probe and the catalogue probe (`EngineRuntime.Combine`) — a leading '/' is absolute from the server root, a bare name appends to the endpoint's path, '?' supplies the query, and a trailing slash on `endpoint` is absorbed. Completions now append, so an engine mounted at `…/v1` is called at `/v1/chat/completions`; previously the base path was dropped and such engines answered 404. Proven against the live strata engine: through the router an empty-messages request returns 502 `engine_error` carrying the engine's own 400 text verbatim (it reached `/v1/chat/completions`), where the root path 404s. Error bodies are now lowercase on every surface (`{"error":{"type":"air_error","code":…,"message":…}}`) — they were PascalCase, which contradicted §12 and the OpenAI-compatibility claim — with the type value aligned to `air_error`; SPEC §6.1 carries the shipped code→status table and `ErrorContractTests` pins the mapping and the casing. New: `UriCompositionTests` (14 composition cases + a live-wire assertion on the paths the fake engine was asked for), and the test fake can answer completions with a chosen status. 87 tests green.
   `linux-x64` and `win-x64` and passed `tools/ci/smoke.sh` on each of its own runners, and the preflight
   refusal is proven (a tag with a leftover draft release failed before any build job started). Windows
   needed `-p:` property switches rather than `/p:` (Git-Bash rewrites `/p:x=y` into a path; the leg failed
@@ -462,6 +463,15 @@ caller can currently promote itself. Pinning that at the edge is v0.1 ingress wo
 then the deployment posture is loopback-or-behind-your-proxy. `docs/ai-integration.md` states this
 to integrators.
 
+The shipped error contract is one lowercase body on every surface —
+`{"error":{"type":"air_error","code":…,"message":…}}` — and the code picks the status:
+`invalid_request` 400, `not_found` 404, `deadline_exceeded` 408, `cancelled` 499, `queue_overflow`
+429, `engine_error` / `engine_unreachable` 502, `switch_failed` / `model_unavailable` 503,
+`no_available_engine` 500 (`switch_in_progress` 409 and `unknown_profile` 400 on the admin side).
+An upstream engine's own 4xx/5xx arrives as `engine_error` with the engine's message embedded, so a
+caller can tell "my request was wrong" from "the engine is down". `docs/ai-integration.md` carries
+the same table for integrators, and `ErrorContractTests` pins both the mapping and the casing.
+
 ## 7. Configuration (TOML)
 
 Single file; loaded at boot; `--config` may repeat (merge, later wins).
@@ -532,6 +542,16 @@ table and yields a bogus catalog entry; write
 validates a file and prints the resolved engine/model/serving-ladder plan without
 opening sockets or running lifecycle commands — the check to run after any edit
 (a test asserts the shipped samples load as written).
+
+**URI composition.** Engine request paths are joined against `endpoint` by one rule, applied
+identically to completion calls, the health probe and the catalogue probe
+(`EngineRuntime.Combine`): a value starting with `/` is **absolute from the server root**
+(`"/props"`, `"/models"` — what llama.cpp-style servers expose), while a bare value is appended
+to the endpoint's own path (`endpoint = "…/v1"` + `"chat/completions"` → `/v1/chat/completions`).
+A `?` in the value supplies the query string; without one, the endpoint's query survives.
+Trailing slashes on `endpoint` are absorbed rather than doubled. Completions are always composed
+against the endpoint path, so mounting an engine at `…/v1` reaches `/v1/chat/completions` — before
+this rule the base path was dropped and every such engine answered 404 (§14 revision v0.9).
 
 ### 7.6 Serving profiles and context-window escalation
 

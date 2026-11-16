@@ -1,10 +1,10 @@
 ---
 id: TASK-10
 title: Harden the backend to PAIR parity where the comparison finds gaps
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-11-16T20:46:00Z'
-updated_date: '2026-11-16T20:46:00Z'
+updated_date: '2026-11-16T23:16:00Z'
 labels:
   - backend
 milestone: v0.10 - live view and robustness parity
@@ -47,9 +47,14 @@ Facts this plan is written against (verified at 329970a):
 - Switch single-flight with per-target state (`RouterCore.ExecSwitchAsync`, `_switchState`); events through a
   bounded `EventRing` (`Events/RouterEvent.cs:33`); config parsed once at startup, no reload path at all.
 
-0. **AC #1 — contracts and URI composition (mostly landed).** `models_endpoint` is configurable and pinned
-   by samples + a loader test. Still missing: base endpoint + probe path join, trailing slash, query string,
-   and relative `health_probe.path` resolution tests.
+0. **AC #1 — contracts and URI composition (LANDED).** One join rule (`EngineRuntime.Combine`) now covers
+   completion calls, the health probe and the catalogue probe: leading '/' = absolute from the server root,
+   bare name = appended to the endpoint's path, '?' supplies the query, trailing slash on `endpoint` absorbed.
+   14 composition cases plus a wire test that asserts the paths the fake was asked for. Error bodies were also
+   made lowercase on every surface (they contradicted §12 and the OpenAI claim) and `ErrorContractTests` pins
+   code→status and casing. Live proof against strata: through the router an empty-messages POST now reaches
+   `/v1/chat/completions` and comes back 502 `engine_error` with the engine's own 400 text; the old root path
+   404s.
 1. **AC #5 — the perimeter, before anything that promises bounds.** Authenticate before reading bodies
    (per-caller credentials from named env vars or key files, constant-time compare, `/admin/*` fail-closed),
    TLS at Kestrel or a trusted proxy, and ASP.NET Core's partitioned rate limiter keyed by credential with
@@ -92,7 +97,7 @@ Two earlier claims in this plan were wrong and are corrected above: capacity res
 and AC #10 being done. AC #10 is open and belongs to step 4.
 
 <!-- AC:BEGIN -->
-- [ ] #1 URI/path composition tested (base endpoint + probe paths, trailing slash, query string, relative `health_probe.path` resolution)
+- [x] #1 URI/path composition tested (base endpoint + probe paths, trailing slash, query string, relative `health_probe.path` resolution)
 - [ ] #2 Request bodies bounded; each phase (connect, headers, first token, idle stream) has a timeout; an explicit commit boundary decides whether in-flight work is recovered or declared lost
 - [ ] #3 Cancellation reaches the engine and releases reserved capacity; a queued ticket can neither spin nor starve (aging bound pinned by a test)
 - [ ] #4 Switches serialized and coalesced; every failure path resets state; the error contract (codes + payload shape) pinned by a table test
@@ -125,4 +130,30 @@ admin surface has no authentication at all. So an untrusted local process can pr
   clamping class **and** sub, and record `thread.priority_clamped` on the ring when it happens.
 - Cover it in the error-contract table test: same header path, both the accepted and clamped value.
 - Documented honestly in SPEC §6.1 and `docs/ai-integration.md` until then (loopback-or-proxy).
+
+## Slice 1 facts (URI composition + error casing)
+
+Verified against the live strata engine (read-only probes; no tokens generated) at 329970a:
+
+| probe | result |
+| --- | --- |
+| `GET /health`, `GET /models`, `GET /v1/models` | 200 |
+| `POST /chat/completions {}` | 404 `{"error":{"message":"not found"}}` |
+| `POST /v1/chat/completions {}` | 400 "messages must be a non-empty list" |
+| router `POST /v1/chat/completions` (same body) | **502 `engine_error` with that 400 text verbatim** + `X-Inference-Ticket: t00000005-4cef` |
+
+So the shipped sample (`endpoint = "…/v1"`) was unreachable for completions before this fix: the base path was
+dropped and every completion went to the server root. The probe paths kept working because they are written
+root-absolute (`/models`, `/props`), which is what makes the single join rule worth having.
+
+Two further findings for later steps:
+
+1. **`auto_switch = false` + a catalog model the engine is not currently serving queues a ticket that never
+   resolves.** With `default_model = "qwen-3.8-flash-next"` (the sample catalog name) against an engine loaded
+   as `qwen3.8-flash-next-iq3_s`, the ticket sat in `WaitingForModel` for the whole 20 s of the client timeout
+   — no deadline, no `model_unavailable`. Step 2 (ticket CTS + phase deadlines) is what makes this answerable;
+   AC #2's deadline set must include the model-wait phase, not just connect/first-token/idle.
+2. **The sample's catalog names do not match the ids strata reports on `/models`.** Either the sample gains the
+   loaded id (or an alias) or the loader test should assert the catalog id appears in the engine's reported set
+   for a documented live configuration. Belongs with TASK-14 (README/sample patterns), not here.
 

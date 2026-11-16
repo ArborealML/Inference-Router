@@ -397,9 +397,9 @@ public sealed class RouterCore : IInferenceRouter
             {
                 using var cts = CancellationTokenSource.CreateLinkedTokenSource(_shutdown.Token, ticket.ExecCts.Token);
                 var body = ModelRewriter.Rewrite(candidate.Request.Body, engine.CanonicalModel(ticket.Model) ?? ticket.Model);
-                var path = LooksLikeCompletion(candidate.Request.Body) ? "/completions" : "/chat/completions";
+                var suffix = LooksLikeCompletion(candidate.Request.Body) ? "completions" : "chat/completions";
 
-                using var res = await SendAsync(engine, body, path, cts.Token).ConfigureAwait(false);
+                using var res = await SendAsync(engine, body, suffix, cts.Token).ConfigureAwait(false);
                 if (!res.IsSuccessStatusCode)
                 {
                     var errBody = await res.Content.ReadAsByteArrayAsync(cts.Token).ConfigureAwait(false);
@@ -443,9 +443,11 @@ public sealed class RouterCore : IInferenceRouter
         }
     }
 
-    private static async Task<HttpResponseMessage> SendAsync(EngineRuntime engine, byte[] body, string path, CancellationToken ct)
+    private static async Task<HttpResponseMessage> SendAsync(EngineRuntime engine, byte[] body, string suffix, CancellationToken ct)
     {
-        using var req = new HttpRequestMessage(HttpMethod.Post, path);
+        // The suffix is composed against the endpoint path (EngineRuntime.Combine), so an endpoint
+        // mounted under /v1 keeps it.
+        using var req = new HttpRequestMessage(HttpMethod.Post, engine.CompletionUri(suffix));
         if (engine.ApiKey is not null)
             req.Headers.TryAddWithoutValidation("Authorization", $"Bearer {engine.ApiKey}");
         req.Content = new ByteArrayContent(body);

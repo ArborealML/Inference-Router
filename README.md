@@ -15,7 +15,7 @@ Design and decisions live in [`SPEC.md`](SPEC.md); the README is the entry point
 
 ## Status
 
-Working and tested (68 tests, warning-free build under `TreatWarningsAsErrors`, clean
+Working and tested (87 tests, warning-free build under `TreatWarningsAsErrors`, clean
 `PublishAot` with zero trim warnings). This is an early-stage internal tool: the request
 path, priority queue, scheduler, config and lifecycle handling are implemented; the
 router-host/listener split, multi-host scheduling and the live web dashboard are
@@ -111,6 +111,9 @@ kind = "openai-compatible"
 endpoint = "http://127.0.0.1:18021/v1"
 api_key_file = "/etc/arboreal/keys/strata-api-key"
 health_probe = { path = "/props", expect = "total_slots>0", context_path = "n_ctx", slots_path = "total_slots" }
+# Request paths join onto `endpoint` by one rule: a leading '/' is absolute from the server root
+# ("/props", "/models"), a bare name appends to the endpoint path. Completion calls always append,
+# so an engine mounted at …/v1 is called at /v1/chat/completions.
 
 [engine.strata.catalog."qwen-3.8-flash-next"]     # dotted ids MUST be quoted (TOML tables)
 default_profile = "128k"

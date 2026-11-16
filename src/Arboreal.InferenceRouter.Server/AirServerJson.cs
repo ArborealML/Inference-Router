@@ -55,16 +55,19 @@ internal static class AirJson
 
 
 /// <summary>Admin + error DTOs. Top-level (not nested) so source-gen metadata resolves cleanly.</summary>
+/// <remarks>Error bodies are lowercase on every surface — SPEC §12 promises the OpenAI shape
+/// (`{"error":{"type","code","message"}}`), so the property names are pinned explicitly rather
+/// than inheriting the PascalCase default of the other admin DTOs.</remarks>
 internal sealed record ErrorBody
 {
-    public required ErrorDetail Error { get; init; }
+    [JsonPropertyName("error")] public required ErrorDetail Error { get; init; }
 }
 
 internal sealed record ErrorDetail
 {
-    public required string Message { get; init; }
-    public string Code { get; init; } = "internal";
-    public string Type { get; init; } = "inference_router_error";
+    [JsonPropertyName("message")] public required string Message { get; init; }
+    [JsonPropertyName("code")] public string Code { get; init; } = "internal";
+    [JsonPropertyName("type")] public string Type { get; init; } = "air_error";
 }
 
 internal sealed record SwitchAck

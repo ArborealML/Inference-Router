@@ -125,9 +125,37 @@ public sealed class EngineRuntime : IAsyncDisposable
 
     private HttpRequestMessage AuthedGet(string path)
     {
-        var req = new HttpRequestMessage(HttpMethod.Get, path);
+        var req = new HttpRequestMessage(HttpMethod.Get, Combine(_def.Endpoint, path));
         if (_apiKey is not null) req.Headers.TryAddWithoutValidation("Authorization", $"Bearer {_apiKey}");
         return req;
+    }
+
+    /// <summary>The URL for one OpenAI completion call. The suffix is composed against the
+    /// endpoint's own path, so `endpoint = "http://host:8080/v1"` reaches /v1/chat/completions —
+    /// the base path is not silently dropped (see <see cref="Combine"/>).</summary>
+    internal Uri CompletionUri(string suffix) => Combine(_def.Endpoint, suffix);
+
+    /// <summary>Compose a configured path against the engine endpoint.
+    /// A leading '/' is absolute from the server root ("/health", "/models"); a bare name appends
+    /// to the endpoint's path ("chat/completions" under …/v1 → /v1/chat/completions). A '?' in the
+    /// value supplies the query string; without one, the endpoint's own query is preserved.</summary>
+    internal static Uri Combine(Uri endpoint, string path)
+    {
+        if (string.IsNullOrEmpty(path)) return endpoint;
+
+        var cut = path.Split('?', 2);
+        var pathPart = cut[0];
+        var query = cut.Length > 1 ? cut[1] : null;
+
+        var absolute = pathPart.Length > 0 && pathPart[0] == '/';
+        var basePath = endpoint.AbsolutePath;
+        var joined = absolute
+            ? pathPart
+            : (basePath.Length > 0 && basePath[^1] == '/' ? basePath : basePath + "/") + pathPart;
+
+        var builder = new UriBuilder(endpoint) { Path = joined };
+        builder.Query = query ?? endpoint.Query;
+        return builder.Uri;
     }
 
     /// <summary>Loaded model ids from the configured models endpoint (llama.cpp /v1/models shape).

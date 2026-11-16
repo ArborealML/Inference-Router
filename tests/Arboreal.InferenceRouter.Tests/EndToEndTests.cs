@@ -26,6 +26,12 @@ public class FakeEngineHandler : HttpMessageHandler
     /// change the advertised window mid-test, which is what a profile switch does).</summary>
     public string? NCtxFile { get; set; }
 
+    /// <summary>Status the fake answers completions with (200 = normal). Non-200 exercises the
+    /// router's upstream-failure mapping (TASK-10 AC #4).</summary>
+    public int CompletionStatus { get; set; } = 200;
+    public string CompletionErrorBody { get; set; } =
+        """{"error":{"type":"invalid_request_error","message":"messages must be a non-empty list"}}""";
+
     private string[] ActiveLoadedModels()
     {
         if (LoadedModelsFile is { Length: > 0 } path && File.Exists(path))
@@ -46,13 +52,23 @@ public class FakeEngineHandler : HttpMessageHandler
     /// <summary>First user-message content per executed completion, in execution order.</summary>
     public List<string> ExecutionOrder { get; } = [];
 
+    /// <summary>Absolute paths the router asked for, in order — path composition is part of the
+    /// engine contract, so tests assert on these (TASK-10 AC #1).</summary>
+    public List<string> SeenRoutes { get; } = [];
+
     public IReadOnlyList<string> Order => ExecutionOrder;
     public void ReleaseGate() => _gate.TrySetResult();
 
+    /// <summary>A route matches at the server root or under any endpoint path prefix, so a test can
+    /// configure `…/v1` and still hit the fake (real engines are mounted either way).</summary>
+    private static bool Matches(string path, string route) =>
+        path == route || path.EndsWith("/" + route, StringComparison.Ordinal);
+
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
-        var path = request.RequestUri!.PathAndQuery.TrimStart('/');
-        if (path.StartsWith("models", StringComparison.Ordinal))
+        var path = request.RequestUri!.AbsolutePath.Trim('/');
+        SeenRoutes.Add(request.RequestUri!.PathAndQuery);
+        if (Matches(path, "models"))
         {
             // The loaded set is mutable so tests can exercise availability: a model the engine does
             // not report must not be scheduled as if it were loaded.
@@ -60,13 +76,23 @@ public class FakeEngineHandler : HttpMessageHandler
                 m => "{\"id\":\"" + m + "\",\"status\":{\"value\":\"loaded\"}}"));
             return Ok("{\"object\":\"list\",\"data\":[" + items + "]}");
         }
-        if (path.StartsWith("props", StringComparison.Ordinal))
+        if (Matches(path, "props"))
         {
             var nctx = ActiveContextTokens();
             return Ok($@"{{""total_slots"": {TotalSlots}{(nctx > 0 ? $",\"n_ctx\": {nctx}" : "")}}}");
         }
-        if (path.StartsWith("chat/completions", StringComparison.Ordinal) || path.StartsWith("completions", StringComparison.Ordinal))
+        if (Matches(path, "chat/completions") || Matches(path, "completions"))
         {
+            if (CompletionStatus is not 200)
+            {
+                var err = new HttpResponseMessage((HttpStatusCode)CompletionStatus)
+                {
+                    Content = new ByteArrayContent(Encoding.UTF8.GetBytes(CompletionErrorBody)),
+                };
+                err.Content.Headers.ContentType =
+                    new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
+                return err;
+            }
             var body = ReadBody(request);
             var tag = ExtractFirstContent(body);
             if (HoldCompletions)
