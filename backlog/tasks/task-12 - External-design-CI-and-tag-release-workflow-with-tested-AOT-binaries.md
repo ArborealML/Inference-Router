@@ -3,8 +3,9 @@ id: TASK-12
 title: 'External design: CI and tag-release workflow with tested AOT binaries'
 status: Done
 assignee:
-  - '@flagship'
+  - '@chatswarm'
 created_date: '2026-11-16T20:50:00Z'
+updated_date: '2026-11-16T23:22:00Z'
 labels:
   - ci
 milestone: v0.10 - live view and robustness parity

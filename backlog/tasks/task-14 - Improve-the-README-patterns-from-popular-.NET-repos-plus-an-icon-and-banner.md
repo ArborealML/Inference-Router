@@ -3,8 +3,9 @@ id: TASK-14
 title: 'Improve the README: patterns from popular .NET repos, plus an icon and banner'
 status: To Do
 assignee:
-  - '@deep'
+  - '@chatswarm'
 created_date: '2026-11-16T22:26:00Z'
+updated_date: '2026-11-16T23:22:00Z'
 labels:
   - docs
   - ui

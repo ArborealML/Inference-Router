@@ -2,8 +2,10 @@
 id: TASK-13
 title: Implement the CI and release workflows once the design is reviewed
 status: Done
-assignee: []
+assignee:
+  - '@qwen3.8-flash-next'
 created_date: '2026-11-16T20:50:00Z'
+updated_date: '2026-11-16T23:22:00Z'
 labels:
   - ci
 milestone: v0.10 - live view and robustness parity

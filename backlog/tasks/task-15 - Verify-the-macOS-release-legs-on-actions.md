@@ -2,14 +2,15 @@
 id: TASK-15
 title: Verify the macOS release legs on Actions
 status: Blocked
-assignee: []
+assignee:
+  - '@claire'
 created_date: '2026-11-16T22:30:00Z'
-updated_date: '2026-11-16T22:30:00Z'
+updated_date: '2026-11-16T23:22:00Z'
 labels:
   - ci
+milestone: v0.9 - native engine lifecycle
 dependencies:
   - TASK-13
-milestone: v0.9 - native engine lifecycle
 ordinal: 15000
 ---
 

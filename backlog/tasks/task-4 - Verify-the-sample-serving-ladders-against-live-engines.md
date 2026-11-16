@@ -2,8 +2,10 @@
 id: TASK-4
 title: Verify the sample serving ladders against live engines
 status: Done
-assignee: []
+assignee:
+  - '@qwen3.8-flash-next'
 created_date: '2026-11-16T20:40:00Z'
+updated_date: '2026-11-16T23:22:00Z'
 labels: []
 dependencies: []
 ordinal: 4000

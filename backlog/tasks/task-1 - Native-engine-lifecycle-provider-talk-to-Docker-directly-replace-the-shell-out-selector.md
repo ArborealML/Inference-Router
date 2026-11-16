@@ -4,9 +4,10 @@ title: >-
   Native engine-lifecycle provider: talk to Docker directly, replace the
   shell-out selector
 status: Blocked
-assignee: []
+assignee:
+  - '@claire'
 created_date: '2026-11-16T20:39:00Z'
-updated_date: '2026-11-16T20:46:00Z'
+updated_date: '2026-11-16T23:22:00Z'
 labels: []
 milestone: v0.9 - native engine lifecycle
 dependencies:

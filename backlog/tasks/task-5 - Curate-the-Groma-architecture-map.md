@@ -2,8 +2,10 @@
 id: TASK-5
 title: Curate the Groma architecture map
 status: Done
-assignee: []
+assignee:
+  - '@qwen3.8-flash-next'
 created_date: '2026-11-16T20:40:00Z'
+updated_date: '2026-11-16T23:22:00Z'
 labels: []
 dependencies: []
 ordinal: 5000

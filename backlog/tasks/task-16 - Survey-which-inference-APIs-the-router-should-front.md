@@ -2,8 +2,10 @@
 id: TASK-16
 title: Survey which inference APIs the router should front
 status: To Do
-assignee: []
+assignee:
+  - '@chatswarm'
 created_date: '2026-11-16T23:02:00Z'
+updated_date: '2026-11-16T23:22:00Z'
 labels: []
 dependencies: []
 priority: low

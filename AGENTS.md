@@ -72,7 +72,8 @@ infrastructure and say so in your report.
 - `.local/` is gitignored and holds working notes, handoffs and anything specific to a
   person's machine or to internal services. Keep it out of commits and out of published
   files; do not put absolute home-directory paths, key-file locations, or internal
-  service names in tracked files — use placeholders like `/etc/arboreal/keys/…`.
+  service names in tracked files — use placeholders like `/etc/arboreal/keys/…`. The one sanctioned
+  name is a task **assignee** (e.g. `@chatswarm`): it says who owns the work, not how to reach it.
 - Commit spec + code + tests together when they form one feature, and add a line to the
   SPEC revision log.
 - New dependencies go in `Directory.Packages.props` (central package management).
@@ -88,6 +89,12 @@ public: the hygiene rule below applies to it. Status means *my* work: a task is 
 someone is actually changing repo state for it — an external review being in flight does **not** make a
 task `In Progress` (record the in-flight review inside the task body instead, and move the task when
 implementation starts). Reviews and plans under review are noted in the task, not implied by its status.
+
+Every task carries an assignee — whoever acts on it next (`backlog task edit <id> -a @name`):
+`@qwen3.8-flash-next` for work done by the local coding agent (name the model that is doing it, so a
+hand-off is attributable), `@chatswarm` for work handed to the external research/review service, and
+`@claire` where the next move is a human decision (an approval, a scope call, runner minutes). Set the
+assignee when you pick a task up and when you hand it over; do not leave it empty.
 <!-- backlog:end -->
 
 <!-- groma:start -->

@@ -2,9 +2,10 @@
 id: TASK-11
 title: 'Blazor live view: screens plus the event-stream additions they need'
 status: Blocked
-assignee: []
+assignee:
+  - '@claire'
 created_date: '2026-11-16T20:46:00Z'
-updated_date: '2026-11-16T20:46:00Z'
+updated_date: '2026-11-16T23:22:00Z'
 labels:
   - ui
 milestone: v0.10 - live view and robustness parity

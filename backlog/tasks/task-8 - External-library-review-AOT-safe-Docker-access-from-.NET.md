@@ -3,8 +3,9 @@ id: TASK-8
 title: 'External library review: AOT-safe Docker access from .NET'
 status: Done
 assignee:
-  - '@deep'
+  - '@chatswarm'
 created_date: '2026-11-16T20:46:00Z'
+updated_date: '2026-11-16T23:22:00Z'
 labels:
   - external
 dependencies: []

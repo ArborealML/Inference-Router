@@ -2,9 +2,10 @@
 id: TASK-10
 title: Harden the backend to PAIR parity where the comparison finds gaps
 status: In Progress
-assignee: []
+assignee:
+  - '@qwen3.8-flash-next'
 created_date: '2026-11-16T20:46:00Z'
-updated_date: '2026-11-16T23:16:00Z'
+updated_date: '2026-11-16T23:22:00Z'
 labels:
   - backend
 milestone: v0.10 - live view and robustness parity
@@ -156,4 +157,3 @@ Two further findings for later steps:
 2. **The sample's catalog names do not match the ids strata reports on `/models`.** Either the sample gains the
    loaded id (or an alias) or the loader test should assert the catalog id appears in the engine's reported set
    for a documented live configuration. Belongs with TASK-14 (README/sample patterns), not here.
-
