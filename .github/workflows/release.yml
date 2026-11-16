@@ -40,6 +40,11 @@ jobs:
     name: preflight (tag exists, is well formed, has no release)
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    # Draft releases are only visible to a token with write access, and a leftover draft from an
+    # interrupted run must block a new build exactly like a published release does. This job reads
+    # only; the write permission is what makes the draft visible to it.
+    permissions:
+      contents: write
     outputs:
       tag: ${{ steps.resolve.outputs.tag }}
       commit: ${{ steps.resolve.outputs.commit }}
