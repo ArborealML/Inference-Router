@@ -8,4 +8,8 @@ groma:
   code:
     - scanner: csharp
       file: src/Arboreal.InferenceRouter/RouterCore.cs
+  group: request-routing
+description: 'Request coordinator: admission, routing, queues, engine registry.'
 ---
+
+Resolves the model route and thread identity for a call, admits or rejects against per-model queue caps and engine slots, hands tickets to the per-model queue, asks the scheduler which engine should take the next ticket, and drives the exchange through EngineRuntime. It also serialises model switches (drain, lifecycle command, resume), registers threads and changes their priority, and appends to the event ring that /admin/events tails.

@@ -1,7 +1,7 @@
 ---
 id: TASK-11
 title: 'Blazor live view: screens plus the event-stream additions they need'
-status: To Do
+status: Blocked
 assignee: []
 created_date: '2026-11-16T20:46:00Z'
 updated_date: '2026-11-16T20:46:00Z'
@@ -32,3 +32,22 @@ them can be built, so the stream work comes first.
 - [ ] #4 Admin JSON schema and casing pinned once (SPEC 15.1) and covered by contract tests
 - [ ] #5 Screens render from the event stream alone: global inference, queues/admission, engines/profiles/switches, topology/trends, request timeline, health/config/security
 <!-- AC:END -->
+
+## Blocked on one decision (owner)
+
+The live view is a Blazor WASM app (SPEC §12.5). Two questions decide its shape, and both are product
+calls rather than technical ones:
+
+1. **Where does it come from?** Serve `air-ui` as static files from the router itself (one binary, one
+   origin, no CORS, but the router then ships a UI bundle and must serve a second content type), or as a
+   separate static site the operator hosts anywhere (cleaner separation, but then the browser needs a
+   reachable admin feed and CORS/origin policy). Recommendation: serve it from the router for v1 — one
+   process, same auth boundary, no new infrastructure — and keep the admin feed the only contract.
+2. **Who can see it?** `/admin/*` is currently unauthenticated and bind-address-only (§6.2). A live
+   dashboard makes that difference visible: an operator who exposes the router on the tailnet is
+   exposing the admin feed too. Options: keep bind-address-only and document it loudly, or add a
+   separate admin token. Recommendation: keep bind-address-only for the router itself and let the
+   operator expose the UI behind a reverse proxy; add the admin token only when someone needs a
+   remote admin. Say otherwise and I will do the token first.
+
+Nothing in this task is technically blocked; it is these two calls.

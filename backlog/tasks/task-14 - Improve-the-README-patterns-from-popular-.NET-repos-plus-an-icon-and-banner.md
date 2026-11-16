@@ -1,7 +1,7 @@
 ---
 id: TASK-14
 title: 'Improve the README: patterns from popular .NET repos, plus an icon and banner'
-status: In Progress
+status: To Do
 assignee:
   - '@deep'
 created_date: '2026-11-16T22:26:00Z'
@@ -37,3 +37,5 @@ feature-wall, no claim that is not measured (SPEC §9.1 gate).
 - [ ] #4 Build status and release badges that actually resolve on the public repo
 - [ ] #5 No claim in the README that SPEC §9.1 does not back with measurements
 <!-- AC:END -->
+
+Status: not started — pattern research is in flight (deep tier, logged in `.local/research-notes.md`); the task moves to In Progress when the README itself changes. Icon/banner art comes after the structure lands.

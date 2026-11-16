@@ -1,12 +1,15 @@
 ---
 type: C4 Component
-title: Program
+title: CLI entry point
 status: stable
 groma:
   id: arboreal-inferencerouter-cli-program
-  parent: arboreal-inferencerouter-cli
+  parent: air-cli
   code:
     - scanner: csharp
       file: src/Arboreal.InferenceRouter.Cli/Program.cs
       symbol: Program
+description: 'Verb dispatch: serve, chat, complete, models, status, events, config.'
 ---
+
+

@@ -21,7 +21,9 @@
         "*.[dD]esigner.cs",
         "*.g.cs",
         "*.g.i.cs",
-        "*.generated.cs"
+        "*.generated.cs",
+        "/bench/",
+        "/tools/"
       ]
     }
   ],

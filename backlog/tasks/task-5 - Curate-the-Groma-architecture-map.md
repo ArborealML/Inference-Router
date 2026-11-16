@@ -1,7 +1,7 @@
 ---
 id: TASK-5
 title: Curate the Groma architecture map
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-11-16T20:40:00Z'
 labels: []
