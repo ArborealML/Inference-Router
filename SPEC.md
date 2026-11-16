@@ -1,6 +1,6 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.8.4)
+Status: draft, continuously revised (v0.8.5)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
@@ -17,6 +17,7 @@ Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 - v0.8 — **serving profiles + context-window escalation implemented** (§7.6): ladder in TOML/JSON (`serving`, `default_profile`), probe gauges (`n_ctx`/`total_slots`) refreshed by the health loop and by switch readiness, `EngineStats.active_profile/active_context_window/active_slots`, `engine.profile` events, scheduler escalation (smallest fitting tier, never blind when the window is unreported, engine skipped when its ladder cannot fit), admission = `min(max_inflight_per_engine, reported slots)`, `X-Inference-Required-Context` header, declared-context estimate via `scheduler.chars_per_token_estimate`, `/admin/switch {profile}`. Lifecycle exec hardened: argv re-quoted for the shell (spaces in one arg), stdout/stderr drained concurrently (chatty select-model no longer deadlocks a full pipe), timeout kills the process tree, and every failure path resets switch state (a failed switch could previously wedge an engine as "switching" forever). Bug found while testing: unquoted dotted model ids in the shipped samples silently nested into bogus catalog entries — samples fixed, quoting documented (§7), and a test now asserts the samples load as written. New `arboreal config` dry-run verb (§11). 64 tests green, build clean under warnings-as-errors, AOT publish trim-clean.
 - v0.8.1 — public-repo hygiene: handoff/session notes moved to gitignored `.local/`, personal absolute paths and key-file locations replaced with neutral `/etc/arboreal/keys/...` in the §7 sketch and `samples/router.toml`, README.md added as the entry point. No secret material was ever committed (checked across full history).
 - v0.8.2 — public hygiene: internal research-service names and request identifiers are gone from the spec (§15 now lists questions and dispositions by question only), personal machine paths use neutral placeholders, MIT licence added, AGENTS.md documents build/test/AOT conventions and safe smoke testing.
+- v0.8.5 — two external reviews ingested. **Docker access under AOT**: no client library; raw Docker Engine HTTP over the socket with source-generated JSON, pinned API version, exec frame demux, and strict error fidelity (404 = absent, transport failure = daemon unavailable) — disposition in §15, seam in §5.3. **Robustness comparison** against a mature local-inference router: we are not yet as robust single-host, so §14.1 records the parity bar and its ordering, §10 records the event/admin-feed prerequisites a live view needs, and §12.5 records which UI ideas to borrow, change or skip. Sample ladder probe results in §0/v0.8.4.
 - v0.8.4 — performance claims put behind a harness: `bench/Arboreal.InferenceRouter.Benchmarks`
   measures engine-direct / router-enqueue / router-http at concurrency 1, 4 and 16, non-stream and
   65-frame stream, with one shared in-process fake engine so each delta is router work. Results and
@@ -243,6 +244,60 @@ modes that bite real `select-model` runs):
 - When the switch targets a serving profile, readiness requires the reported
   context window to fit it, not merely that the model id appears in the models
   list (§7.6).
+
+#### 5.3.1 Container-native lifecycle (in design)
+
+Shell-outs to a launcher script are an integration cost, not a feature: they hide the
+state the router needs, and a failed script leaves an orphaned container the scheduler
+cannot see. The target design drives the container runtime directly.
+
+**Seam.** Extract `IEngineLifecycle` out of the switch path (keeping switch
+serialization and failure reset exactly as above) and implement it over a fakeable,
+cancellable `IContainerRuntime`:
+
+```csharp
+public interface IContainerRuntime            // Docker Engine API adapter; fake in tests
+{
+    Task<ContainerInfo?> Inspect(string name, CancellationToken ct);   // null IFF 404
+    Task<IReadOnlyList<ContainerInfo>> List(string labelSelector, CancellationToken ct);
+    Task<ImageInfo?> InspectImage(string pinnedRef, CancellationToken ct);   // no pull, ever
+    Task<string> Create(ContainerPlan plan, CancellationToken ct);
+    Task Start(string id, CancellationToken ct);                 // 204/304 both fine
+    Task Stop(string id, TimeSpan grace, CancellationToken ct);   // daemon kills after grace
+    Task Kill(string id, CancellationToken ct);
+    Task Remove(string id, CancellationToken ct);
+    Task<ExecResult> Exec(string id, IReadOnlyList<string> argv, CancellationToken ct);
+    IAsyncEnumerable<LogFrame> Logs(string id, CancellationToken ct);
+    IAsyncEnumerable<ContainerEvent> Events(CancellationToken ct);
+}
+```
+
+**Transport and AOT.** Raw Docker Engine HTTP: `SocketsHttpHandler.ConnectCallback` to a
+`UnixDomainSocketEndPoint` (`npipe` on Windows via `System.IO.Pipes`), `HttpClient` based at
+`http://docker/`, HTTP/1.1, no proxy/redirect, per-call timeouts, API version pinned
+(`/_ping` + `/version` to negotiate, reject a daemon outside a configured min/max). All JSON
+through a source-generated `JsonSerializerContext` — no Docker client library, which needs
+reflection roots and breaks the zero-warning AOT rule (§9). Exec output is demultiplexed from
+the 8-byte frame header (stream id + big-endian length) and a non-zero exec exit code is a
+failure.
+
+**Ownership gate.** Every container the router manages carries an ownership label from config
+(e.g. `air.launcher=<engine>`); inspect/list happens **before** anything is stopped or started,
+and a container without our label is refused rather than adopted. Image references must be
+pinned (verify `Id`, `RepoDigests`, platform, layer digests); the router never pulls.
+
+**Error fidelity.** `404` from inspect means *absent* and nothing else. `ENOENT`,
+`ECONNREFUSED`, `EACCES`, TLS and timeout failures mean *daemon unavailable* — never
+“the container is gone”, because acting on that confusion deletes other people's
+containers. `409` is surfaced as a conflict, `304` treated as idempotent success, and an
+uncertain outcome is re-inspected by immutable id.
+
+Config additions (§7 sketch): `image`, `container_name`, `labels`, `entrypoint`/`cmd`
+template, `env`, `mounts`, `ports`, `gpu` (device requests / `count = -1` /
+`capabilities = [["gpu"]]`), `stop_grace_ms`, `restart = "no"`, resource limits, and
+`daemon = "unix:///var/run/docker.sock" | DOCKER_HOST`. Podman's socket is supported as a
+Docker-API-compatible endpoint at its own version floor; containerd-native is out of scope
+(different protocol, separate adapter).
 
 ### 5.4 Scheduler (pluggable; v1 policy included)
 
@@ -582,6 +637,17 @@ Status: **0 warnings / 0 errors with warnings-as-errors, and an AOT publish with
 per-engine (inflight, queue, tokens/s estimate), per-model queue depth.
 This feed is the Blazor client's contract (§12.5).
 
+**Feed gaps that must close before a live view is worth building** (from the robustness
+comparison; tracked as the parity task): ticket records need generated fields — owner,
+state, priority, queue, attempt, active profile, required vs active context, capacity,
+timing, result, prompt/completion bytes, tokens, prefix hash, config pin, commit boundary.
+The event set needs rejection, capacity change, queue, health/crash/restart, switch/profile,
+prefix, config change and an explicit **`stream.gap`** (append + counters only, never
+content). `/admin/status` must add active/queued/readiness/rates; `/admin/events` must
+support filtering, a heartbeat and bounded sequence-gap handling; a bounded
+`/admin/requests` (recent-request journal) is needed for the request timeline. Pinning the
+admin schema and casing (§15.1) is a prerequisite, not a follow-up.
+
 ## 11. CLI
 
 ```
@@ -670,6 +736,15 @@ prefix/suffix tokens twice.
 Reads `/admin/events` (SSE) + `/admin/stats`; static SSR + selective
 Interactive Server per T011 guidance; never bypasses the public API. Live
 view = request log stream + per-engine gauges + queue depths.
+
+Screens (our shape, not an appliance's): global inference activity · queues and
+admission · engines/profiles/switches · topology and trends · request timeline ·
+health, config and security. From the comparable NVIDIA router (Personal-AI-Router),
+**borrow** the workload rail, filters, topology view, endpoint copy and actionable
+error presentation; **change** capacity/profile/readiness presentation to be
+engine-first rather than model-first, and add queue/TTFT/throughput trends;
+**skip** the installer, model deletion, pairing flow, autostart/update/wipe controls.
+The feed prerequisites in §10 gate this whole section.
 
 ## 13. Pi integration (session-scoped model switching)
 
@@ -774,6 +849,26 @@ and cohort/residency hysteresis in the scheduler (§12.3 hook).
 - **Compat test**: `curl` with stock `openai` python client against the
   server (chat, stream, models) — must pass unchanged.
 
+### 14.1 Robustness bar (parity review)
+
+An external source review of this router against a mature local-inference router
+(NVIDIA Personal-AI-Router, both at pinned commits) concluded: **we are not yet as robust,
+even single-host**, while leading on priority, admission, serving profiles and prefix policy.
+The bar it sets, in order:
+
+1. **P0** — URI/path composition; readiness that is *proven* (health, context, capability)
+rather than assumed; dispatch progress that cannot spin or starve.
+2. **P0** — transport discipline: bounded bodies, per-phase timeouts, a commit boundary for
+   in-flight work, cancellation that reaches the engine and releases capacity.
+3. **P0** — switch serialization/coalescing with state reset on every failure path, and a
+   stable, table-pinned error contract.
+4. **P0** — owned lifecycle: drain, crash recovery, restart generations, terminal ingress
+   (§5.3, the native lifecycle task).
+5. **P0** — security: ingress auth/TLS/rate caps, engine keys, fail-closed resource identity.
+6. **P1** — version/config pins, atomic reload, bounded telemetry with gap detection,
+   durability of the request journal, fairness/starvation bound, then the live view (§12.5).
+7. **P2** — multi-host (§12.1–§12.3), which is L/XL effort and stays speculative until 1–5 hold.
+
 ## 15. Research questions and dispositions
 
 | Question | Disposition |
@@ -783,8 +878,10 @@ and cohort/residency hysteresis in the scheduler (§12.3 hook).
 | ASP.NET minimal APIs under Native AOT on .NET 11; STJ source-gen for streaming | completed; dispositioned in §9 |
 | Prefix/suffix-aware scheduling prior art (SGLang router, Llumnix, vLLM) | **completed**; distilled into §12.2/§12.3/§12.4 |
 | Pi mid-session model switching + wait protocol design | **completed**; folded into §13.2/§13.3 |
-| Recommended Roslyn analyzer stack for code quality on .NET 11 AOT | **completed, integrated** (§9.2) |
+| Recommended Roslyn analyzer stack for code quality on .NET 11 AOT | **completed, integrated** (§9.2: central packages, banned-API policy, warnings-as-errors, 0-warning build + 0-warning AOT publish) |
 | Tomlyn DOM vs source-generated binding API on .NET 11 | **completed**: keep Tomlyn 2.11.1 source-gen; untyped `TomlSerializer.Deserialize<TomlTable>` is reflection-free/AOT-safe if a DOM path is ever needed (not needed today) |
+| AOT-safe Docker access from .NET 11 (client library vs raw engine API) | **completed**: no client library — Docker.DotNet needs reflection roots (`DynamicDependency`, IL2026/IL3050 risk). Go raw: `SocketsHttpHandler.ConnectCallback` over `UnixDomainSocketEndPoint` (npipe on Windows), `HttpClient` based at `http://docker/`, STJ **source-generated** DTOs, API version pinned with `/_ping` + `/version` negotiation, exec demux of the 8-byte frame header, and error fidelity where **inspect 404 means absent and nothing else** while transport failure means *daemon unavailable*. Seam: `IEngineLifecycle` over a fakeable `IContainerRuntime` (§5.3) |
+| Robustness and UI comparison against NVIDIA Personal-AI-Router | **completed**: verdict + ordering in §14.1, feed prerequisites in §10, UI borrow/change/skip in §12.5. Where that router leads on robustness we have tasks; where we lead (priority, admission, profiles, prefix, generic endpoints, engine keys, per-engine instances) is not a gap to close |
 
 Findings feed §7 (TOML binding choice), §9 (AOT strategy), §5.4 (scheduler
 heuristics). Spec revisions cite them.
@@ -801,6 +898,17 @@ heuristics). Spec revisions cite them.
 3. **Cohort + residency policy** — how long a model/profile stays loaded for a
    thread cohort that may return, and how that interacts with priority classes
    (§12.3 hook; the Pi design pass flagged it as the missing piece for Pi's wait protocol).
+4. **Daemon authorization posture** — when the container socket is unreachable or permission
+   is denied, does the router refuse the switch and report, or attempt to elevate? Socket
+   group membership is root-equivalent, so the default here is refuse-and-report; it needs an
+   explicit decision because it changes what an operator sees during an outage (§5.3.1).
+5. **Where launch tuning lives** — GPU selection, utilization, suffix-cache flags and
+   qualification receipts are today supplied by a host-side launcher shell script. If the router
+   drives containers directly, either the router declares them in TOML (one source of truth,
+   more config surface, and the router must understand engine flags) or the launcher survives as
+   a thin image-provided entrypoint (less router knowledge, tuning invisible to the scheduler).
+   Recommended: hybrid — router owns identity, ports, mounts, GPU device requests and readiness;
+   the image entrypoint owns engine-flag detail, surfaced back through the health probe.
 
 ## 16. Repository layout
 

@@ -16,5 +16,22 @@ ordinal: 10000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Seeded by the comparison task: for every capability where our backend is weaker, a fix with acceptance criteria. Expected areas include durability across restart, crash recovery of half-finished engine switches, per-client abuse protection, and auth on the admin surface, but the list comes from evidence rather than expectation.
+The external comparison against NVIDIA Personal-AI-Router (TASK-9) concluded this router is
+**not yet as robust as PAIR, even single-host**, while already leading on priority, admission,
+serving profiles and prefix policy. This task closes the robustness gap in the recommended order:
+URI handling + readiness proof + dispatch progress, then transport bounds and phase timeouts, then
+switch serialization and the error contract, then owned lifecycle/drain/recovery (delivered by
+TASK-1), then security and tests. Durability, fairness and version pins follow.
 <!-- SECTION:DESCRIPTION:END -->
+
+## Acceptance Criteria
+<!-- AC:BEGIN -->
+- [ ] #1 URI/path composition tested (base endpoint + probe paths, trailing slash, query string, relative `health_probe.path` resolution)
+- [ ] #2 Request bodies bounded; each phase (connect, headers, first token, idle stream) has a timeout; an explicit commit boundary decides whether in-flight work is recovered or declared lost
+- [ ] #3 Cancellation reaches the engine and releases reserved capacity; a queued ticket can neither spin nor starve (aging bound pinned by a test)
+- [ ] #4 Switches serialized and coalesced; every failure path resets state; the error contract (codes + payload shape) pinned by a table test
+- [ ] #5 Ingress auth/TLS/rate caps and engine API keys enforced; resource identity fail-closed (unlabelled/unowned containers refused)
+- [ ] #6 Config reload atomic with the config pin recorded; engine crash produces readiness cleanup and a restart generation
+- [ ] #7 Telemetry bounded (event ring, request journal) with consumer-detectable sequence gaps
+- [ ] #8 Each fix ships with a fake-backed test; suite green, zero analyzer warnings, zero-warning AOT publish
+<!-- AC:END -->

@@ -1,7 +1,7 @@
 ---
 id: TASK-9
 title: 'External comparison: AIR against NVIDIA Personal-AI-Router'
-status: In Progress
+status: Done
 assignee:
   - '@flagship'
 created_date: '2026-11-16T20:46:00Z'
@@ -19,8 +19,33 @@ An external flagship-tier pass has been dispatched to compare our backend with N
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Capability and robustness matrix with evidence from both codebases
-- [ ] #2 Every gap in our backend turned into a task with acceptance criteria
-- [ ] #3 UI screens rated borrow / borrow-with-changes / skip
-- [ ] #4 The event-stream and status additions needed to make the live view cheap later are listed
+- [x] #1 Capability and robustness matrix with evidence from both codebases
+- [x] #2 Every gap in our backend turned into a task with acceptance criteria
+- [x] #3 UI screens rated borrow / borrow-with-changes / skip
+- [x] #4 The event-stream and status additions needed to make the live view cheap later are listed
 <!-- AC:END -->
+
+## Result (external review, flagship tier; full digest stays in unpublished `.local/notes`)
+
+Pinned review: this repo at `d3605fc136e` vs NVIDIA Personal-AI-Router at `1de8439a3811`,
+source only.
+
+**This router is not yet as robust as PAIR, even single-host.** It already leads on the axes PAIR
+does not serve: request priority and admission, serving profiles / context escalation, prefix
+affinity, per-model queues, generic endpoints, engine API keys, multiple instances per engine type.
+
+What PAIR has that we lack: URI handling correctness, a commit boundary for in-flight work, request
+and body bounds, per-phase timeouts, dispatch progress that cannot starve, aging, proven
+health/context/capability signals, owned lifecycle with drain + recovery, switch coalescing, a
+stable error contract, atomic config reload with version pins, auth/TLS/rate caps, bounded
+telemetry with checkpointing, and restart generations / terminal ingress / journals.
+
+PAIR's UI is the reference for a live view: shell+status, overview/settings, workload rail with
+filters and topology, node cards, GPU/VRAM/CPU/RAM gauges and trends, engine/model controls,
+endpoint copy, pairing, service/log/reset, actionable errors. Borrow the rail, filters, topology,
+endpoint copy and actionable errors; make capacity/profile/readiness and queue/TTFT/throughput
+trends engine-first; skip the installer, model deletion, pairing, autostart/update/wipe.
+
+Fix order: P0 URI + readiness proof + dispatch progress → transport bounds → switches + error
+contract → owned lifecycle/recovery (TASK-1) → security + tests. P1 version pins, telemetry,
+durability, fairness, Blazor. P2 multi-host.
