@@ -1,6 +1,6 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.4)
+Status: draft, continuously revised (v0.6)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `~/src/arboreal/inference-router` (git, this repo).
 
@@ -10,6 +10,8 @@ Repository: `~/src/arboreal/inference-router` (git, this repo).
 - v0.2 — added TOML config schema, engine lifecycle contract, thread model, AOT strategy, research questions.
 - v0.3 — tightened scheduling semantics (prefix-aware scoring, prefill impact), added suffix-cache forward design, observability events, acceptance criteria, repo layout; recorded the research questions and their disposition.
 - v0.4 — ASP.NET-under-Native-AOT research folded into §9 (RDG, CreateSlimBuilder, STJ mode guidance, SSE via TypedResults.ServerSentEvents, HttpClient type-info overloads, trim-warning discipline); added §13 Pi integration (mid-session model switching, intelligent wait protocol, design pass dispatched as a deep research question).
+- v0.5 — implementation landed: core library (threads/priority, per-model priority queues, prefix trie + suffix extents, prefix-aware scheduler, engine runtime with health/lifecycle, TOML+JSON config), Server (passthrough minimal APIs, SSE keepalive while queued/switching, admin surface), CLI (serve/chat/complete/models/status/events/threads/switch/tickets), 41 passing tests incl. end-to-end dispatch against stubbed engines.
+- v0.6 — Native AOT achieved end-to-end: TOML config via Tomlyn's Roslyn source generator over typed DTOs (ConfigTomlContext; no reflection/DOM), JSON twin via STJ source-generated context over the same DTOs, `IsAotCompatible` clean, `PublishAot` smoke produces a working stripped native binary with zero analyzer warnings (RDG intercepts Map* lambdas at publish, so compile-time IL2026/IL3050 on Map* are expected noise under IsAotCompatible builds only). Dispatch correctness hardening: engine capacity is reserved at dispatch time (drain loop cannot over-dispatch); capacity release re-wakes dispatch after EndEngineOnce; ModelQueue head-first ordering fixed (priority desc, FIFO asc, index 0 = next dispatch); scheduler compares canonical Ticket.Model, not the raw requested alias; engine health loop bootstraps an immediate probe at startup; wait_health=false switch refreshes loaded models before resolving ready; streaming chunks are copied out of the read buffer before channel write. samples/router.safe-smoke.toml added: inert (remote) engines for smoke tests so auto-switch never spawns real lifecycle commands.
 
 ## 1. Overview
 
@@ -520,7 +522,7 @@ constraints it must respect:
 | Question | Disposition |
 |---|---|
 | Cysharp-style performance guidance for this codebase | pending |
-| AOT-safe TOML: CsToml vs Tomlyn on .NET 11 | pending |
+| AOT-safe TOML: CsToml vs Tomlyn on .NET 11 | superseded locally: Tomlyn 2.11.1 ships a Roslyn source generator (`TomlSerializerContext`, `[TomlSerializable]`, `[TomlPropertyName]`) — used in §9/§ConfigDto; the research service result still pending as confirmation |
 | ASP.NET minimal APIs under Native AOT on .NET 11; STJ source-gen for streaming | pending |
 | Prefix/suffix-aware scheduling prior art (SGLang router, Llumnix, vLLM) | pending |
 | Pi mid-session model switching + wait protocol design | pending |

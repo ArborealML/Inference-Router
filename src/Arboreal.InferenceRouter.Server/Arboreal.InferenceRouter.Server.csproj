@@ -3,6 +3,7 @@
   <PropertyGroup>
     <TargetFramework>net11.0</TargetFramework>
     <Nullable>enable</Nullable>
+    <IsAotCompatible>true</IsAotCompatible>
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
 

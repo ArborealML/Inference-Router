@@ -1,26 +1,18 @@
 using Arboreal.InferenceRouter.Server;
 
-var args0 = args;
-if (args0 is ["serve", ..] or [])
-{
-    var configArg = args0.GetCommandLineValue("--config", "-c");
-    ServerApp.Run(args0.Length == 0 ? [] : args0.Where(a => !a.StartsWith('-') && a != "serve").ToArray(), configArg);
-    return;
-}
-else
-{
-    Console.Error.WriteLine("usage: Arboreal.InferenceRouter.Server [serve] [--config|-c path]");
-    return;
-}
+// usage: Arboreal.InferenceRouter.Server [serve] [--config|-c path] [--urls http://…]
+// "serve" is optional; remaining args pass through to the ASP.NET host (e.g. --urls).
+var argv = new List<string>(Environment.GetCommandLineArgs()[1..]);
+var configArg = GetCommandLineValue(argv, "--config", "-c");
+argv.RemoveAll(a => a is "serve" or "--config" or "-c" || a == configArg);
+ServerApp.Run(argv.ToArray(), configArg);
+return;
 
-file static class ArgExtensions
+static string? GetCommandLineValue(List<string> argvList, params string[] keys)
 {
-    public static string? GetCommandLineValue(this string[] args, params string[] keys)
-    {
-        for (var i = 0; i < args.Length; i++)
-            foreach (var k in keys)
-                if (args[i] == k && i + 1 < args.Length)
-                    return args[i + 1];
-        return null;
-    }
+    for (var i = 0; i < argvList.Count; i++)
+        foreach (var k in keys)
+            if (argvList[i] == k && i + 1 < argvList.Count)
+                return argvList[i + 1];
+    return null;
 }
