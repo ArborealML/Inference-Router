@@ -49,6 +49,7 @@ jobs:
         id: resolve
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}   # lets `gh api repos/{owner}/{repo}/…` resolve
         run: |
           set -euo pipefail
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
@@ -76,6 +77,7 @@ jobs:
       - name: Refuse if a release already exists for this tag
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
           TAG: ${{ steps.resolve.outputs.tag }}
         run: |
           set -euo pipefail
@@ -191,6 +193,7 @@ jobs:
       contents: write
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
       TAG: ${{ needs.preflight.outputs.tag }}
     steps:
       - name: Collect assets
