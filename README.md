@@ -107,6 +107,8 @@ generators**; there is no runtime reflection, and the build bans reflection-only
 | `src/Arboreal.InferenceRouter.Server/` | HTTP surface (Minimal APIs, AOT JSON context) |
 | `src/Arboreal.InferenceRouter.Cli/` | `serve`, `chat`, `models`, `status`, `events`, `threads`, `switch`, `tickets`, `config` |
 | `tests/` | xUnit suite, including real-HTTP wire tests and shell round-trip tests for lifecycle argv |
+| `bench/` | JIT overhead harness: engine → routing → HTTP ladder against one shared fake engine |
+| `docs/benchmarks.md` | measured overhead, what the numbers exclude, and the bug the harness caught |
 | `SPEC.md` | specification and revision log |
 
 ## Roadmap (spec'd, not built)
@@ -121,6 +123,19 @@ engine and per-request state. Details and open questions: SPEC §12, §13, §15.
 Planned work lives as Markdown tasks under `backlog/`, and the architecture map lives under
 `groma/` — both are plain files reviewed alongside the code. The two CLIs are `backlog` and
 `groma`; `AGENTS.md` says how agents use them.
+
+### Benchmarks
+
+Performance claims are gated on measurement, not assertion:
+
+```sh
+dotnet run -c Release --project bench/Arboreal.InferenceRouter.Benchmarks -- 400 60
+```
+
+The harness runs the same in-process fake engine behind every layer, so each row's difference
+is router work. Latest run on a 24-core desktop box: routing adds ~54–87 µs p50 and ~15 KB per
+request; the full HTTP path ~213–314 µs and ~26–29 KB; the SSE relay ~54–96 µs and ~25 KB. All
+figures, caveats, and what is still unmeasured: [`docs/benchmarks.md`](docs/benchmarks.md).
 
 ## License
 

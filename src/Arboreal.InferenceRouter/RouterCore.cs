@@ -289,6 +289,14 @@ public sealed class RouterCore : IInferenceRouter
         if (candidate is null || engine is null) return false;
 
         var ticket = candidate.Ticket;
+        if (candidate.Request.Stream && ticket.StreamChannel is null)
+        {
+            // Publish the channel with the state change: a listener that sees Executing must be
+            // able to read the stream from that moment, not only after the engine call starts.
+            ticket.StreamChannel = Channel.CreateUnbounded<ReadOnlyMemory<byte>>(
+                new UnboundedChannelOptions { SingleReader = true, SingleWriter = true });
+        }
+
         ticket.State = switchRequired ? TicketState.WaitingForModel : TicketState.Executing;
         ticket.Engine = engine.Name;
         _events.Append(new RouterEvent
@@ -380,10 +388,11 @@ public sealed class RouterCore : IInferenceRouter
             }
 
             Interlocked.Increment(ref thread.Enqueued);
-            ticket.StreamChannel = candidate.Request.Stream
-                ? Channel.CreateUnbounded<ReadOnlyMemory<byte>>(
-                    new UnboundedChannelOptions { SingleReader = true, SingleWriter = true })
-                : null;
+            if (candidate.Request.Stream)
+            {
+                ticket.StreamChannel ??= Channel.CreateUnbounded<ReadOnlyMemory<byte>>(
+                    new UnboundedChannelOptions { SingleReader = true, SingleWriter = true });
+            }
             try
             {
                 using var cts = CancellationTokenSource.CreateLinkedTokenSource(_shutdown.Token, ticket.ExecCts.Token);

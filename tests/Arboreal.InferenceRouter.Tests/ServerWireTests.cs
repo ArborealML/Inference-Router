@@ -220,6 +220,29 @@ public class ServerWireTests
     }
 
     [Fact]
+    public async Task Streaming_With_Immediate_Engine_Reply_Never_Loses_Frames()
+    {
+        // Regression: the stream channel used to appear only after the ticket reached Executing, so a
+        // fast engine left the SSE relay with nothing to read and the response carried a keepalive only.
+        var (app, _, port) = await StartServerAsync();
+        await using var _ = app;
+        using var http = Client(port);
+
+        for (var attempt = 0; attempt < 25; attempt++)
+        {
+            using var req = new HttpRequestMessage(HttpMethod.Post, "/v1/chat/completions");
+            req.Content = new StringContent(
+                """{"model":"test-model","stream":true,"messages":[{"role":"user","content":"ping"}]}""",
+                Encoding.UTF8, "application/json");
+            using var res = await http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead);
+            Assert.Equal(HttpStatusCode.OK, res.StatusCode);
+            var body = await res.Content.ReadAsStringAsync();
+            Assert.Contains("\"delta\"", body);
+            Assert.Contains("[DONE]", body);
+        }
+    }
+
+    [Fact]
     public async Task Admin_Ticket_And_Cancel()
     {
         var (app, fake, port) = await StartServerAsync(holdCompletions: true);

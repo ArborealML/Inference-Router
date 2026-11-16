@@ -1,6 +1,6 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.8.3)
+Status: draft, continuously revised (v0.8.4)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
@@ -17,6 +17,7 @@ Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 - v0.8 — **serving profiles + context-window escalation implemented** (§7.6): ladder in TOML/JSON (`serving`, `default_profile`), probe gauges (`n_ctx`/`total_slots`) refreshed by the health loop and by switch readiness, `EngineStats.active_profile/active_context_window/active_slots`, `engine.profile` events, scheduler escalation (smallest fitting tier, never blind when the window is unreported, engine skipped when its ladder cannot fit), admission = `min(max_inflight_per_engine, reported slots)`, `X-Inference-Required-Context` header, declared-context estimate via `scheduler.chars_per_token_estimate`, `/admin/switch {profile}`. Lifecycle exec hardened: argv re-quoted for the shell (spaces in one arg), stdout/stderr drained concurrently (chatty select-model no longer deadlocks a full pipe), timeout kills the process tree, and every failure path resets switch state (a failed switch could previously wedge an engine as "switching" forever). Bug found while testing: unquoted dotted model ids in the shipped samples silently nested into bogus catalog entries — samples fixed, quoting documented (§7), and a test now asserts the samples load as written. New `arboreal config` dry-run verb (§11). 64 tests green, build clean under warnings-as-errors, AOT publish trim-clean.
 - v0.8.1 — public-repo hygiene: handoff/session notes moved to gitignored `.local/`, personal absolute paths and key-file locations replaced with neutral `/etc/arboreal/keys/...` in the §7 sketch and `samples/router.toml`, README.md added as the entry point. No secret material was ever committed (checked across full history).
 - v0.8.2 — public hygiene: internal research-service names and request identifiers are gone from the spec (§15 now lists questions and dispositions by question only), personal machine paths use neutral placeholders, MIT licence added, AGENTS.md documents build/test/AOT conventions and safe smoke testing.
+- v0.8.4 — performance claims put behind a harness: `bench/Arboreal.InferenceRouter.Benchmarks` measures engine-direct / router-enqueue / router-http at concurrency 1 and 4, non-stream and 65-frame stream, with one shared in-process fake engine so each delta is router work. Results and caveats in `docs/benchmarks.md`; §9.1 now quotes them instead of promising them. The harness caught a real defect: the SSE relay polled every 200 ms for the ticket's stream channel, so time-to-first-token could stall a whole interval. The channel is now created at admission (before `Executing` is published) and `RouterTicket.StreamReady` resolves it for the HTTP relay, which emits keepalives every 4 s instead of polling; two regression tests added. 66 tests green.
 - v0.8.3 — history rewritten (force-pushed) so the published history contains neither the machine-specific paths above nor the unpublished working notes: the two commits that only added working notes were dropped, and every remaining commit's spec/sample blobs were scrubbed with the same rules as v0.8.1–v0.8.2. Keep it that way: nothing internal, personal or service-specific goes in tracked files.
 
 ## 1. Overview
@@ -320,6 +321,13 @@ tests assert `"ThreadId"`, `"State"`, `"TicketId"`). That is a live wire contrac
 so the casing must be pinned deliberately before the Pi extension and the Blazor
 client start parsing it (§15 open question).
 
+**Streaming handoff**: the SSE relay does not poll for the ticket's stream channel. The
+channel is created at admission, before the `Executing` event is published, and
+`RouterTicket.StreamReady` resolves with it (or with `null` at a terminal state); the relay
+awaits that and emits keepalive comment frames every 4 s while a request is still queued or
+switching. Poll-based handoffs stall time-to-first-token by the whole poll interval — the
+benchmark harness measured exactly that before this fix (§14, `docs/benchmarks.md`).
+
 **Threading through HTTP**: clients convey thread + priority via headers:
 `X-Inference-Thread: agent-42`, `X-Inference-Priority: high:200`
 (`class[:sub]`), `X-Inference-Affinity: <normalized-prefix-hash>` (optional,
@@ -520,7 +528,12 @@ Applied here:
 - **Operational discipline**: bounded channels, explicit capacity reservation at dispatch,
   cancellation/deadlines on every wait, immutable route snapshots, backpressure by queue cap.
 - **Benchmarks gate claims**: allocations/request, allocations/token, tail latency, and
-  streaming throughput under realistic concurrency (not yet wired — see §15).
+  streaming throughput under realistic concurrency. Wired: `bench/Arboreal.InferenceRouter.Benchmarks`
+  (JIT Release harness, one shared fake engine per layer) with results and caveats in
+  `docs/benchmarks.md`. As of the 2026-11-16 run: routing adds **54–87 µs p50 and ~15 KB/req**,
+  the full HTTP path **213–314 µs p50 and 26–29 KB/req**, the SSE relay **54–96 µs p50 and
+  ~25 KB/req**. Not yet measured: allocations per output token, AOT-published binaries, real
+  engines (prefill interference, slot exhaustion, §7.6 escalation under load).
 
 ### 9.2 Analyzer stack (integrated)
 
@@ -742,6 +755,9 @@ and cohort/residency hysteresis in the scheduler (§12.3 hook).
   (small request served, oversized request queues behind a profile switch that
   widens the engine's reported window, then completes); health probe failure;
   real HTTP through Kestrel against the stub engine.
+- **Benchmark** (`bench/`, not part of the test suite): overhead ladder against a shared
+  fake engine; the gate for any §9.1 claim and the regression net for streaming handoff
+  stalls. See `docs/benchmarks.md`.
 - **AOT**: full AOT publish of Server + Cli with zero trim warnings on CI.
 - **Compat test**: `curl` with stock `openai` python client against the
   server (chat, stream, models) — must pass unchanged.
@@ -785,5 +801,7 @@ src/Arboreal.InferenceRouter/{AirJson.cs, ...}
 src/Arboreal.InferenceRouter.Server/
 src/Arboreal.InferenceRouter.Cli/
 tests/Arboreal.InferenceRouter.Tests/
+bench/Arboreal.InferenceRouter.Benchmarks/   (JIT overhead harness)
+docs/benchmarks.md                           (measured numbers + caveats)
 samples/router.toml
 ```

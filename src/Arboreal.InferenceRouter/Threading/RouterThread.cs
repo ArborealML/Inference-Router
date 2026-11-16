@@ -86,7 +86,22 @@ public sealed class RouterTicket
     public string ThreadId { get; }
     public string Model { get; }
     public DateTimeOffset QueuedAt { get; }
-    public TicketState State { get; internal set; }
+    public TicketState State
+    {
+        get => _state;
+        internal set
+        {
+            _state = value;
+            if (value is TicketState.Completed or TicketState.Cancelled or TicketState.Failed)
+            {
+                // A streaming listener must not wait forever on a request that ended before it had
+                // a channel to read.
+                _streamReady.TrySetResult(null);
+            }
+        }
+    }
+
+    private TicketState _state;
     public string? Engine { get; internal set; }
     public string? Error { get; internal set; }
     public string? ErrorCode { get; internal set; }
@@ -98,8 +113,30 @@ public sealed class RouterTicket
         new(TaskCreationOptions.RunContinuationsAsynchronously);
     internal CancellationTokenSource? ExecCts;
     /// <summary>Streaming responses: ordered upstream byte chunks (SSE frames as received).
-    /// Null for non-streaming requests until the engine begins streaming.</summary>
-    public System.Threading.Channels.Channel<ReadOnlyMemory<byte>>? StreamChannel { get; internal set; }
+    /// Null until admission creates the channel for a streaming request.</summary>
+    public System.Threading.Channels.Channel<ReadOnlyMemory<byte>>? StreamChannel
+    {
+        get => _streamChannel;
+        internal set
+        {
+            _streamChannel = value;
+            if (value is not null)
+            {
+                _streamReady.TrySetResult(value);
+            }
+        }
+    }
+
+    private System.Threading.Channels.Channel<ReadOnlyMemory<byte>>? _streamChannel;
+
+    /// <summary>Resolves with the stream channel as soon as a streaming request has one, or with
+    /// null if the ticket reaches a terminal state without one. Lets an SSE relay start the moment
+    /// the request is admitted instead of polling — a poll interval would otherwise be paid by every
+    /// stream as time-to-first-token.</summary>
+    public Task<System.Threading.Channels.Channel<ReadOnlyMemory<byte>>?> StreamReady => _streamReady.Task;
+
+    private readonly TaskCompletionSource<System.Threading.Channels.Channel<ReadOnlyMemory<byte>>?> _streamReady =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
 }
 
 /// <summary>Raw request envelope: the OpenAI-compatible JSON body plus the router's parsed

@@ -198,6 +198,19 @@ public class EndToEndTests
     }
 
     [Fact]
+    public async Task Streaming_Channel_Is_Published_With_Executing_State()
+    {
+        // The channel must be readable the moment a listener observes Executing; otherwise a fast
+        // engine can finish before the SSE relay ever finds a channel.
+        var (router, fake) = await WithHealthyRouterAsync(maxInflight: 1, maxQueue: 8);
+        await using var _ = router;
+        fake.HoldCompletions = true;
+        var ticket = await router.EnqueueAsync("t1", Request("ping", stream: true));
+        await WaitStateAsync(ticket, TicketState.Executing);
+        Assert.NotNull(ticket.StreamChannel);
+    }
+
+    [Fact]
     public async Task Priority_Orders_Execution_Across_Threads()
     {
         var (router, fake) = await WithHealthyRouterAsync(maxInflight: 1, maxQueue: 8);

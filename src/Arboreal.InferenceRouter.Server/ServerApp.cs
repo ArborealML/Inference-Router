@@ -178,24 +178,28 @@ public static class ServerApp
         keepaliveSeq++;
 
         ChannelReader<ReadOnlyMemory<byte>>? reader = null;
-        var started = Stopwatch.StartNew();
-        while (reader is null)
+        var channel = ticket.StreamChannel;
+        if (channel is null)
         {
-            if (ct.IsCancellationRequested) return;
-            if (ticket.StreamChannel is { } ch) { reader = ch; break; }
-            if (ticket.State is TicketState.Executing
-                or TicketState.Completed or TicketState.Failed or TicketState.Cancelled)
+            // Wait on readiness, not on a poll interval: the gap between the relay starting and the
+            // request being admitted is normally microseconds, and a fixed poll would add that
+            // interval to time-to-first-token for every stream. Keepalives go out every 4 s while
+            // the request is queued or switching models.
+            var ready = ticket.StreamReady;
+            while (!ready.IsCompleted)
             {
-                break;
-            }
-            if (started.ElapsedMilliseconds > 4_000)
-            {
-                started.Restart();
+                if (ct.IsCancellationRequested) return;
                 lastStatus = await WriteKeepaliveAsync(writer, ticket, keepaliveSeq, lastStatus, ct).ConfigureAwait(false);
                 keepaliveSeq++;
+                await Task.WhenAny(ready, Task.Delay(TimeSpan.FromSeconds(4), ct)).ConfigureAwait(false);
             }
-            try { await Task.Delay(200, ct).ConfigureAwait(false); }
-            catch (OperationCanceledException) { return; }
+
+            channel = await ready.ConfigureAwait(false);
+        }
+
+        if (channel is not null)
+        {
+            reader = channel.Reader;
         }
 
         if (reader is not null)
