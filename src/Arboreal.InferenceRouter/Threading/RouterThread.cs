@@ -37,7 +37,7 @@ public sealed class RouterThread
     }
 
     /// <summary>Raised when the priority changes; the queue reorders in response.</summary>
-    public event Action<RouterThread, ThreadPriority>? PriorityChanged;
+    public event EventHandler<ThreadPriority>? PriorityChanged;
 
     internal int Inflight => Volatile.Read(ref _inflight);
     private int _inflight;

@@ -156,7 +156,7 @@ public sealed class RouterCore : IInferenceRouter
                 Inflight = e.Inflight,
                 SwitchingToward = e.SwitchingToward,
             }).ToArray();
-            var queues = _queues.Values.ToDictionary(q => q.Model, q => q.Depth);
+            var queues = _queues.Values.ToDictionary(q => q.Model, q => q.Depth, StringComparer.Ordinal);
             var threads = _threads.Values.Select(t => new ThreadStats
             {
                 ThreadId = t.ThreadId,
@@ -634,7 +634,6 @@ public sealed class RouterCore : IInferenceRouter
         _shutdown.Cancel();
         foreach (var e in _engines.Values) await e.DisposeAsync().ConfigureAwait(false);
         _shutdown.Dispose();
-        GC.SuppressFinalize(this);
     }
 }
 

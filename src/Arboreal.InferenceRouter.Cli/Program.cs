@@ -2,6 +2,11 @@ using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 
+// MA0001 ("use the StringComparison overload") and CA1865 ("use the char overload") collide on
+// single-char prefix tests. The char overload is ordinal by definition and allocation-free, so
+// it wins; the collision is confined to this argument-parsing file.
+#pragma warning disable MA0001
+
 using Arboreal.InferenceRouter.Server;
 namespace Arboreal.InferenceRouter.Cli;
 
@@ -18,7 +23,7 @@ public static class Program
         if (args.Length == 0) return await RunHelpAsync().ConfigureAwait(false);
         return args[0] switch
         {
-            "serve" => RunServe(args[1..]),
+            "serve" => await RunServeAsync(args[1..]).ConfigureAwait(false),
             "chat" or "complete" => await RunChatAsync(args[1..]).ConfigureAwait(false),
             "models" => await RunModelsAsync(args[1..]).ConfigureAwait(false),
             "status" => await RunStatusAsync(args[1..]).ConfigureAwait(false),
@@ -54,13 +59,12 @@ public static class Program
 
     // ── serve ───────────────────────────────────────────────────────────────
 
-    private static int RunServe(string[] args)
+    private static async Task<int> RunServeAsync(string[] args)
     {
         string? config = GetOpt(args, ["--config", "-c"]);
         string? listen = GetOpt(args, ["--listen", "-l"]);
         var runArgs = listen is { Length: > 0 } ? new[] { $"--urls={listen}" } : [];
-        ServerApp.Run(runArgs, config);
-        return 0;
+        return await ServerApp.RunAsync(runArgs, config).ConfigureAwait(false);
     }
 
     // ── chat ────────────────────────────────────────────────────────────────

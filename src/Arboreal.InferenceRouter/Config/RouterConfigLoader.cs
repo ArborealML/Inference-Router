@@ -75,7 +75,7 @@ public static class RouterConfigLoader
 
         if (dto.Threads is { } threads)
         {
-            var dict = new Dictionary<string, ThreadDefinition>();
+            var dict = new Dictionary<string, ThreadDefinition>(StringComparer.Ordinal);
             foreach (var (key, t) in threads)
             {
                 if (t.Priority is null)
@@ -93,7 +93,7 @@ public static class RouterConfigLoader
 
         if (dto.Engines is { } engines)
         {
-            var dict = new Dictionary<string, EngineDefinition>();
+            var dict = new Dictionary<string, EngineDefinition>(StringComparer.Ordinal);
             foreach (var (name, e) in engines)
                 dict[name] = ParseEngine(name, e);
             cfg.Engines = dict;
@@ -138,7 +138,7 @@ public static class RouterConfigLoader
             };
         }
 
-        var catalog = new Dictionary<string, EngineModelDefinition>();
+        var catalog = new Dictionary<string, EngineModelDefinition>(StringComparer.Ordinal);
         if (e.Catalog is { } cat)
         {
             foreach (var (modelName, m) in cat)

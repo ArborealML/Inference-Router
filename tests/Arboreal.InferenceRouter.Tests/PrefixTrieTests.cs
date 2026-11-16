@@ -4,7 +4,7 @@ namespace Arboreal.InferenceRouter.Tests;
 
 public class PrefixTrieTests
 {
-    private static List<string> Norm(string[] messages) => PrefixNormalizer.NormalizeMessages(messages);
+    private static IReadOnlyList<string> Norm(string[] messages) => PrefixNormalizer.NormalizeMessages(messages);
 
     [Fact]
     public void Normalizer_Lowercases_And_Collapses_Whitespace()
@@ -84,7 +84,7 @@ public class PrefixTrieTests
         engine.RecordPrefix(messages);
         Assert.Equal("system".Length + "user".Length, engine.MatchedPrefixChars(messages));
         Assert.Equal(0, engine.MatchedPrefixChars(new List<string> { "other" }));
-        engine.DisposeAsync().GetAwaiter().GetResult();
+        await engine.DisposeAsync();
     }
 
     private static EngineDefinition FakeDef() => new()

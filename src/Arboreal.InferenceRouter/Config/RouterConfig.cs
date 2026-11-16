@@ -21,6 +21,11 @@ public sealed class HealthProbeDefinition
     public string? Expect { get; init; }
     public int IntervalMs { get; init; } = 2_000;
     public int TimeoutMs { get; init; } = 5_000;
+    /// <summary>Dotted path in the probe JSON reporting the active context window (tokens),
+    /// e.g. "n_ctx". Empty when the engine does not expose it.</summary>
+    public string ContextPath { get; init; } = "n_ctx";
+    /// <summary>Dotted path reporting active concurrent slots, e.g. "total_slots".</summary>
+    public string SlotsPath { get; init; } = "total_slots";
 }
 
 public sealed class EngineCapabilities
@@ -32,6 +37,18 @@ public sealed class EngineCapabilities
 }
 
 /// <summary>One model the engine can serve (catalog), with switch command + aliases.</summary>
+/// <summary>A serving profile: a context-window tier with its slot capacity. Engines load a
+/// profile via their lifecycle command; requests whose required context exceeds the active
+/// profile's window are queued behind an escalation (profile switch), not compacted.</summary>
+public sealed record ServingProfile
+{
+    public required string Name { get; init; }
+    /// <summary>Maximum context window this profile provides, in tokens.</summary>
+    public required long MaxContext { get; init; }
+    /// <summary>Concurrent slots this profile allows (engine capacity while active).</summary>
+    public int MaxSlots { get; init; } = 1;
+}
+
 public sealed record EngineModelDefinition
 {
     public required string Name { get; init; }
@@ -39,6 +56,9 @@ public sealed record EngineModelDefinition
     public string[] Profiles { get; init; } = [];
     public LifecycleCommand? Select { get; init; }
     public string? Profile { get; init; }             // default profile for switch
+    /// <summary>Serving profiles this model can be served under (context tier ladder).</summary>
+    public IReadOnlyList<ServingProfile> ServingProfiles { get; init; } =
+        Array.Empty<ServingProfile>();
 }
 
 public sealed class EngineDefinition
@@ -55,7 +75,7 @@ public sealed class EngineDefinition
     public bool LoadedRequiresStatusLoaded { get; init; }
     public EngineCapabilities Capabilities { get; init; } = new();
     public IReadOnlyDictionary<string, EngineModelDefinition> Catalog { get; init; } =
-        new Dictionary<string, EngineModelDefinition>();
+        new Dictionary<string, EngineModelDefinition>(StringComparer.Ordinal);
     public bool Remote { get; init; }                 // remote peer: no lifecycle commands
 }
 
@@ -75,6 +95,9 @@ public sealed class SchedulerConfig
     public int MaxQueuePerModel { get; set; } = 64;
     public int MaxInflightPerEngine { get; set; } = 8;
     public int PrefixTrieMaxNodes { get; set; } = 8192;
+    /// <summary>Chars-per-token estimate used to convert prompt chars into context demand.
+    /// Conservative default; engines reporting n_ctx are compared in tokens.</summary>
+    public double CharsPerTokenEstimate { get; set; } = 4.0;
 }
 
 public sealed class RouterConfig
@@ -86,9 +109,9 @@ public sealed class RouterConfig
     public int SwitchCooldownMs { get; set; } = 15_000;
     public SchedulerConfig Scheduler { get; set; } = new();
     public IReadOnlyDictionary<string, ThreadDefinition> Threads { get; set; } =
-        new Dictionary<string, ThreadDefinition>();
+        new Dictionary<string, ThreadDefinition>(StringComparer.Ordinal);
     public IReadOnlyDictionary<string, EngineDefinition> Engines { get; set; } =
-        new Dictionary<string, EngineDefinition>();
+        new Dictionary<string, EngineDefinition>(StringComparer.Ordinal);
     /// <summary>Optional per-engine HTTP handler factory (test harnesses, custom transports).
     /// Production config leaves it null; engines then use a default HttpClient.</summary>
     public Func<EngineDefinition, HttpMessageHandler>? HttpHandlerFactory { get; set; }

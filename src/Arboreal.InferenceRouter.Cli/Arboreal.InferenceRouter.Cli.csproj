@@ -1,6 +1,15 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.BannedApiAnalyzers" PrivateAssets="all" />
+    <PackageReference Include="Meziantou.Analyzer" PrivateAssets="all" />
+    <PackageReference Include="IDisposableAnalyzers" PrivateAssets="all" />
+    <PackageReference Include="AsyncFixer" PrivateAssets="all" />
+    <PackageReference Include="CSharpIsNullAnalyzer" PrivateAssets="all" />
+    <AdditionalFiles Include="$(RepoRoot)BannedSymbols.txt" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\Arboreal.InferenceRouter.Server\Arboreal.InferenceRouter.Server.csproj" />
   </ItemGroup>
 

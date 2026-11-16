@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using System.Diagnostics;
 
@@ -11,6 +12,7 @@ public sealed class EngineRuntime : IAsyncDisposable
     private readonly RouterConfig _config;
     private readonly EventRing _events;
     private readonly HttpClient _http;
+    private readonly HttpMessageHandler? _ownedHandler;   // disposed with the client
     private readonly string? _apiKey;
     private readonly PrefixTrie _trie;
     private readonly SemaphoreSlim _switchLock = new(1, 1);
@@ -36,9 +38,15 @@ public sealed class EngineRuntime : IAsyncDisposable
         _maxInflight = Math.Max(1, config.Scheduler.MaxInflightPerEngine);
         _trie = new PrefixTrie(config.Scheduler.PrefixTrieMaxNodes);
         _apiKey = ResolveApiKey(def);
-        _http = handler is null
-            ? new HttpClient(new HttpClientHandler { AutomaticDecompression = System.Net.DecompressionMethods.None })
-            : new HttpClient(handler);
+        if (handler is null)
+        {
+            _ownedHandler = new HttpClientHandler { AutomaticDecompression = System.Net.DecompressionMethods.None };
+            _http = new HttpClient(_ownedHandler, disposeHandler: false);
+        }
+        else
+        {
+            _http = new HttpClient(handler, disposeHandler: false);   // caller owns the handler
+        }
         _http.BaseAddress = def.Endpoint;
         _http.Timeout = TimeSpan.FromMilliseconds(Timeout.Infinite); // long streams; per-request CTS applies
     }
@@ -74,7 +82,11 @@ public sealed class EngineRuntime : IAsyncDisposable
             // bootstrap: probe immediately at startup, then on the interval
             try
             {
+                // CA2000's "recommended dispose pattern" doesn't track `using var` in an async
+                // loop body; the CTS is disposed at each iteration and the await completes inside.
+#pragma warning disable CA2000
                 using var cts = new CancellationTokenSource(_def.Health?.TimeoutMs ?? 5_000);
+#pragma warning restore CA2000
                 var models = await FetchLoadedModelsAsync(cts.Token).ConfigureAwait(false);
                 _loadedModels = models;
                 _healthy = true;
@@ -104,7 +116,8 @@ public sealed class EngineRuntime : IAsyncDisposable
     /// Optionally requires status==loaded and no alias_of.</summary>
     internal async Task<string[]> FetchLoadedModelsAsync(CancellationToken ct)
     {
-        using var res = await _http.SendAsync(AuthedGet(_def.ModelsEndpoint), ct).ConfigureAwait(false);
+        using var req = AuthedGet(_def.ModelsEndpoint);
+        using var res = await _http.SendAsync(req, ct).ConfigureAwait(false);
         if (!res.IsSuccessStatusCode) throw new HttpRequestException($"models endpoint {(int)res.StatusCode}");
         var bodyBytes = await res.Content.ReadAsByteArrayAsync(ct).ConfigureAwait(false);
         using var doc = JsonDocument.Parse(bodyBytes);
@@ -135,7 +148,8 @@ public sealed class EngineRuntime : IAsyncDisposable
         var path = _def.Health?.Path ?? "/props";
         try
         {
-            using var res = await _http.SendAsync(AuthedGet(path), ct).ConfigureAwait(false);
+            using var req = AuthedGet(path);
+            using var res = await _http.SendAsync(req, ct).ConfigureAwait(false);
             if (!res.IsSuccessStatusCode) return false;
             var probeBytes = await res.Content.ReadAsByteArrayAsync(ct).ConfigureAwait(false);
             using var doc = JsonDocument.Parse(probeBytes);
@@ -256,15 +270,15 @@ public sealed class EngineRuntime : IAsyncDisposable
         }
     }
 
-    private string[] ExpandArgs(string[] args, string model, string? profile)
+    private static string[] ExpandArgs(string[] args, string model, string? profile)
     {
         var expanded = new string[args.Length];
         for (var i = 0; i < args.Length; i++)
         {
             expanded[i] = args[i]
-                .Replace("{{model}}", model)
-                .Replace("{{profile}}", profile ?? "")
-                .Replace("{{suffixCache}}", "");
+                .Replace("{{model}}", model, StringComparison.Ordinal)
+                .Replace("{{profile}}", profile ?? "", StringComparison.Ordinal)
+                .Replace("{{suffixCache}}", "", StringComparison.Ordinal);
         }
         return expanded;
     }
@@ -324,8 +338,9 @@ public sealed class EngineRuntime : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         _http.Dispose();
+        _ownedHandler?.Dispose();
+        _switchLock.Dispose();
         await Task.CompletedTask;
-        GC.SuppressFinalize(this);
     }
 }
 
@@ -367,7 +382,7 @@ public static class ProbeExpect
                 _ => false,
             };
         }
-        if (!double.TryParse(rhs, out var r)) return false;
+        if (!double.TryParse(rhs, NumberStyles.Float, CultureInfo.InvariantCulture, out var r)) return false;
         if (l.ValueKind != JsonValueKind.Number) return false;
         var lv = l.GetDouble();
         return op switch

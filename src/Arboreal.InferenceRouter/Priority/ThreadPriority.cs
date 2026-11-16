@@ -94,11 +94,21 @@ public readonly struct ThreadPriority : IEquatable<ThreadPriority>, IComparable<
 }
 
 /// <summary>Router-internal priority record carrying the sequence tie-break.</summary>
-public sealed record PrioritizedRequest(RouterTicket Ticket, ThreadPriority Priority, long Sequence)
+public sealed record PrioritizedRequest(RouterTicket Ticket, ThreadPriority Priority, long Sequence) : IComparable<PrioritizedRequest>
 {
-    public int CompareTo(PrioritizedRequest other)
+    public int CompareTo(PrioritizedRequest? other)
     {
+        if (other is null) return 1;
         var c = Priority.CompareTo(other.Priority);
         return c != 0 ? c : Sequence.CompareTo(other.Sequence);
     }
+
+    public static bool operator <(PrioritizedRequest? left, PrioritizedRequest? right)
+        => left is null ? right is not null : left.CompareTo(right) < 0;
+    public static bool operator >(PrioritizedRequest? left, PrioritizedRequest? right)
+        => left is not null && left.CompareTo(right) > 0;
+    public static bool operator <=(PrioritizedRequest? left, PrioritizedRequest? right)
+        => left is null || left.CompareTo(right) <= 0;
+    public static bool operator >=(PrioritizedRequest? left, PrioritizedRequest? right)
+        => left is null ? right is null : left.CompareTo(right) >= 0;
 }

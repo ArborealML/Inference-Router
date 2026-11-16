@@ -16,25 +16,25 @@ public class FakeEngineHandler : HttpMessageHandler
     /// <summary>Block every completion until <see cref="ReleaseGate"/> (for ordering tests).</summary>
     public bool HoldCompletions { get; set; }
     /// <summary>First user-message content per executed completion, in execution order.</summary>
-    public List<string> ExecutionOrder = [];
+    public List<string> ExecutionOrder { get; } = [];
 
     public IReadOnlyList<string> Order => ExecutionOrder;
     public void ReleaseGate() => _gate.TrySetResult();
 
-    protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
+    protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
         var path = request.RequestUri!.PathAndQuery.TrimStart('/');
-        if (path.StartsWith("models"))
+        if (path.StartsWith("models", StringComparison.Ordinal))
             return Ok("{\"data\":[{\"id\":\"test-model\"},{\"id\":\"other-model\"}]}");
-        if (path.StartsWith("props"))
+        if (path.StartsWith("props", StringComparison.Ordinal))
             return Ok("{\"total_slots\": 4}");
-        if (path.StartsWith("chat/completions") || path.StartsWith("completions"))
+        if (path.StartsWith("chat/completions", StringComparison.Ordinal) || path.StartsWith("completions", StringComparison.Ordinal))
         {
             var body = ReadBody(request);
             var tag = ExtractFirstContent(body);
             if (HoldCompletions)
             {
-                try { await _gate.Task.WaitAsync(ct); }
+                try { await _gate.Task.WaitAsync(cancellationToken); }
                 catch (OperationCanceledException) { }
             }
             ExecutionOrder.Add(tag);
@@ -249,7 +249,7 @@ public class EndToEndTests
     [Fact]
     public async Task AutoSwitch_Runs_Lifecycle_Command()
     {
-        var fake = new FakeEngineHandler { LoadedModels = [] }; // nothing loaded yet
+        using var fake = new FakeEngineHandler { LoadedModels = [] }; // nothing loaded yet
         var cfg = new RouterConfig
         {
             DefaultModel = "test-model",

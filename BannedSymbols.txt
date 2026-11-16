@@ -1,0 +1,6 @@
+T:System.Activator;Prefer generated factories / explicit construction (AOT-friendly, no late-bound reflection)
+T:System.Reflection.Emit.DynamicMethod;No runtime IL emission
+T:System.Reflection.Emit.AssemblyBuilder;No runtime IL emission
+M:System.Text.Json.JsonSerializer.Deserialize``1(System.String,System.Text.Json.JsonSerializerOptions);Use source-generated JsonTypeInfo overloads
+M:System.Text.Json.JsonSerializer.Serialize``1(``0,System.Text.Json.JsonSerializerOptions);Use source-generated JsonTypeInfo overloads
+M:Tomlyn.TomlSerializer.Deserialize``1(System.String);Use the source-generated TomlSerializerContext overload

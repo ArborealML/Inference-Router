@@ -1,5 +1,3 @@
-using System.Security.Cryptography;
-
 namespace Arboreal.InferenceRouter;
 
 /// <summary>Prefix affinity trie over hashed, normalized message prefixes, per engine.
@@ -28,19 +26,48 @@ public sealed class PrefixTrie
         _maxDepth = maxDepth;
     }
 
-    /// <summary>Normalized, hashed message chain: hash(parent, utf8(message)).</summary>
+    /// <summary>Normalized, hashed message chain: hash(parent, utf8(message)).
+    /// FNV-1a (32-bit): deliberately non-cryptographic — chain keys are in-process affinity
+    /// labels, never an authenticity primitive — and it avoids the MD5 allocation + the
+    /// CA5351 "broken algorithm" signal on a per-request hot path.</summary>
     private static uint Chain(uint parent, ReadOnlySpan<byte> message)
     {
-        Span<byte> hash = stackalloc byte[32];
-        Span<byte> input = stackalloc byte[36];
         unchecked
         {
-            input[0] = (byte)parent; input[1] = (byte)(parent >> 8);
-            input[2] = (byte)(parent >> 16); input[3] = (byte)(parent >> 24);
-            message.CopyTo(input[4..]);
-            MD5.HashData(input[..(4 + message.Length)], hash);   // fast, quality fine for affinity
-            return hash[0] | ((uint)hash[1] << 8) | ((uint)hash[2] << 16) | ((uint)hash[3] << 24);
+            var h = 2166136261u;
+            for (var i = 0; i < 4; i++)
+            {
+                h ^= (byte)(parent >> (8 * i));
+                h *= 16777619u;
+            }
+            for (var i = 0; i < message.Length; i++)
+            {
+                h ^= message[i];
+                h *= 16777619u;
+            }
+            return h;
         }
+    }
+
+    /// <summary>UTF-8 bytes of <paramref name="msg"/> without the transient array allocation
+    /// when the message fits the stack buffer.</summary>
+    private static uint ChainFor(uint parent, string msg)
+    {
+        Span<byte> stack = stackalloc byte[1024];
+        var byteCount = System.Text.Encoding.UTF8.GetByteCount(msg);
+        if (byteCount <= stack.Length)
+        {
+            System.Text.Encoding.UTF8.GetBytes(msg, stack);
+            return Chain(parent, stack[..byteCount]);
+        }
+        var pool = System.Buffers.ArrayPool<byte>.Shared;
+        var rented = pool.Rent(byteCount);
+        try
+        {
+            System.Text.Encoding.UTF8.GetBytes(msg, rented.AsSpan(0, byteCount));
+            return Chain(parent, rented.AsSpan(0, byteCount));
+        }
+        finally { pool.Return(rented); }
     }
 
     /// <summary>Record that this engine has served a request with this message sequence.</summary>
@@ -55,7 +82,7 @@ public sealed class PrefixTrie
             {
                 if (msg.Length == 0) continue;
                 if (depth >= _maxDepth) break;
-                var h = Chain(parent, System.Text.Encoding.UTF8.GetBytes(msg));
+                var h = ChainFor(parent, msg);
                 if (!node.Children.TryGetValue(h, out var child))
                 {
                     child = new Node { MsgChars = msg.Length };
@@ -85,7 +112,7 @@ public sealed class PrefixTrie
             {
                 if (msg.Length == 0) continue;
                 if (depth >= _maxDepth) break;
-                var h = Chain(parent, System.Text.Encoding.UTF8.GetBytes(msg));
+                var h = ChainFor(parent, msg);
                 if (!node.Children.TryGetValue(h, out var child)) break;
                 node = child;
                 node.LastUsed = Environment.TickCount64;
@@ -108,7 +135,7 @@ public sealed class PrefixTrie
             foreach (var msg in normalizedMessages)
             {
                 if (msg.Length == 0) continue;
-                var h = Chain(parent, System.Text.Encoding.UTF8.GetBytes(msg));
+                var h = ChainFor(parent, msg);
                 if (!node.Children.TryGetValue(h, out var child)) return; // unknown prefix; ignore
                 node = child;
                 node.LastUsed = Environment.TickCount64;
@@ -146,9 +173,21 @@ public static class PrefixNormalizer
     public static string Normalize(string text)
     {
         if (text.Length == 0) return string.Empty;
-        if (text.Length > 512)
-            return System.Text.RegularExpressions.Regex.Replace(text.ToLowerInvariant(), @"\s+", " ").Trim();
-        Span<char> buf = stackalloc char[512];
+        if (text.Length <= 512)
+        {
+            Span<char> buf = stackalloc char[text.Length];
+            return Collapse(text, buf);
+        }
+        // Long messages: rent instead of regex (no Regex DoS surface, no UTF-16 intermediates).
+        var pool = System.Buffers.ArrayPool<char>.Shared;
+        var rented = pool.Rent(text.Length);
+        try { return Collapse(text, rented.AsSpan(0, text.Length)); }
+        finally { pool.Return(rented); }
+    }
+
+    /// <summary>ASCII lowercase fold + whitespace collapse into <paramref name="buf"/>.</summary>
+    private static string Collapse(ReadOnlySpan<char> text, Span<char> buf)
+    {
         var len = 0;
         var wasSpace = false;
         foreach (var c in text)
@@ -156,15 +195,14 @@ public static class PrefixNormalizer
             var ch = (c >= 'A' && c <= 'Z') ? (char)(c + 32) : c;
             var isSpace = char.IsWhiteSpace(ch);
             if (isSpace && wasSpace) continue;
-            if (len < buf.Length) buf[len] = isSpace ? ' ' : ch;
-            len++;
+            buf[len++] = isSpace ? ' ' : ch;
             wasSpace = isSpace;
         }
         return new string(buf[..len]).Trim();
     }
 
     /// <summary>Hashed message sequence: one entry per non-empty normalized message.</summary>
-    public static List<string> NormalizeMessages(IReadOnlyList<string> messages)
+    public static IReadOnlyList<string> NormalizeMessages(IReadOnlyList<string> messages)
     {
         var list = new List<string>(messages.Count);
         foreach (var m in messages)

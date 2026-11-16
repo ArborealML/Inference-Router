@@ -15,10 +15,13 @@ public class ServerWireTests
     private static async Task<(WebApplication App, FakeEngineHandler Fake, int Port)> StartServerAsync(bool holdCompletions = false)
     {
         var fake = new FakeEngineHandler { HoldCompletions = holdCompletions };
-        var latch = new TcpListener(IPAddress.Loopback, 0);
-        latch.Start();
-        var port = ((IPEndPoint)latch.LocalEndpoint).Port;
-        latch.Stop();
+        int port;
+        using (var latch = new TcpListener(IPAddress.Loopback, 0))
+        {
+            latch.Start();
+            port = ((IPEndPoint)latch.LocalEndpoint).Port;
+            latch.Stop();
+        }
 
         var cfg = new RouterConfig
         {
@@ -171,14 +174,18 @@ public class ServerWireTests
         using var reader = new StreamReader(stream);
         var sb = new StringBuilder();
         var deadline = Environment.TickCount64 + 2_000;
-        while (Environment.TickCount64 < deadline)
+        while (true)
         {
-            var readTask = reader.ReadLineAsync();
             var remaining = deadline - Environment.TickCount64;
             if (remaining <= 0) break;
-            var finished = await Task.WhenAny(readTask, Task.Delay((int)Math.Clamp(remaining, 1, 2_000)));
-            if (finished != readTask) break;
-            var line = await readTask;
+            string? line;
+            try
+            {
+                // bounded read without a stray Task.Delay timer
+                line = await reader.ReadLineAsync()
+                    .WaitAsync(TimeSpan.FromMilliseconds(Math.Clamp(remaining, 1, 2_000)));
+            }
+            catch (TimeoutException) { break; }
             if (line is null) break;
             sb.AppendLine(line);
             if (sb.Length > 8_000) break;

@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.IO.Pipelines;
 using System.Text;
 using System.Text.Json;
@@ -14,12 +15,15 @@ namespace Arboreal.InferenceRouter.Server;
 /// DTO binding); responses are raw passthrough bytes; admin DTOs use AirServerJson.</summary>
 public static class ServerApp
 {
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Microsoft.Reliability", "CA2000:Dispose objects before losing scope",
+        Justification = "Owned by the DI container: disposed (async) when the WebApplication is disposed in RunAsync.")]
     public static WebApplication Build(string[] args, string? configPath = null, RouterConfig? configOverride = null)
     {
         configPath ??= Environment.GetEnvironmentVariable("AIRBODAL_ROUTER_CONFIG")
                        ?? Environment.GetEnvironmentVariable("AIR_CONFIG")
                        ?? "router.toml";
         var config = configOverride ?? RouterConfigLoader.LoadFile(configPath);
+        // Owned by the DI container: disposed (async) when the WebApplication is disposed in RunAsync.
         var router = new RouterCore(config);
         router.Start();
 
@@ -29,6 +33,12 @@ public static class ServerApp
         var app = builder.Build();
         app.Urls.Add(config.Listen);
 
+        // Request-delegate lambdas: under PublishAot the RDG source generator rewrites every
+        // Map* call into generated reflection-free invocation code, so the compile-time
+        // IL2026/IL3050 signal is expected noise in non-publish IsAotCompatible builds only.
+        // The AOT publish (the shipping artifact) is verified free of these warnings.
+#pragma warning disable IL2026 // CA2026-like: RDG-rewritten Map* request delegates
+#pragma warning disable IL3050 // Dynamic code (ReflectionMetadata) in Map* — RDG replaces it
         // OpenAI-compatible surface (passthrough).
         app.MapPost("/v1/chat/completions", (HttpContext ctx, RouterCore r) => HandleInference(ctx, r));
         app.MapPost("/v1/completions", (HttpContext ctx, RouterCore r) => HandleInference(ctx, r));
@@ -43,14 +53,24 @@ public static class ServerApp
         app.MapDelete("/admin/tickets/{id}", (string id, HttpContext ctx, RouterCore r) => HandleCancel(ctx, r, id));
 
         app.MapGet("/healthz", () => Results.Text("ok"));
+#pragma warning restore IL3050
+#pragma warning restore IL2026
 
         return app;
     }
 
-    public static void Run(string[] args, string? configPath = null, RouterConfig? configOverride = null)
+    public static async Task<int> RunAsync(string[] args, string? configPath = null, RouterConfig? configOverride = null)
     {
-        using var app = Build(args, configPath, configOverride);
-        app.Run();
+        var app = Build(args, configPath, configOverride);
+        try
+        {
+            await app.RunAsync().ConfigureAwait(false);
+            return 0;
+        }
+        finally
+        {
+            await app.DisposeAsync().ConfigureAwait(false);   // disposes RouterCore (IAsyncDisposable)
+        }
     }
 
     // ── inference endpoints ─────────────────────────────────────────────────
@@ -260,7 +280,8 @@ public static class ServerApp
         ctx.Response.Headers.CacheControl = "no-cache";
         var writer = ctx.Response.BodyWriter;
         var ct = ctx.RequestAborted;
-        var since = ctx.Request.Query.TryGetValue("since", out var s) && long.TryParse(s.ToString(), out var v) ? v : 0;
+        var since = ctx.Request.Query.TryGetValue("since", out var s) &&
+                    long.TryParse(s.ToString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var v) ? v : 0;
 
         foreach (var e in router.Events.Replay(since))
             await AirJson.WriteSseFrameAsync(writer, e, AirServerJson.AirServerContext.Default.RouterEvent, ct)
@@ -356,7 +377,11 @@ public static class ServerApp
                     $"engine {engineName} is switching to {engine.SwitchingToward}").ConfigureAwait(false);
                 return;
             }
+            // Fire-and-forget by design: the switch continues after the 202 ack is written;
+            // its lifetime is bounded by engine shutdown, not by this request.
+#pragma warning disable IDISP013 // await-in-using not applicable: intentionally detached Task
             _ = Task.Run(() => engine.WaitForModelAsync(model, Timeout.InfiniteTimeSpan, CancellationToken.None));
+#pragma warning restore IDISP013
             ctx.Response.StatusCode = 202;
             var ack = new SwitchAck { Engine = engineName!, Model = model!, Switching = true };
             await AirJson.WriteAsync(ctx.Response, ack,

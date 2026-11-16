@@ -5,7 +5,7 @@ using Arboreal.InferenceRouter.Server;
 var argv = new List<string>(Environment.GetCommandLineArgs()[1..]);
 var configArg = GetCommandLineValue(argv, "--config", "-c");
 argv.RemoveAll(a => a is "serve" or "--config" or "-c" || a == configArg);
-ServerApp.Run(argv.ToArray(), configArg);
+await ServerApp.RunAsync(argv.ToArray(), configArg).ConfigureAwait(false);
 return;
 
 static string? GetCommandLineValue(List<string> argvList, params string[] keys)
