@@ -1,6 +1,6 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.8.7)
+Status: draft, continuously revised (v0.8.8)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
@@ -49,7 +49,19 @@ Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
   harness, and the CLI executable renamed to `air`. Two CLI defects found while building the smoke
   harness are fixed: POST commands handed `HttpClient` a relative URI (every `chat`/`threads`/
   `switch` call failed before reaching the router) and the config environment variable was
-  misspelled (`AIRBODAL_ROUTER_CONFIG` → `ARBOREAL_ROUTER_CONFIG`).## 1. Overview
+  misspelled (`AIRBODAL_ROUTER_CONFIG` → `ARBOREAL_ROUTER_CONFIG`).
+- v0.8.8 — release pipeline exercised on Actions: a dry run built stripped Native-AOT `air` for
+  `linux-x64` and `win-x64` and passed `tools/ci/smoke.sh` on each of its own runners, and the preflight
+  refusal is proven (a tag with a leftover draft release failed before any build job started). Windows
+  needed `-p:` property switches rather than `/p:` (Git-Bash rewrites `/p:x=y` into a path; the leg failed
+  with MSB1008 first), and preflight needs write scope because the releases-by-tag API hides drafts. The
+  macOS legs never got a runner, so osx artifacts are designed but unproven (TASK-15). Availability got
+  real: the test fake now serves a mutable loaded set (`LoadedModels` / `LoadedModelsFile`), so the
+  auto-switch test proves a lifecycle command changes what an engine serves, and the catalogue probe path
+  (`models_endpoint`; `/models` by default, `/v1/models` for OpenAI-only engines) is pinned by samples and
+  a loader test.
+
+## 1. Overview
 
 The Arboreal Inference Router ("AIR") is a .NET library + CLI that sits between
 callers (agents, CLIs, tools, web clients) and one or more LLM inference
