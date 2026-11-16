@@ -104,6 +104,8 @@ jobs:
           - rid: win-x64
             os: windows-2022
             exe: air.exe
+          # macOS legs need macOS runner minutes; if the account has none, these jobs queue
+          # forever rather than failing. Check Actions billing before adding platforms.
           - rid: osx-arm64
             os: macos-14
             exe: air
@@ -126,8 +128,8 @@ jobs:
         run: |
           set -euo pipefail
           dotnet publish src/Arboreal.InferenceRouter.Cli -c Release -r ${{ matrix.rid }} \
-            /p:PublishAot=true /p:StripSymbols=true /p:DebugSymbols=false /p:DebugType=None \
-            /p:InvariantGlobalization=true -v minimal 2>&1 | tee aot-${{ matrix.rid }}.log
+            -p:PublishAot=true -p:StripSymbols=true -p:DebugSymbols=false -p:DebugType=None \
+            -p:InvariantGlobalization=true -v minimal 2>&1 | tee aot-${{ matrix.rid }}.log
           if grep -E "warning (IL|TRIM)" "aot-${{ matrix.rid }}.log"; then
             echo "::error::AOT publish produced trim/AOT warnings for ${{ matrix.rid }}"
             exit 1

@@ -175,6 +175,33 @@ public class ConfigLoaderTests
         Assert.Equal(te.Capabilities.Vision, je.Capabilities.Vision);
     }
 
+    /// <summary>The catalogue probe path is per-engine: llama.cpp-style servers answer `/models` at the
+    /// root, OpenAI-only servers answer `/v1/models`. Point the probe at the wrong one and a perfectly
+    /// healthy engine looks unhealthy, so the knob is defaulted, overridable and sample-pinned.</summary>
+    [Fact]
+    public void Catalogue_Probe_Path_Is_Configurable()
+    {
+        const string Text = """
+            listen = "http://127.0.0.1:9901"
+            default_model = "m1"
+            [engine.plain]
+            kind = "openai-compatible"
+            endpoint = "http://127.0.0.1:9/v1"
+            [engine.plain.catalog."m1"]
+            [engine.openai_only]
+            kind = "openai-compatible"
+            endpoint = "http://127.0.0.1:10/v1"
+            models_endpoint = "/v1/models"
+            loaded_requires_status_loaded = false
+            [engine.openai_only.catalog."m1"]
+            """;
+
+        var cfg = RouterConfigLoader.Load(Text, "test.toml");
+        Assert.Equal("/models", cfg.Engines["plain"].ModelsEndpoint);
+        Assert.Equal("/v1/models", cfg.Engines["openai_only"].ModelsEndpoint);
+        Assert.False(cfg.Engines["openai_only"].LoadedRequiresStatusLoaded);
+    }
+
     /// <summary>The shipped samples must load as written: dotted model ids quoted (TOML table
     /// separators otherwise silently create bogus catalog entries) and the smoke config inert.</summary>
     [Fact]
@@ -204,6 +231,14 @@ public class ConfigLoaderTests
         Assert.Contains("qwen-3.8-flash-next", smokeCfg.Engines["strata"].Catalog.Keys);
         Assert.All(smokeCfg.Engines.Values, e => Assert.True(e.Remote));
         Assert.All(smokeCfg.Engines.Values, e => Assert.All(e.Catalog.Values, m => Assert.Null(m.Select)));
+
+        // The CI smoke config pins where its catalogue probe looks, matching the fake engine.
+        var ciSmoke = RepoFile("samples/router.ci-smoke.toml");
+        Assert.NotNull(ciSmoke);
+        var ciCfg = RouterConfigLoader.LoadFile(ciSmoke!);
+        Assert.Equal("/v1/models", ciCfg.Engines["fixture"].ModelsEndpoint);
+        Assert.Equal("/models", strata.ModelsEndpoint);
+        Assert.Equal("/v1/models", cfg.Engines["hyperqwen"].ModelsEndpoint);
     }
 
     /// <summary>Walk up from the test assembly to the repo root and return the file, else null.</summary>

@@ -15,6 +15,9 @@ public class FakeEngineHandler : HttpMessageHandler
     public string[] LoadedModels { get; set; } = ["test-model", "other-model"];
     /// <summary>Block every completion until <see cref="ReleaseGate"/> (for ordering tests).</summary>
     public bool HoldCompletions { get; set; }
+    /// <summary>When set, /models re-reads the loaded set from this file (one id per line), so a
+    /// lifecycle command can "load" a model mid-test the way a real switch does.</summary>
+    public string? LoadedModelsFile { get; set; }
     /// <summary>Context window reported by /props (0 = omit the field entirely).</summary>
     public long NCtx { get; set; }
     /// <summary>Slots reported by /props; also the engine's physical concurrency ceiling.</summary>
@@ -22,6 +25,15 @@ public class FakeEngineHandler : HttpMessageHandler
     /// <summary>When set, /props re-reads the window from this file (lets a lifecycle command
     /// change the advertised window mid-test, which is what a profile switch does).</summary>
     public string? NCtxFile { get; set; }
+
+    private string[] ActiveLoadedModels()
+    {
+        if (LoadedModelsFile is { Length: > 0 } path && File.Exists(path))
+            return [.. from line in File.ReadAllLines(path)
+                      where line.Trim().Length > 0
+                      select line.Trim()];
+        return LoadedModels;
+    }
 
     private long ActiveContextTokens()
     {
@@ -41,7 +53,13 @@ public class FakeEngineHandler : HttpMessageHandler
     {
         var path = request.RequestUri!.PathAndQuery.TrimStart('/');
         if (path.StartsWith("models", StringComparison.Ordinal))
-            return Ok("{\"data\":[{\"id\":\"test-model\"},{\"id\":\"other-model\"}]}");
+        {
+            // The loaded set is mutable so tests can exercise availability: a model the engine does
+            // not report must not be scheduled as if it were loaded.
+            var items = string.Join(",", ActiveLoadedModels().Select(
+                m => "{\"id\":\"" + m + "\",\"status\":{\"value\":\"loaded\"}}"));
+            return Ok("{\"object\":\"list\",\"data\":[" + items + "]}");
+        }
         if (path.StartsWith("props", StringComparison.Ordinal))
         {
             var nctx = ActiveContextTokens();
@@ -125,6 +143,32 @@ public class EndToEndTests
         var router = new RouterCore(cfg, events: new EventRing());
         router.Start();
         return (router, fake);
+    }
+
+    /// <summary>The fake engine's loaded set is what the router sees: mutating it must change the
+    /// engine's reported models, which is the input every availability decision uses.</summary>
+    [Fact]
+    public async Task Engine_Loaded_Set_Flows_From_The_Fake_To_The_Router()
+    {
+        var (router, fake) = CreateRouter();
+        try
+        {
+            fake.LoadedModels = ["only-this-one"];
+            var deadline = Stopwatch.GetTimestamp() + Stopwatch.Frequency * 10;
+            string[] seen = [];
+            while (Stopwatch.GetTimestamp() < deadline)
+            {
+                seen = router.Engines["fake"].LoadedModels;
+                if (seen.Length == 1 && seen[0] == "only-this-one") break;
+                Thread.Sleep(100);
+            }
+            Assert.Equal(["only-this-one"], seen);
+            Assert.DoesNotContain("test-model", router.Engines["fake"].LoadedModels);
+        }
+        finally
+        {
+            await router.DisposeAsync();
+        }
     }
 
     private static InferenceRequest Request(string tag, bool stream = false, string? model = null,
@@ -285,7 +329,10 @@ public class EndToEndTests
     [Fact]
     public async Task AutoSwitch_Runs_Lifecycle_Command()
     {
-        using var fake = new FakeEngineHandler { LoadedModels = [] }; // nothing loaded yet
+        var loadedFile = Path.Combine(Path.GetTempPath(), $"air-loaded-{Guid.NewGuid():N}.txt");
+        // Nothing is loaded to start with; the lifecycle command below is what puts the model on the
+        // engine's /models list, exactly as a real select-model switch does.
+        using var fake = new FakeEngineHandler { LoadedModels = [], LoadedModelsFile = loadedFile };
         var cfg = new RouterConfig
         {
             DefaultModel = "test-model",
@@ -306,7 +353,8 @@ public class EndToEndTests
                         Name = "test-model",
                         Select = new LifecycleCommand
                         {
-                            Exec = "/bin/true",         // trivially succeeds; wait_health=false
+                            Exec = "/bin/sh",           // "loads" the model; wait_health=false
+                            Args = ["-c", $"printf 'test-model\n' > {loadedFile}"],
                             WaitHealth = false,
                         },
                     },
@@ -322,6 +370,7 @@ public class EndToEndTests
         Assert.Equal(TicketState.Completed, ticket.State);
         // the lifecycle command ran and the completion went through afterwards
         Assert.Contains("ping", fake.ExecutionOrder);
+        File.Delete(loadedFile);
     }
 
     /// <summary>Context-window escalation (§7.6): the model is loaded but serving a smaller window

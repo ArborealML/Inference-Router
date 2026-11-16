@@ -18,6 +18,7 @@ max_queue_per_model = 8
 kind = "openai-compatible"
 endpoint = "http://127.0.0.1:18123/v1"
 remote = true
+models_endpoint = "/v1/models"       # the fake engine is OpenAI-shaped: catalogue lives under /v1
 capabilities = { max_context = 8192, max_slots = 2 }
 
 [engine.fixture.catalog."fixture-model"]

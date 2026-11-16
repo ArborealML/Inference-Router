@@ -39,6 +39,9 @@ kind = "openai-compatible"
 endpoint = "http://127.0.0.1:18021/v1"
 api_key_file = "/etc/arboreal/keys/strata-api-key"
 loaded_requires_status_loaded = true
+# Catalogue probe: which path lists loaded models. Default is "/models" (the llama.cpp-style
+# server root); OpenAI-only engines must point it at "/v1/models" and drop the status requirement.
+models_endpoint = "/models"
 capabilities = { suffix_cache = true, max_context = 131072, max_slots = 4 }
 
 [engine.strata.health_probe]
@@ -106,6 +109,8 @@ args = ["{{model}}", "--profile", "{{profile}}"]
 kind = "openai-compatible"
 endpoint = "http://127.0.0.1:18020/v1"
 api_key_file = "/etc/arboreal/keys/hyperqwen-api-key"
+models_endpoint = "/v1/models"          # this engine has no /models route at the root
+loaded_requires_status_loaded = false   # OpenAI-style model list carries no load status
 capabilities = { max_context = 32768, max_slots = 2 }
 
 [engine.hyperqwen.health_probe]

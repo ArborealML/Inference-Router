@@ -57,7 +57,7 @@ jobs:
         run: |
           set -euo pipefail
           dotnet publish src/Arboreal.InferenceRouter.Cli -c Release -r linux-x64 \
-            /p:PublishAot=true /p:StripSymbols=true /p:DebugSymbols=false /p:DebugType=None \
+            -p:PublishAot=true -p:StripSymbols=true -p:DebugSymbols=false -p:DebugType=None \
             -v minimal 2>&1 | tee aot-publish.log
           if grep -E "warning (IL|TRIM)" aot-publish.log; then
             echo "::error::AOT publish produced trim/AOT warnings"
