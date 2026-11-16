@@ -1,5 +1,6 @@
 # Arboreal inference router — sample config.
-# Matches this machine's select-model backends (strata / hyperqwen / glm / deepseek).
+# Modeled on one developer's local inference box (strata / hyperqwen / glm). Adjust
+# endpoints, model ids, serving tiers and key paths to your own setup.
 # TOML is human-friendly; the same schema works as JSON (config .json → JSON loader).
 #
 # NOTE: dotted model ids are TOML table separators, so they MUST be quoted:
