@@ -20,8 +20,8 @@ Implement exactly what the reviewed design specifies, then prove it: a push run,
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 ci.yml runs on push to main and on pull requests
-- [ ] #2 release.yml refuses a duplicate tag before any build work starts
+- [x] #1 ci.yml runs on push to main and on pull requests
+- [x] #2 release.yml refuses a duplicate tag before any build work starts
 - [ ] #3 All four RID artifacts build, verify, and only then publish
 <!-- AC:END -->
 
