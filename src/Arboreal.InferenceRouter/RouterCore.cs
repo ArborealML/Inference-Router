@@ -80,17 +80,18 @@ public sealed class RouterCore : IInferenceRouter
 
     public ValueTask<RouterTicket> EnqueueAsync(string threadId, InferenceRequest request, CancellationToken ct = default)
     {
+        var opts = request.Options ?? new RouterRequestOptions();
         RouterThread thread;
         lock (_gate)
         {
+            // A newly-encountered thread adopts the first request's explicit priority, if any.
             if (!_threads.TryGetValue(threadId, out var t))
-                t = RegisterThread(threadId, _config.DefaultPriority);
+                t = RegisterThread(threadId, opts.Priority ?? _config.DefaultPriority);
             thread = t;
         }
 
         var requestedModel = request.Model ?? thread.ModelAffinity ?? _config.DefaultModel;
         var canonical = ResolveCanonical(requestedModel);
-        var opts = request.Options ?? new RouterRequestOptions();
         var ticket = new RouterTicket(NewTicketId(), threadId, canonical, DateTimeOffset.UtcNow);
         var prio = opts.Priority ?? thread.Priority;
         var node = new PrioritizedRequest(ticket, prio, Interlocked.Increment(ref _seq));

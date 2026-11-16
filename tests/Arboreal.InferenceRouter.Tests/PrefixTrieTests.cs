@@ -77,7 +77,7 @@ public class PrefixTrieTests
     }
 
     [Fact]
-    public void EngineRuntime_Matches_Its_Trie()
+    public async Task EngineRuntime_Matches_Its_Trie()
     {
         var engine = new EngineRuntime(FakeDef(), new RouterConfig(), new EventRing());
         var messages = new List<string> { "system", "user" };
