@@ -1,7 +1,7 @@
 ---
 id: TASK-13
 title: Implement the CI and release workflows once the design is reviewed
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-11-16T20:50:00Z'
 labels:
@@ -30,3 +30,11 @@ Implemented on `main`: `.github/workflows/ci.yml`, `.github/workflows/release.ym
 binary passes the full smoke sequence locally. Remaining before this can be checked off: a green CI
 run on `main`, and one real tag run of `release.yml` (the win-x64/osx legs cannot be exercised
 locally) — which means cutting a first release, an owner decision.
+
+Verified on GitHub Actions (dry run of the tag pipeline, all four legs attempted):
+preflight succeeded, `linux-x64` and `win-x64` each built a stripped Native-AOT `air` and passed
+`tools/ci/smoke.sh` **on their own runner**, and the publish job was skipped because the run was a
+dry run. The two macOS legs never started — they sat queued with no runner picked up — so macOS
+artifacts are **designed but not yet demonstrated**. That is a runner-availability question for the
+account, tracked as TASK-15; nothing in the pipeline needs changing for it.
+The dry-run tag was deleted afterwards; no release exists yet.
