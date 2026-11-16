@@ -1,9 +1,10 @@
 ---
 id: TASK-2
 title: Ticket-aware Pi session surface
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-11-16T20:40:00Z'
+updated_date: '2026-11-16T22:55:00Z'
 labels: []
 dependencies: []
 ordinal: 2000

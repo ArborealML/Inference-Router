@@ -51,6 +51,7 @@ Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
   `switch` call failed before reaching the router) and the config environment variable was
   misspelled (`AIRBODAL_ROUTER_CONFIG` → `ARBOREAL_ROUTER_CONFIG`).
 - v0.8.8 — release pipeline exercised on Actions: a dry run built stripped Native-AOT `air` for
+- v0.8.9 — agent integration surface documented and pinned to the code: `docs/ai-integration.md` (thread identity, context-demand header, keepalive/abort framing, admin surface, error-code table, worked context-overflow session) and `samples/pi/inference-router-tools.json` (descriptive tool manifest; nothing reads it). New: every admitted request returns `X-Inference-Ticket`, so a client can `GET|DELETE /admin/tickets/{id}` without scraping the event stream. §6 text corrected to the shipped framing (`data: [router keepalive seq=N status="…"]` every 4 s, status only on change; a failed stream ends `data: {"error":…}` then `data: [DONE]`). §6.1 now states the ingress posture honestly: priority is **not** clamped to the configured default and the admin surface is unauthenticated, so deployment is loopback-or-behind-a-proxy until the v0.1 ingress work. A new wire test replays every path/method in the manifest against a live `ServerApp`, so a renamed route or a phantom tool fails the build. 69 tests green.
   `linux-x64` and `win-x64` and passed `tools/ci/smoke.sh` on each of its own runners, and the preflight
   refusal is proven (a tag with a leftover draft release failed before any build job started). Windows
   needed `-p:` property switches rather than `/p:` (Git-Bash rewrites `/p:x=y` into a path; the leg failed
@@ -438,17 +439,28 @@ client start parsing it (§15 open question).
 **Streaming handoff**: the SSE relay does not poll for the ticket's stream channel. The
 channel is created at admission, before the `Executing` event is published, and
 `RouterTicket.StreamReady` resolves with it (or with `null` at a terminal state); the relay
-awaits that and emits keepalive comment frames every 4 s while a request is still queued or
-switching. Poll-based handoffs stall time-to-first-token by the whole poll interval — the
-benchmark harness measured exactly that before this fix (§14, `docs/benchmarks.md`).
+waits on that and emits a keepalive `data:` frame every 4 s while a request is still queued or
+switching — `data: [router keepalive seq=7 status="switching model=qwen-long engine=hyperqwen"]`,
+status-bearing only when the state changed. A stream that fails after it started ends with
+`data: {"error":{…}}` then `data: [DONE]`, so a client that stops at the sentinel cannot hang and
+can tell a truncated completion from a finished one. Poll-based handoffs stall time-to-first-token
+by the whole poll interval — the benchmark harness measured exactly that before this fix (§14,
+`docs/benchmarks.md`).
 
 **Threading through HTTP**: clients convey thread + priority via headers:
 `X-Inference-Thread: agent-42`, `X-Inference-Priority: high:200`
 (`class[:sub]`), `X-Inference-Affinity: <normalized-prefix-hash>` (optional,
 server-side prefix normalization is authoritative anyway (§7.6),
 `X-Inference-Required-Context: <tokens>` (declares the context the request must
-be served under; absent ⇒ the router estimates from prompt chars, §7.6). Body-only
+be served under; absent ⇒ the router estimates from prompt chars, §7.6). Every admitted request
+carries its ticket id back on the response as `X-Inference-Ticket`, which is how a client reaches
+`GET|DELETE /admin/tickets/{id}` (watch / cancel) without scraping the event stream. Body-only
 callers (default thread `anon`, priority Normal) work unchanged.
+
+Priority is **not** clamped to the configured default and the surface has no authentication, so a
+caller can currently promote itself. Pinning that at the edge is v0.1 ingress work (§15.1); until
+then the deployment posture is loopback-or-behind-your-proxy. `docs/ai-integration.md` states this
+to integrators.
 
 ## 7. Configuration (TOML)
 

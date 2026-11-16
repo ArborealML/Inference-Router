@@ -15,7 +15,7 @@ Design and decisions live in [`SPEC.md`](SPEC.md); the README is the entry point
 
 ## Status
 
-Working and tested (66 tests, warning-free build under `TreatWarningsAsErrors`, clean
+Working and tested (68 tests, warning-free build under `TreatWarningsAsErrors`, clean
 `PublishAot` with zero trim warnings). This is an early-stage internal tool: the request
 path, priority queue, scheduler, config and lifecycle handling are implemented; the
 router-host/listener split, multi-host scheduling and the live web dashboard are
@@ -124,6 +124,31 @@ select = { exec = "select-model", args = ["{{model}}", "--profile", "{{profile}}
 The same schema loads from JSON. Deserialisation uses Tomlyn and System.Text.Json **source
 generators**; there is no runtime reflection, and the build bans reflection-only APIs.
 
+## From an agent (Pi, or anything that speaks HTTP)
+
+The router is a normal HTTP server, so an agent needs no SDK. The two things worth knowing beyond
+the OpenAI request shape are thread identity and context demand:
+
+```bash
+curl -N http://127.0.0.1:8321/v1/chat/completions \
+  -H 'content-type: application/json' \
+  -H 'X-Inference-Thread: claude-session-7' \
+  -H 'X-Inference-Required-Context: 24000' \
+  -d '{"model":"qwen-3.8-flash-next","stream":true,"messages":[{"role":"user","content":"hi"}]}'
+```
+
+`X-Inference-Thread` gives the conversation its share of the queue — its priority class is set with
+`POST /admin/threads` and holds for every later request that carries the header. Note that the
+router does not authenticate callers yet, so priority claims are honoured as given: keep the router
+on loopback or behind your own proxy. `X-Inference-Required-Context` tells the scheduler the window
+you need, so it switches profile instead of failing. While a request waits or a model loads, the
+stream carries `data: [router keepalive …]` frames rather than going silent, and a failed stream
+ends with an error frame plus `[DONE]`.
+
+[`docs/ai-integration.md`](docs/ai-integration.md) covers the admin surface, the error-code table,
+and a worked "the log is too big" session. [`samples/pi/inference-router-tools.json`](samples/pi/inference-router-tools.json)
+describes the same calls as tool definitions for a harness. Nothing in the router reads that file.
+
 ## Layout
 
 | Path | What lives there |
@@ -134,6 +159,8 @@ generators**; there is no runtime reflection, and the build bans reflection-only
 | `tests/` | xUnit suite, including real-HTTP wire tests and shell round-trip tests for lifecycle argv |
 | `bench/` | JIT overhead harness: engine → routing → HTTP ladder against one shared fake engine |
 | `docs/benchmarks.md` | measured overhead, what the numbers exclude, and the bug the harness caught |
+| `docs/ai-integration.md` | how an LLM agent (Pi or any HTTP client) should drive the router |
+| `samples/pi/` | tool manifest for agent harnesses |
 | `SPEC.md` | specification and revision log |
 
 ## Roadmap (spec'd, not built)

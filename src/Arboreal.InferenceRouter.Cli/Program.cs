@@ -48,7 +48,7 @@ public static class Program
         Console.WriteLine("""
             arboreal inference router
 
-            usage: arboreal <command> [options]
+            usage: air <command> [options]
 
             commands:
               serve [--config path] [--listen url]      run the router host in this process

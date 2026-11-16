@@ -1,0 +1,191 @@
+{
+  "$comment": "Tool manifest for agents that call the Arboreal inference router. It is descriptive: nothing in the router reads this file. Adjust 'server_url' and transcription to your harness (OpenAI-style function tools, MCP, or a shell alias).",
+  "server_url": "http://127.0.0.1:8321",
+  "thread_header": "X-Inference-Thread",
+  "tools": [
+    {
+      "name": "chat_completion",
+      "description": "Send a chat message to whichever engine the router decides should serve it. Returns streamed tokens (SSE) or one JSON body. Queue waits and model switches are invisible to the caller except for keepalive frames.",
+      "method": "POST",
+      "path": "/v1/chat/completions",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "model": {
+            "type": "string",
+            "description": "Model name as listed by list_models."
+          },
+          "messages": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "stream": {
+            "type": "boolean",
+            "default": true
+          },
+          "max_tokens": {
+            "type": "integer"
+          },
+          "thread_id": {
+            "type": "string",
+            "description": "Sent as the X-Inference-Thread header; keeps this conversation's priority and context budget."
+          },
+          "required_context_tokens": {
+            "type": "integer",
+            "description": "Sent as X-Inference-Required-Context when you know the window you need; the router switches profile rather than failing."
+          }
+        },
+        "required": [
+          "model",
+          "messages"
+        ]
+      },
+      "returns": {
+        "header_x_inference_ticket": "id of the admitted request",
+        "stream": "engine frames verbatim; 'data: [router keepalive \u2026]' while queued or switching; error frame then [DONE] on failure"
+      }
+    },
+    {
+      "name": "list_models",
+      "description": "List the models this router can serve right now, and which engine owns each (OpenAI 'models' format).",
+      "method": "GET",
+      "path": "/v1/models",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "register_thread",
+      "description": "Give a conversation a priority class so it gets its share of engine capacity. Not enforced today: the router does not clamp the class you ask for and has no caller authentication, so run it on loopback or behind your own proxy.",
+      "method": "POST",
+      "path": "/admin/threads",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "threadId": {
+            "type": "string"
+          },
+          "priority": {
+            "type": "object",
+            "properties": {
+              "class": {
+                "type": "string",
+                "enum": [
+                  "background",
+                  "low",
+                  "normal",
+                  "high",
+                  "interactive"
+                ]
+              },
+              "sub": {
+                "type": "integer",
+                "default": 0,
+                "description": "0-255 tie-break inside the class."
+              }
+            },
+            "required": [
+              "class"
+            ]
+          }
+        },
+        "required": [
+          "threadId",
+          "priority"
+        ]
+      }
+    },
+    {
+      "name": "engine_status",
+      "description": "Which engines are up, their loaded model and context window, queue depths, and per-thread state. Use before deciding whether to wait or retry.",
+      "method": "GET",
+      "path": "/admin/status",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "read_events",
+      "description": "Replay the router's decision log from a sequence number (SSE). Each event carries kind, threadId, ticketId, engine, model, reason and an optional numeric value. Kinds include request.enqueued, request.selected, request.streaming_first_token, request.completed, queue.rejected, engine.switch_started, engine.switch_completed, engine.switch_failed.",
+      "method": "GET",
+      "path": "/admin/events?since={since_seq}",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "since_seq": {
+            "type": "integer",
+            "description": "Replay events after this sequence number; 0 replays the retained ring."
+          }
+        },
+        "required": [
+          "since_seq"
+        ]
+      }
+    },
+    {
+      "name": "inspect_ticket",
+      "description": "State of one admitted request: Queued, WaitingForModel, Executing, Completed, Cancelled or Failed, plus the engine serving it and any error code.",
+      "method": "GET",
+      "path": "/admin/tickets/{id}",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Ticket id from the X-Inference-Ticket response header of the request you want to inspect or cancel."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "name": "cancel_ticket",
+      "description": "Cancel a queued or running request and release its reserved engine capacity. Only useful before the first token reaches the caller.",
+      "method": "DELETE",
+      "path": "/admin/tickets/{id}",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Ticket id from the X-Inference-Ticket response header of the request you want to inspect or cancel."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "name": "switch_model",
+      "description": "Ask the router to load a model on a running engine. It drains in-flight requests first, then re-probes readiness; requests keep their URLs throughout.",
+      "method": "POST",
+      "path": "/admin/switch",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "engine": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "profile": {
+            "type": "string",
+            "description": "Optional named context-window profile to serve the new model under."
+          }
+        },
+        "required": [
+          "engine",
+          "model"
+        ]
+      }
+    }
+  ]
+}

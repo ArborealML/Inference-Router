@@ -133,6 +133,10 @@ public static class ServerApp
             return;
         }
 
+        // The ticket id is how a client (or an agent harness) reaches /admin/tickets/{id} to watch
+        // or cancel this request; without it the id only exists in the event stream.
+        ctx.Response.Headers["X-Inference-Ticket"] = ticket.Id;
+
         if (stream)
         {
             await StreamTicketAsync(ctx, ticket).ConfigureAwait(false);
