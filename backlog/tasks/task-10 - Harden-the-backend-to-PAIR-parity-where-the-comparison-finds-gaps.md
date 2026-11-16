@@ -25,39 +25,71 @@ TASK-1), then security and tests. Durability, fairness and version pins follow.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
-## Plan (ordered; each step ships with fake-backed tests per AC #8)
+## Plan (reordered after the deepest tier plan review; each step ships with fake-backed tests per AC #8)
 
-Facts this plan is written against: one flat `request_timeout_seconds` per engine and an infinite
-`HttpClient` timeout so long streams survive (`EngineRuntime.cs:67`); switch single-flight with
-per-target latched state (`RouterCore.ExecSwitchAsync`, `_switchState`); slots counted per engine with
-lifecycle waiters excluded since 8af6aac; events through a bounded `EventRing`
-(`Events/RouterEvent.cs:33`); config parsed once at startup with no reload path at all.
+Review source: the research service deepest tier plan review, mirrored at `.local/reviews/r13-task10-plan-solpro.md`
+(untrusted external output; the claims below were re-checked against the code by me).
 
-1. **AC #2 — bounds and phase deadlines.** Add `max_request_bytes` (ingress, enforced before any engine
-   call) and an upstream response cap enforced by a counting relay stream that fails the request when the
-   engine exceeds it. Split the flat timeout into phases: connect/response-headers, first-delta, and
-   inter-delta idle (`first_delta_timeout_ms`, `idle_delta_timeout_ms`). Commit boundary: once the first
-   delta reaches the client the response is committed, so a mid-stream failure is declared lost
-   (event `engine.stream_aborted`), never replayed.
-2. **AC #4 — switch contract.** Audit every failure path (engine gone, command exit≠0, command timeout,
-   model never becomes ready) so per-target state resets and every waiter gets the same terminal answer;
-   pin the wire error contract with a table test (status ↔ error code ↔ payload shape).
-3. **AC #3 — cancellation, capacity, aging.** Cancellation must reach the upstream request and release
-   the slot exactly once; a queued ticket must neither spin nor starve — pin an aging bound with a test
-   that a low-priority ticket eventually runs behind a busy model.
-4. **AC #7 — bounded telemetry.** Monotonic sequence numbers on event frames plus a drop counter, so a
-   consumer detects a gap instead of silently missing history; keep the ring bounded and add a bounded
-   recent-request journal surfaced through the admin surface.
-5. **AC #5 — ingress protection.** Optional shared-key auth on `/v1/*` and `/admin/*` (admin requires it
-   by default), TLS via config, per-identity rate caps. Tests assert the engine API key actually leaves
-   on the wire (fixture inspects `Authorization`). Fail-closed resource identity belongs to TASK-1 and is
-   cross-referenced, not duplicated here.
-6. **AC #6 — crash and reload.** Engine crash already clears readiness; add a restart generation (engine
-   epoch) in `/admin/status` and events so a restart is visible. Config reload does not exist today:
-   either land an atomic snapshot swap or record "no reload before v0.1" as an accepted gap in SPEC §14 —
-   owner's call.
-7. **AC #10 (done)** — a switch request with no capacity terminates on its own deadline as `engine_error`
-   rather than `queue_timeout`; regression test in 8af6aac.
+Facts this plan is written against (verified at 329970a):
+- One flat `request_timeout_seconds` per engine, with an infinite `HttpClient` timeout so long streams
+  survive (`EngineRuntime.cs:67`). No phase deadlines exist.
+- Admission **reserves engine capacity at selection** (`RouterCore.cs:284`) before the model-switch wait
+  (`RouterCore.cs:375`), so a switch waiter holds a slot the whole time it waits. An earlier note in this
+  plan claimed switch waiters were excluded from capacity since 8af6aac — that was wrong: 8af6aac changed
+  SPEC and board text only, no code. Consequence: on a box where every engine is switching, admitted
+  tickets consume all slots and AC #10 (prompt no-capacity error) cannot be met by tuning alone.
+- `ticket.ExecCts` is created unlinked from the client token (`RouterCore.cs:355`), so a client that drops
+  the connection does not stop upstream generation; the slot stays reserved until the engine finishes.
+- The commit boundary is the **first flushed frame**, not the first delta: `StreamTicketAsync` writes status
+  200 and a keepalive frame before any token reaches the client (`ServerApp.cs:172-181`), which is why
+  "retry after the first token" is not the right line — the response is already started. Client receipt is
+  unobservable; server commit is what we can know.
+- Switch single-flight with per-target state (`RouterCore.ExecSwitchAsync`, `_switchState`); events through a
+  bounded `EventRing` (`Events/RouterEvent.cs:33`); config parsed once at startup, no reload path at all.
+
+0. **AC #1 — contracts and URI composition (mostly landed).** `models_endpoint` is configurable and pinned
+   by samples + a loader test. Still missing: base endpoint + probe path join, trailing slash, query string,
+   and relative `health_probe.path` resolution tests.
+1. **AC #5 — the perimeter, before anything that promises bounds.** Authenticate before reading bodies
+   (per-caller credentials from named env vars or key files, constant-time compare, `/admin/*` fail-closed),
+   TLS at Kestrel or a trusted proxy, and ASP.NET Core's partitioned rate limiter keyed by credential with
+   `QueueLimit = 0` so over-cap callers are rejected rather than queued. Keep the router's own key separate
+   from each upstream engine's key and test that the engine key actually goes out on the wire. **Owner
+   decision needed: the credential config shape** (`[[ingress.credential]]` name + `key_env`/`key_file`, or a
+   single shared key with no per-identity caps). Also closes the escalation gap noted below.
+2. **AC #3 (first half) + AC #2 — lifetime and transport.** Create the ticket CTS at enqueue, linked to
+   `ctx.RequestAborted` and shutdown; give the ticket one atomic terminal transition; make the capacity lease
+   a single object released exactly once in `finally`; keep switch waiters **outside** inference capacity.
+   Then the bounds: `max_request_bytes` at ingress (Kestrel `MaxRequestBodySize` plus the reader), an upstream
+   byte cap enforced by a counting relay over a bounded channel of owned pooled buffers, and phase deadlines —
+   connect, response headers, first byte, inter-read idle — with idle timing paused while the client applies
+   backpressure. Commit-boundary behaviour: pre-commit failure answers the OpenAI error body; post-commit
+   failure emits `engine.stream_aborted`, closes the stream, and sends **no** `[DONE]` and no replay. That
+   last part contradicts what `docs/ai-integration.md` and SPEC §6 describe as today's framing, so the same
+   commit updates them.
+3. **AC #4 — switch contract plus epochs.** Capture immutable `(target, epoch, typed completion)` state with
+   owned deadlines; a waiter's cancellation only detaches that waiter. Coalesce requests for the same target
+   and queue competitors; clear the latched state once; keep the failure latched until an explicit retry,
+   config change or epoch change; reject completions from a stale epoch. Error casing: lowercase for `/v1`,
+   PascalCase for `/admin` (pin it with a table test rather than "fixing" one of them).
+4. **AC #3 (second half) + AC #10 — dispatch and aging.** Schedule the exact ticket the scheduler decided on
+   instead of popping another head; wake dispatch on state changes plus one deadline timer rather than
+   polling; bound how far an eligible lower-priority ticket can be bypassed (`N`) and pin it with a test.
+   AC #10 then falls out: when no engine can serve, the request terminates on its own visible deadline with a
+   no-capacity error instead of sitting in `WaitingForModel` forever.
+5. **AC #7 — bounded telemetry.** Add a `StreamId` per subscriber, subscribe atomically after a cursor, bound
+   each subscriber's queue and report the gap as `(requested, oldest, current, dropped)` with loss sources
+   separated; support `Last-Event-ID` reconnect; add a metadata-only recent-request journal bounded by count
+   and bytes.
+6. **AC #6 — no-reload gap, decided.** Take the reviewer's accepted-gap wording verbatim (see
+   `.local/reviews/r13-task10-plan-solpro.md` §8): no in-process configuration reload through v0.10; changes
+   require restart; records expose a secret-redacted `ConfigPin`; requests stay snapshot-pinned. Engine crash:
+   clearing readiness must also clear loaded models/gauges, cancel in-flight work as `engine_died`, wake
+   dispatch, and advance a `ReadinessEpoch` once per lost→ready generation (`EngineEpoch` itself is TASK-1
+   instance identity).
+
+Two earlier claims in this plan were wrong and are corrected above: capacity reserved before the switch wait,
+and AC #10 being done. AC #10 is open and belongs to step 4.
 
 <!-- AC:BEGIN -->
 - [ ] #1 URI/path composition tested (base endpoint + probe paths, trailing slash, query string, relative `health_probe.path` resolution)
