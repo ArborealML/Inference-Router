@@ -95,15 +95,17 @@ public sealed class RouterTicket
         new(TaskCreationOptions.RunContinuationsAsynchronously);
     internal CancellationTokenSource? ExecCts;
     /// <summary>Streaming responses: ordered upstream byte chunks (SSE frames as received).
-    /// Null for non-streaming requests.</summary>
-    internal System.Threading.Channels.Channel<ReadOnlyMemory<byte>>? StreamChannel;
+    /// Null for non-streaming requests until the engine begins streaming.</summary>
+    public System.Threading.Channels.Channel<ReadOnlyMemory<byte>>? StreamChannel { get; internal set; }
 }
 
 /// <summary>Raw request envelope: the OpenAI-compatible JSON body plus the router's parsed
 /// scheduling probe. Bodies are forwarded verbatim to engines (full tools/multimodal passthrough).</summary>
 public sealed class InferenceRequest
 {
-    public required string Model { get; init; }
+    /// <summary>Requested model (OpenAI alias or canonical id); null falls back to thread
+    /// affinity, then the router default.</summary>
+    public string? Model { get; init; }
     /// <summary>Whether the client wants SSE streaming deltas.</summary>
     public bool Stream { get; init; }
     /// <summary>UTF-8 JSON body (OpenAI chat/completions shape).</summary>

@@ -69,8 +69,9 @@ public sealed class EngineRuntime : IAsyncDisposable
     {
         var interval = TimeSpan.FromMilliseconds(_def.Health?.IntervalMs ?? 2_000);
         using var timer = new PeriodicTimer(interval);
-        while (await timer.WaitForNextTickAsync(ct).ConfigureAwait(false))
+        while (true)
         {
+            // bootstrap: probe immediately at startup, then on the interval
             try
             {
                 using var cts = new CancellationTokenSource(_def.Health?.TimeoutMs ?? 5_000);
@@ -84,6 +85,11 @@ public sealed class EngineRuntime : IAsyncDisposable
                 _healthy = false;
                 Emit("engine.health", reason: ex.Message, value: 0);
             }
+            try
+            {
+                if (!await timer.WaitForNextTickAsync(ct).ConfigureAwait(false)) break;
+            }
+            catch (OperationCanceledException) { break; }
         }
     }
 
@@ -236,6 +242,8 @@ public sealed class EngineRuntime : IAsyncDisposable
                 Volatile.Write(ref _switchState, new SwitchState());
                 return;
             }
+            try { _loadedModels = await FetchLoadedModelsAsync(ct).ConfigureAwait(false); }
+            catch { /* best-effort refresh; the switch itself succeeded */ }
             state.Ready.TrySetResult(true);
             Emit("engine.switch_completed", model: model, value: (DateTimeOffset.UtcNow - state.StartedAt).TotalMilliseconds);
             Volatile.Write(ref _switchState, new SwitchState());

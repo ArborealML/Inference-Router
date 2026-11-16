@@ -40,7 +40,7 @@ public sealed class ModelQueue
                 return false;
             }
             _heap.Add(item);
-            _heap.Sort((a, b) => a.PriorityNode.CompareTo(b.PriorityNode)); // stable: seq tiebreak
+            _heap.Sort(HeadFirst);
             return true;
         }
     }
@@ -86,7 +86,15 @@ public sealed class ModelQueue
     /// <summary>Re-sort in place after a thread priority change; stable on enqueue sequence.</summary>
     public void Resort()
     {
-        lock (_lock) _heap.Sort((a, b) => a.PriorityNode.CompareTo(b.PriorityNode));
+        lock (_lock) _heap.Sort(HeadFirst);
+    }
+
+    /// <summary>Head-of-queue ordering: higher priority first, FIFO (enqueue sequence) within
+    /// a priority. Index 0 is always the next request to dispatch.</summary>
+    private static int HeadFirst(QueuedRequest a, QueuedRequest b)
+    {
+        var c = b.PriorityNode.Priority.CompareTo(a.PriorityNode.Priority); // descending priority
+        return c != 0 ? c : a.PriorityNode.Sequence.CompareTo(b.PriorityNode.Sequence); // ascending FIFO
     }
 
     public QueuedRequest? PeekHead()

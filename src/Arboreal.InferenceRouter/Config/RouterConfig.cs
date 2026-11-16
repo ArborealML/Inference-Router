@@ -89,6 +89,9 @@ public sealed class RouterConfig
         new Dictionary<string, ThreadDefinition>();
     public IReadOnlyDictionary<string, EngineDefinition> Engines { get; set; } =
         new Dictionary<string, EngineDefinition>();
+    /// <summary>Optional per-engine HTTP handler factory (test harnesses, custom transports).
+    /// Production config leaves it null; engines then use a default HttpClient.</summary>
+    public Func<EngineDefinition, HttpMessageHandler>? HttpHandlerFactory { get; set; }
 }
 
 public sealed class RouterConfigException(string message) : Exception(message);

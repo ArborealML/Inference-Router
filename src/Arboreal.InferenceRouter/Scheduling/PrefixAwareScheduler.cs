@@ -57,8 +57,10 @@ public sealed class PrefixAwareScheduler : IRequestScheduler
         foreach (var e in view.Engines)
         {
             if (!e.Healthy || e.Switching) continue;
-            var loaded = e.LoadedModels.Contains(request.Request.Model, StringComparer.OrdinalIgnoreCase);
-            var catalog = e.CatalogModels.Contains(request.Request.Model, StringComparer.OrdinalIgnoreCase);
+            // Compare on the canonical model (Ticket.Model), not the raw requested alias.
+            var model = request.Ticket.Model;
+            var loaded = e.LoadedModels.Contains(model, StringComparer.OrdinalIgnoreCase);
+            var catalog = e.CatalogModels.Contains(model, StringComparer.OrdinalIgnoreCase);
             if (!loaded && !catalog) continue;
 
             var affinity = AffinityScore(e);

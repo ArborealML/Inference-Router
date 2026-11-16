@@ -87,6 +87,10 @@ public readonly struct ThreadPriority : IEquatable<ThreadPriority>, IComparable<
     public override int GetHashCode() => (Class << 8) | Sub;
     public static bool operator ==(ThreadPriority a, ThreadPriority b) => a.Equals(b);
     public static bool operator !=(ThreadPriority a, ThreadPriority b) => !a.Equals(b);
+    public static bool operator <(ThreadPriority a, ThreadPriority b) => a.CompareTo(b) < 0;
+    public static bool operator >(ThreadPriority a, ThreadPriority b) => a.CompareTo(b) > 0;
+    public static bool operator <=(ThreadPriority a, ThreadPriority b) => a.CompareTo(b) <= 0;
+    public static bool operator >=(ThreadPriority a, ThreadPriority b) => a.CompareTo(b) >= 0;
 }
 
 /// <summary>Router-internal priority record carrying the sequence tie-break.</summary>

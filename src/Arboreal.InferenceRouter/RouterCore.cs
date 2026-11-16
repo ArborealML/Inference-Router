@@ -24,7 +24,7 @@ public sealed class RouterCore : IInferenceRouter
         _scheduler = scheduler ?? new PrefixAwareScheduler();
         _events = events ?? new EventRing();
         foreach (var (name, def) in config.Engines)
-            _engines[name] = new EngineRuntime(def, config, _events);
+            _engines[name] = new EngineRuntime(def, config, _events, config.HttpHandlerFactory?.Invoke(def));
         foreach (var (id, td) in config.Threads)
             _threads[id] = new RouterThread(id, td.Priority, td.Weight, td.ModelAffinity);
     }
@@ -168,6 +168,25 @@ public sealed class RouterCore : IInferenceRouter
         }
     }
 
+    public TicketSnapshot? TryGetTicket(string ticketId)
+    {
+        lock (_gate)
+        {
+            if (!_tickets.TryGetValue(ticketId, out var t)) return null;
+            return new TicketSnapshot
+            {
+                Id = t.Id,
+                ThreadId = t.ThreadId,
+                Model = t.Model,
+                QueuedAt = t.QueuedAt,
+                State = t.State.ToString(),
+                Engine = t.Engine,
+                ErrorCode = t.ErrorCode,
+                Error = t.Error,
+            };
+        }
+    }
+
     public IAsyncEnumerable<RouterEvent> SubscribeEvents(RouterEventFilter? filter = null, CancellationToken ct = default)
         => new EventEnumerable(_events, filter ?? new RouterEventFilter(), ct);
 
@@ -252,7 +271,8 @@ public sealed class RouterCore : IInferenceRouter
                 engine = e;
                 switchRequired = decision.SwitchRequired;
                 popped.Thread.IncrementInflight();
-                break;
+                engine.BeginRequest(popped.PromptChars);   // reserve engine capacity now:
+                break;                                     // the drain loop must not over-dispatch
             }
         }
 
@@ -313,11 +333,18 @@ public sealed class RouterCore : IInferenceRouter
         var thread = candidate.Thread;
         ticket.ExecCts = new CancellationTokenSource();
         var decremented = false;
+        var ended = false;
         void DecrementOnce()
         {
             if (decremented) return;
             decremented = true;
             thread.DecrementInflight();
+        }
+        void EndEngineOnce()
+        {
+            if (ended) return;
+            ended = true;
+            engine.EndRequest(candidate.PromptChars);
         }
         try
         {
@@ -330,14 +357,16 @@ public sealed class RouterCore : IInferenceRouter
                 if (!loaded)
                 {
                     Fail(ticket, "switch_failed", $"engine {engine.Name} could not load {ticket.Model}");
-                    DecrementOnce();
                     return;
                 }
                 ticket.State = TicketState.Executing;
             }
 
             Interlocked.Increment(ref thread.Enqueued);
-            engine.BeginRequest(candidate.PromptChars);
+            ticket.StreamChannel = candidate.Request.Stream
+                ? Channel.CreateUnbounded<ReadOnlyMemory<byte>>(
+                    new UnboundedChannelOptions { SingleReader = true, SingleWriter = true })
+                : null;
             try
             {
                 using var cts = CancellationTokenSource.CreateLinkedTokenSource(_shutdown.Token, ticket.ExecCts.Token);
@@ -350,15 +379,12 @@ public sealed class RouterCore : IInferenceRouter
                     var errBody = await res.Content.ReadAsByteArrayAsync(cts.Token).ConfigureAwait(false);
                     Fail(ticket, "engine_error",
                         $"{(int)res.StatusCode}: {System.Text.Encoding.UTF8.GetString(errBody.AsSpan(0, Math.Min(errBody.Length, 256)))}");
-                    DecrementOnce();
                     return;
                 }
 
                 if (candidate.Request.Stream)
                 {
-                    var channel = Channel.CreateUnbounded<ReadOnlyMemory<byte>>(
-                        new UnboundedChannelOptions { SingleReader = true, SingleWriter = true });
-                    ticket.StreamChannel = channel;
+                    var channel = ticket.StreamChannel!;
                     await PumpStreamAsync(engine, ticket, res.Content, channel, cts.Token).ConfigureAwait(false);
                     Complete(ticket);
                 }
@@ -370,7 +396,6 @@ public sealed class RouterCore : IInferenceRouter
             }
             finally
             {
-                engine.EndRequest(candidate.PromptChars);
                 engine.RecordPrefix(candidate.Messages());
             }
         }
@@ -384,6 +409,8 @@ public sealed class RouterCore : IInferenceRouter
         }
         finally
         {
+            EndEngineOnce();
+            SignalDispatch();          // wake dispatch AFTER capacity is released
             ticket.ExecCts?.Dispose();
             ticket.ExecCts = null;
             DecrementOnce();
@@ -433,7 +460,9 @@ public sealed class RouterCore : IInferenceRouter
                         Value = sw.ElapsedMilliseconds,
                     });
                 }
-                await channel.Writer.WriteAsync(buffer.AsMemory(0, read), ct).ConfigureAwait(false);
+                var chunk = new byte[read];
+                buffer.AsSpan(0, read).CopyTo(chunk);
+                await channel.Writer.WriteAsync(chunk, ct).ConfigureAwait(false);
             }
         }
         catch (OperationCanceledException)
@@ -635,6 +664,20 @@ public sealed record RouterStats(
     EngineStats[] Engines,
     IReadOnlyDictionary<string, int> QueueDepths,
     ThreadStats[] Threads);
+
+/// <summary>Immutable projection of one ticket for the admin API (AOT-safe DTO).</summary>
+public sealed record TicketSnapshot
+{
+    public required string Id { get; init; }
+    public required string ThreadId { get; init; }
+    public required string Model { get; init; }
+    public required DateTimeOffset QueuedAt { get; init; }
+    /// <summary>TicketState as string (avoids enum source-gen pitfalls in metadata mode).</summary>
+    public required string State { get; init; }
+    public string? Engine { get; init; }
+    public string? ErrorCode { get; init; }
+    public string? Error { get; init; }
+}
 
 public interface IInferenceRouter : IAsyncDisposable
 {

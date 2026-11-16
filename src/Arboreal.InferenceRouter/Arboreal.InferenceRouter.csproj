@@ -10,4 +10,8 @@
     <PackageReference Include="Tomlyn" Version="2.11.1" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="Arboreal.InferenceRouter.Tests" />
+  </ItemGroup>
+
 </Project>

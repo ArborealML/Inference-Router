@@ -1,0 +1,79 @@
+# Arboreal inference router — sample config.
+# Matches this machine's select-model backends (strata / hyperqwen / glm / deepseek).
+# TOML is human-friendly; the same schema works as JSON (config .json → JSON loader).
+
+listen = "http://127.0.0.1:8321"
+default_model = "qwen-3.8-flash-next"
+auto_switch = true
+switch_cooldown_ms = 2000
+
+[default_priority]
+class = "normal"        # background | low | normal | high | interactive
+sub = 0                 # 0..255 tie-break inside the class
+
+[scheduler]
+prefix_affinity_threshold_chars = 512
+affinity_weight = 1.5
+prefill_cost_alpha = 1.0
+max_queue_per_model = 64
+max_inflight_per_engine = 8
+prefix_trie_max_nodes = 8192
+
+[threads.interactive-ui]
+priority = { class = "interactive", sub = 128 }
+model_affinity = "qwen-3.8-flash-next"
+
+[threads.background-indexer]
+priority = { class = "background" }
+
+# ── strata: qwen-3.8 models on port 18021 (sufix-cache capable) ──────────────
+[engine.strata]
+kind = "openai-compatible"
+endpoint = "http://127.0.0.1:18021/v1"
+api_key_file = "/etc/arboreal/keys/strata-api-key"
+loaded_requires_status_loaded = true
+capabilities = { suffix_cache = true, max_context = 131072, max_slots = 4 }
+
+[engine.strata.health_probe]
+path = "/props"
+expect = "total_slots>0"
+interval_ms = 2000
+timeout_ms = 5000
+
+[engine.strata.catalog.qwen-3.8-flash-next]
+aliases = ["flash-next", "qwen"]
+profiles = ["max", "128k-2", "64k-4"]
+select.exec = "select-model"
+select.args = ["{{model}}", "--profile", "{{profile}}"]
+
+[engine.strata.catalog.qwen-3.8-flash-next-coder]
+aliases = ["coder"]
+profiles = ["max"]
+select.exec = "select-model"
+select.args = ["{{model}}", "--profile", "{{profile}}"]
+
+# ── hyperqwen: swift/qwen-3.8-27b on port 18020 ─────────────────────────────
+[engine.hyperqwen]
+kind = "openai-compatible"
+endpoint = "http://127.0.0.1:18020/v1"
+api_key_file = "/etc/arboreal/keys/hyperqwen-api-key"
+capabilities = { max_context = 32768, max_slots = 2 }
+
+[engine.hyperqwen.health_probe]
+path = "/v1/models"
+
+[engine.hyperqwen.catalog.qwen-3.8-27b]
+aliases = ["qwen-27b"]
+
+# ── glm / deepseek via select-model shims (example: remote=false, lifecycle) ─
+[engine.glm]
+kind = "openai-compatible"
+endpoint = "http://127.0.0.1:18060/v1"
+remote = true                           # no lifecycle commands; health only
+
+[engine.glm.health_probe]
+path = "/v1/models"
+expect = "glm"
+
+[engine.glm.catalog.glm-5.3-flash]
+aliases = ["glm-flash"]
