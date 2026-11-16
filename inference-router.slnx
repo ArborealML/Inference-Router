@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="src/Arboreal.InferenceRouter.Cli/Arboreal.InferenceRouter.Cli.csproj" />
+  <Project Path="src/Arboreal.InferenceRouter.Server/Arboreal.InferenceRouter.Server.csproj" />
+  <Project Path="src/Arboreal.InferenceRouter/Arboreal.InferenceRouter.csproj" />
+  <Project Path="tests/Arboreal.InferenceRouter.Tests/Arboreal.InferenceRouter.Tests.csproj" />
+</Solution>
