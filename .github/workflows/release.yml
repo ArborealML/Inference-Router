@@ -81,8 +81,11 @@ jobs:
           TAG: ${{ steps.resolve.outputs.tag }}
         run: |
           set -euo pipefail
-          if gh api "repos/{owner}/{repo}/releases/tags/$TAG" --jq .draft > draft.txt 2>/dev/null; then
-            if [ "$(cat draft.txt)" = "true" ]; then kind=draft; else kind=published; fi
+          # Note: the "release by tag name" endpoint hides drafts, so list and filter instead —
+          # a half-finished draft from an earlier run must block a new build just as a published
+          # release does.
+          kind="$(gh api "repos/{owner}/{repo}/releases?per_page=100" 2>/dev/null             | python3 -c 'import json,sys; rs=json.load(sys.stdin); m=[r for r in rs if r.get("tag_name")==sys.argv[1]]; print("absent" if not m else ("draft" if m[0].get("draft") else "published"))' "$TAG")"
+          if [ "$kind" != "absent" ]; then
             echo "::error::refusing to build: a $kind release for $TAG already exists (delete it first if a re-release is intended)"
             exit 1
           fi
