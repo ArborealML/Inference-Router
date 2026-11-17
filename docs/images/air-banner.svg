@@ -1,0 +1,17 @@
+<!-- AIR identity, banner. Generated for this project by an external model service at the repository owner's request; no third-party assets, no stock art. MIT (see LICENSE). Paths are original: a route trunk branching to three destinations. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="300" viewBox="0 0 1200 300" role="img" aria-label="AIR — Arboreal Inference Router">
+  <rect width="1200" height="300" fill="#10241F"/>
+  <g fill="none" stroke="#F3F7F2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M146 221V139M146 163 102 119M146 163 190 119" stroke-width="13"/>
+    <circle cx="146" cy="91" r="17" stroke="#2B806C" stroke-width="12"/>
+    <circle cx="93" cy="110" r="17" stroke="#2B806C" stroke-width="12"/>
+    <circle cx="199" cy="110" r="17" stroke="#2B806C" stroke-width="12"/>
+    <path d="M146 139V108" stroke-width="13"/>
+  </g>
+  <path d="M270 65V235" stroke="#2B806C" stroke-width="3"/>
+  <g fill="#F3F7F2" font-family="system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">
+    <text x="318" y="154" font-size="104" font-weight="800" letter-spacing="3">AIR</text>
+    <text x="323" y="197" font-size="29" font-weight="600">Arboreal Inference Router</text>
+    <text x="323" y="233" font-size="20" fill="#C8D8D0">Thread-aware routing for self-hosted inference</text>
+  </g>
+</svg>

@@ -1,0 +1,8 @@
+<!-- AIR identity, mark. Generated for this project by an external model service at the repository owner's request; no third-party assets, no stock art. MIT (see LICENSE). Paths are original: a route trunk branching to three destinations. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" fill="none" color="currentColor" role="img" aria-label="AIR: branching inference routes">
+  <path d="M32 58V31M32 39 15 22M32 39 49 22" stroke="currentColor" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="32" cy="13" r="7" stroke="currentColor" stroke-width="5"/>
+  <circle cx="12" cy="19" r="7" stroke="currentColor" stroke-width="5"/>
+  <circle cx="52" cy="19" r="7" stroke="currentColor" stroke-width="5"/>
+  <path d="M32 31V23" stroke="currentColor" stroke-width="6" stroke-linecap="round"/>
+</svg>

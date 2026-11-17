@@ -1,3 +1,5 @@
+![AIR — a route trunk branching to three destinations, beside the wordmark Arboreal Inference Router](docs/images/air-banner.svg)
+
 # Arboreal Inference Router
 
 An OpenAI-compatible HTTP front door for several local LLM inference engines. It queues, prioritises

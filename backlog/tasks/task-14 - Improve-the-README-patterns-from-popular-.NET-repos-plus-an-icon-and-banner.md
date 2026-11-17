@@ -5,7 +5,7 @@ status: Waiting
 assignee:
   - '@chatswarm'
 created_date: '2026-11-16T22:26:00Z'
-updated_date: '2026-11-17T02:14:00Z'
+updated_date: '2026-11-17T02:26:00Z'
 labels:
   - docs
   - ui
@@ -35,7 +35,7 @@ feature-wall, no claim that is not measured (SPEC §9.1 gate).
 - [x] #1 Pattern findings from popular .NET repos recorded in this task (or a short note under docs/)
 - [x] #2 README restructured with a recognised section order: identity, what it does, quick start,
   configuration, CI/release, status/scope, layout, license
-- [ ] #3 An icon and a banner image committed under `docs/images/` (or `.github/`), with alt text and
+- [x] #3 An icon and a banner image committed under `docs/images/` (or `.github/`), with alt text and
   a source/attribution note; no third-party assets with unclear licences
 - [ ] #4 Build status and release badges that actually resolve on the public repo
 - [ ] #5 No claim in the README that SPEC §9.1 does not back with measurements
@@ -45,6 +45,10 @@ feature-wall, no claim that is not measured (SPEC §9.1 gate).
 
 <!-- SECTION:NOTES:BEGIN -->
 Why the image files are still missing: the README pattern review that is recorded here returned art *specifications* only — an aspect-ratio brief for the mark, banner and social preview, and where they should live — and explicitly rendered no artwork. Nothing has been sent to the image service yet, so the absence of `docs/images/` is an undispatched step, not a lost delivery. Next action is an art request (or an in-repo vector mark), then wire the badge/identity into the README.
+
+The mark, banner and social preview are in the repo under docs/images/ as original vector markup, wired into the README with alt text, with provenance and palette in docs/images/README.md. What cannot be verified here: how they look. The markup is well-formed, tiny and free of external references, but rendering (browser and GitHub proxy) and taste are for a human to judge. AC #4 stays open on purpose: the build and licence badges resolve, the release badge cannot exist until a tag is cut, which is a decision on the board.
+
+The visual direction and the repository-settings upload are handed to a human decision task; the remaining README acceptance criteria wait on it.
 <!-- SECTION:NOTES:END -->
 
 Status: step 1 landed (findings below); the task moves to In Progress when the README itself changes.
