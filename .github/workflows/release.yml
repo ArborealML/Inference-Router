@@ -91,6 +91,13 @@ jobs:
           # after it has been made control-free.
           brief() { printf '%s' "$1" | LC_ALL=C tr -c '\40-\176' '?' \
                       | LC_ALL=C cut -c1-200 | sed -e 's/%/%25/g' -e 's/:/%3A/g'; }
+          # stderr is a diagnostic, not a value: at most the first line of at most 2 KiB, with anything
+          # shaped like a credential replaced before it is sanitized. gh's own errors are short and plain
+          # ("gh: Not Found (HTTP 404)"), so nothing needed for triage is lost, and a token that a debug
+          # build or a proxy puts on stderr cannot ride the first 200 characters into the workflow log.
+          redact() { head -c 2048 "$1" | head -n 1 \
+                       | sed -E -e 's/(gh[pousr]|github_pat)_[A-Za-z0-9]{16,}/[redacted]/g' \
+                                -e 's/[A-Za-z0-9._-]{36,}/[redacted]/g'; }
           # Note: the "release by tag name" endpoint hides drafts, so list and filter instead —
           # a half-finished draft from an earlier run must block a new build just as a published
           # release does. --paginate means a second page of releases cannot hide an existing one,
@@ -104,14 +111,15 @@ jobs:
           # objects carrying a string tag_name, so an error body or a junk element is a refusal and
           # not an absence. The tag goes to jq as an argument, never inside the filter.
           list_err="$(mktemp)"
+          # An EXIT trap, not a pair of rm calls: a killed or failing step should not leave the captured
+          # stderr of an API call sitting on the runner.
+          trap 'rm -f "$list_err"' EXIT
           rc=0
           existing="$(gh api --paginate "repos/{owner}/{repo}/releases?per_page=100" 2>"$list_err")" || rc=$?
           if [ "$rc" != 0 ]; then
-            echo "::error::could not read this repository's releases (gh exited $rc; stderr: $(brief "$(cat "$list_err")")) — a release for $TAG cannot be ruled out, so not building"
-            rm -f "$list_err"
+            echo "::error::could not read this repository's releases (gh exited $rc; first line of stderr, redacted: $(brief "$(redact "$list_err")")) — a release for $TAG cannot be ruled out, so not building"
             exit 1
           fi
-          rm -f "$list_err"
           if [ -z "$existing" ]; then
             echo "::error::could not read this repository's releases, so a release for $TAG cannot be ruled out — not building"
             exit 1
@@ -383,9 +391,14 @@ jobs:
           # cutting after tr (instead of head) means no producer dies of SIGPIPE under pipefail, so a
           # diagnostic cannot come out silently empty.
           brief() { printf '%s' "$1" | LC_ALL=C tr -c '\40-\176' '?' | LC_ALL=C cut -c1-200 | sed -e 's/%/%25/g' -e 's/:/%3A/g'; }
-          rsum() { printf '%s' "$1" | jq -r '[.id,.tag_name,.name,.draft,.prerelease,.upload_url]
-                       | map(if . == null then "absent" else .|tostring end) | join(" ")' 2>/dev/null \
-                     || echo "unreadable response"; }
+          rsum() { printf '%s' "$1" | jq -r '(.upload_url // "") as $u
+                       | [ "id=\(if .id == null then "absent" else (.id|tostring) end)",
+                           "tag=\(.tag_name // "absent")",
+                           "name=\(.name // "absent")",
+                           "draft=\(if .draft == null then "absent" else (.draft|tostring) end)",
+                           "pre=\(if .prerelease == null then "absent" else (.prerelease|tostring) end)",
+                           "upload_url=\($u[0:60])" + (if ($u|length) > 60 then "+(\($u|length) bytes)" else "" end)
+                         ] | join(" ")' 2>/dev/null || echo "unreadable response"; }
           # Preflight proved the tag exists, and the tag was never the thing at issue: a tag can move
           # after preflight. Re-resolve it and compare against what the legs
           # actually built, or a tag moved after preflight would publish somebody else's commit.
@@ -469,7 +482,11 @@ jobs:
           # this gate's own (air-<rid>.tar.gz, its .sha256, SHA256SUMS): ASCII with no characters
           # that need percent-encoding. The body is the file itself over an octet-stream header; if
           # anything mangled it on the way, the stored-digest check below stops the publication.
-          upload_base="${upload_url%%\{*}"
+          # The request target is BUILT here, from repository context and the id this step validated as
+          # digits — not sliced out of the server's `upload_url`. The equality check above still enforces
+          # the documented contract (and fails the run if GitHub moves the host), but a server-supplied
+          # string no longer decides where the binaries are posted. github.com only, deliberately.
+          upload_base="https://uploads.github.com/repos/${GH_REPO}/releases/${rel_id}/assets"
           for n in "${assets[@]}"; do
             asset_id="$(gh api -X POST "${upload_base}?name=$n" -H 'Content-Type: application/octet-stream' --input "stage/$n" --jq '.id')"
             case "${asset_id:-}" in
