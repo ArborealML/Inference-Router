@@ -41,6 +41,10 @@ spends a force-push on a public repository to settle an ambiguity A removes goin
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
+No agit-style identity wrapper is installed on this machine, which is why the agent-named commits happened per commit rather than by
+configuration; and nothing in the release gate depends on the author identity — the tag and release runs work under the default
+author. Carried from the archived duplicate row that first asked the general form of this question.
+
 **Census at 23:1xZ** (`git log --all --format='%an <%ae>' | sort | uniq -c`): 199 default identity, 15 `Claire <claire@localhost>`,
 3 `board`, 1 `Ian Diaz <shadowndacorner@gmail.com>`, 2 `qwen3.8-flash-next <qwen3.8-flash-next@local>`.
 
