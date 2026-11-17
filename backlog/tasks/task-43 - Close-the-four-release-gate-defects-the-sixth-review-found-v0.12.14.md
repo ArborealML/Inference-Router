@@ -5,7 +5,7 @@ status: Waiting
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T09:53:00Z'
-updated_date: '2026-11-17T09:53:00Z'
+updated_date: '2026-11-17T10:20:00Z'
 labels:
   - ci
   - release
@@ -23,8 +23,20 @@ Round 7 carrier. Round 6 reviewed e4b4683 and confirmed the round-5 repair is ri
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The draft's tag_name is re-checked against the expected tag in the final inspection, not only its flags
-- [ ] #2 The release title is pinned by passing the tag as the release name on create
-- [ ] #3 upload_url is validated against the exact expected shape for this repository and release id
-- [ ] #4 The workflow-write guard is described by its observed status codes, not by the 422 earlier rounds assumed, and the ambiguity about an existing tag is written down as ambiguity
+- [x] #1 The draft's tag_name is re-checked against the expected tag in the final inspection, not only its flags
+- [x] #2 The release title is pinned by passing the tag as the release name on create
+- [x] #3 upload_url is validated against the exact expected shape for this repository and release id
+- [x] #4 The workflow-write guard is described by its observed status codes, not by the 422 earlier rounds assumed, and the ambiguity about an existing tag is written down as ambiguity
 <!-- AC:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+created: 2026-11-17T10:18:00Z
+
+---
+
+Four boxes checked by reading the checked-out workflow: the release object's tag_name is compared in the pre-PATCH inspection (release.yml:438) and again in the post-publish read-back (462); the title is pinned with name=$TAG on create (361); upload_url is compared against the exact expected shape for this repository and id (380, used at 396); and the create response is validated as a whole - id, upload_url, tag_name, draft, prerelease (363). AC #4, describing the guard's real status codes, is closed by the wording now on TASK-41 and TASK-28: 404, sometimes 403, never 422, with the existing-tag case documented as ambiguity. Wake remains the review of this commit, which is the round-7 review; a declined or clean review closes the task.
+
+---
+<!-- COMMENTS:END -->
