@@ -5,7 +5,7 @@ status: Done
 assignee:
   - '@claire'
 created_date: '2026-11-17T01:27:00Z'
-updated_date: '2026-11-17T05:23:00Z'
+updated_date: '2026-11-17T12:18:00Z'
 labels:
   - docs
   - process
@@ -52,6 +52,14 @@ created: 2026-11-17T05:23:00Z
 ---
 
 Closed on the merge. AC #6 verified in two halves: the pull request is MERGED (merge commit 945fc69, 2026-11-17T04:36:17Z, single file AGENTS.md, tool-managed regions byte-identical, CI green on the merge push), and the disposition of each contested rule change is recorded in the notes above — three external review passes, each finding either fixed in the follow-up commit or declined with the reason (redacted-by-default config output and a machine gate for the no-paste rule are features, not doc fixes; "operator" left undefined on purpose). Where each *unchanged* rule landed is in the pull request description's rule-by-rule trace, which is public repository text, not board text: the board carries the contested dispositions, the merged file carries the outcome. Assignee is now the owner, who performed the merge.
+
+---
+
+created: 2026-11-17T12:18:00Z
+
+---
+
+State of record: PR #1 is MERGED — merge commit 945fc69 at 2026-11-17T04:36:17Z, one file — and the branch task-17-agents-contract is fully contained in main (git merge-base --is-ancestor confirms). The "in flight / blocked on TASK-18" wording in this task is history: nobody should re-open the decision. Deleting the branch is a repository mutation owned by the coding session, not a board act.
 
 ---
 <!-- COMMENTS:END -->
