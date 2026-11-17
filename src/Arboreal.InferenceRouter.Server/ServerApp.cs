@@ -138,6 +138,16 @@ public static class ServerApp
         // or cancel this request; without it the id only exists in the event stream.
         ctx.Response.Headers["X-Inference-Ticket"] = ticket.Id;
 
+        // A caller that goes away must stop costing an engine slot and an output buffer. Before this,
+        // disconnecting from a stream left the router serving the rest of the response into a closed
+        // socket and recording the request as completed: a truncated request looked like a served one,
+        // in the stats and in the event feed.
+        using var callerAbort = ctx.RequestAborted.Register(static state =>
+        {
+            var (core, id) = ((RouterCore, string))state!;
+            core.TryCancel(id);
+        }, (router, ticket.Id));
+
         if (stream)
         {
             await StreamTicketAsync(ctx, ticket).ConfigureAwait(false);

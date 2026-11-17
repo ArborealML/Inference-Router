@@ -617,11 +617,13 @@ public sealed class RouterCore : IInferenceRouter
                 buffer.AsSpan(0, read).CopyTo(chunk);
                 await channel.Writer.WriteAsync(chunk, ct).ConfigureAwait(false);
             }
+
+            // Reaching the end of the loop because the caller went away is not the same as reaching
+            // the end of the stream: a truncated stream must not be counted as a finished one.
+            ct.ThrowIfCancellationRequested();
         }
-        catch (OperationCanceledException)
-        {
-            // cancelled mid-stream: reader will observe terminal completion below
-        }
+        // Cancellation propagates: ExecuteAsync records it as a cancelled request rather than a
+        // completed one, and the finally below closes the stream so the HTTP side stops waiting.
         finally
         {
             channel.Writer.Complete();
@@ -660,6 +662,10 @@ public sealed class RouterCore : IInferenceRouter
         ticket.State = code is "cancelled" ? TicketState.Cancelled : TicketState.Failed;
         ticket.ErrorCode = code;
         ticket.Error = message;
+        // A stream that will never produce another byte has to be closed. The HTTP side pumps the
+        // channel until its writer completes, so a failure that leaves the channel open parks the
+        // caller on a 200 response that can no longer say anything — not even its own error frame.
+        ticket.StreamChannel?.Writer.TryComplete();
         ticket.CompletionTcs.TrySetException(new RouterRequestException(code, message));
         _events.Append(new RouterEvent
         {

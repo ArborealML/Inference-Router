@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-16T20:46:00Z'
-updated_date: '2026-11-17T01:13:00Z'
+updated_date: '2026-11-17T02:08:00Z'
 labels:
   - backend
 milestone: v0.10 - live view and robustness parity
@@ -31,6 +31,8 @@ TASK-1), then security and tests. Durability, fairness and version pins follow.
 
 <!-- SECTION:NOTES:BEGIN -->
 Event-feed correctness (exclusive replay cursor, full retained-window replay, atomic replay/subscribe handover, slow-subscriber feed closure, bounded subscribers) is being fixed in the ticket-surface task now, without changing the wire contract. What is deliberately left to this task is drop *accounting*: a slow subscriber's loss is currently visible only as a closed feed, and reporting it as an event kind is a wire extension that needs its own decision alongside the schema additions already listed here.
+
+Cancellation had a hole that the AC checkbox hid. SPEC 5.5 says a client that hangs up takes the same path as DELETE /admin/tickets/{id}, but the HTTP layer never connected the request abort to the ticket: an abandoned stream was served to the end into a closed socket, kept its engine slot, and was counted as completed, and the pump swallowed cancellation and completed the ticket for the same reason. A stream whose engine answered an error status also left its channel open, so the caller waited forever for the error frame SPEC 6 promises. All three are fixed and pinned by fake-backed wire tests, which is what AC #8 is for: an AC that reads "cancellation reaches the engine" is only earned by a test that hangs up mid-stream. Remaining in this area, still open: the per-phase timeouts and the commit boundary (AC #2), and the fact that a disconnect is only noticed when the router next writes, so a caller that dies during a quiet stretch is noticed late.
 <!-- SECTION:NOTES:END -->
 
 ## Plan (reordered after the deepest tier plan review; each step ships with fake-backed tests per AC #8)

@@ -29,7 +29,9 @@ public class FakeEngineHandler : HttpMessageHandler
     /// <summary>Status the fake answers completions with (200 = normal). Non-200 exercises the
     /// router's upstream-failure mapping (TASK-10 AC #4).</summary>
     public int CompletionStatus { get; set; } = 200;
-    public string CompletionErrorBody { get; set; } =
+    /// <summary>When > 0 a streaming request is answered by writing SSE frames this many ms apart,
+    /// so a caller that hangs up mid-stream can be observed by the router.</summary>
+    public int TrickleStreamMs { get; set; }    public string CompletionErrorBody { get; set; } =
         """{"error":{"type":"invalid_request_error","message":"messages must be a non-empty list"}}""";
 
     /// <summary>Completions the router cancelled upstream while the fake was holding them. Ticket
@@ -107,12 +109,53 @@ public class FakeEngineHandler : HttpMessageHandler
             }
             ExecutionOrder.Add(tag);
             if (body.Contains("\"stream\":true"))
+            {
+                if (TrickleStreamMs > 0)
+                {
+                    var streaming = new HttpResponseMessage(HttpStatusCode.OK)
+                    {
+                        Content = new StreamContent(new TrickleStream(this)),
+                        RequestMessage = request,
+                    };
+                    streaming.Content.Headers.ContentType =
+                        new System.Net.Http.Headers.MediaTypeHeaderValue("text/event-stream");
+                    return streaming;
+                }
                 return Ok("data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n\ndata: [DONE]\n\n", "text/event-stream");
+            }
             return Ok("""
                 {"id":"c1","object":"chat.completion","choices":[{"index":0,"message":{"role":"assistant","content":"pong"}}]}
                 """);
         }
         return Ok("{}");
+    }
+
+    /// <summary>A stream body that produces SSE frames a fixed interval apart, so a caller that hangs
+    /// up mid-stream and a router that cancels mid-stream are both observable.</summary>
+    private sealed class TrickleStream(FakeEngineHandler owner) : Stream
+    {
+        private int _frame;
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+        public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+        public override void Flush() { }
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+
+        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            if (_frame >= 20) return 0;
+            await Task.Delay(owner.TrickleStreamMs, cancellationToken).ConfigureAwait(false);
+            var bytes = Encoding.UTF8.GetBytes(
+                $"data: {{\"choices\":[{{\"delta\":{{\"content\":\"c{_frame}\"}}}}]}}\n\n");
+            _frame++;
+            bytes.AsMemory(0, Math.Min(bytes.Length, buffer.Length)).CopyTo(buffer);
+            return Math.Min(bytes.Length, buffer.Length);
+        }
     }
 
     private static string ExtractFirstContent(string body)

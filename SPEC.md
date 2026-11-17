@@ -112,6 +112,18 @@ Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
   quiet period because the ring carries no epoch. Those need the wire extension, not another local fix. Drop
   *accounting* and `stream.gap` remain open: they add an event kind, so they need a wire decision and
   belong with the parity work, not with this fix. 102 tests green.
+- v0.11.2 — a streaming request that does not finish now ends the way §5.5 and §6 already said it
+  would. §5.5 promised that a client which hangs up takes the same path as `DELETE /admin/tickets/{id}`;
+  the HTTP layer never wired `RequestAborted` to the ticket, so an abandoned stream was served to the
+  end into a closed socket, held its engine slot, and was recorded as `request.completed` — a truncated
+  request indistinguishable from a served one, in the stats and in the event feed. The pump also
+  swallowed cancellation and returned normally, which completed the ticket for the same reason. And a
+  stream whose engine answered an error status left its channel open: the response was already a
+  committed 200 event stream, so the caller sat waiting for the error frame §6 promises. Failure now
+  completes the stream channel, cancellation propagates to a `cancelled` terminal state, and the
+  request's own abort cancels the ticket. New `StreamingFailureTests` pins both cases against a live
+  `ServerApp`, and the test fake can trickle a stream frame-by-frame so a mid-stream hang-up is
+  observable rather than assumed. 109 tests green.
 
 ## 1. Overview
 
