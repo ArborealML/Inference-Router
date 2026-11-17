@@ -1,3 +1,4 @@
+using Arboreal.InferenceRouter.Lifecycle;
 using System.Text.Json;
 using Arboreal.InferenceRouter;
 
@@ -10,18 +11,18 @@ public class LifecycleCommandTests
     [Fact]
     public void Quotes_Args_For_Argv_Resplit()
     {
-        Assert.Equal("a", EngineRuntime.BuildArgumentString(["a"]));
-        Assert.Equal("\"a b\"", EngineRuntime.BuildArgumentString(["a b"]));
-        Assert.Equal("\"\"", EngineRuntime.BuildArgumentString([""]));
-        Assert.Equal("\"printf 1 > /tmp/x\"", EngineRuntime.BuildArgumentString(["printf 1 > /tmp/x"]));
-        Assert.Equal("\"say \\\"hi\\\"\"", EngineRuntime.BuildArgumentString(["say \"hi\""]));
-        Assert.Equal("\"back\\slash\"", EngineRuntime.BuildArgumentString(["back\\slash"]));
+        Assert.Equal("a", DelegatedExecProvider.BuildArgumentString(["a"]));
+        Assert.Equal("\"a b\"", DelegatedExecProvider.BuildArgumentString(["a b"]));
+        Assert.Equal("\"\"", DelegatedExecProvider.BuildArgumentString([""]));
+        Assert.Equal("\"printf 1 > /tmp/x\"", DelegatedExecProvider.BuildArgumentString(["printf 1 > /tmp/x"]));
+        Assert.Equal("\"say \\\"hi\\\"\"", DelegatedExecProvider.BuildArgumentString(["say \"hi\""]));
+        Assert.Equal("\"back\\slash\"", DelegatedExecProvider.BuildArgumentString(["back\\slash"]));
     }
 
     [Fact]
     public void Joins_Multiple_Args_With_Spaces()
         => Assert.Equal("/bin/sh -c \"select-model strata big\"",
-            EngineRuntime.BuildArgumentString(["/bin/sh", "-c", "select-model strata big"]));
+            DelegatedExecProvider.BuildArgumentString(["/bin/sh", "-c", "select-model strata big"]));
 
     [Fact]
     public async Task RoundTrips_Arguments_Through_A_Real_Shell()
@@ -34,7 +35,7 @@ public class LifecycleCommandTests
             var psi = new System.Diagnostics.ProcessStartInfo
             {
                 FileName = "/bin/sh",
-                Arguments = EngineRuntime.BuildArgumentString(["-c", $"printf ok > {marker}"]),
+                Arguments = DelegatedExecProvider.BuildArgumentString(["-c", $"printf ok > {marker}"]),
                 UseShellExecute = false,
             };
             using var proc = System.Diagnostics.Process.Start(psi)!;

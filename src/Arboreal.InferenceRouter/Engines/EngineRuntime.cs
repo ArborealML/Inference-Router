@@ -1,7 +1,7 @@
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
-using System.Diagnostics;
+using Arboreal.InferenceRouter.Lifecycle;
 
 namespace Arboreal.InferenceRouter;
 
@@ -17,6 +17,7 @@ public sealed class EngineRuntime : IAsyncDisposable
     private readonly string? _apiKey;
     private readonly PrefixTrie _trie;
     private readonly SemaphoreSlim _switchLock = new(1, 1);
+    private readonly EngineLifecycleCoordinator _lifecycle;
     private readonly int _maxInflight;
 
     private volatile bool _healthy;
@@ -46,11 +47,13 @@ public sealed class EngineRuntime : IAsyncDisposable
         public override string ToString() => Model is null ? "none" : Model;
     }
 
-    public EngineRuntime(EngineDefinition def, RouterConfig config, EventRing events, HttpMessageHandler? handler = null)
+    public EngineRuntime(EngineDefinition def, RouterConfig config, EventRing events, HttpMessageHandler? handler = null,
+                         IEngineLifecycleProvider? lifecycle = null)
     {
         _def = def;
         _config = config;
         _events = events;
+        _lifecycle = new EngineLifecycleCoordinator(lifecycle ?? new DelegatedExecProvider());
         _maxInflight = Math.Max(1, config.Scheduler.MaxInflightPerEngine);
         _trie = new PrefixTrie(config.Scheduler.PrefixTrieMaxNodes);
         _apiKey = ResolveApiKey(def);
@@ -69,6 +72,10 @@ public sealed class EngineRuntime : IAsyncDisposable
 
     public string Name => _def.Name;
     public EngineDefinition Definition => _def;
+    public string LifecycleProvider => _lifecycle.Kind;
+    /// <summary>Advisory trace of the last lifecycle transactions on this engine: why a switch was
+    /// refused, what was stopped, what was launched. Not part of the wire contract.</summary>
+    public IReadOnlyList<string> LifecycleJournal => _lifecycle.Journal;
     public bool Healthy => _healthy;
     public string[] LoadedModels => _loadedModels;
     public int Inflight => Volatile.Read(ref _inflight);
@@ -341,7 +348,7 @@ public sealed class EngineRuntime : IAsyncDisposable
         try
         {
             var def = _config.Engines[_def.Name];
-            if (!def.Catalog.TryGetValue(model, out var md) || md.Select is null)
+            if (!def.Catalog.TryGetValue(model, out var md))
             {
                 state.Ready.TrySetResult(false);
                 Emit("engine.switch_failed", model: model, reason: "no_select_command");
@@ -349,55 +356,24 @@ public sealed class EngineRuntime : IAsyncDisposable
             }
             var profileName = profileOverride?.Name ?? md.Profile;
             Emit("engine.switch_started", model: model, reason: profileName is null ? null : $"profile={profileName}");
-            var cmd = md.Select;
-            var args = ExpandArgs(cmd.Args, model, profileName);
-            using var proc = new Process
+
+            // One transaction through the provider seam: prove ownership, validate, stop what is ours,
+            // launch the exact target. What "launch" means is the provider's business; the ordering is
+            // the router's, and it is what keeps a refusal from costing the engine anything it had.
+            var target = new LifecycleTarget(_def.Name, model, profileOverride, md);
+            var launched = await _lifecycle.SwitchAsync(target, ct).ConfigureAwait(false);
+            if (!launched.Succeeded)
             {
-                StartInfo = new ProcessStartInfo
-                {
-                    FileName = cmd.Exec,
-                    Arguments = BuildArgumentString(args),
-                    UseShellExecute = false,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                },
-            };
-            using var exitCts = new CancellationTokenSource(cmd.WaitTimeoutMs);
-            using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, exitCts.Token);
-            if (!proc.Start()) throw new IOException($"failed to start {cmd.Exec}");
-            // Drain both pipes concurrently: chatty lifecycle commands (select-model prints progress)
-            // must not block on a full pipe buffer while we wait for exit.
-            var stdoutTask = proc.StandardOutput.ReadToEndAsync(CancellationToken.None);
-            var stderrTask = proc.StandardError.ReadToEndAsync(CancellationToken.None);
-            var exited = true;
-            try { await proc.WaitForExitAsync(linked.Token).ConfigureAwait(false); }
-            catch (OperationCanceledException) { exited = false; }
-            if (!exited)
-            {
-                try { proc.Kill(entireProcessTree: true); } catch (InvalidOperationException) { }   // already exited
                 state.Ready.TrySetResult(false);
-                Emit("engine.switch_failed", model: model, reason: $"timeout_after_{cmd.WaitTimeoutMs}ms");
+                Emit("engine.switch_failed", model: model, reason: launched.Reason ?? "lifecycle_failed");
                 Volatile.Write(ref _switchState, new SwitchState());
                 return;
             }
-            var stderr = string.Empty;
-            try { stderr = await stderrTask.WaitAsync(TimeSpan.FromSeconds(5), CancellationToken.None).ConfigureAwait(false); }
-            catch (TimeoutException) { /* pipe held by a grandchild: proceed without stderr */ }
-            try { await stdoutTask.WaitAsync(TimeSpan.FromSeconds(5), CancellationToken.None).ConfigureAwait(false); }
-            catch (TimeoutException) { /* stdout is only drained to avoid pipe deadlock */ }
-            if (proc.ExitCode != 0)
+            var readiness = _lifecycle.Readiness(target);
+            if (readiness.ProveHealth)
             {
-                state.Ready.TrySetResult(false);
-                var tail = stderr.Trim();
-                if (tail.Length > 140) tail = tail[..140];
-                Emit("engine.switch_failed", model: model, reason: $"exit={proc.ExitCode} {tail}");
-                Volatile.Write(ref _switchState, new SwitchState());
-                return;
-            }
-            if (cmd.WaitHealth)
-            {
-                var deadline = DateTimeOffset.UtcNow + TimeSpan.FromMilliseconds(cmd.WaitTimeoutMs);
-                while (DateTimeOffset.UtcNow < deadline && !linked.IsCancellationRequested)
+                var deadline = DateTimeOffset.UtcNow + readiness.Timeout;
+                while (DateTimeOffset.UtcNow < deadline && !ct.IsCancellationRequested)
                 {
                     // Probe first: it refreshes the window gauge that the profile check below reads.
                     var healthy = await ProbeStateAsync(ct).ConfigureAwait(false);
@@ -446,66 +422,6 @@ public sealed class EngineRuntime : IAsyncDisposable
         }
     }
 
-    private static string[] ExpandArgs(string[] args, string model, string? profile)
-    {
-        var expanded = new string[args.Length];
-        for (var i = 0; i < args.Length; i++)
-        {
-            expanded[i] = args[i]
-                .Replace("{{model}}", model, StringComparison.Ordinal)
-                .Replace("{{profile}}", profile ?? "", StringComparison.Ordinal)
-                .Replace("{{suffixCache}}", "", StringComparison.Ordinal);
-        }
-        return expanded;
-    }
-
-    /// <summary>Build the single argument string that .NET re-splits into argv. Args are quoted with
-    /// CommandLineToArgvW rules (the parser .NET uses on Unix too) so lifecycle commands can carry
-    /// spaces, e.g. exec=/bin/sh args=["-c", "select-model strata {{profile}}"].</summary>
-    internal static string BuildArgumentString(string[] args)
-    {
-        var sb = new StringBuilder();
-        foreach (var a in args)
-        {
-            if (sb.Length > 0) sb.Append(' ');
-            AppendQuoted(sb, a);
-        }
-        return sb.ToString();
-    }
-
-    private static void AppendQuoted(StringBuilder sb, string arg)
-    {
-        if (arg.Length == 0)
-        {
-            sb.Append("\"\"");
-            return;
-        }
-        var needsQuotes = false;
-        foreach (var c in arg)
-        {
-            if (c is ' ' or '\t' or '"' or '\\') { needsQuotes = true; break; }
-        }
-        if (!needsQuotes)
-        {
-            sb.Append(arg);
-            return;
-        }
-        sb.Append('"');
-        var backslashes = 0;
-        foreach (var c in arg)
-        {
-            if (c == '\\')
-            {
-                backslashes++;
-                continue;
-            }
-            if (c == '"') sb.Append('\\', backslashes * 2 + 1).Append('"');
-            else { if (backslashes > 0) sb.Append('\\', backslashes); sb.Append(c); }
-            backslashes = 0;
-        }
-        if (backslashes > 0) sb.Append('\\', backslashes * 2);
-        sb.Append('"');
-    }
 
     public string? CanonicalModel(string requested)
     {
@@ -569,6 +485,7 @@ public sealed class EngineRuntime : IAsyncDisposable
         _http.Dispose();
         _ownedHandler?.Dispose();
         _switchLock.Dispose();
+        _lifecycle.Dispose();
         await Task.CompletedTask;
     }
 }
