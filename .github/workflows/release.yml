@@ -378,8 +378,9 @@ jobs:
           # "7 <url> v0.1.0 v0.1.0 true false" and satisfied tag, name, draft and prerelease at once —
           # four comparisons passed by fields that were never there. Typed comparison refuses a string
           # "true" where a boolean true is required, and refuses a string id. (`.target_commitish` is
-          # deliberately not compared: the API says it is unused for a tag that already exists, so it
-          # proves nothing about which commit is released.)
+          # deliberately not compared — the API says it is unused for a tag that already exists, so it
+          # proves nothing about which commit is released — and deliberately not sent either: see the
+          # §14 note on the workflow-write guard, which is evaluated against the target the API resolves.)
           if ! printf '%s' "$created" | jq -e --arg tag "$TAG" --argjson pre "$prerelease" \
                '(.id | type) == "number" and .id > 0 and ((.upload_url // "") | type) == "string"
                 and .tag_name == $tag and .name == $tag and .draft == true and .prerelease == $pre' \
