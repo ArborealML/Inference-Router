@@ -3,11 +3,11 @@ id: TASK-1
 title: >-
   Native engine-lifecycle provider: talk to Docker directly, replace the
   shell-out selector
-status: Blocked
+status: To Do
 assignee:
-  - '@claire'
+  - '@qwen3.8-flash-next'
 created_date: '2026-11-16T20:39:00Z'
-updated_date: '2026-11-17T02:19:00Z'
+updated_date: '2026-11-17T02:30:00Z'
 labels: []
 milestone: v0.9 - native engine lifecycle
 dependencies:
@@ -48,6 +48,8 @@ per model with native lifecycle.
 Blocked on two decisions (decision-1 authorization model, decision-2 launch-tuning boundary) and one external design review whose result is held outside this repository; the plan will be written into this task before implementation starts.
 
 Blocked on TASK-20 — the next move is the lifecycle mechanism and authorisation decision, which belongs to a human. Work here resumes when that task is closed.
+
+Unblocked by checking rather than by a new decision: the provider shape is settled (raw Engine HTTP over a swappable seam), and the two decisions that used to gate it — refuse rather than escalate on ownership, and launch tuning — are recorded. Every acceptance criterion on this task can be met against a test fake with no daemon present, so implementation does not wait on anything. Only end-to-end verification against a real Docker host needs the daemon-route question answered.
 <!-- SECTION:NOTES:END -->
 
 ## Dependencies still open (decisions, not work)

@@ -22,3 +22,15 @@ The map groups the library behind an entry labelled "Unidentified container", wh
 <!-- AC:BEGIN -->
 - [ ] #1 One of A, B or C is chosen, in one line
 <!-- AC:END -->
+
+## Do this (about 5 minutes)
+
+1. Run `groma view` in the repo (or `groma web` for the browser map) and find how the library's own
+   components hang off a container the map labels as unidentified.
+2. The map lives under `groma/systems/inference-router/` — `system.md`, `containers/`, `components/`.
+   While you are there: `containers/` holds near-duplicates (`air-cli` and `…-cli`, `air-server` and
+   `…-server`), which is the same mess pointing the other way.
+3. Reply with one letter: **A** accept the label and change nothing, **B** declare a container for the
+   library so it maps as itself, **C** split the map per executable with the library shared under each.
+
+Answer format: `TASK-19: B`. All map edits go through the `groma` CLI and are mine to do.
