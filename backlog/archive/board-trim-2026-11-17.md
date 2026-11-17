@@ -688,3 +688,38 @@ because it explains why the board sequenced the first tag against the ruleset at
 
 And the sentence the task's Notes no longer carries: "the release path publishes whatever the tag points at, under a
 version number people trust."
+
+### TASK-42 (superseded narrative, 19:2xZ)
+
+**Order, as performed.** Ruleset and immutability first: a canary against an unprotected repository proves nothing about
+protection. The live ruleset protects `update` and `deletion` and omits `creation`, so a new `v*` tag pushes fine —
+measured twice; whether a `creation` rule with `bypass_actors: []` would have blocked the pusher is untested.
+
+**Canary 1 is evidence the gate works, not that it failed.** Both legs built and smoke-tested, then publish refused: the
+gate byte-compared a checksum record whole, and Windows writes it in binary mode where GNU coreutils writes text — equal
+digests, unequal lines. Fixed at 9910c0f (v0.12.23), harness to 132 cases, row in
+[SPEC.md](https://github.com/ArborealML/Inference-Router/blob/main/SPEC.md) §15.
+
+**Proves only what the tagged commit's workflow can do**; the floor rule is on TASK-28 and the gh version floor (no `gh
+release verify` or `gh attestation` in 2.46.0) on TASK-48.
+
+### TASK-42 (superseded narrative, 19:3xZ)
+
+**Order, as performed, and canary 1's near-miss: superseded narrative, kept in
+[board trim, 2026-11-17](https://github.com/ArborealML/Inference-Router/blob/main/backlog/archive/board-trim-2026-11-17.md).**
+Ruleset and immutability came first; canary 1 built both legs and was refused at publish by the gate's own checksum
+comparison, fixed at 9910c0f (v0.12.23), 132 harness cases.
+
+### TASK-42 (trimmed from the task body 19:4xZ)
+
+**Immutability protects less than this task assumed — measured in the laboratory repository at 19:2xZ.** On a published
+immutable release an asset was deleted (`204`) and a **different file uploaded under the same name** (`201`); the download
+URL serves the new bytes and the old asset is gone. `PATCH` on the release and on the asset answer 200. With no ruleset,
+`git push -f` **moved the tag of a published immutable release**. What the flag does hold: deleting the release leaves the
+tag name burned (`422 tag_name was used by an immutable release`), and implicit tag creation is refused where creation is
+restricted. So the tag ref's only measured protection is the ruleset (`update` + `deletion`), and asset integrity rests on
+the gate's digest records plus the post-publish readback — TASK-48's job, now load-bearing rather than optional.
+**The tag-identity guard is already in the gate, measured in the open** (publish re-resolves the tag and refuses unless
+its commit equals what the legs built, release.yml:500-510; checkout pins the same commit at release.yml:191). Owed still:
+the **post**-publication peel re-check, and a SPEC line that `target_commitish` is not a pin — the canary answers `main`
+there while the peeled tag is 9910c0f.

@@ -21,47 +21,44 @@ ordinal: 49000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-**Answered: yes — one disposable public repository, and no new spend.** The option analysis landed at 17:4xZ and this board
-**adopted** it, checked against what this repository measures. The money half was settled by the owner on
-2026-11-17: `we're not doing paid minutes for this`; every run here is Actions minutes on a public repository, Linux and
-Windows legs only (decision-10 keeps macOS off the board, and macOS is the leg this account is billed for).
+**Answered and run: one disposable repository, no new spend.** Adopted from the external option analysis and checked
+against this repository's measurements. No spend was requested — the owner's line is `we're not doing paid minutes for
+this`, and every run is Actions minutes on a public repository, Linux and Windows legs only.
 
-**The shape.** One unique, non-fork repository under the organisation, name with a nonce, workflow pinned to the approved
-commit, both legs and the tag trigger and the publication sequence identical, and the destructive half run there:
-duplicate release on an existing tag (the `422` never observed), asset replacement and tag move against a published
-immutable release, draft tampering, publish-then-delete, and whether a `creation` rule with `bypass_actors: []` blocks the
-account that pushes a release tag. Delete it afterwards, exporting settings, responses, run ids and hashes first.
-**Audit every destination** — `-R`, `GH_REPO`, checkout and API calls — so no lab probe can land on this repository.
+**Where the laboratory had to be: the user account, not the org.** Creating an org repository needs `admin:org`, which this
+token lacks (measured 404), so the laboratory is a user-owned public repository. All probes are repository-scoped, so the
+semantics transfer; org-level rulesets could not be enumerated, and that stays a stated limit rather than a conclusion.
 
-**What a rehearsal does not buy.** Rulesets and immutable releases are per-repository: the lab proves the workflow and the
-API semantics, never that this repository's protections are installed and effective, so the settings facts are still read
-back here on TASK-38 and TASK-45. A lab `tag_name` costs nothing; this
-repository's canary name is spent deliberately.
+**What the laboratory proved, at 19:2xZ** (measured, not reasoned): a `creation` rule with `bypass_actors: []` refuses both
+the Actions token's tag push (GH013) and the owner PAT, so it would break the release path — the production ruleset omits
+`creation`; with `update` + `deletion` only, the token creates a new `v*` tag and cannot force-move a protected one. A
+duplicate release on one tag answers `422 already_exists field: tag_name`. **Immutable releases do not protect assets or
+the tag ref**: an asset on a published immutable release was deleted and a different file uploaded under the same name, and
+the download URL serves the new bytes; with no ruleset a force-push moved a published immutable release's tag. What the
+flag does hold is the version name: deleting the release leaves it burned.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [x] #1 the option analysis landed and its answer is recorded here as adopted, with what this board checked locally
-- [x] #2 the answer names where each destructive test runs and the shape of the disposable repository: unique name, pinned workflow, both legs, every probe destination audited
+- [x] #2 the answer names where each destructive test runs and the shape of the disposable repository: pinned workflow, both legs, destinations audited
 - [x] #3 the spend line is settled: two legs, Linux and Windows, no paid macOS minutes, and no new paid minutes requested
-- [ ] #4 the disposable repository exists under the organisation, workflow pinned to the approved commit, settings read back, destinations audited, before any destructive case runs
-- [ ] #5 it is deleted after the battery, with settings, responses, run ids, hashes and run links exported first, and the deletion reported
+- [x] #4 the laboratory exists with its workflow pinned and settings read back before any destructive case ran, under the user account because org creation needs `admin:org` and this token lacks it
+- [ ] #5 it is deleted after the battery — evidence exported and it is archived, but `DELETE` answers 403 for this token, so the delete is a person's act on the task named for it
 <!-- AC:END -->
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-**Two probes adopted from the analysis that this board had not planned.** (1) A refusal to move a **published**
-release's tag cannot tell ruleset enforcement from immutability: prove the ruleset by probing update and deletion on a
-live `v*` tag **before** any release is published, and require a causal error plus a readback — a generic 4xx proves
-nothing. (2) `target_commitish` is ignored when the tag already exists, so immutability can freeze the wrong source. The
-before-publish half is already in the gate and ran in the open (release.yml:191, 500-510); what is owed is the
-**post**-publication peel re-check and a SPEC line that `target_commitish` is not a pin.
+**Wake: the laboratory deleted** (AC #5, and the human task cut for it).
 
-**Links**
-- The gate a rehearsal would copy: [.github/workflows/release.yml](https://github.com/ArborealML/Inference-Router/blob/main/.github/workflows/release.yml); its acceptance criteria: [SPEC.md](https://github.com/ArborealML/Inference-Router/blob/main/SPEC.md) §14.
-- Where the acts land: [TASK-42](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-42%20-%20Run-the-canary-through-the-real-gate-knowing-the-version-name-is-burned.md) canary, [TASK-38](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-38%20-%20Act-put-a-v-ruleset-on-the-repository-and-read-it-back.md) ruleset, [TASK-45](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-45%20-%20Enable-GitHub-immutable-releases-before-the-first-tag.md) immutable releases, [TASK-28](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-28%20-%20Cut-the-first-release-tag-and-watch-the-release-run.md) the first tag.
-- Spend rule: decision-10. Live state at the dispatch: no rulesets, no tags, no releases, immutability off.
+**Consequences for the other tasks.** Asset integrity rests on the gate's digest records and the post-publish readback, not
+on the immutable flag, which makes the download readback load-bearing. The tag ref's only measured protection is the
+ruleset. Two harness lessons: the same-name asset `422` is an ordinary collision and not an immutability guarantee, and
+`GET /releases` read read-after-write inconsistent three times — read objects by the id the create response returned.
+Raw captures (statuses, bodies, ids, run ids, served-byte comparisons) sit in an untracked working directory.
+
+**Links**: the gate copied into the laboratory ([.github/workflows/release.yml](https://github.com/ArborealML/Inference-Router/blob/main/.github/workflows/release.yml)); spend rule decision-10; the acts that follow on TASK-38, TASK-42 and TASK-48.
 
 Superseded log entries for this task: [board trim, 2026-11-17](https://github.com/ArborealML/Inference-Router/blob/main/backlog/archive/board-trim-2026-11-17.md).
 <!-- SECTION:NOTES:END -->

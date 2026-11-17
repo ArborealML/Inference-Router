@@ -71,8 +71,8 @@ prose and gets reworded, not an edge to add.
 **What gates this, as events.** [TASK-38](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-38%20-%20Act-put-a-v-ruleset-on-the-repository-and-read-it-back.md)'s ruleset — landed and read back at 18:2xZ:
 it protects `update` and `deletion` and leaves `creation` out, so pushing a new `v*` tag succeeds and this tag is not
 blocked; [TASK-45](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-45%20-%20Enable-GitHub-immutable-releases-before-the-first-tag.md) done; [TASK-44](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-44%20-%20Close-the-open-release-gate-review-findings-SPEC-v0-12-15-onward.md) closed; CI green on the tagged commit.
-The board's earlier reason for sequencing the ruleset against this tag — a `creation` rule with empty `bypass_actors`
-blocking the pusher — is **untested**; that probe runs in the disposable repository.
+Measured since in the laboratory repository: a `creation` rule with empty `bypass_actors` blocks the Actions token and
+the owner PAT, so the production ruleset omits `creation` and this tag's push is not blocked.
 
 **Preconditions, not criteria:** two-platform legs (TASK-15, closed) and platform surface (decision-10). Which commit
 raised the floor last is history in git and the SPEC log; the rule above is the floor, so no sha here goes stale. Superseded log entries for this task: [board trim, 2026-11-17](https://github.com/ArborealML/Inference-Router/blob/main/backlog/archive/board-trim-2026-11-17.md).

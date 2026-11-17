@@ -18,7 +18,7 @@ ordinal: 37000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-**An act, not a decision: create a `v*` tag ruleset and read it back.** Read the live state before posting: a ruleset is the scriptable route here (the tag-protection endpoint answers 404 for this token), and the answer at the moment of the act goes in the report. About 20 minutes with `gh api`, reversible with a DELETE.
+**An act, not a decision: create a `v*` tag ruleset and read it back.** Read the live state first: a ruleset is the scriptable route here (the tag-protection endpoint answers 404 for this token),  About 20 minutes with `gh api`, reversible.
 
     gh api repos/ArborealML/Inference-Router/rulesets      # read live, do not quote an older answer
 
@@ -50,9 +50,9 @@ canary's tag under it. Adding `conditions: {ref_name: {include: ["refs/tags/v*"]
 `/repos/{o}/{r}/rulesets/{id}` answers 404) made the same two probes refuse. The list endpoint shows no rules: read back
 `GET /repos/{o}/{r}/rulesets/{id}`. (2) **The shape, measured:** rules `update` and `deletion`, no
 `creation` rule — creating a new `v*` tag succeeds, moving one and deleting one are refused — so ruleset-then-tag is not a
-deadlock. **Untested, and no task may state it as fact:** whether a `creation`
-rule with `bypass_actors: []` blocks the account that pushes the tag. That probe belongs in the disposable repository on
-TASK-49, where a burned name costs nothing.
+deadlock. **Measured in the laboratory repository at 19:2xZ:** a `creation` rule refuses the Actions token's tag push (GH013) *and*
+the owner PAT (API 422 `Reference update failed`), so it would break the release path; the production ruleset omits
+`creation`, and with `update`+`deletion` only the Actions token created a new `v*` tag while its force-move was refused.
 
 Superseded log entries: [board trim, 2026-11-17](https://github.com/ArborealML/Inference-Router/blob/main/backlog/archive/board-trim-2026-11-17.md).
 
