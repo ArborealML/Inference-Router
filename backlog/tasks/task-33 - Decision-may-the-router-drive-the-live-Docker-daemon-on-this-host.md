@@ -5,7 +5,7 @@ status: To Do
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T07:53:00Z'
-updated_date: '2026-11-17T14:48:00Z'
+updated_date: '2026-11-17T15:01:00Z'
 labels:
   - engine
   - lifecycle
@@ -38,7 +38,7 @@ posture the README should state rather than leave implied.
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Answer in one line: allow one lifecycle transaction on this host, or no live daemon runs and verification stays on fakes
+- [ ] #1 the router does not drive the live Docker daemon on this host: the answer is written into SPEC 5.3.1 as a posture, with the refuse-don't-escalate rule (decision-1) named
 <!-- AC:END -->
 
 ## Implementation Notes

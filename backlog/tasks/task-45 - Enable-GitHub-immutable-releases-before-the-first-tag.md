@@ -1,11 +1,11 @@
 ---
 id: TASK-45
 title: Enable GitHub immutable releases before the first tag
-status: Blocked
+status: Waiting
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T10:52:00Z'
-updated_date: '2026-11-17T13:56:00Z'
+updated_date: '2026-11-17T15:01:00Z'
 labels:
   - ci
   - release
@@ -50,7 +50,6 @@ Report line owed by whoever performs this (decision-16): the exact call used —
 ## Comments
 
 <!-- COMMENTS:BEGIN -->
-
 created: 2026-11-17T13:56:00Z
 
 ---
@@ -59,4 +58,11 @@ Blocked on TASK-49 (a): enabling immutable releases makes a canary permanent-by-
 
 ---
 
+created: 2026-11-17T15:01:00Z
+
+---
+
+**Waiting, not Blocked:** the enable is two `gh api` calls and the assignee is an agent. **Wake:** TASK-49's answer about where the destructive tests run, because enabling immutability before that answer makes a burned version name likely.
+
+---
 <!-- COMMENTS:END -->

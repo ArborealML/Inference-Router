@@ -5,13 +5,14 @@ status: Waiting
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T07:30:00Z'
-updated_date: '2026-11-17T14:48:00Z'
+updated_date: '2026-11-17T15:01:00Z'
 labels:
   - release
 dependencies:
   - TASK-42
   - TASK-44
   - TASK-45
+  - TASK-50
 priority: medium
 ordinal: 31000
 ---
@@ -39,7 +40,7 @@ runner leg.
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Answer in one line: cut v0.1.0, or hold with a reason
+- [ ] #1 the release tag exists on `main`, the release run is reported from its own log, and the published artifacts and their digests are listed
 <!-- AC:END -->
 
 ## Implementation Notes

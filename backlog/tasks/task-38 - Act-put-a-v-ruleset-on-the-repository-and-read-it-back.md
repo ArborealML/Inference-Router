@@ -1,11 +1,11 @@
 ---
 id: TASK-38
 title: 'Act: put a v* ruleset on the repository and read it back'
-status: Blocked
+status: Waiting
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T09:11:00Z'
-updated_date: '2026-11-17T14:50:00Z'
+updated_date: '2026-11-17T15:01:00Z'
 labels:
   - release
   - security
@@ -68,7 +68,6 @@ remaining hole in a path that has been hardened four times this morning, and it 
 ## Comments
 
 <!-- COMMENTS:BEGIN -->
-
 created: 2026-11-17T14:10:00Z
 
 ---
@@ -77,4 +76,11 @@ Ownership corrected: the ruleset-scope question was parked on the owner by mista
 
 ---
 
+created: 2026-11-17T15:01:00Z
+
+---
+
+**Waiting, not Blocked:** the ruleset POST is an agent act (decision-16). **Wake:** TASK-49's answer about the throwaway repository, which is where the ruleset gets exercised against the destructive cases.
+
+---
 <!-- COMMENTS:END -->

@@ -4,7 +4,7 @@ title: >-
   A public version number is the owner's go-ahead; a test tag inside an
   agent-run protocol is an agent act
 date: '2026-11-17T14:26:00Z'
-status: accepted
+status: proposed - pending owner ratification on TASK-50
 ---
 ## Context
 

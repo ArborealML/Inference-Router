@@ -1,11 +1,11 @@
 ---
 id: TASK-28
 title: Cut the first release tag and watch the release run
-status: Blocked
+status: Waiting
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T05:58:00Z'
-updated_date: '2026-11-17T13:30:00Z'
+updated_date: '2026-11-17T15:01:00Z'
 labels:
   - release
   - ci
@@ -84,7 +84,6 @@ Three confirmations only a live run can give, REPLACING the three by-tag ones wr
 ## Comments
 
 <!-- COMMENTS:BEGIN -->
-
 created: 2026-11-17T13:30:00Z
 
 ---
@@ -93,4 +92,11 @@ Sequencing trap, from the plan review dispositioned in SPEC v0.12.20 and re-meas
 
 ---
 
+created: 2026-11-17T15:01:00Z
+
+---
+
+**Waiting, not Blocked:** every assignee here is an agent, so per the revised rule a task that waits on another task sits in Waiting and names it. **Wake:** TASK-50's `go` (or the owner's `ratify decision-21: no`, which removes the gate), plus the `v*` ruleset read back on TASK-38 and TASK-45 done — the ruleset's `creation` rule must be settled before a `v*` tag can be pushed at all.
+
+---
 <!-- COMMENTS:END -->
