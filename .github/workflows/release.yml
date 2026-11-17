@@ -637,8 +637,15 @@ jobs:
             exit 0
           fi
           brief() { printf '%s' "$1" | LC_ALL=C tr -c '\40-\176' '?' | LC_ALL=C cut -c1-200 | sed -e 's/%/%25/g' -e 's/:/%3A/g'; }
-          rsum() { printf '%s' "$1" | jq -r '[.id,.tag_name,.name,.draft,.prerelease]
-                       | map(if . == null then "absent" else .|tostring end) | join(" ")' 2>/dev/null \
+          rsum() { printf '%s' "$1" | jq -r '
+              def f(v; n): (if v == null then "absent"
+                            elif (v | type) == "string"
+                              then (if (v | length) > n
+                                    then v[0:n] + "+(" + (v | length | tostring) + "ch)"
+                                    else v end)
+                            else (v | tojson) end);
+              "id=" + f(.id; 20) + " tag=" + f(.tag_name; 40) + " name=" + f(.name; 40)
+              + " draft=" + f(.draft; 12) + " pre=" + f(.prerelease; 12)' 2>/dev/null \
                      || echo "unreadable response"; }
           # The empty string matches `*[!0-9]*` as "no bad characters" and would be deleted by name.
           # Nothing reaches here empty — the step exits earlier — but a DELETE guard that is only

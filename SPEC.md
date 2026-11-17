@@ -363,7 +363,8 @@ daemon transaction per engine. 137 tests green.
   prerelease and the address each with its own cap and its true length — so a 300-character title can no longer
   push the flags past the 200-character cut (`name_crowding`), and a field of the wrong type is shown as JSON
   rather than collapsing the line (`url_wrong_type`); the earlier version also printed `tojson` of the whole
-  response instead of the field, which the new cases caught. **Verified rather than changed**: the address
+  response instead of the field, which the new cases caught. The cleanup step's summary of a release lookup is
+  bounded the same way, so the two jobs describe a bad response in the same shape. **Verified rather than changed**: the address
   literal in the file is a plain string (`cat -A` shows `upload_base="https://uploads.github.com/…"` — the
   review's Markdown-link worry was an artifact of how my own payload was rendered), and asset names reach the
   `?name=` query only through an allowlist of literal leg ids, so a character needing percent-encoding cannot
