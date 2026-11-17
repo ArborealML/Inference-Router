@@ -156,3 +156,34 @@ it without asking a follow-up question.
 Move the board at each work boundary — any commit or push that changes what the next move is — not at end
 of day. Anything sitting `Waiting` for a week without being woken gets re-triaged: dispatched, descoped,
 or parked out loud. A column that never changes is a bug in the board, not a fact about the work.
+
+## One writer for the board
+
+The board session (assignee `@qwen3.8-flash-next-board`) is the only session that edits `backlog/`, and it
+commits `board:`-prefixed changes that touch nothing else. The coding session never writes under `backlog/`:
+it sends the board findings it can prove — the file, the line, the command that shows the defect — and the
+board makes the edit. Code and SPEC stay the coding session's, and the board records what landed.
+
+## Task content that survives the tools
+
+- `backlog task view` and the browser render Dependency Graph, Description, Acceptance Criteria, Definition of
+  Done, Implementation Plan, Implementation Notes and Comments. Anything in another section — a `## Final
+  Summary`, any custom heading — is invisible to everyone reading the board. Put the verdict, the steps and
+  the links in Description or Notes, and check your own edit by running `task view` on the task you changed.
+- Criteria live only between `<!-- AC:BEGIN -->` and `<!-- AC:END -->`, one such list per task. A checkbox
+  written in prose, or a second `## Acceptance Criteria` heading left in the file, is a defect even when the
+  rendered list looks right.
+- **Done** means every box in that list is checked. A criterion another task or an accepted SPEC gap carries
+  says so in its own text; a criterion that is genuinely open means the task is not Done, whatever the
+  closing paragraph claims.
+- Finished work names its evidence: the commit, pull request or file, as a link that resolves on `main`.
+  A task that says work happened and points at nothing is not closed, it is abandoned.
+- `@chatswarm` on a task means a request has actually been dispatched to the external service, and the task
+  body says when. Otherwise the next move is a person's and the task is assigned to that person.
+- Duplicate tasks get one survivor: keep the one carrying the criteria and dependencies the board reads,
+  archive the other, and commit the archive. An unarchived or uncommitted duplicate comes back on the next
+  scan, usually with a different answer.
+
+After every landing, the board re-checks these properties mechanically across all tasks — headings, criteria
+boxes against status, assignee against title, status against its wake or blocker, evidence on closed work —
+and fixes what it finds. A defect list that lives only in a chat message is not a pass.
