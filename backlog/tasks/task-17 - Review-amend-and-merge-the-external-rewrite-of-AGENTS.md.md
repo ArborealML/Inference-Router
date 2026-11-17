@@ -5,7 +5,7 @@ status: Blocked
 assignee:
   - '@chatswarm'
 created_date: '2026-11-17T01:27:00Z'
-updated_date: '2026-11-17T02:24:00Z'
+updated_date: '2026-11-17T02:28:00Z'
 labels:
   - docs
   - process
@@ -22,11 +22,11 @@ An external deep-tier request is producing a rewrite of AGENTS.md as a pull requ
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The PR (or a complete replacement file plus an applicable patch, if the writer could not push) changes AGENTS.md and nothing else
-- [ ] #2 The two tool-managed regions (backlog and groma markers and their contents) are byte-identical to main
-- [ ] #3 Every non-negotiable constraint is traced old-to-new, and anything the rewrite dropped or weakened is amended before merge rather than accepted
-- [ ] #4 Each command in the rewritten file is run on this machine and produces what the file claims it produces
-- [ ] #5 The hygiene scan is clean on the PR content and backlog/config.yml is untouched by the merge
+- [x] #1 The PR (or a complete replacement file plus an applicable patch, if the writer could not push) changes AGENTS.md and nothing else
+- [x] #2 The two tool-managed regions (backlog and groma markers and their contents) are byte-identical to main
+- [x] #3 Every non-negotiable constraint is traced old-to-new, and anything the rewrite dropped or weakened is amended before merge rather than accepted
+- [x] #4 Each command in the rewritten file is run on this machine and produces what the file claims it produces
+- [x] #5 The hygiene scan is clean on the PR content and backlog/config.yml is untouched by the merge
 - [ ] #6 The PR is merged and the disposition of every rule change is recorded on the board
 <!-- AC:END -->
 
@@ -40,4 +40,6 @@ The first attempt could not push: GitHub refused branch creation for the integra
 Blocked on TASK-18 — the next move is pull request review and merge, which belongs to a human. Work here resumes when that task is closed.
 
 Deep review of the first two commits: not safe to merge, six findings, five correct against this code and fixed in the follow-up commit — the casing rule overstated what is PascalCase (errors are lowercase everywhere and are a wire break either way), the stale-binary warning was stated as a property of a command CI runs safely rather than of building Debug and testing Release, sample loading was credited to the dry-run when a test loads all three shipped samples, accepted gaps were pointed at the acceptance-criteria section instead of the dispositions section, and the rule had lost who performs the review. Its blocker (the kanban section describing columns the branch config did not carry) was resolved by merging main, where the status list lives. Its ordering point is taken: the lifecycle footgun and the tool preflight now come before the commands, and the hygiene rule names the config dry-run output as something never to paste into public text. A review of the pinned head is in flight. Still blocked on TASK-18.
+
+Re-review of the pinned head: still not merge-ready, twice right again. The stale-binary rule named the wrong configuration (plain --no-build judges Debug, so the advice could have kept an agent testing old code), and the casing rule cited the future-commitments section instead of the HTTP surface section while overstating what the tests pin. Both fixed. The review confirms no rule was lost in the rewrite, the five kanban statuses are real on the branch, and the ordering fix puts the footgun before the commands. Remaining review preferences, deliberately not taken: redacted-by-default config output and a machine gate for the no-paste rule are features, not doc fixes; "operator" is left undefined because the file is read by whoever is working. Head is CI-green, AGENTS.md-only, managed regions byte-identical; ACs 1-5 are met and the merge (AC #6) waits on the human review task.
 <!-- SECTION:NOTES:END -->
