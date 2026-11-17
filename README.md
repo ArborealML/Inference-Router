@@ -224,15 +224,21 @@ does not resolve to a commit, or **any release (draft or published) already uses
 runs before any build. It then builds a stripped Native-AOT `air` for `linux-x64` and `win-x64` on
 native runners, smoke-tests each binary on its own operating system (`tools/ci/smoke.sh`), and only
 then creates the release: a draft with both archives, their per-archive `.sha256` files and
-`SHA256SUMS`. Nothing is published until every declared asset has been checked. It has to be present and
-non-empty, unpack to a tar that actually holds the `air` (or `air.exe`) binary, and match the checksum
-record the leg that built it wrote — digest and filename together, which is what catches a sidecar
-pointing at some other archive. An artifact for a platform that is not declared, or the same filename
-arriving from two artifacts, fails the gate instead of being published or quietly overwritten. The draft
-is then read back from GitHub — asset list, draft and prerelease flags — before anything is made public.
-A tag with a `-suffix` publishes as a GitHub
-prerelease. A failed publish removes only the draft that run created itself. The checksums catch damage in
-transfer and collection; they are not signatures, and they do not prove which runner wrote the bytes. To
+`SHA256SUMS`. Nothing is published until every declared asset has been checked. Each one has to be a real
+file (not a directory or a symlink) and non-empty; the archive has to unpack to a tar holding exactly one
+member, named `air` (or `air.exe`) and nothing else; and it has to match the checksum record the leg that
+built it wrote — digest and filename together, which is what catches a sidecar pointing at some other
+archive. An artifact for a platform that is not declared, an artifact named for two platforms at once, a
+leg folder with a stranger in it, or the same filename arriving from two artifacts fails the gate instead
+of being published or quietly overwritten. Before anything is made public the tag is resolved again and has
+to still name the commit the builds ran on, and the draft is read back from GitHub by the release id this
+run created: its asset list, each asset's upload state and byte size against the file that was uploaded,
+and the draft and prerelease flags. A tag with a `-suffix` publishes as a GitHub
+prerelease. A failed publish removes only the draft that run created itself — the id its own create call
+returned — and a run that never got one deletes nothing. The checksums catch damage in
+transfer and collection; they are not signatures, they do not prove which runner wrote the bytes, and the
+gate does not download the served files and hash them again, so a check after publication is still yours to
+run. To
 exercise the whole pipeline without releasing, run the workflow manually with `dry_run` checked. Two platforms is the published
 surface by decision: a macOS binary is something you build, never something this repository ships. No
 release has been published yet, so this gate is configured rather than proven — the first tag run is the

@@ -1,6 +1,6 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.8)
+Status: draft, continuously revised (v0.12.10)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
@@ -280,6 +280,29 @@ daemon transaction per engine. 137 tests green.
   another run cannot destroy its release. The checksums remain a damage check and not provenance: nothing
   here signs the artifacts or proves which runner wrote them. No tag has been published, so the gate is
   still configured rather than proven.
+- v0.12.10 — a second deep review of the gate (of v0.12.9) found four holes, each reproduced as a
+  forged artifact before being fixed, and each now a standing case in the local gate harness. (a) The
+  cleanup step decided ownership from the release's `created_at` against `github.run_started_at`, which
+  is not a documented Actions context property: read as empty, the comparison protects nothing, and a
+  draft someone else made for the same tag while this run built would be deleted. The create call's own
+  release id is now recorded and is the only thing cleanup will delete — and only while it is still an
+  unpublished draft of that tag; with no id captured, the step touches nothing. (b) The leg allowlist
+  tested `EXPECTED_RIDS` for a substring, so one artifact named for two legs at once was admitted; the
+  match is now word-for-word. (c) The archive member check used `grep -qx "$exe"`, a regex, so an
+  archive whose only member was `airXexe` satisfied "contains `air.exe`", and an archive could carry a
+  second member; members are now matched literally and the archive must hold exactly one. (d) Directories
+  and symlinks were invisible to the inventory walk (`find -type f`) and a directory passes `test -s`, so
+  the leg folder is now walked for every entry, counted against the two the leg produces, and each name has
+  to be a regular non-symlink file. Alongside: the tag is re-resolved to a commit and compared against what
+  the build legs checked out before anything is published (`--verify-tag` only proves a tag exists); every
+  published asset must be in `uploaded` state with the staged file's size; the draft is addressed by its id
+  rather than found by listing releases (which was one page of a hundred); preflight's existing-release
+  check paginates and reports more than one release on a tag as a conflict; and an unknown RID has no
+  implied binary name. Accepted gap, stated rather than fixed: the gate checks the remote asset's name,
+  state and size but does not download the served bytes and hash them, so corruption inside GitHub's own
+  storage between upload and publish is not detected — the published sidecars and `SHA256SUMS` cover the
+  downloader, not the gate. The first tag run still has to confirm the real `download-artifact` layout, the
+  `gh release create --json id` output, draft visibility, and asset `state`/`size` against live uploads.
 
 ## 1. Overview
 
@@ -1306,15 +1329,19 @@ and cohort/residency hysteresis in the scheduler (§12.3 hook).
   warnings — on every push to `main` and every pull request. Tests are POSIX-aware today, so CI
   runs on Linux; each platform binary is still exercised natively at release time.
 - **Published surface** (`.github/workflows/release.yml`): `linux-x64` and `win-x64`, each built and
-  smoke-tested on its own runner, gated before publish. Each leg artifact keeps its own download folder:
-  an artifact named for no declared leg, a file inside a leg folder that leg does not produce, and a
-  basename arriving from two artifacts are all refused. Every archive and sidecar must be present and
-  non-empty, the archive must unpack and contain its `air` / `air.exe` entry, and it must match the whole
-  checksum record its own leg wrote — digest and filename together — rather than a name read out of the
-  sidecar. The upload list is built from the same `EXPECTED_RIDS` list the gate reads, so a leg cannot be
-  verified by one set of names and published by another. The release is created as a draft, inspected on
-  the remote (asset inventory, draft, prerelease) before it is made public, and its published state is
-  asserted afterwards. macOS RIDs stay declared in the Cli project so a local
+  smoke-tested on its own runner, gated before publish. Each leg artifact keeps its own download folder,
+  matched by exact leg name: an artifact named for no declared leg (or for two legs at once), a leg folder
+  holding any entry other than the two that leg produces — a directory or a symlink included — and a
+  basename arriving from two artifacts are all refused. Every archive and sidecar must be present, a regular
+  non-symlink file, and non-empty; the archive must unpack and hold exactly one member named literally
+  `air` / `air.exe`; and it must match the whole checksum record its own leg wrote — digest and filename
+  together — rather than a name read out of the sidecar. The upload list is built from the same
+  `EXPECTED_RIDS` list the gate reads, so a leg cannot be verified by one set of names and published by
+  another. Before publication the tag is re-resolved and must still name the commit the legs built, and the
+  draft is inspected on the remote by the release id this run created: asset inventory, each asset's upload
+  state and byte size against the staged file, and the draft/prerelease flags. A failed run deletes only
+  that captured id, and only while it is still an unpublished draft of that tag; a run that captured no id
+  deletes nothing. macOS RIDs stay declared in the Cli project so a local
   `-r osx-arm64` build works, but no macOS artifact is built, published, claimed or gated: the account has
   no macOS runner minutes, and a leg that queues forever is not a leg that passes. A platform is added
   back with runner minutes, a leg that actually runs, `EXPECTED_RIDS` updated, and README copy that

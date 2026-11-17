@@ -88,8 +88,15 @@ jobs:
           set -euo pipefail
           # Note: the "release by tag name" endpoint hides drafts, so list and filter instead —
           # a half-finished draft from an earlier run must block a new build just as a published
-          # release does.
-          kind="$(gh api "repos/{owner}/{repo}/releases?per_page=100" 2>/dev/null             | python3 -c 'import json,sys; rs=json.load(sys.stdin); m=[r for r in rs if r.get("tag_name")==sys.argv[1]]; print("absent" if not m else ("draft" if m[0].get("draft") else "published"))' "$TAG")"
+          # release does. --paginate means a second page of releases cannot hide an existing one,
+          # and more than one match is reported as a conflict rather than releasing the first hit.
+          flags="$(gh api --paginate "repos/{owner}/{repo}/releases?per_page=100" --jq ".[] | select(.tag_name==\"$TAG\") | .draft" 2>/dev/null | tr '\n' ' ' || true)"
+          set -- ${flags}   # unquoted on purpose: $# is then the number of releases on this tag
+          case "$#" in
+            0) kind=absent ;;
+            1) if [ "$1" = "true" ]; then kind=draft; else kind=published; fi ;;
+            *) kind="conflicting ($#)" ;;
+          esac
           if [ "$kind" != "absent" ]; then
             echo "::error::refusing to build: a $kind release for $TAG already exists (delete it first if a re-release is intended)"
             exit 1
@@ -201,6 +208,9 @@ jobs:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       GH_REPO: ${{ github.repository }}
       TAG: ${{ needs.preflight.outputs.tag }}
+      # The commit preflight resolved from the tag and every build leg checked out. Re-checking it
+      # against the tag before publish is what makes "the tag exists" mean "the tag still means this".
+      COMMIT: ${{ needs.preflight.outputs.commit }}
       # One manifest, two consumers: this list drives both the gate below and the upload list,
       # so a leg cannot be verified by one set of names and published by another.
       EXPECTED_RIDS: "linux-x64 win-x64"
@@ -218,27 +228,46 @@ jobs:
           set -euo pipefail
           stage=stage
           rm -rf "$stage"; mkdir -p "$stage"
-          # Anything downloaded that the declared legs do not name is refused here, so an
-          # unrelated artifact cannot supply an archive or a sidecar that then gets published.
+          # Every declared leg must arrive, and nothing that is not a declared leg may arrive.
+          # Word equality, not a substring test: `case " $EXPECTED_RIDS " in *" $rid "*)` accepts one
+          # artifact named for two legs at once (`asset-linux-x64 win-x64`), which is not a leg.
+          for want in $EXPECTED_RIDS; do
+            test -d "out/asset-$want" || { echo "::error::no artifact arrived for declared leg $want"; exit 1; }
+          done
           for d in out/asset-*; do
-            [ -d "$d" ] || { echo "::error::no leg artifacts were downloaded"; exit 1; }
-            rid="${d#out/asset-}"
-            case " $EXPECTED_RIDS " in
-              *" $rid "*) ;;
-              *) echo "::error::artifact $d names no declared leg ($EXPECTED_RIDS) — refusing to publish"; exit 1 ;;
-            esac
+            [ -d "$d" ] || { echo "::error::$d is not a leg artifact directory"; exit 1; }
+            rid="${d##*/}"; rid="${rid#asset-}"
+            known=false
+            for want in $EXPECTED_RIDS; do
+              if [ "$rid" = "$want" ]; then known=true; fi
+            done
+            if [ "$known" != true ]; then
+              echo "::error::artifact $d names no declared leg ($EXPECTED_RIDS) — refusing to publish"; exit 1
+            fi
+            # The inventory walks every entry, not only regular files: a directory or a symlink
+            # wearing an expected name has to be refused by name, and the leg produces exactly two.
+            count=0
             while IFS= read -r f; do
               base="${f##*/}"
               case "$base" in
                 "air-${rid}.tar.gz"|"air-${rid}.tar.gz.sha256") ;;
                 *) echo "::error::$d carries $base, which the $rid leg does not produce"; exit 1 ;;
               esac
-            done < <(find "$d" -maxdepth 1 -type f)
+              count=$((count+1))
+            done < <(find "$d" -mindepth 1 -maxdepth 1)
+            if [ "$count" -ne 2 ]; then
+              echo "::error::$d holds $count entries; the $rid leg produces exactly 2"; exit 1
+            fi
+            for n in "air-${rid}.tar.gz" "air-${rid}.tar.gz.sha256"; do
+              if [ -L "$d/$n" ] || [ ! -f "$d/$n" ]; then
+                echo "::error::$d/$n is not a regular file"; exit 1
+              fi
+              test -s "$d/$n" || { echo "::error::missing or empty $d/$n — the $rid leg did not produce an asset"; exit 1; }
+            done
           done
           for rid in $EXPECTED_RIDS; do
             d="out/asset-${rid}"
             for n in "air-${rid}.tar.gz" "air-${rid}.tar.gz.sha256"; do
-              test -s "$d/$n" || { echo "::error::missing or empty $d/$n — the $rid leg did not produce an asset"; exit 1; }
               if [ -e "$stage/$n" ]; then
                 echo "::error::$n arrived from more than one artifact — refusing to publish an overwritten asset"
                 exit 1
@@ -246,14 +275,23 @@ jobs:
               cp "$d/$n" "$stage/$n"
             done
           done
-          # Present and non-empty is not a package. Unpack the tar and insist on the binary.
+          # Present and non-empty is not a package. The packaging step above writes exactly one
+          # member per archive, so the gate asks for exactly one, matched as a literal string:
+          # `grep -qx "$exe"` is a regex, so `airXexe` satisfies it in place of `air.exe`; `-F` matches
+          # it as a name. A member named `./air` or `sub/air` fails the literal test, so nothing nested
+          # or extra can ride along inside a published archive.
           for rid in $EXPECTED_RIDS; do
-            case "$rid" in win-*) exe="air.exe" ;; *) exe="air" ;; esac
-            if ! entries="$(tar -tzf "$stage/air-${rid}.tar.gz" 2>/dev/null)"; then
+            case "$rid" in
+              linux-x64) exe="air" ;;
+              win-x64) exe="air.exe" ;;
+              *) echo "::error::no archive member rule is defined for leg $rid — add it here and to the matrix"; exit 1 ;;
+            esac
+            if ! members="$(tar -tzf "$stage/air-${rid}.tar.gz" 2>/dev/null)"; then
               echo "::error::air-${rid}.tar.gz is not a readable tar.gz"; exit 1
             fi
-            if ! printf '%s\n' "$entries" | grep -qx "$exe"; then
-              echo "::error::air-${rid}.tar.gz does not contain $exe"; exit 1
+            if [ "$(printf '%s\n' "$members" | wc -l)" -ne 1 ] || ! grep -Fqx -- "$exe" <<< "$members"; then
+              echo "::error::air-${rid}.tar.gz must hold exactly one member named $exe; it holds: $(printf '%s' "$members" | tr '\n' ' ')"
+              exit 1
             fi
           done
           # Bind each archive to the record its own leg wrote, by comparing the whole producer
@@ -271,6 +309,7 @@ jobs:
           (cd "$stage" && sha256sum air-*.tar.gz > SHA256SUMS && cat SHA256SUMS)
         shell: bash
       - name: Create the draft, inspect the remote, then publish
+        id: publish
         run: |
           set -euo pipefail
           assets=()
@@ -283,28 +322,58 @@ jobs:
           # preflight admits a tag with a -suffix; without --prerelease GitHub would list such a
           # release as a final one.
           case "$TAG" in *-*) args+=(--prerelease); prerelease=true ;; esac
-          gh release create "$TAG" "${args[@]}" "${assets[@]}"
-          # Upload and publish are separate API calls, so read the draft back from GitHub before
-          # it goes public: the asset set and the flags have to be right while they are still
-          # fixable. Drafts are invisible to the by-tag endpoint, hence the list-and-filter.
-          rel_id="$(gh api "repos/{owner}/{repo}/releases?per_page=100" --jq ".[] | select(.tag_name==\"$TAG\") | .id")"
-          if [ -z "$rel_id" ]; then
-            echo "::error::no release for $TAG on the remote after create — not publishing"
+          # --verify-tag only proves a tag exists. Re-resolve it and compare against what the legs
+          # actually built, or a tag moved after preflight would publish somebody else's commit.
+          tag_sha="$(gh api "repos/{owner}/{repo}/commits/$TAG" --jq .sha 2>/dev/null || true)"
+          if [ -z "$tag_sha" ] || [ "$tag_sha" != "$COMMIT" ]; then
+            echo "::error::tag $TAG resolves to ${tag_sha:-nothing}, but the legs built $COMMIT — not publishing"
             exit 1
           fi
-          got_assets="$(gh api "repos/{owner}/{repo}/releases/$rel_id/assets" --jq "[.[].name]|sort|join(\" \")")"
+          # Take the id from the create call itself. It is the only ownership proof the cleanup step
+          # can use: a list-and-filter cannot tell this run's draft from a draft someone else made
+          # for the same tag while this run was building.
+          rel_id="$(gh release create "$TAG" "${args[@]}" "${assets[@]}" --json id --jq .id)"
+          if [ -z "$rel_id" ]; then
+            echo "::error::release create returned no id — leaving whatever exists for a human"
+            exit 1
+          fi
+          echo "release_id=$rel_id" >> "$GITHUB_OUTPUT"
+          echo "created draft $rel_id for $TAG at $tag_sha"
+          # Upload and publish are separate API calls, so read the draft back from GitHub before
+          # it goes public: the asset set and the flags have to be right while they are still
+          # fixable. Every lookup below addresses the id this run created, so a page of a hundred
+          # other releases cannot hide it.
+          got_tag="$(gh api "repos/{owner}/{repo}/releases/$rel_id" --jq .tag_name)"
+          if [ "$got_tag" != "$TAG" ]; then
+            echo "::error::release $rel_id carries tag $got_tag, expected $TAG — not publishing"
+            exit 1
+          fi
+          got_assets="$(gh api "repos/{owner}/{repo}/releases/$rel_id/assets?per_page=100" --jq "[.[].name]|sort|join(\" \")")"
           want_assets="$( { for rid in $EXPECTED_RIDS; do printf '%s\n' "air-$rid.tar.gz" "air-$rid.tar.gz.sha256"; done; printf 'SHA256SUMS\n'; } | sort | paste -sd' ' )"
           if [ "$got_assets" != "$want_assets" ]; then
             echo "::error::remote draft carries [$got_assets], expected [$want_assets] — not publishing"
             exit 1
           fi
+          # A name on the inventory is not a byte. Each asset has to have finished uploading, and
+          # its size has to equal the staged file's, so a truncated or still-uploading asset stops
+          # the publication instead of becoming the download link.
+          for n in $want_assets; do
+            read -r state size <<<"$(gh api "repos/{owner}/{repo}/releases/$rel_id/assets?per_page=100" --jq "[.[] | select(.name==\"$n\")] | if length==1 then \"\(.[0].state) \(.[0].size)\" else \"absent 0\" end")"
+            want_size="$(stat -c %s "stage/$n")"
+            if [ "$state" != "uploaded" ] || [ "$size" != "$want_size" ]; then
+              echo "::error::asset $n is [$state $size], expected [uploaded $want_size] — not publishing"
+              exit 1
+            fi
+          done
           got_flags="$(gh api "repos/{owner}/{repo}/releases/$rel_id" --jq "[.draft,.prerelease]|join(\" \")")"
           if [ "$got_flags" != "true $prerelease" ]; then
             echo "::error::remote draft state is [$got_flags], expected [true $prerelease] — not publishing"
             exit 1
           fi
           echo "draft $rel_id for $TAG verified: $(printf '%s' "$got_assets")"
-          gh release edit "$TAG" --draft=false
+          # By id, not by tag: two releases can carry one tag name, and the tag is not the thing
+          # this run made.
+          gh release edit "$rel_id" --draft=false
           after="$(gh api "repos/{owner}/{repo}/releases/$rel_id" --jq "[.draft,.prerelease]|join(\" \")")"
           if [ "$after" != "false $prerelease" ]; then
             echo "::error::published release state is [$after], expected [false $prerelease] — check the releases page before trusting it"
@@ -312,25 +381,27 @@ jobs:
           fi
           gh release view "$TAG" --json tagName,isDraft,isPrerelease,assets,url
         shell: bash
-      # Preflight already refused any pre-existing release, so a draft here is almost certainly
-      # this run's. Almost is not proof: delete by id, and only when that draft was created at or
-      # after this run started, so a preflight race with another run cannot delete its release.
+      # Delete only the release this run can prove it made: the id `gh release create` returned.
+      # The old guard compared the draft's created_at against `github.run_started_at`, which is not
+      # a documented Actions context property — empty, it turns the comparison into a no-op and the
+      # step deletes whoever else's draft happens to carry this tag. If create never returned an id,
+      # nothing here is safe to remove: say so and leave a human the preflight refusal to work with.
       - name: Remove a half-finished draft
         if: failure()
         env:
-          STARTED: ${{ github.run_started_at }}
+          CREATED_ID: ${{ steps.publish.outputs.release_id }}
         run: |
           set -euo pipefail
-          row="$(gh api "repos/{owner}/{repo}/releases?per_page=100" --jq "[.[] | select(.tag_name==\"$TAG\" and .draft==true)] | if length==1 then \"\(.id) \(.created_at)\" else \"\" end")"
-          if [ -z "$row" ]; then
-            echo "no single draft release for $TAG; nothing to delete"
+          if [ -z "${CREATED_ID:-}" ]; then
+            echo "this run created no release id; leaving any release for $TAG for a human"
             exit 0
           fi
-          id="${row%% *}"; created="${row##* }"
-          if [[ "$created" < "$STARTED" ]]; then
-            echo "draft $id predates this run (created $created, run started $STARTED); leaving it for a human"
+          row="$(gh api "repos/{owner}/{repo}/releases/$CREATED_ID" --jq "[.id,.tag_name,.draft]|join(\" \")" 2>/dev/null || true)"
+          read -r id tag draft <<<"$row"
+          if [ "${id:-}" != "$CREATED_ID" ] || [ "${tag:-}" != "$TAG" ] || [ "${draft:-}" != "true" ]; then
+            echo "release $CREATED_ID is not an unpublished draft of $TAG (${row:-gone}); leaving it"
             exit 0
           fi
-          gh api -X DELETE "repos/{owner}/{repo}/releases/$id"
-          echo "deleted draft release $id for $TAG"
+          gh api -X DELETE "repos/{owner}/{repo}/releases/$CREATED_ID"
+          echo "deleted draft release $CREATED_ID for $TAG (this run created it)"
         shell: bash
