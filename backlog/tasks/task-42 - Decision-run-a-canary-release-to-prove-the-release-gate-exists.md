@@ -5,7 +5,7 @@ status: Waiting
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T09:53:00Z'
-updated_date: '2026-11-17T12:02:00Z'
+updated_date: '2026-11-17T12:05:00Z'
 labels:
   - release
   - ci
@@ -39,7 +39,7 @@ refuses a tag that already carries a release, draft or published: `gh release de
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [x] #1 Answer recorded and acted: the canary is cut and reported (tag `v0.0.0-canary`, unmodified workflow, the job's own token)
+- [ ] #1 the decision to run it is recorded (yes, under decision-16); the canary tag `v0.0.0-canary` is cut and the run reported with the unmodified workflow and the job's own token
 - [ ] #2 the run answers, as evidence rather than argument, what TASK-41 AC #6 promised: whether `contents: write` from GITHUB_TOKEN is sufficient in practice for asset upload plus the un-draft PATCH, and whether the workflow-write guard fires for a tag cut at the head of main
 - [ ] #3 the run records what `.target_commitish` says on a real create, and what the tag object SHA and the peeled commit SHA were
 - [ ] #4 the published canary is probed after publication: an asset replacement attempt and a tag move attempt, both required to be refused, plus `.immutable` read back
