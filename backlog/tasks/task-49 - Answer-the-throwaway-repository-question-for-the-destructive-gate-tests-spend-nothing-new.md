@@ -54,14 +54,14 @@ repository's canary name is spent deliberately.
 **Two probes adopted from the analysis that this board had not planned.** (1) A refusal to move a **published**
 release's tag cannot tell ruleset enforcement from immutability: prove the ruleset by probing update and deletion on a
 live `v*` tag **before** any release is published, and require a causal error plus a readback — a generic 4xx proves
-nothing. (2) `target_commitish` is ignored when the tag already exists, so immutability can freeze the wrong source:
-require peeled remote tag commit = approved commit = the producing run's `head_sha`, before publishing and again in the
-readback. The first belongs to TASK-38's readback.
+nothing. (2) `target_commitish` is ignored when the tag already exists, so immutability can freeze the wrong source. The
+before-publish half is already in the gate and ran in the open (release.yml:191, 500-510); what is owed is the
+**post**-publication peel re-check and a SPEC line that `target_commitish` is not a pin.
 
 **Links**
 - The gate a rehearsal would copy: [.github/workflows/release.yml](https://github.com/ArborealML/Inference-Router/blob/main/.github/workflows/release.yml); its acceptance criteria: [SPEC.md](https://github.com/ArborealML/Inference-Router/blob/main/SPEC.md) §14.
 - Where the acts land: [TASK-42](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-42%20-%20Run-the-canary-through-the-real-gate-knowing-the-version-name-is-burned.md) canary, [TASK-38](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-38%20-%20Act-put-a-v-ruleset-on-the-repository-and-read-it-back.md) ruleset, [TASK-45](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-45%20-%20Enable-GitHub-immutable-releases-before-the-first-tag.md) immutable releases, [TASK-28](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-28%20-%20Cut-the-first-release-tag-and-watch-the-release-run.md) the first tag.
-- Spend rule: decision-10. Live state at 17:39Z: 0 rulesets, 0 tags, 0 releases, immutability off, token `admin: true`.
+- Spend rule: decision-10. Live state at the dispatch: no rulesets, no tags, no releases, immutability off.
 
 Superseded log entries for this task: [board trim, 2026-11-17](https://github.com/ArborealML/Inference-Router/blob/main/backlog/archive/board-trim-2026-11-17.md).
 <!-- SECTION:NOTES:END -->
