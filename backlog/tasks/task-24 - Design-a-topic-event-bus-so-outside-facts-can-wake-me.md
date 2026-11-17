@@ -26,3 +26,19 @@ The gap: things that happen outside this session — a pull request merging, a d
 - [ ] #3 A first transport is chosen (the existing push path for research results, or a new one)
 - [ ] #4 One real source is wired end to end as the proof: a merged pull request, or a board decision landing
 <!-- AC:END -->
+
+## Do this (about 5 minutes)
+
+Three answers, and I can build the first slice:
+
+1. **Who may publish, and how does a publisher prove it?** Options: a shared secret per topic; a token
+   file the poller script already has; or "whatever user owns the store may publish anything" for a
+   single-machine setup.
+2. **Where does the store live, and what happens to events while I am not running?** A file under the
+   project directory, a local daemon, or the same transport the research notifications already use.
+   Retention matters: an event nobody consumed must not vanish.
+3. **What is the first source to wire?** Pick one and I will make it the proof: a merged pull request,
+   a board decision landing, or a machine coming back up.
+
+Answer format: `TASK-24: shared secret / file store / merged PR`. A written design is welcome instead;
+I will review it against how this repo's notification paths actually work.

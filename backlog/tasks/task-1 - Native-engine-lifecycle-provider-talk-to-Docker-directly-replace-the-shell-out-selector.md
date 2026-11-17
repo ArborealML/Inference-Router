@@ -3,11 +3,11 @@ id: TASK-1
 title: >-
   Native engine-lifecycle provider: talk to Docker directly, replace the
   shell-out selector
-status: To Do
+status: In Progress
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-16T20:39:00Z'
-updated_date: '2026-11-17T02:30:00Z'
+updated_date: '2026-11-17T02:34:00Z'
 labels: []
 milestone: v0.9 - native engine lifecycle
 dependencies:
@@ -41,6 +41,12 @@ per model with native lifecycle.
 - [ ] #4 Readiness failure is a hard error with one actionable message; no silent fallback
 - [ ] #5 NativeAOT publish stays trim-clean (no reflection, no runtime provider discovery)
 <!-- AC:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Seam first, Docker behind it:\n1. `IEngineLifecycleProvider`: PreflightAsync (validate only), ProbeAsync, StopOwnedAsync, StartAsync, WaitReadyAsync, plus ownership labels. Everything the coordinator does is expressed through the interface so a fake can drive it.\n2. `EngineLifecycleCoordinator`: the transaction order — ownership proof, admission close, cohort drain, preflight revalidation, stop owned peers, launch exact target, readiness proof, admission reopen. Single-flight per target, refuse rather than escalate, containers without our labels are never touched, an advisory journal line per step.\n3. `DockerLifecycleProvider`: raw Engine HTTP over the socket (unix socket or TCP+TLS), pinned API version, source-generated JSON, image-pin verification, no pulls ever, exec frame demux kept out of the hot path. Refusal when the socket is unreachable is one actionable message.\n4. `select.exec` stays working as a delegated provider, mutually exclusive per model with native lifecycle.\n5. Tests: fake provider drives the whole transaction (order, refusal on unlabelled containers, readiness failure = one message, no fallback); Docker provider tested against a fake HTTP handler with recorded requests, no daemon.\n6. SPEC 5.3.1 rewrite + revlog; `engines preflight` stays validate-only.
+<!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
 

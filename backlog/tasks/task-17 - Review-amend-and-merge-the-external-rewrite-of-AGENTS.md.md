@@ -3,9 +3,9 @@ id: TASK-17
 title: Review, amend and merge the external rewrite of AGENTS.md
 status: Blocked
 assignee:
-  - '@chatswarm'
+  - '@qwen3.8-flash-next'
 created_date: '2026-11-17T01:27:00Z'
-updated_date: '2026-11-17T02:28:00Z'
+updated_date: '2026-11-17T02:39:00Z'
 labels:
   - docs
   - process

@@ -38,3 +38,10 @@ binaries it has never produced.
 <!-- SECTION:NOTES:BEGIN -->
 Blocked on TASK-22 — the next move is macOS runner minutes and the release tag, which belongs to a human. Work here resumes when that task is closed.
 <!-- SECTION:NOTES:END -->
+
+## Do this (about 1 minute)
+
+The two answers this task needs (macOS runner minutes, and whether to cut the first tag) are on
+**TASK-22**, in <https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/>. The build legs themselves are already written:
+`.github/workflows/release.yml` builds four platform binaries and smoke-tests each on its own OS before
+a release is created. What is missing is only the paid minutes and a tag.

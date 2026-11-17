@@ -58,3 +58,8 @@ calls rather than technical ones:
    remote admin. Say otherwise and I will do the token first.
 
 Nothing in this task is technically blocked; it is these two calls.
+
+## Do this (about 1 minute)
+
+Nothing to decide here — the three questions this task waits on are written out on **TASK-21** with the
+answer format, in <https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/>. Answer those and this one starts on its own.
