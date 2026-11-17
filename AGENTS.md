@@ -183,7 +183,31 @@ board makes the edit. Code and SPEC stay the coding session's, and the board rec
 - Duplicate tasks get one survivor: keep the one carrying the criteria and dependencies the board reads,
   archive the other, and commit the archive. An unarchived or uncommitted duplicate comes back on the next
   scan, usually with a different answer.
+- **The word budget is per task, not per section.** An open task is readable in one sitting: at most **600
+  words across its rendered sections together**, no one section over 300, and the Description under 300 as
+  before. Moving prose from Description into Notes is not trimming. The checker measures the corpus as well
+  as the section: a task about trimming that leaves the open-task word total the same size or bigger is not
+  done.
+- **Notes and Comments are a rolling window, not a log.** A new entry replaces the entry it supersedes.
+  Round-by-round records belong in the SPEC revision log and in git, and the task body cites them by sha or
+  SPEC version rather than reproducing them. If a reader would not act on an old entry, delete it.
+- **A criterion is one line.** An AC item states the checkable outcome in under about 40 words; the reason it
+  holds, the census behind it and the case that pins it belong in Notes or SPEC. An AC that needs three
+  sentences to read is two criteria, or one criterion with an essay attached.
+- **A fact quoted in an open task has to be reproducible today.** A measurement pinned to an older commit, a
+  byte count, a test-case count: either the re-check re-measures it against `main` on every landing, or it is
+  written once when the task closes and not maintained while the task is open.
+- **Status and the first line of the body have to agree.** `Blocked` names the person and the one decision;
+  `Waiting` names the event that wakes it. A body whose own first line says no person is in this path cannot
+  sit in `Blocked`, and a task that describes an act an agent performs is not titled `Decision:`.
+- **One task per next action.** Tasks that share a next action are one task: the owner-facing question points
+  at the analysis instead of restating it, and the analysis keeps the criteria. Before opening a task for a
+  person, count the open tasks on the same subject — two tasks asking one question is a duplicate however
+  differently they are worded.
 
 After every landing, the board re-checks these properties mechanically across all tasks — headings, criteria
 boxes against status, assignee against title, status against its wake or blocker, evidence on closed work —
-and fixes what it finds. A defect list that lives only in a chat message is not a pass.
+and fixes what it finds. The re-check reports the corpus as numbers every time: open-task word total, median
+and largest task, and the count of open tasks over budget. A defect list that lives only in a chat message is
+not a pass, and neither is a zero-defect count from a checker that stopped measuring the thing the standard
+was about.
