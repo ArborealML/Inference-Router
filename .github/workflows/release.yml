@@ -211,17 +211,35 @@ jobs:
       - name: Verify every declared asset and write checksums
         run: |
           set -euo pipefail
-          for rid in linux-x64 win-x64; do
-            f="out/air-${rid}.tar.gz"
-            test -f "$f" || { echo "::error::missing $f — a platform leg did not produce an asset"; exit 1; }
+          # This RID list is the release contract: the publish step uploads whatever the glob below
+          # finds, so an archive from a leg that is not named here would ship ungated.
+          expected_rids="linux-x64 win-x64"
+          set -- $expected_rids
+          for rid in $expected_rids; do
+            for f in "out/air-${rid}.tar.gz" "out/air-${rid}.tar.gz.sha256"; do
+              test -s "$f" || { echo "::error::missing or empty $f — a platform leg did not produce an asset"; exit 1; }
+            done
           done
+          found="$(find out -maxdepth 1 -name 'air-*.tar.gz' | wc -l)"
+          if [ "$found" -ne "$#" ]; then
+            echo "::error::found $found archives, expected $# (one per declared leg) — an undeclared leg produced one"
+            exit 1
+          fi
+          # Check each archive against the checksum its own build leg recorded, then publish the set.
+          if ! (cd out && sha256sum --check air-*.tar.gz.sha256); then
+            echo "::error::an archive does not match the checksum its build leg recorded — refusing to publish"
+            exit 1
+          fi
           (cd out && sha256sum air-*.tar.gz > SHA256SUMS && cat SHA256SUMS)
         shell: bash
       - name: Create and publish the release
         run: |
           set -euo pipefail
-          gh release create "$TAG" --draft --verify-tag --generate-notes \
-            out/air-*.tar.gz out/air-*.tar.gz.sha256 out/SHA256SUMS
+          # preflight admits a tag with a -suffix; without --prerelease GitHub would list such a
+          # release as a final one.
+          args=(--draft --verify-tag --generate-notes)
+          case "$TAG" in *-*) args+=(--prerelease) ;; esac
+          gh release create "$TAG" "${args[@]}" out/air-*.tar.gz out/air-*.tar.gz.sha256 out/SHA256SUMS
           gh release edit "$TAG" --draft=false
           gh release view "$TAG" --json name,assets,url
         shell: bash

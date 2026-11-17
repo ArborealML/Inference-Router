@@ -1,6 +1,6 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.7)
+Status: draft, continuously revised (v0.12.8)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
@@ -255,6 +255,15 @@ daemon transaction per engine. 137 tests green.
   keeps all four RIDs and `dotnet publish -r osx-arm64` stays a build-it-yourself path, but no macOS
   artifact is built, published, claimed or gated. §14 states the published surface; no wire behaviour
   changes.
+- v0.12.8 — the release gate hardened after a deep review of v0.12.7. It now refuses an empty archive
+  or an empty sidecar rather than only a missing one; it verifies every archive against the checksum its
+  own build leg recorded before publishing a set, instead of hashing whatever was downloaded and calling
+  that a checksum; and it refuses an archive count that differs from the declared leg count, so a matrix
+  leg added without editing the gate cannot be published ungated (the publish step globs, which is why
+  the count is checked). A tag with a `-suffix` now publishes as a GitHub prerelease: preflight already
+  admitted such tags, and they would otherwise have been released as final versions. README and §14 say
+  plainly that the two-platform surface is configured and not yet proven — no tag has been published, so
+  the gate has never run end to end.
 
 ## 1. Overview
 
@@ -1281,11 +1290,14 @@ and cohort/residency hysteresis in the scheduler (§12.3 hook).
   warnings — on every push to `main` and every pull request. Tests are POSIX-aware today, so CI
   runs on Linux; each platform binary is still exercised natively at release time.
 - **Published surface** (`.github/workflows/release.yml`): `linux-x64` and `win-x64`, each built and
-  smoke-tested on its own runner, gated before publish on every declared asset being present. macOS RIDs
-  stay declared in the Cli project so a local `-r osx-arm64` build works, but no macOS artifact is
-  built, published, claimed or gated: the account has no macOS runner minutes, and a leg that queues
-  forever is not a leg that passes. A platform is added back with runner minutes, a leg that actually
-  runs, and README copy that follows it.
+  smoke-tested on its own runner, gated before publish: every declared archive and its sidecar must be
+  present and non-empty, each archive must match the checksum its own leg recorded, and the number of
+  archives must equal the number of declared legs. macOS RIDs stay declared in the Cli project so a local
+  `-r osx-arm64` build works, but no macOS artifact is built, published, claimed or gated: the account has
+  no macOS runner minutes, and a leg that queues forever is not a leg that passes. A platform is added
+  back with runner minutes, a leg that actually runs, the gate's RID list updated, and README copy that
+  follows it. No tag has been published yet, so this gate is configured rather than proven; the first tag
+  run is the evidence.
 - **Compat test**: `curl` with stock `openai` python client against the
   server (chat, stream, models) — must pass unchanged.
 
