@@ -213,6 +213,9 @@ public static class RouterConfigLoader
         if (e.Docker is { } d)
         {
             lifecycle = EngineLifecycleKind.Docker;
+            if (d.CallTimeoutMs is { } callMs && callMs < 100)
+                throw new RouterConfigException(
+                    $"{name}.docker.call_timeout_ms must be at least 100: below that a healthy daemon is treated as wedged");
             if (string.IsNullOrWhiteSpace(d.Image))
                 throw new RouterConfigException(
                     $"engine.{name}.docker.image is required: the router starts an image that is already on the host and never pulls one itself");
@@ -230,6 +233,7 @@ public static class RouterConfigLoader
                 NetworkMode = d.NetworkMode,
                 WaitHealth = d.WaitHealth ?? true,
                 WaitTimeoutMs = d.WaitTimeoutMs ?? 600_000,
+                CallTimeoutMs = d.CallTimeoutMs ?? 15_000,
             };
         }
         else if (lifecycle == EngineLifecycleKind.Docker)

@@ -13,6 +13,8 @@ public sealed class FakeDockerDaemonHandler : HttpMessageHandler
     public List<string> Bodies { get; } = [];
     /// <summary>When true the transport itself fails, which is how an unreachable socket looks.</summary>
     public bool TransportFails { get; set; }
+    /// <summary>Milliseconds the daemon "thinks" before answering: how a wedged dockerd looks.</summary>
+    public int StallMs { get; set; }
     public Func<string, (HttpStatusCode Status, string Body)> Responder { get; set; } =
         _ => (HttpStatusCode.NotFound, "{}");
 
@@ -25,6 +27,7 @@ public sealed class FakeDockerDaemonHandler : HttpMessageHandler
 
         if (TransportFails) throw new HttpRequestException("connection refused");
 
+        if (StallMs > 0) await Task.Delay(StallMs, cancellationToken);
         var (status, text) = Responder(path);
         return new HttpResponseMessage(status)
         {
@@ -191,6 +194,34 @@ public sealed class DockerLifecycleProviderTests
         Assert.Contains("not retry with elevated rights", result.Action);
     }
 
+
+    [Fact(Timeout = 20_000)]
+    public async Task AWedgedDaemonIsCutOffByThePerCallDeadlineInsteadOfHoldingTheSwitchOpen()
+    {
+        // The wait_timeout is how long a model may take to load. It is not a licence for one HTTP call to
+        // hang forever: a daemon that accepts the connection and says nothing would otherwise keep the
+        // engine in "switching" and the ticket waiting on a socket that will never answer.
+        using var daemon = new FakeDockerDaemonHandler
+        {
+            StallMs = 4_000,
+            Responder = _ => (HttpStatusCode.OK, "{}"),
+        };
+        var cfg = Cfg();
+        cfg = new DockerLifecycleConfig
+        {
+            Image = cfg.Image, Socket = cfg.Socket, ApiVersion = cfg.ApiVersion, RouterId = cfg.RouterId,
+            Command = cfg.Command, Env = cfg.Env, HostPort = cfg.HostPort, ContainerPort = cfg.ContainerPort,
+            CallTimeoutMs = 150,
+        };
+        using var provider = new DockerLifecycleProvider(cfg, "strata", daemon);
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));   // the test itself must not hang
+
+        var result = await provider.PreflightAsync(Target(), timeout.Token);
+
+        Assert.False(result.Succeeded);
+        Assert.Contains("daemon_call_timeout_150ms", result.Reason);
+        Assert.Contains("wedged", result.Action);
+    }
 
     [Fact(Timeout = 20_000)]
     public async Task AFailedOwnershipQueryStopsTheTransactionRatherThanAssumingNothingIsRunning()

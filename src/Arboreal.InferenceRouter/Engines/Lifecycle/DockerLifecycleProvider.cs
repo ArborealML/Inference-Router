@@ -269,13 +269,18 @@ public sealed class DockerLifecycleProvider : IEngineLifecycleProvider, IDisposa
     private async ValueTask<(bool Ok, string Body, LifecycleResult? Failure)> CallAsync(
         HttpMethod method, string path, HttpContent? content, CancellationToken ct)
     {
+        // Every call carries its own deadline. Without it a daemon that accepts the connection and then
+        // says nothing holds a switch open indefinitely, the engine stays in "switching", and the request
+        // that triggered it waits on a socket that will never answer.
+        using var callCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        callCts.CancelAfter(TimeSpan.FromMilliseconds(_cfg.CallTimeoutMs));
         HttpResponseMessage? response = null;
         try
         {
             using var request = new HttpRequestMessage(method, path);
             if (content is not null) request.Content = content;
-            response = await _http.SendAsync(request, ct).ConfigureAwait(false);
-            var body = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+            response = await _http.SendAsync(request, callCts.Token).ConfigureAwait(false);
+            var body = await response.Content.ReadAsStringAsync(callCts.Token).ConfigureAwait(false);
             if (response.IsSuccessStatusCode) return (true, body, default);
 
             var status = (int)response.StatusCode;
@@ -310,11 +315,12 @@ public sealed class DockerLifecycleProvider : IEngineLifecycleProvider, IDisposa
                 $"socket_unreachable {ex.Message}",
                 $"the socket {_cfg.Socket} refused the connection: check its path and the router user's permission on it"));
         }
-        catch (TaskCanceledException) when (!ct.IsCancellationRequested)
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
             return (false, "", LifecycleResult.Fail(
-                "daemon_timeout",
-                $"the daemon at {_cfg.Socket} did not answer in time: check that it is loaded rather than wedged"));
+                $"daemon_call_timeout_{_cfg.CallTimeoutMs}ms",
+                $"the daemon at {_cfg.Socket} accepted the request and did not answer within {_cfg.CallTimeoutMs} ms: " +
+                "check whether dockerd is wedged, or raise docker.call_timeout_ms if this host is slow"));
         }
         finally
         {

@@ -73,6 +73,7 @@ public sealed class DockerDto
     [JsonPropertyName("network_mode")][TomlPropertyName("network_mode")] public string? NetworkMode { get; set; }
     [JsonPropertyName("wait_health")][TomlPropertyName("wait_health")] public bool? WaitHealth { get; set; }
     [JsonPropertyName("wait_timeout_ms")][TomlPropertyName("wait_timeout_ms")] public int? WaitTimeoutMs { get; set; }
+    [JsonPropertyName("call_timeout_ms")][TomlPropertyName("call_timeout_ms")] public int? CallTimeoutMs { get; set; }
 }
 
 public sealed class HealthProbeDto

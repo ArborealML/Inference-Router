@@ -132,8 +132,8 @@ Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
   kill, so every existing config switches exactly as before with one more hop. `DockerLifecycleProvider`
   speaks raw Engine HTTP (unix socket or TCP), pinned API version refused downward, **source-generated**
   JSON, containers labelled `arboreal.router`/`arboreal.engine`/`arboreal.model`, image presence required
-  and no pull ever, and a daemon that is unreachable or refuses the router yields one actionable message
-  with no attempt to escalate. Three rules that used to be implied are now pinned by tests: a refused
+  and no pull ever, and a daemon that is unreachable, refuses the router, or accepts a call and then goes
+  quiet (each call carries its own deadline) yields one actionable message with no attempt to escalate. Three rules that used to be implied are now pinned by tests: a refused
   preflight stops and starts nothing; a container the daemon lists but our labels do not claim is never
   handed to the stop step; and a **failed ownership query is a refusal, not an empty list** — treating
   "I could not ask" as "nothing is running" is how a router starts a second copy of a model that is
@@ -392,6 +392,7 @@ container_port = 8080
 stop_timeout_ms = 30000
 wait_health = true
 wait_timeout_ms = 600000
+call_timeout_ms = 15000                   # one Engine API call; a wedged daemon must not hold a switch
 ```
 
 `lifecycle = "docker"` with a model that still carries `select = { exec = … }` is a **config error**:

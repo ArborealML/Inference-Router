@@ -38,6 +38,10 @@ public sealed class DockerLifecycleConfig
     public string? NetworkMode { get; init; }
     public bool WaitHealth { get; init; } = true;
     public int WaitTimeoutMs { get; init; } = 600_000;
+    /// <summary>Deadline for one Engine API call. A wedged daemon must not be able to hold a switch
+    /// open forever: the wait above is how long a model may take to load, not how long one HTTP call
+    /// may take.</summary>
+    public int CallTimeoutMs { get; init; } = 15_000;
 }
 
 /// <summary>Health probe definition. Expect is a tiny comparison DSL: "path OP value" with
