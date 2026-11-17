@@ -41,7 +41,7 @@ public class StreamingFailureTests
     {
         var (app, fake, port) = await WireHarness.StartAsync(holdCompletions: false);
         using var _ = app;
-        fake.TrickleStreamMs = 100;
+        fake.TrickleStreamMs = 25;
 
         using var http = new HttpClient
         {

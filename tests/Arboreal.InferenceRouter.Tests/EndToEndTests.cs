@@ -135,6 +135,7 @@ public class FakeEngineHandler : HttpMessageHandler
     private sealed class TrickleStream(FakeEngineHandler owner) : Stream
     {
         private int _frame;
+        private byte[] _pending = [];
         public override bool CanRead => true;
         public override bool CanSeek => false;
         public override bool CanWrite => false;
@@ -148,13 +149,24 @@ public class FakeEngineHandler : HttpMessageHandler
 
         public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
         {
-            if (_frame >= 20) return 0;
+            if (_pending.Length > 0)
+            {
+                var n = Math.Min(_pending.Length, buffer.Length);
+                _pending.AsMemory(0, n).CopyTo(buffer);
+                _pending = _pending[n..];
+                return n;
+            }
+            if (_frame >= 120) return 0;
             await Task.Delay(owner.TrickleStreamMs, cancellationToken).ConfigureAwait(false);
-            var bytes = Encoding.UTF8.GetBytes(
-                $"data: {{\"choices\":[{{\"delta\":{{\"content\":\"c{_frame}\"}}}}]}}\n\n");
+            // Frames are deliberately large. A router only notices that its caller has gone when it
+            // writes to a socket nobody is reading, and a frame small enough to sit in the response
+            // buffer never gets that far — the stream then finishes "normally" and the test proves
+            // nothing, which is how it flaked on a CI runner.
+            var payload = new string('x', 16 * 1024);
+            _pending = Encoding.UTF8.GetBytes(
+                $"data: {{\"choices\":[{{\"delta\":{{\"content\":\"{payload}{_frame}\"}}}}]}}\n\n");
             _frame++;
-            bytes.AsMemory(0, Math.Min(bytes.Length, buffer.Length)).CopyTo(buffer);
-            return Math.Min(bytes.Length, buffer.Length);
+            return await ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
         }
     }
 
