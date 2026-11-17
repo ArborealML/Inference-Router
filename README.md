@@ -231,10 +231,13 @@ else; and it has to match the checksum record the leg that
 built it wrote — digest and filename together, which is what catches a sidecar pointing at some other
 archive. An artifact for a platform that is not declared, an artifact named for two platforms at once, a
 leg folder with a stranger in it, or the same filename arriving from two artifacts fails the gate instead
-of being published or quietly overwritten. Before anything is made public the tag is resolved again and has
-to still name the commit the builds ran on, and the draft is read back from GitHub by the release id this
-run created: its asset list, each asset's upload state, byte size and stored-bytes digest against the file
-that was uploaded, and the draft and prerelease flags; publication updates that same id. A tag with a `-suffix` publishes as a GitHub
+of being published or quietly overwritten. The release is created as a draft by the API call that answers
+with its id and upload address, so every later call — the uploads, the checks, publication, cleanup — is
+addressed by that id and not by the tag, which finds published releases only. Before anything is made
+public the tag is resolved again and has to still name the commit the builds ran on, and the draft is read
+back from GitHub in one list of its own assets: each asset's upload state, byte size and stored-bytes
+digest against the file that was uploaded, and the draft and prerelease flags; that whole check runs a
+second time just before publication, which updates that same id. A tag with a `-suffix` publishes as a GitHub
 prerelease. A failed publish removes only the draft that run created itself — the id it captured — a run
 that never got one deletes nothing, and a run that asked GitHub for a release and captured no id says so
 loudly instead of finishing quietly. The checksums catch damage in

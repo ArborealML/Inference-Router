@@ -321,14 +321,13 @@ jobs:
           set -euo pipefail
           assets=()
           for rid in $EXPECTED_RIDS; do
-            assets+=("stage/air-${rid}.tar.gz" "stage/air-${rid}.tar.gz.sha256")
+            assets+=("air-${rid}.tar.gz" "air-${rid}.tar.gz.sha256")
           done
-          assets+=("stage/SHA256SUMS")
-          args=(--draft --verify-tag --generate-notes)
+          assets+=("SHA256SUMS")
           prerelease=false
-          # preflight admits a tag with a -suffix; without --prerelease GitHub would list such a
+          # preflight admits a tag with a -suffix; without prerelease=true GitHub would list such a
           # release as a final one.
-          case "$TAG" in *-*) args+=(--prerelease); prerelease=true ;; esac
+          case "$TAG" in *-*) prerelease=true ;; esac
           # --verify-tag only proves a tag exists. Re-resolve it and compare against what the legs
           # actually built, or a tag moved after preflight would publish somebody else's commit.
           tag_sha="$(gh api "repos/{owner}/{repo}/commits/$TAG" --jq .sha 2>/dev/null || true)"
@@ -336,30 +335,57 @@ jobs:
             echo "::error::tag $TAG resolves to ${tag_sha:-nothing}, but the legs built $COMMIT — not publishing"
             exit 1
           fi
-          # The gh CLI contract, checked against gh 2.46.0 instead of assumed:
-          #   `gh release create … --json id --jq .id` fails argument parsing ("unknown flag:
-          #   --json", exit 1) before it reaches the API, and `gh release view|edit` read their
-          #   operand as a tag, not a release id (`gh release view 443387629 -R cli/cli` answers
-          #   "release not found"). So the create stays on the CLI for its flags, and every remote
-          #   call after it is REST, where /releases/{id} is the documented id-addressed form.
+          # Two gh contracts, both checked against the tool and the API description rather than
+          # assumed (gh 2.46.0 on this box, plus github/rest-api-description, fetched 2026-11-17):
+          #   1. `gh release create … --json id --jq .id` fails argument parsing ("unknown flag:
+          #      --json", exit 1) before it reaches the API, and `gh release view|edit` read their
+          #      operand as a tag, not a release id (`gh release view 443387629 -R cli/cli` answers
+          #      "release not found").
+          #   2. `GET /repos/{owner}/{repo}/releases/tags/{tag}` is described as "Get a published
+          #      release with the specified tag", and a draft release is listed only for a token with
+          #      push access. So a release created as a draft cannot be found by tag: the tag lookup
+          #      this step used is not a way to find this run's draft, and `gh release upload <tag>`
+          #      and `gh release create --draft` are tag-addressed all the way down.
+          # So the create is REST: POST /releases, which answers with the id and upload_url of the
+          # release it just made. The id is not looked up afterwards, so it is not a claim about who
+          # owns the tag — it is the thing this run was handed. Draft and prerelease are typed with
+          # -F, because -f sends strings.
           # Say so before the call: if create dies partway there is no id to hand cleanup, and the
           # cleanup step can still tell "attempted, no id" (possible orphan) from "never got here".
           echo "create_attempted=1" >> "$GITHUB_OUTPUT"
-          gh release create "$TAG" "${args[@]}" "${assets[@]}" >/dev/null
-          # One release per tag is a GitHub constraint: a create for a tag that already carries a
-          # release is refused. So once this create has succeeded, the release carrying this tag is
-          # the one this run made, and its id is the ownership proof the cleanup step needs. A
-          # list-and-filter cannot say that: it cannot tell this run's draft from a draft someone
-          # else made for the same tag while this run was building.
-          rel_id="$(gh api "repos/{owner}/{repo}/releases/tags/$TAG" --jq .id)"
-          case "$rel_id" in
+          created="$(gh api -X POST repos/{owner}/{repo}/releases \
+            -f tag_name="$TAG" -F draft=true -F prerelease="$prerelease" \
+            -F generate_release_notes=true --jq '[.id,(.upload_url // "")] | join(" ")')"
+          read -r rel_id upload_url <<<"$created"
+          case "${rel_id:-}" in
             ''|*[!0-9]*)
-              echo "::error::no numeric release id for tag $TAG — not publishing, and leaving whatever exists for a human"
+              echo "::error::create returned no numeric release id (got ${rel_id:-nothing}) — not publishing, and leaving whatever exists for a human"
               exit 1
               ;;
           esac
+          if [ -z "${upload_url:-}" ]; then
+            echo "::error::release $rel_id came back with no upload_url — not publishing, and leaving draft $rel_id for a human"
+            exit 1
+          fi
           echo "release_id=$rel_id" >> "$GITHUB_OUTPUT"
           echo "created draft $rel_id for $TAG at $tag_sha"
+          # Upload by that id, through the upload_url the create returned with its own URI template.
+          # gh does not expand templates — `…latest{?per_page}` is sent literally and 404s — so the
+          # template part is cut off here and the name is put in the query by hand. Asset names are
+          # this gate's own (air-<rid>.tar.gz, its .sha256, SHA256SUMS): ASCII with no characters
+          # that need percent-encoding. The body is the file itself over an octet-stream header; if
+          # anything mangled it on the way, the stored-digest check below stops the publication.
+          upload_base="${upload_url%%\{*}"
+          for n in "${assets[@]}"; do
+            asset_id="$(gh api -X POST "${upload_base}?name=$n" -H 'Content-Type: application/octet-stream' --input "stage/$n" --jq '.id')"
+            case "${asset_id:-}" in
+              ''|*[!0-9]*)
+                echo "::error::upload of $n to release $rel_id returned no asset id (got ${asset_id:-nothing}) — not publishing, and leaving draft $rel_id for a human"
+                exit 1
+                ;;
+            esac
+            echo "uploaded $n as asset $asset_id"
+          done
           # Upload and publish are separate API calls, so read the draft back from GitHub before
           # it goes public: the asset set and the flags have to be right while they are still
           # fixable. Every lookup below addresses the id this run created, so a page of a hundred
@@ -369,36 +395,56 @@ jobs:
             echo "::error::release $rel_id carries tag $got_tag, expected $TAG — not publishing"
             exit 1
           fi
-          got_assets="$(gh api "repos/{owner}/{repo}/releases/$rel_id/assets?per_page=100" --jq "[.[].name]|sort|join(\" \")")"
           want_assets="$( { for rid in $EXPECTED_RIDS; do printf '%s\n' "air-$rid.tar.gz" "air-$rid.tar.gz.sha256"; done; printf 'SHA256SUMS\n'; } | sort | paste -sd' ' )"
-          if [ "$got_assets" != "$want_assets" ]; then
-            echo "::error::remote draft carries [$got_assets], expected [$want_assets] — not publishing"
-            exit 1
-          fi
-          # A name on the inventory is not a byte. Each asset has to have finished uploading, its size
-          # has to equal the staged file's, and the digest GitHub reports for the bytes it stored has to
-          # equal the staged file's sha256 — so a truncated, replaced or still-uploading asset stops the
-          # publication instead of becoming the download link, and an equal-size substitution stops too.
-          # A digest the remote does not report fails the gate: an unverifiable field is not a passing one.
-          for n in $want_assets; do
-            read -r state size digest <<<"$(gh api "repos/{owner}/{repo}/releases/$rel_id/assets?per_page=100" --jq "[.[] | select(.name==\"$n\")] | if length==1 then \"\(.[0].state) \(.[0].size) \(.[0].digest // \"none\")\" else \"absent 0 none\" end")"
-            want_size="$(stat -c %s "stage/$n")"
-            want_digest="sha256:$(sha256sum "stage/$n" | cut -d' ' -f1)"
-            if [ "$state" != "uploaded" ] || [ "$size" != "$want_size" ] || [ "$digest" != "$want_digest" ]; then
-              echo "::error::asset $n is [$state $size $digest], expected [uploaded $want_size $want_digest] — not publishing"
+          # One call, one snapshot. Five separate per-name lookups would each be true of some moment
+          # on the server and none of them the same moment; here the inventory and every field read
+          # from it come from a single list of this release's own assets, addressed by id.
+          inspect_draft() {
+            snap="$(gh api "repos/{owner}/{repo}/releases/$rel_id/assets?per_page=100" --jq '.[] | [.name,.state,(.size|tostring),(.digest // "none"),("(\(.id))")] | join(" ")')"
+            got_assets="$(printf '%s\n' "$snap" | awk '{print $1}' | sort | paste -sd' ' -)"
+            if [ "$got_assets" != "$want_assets" ]; then
+              echo "::error::remote draft carries [$got_assets], expected [$want_assets] — not publishing"
               exit 1
             fi
-          done
-          got_flags="$(gh api "repos/{owner}/{repo}/releases/$rel_id" --jq "[.draft,.prerelease]|join(\" \")")"
-          if [ "$got_flags" != "true $prerelease" ]; then
-            echo "::error::remote draft state is [$got_flags], expected [true $prerelease] — not publishing"
+            # A name on the inventory is not a byte. Each asset has to appear exactly once, have
+            # finished uploading, match the staged file's size, and carry the digest GitHub reports
+            # for the bytes it stored — so a truncated, replaced or still-uploading asset stops the
+            # publication instead of becoming the download link, and an equal-size substitution stops
+            # too. A digest the remote does not report fails the gate: an unverifiable field is not a
+            # passing one.
+            for n in $want_assets; do
+              rows="$(printf '%s\n' "$snap" | awk -v want="$n" '$1 == want')"
+              read -r _ state size digest _ <<<"$rows"
+              want_size="$(stat -c %s "stage/$n")"
+              want_digest="sha256:$(sha256sum "stage/$n" | cut -d' ' -f1)"
+              if [ "$(printf '%s\n' "$rows" | grep -c .)" != "1" ] || [ "${state:-absent}" != "uploaded" ] || [ "${size:-0}" != "$want_size" ] || [ "${digest:-none}" != "$want_digest" ]; then
+                echo "::error::asset $n is [${state:-absent} ${size:-0} ${digest:-none}] ($(printf '%s\n' "$rows" | grep -c .) row(s)), expected [uploaded $want_size $want_digest] in exactly one row — not publishing"
+                exit 1
+              fi
+            done
+            got_flags="$(gh api "repos/{owner}/{repo}/releases/$rel_id" --jq '[.draft,.prerelease] | join(" ")')"
+            if [ "$got_flags" != "true $prerelease" ]; then
+              echo "::error::remote draft state is [$got_flags], expected [true $prerelease] — not publishing"
+              exit 1
+            fi
+          }
+          inspect_draft
+          echo "draft $rel_id for $TAG verified: $got_assets"
+          # Last look before it goes public. Everything above is a few API calls old, and this run
+          # only serializes against other runs on the same ref, so the tag could have moved and the
+          # draft could have been touched while we were reading it. This narrows the window; it does
+          # not close it, and tag protection plus a restricted set of release writers is what closes
+          # it (a repository setting, not something YAML can enforce).
+          tag_now="$(gh api "repos/{owner}/{repo}/commits/$TAG" --jq .sha 2>/dev/null || true)"
+          if [ -z "$tag_now" ] || [ "$tag_now" != "$COMMIT" ]; then
+            echo "::error::tag $TAG now resolves ${tag_now:-nothing}, but the legs built $COMMIT — leaving draft $rel_id unpublished for a human"
             exit 1
           fi
-          echo "draft $rel_id for $TAG verified: $(printf '%s' "$got_assets")"
+          inspect_draft
           # By id, not by tag: the tag is not the thing this run made, and `gh release edit` would
           # resolve the operand as a tag name anyway.
           gh api -X PATCH "repos/{owner}/{repo}/releases/$rel_id" -F draft=false >/dev/null
-          after="$(gh api "repos/{owner}/{repo}/releases/$rel_id" --jq "[.draft,.prerelease]|join(\" \")")"
+          after="$(gh api "repos/{owner}/{repo}/releases/$rel_id" --jq '[.draft,.prerelease] | join(" ")')"
           if [ "$after" != "false $prerelease" ]; then
             echo "::error::published release state is [$after], expected [false $prerelease] — check the releases page before trusting it"
             exit 1
@@ -407,8 +453,8 @@ jobs:
           gh api "repos/{owner}/{repo}/releases/$rel_id" \
             --jq "{id:.id,tag_name:.tag_name,draft:.draft,prerelease:.prerelease,assets:[.assets[]|{name:.name,size:.size}]}"
         shell: bash
-      # Delete only the release this run can prove it made: the id read back for the tag after this
-      # run's create succeeded. The old guard compared the draft's created_at against
+      # Delete only the release this run can prove it made: the id its own create call answered with.
+      # The old guard compared the draft's created_at against
       # `github.run_started_at`, which is not a documented Actions context property — empty, it turns
       # the comparison into a no-op and the step deletes whoever else's draft happens to carry this
       # tag. If no id was captured, nothing here is safe to remove: say so loudly and leave a human
