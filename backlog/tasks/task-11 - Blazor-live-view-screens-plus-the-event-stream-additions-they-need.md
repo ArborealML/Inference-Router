@@ -5,7 +5,7 @@ status: Waiting
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-16T20:46:00Z'
-updated_date: '2026-11-17T10:58:00Z'
+updated_date: '2026-11-17T12:19:00Z'
 labels:
   - ui
 milestone: v0.10 - live view and robustness parity
@@ -19,7 +19,6 @@ ordinal: 11000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-
 Build the Blazor live view on the event stream, taking the good parts of PAIR's UI (workload
 rail, filters, topology, endpoint copy, actionable errors) and dropping the appliance parts
 (installer, model deletion, pairing, autostart/update/wipe). Our screens differ: global inference
@@ -41,20 +40,7 @@ answer format, in [TASK-21](https://github.com/ArborealML/Inference-Router/blob/
 The live view is a Blazor WASM app (SPEC §12.5). Two questions decide its shape, and both are product
 calls rather than technical ones:
 
-1. **Where does it come from?** Serve `air-ui` as static files from the router itself (one binary, one
-   origin, no CORS, but the router then ships a UI bundle and must serve a second content type), or as a
-   separate static site the operator hosts anywhere (cleaner separation, but then the browser needs a
-   reachable admin feed and CORS/origin policy). Recommendation: serve it from the router for v1 — one
-   process, same auth boundary, no new infrastructure — and keep the admin feed the only contract.
-2. **Who can see it?** `/admin/*` is currently unauthenticated and bind-address-only (§6.2). A live
-   dashboard makes that difference visible: an operator who exposes the router on the tailnet is
-   exposing the admin feed too. Options: keep bind-address-only and document it loudly, or add a
-   separate admin token. Recommendation: keep bind-address-only for the router itself and let the
-   operator expose the UI behind a reverse proxy; add the admin token only when someone needs a
-   remote admin. Say otherwise and I will do the token first.
-
 Nothing in this task is technically blocked; it is these two calls.
-
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -74,6 +60,20 @@ Blocked on TASK-21 — the next move is the live-view audience, credential and w
 Blocked-state check: the blocker is a person, and the human task that carries it is TASK-21 (audience, credential posture, and whether the event feed gains a loss event). The two questions restated in this task's body are context for whoever reads this task — the answers belong on TASK-21, so answering here does not move anything.
 
 Wake condition, stated for the Waiting column: this task wakes when the live-view decisions are recorded (TASK-21 — audience, credential posture, and whether the event feed gains an explicit loss event), because the screens cannot be specified until the feed they read from is specified. Per the working contract the feed-contract plan also gets an external review before the code exists, so the second wake is that review landing. What is true now: TASK-21 is a BLOCKED owner task again - the external design recommendation landed and the three answers (audience, credential posture, and whether the feed gains a loss event) are ratifications only the owner can make. So this task does wait on a person, and the Waiting column is correct only because that person's task exists. The earlier sentence claiming nothing here waits on a person was written when the questions were still with an agent, and is withdrawn.
+
+Moved out of the Description under decision-18's word line — nothing deleted, nothing rewritten:
+
+1. **Where does it come from?** Serve `air-ui` as static files from the router itself (one binary, one
+   origin, no CORS, but the router then ships a UI bundle and must serve a second content type), or as a
+   separate static site the operator hosts anywhere (cleaner separation, but then the browser needs a
+   reachable admin feed and CORS/origin policy). Recommendation: serve it from the router for v1 — one
+   process, same auth boundary, no new infrastructure — and keep the admin feed the only contract.
+2. **Who can see it?** `/admin/*` is currently unauthenticated and bind-address-only (§6.2). A live
+   dashboard makes that difference visible: an operator who exposes the router on the tailnet is
+   exposing the admin feed too. Options: keep bind-address-only and document it loudly, or add a
+   separate admin token. Recommendation: keep bind-address-only for the router itself and let the
+   operator expose the UI behind a reverse proxy; add the admin token only when someone needs a
+   remote admin. Say otherwise and I will do the token first.
 <!-- SECTION:NOTES:END -->
 
 ## Comments

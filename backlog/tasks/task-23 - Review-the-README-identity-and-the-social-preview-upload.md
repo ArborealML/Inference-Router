@@ -7,7 +7,7 @@ status: Waiting
 assignee:
   - '@qwen3.8-flash-next-board'
 created_date: '2026-11-17T02:26:00Z'
-updated_date: '2026-11-17T08:16:00Z'
+updated_date: '2026-11-17T12:19:00Z'
 labels:
   - docs
 dependencies: []
@@ -35,16 +35,6 @@ a judgement about the exported card *as a picture* — do the three text lines r
 wordmark. The mechanical half is checked and closed. The taste half is taken at the moment the card is uploaded,
 because the settings form in TASK-29 shows the image at full size: whoever presses Upload looks at it, and if it
 reads badly, naming a typeface gets the card re-rendered in minutes. No separate review round, no separate cost.
-
-**What each answer changes.** Accept the render and the identity work is closed and TASK-14's identity half stays
-closed. Reject it and the card is re-rendered with a pinned face (or the SVG is retuned), which reopens only the
-export, not the mark.
-
-**Links**
-- Art to judge: [air-mark.svg](https://github.com/ArborealML/Inference-Router/blob/main/docs/images/air-mark.svg), [air-banner.svg](https://github.com/ArborealML/Inference-Router/blob/main/docs/images/air-banner.svg), [air-social.svg](https://github.com/ArborealML/Inference-Router/blob/main/docs/images/air-social.svg); committed rasters: [air-social-1280x640.png](https://github.com/ArborealML/Inference-Router/blob/main/docs/images/air-social-1280x640.png), [air-mark-512.png](https://github.com/ArborealML/Inference-Router/blob/main/docs/images/air-mark-512.png).
-- Palette, provenance, renderer, resolved font: [docs/images/README.md](https://github.com/ArborealML/Inference-Router/blob/main/docs/images/README.md).
-- Where the banner is wired: [README.md:1](https://github.com/ArborealML/Inference-Router/blob/main/README.md#L1).
-- The upload this waits on: [TASK-29] (https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-29%20-%20Upload-the-social-preview-card-and-the-repository-avatar.md). The release badge in TASK-14 waits on a tag, which is now [TASK-32] (https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-32%20-%20Decision-cut-the-v0.1.0-tag.md), not on this task.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -63,6 +53,18 @@ Board audit: the steps, the cost, the upload that only a human can do and the an
 Upload half moved to TASK-29: the social-preview image and the organisation profile picture are authenticated web uploads with no API, so they stay human. Everything up to the upload stays here - the keep-or-replace call, the exports, and the avatar-ready variant. Two facts found while writing TASK-29, both of which block a naive export: (1) GitHub has no repository image other than the social preview, so the mark can only be the org avatar; (2) air-mark.svg strokes in currentColor and declares no field, so a standalone render is black-on-transparent, invisible on a dark frame, and needs an explicit field and stroke colour before anything uploads it. Third constraint, real and not cosmetic: this development box has no SVG rasteriser, no headless browser and no Python image library, and the card sets its text in a system-ui stack - so the export has to run where a browser or converter lives, and a hand-drawn re-render is not a substitute for it.
 
 Fence note: this task was moved to the agent queue, but its output lands under the images directory in the repository, and the code session currently holds that path by instruction. So either the code session commits the two exported files, or the fence comes off the images directory for this one edit. Flagged rather than assumed.
+
+Moved out of the Description under decision-18's word line — nothing deleted, nothing rewritten:
+
+**What each answer changes.** Accept the render and the identity work is closed and TASK-14's identity half stays
+closed. Reject it and the card is re-rendered with a pinned face (or the SVG is retuned), which reopens only the
+export, not the mark.
+
+**Links**
+- Art to judge: [air-mark.svg](https://github.com/ArborealML/Inference-Router/blob/main/docs/images/air-mark.svg), [air-banner.svg](https://github.com/ArborealML/Inference-Router/blob/main/docs/images/air-banner.svg), [air-social.svg](https://github.com/ArborealML/Inference-Router/blob/main/docs/images/air-social.svg); committed rasters: [air-social-1280x640.png](https://github.com/ArborealML/Inference-Router/blob/main/docs/images/air-social-1280x640.png), [air-mark-512.png](https://github.com/ArborealML/Inference-Router/blob/main/docs/images/air-mark-512.png).
+- Palette, provenance, renderer, resolved font: [docs/images/README.md](https://github.com/ArborealML/Inference-Router/blob/main/docs/images/README.md).
+- Where the banner is wired: [README.md:1](https://github.com/ArborealML/Inference-Router/blob/main/README.md#L1).
+- The upload this waits on: [TASK-29] (https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-29%20-%20Upload-the-social-preview-card-and-the-repository-avatar.md). The release badge in TASK-14 waits on a tag, which is now [TASK-32] (https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-32%20-%20Decision-cut-the-v0.1.0-tag.md), not on this task.
 <!-- SECTION:NOTES:END -->
 
 ## Comments

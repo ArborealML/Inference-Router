@@ -1,11 +1,11 @@
 ---
 id: TASK-47
 title: Trim the Description bodies of the open tasks to 300 words
-status: To Do
+status: Done
 assignee:
   - '@qwen3.8-flash-next-board'
 created_date: '2026-11-17T11:03:00Z'
-updated_date: '2026-11-17T12:03:00Z'
+updated_date: '2026-11-17T12:20:00Z'
 labels: []
 dependencies: []
 priority: medium
@@ -16,31 +16,40 @@ ordinal: 46000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-**Do this (about an hour, no code, no risk).** Nine open task Descriptions are over the 300-word standard; trim
-them by moving reasoning into Implementation Notes, deleting nothing. **The set moves every time a Description is
-trimmed, so re-run the checker rather than trusting the list below** — as I last measured it the open set over 300 words is
-TASK-2, 6, 11, 14, 23, 28 (nine Done tasks are over it and are exempt under decision-18). Done tasks are exempt history and keep their length on purpose.
+**Closed: the open set over 300 words is now empty.** The set moves every time a Description is trimmed, so
+re-run the checker rather than trusting any list written here — as I last measured it the open set was TASK-2 (627),
+6 (341), 11 (371), 14 (513), 23 (353), and all five are now under the line. Nine Done tasks (TASK-7, 10, 20, 24, 27,
+36, 37, 40, 41) are over it and are exempt history under decision-18; their bodies are not rewritten.
 
-    python3 .local/board-standards.py      # counts Defects by check; WORDS is the only open class
-    python3 .local/board-lint.py           # must stay at 0 defects, both before and after
+**The method that worked, for the next time:** re-read the file; cut whole trailing paragraphs out of
+`## Description` and append them to `## Implementation Notes` with `--append-notes` — nothing deleted, nothing
+rewritten; leave the answer or wake line, the steps, the cost and the links. `--description` is a total overwrite and
+`--acceptance-criteria` replaces the whole AC list (repeat the flag once per criterion in one call). Re-read the
+file after every write.
 
-**Method, one task at a time.** Re-read the file. Cut the reasoning paragraphs out of `## Description` and append
-them to `## Implementation Notes` with `--append-notes`. Leave in the Description the answer or wake line, the
-do-this steps, the cost in minutes, and the links. Re-read the file after every write: `--description` is a total
-overwrite, `--acceptance-criteria` replaces the whole AC list (repeat the flag once per criterion, in one call),
-and the AC block is a separate managed region.
+    python3 .local/board-lint.py        # 0 defects, exit 0
+    python3 .local/board-standards.py   # 0 defects, exit 0; WORDS fires for non-Done tasks only
 
-**What must survive the shrink** — the same linters check the same things, so a trim that breaks one shows up as a
-new defect rather than a quieter task: an answer or wake line inside the first 30 lines, at least one backticked
-command or path, a stated cost, a link to a file rather than a folder, and the wake or blocker sentence.
-
-**Done when** `board-standards.py` reports 0 WORDS defects for every non-Done task and `board-lint.py` still
-reports 0 defects with exit 0. Commit as `board:` and stay inside `backlog/`.
+**What must survive a shrink** — the checkers test the same things, so a trim that breaks one shows up as a defect
+rather than a quieter task: an answer or wake line, at least one backticked command or path, a stated cost, links to
+files rather than folders, and the wake or blocker sentence.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 backlog task list is unchanged in shape: no task loses an answer line, a command, a cost, a link or an acceptance criterion while its Description shrinks
-- [ ] #2 moved prose lands in Implementation Notes or a task comment, not deleted
-- [ ] #3 python3 .local/board-standards.py reports 0 WORDS defects for every non-Done task
+- [x] #1 backlog task list is unchanged in shape: no task loses an answer line, a command, a cost, a link or an acceptance criterion while its Description shrinks
+- [x] #2 moved prose lands in Implementation Notes or a task comment, not deleted
+- [x] #3 python3 .local/board-standards.py reports 0 WORDS defects for every non-Done task
 <!-- AC:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+created: 2026-11-17T12:20:00Z
+
+---
+
+Closing counts, measured by the board session on this tree, not inherited: `python3 .local/board-lint.py` -> 0 defects, exit 0. `python3 .local/board-standards.py` -> 0 defects, exit 0, plus its informational line: 9 Done tasks over 300 words (TASK-7, 10, 20, 24, 27, 36, 37, 40, 41), history under decision-18. Before this pass the same command reported 6 defects exit 1 (5 WORDS on open tasks plus 1 ORDINAL collision between TASK-23 and TASK-29 at 23000). Five Descriptions were shortened by moving whole paragraphs to Implementation Notes — TASK-2 to 281 words (357 moved), TASK-6 to 256 (96), TASK-11 to 200 (182), TASK-14 to 283 (241), TASK-23 to 258 (106) — counts are the checker's own, as-of this commit.--plain
+
+---
+<!-- COMMENTS:END -->

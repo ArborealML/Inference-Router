@@ -5,7 +5,7 @@ status: To Do
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-16T20:40:00Z'
-updated_date: '2026-11-17T09:42:00Z'
+updated_date: '2026-11-17T12:19:00Z'
 labels: []
 dependencies:
   - TASK-1
@@ -16,7 +16,6 @@ ordinal: 6000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-
 After the native engine-lifecycle work lands, re-scan and make sure the map shows the new provider/registry components and their relationships to EngineRuntime.
 
 **Status notes**
@@ -36,18 +35,11 @@ components was found in the current tooling, and stripping each component's desc
 move is not a supported or lossless sequence, so this is a modelling decision first and a tooling
 question second.
 
-Decision needed: what is a container here. The C4 guidance treats a shared assembly as *not* a container,
-which argues for keeping the shared components unfiled until we choose a simplification, or for filing
-them under the process that actually hosts them — noting that `air serve` runs the HTTP host inside the
-CLI process and `air config` loads configuration locally, so the CLI is not merely a remote client of the
-library and the map cannot show one source file owned by both executables.
-
 **Links**
 - Map tree edited through the CLI: [groma/systems/inference-router/](https://github.com/ArborealML/Inference-Router/tree/main/groma/systems/inference-router/).
 - Library container as declared: [container.md](https://github.com/ArborealML/Inference-Router/blob/main/groma/systems/inference-router/containers/arboreal-inferencerouter/container.md).
 - Code the components must name: [Engines/Lifecycle/](https://github.com/ArborealML/Inference-Router/tree/main/src/Arboreal.InferenceRouter/Engines/Lifecycle/) and [EngineRuntime.cs](https://github.com/ArborealML/Inference-Router/blob/main/src/Arboreal.InferenceRouter/Engines/EngineRuntime.cs).
 - Claim being pinned to: [SPEC §5.3.1](https://github.com/ArborealML/Inference-Router/blob/main/SPEC.md#L420).
-
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -73,4 +65,12 @@ Unblocked: the map-model decision is made and the library is a container (TASK-1
 Map state at 18d7279 (checked by exporting the map and reading its zones): no unidentified group remains; every component has a container parent, all 20 src files are claimed by a component, and the only zones are the four groups under the library container. The residual is that the library container is a permanent ghost: groma matches a declared container to a scan only when the scanner produces a container fact, and the C# scanner produces those only from application entry points, so a library never gets one and 'groma accept' prints 'no scan match'. The box will render outlined for as long as the library is one container. Pinning work to components (this task) is unaffected.
 
 Status check for the board: this task is not blocked. TASK-19's map-model decision landed and the library is one declared container (sixteen components under it, verified by counting the map tree), so the pinning named here is ordinary work now. It is also unaffected by TASK-27, the follow-on owner decision about that container rendering as an outline rather than a solid box: keeping the outline changes nothing here, and only a decision to split the library per executable would re-open this task's shape.
+
+Moved out of the Description under decision-18's word line — nothing deleted, nothing rewritten:
+
+Decision needed: what is a container here. The C4 guidance treats a shared assembly as *not* a container,
+which argues for keeping the shared components unfiled until we choose a simplification, or for filing
+them under the process that actually hosts them — noting that `air serve` runs the HTTP host inside the
+CLI process and `air config` loads configuration locally, so the CLI is not merely a remote client of the
+library and the map cannot show one source file owned by both executables.
 <!-- SECTION:NOTES:END -->
