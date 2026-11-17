@@ -1,11 +1,11 @@
 ---
 id: TASK-17
 title: Review, amend and merge the external rewrite of AGENTS.md
-status: To Do
+status: Waiting
 assignee:
   - '@chatswarm'
 created_date: '2026-11-17T01:27:00Z'
-updated_date: '2026-11-17T01:47:00Z'
+updated_date: '2026-11-17T02:14:00Z'
 labels:
   - docs
   - process

@@ -1,11 +1,11 @@
 ---
 id: TASK-14
 title: 'Improve the README: patterns from popular .NET repos, plus an icon and banner'
-status: In Progress
+status: Waiting
 assignee:
   - '@chatswarm'
 created_date: '2026-11-16T22:26:00Z'
-updated_date: '2026-11-17T01:14:00Z'
+updated_date: '2026-11-17T02:14:00Z'
 labels:
   - docs
   - ui
