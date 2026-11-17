@@ -328,7 +328,8 @@ jobs:
           # preflight admits a tag with a -suffix; without prerelease=true GitHub would list such a
           # release as a final one.
           case "$TAG" in *-*) prerelease=true ;; esac
-          # --verify-tag only proves a tag exists. Re-resolve it and compare against what the legs
+          # Preflight proved the tag exists, and the tag was never the thing at issue: a tag can move
+          # after preflight. Re-resolve it and compare against what the legs
           # actually built, or a tag moved after preflight would publish somebody else's commit.
           tag_sha="$(gh api "repos/{owner}/{repo}/commits/$TAG" --jq .sha 2>/dev/null || true)"
           if [ -z "$tag_sha" ] || [ "$tag_sha" != "$COMMIT" ]; then
