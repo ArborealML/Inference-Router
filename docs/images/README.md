@@ -33,7 +33,7 @@ the regeneration command is below.
 
 | File | Rendered from | Renderer | Font resolved | Size | sha256 |
 |---|---|---|---|---|---|
-| `air-social-1280x640.png` | `air-social.svg` | resvg 2.6.2 (`@resvg/resvg-js`) | **DejaVu Sans** | 1280×640, 30,842 B | `b02b6d329c39fe046e18fe514d16f4dfb6e280a325f5e96cb24ea0bb2f5b97e9` |
+| `air-social-1280x640.png` | `air-social.svg` | resvg 2.6.2 (`@resvg/resvg-js`) | **DejaVu Sans** | 1280×640, 38,150 B | `cee3237b7f980d12259d6aad082a9473f12214115b36e0239d85c8147ec98f09` |
 | `air-mark-512.png` | `air-mark-avatar.svg` | resvg 2.6.2 (`@resvg/resvg-js`) | none — no text in this asset | 512×512, 9,935 B | `2e1b5e0286295ed50228d5e46dc66623772fb925befecc2c2a431cd219e820a2` |
 
 The SVGs stay authored against `system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif`, which is
@@ -47,3 +47,26 @@ Byte-identical on re-render, so the pipeline is deterministic:
 mkdir -p /tmp/svg-render && cd /tmp/svg-render && npm init -y >/dev/null && npm install @resvg/resvg-js
 node /tmp/svg-render/export.js   # font: {defaultFontFamily:'DejaVu Sans', sansSerifFamily:'DejaVu Sans', loadSystemFonts:true}
 ```
+
+## The legibility floor on the social card, and what it is proven against
+
+The card was redrawn once. The first version rendered at 1280×640 with capital heights of **109, 29 and 20 px**
+for its three lines: the wordmark was fine and the two lines under it were not something you could read in a
+link preview or a mobile preview column. The current artwork keeps the same three lines and the same mark, moves
+the mark group left (scale 0.71) and the divider from `x=490` to `x=300`, and widens the text column to
+`320..1206`; the same measurement now gives **109, 48 and 42 px**. Nothing was accepted on the strength of a
+font size in the markup — the numbers come out of the rendered pixels.
+
+How they are measured, so the claim can be re-run: split the raster into horizontal bands of inked rows in the
+text column, take a band's cap height as its first inked row to the last row still carrying at least 25% of the
+band's peak ink (a descender tail — the `g` in "routing" — is a couple of thin strokes and would otherwise
+inflate the number), and require **at least 40 px**. Alongside it: no ink at all in a 3 px border ring, checked
+both against the field colour and against *any* colour so a clipped accent in `#2B806C` (luminance ≈ 108) cannot
+hide as "no ink"; 79 px of right margin to the rightmost ink; and all three bands still carrying ink after a
+downscale to 640×320, which is what a dense preview column actually shows.
+
+One limit worth stating: the floor is proven for the face that resolves **here**. This box renders the declared
+system font stack as DejaVu Sans, whose capital height runs about 0.73 em, so the 56 px tagline lands at 42 px.
+A face with a smaller cap ratio — some system UI faces are nearer 0.70 or below — would pull that line under the
+floor. If the card is ever rendered on another machine, re-run the measurement on the raster it produces rather
+than trusting the `font-size` attribute.
