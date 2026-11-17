@@ -5,7 +5,7 @@ status: Blocked
 assignee:
   - '@claire'
 created_date: '2026-11-17T15:01:00Z'
-updated_date: '2026-11-17T15:08:00Z'
+updated_date: '2026-11-17T16:00:00Z'
 labels:
   - release
 dependencies: []
@@ -30,6 +30,6 @@ ordinal: 50000
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 the answer `v0.1.0: go | hold` is recorded here, and the board cuts the tag or parks it in the same sitting
+- [ ] #1 the answer `v0.1.0: go | hold` is recorded here; a `go` releases the tag task and a `hold` parks it — this task performs no act
 - [ ] #2 the answer `ratify decision-21: yes | no` is recorded, and decision-21's status is changed to match
 <!-- AC:END -->

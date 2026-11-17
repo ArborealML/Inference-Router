@@ -7,7 +7,7 @@ status: To Do
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T02:18:00Z'
-updated_date: '2026-11-17T14:02:00Z'
+updated_date: '2026-11-17T16:01:00Z'
 labels:
   - ui
   - wire
@@ -86,6 +86,8 @@ with per-subscriber state and replay races, and it needs its own task and SPEC s
 Read the decisions against SPEC §6.1 (admin surface: unauthenticated, loopback bind) and §10 (feed shape, replay, subscriber bounds): https://github.com/ArborealML/Inference-Router/blob/main/SPEC.md — those two sections are the whole evidence base for the audience and credential questions, and §6.1 plus the §6.1 casing table is what a new event kind has to be added through. Per the owner instruction this decision is now the agents to take and record as a decision record; the wire addition is still a §6 change with contract tests, so the loss-event half lands as code only with a decision record naming it. TASK-11 wakes when that record exists.
 
 DISPATCHED to the external research and review service at 2026-11-17 08:07 UTC, reasoning-only authority, top reasoning tier, text deliverable. The brief put to it: the three questions above, with the feed semantics it has to respect (bounded ring, exclusive replay cursor, slow subscriber ended not pruned, subscribers bounded, 503 before SSE headers) and the AOT/no-reflection constraint. Wake condition: the recommendation lands in this session, and it is expected as three recommendations each with its strongest counter-argument. Request bookkeeping (id, hash, tier) lives in .local/reviews/dispatches.md, not on the board. When it lands: review against how this repository's admin surface and feed actually behave, then file one owner task with the approval lines written out.
+
+Superseded log entries for this task: [board trim, 2026-11-17](https://github.com/ArborealML/Inference-Router/blob/main/backlog/archive/board-trim-2026-11-17.md).
 <!-- SECTION:NOTES:END -->
 
 ## Comments

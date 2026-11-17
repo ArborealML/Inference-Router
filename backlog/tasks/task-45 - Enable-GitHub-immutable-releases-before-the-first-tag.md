@@ -5,7 +5,7 @@ status: Waiting
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T10:52:00Z'
-updated_date: '2026-11-17T15:56:00Z'
+updated_date: '2026-11-17T16:01:00Z'
 labels:
   - ci
   - release
@@ -44,6 +44,8 @@ Measured by this session at 8f78a73 the first line answers `{"enabled":false,"en
 Report line owed by whoever performs this (decision-16): the exact call used — `gh api -X PUT repos/ArborealML/Inference-Router/immutable-releases` — the before and after JSON from the GET, the blast radius in one sentence (every future release on this public repository: published assets and their tag locked, drafts and metadata still editable, release deletion still possible), and the reversal (DELETE on the same path). Blast radius is repository-wide, so the report is not optional.
 
 **Org-level boundary, measured at 8f78a73:** `GET orgs/ArborealML/settings/immutable-releases` and `GET orgs/ArborealML/rulesets` both answer "This API operation needs the `admin:org` scope", so organisation-wide immutability is out of reach for this token and would be a person's act. Nothing here waits on it: the repository-level setting is readable and writable today (`enabled: false`, `enforced_by_owner: false`, and the repository answers `admin: true`).
+
+Superseded log entries for this task: [board trim, 2026-11-17](https://github.com/ArborealML/Inference-Router/blob/main/backlog/archive/board-trim-2026-11-17.md).
 <!-- SECTION:NOTES:END -->
 
 ## Comments

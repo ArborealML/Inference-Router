@@ -5,7 +5,7 @@ status: Waiting
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T09:11:00Z'
-updated_date: '2026-11-17T15:54:00Z'
+updated_date: '2026-11-17T16:01:00Z'
 labels:
   - release
   - security
@@ -65,6 +65,8 @@ remaining hole in a path that has been hardened four times this morning, and it 
    gets write access.
 
 **Measured by this board session at 8f78a73**, with `gh api --jq` and exit codes: `GET repos/ArborealML/Inference-Router` answers `admin: true`; `GET .../rulesets` answers `[]` (length 0); `GET .../tags/protection` answers 404 for this token; the repository has 0 tags and 0 releases; `GET orgs/ArborealML/rulesets` and the org-level immutable-releases setting answer "this API operation needs the `admin:org` scope" — an organisation-wide ruleset or org-level immutability is therefore a person's act, not an agent's, and is not planned here.
+
+Superseded log entries for this task: [board trim, 2026-11-17](https://github.com/ArborealML/Inference-Router/blob/main/backlog/archive/board-trim-2026-11-17.md).
 <!-- SECTION:NOTES:END -->
 
 ## Comments

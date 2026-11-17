@@ -5,11 +5,12 @@ status: Waiting
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T09:53:00Z'
-updated_date: '2026-11-17T15:56:00Z'
+updated_date: '2026-11-17T16:01:00Z'
 labels:
   - release
   - ci
 dependencies:
+  - TASK-38
   - TASK-44
   - TASK-45
 priority: high
@@ -51,6 +52,10 @@ refuses a tag that already carries a release, draft or published: `gh release de
 
 <!-- SECTION:NOTES:BEGIN -->
 **Cost and reversibility, corrected by the plan review (SPEC v0.12.20), and it changes the decision.** With immutable releases on there is no clean undo: deleting the canary's release lets the tag go, but the version **name stays reserved permanently**, and turning immutability off afterwards does not unlock it — so "disposable tag" in this task's title is the premise the review falsified, and the canary is either kept as a permanent prerelease (the review's recommendation) or deleted with the name burned either way. Never auto-delete an uncertain release: cleanup's `GET`-then-`DELETE` window plus a burned name makes a hasty delete worse than a stray draft. **First choice if an extra runner leg is allowed: rehearse in a throwaway repository** — same workflow, same runner minutes, no burned name and no public surface; the rehearsal saves the name and the audience, not the minutes. If the extra leg is refused, record the refusal and run it here. **Also unproven and now stated as unproven in SPEC**: whether `POST /releases` refuses a second release on an existing tag (a `422`) — never tested; and a `v*` ruleset with a `creation` rule and empty `bypass_actors` would block whoever pushes the canary tag itself, so TASK-38's actor list is a precondition of this run.
+
+Superseded log entries for this task: [board trim, 2026-11-17](https://github.com/ArborealML/Inference-Router/blob/main/backlog/archive/board-trim-2026-11-17.md).
+
+**Two rules this run has to respect.** A canary against an unprotected repository proves nothing about protection, so the ruleset on [TASK-38](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-38%20-%20Act-put-a-v-ruleset-on-the-repository-and-read-it-back.md) and immutable releases on [TASK-45](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-45%20-%20Enable-GitHub-immutable-releases-before-the-first-tag.md) come first. And a run proves only what the workflow in the tagged commit can do: the floor rule and the gh version floor (no `gh release verify` or `gh attestation` in 2.46.0) are criteria on [TASK-28](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-28%20-%20Cut-the-first-release-tag-and-watch-the-release-run.md) and [TASK-48](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-48%20-%20Prove-what-a-downloader-receives-post-publish-readback-and-free-build-attestation.md), cited here rather than repeated.
 <!-- SECTION:NOTES:END -->
 
 ## Comments

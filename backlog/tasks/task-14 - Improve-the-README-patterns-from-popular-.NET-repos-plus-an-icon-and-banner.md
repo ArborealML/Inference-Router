@@ -5,7 +5,7 @@ status: Waiting
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-16T22:26:00Z'
-updated_date: '2026-11-17T13:56:00Z'
+updated_date: '2026-11-17T16:01:00Z'
 labels:
   - docs
   - ui
@@ -95,6 +95,8 @@ banner at 3:1–4:1 (1200×360–400 source, rendered at ≤960px); GitHub's soc
 fallback. Keep assets under `docs/images/` (`.github/` stays for workflows and community files), give
 every image alt text, and record generated art in `docs/images/ATTRIBUTION.md` with the generator, date,
 maintainer edits and reuse terms — without claiming rights beyond what the tool's terms give.
+
+Superseded log entries for this task: [board trim, 2026-11-17](https://github.com/ArborealML/Inference-Router/blob/main/backlog/archive/board-trim-2026-11-17.md).
 <!-- SECTION:NOTES:END -->
 
 ## Comments

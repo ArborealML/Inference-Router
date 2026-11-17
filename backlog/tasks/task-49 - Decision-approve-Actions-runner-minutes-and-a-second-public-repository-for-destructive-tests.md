@@ -7,7 +7,7 @@ status: Blocked
 assignee:
   - '@claire'
 created_date: '2026-11-17T13:56:00Z'
-updated_date: '2026-11-17T14:25:00Z'
+updated_date: '2026-11-17T16:01:00Z'
 labels:
   - release
   - security
@@ -49,6 +49,8 @@ ordinal: 49000
 - The three parked tasks: [TASK-42](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-42%20-%20Decision-prove-the-release-gate-on-a-canary-knowing-the-tag-name-is-burned.md), [TASK-45](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-45%20-%20Enable-GitHub-immutable-releases-before-the-first-tag.md), [TASK-38](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-38%20-%20Act-put-a-v-ruleset-on-the-repository-and-read-it-back.md).
 - The card in (d): [docs/images/air-social-1280x640.png](https://github.com/ArborealML/Inference-Router/blob/main/docs/images/air-social-1280x640.png), with its provenance and measurements in [docs/images/README.md](https://github.com/ArborealML/Inference-Router/blob/main/docs/images/README.md). Rejected candidates B and C are untracked images on the working machine under `.local/card-prep/`; committing one costs a render.
 - The upload itself, once the card is settled: [TASK-29](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-29%20-%20Upload-the-social-preview-card-and-the-repository-avatar.md).
+
+Superseded log entries for this task: [board trim, 2026-11-17](https://github.com/ArborealML/Inference-Router/blob/main/backlog/archive/board-trim-2026-11-17.md).
 <!-- SECTION:NOTES:END -->
 
 ## Comments

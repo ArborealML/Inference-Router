@@ -5,12 +5,12 @@ status: Waiting
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T05:58:00Z'
-updated_date: '2026-11-17T15:01:00Z'
+updated_date: '2026-11-17T16:00:00Z'
 labels:
   - release
   - ci
 dependencies:
-  - TASK-32
+  - TASK-50
   - TASK-38
   - TASK-39
   - TASK-41
@@ -26,33 +26,30 @@ ordinal: 28000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-decision-10 settled the platform surface: release linux-x64 and win-x64, nothing else. What is left is the first
-actual tag run — the release workflow has only ever been exercised as a dry run, and it refuses to publish unless
-every declared leg produced a verified archive. Cutting a tag makes a public release; the go-ahead on TASK-32 is a gate check, and this task carries the run once that answer is `cut`.
+One tag, one run: the release workflow has only ever been exercised as a dry run, and it refuses to publish unless
+every declared leg produced a verified archive. decision-10 fixed the surface — linux-x64 and win-x64, nothing else.
 
-**Wake condition, current.** TASK-15 landed in 713ffdd and its follow-up fbc48d6 hardened the gate, so the
-workflow precondition is satisfied — that is no longer an acceptance criterion, it is a precondition that is true.
-The only outstanding wake is the owner's `go | hold` on TASK-50; every other step here is an agent act, so this task sits Waiting and names that event.
+**Wake: the owner's `go | hold` on [TASK-50](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-50%20-%20Decision-approve-the-first-public-version-number-v0.1.0-—-one-line.md), and nothing else.** Under decision-16 the cut itself is an
+agent act that gets reported; requiring a go-ahead first is decision-21, pending that same ratification. Everything
+else here is an agent act, so this task sits Waiting and names that event. A `hold` records a decision and does not
+release this task.
 
-**Sequencing hazard, found by review, and it is real.** Actions runs the workflow file **from the commit the tag
-points at**. Tag anything older than fbc48d6 and the OLD four-leg workflow runs, the macOS jobs queue again, and
-the run hangs on archives no runner will ever produce. So, before pushing the tag:
+**Standing rule — the floor a tag must clear.** Actions runs the workflow from the commit the tag points at, so a tag
+on an older commit runs an older, weaker gate: it could publish unchecked bytes, and before decision-10 it also
+queued macOS legs no runner services. Never tag a hardcoded sha. Establish the floor and honour it:
 
 ```bash
-git merge-base --is-ancestor fbc48d6 "$(git rev-parse origin/main)" && echo ok
-git rev-parse origin/main                       # tag THIS sha, the current main HEAD
-git tag -a v0.1.0 -m v0.1.0 "$(git rev-parse origin/main)"
-git push origin v0.1.0
-gh run watch <id>
+floor=$(git log -1 --format=%H -- .github/workflows/release.yml)
+git merge-base --is-ancestor "$floor" "$(git rev-parse origin/main)" && echo ok
+git tag -a v0.1.0 -m v0.1.0 "$(git rev-parse origin/main)"   # current main HEAD
+git push origin v0.1.0 && gh run watch <id>
 ```
 
-The same ancestry line is on TASK-32, because the owner may cut the tag personally.
-
-**Links**
-- Workflow a tag runs: [release.yml](https://github.com/ArborealML/Inference-Router/blob/main/.github/workflows/release.yml); preflight refusal at [96-104](https://github.com/ArborealML/Inference-Router/blob/main/.github/workflows/release.yml#L96-L104); asset gate and archive-count check at [216-231](https://github.com/ArborealML/Inference-Router/blob/main/.github/workflows/release.yml#L216-L231); prerelease handling at [238-241](https://github.com/ArborealML/Inference-Router/blob/main/.github/workflows/release.yml#L238-L241).
-- Where it appears: [releases](https://github.com/ArborealML/Inference-Router/releases). Decision behind the platform set: [decision-10](https://github.com/ArborealML/Inference-Router/blob/main/backlog/decisions/decision-10%20-%20No-paid-macOS-runner-minutes-release-artifacts-are-Linux-and-Windows-only.md). Owner go-ahead it waits on: [TASK-32] (https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-32%20-%20Decision-cut-the-v0.1.0-tag.md).
-
-A tag with a `-suffix` publishes as a GitHub prerelease (fbc48d6); `v0.1.0` with no suffix publishes as final.
+**Cut:** the releases page gains two archives plus `SHA256SUMS`, [TASK-14](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-14%20-%20Improve-the-README-patterns-from-popular-.NET-repos-plus-an-icon-and-banner.md) can point at real downloads, and
+this task reports what the gate proved. **Hold:** the README keeps telling readers to build from source and this task
+stays parked. Recommendation, stated not asked: cut `v0.1.0` only after [TASK-44](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-44%20-%20Close-the-open-release-gate-review-findings-SPEC-v0-12-15-onward.md) closes,
+[TASK-45](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-45%20-%20Enable-GitHub-immutable-releases-before-the-first-tag.md) is done and the canary on [TASK-42](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-42%20-%20Decision-prove-the-release-gate-on-a-canary-knowing-the-tag-name-is-burned.md) has run — immutable releases freeze whatever ships
+first and a published name is never reused.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -60,25 +57,22 @@ A tag with a `-suffix` publishes as a GitHub prerelease (fbc48d6); `v0.1.0` with
 - [ ] #1 One tag run builds and smoke-tests linux-x64 and win-x64 on their own runners before publish
 - [ ] #2 The published release carries both binaries plus SHA256SUMS, and the run is read rather than assumed green
 - [ ] #3 The README install path points at the published assets
+- [ ] #4 the tag points at a commit containing the newest release-gate work, proven by the ancestry check quoted in this task's report
 <!-- AC:END -->
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-<!-- SECTION:NOTES:BEGIN -->
-Precondition, not an acceptance criterion: the workflow must declare and gate two platforms first (TASK-15). Cut off as a criterion because that change already has an owner and a criterion of its own. Also gated by the owner task asking whether to publish at all: a tag creates a public release, and no decision on the board grants that. Status returns to Waiting when both clear.
+**What gates this, as events.** [TASK-50](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-50%20-%20Decision-approve-the-first-public-version-number-v0.1.0-—-one-line.md)'s `go`; [TASK-38](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-38%20-%20Act-put-a-v-ruleset-on-the-repository-and-read-it-back.md)'s ruleset read back — a `creation` rule
+with empty `bypass_actors` blocks the principal that pushes the tag, so the ruleset and the first tag cannot both be
+first; [TASK-45](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-45%20-%20Enable-GitHub-immutable-releases-before-the-first-tag.md) done; [TASK-44](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-44%20-%20Close-the-open-release-gate-review-findings-SPEC-v0-12-15-onward.md) closed; CI green on the tagged commit.
 
-Precondition, not a criterion (it is TASK-15 AC #2 and has one owner): the workflow must no longer declare or gate on osx artifacts. Owner authorisation to publish at all is a separate task; TASK-28 is Blocked on it.
+**Preconditions, not criteria:** two-platform legs (TASK-15, closed) and the platform surface (decision-10). Which
+commit last raised the floor is history and lives in git and the SPEC revision log; the rule above is the floor, so no
+sha quoted here can go stale. Superseded log entries for this task: [board trim, 2026-11-17](https://github.com/ArborealML/Inference-Router/blob/main/backlog/archive/board-trim-2026-11-17.md).
 
-Wake condition, updated 07:45 UTC: the TASK-15 precondition is satisfied - commit 713ffdd dropped the osx legs and the gate now counts two archives, re-verified on the checked-out file. What is left is one human act: the go-ahead on TASK-32. That is why this moved from Waiting to Blocked - no event wakes it until a person answers cut or hold.
-
-Floor updated to 6aa26cc for the same reason: the workflow that runs is the one in the tagged commit, so a tag older than 6aa26cc runs the older gate that could pass unchecked bytes. Check-then-tag, never a hardcoded sha as the target.
-
-Floor, stated as a rule instead of a sha so it cannot go stale: the tag must point at a commit that contains the newest release-gate work. Find the floor with `git log -1 --format=%H -- .github/workflows/release.yml` (at the time of writing that is 6b91de4), then check-then-tag: `git merge-base --is-ancestor "$(git log -1 --format=%H -- .github/workflows/release.yml)" "$(git rev-parse origin/main)" && git tag -a v0.1.0 -m v0.1.0 "$(git rev-parse origin/main)" && git push origin v0.1.0`. Actions runs the workflow file from the tagged commit, so a tag behind the floor runs an older, weaker gate.
-
-FIRST-RUN CHECKLIST - the first tag is the only real evidence the gate exists, so it is read by a person and not assumed green. Before pushing: (1) the ancestry rule above passes, and origin/main HEAD is recorded; (2) watch the two build legs and confirm each produced exactly two artifacts plus their expected names. Before un-drafting, from the run log: (3) the captured release id; (4) the tag-to-commit proof line naming the same commit the legs built; (5) the five asset names with state=uploaded and the byte sizes matching the staged files. After publishing: (6) the public URL, the prerelease flag (a tag with a -suffix publishes as a prerelease), the generated notes, and the downloadable SHA256SUMS verified against the archives by a downloader that is not the publishing run; (7) each binary's file type (ELF x64 / PE x64) and a smoke run on its own OS. Failure paths first: exercise them with a dispatch run or a scratch tag that is deleted afterwards, remembering that pushing a tag creates a real release - the workflow refuses a tag that already has a release, published or draft, so a scratch tag must be removed before v0.1.0 is cut.
-
-Three confirmations only a live run can give, REPLACING the three by-tag ones written at 09:16 UTC, which were obsolete before anyone used them (the by-tag endpoint answers only PUBLISHED releases, so a draft this run created is not findable by tag): (1) the create answers with a numeric release id and an upload_url, and those are what the rest of the run addresses; (2) all five assets come back in one snapshot with non-null digests equal to the staged sha256 - that match is also the only current evidence that the upload leg moved bytes faithfully, so a mismatch is the gate working, not a false alarm; (3) the workflow-write guard's real behaviour, which earlier rounds guessed wrong: on create and on update it answers 404, and sometimes 403 with "Resource not accessible by integration" - not 422 - and whether it fires at all when the tag already exists is documented ambiguity rather than settled fact, so the first run is the observation. The other half of the same hazard: if the tag vanished between preflight and create, an omitted target_commitish lets the endpoint create the tag from the DEFAULT branch, so a run could publish a build of a commit nobody chose. Reminder kept: a scratch tag used to exercise failure paths creates a real draft, and preflight then refuses that tag until the draft is deleted.
+**Duplicate archived:** [TASK-32](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-32%20-%20Decision-cut-the-v0.1.0-tag.md) carried the same deliverable, actor and outcome and is in the archive; its
+go/hold analysis now lives on TASK-50, and its `Decision:` title contradicted an agent assignee.
 <!-- SECTION:NOTES:END -->
 
 ## Comments

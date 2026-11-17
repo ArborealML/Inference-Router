@@ -5,7 +5,7 @@ status: Waiting
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T10:52:00Z'
-updated_date: '2026-11-17T14:48:00Z'
+updated_date: '2026-11-17T16:01:00Z'
 labels:
   - ci
   - release
@@ -30,7 +30,7 @@ ordinal: 43000
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [x] #1 the twelve criteria closed between v0.12.15 and v0.12.21, with each round's findings and dispositions, live in SPEC 15 and git (decision-20)
+- [x] #1 the twelve closed criteria live in [SPEC 15](https://github.com/ArborealML/Inference-Router/blob/main/SPEC.md) as the rows 'Deep review of v0.12.15' through 'Twelfth deep review of the release gate', and in the commits 95410ba, 8f78a73 and 79a21e0
 - [ ] #2 the two authorization facts stay unproven until a live run: `GITHUB_TOKEN` at `contents: write` sufficing for upload plus un-draft, and the workflow-write guard for a tag at the head of main
 - [ ] #3 the gate reads `.immutable` on a published release and records it, once immutable releases are on (behind TASK-45)
 <!-- AC:END -->
@@ -40,7 +40,7 @@ ordinal: 43000
 <!-- SECTION:NOTES:BEGIN -->
 **Current round only.** Thirteenth review over 79a21e0, recorded before its fix exists: the two P2s above are reproduced at source, and the `diag_fields_survive` fixture is the gap. AC count stays where it is until a fix and a fixture that fails without it both land.
 
-**The census behind AC #2** (re-run: `git show main:.github/workflows/release.yml | grep -c '2>/dev/null'`): 9 sites discard stderr, 6 jq shape guards discard stdout only, 1 discards both, 1 API read captures stderr to a temp file removed by an EXIT trap and reports only the exit code plus status-like numbers, 1 merge is compiler output (`dotnet publish … 2>&1 | tee aot-<rid>.log`). jq prints a value only for typed operations, truncated to ten characters, and every typed operation in those six guards sits behind a `type` guard — pinned by `shape_jq_stderr`. Text that says "sanitized stderr" describes the replaced rule.
+**The census behind the stderr criterion, retired into SPEC 15 with the v0.12.20 round** (re-run: `git show main:.github/workflows/release.yml | grep -c '2>/dev/null'`): 9 sites discard stderr, 6 jq shape guards discard stdout only, 1 discards both, 1 API read captures stderr to a temp file removed by an EXIT trap and reports only the exit code plus status-like numbers, 1 merge is compiler output (`dotnet publish … 2>&1 | tee aot-<rid>.log`). jq prints a value only for typed operations, truncated to ten characters, and every typed operation in those six guards sits behind a `type` guard — pinned by `shape_jq_stderr`. Text that says "sanitized stderr" describes the replaced rule.
 
 **Rejected, and still rejected:** the case-fold finding — the replaced code folded the same prefix (`${got_prefix,,}`), deliberately, since v0.12.15. Three limits stay limits, not tasks: an undetectable short array, a duplicate key defeating the tag match, the `< 2^53` ceiling refusing a future id on purpose. The release-write race is never claimable from YAML; its controls are TASK-38 and TASK-45.
 

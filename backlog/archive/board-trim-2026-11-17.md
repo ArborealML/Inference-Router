@@ -1,0 +1,416 @@
+# Superseded board log — trimmed 2026-11-17
+
+Comment entries the board removed from open tasks under the rolling-window rule (decision-20). Each entry was
+superseded argument or history, not a standing rule: the rules that survive are in the task Description,
+Acceptance Criteria, Notes or SPEC. Nothing here is current guidance; it is the record of what was decided and
+why, kept so a later reader can tell a decision from an oversight. Disposition of each round's findings is in
+SPEC §15 and the commit that closed it.
+
+## TASK-11
+
+# TASK-11: 6 superseded comment(s), removed from the board body
+Nothing was deleted: this is the text that came out, and git history plus the cited commits and
+SPEC 15 rows keep the record. Newest two kept in the task.
+
+created: 2026-11-17T10:14:00Z
+
+---
+
+AC #2 rewritten: it used to list an explicit stream gap event as if settled, which pre-decided a wire question that TASK-21 - now a Blocked owner task - exists to answer. The task still depends on TASK-21 in front matter, so the gate is visible; the contradiction was in the criterion, not the dependency. TASK-6 re-checked for the stale macOS wording and none is present (no TASK-22 reference in the file).
+
+---
+
+created: 2026-11-17T10:58:00Z
+
+---
+
+Wake, named: the three posture answers on [TASK-21](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-21%20-%20Decision-what-the-live-view-shows-who-may-open-it-and-whether-the-wire-gains-loss-reporting.md) are adopted (operator-first; `/admin` unauthenticated and loopback-only with operator-managed tunnels; no new feed event kind — continuity computed client-side from sequence holes plus the exclusive cursor). This task starts when SPEC carries that wording, because AC #5 is the event-stream half of it.
+
+---
+
+created: 2026-11-17T13:56:00Z
+
+---
+
+**Stale park, found by the board audit at b214ce6.** This task sat Waiting on posture answers from a predecessor that is now closed; the wake already happened, so the Waiting column was hiding ready work. Moved to To Do with its assignee unchanged. Nothing about its scope or criteria changed.
+
+## TASK-14
+
+# TASK-14: 6 superseded comment(s), removed from the board body
+Nothing was deleted: this is the text that came out, and git history plus the cited commits and
+SPEC 15 rows keep the record. Newest two kept in the task.
+
+created: 2026-11-17T03:44:00Z
+
+---
+
+AC #5 now holds, and it is checkable rather than a vibe: the only measured claims in the README are the benchmark paragraph, and every figure in it traces to the published run — routing +58.0/+90.6/+91.4 µs p50 and ~15 KB (README: ~58–91 µs, ~15 KB), full HTTP path +217.1/+320.7/+995.8 µs and ~26–32 KB (README: ~217–996 µs, ~26–32 KB, with the top of the range labelled as HTTP framing rather than routing), SSE relay +58.1/+97.5/+102.3 µs and ~24–25 KB (README: ~58–102 µs, ~25 KB) — with docs/benchmarks.md and SPEC 9.1 linked for the caveats. The compatibility claim is scoped to the two proxy routes in the works-today/not-built-yet table, and no other sentence in the README asserts performance.
+
+---
+
+created: 2026-11-17T05:26:00Z
+
+---
+
+Assignee reduced to one name. Two were listed (the owner and the agent): the owner's move on the README itself lives on TASK-23, so the next actor on this task is the agent who restructures it when TASK-23 lands. A task with two assignees reads as nobody.
+
+---
+
+created: 2026-11-17T07:55:00Z
+
+---
+
+AC #4 is two badges and only one of them exists today: README lines 10-12 carry CI, license and .NET badges, and the CI badge resolves (checked the URL form against the workflow name). The release badge cannot resolve until a release exists, which is TASK-32 (owner go-ahead) then TASK-28 (the tag run). Dependency set to TASK-28 so the board shows the real wake instead of a prose promise. Assignee stays the main session: a README line during the tag run, not a separate change.
+
+## TASK-16
+
+# TASK-16: 2 superseded comment(s), removed from the board body
+Nothing was deleted: this is the text that came out, and git history plus the cited commits and
+SPEC 15 rows keep the record. Newest two kept in the task.
+
+created: 2026-11-17T05:26:00Z
+
+---
+
+Assignee changed from the external research service to the agent. Nothing has been dispatched: AC #1 is the dispatch itself, and it is sequenced behind TASK-14, so the next move is whoever submits the request, not the service that will answer it. The service owns a request only once it exists — the board has already used that convention on the tasks whose research actually ran. Dependency on TASK-14 recorded so the ordering is structural rather than a sentence in the description.
+
+## TASK-21
+
+# TASK-21: 6 superseded comment(s), removed from the board body
+Nothing was deleted: this is the text that came out, and git history plus the cited commits and
+SPEC 15 rows keep the record. Newest two kept in the task.
+
+created: 2026-11-17T07:54:00Z
+
+---
+
+Assignee and title changed on purpose. This is not an owner decision being handed to a machine: it is a design question whose answer is a recommendation, so the external review service owns the analysis and the board session owns what happens to it - review against how this repo's admin surface and event feed actually work, then file one owner task with the approval lines written out. Wake condition: the recommendation lands. Until then no person is waiting on this and no person is being asked to write a design. Retitled from Decision: to Design: so the title matches who acts.
+
+---
+
+created: 2026-11-17T08:14:00Z
+
+---
+
+Design phase closed: dispatched to the external research and review service at 08:07 UTC and answered at 08:1x UTC (transcript in .local/reviews/, not in the repository). The board reviewed the answer against SPEC 6/10/12.5 and the feed semantics in code before putting any of it here - in particular the claim that loss is subscriber-relative, which is true of this ring: eviction is global, consumption is per subscriber, and an eviction event would itself consume ring capacity to describe something that may affect nobody. Retitled Design: back to Decision: because what remains is ratification, not analysis. Status Blocked: no event wakes this, a person answers three one-line approvals (about 3 minutes).
+
+---
+
+created: 2026-11-17T10:58:00Z
+
+---
+
+Reassigned under decision-16 and **adopted as recommended** by the external design answer, which the board checked against this code before recording it: (1) the live view is operator-first, not multi-tenant; (2) `/admin` stays unauthenticated and loopback-only, with operator-managed tunnels plus browser-request hardening — no new credential surface; (3) **no gap/loss event kind on the shared feed**: compute continuity client-side from sequence holes plus the exclusive cursor, and if a server-side notice is ever wanted it must be subscriber-relative and must not consume a global sequence id. Remaining work: write those three into SPEC §6, §10 and §12.5 as posture, with a revision-log line, then [TASK-11](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-11%20-%20Blazor-live-view-screens-plus-the-event-stream-additions-they-need.md) can start. Answer 3 changes nothing on the wire, which is the point of adopting it.
+
+## TASK-28
+
+# TASK-28: 10 superseded comment(s), removed from the board body
+Nothing was deleted: this is the text that came out, and git history plus the cited commits and
+SPEC 15 rows keep the record. Newest two kept in the task.
+
+created: 2026-11-17T07:53:00Z
+
+---
+
+Wake condition rewritten, and a new step added from an external review of the release work, checked against the file: Actions runs the workflow from the commit the tag points at, so a tag on anything older than fbc48d6 runs the old four-leg workflow and the macOS legs queue again. Verified on the checked-out HEAD: matrix legs parse to [linux-x64, win-x64]; the gate names the same two in expected_rids (line 216); the archive-count refusal is at 225; prerelease handling at 238-241. The same ancestry check is now on TASK-32 for the case where the owner cuts the tag personally. Two external deep reviews of this area (713ffdd, fbc48d6) are recorded as in flight; per the contract that changes neither status nor assignee, and their request bookkeeping stays out of the board.
+
+---
+
+created: 2026-11-17T08:49:00Z
+
+---
+
+Dependency added: the tag should not be cut while the gate is under review. TASK-28 now waits on the owner go-ahead (TASK-32) and on the release-gate round closing (TASK-37, wake = the review of 6b91de4 plus the SPEC 15 disposition row). The first-run checklist is in Implementation Notes.
+
+---
+
+created: 2026-11-17T09:13:00Z
+
+---
+
+Dependency set widened deliberately: TASK-38 (who may move a release tag) and TASK-39 (whether to pay for download-and-hash or signing) are repository-settings and money calls in front of the owner, and TASK-40 is the gate round whose load-bearing claim is untested. Cutting the first release before those land would mean proving the gate in production with the settings still open. If you would rather cut v0.1.0 with the settings question open, say so on TASK-32 and I will record that as the accepted posture rather than argue it.
+
+---
+
+created: 2026-11-17T10:58:00Z
+
+---
+
+Board update after the round-8 review: this stays Blocked, and the blockers are all agent work now, not an owner's keystrokes (decision-16). Floor for the tag moves to the merge commit of [TASK-44](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-44%20-%20Close-the-open-release-gate-review-findings-SPEC-v0-12-15-onward.md); TASK-42 (canary) proves the gate first, TASK-45 turns on immutable releases before any release is published, TASK-38 puts a `v*` ruleset on the tag. No tag has run the gate: configured, not proven.
+
+---
+
+created: 2026-11-17T11:06:00Z
+
+---
+
+Board update: [TASK-39](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-39%20-%20Decision-verify-what-a-downloader-receives-or-keep-accepting-that-we-do-not.md) is answered (adopt posture), and the work it produced is [TASK-48](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-48%20-%20Prove-what-a-downloader-receives-post-publish-readback-and-free-build-attestation.md), which now also gates this task. The first real tag should therefore be the canary in [TASK-42](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-42%20-%20Decision-prove-the-release-gate-on-a-canary-knowing-the-tag-name-is-burned.md), not v0.1.0: the canary is where the readback and the consumer-verification commands get tested on a release nobody will install.
+
+## TASK-29
+
+# TASK-29: 10 superseded comment(s), removed from the board body
+Nothing was deleted: this is the text that came out, and git history plus the cited commits and
+SPEC 15 rows keep the record. Newest two kept in the task.
+
+created: 2026-11-17T06:56:00Z
+
+---
+
+Answer received: `card set, avatar set`. Checked AC #2 (avatar) and NOT AC #1 (card), because only one of the two is true on the public side, and this task is graded on what a visitor sees, not on what was pressed.
+
+**Avatar — confirmed, from outside the form.** `https://github.com/ArborealML.png?size=512` returns 460×460 RGB whose colour histogram is 82.4% near-black field and 16.5% near-white mark. Our export `air-mark-512.png` is 82.4% #10241F and 16.7% #F3F7F2 — the same ratio to a tenth of a percent, with GitHub re-encoding the palette slightly (#101010 / #F3F3F3 instead of #10241F / #F3F7F2). That is the mark.
+
+**Card — not live.** Two independent checks: the repository page still serves `<meta property="og:image" content="https://repository-images.githubusercontent.com/1460450305/…">`, which is GitHub's **auto-generated repository image**, not an upload; and that image's histogram is 87.6% white with 4.4% near-black — the inverse of our card, which is 93.6% #10241F field with 3.7% #F3F7F2 ink. A custom social preview would make the page point at `opengraph.githubassets.com/…` and serve the dark field. Re-checked after a pause, still the default.\n\nWhat to do: repo Settings → Options → Social preview → confirm the image is still shown in the box **and that Save was pressed** — the form silently keeps the previous state if Save is missed, and the removal/add state is easy to miss because the page shows a thumbnail either way. Then the check above should flip to the dark field; if you want the card ready to re-pick, the export is at `.local/exports/air-social-1280x640.png` (30,842 bytes, sha256 b02b6d32…97e9) and the mark at `.local/exports/air-mark-512.png` (9,935 bytes, sha256 2e1b5e02…820a). Stays Blocked: only a person can press that button.
+
+---
+
+created: 2026-11-17T07:45:00Z
+
+---
+
+Third check, 2026-11-17 07:33 UTC, and this one is decisive about what the settings page is holding. (a) The repository page still serves og:image = repository-images.githubusercontent.com/1460450305/..., and that object is 2269x1134 - GitHub's generated repository image. A repository that has a custom social preview serves og:image from opengraph.githubassets.com with a content hash in the path; checked against vitejs/vite as a positive control. (b) The object the link-preview endpoint serves is 1200x600 and 87.6 percent white with 3.9 percent purple (#7355DD, GitHub card furniture); our committed card is 93.6 percent #10241F field with 3.7 percent ink. Same answer from two surfaces, and re-fetching with different cache versions returns byte-identical bytes, so this is not a stale cache. Avatar by contrast is live: the org picture returns 460x460 at 82.4 percent #10241F and 16.5 percent #F3F7F2 against our export at 82.4/16.7 - that is the mark. What to look at: the card upload box in repo Settings -> Options, where an added image and an absent one both render as a thumbnail; the description answer has now said card set twice while the public surface says otherwise, which is the signature of pressing away from the form instead of Save. The PNG to pick is committed, so it is download-and-pick: docs/images/air-social-1280x640.png. AC #2 stays checked, AC #1 and #3 stay open, status stays Blocked: only a browser session can change that setting.
+
+---
+
+created: 2026-11-17T10:58:00Z
+
+---
+
+Retitled and re-trimmed under decision-16: this is the **only** task left on a person, because GitHub has no API, no `gh` endpoint and no committed file that stands in for the social-preview upload — an agent can prepare the PNG and verify the result afterwards, but cannot press Save. Everything that is not the button moved to [TASK-46](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-46%20-%20Render-the-final-social-preview-card-and-verify-it-from-outside-the-form.md) (final render, measurements, sha256 of the file to pick) and the after-the-fact public check. Status: avatar live and verified; card not live — re-checked 10:40Z, the page still serves `repository-images.githubusercontent.com/1460450305/...`, which is GitHub's generated image, and a custom card would make it serve `opengraph.githubassets.com/...`. The form shows a thumbnail whether an image is set or not, so the failure mode is pressing away from the form instead of Save; that has now happened twice against a 'card set' answer.
+
+---
+
+created: 2026-11-17T13:30:00Z
+
+---
+
+**Fourth check, measured by the board at 8f78a73 (13:2xZ), and the card is still not live.** The repository page serves `og:image` = `repository-images.githubusercontent.com/1460450305/...`, GitHub's generated image. Fetched the link-preview object directly: 1200x600, 88.7% light pixels — our committed card is 96.1% dark field, 3.9% light, so the card GitHub shows is not ours. The avatar **is** live and re-confirmed independently: 460x460, 82.6% dark / 16.7% light against our export's 82.4/16.7.
+
+Moved to **Waiting** rather than Blocked because there is now an event that wakes it: [TASK-46](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-46%20-%20Render-the-final-social-preview-card-and-verify-it-from-outside-the-form.md) is re-rendering the card, because the committed one fails its own legibility bar — its smallest text line has ~19 px caps in the 1280x640 raster and a GitHub link preview shows the card at about 600 px wide, so that line lands near 9 px. Uploading today's PNG is still open to anyone who wants a card now: it is 30,842 bytes, under GitHub's 1 MB ceiling, and replacing it later is a second trip to the same form with nothing burned. What the board does not want is a third upload of an image that fails the measurement in TASK-46 AC #2.
+
+---
+
+created: 2026-11-17T13:44:00Z
+
+---
+
+**Heads-up on a number in this task's own text, so it is not trusted after it goes stale.** The byte size and sha256 quoted above (30,842 B, `b02b6d32...97e9`) belong to the card as committed today. [TASK-46] (https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-46%20-%20Render-the-final-social-preview-card-and-verify-it-from-outside-the-form.md) is replacing that image: the committed card's smallest text line measures 20 px cap height and a link preview shrinks it to about 9 px, which is unreadable. The replacement candidate is measured at 42 px on the same line and is already verified for determinism and geometry, but it is not committed yet. **Pick whatever `docs/images/air-social-1280x640.png` holds when the upload happens, and re-read its sha256 from the file rather than from this task.** Nothing here burns anything: replacing a social-preview image is a second trip to the same form.
+
+## TASK-30
+
+# TASK-30: 4 superseded comment(s), removed from the board body
+Nothing was deleted: this is the text that came out, and git history plus the cited commits and
+SPEC 15 rows keep the record. Newest two kept in the task.
+
+created: 2026-11-17T08:14:00Z
+
+---
+
+Wire-shape question resolved rather than pre-decided, and the answer is smaller than it looked. Checked against the code and SPEC: the in-band ending for a stream whose 200 is already committed is shipped precedent, not a new surface - response_timeout_ms already ends a quiet engine mid-turn with one engine_timeout frame plus [DONE] (SPEC:696, SPEC:796, and the v0.12.7-era note at SPEC:222 that streaming ceilings are in-band by construction). So AC #3 now names SPEC 6 for the shape and TASK-34 for the numbers. TASK-34 asks you for three constants and one policy (idle bound default, cancel-or-let-finish, frames-or-bytes) and starts at @claire. Start the machinery now: relay bound, stall detection, tests against the fake - the constants are the only thing waiting on a person, and a two-minute answer should not stall a week of work.
+
+---
+
+created: 2026-11-17T08:48:00Z
+
+---
+
+Precedent claim verified independently, and the line anchors in my first wording had already drifted (SPEC moves constantly, so cite sections): SPEC 6 says a committed stream whose engine goes quiet fails in band with one engine_timeout frame plus [DONE] (row at line 735 today), SPEC 14.1 row 2 names the same ending and credits RequestPhaseTimeoutTests (line 1379), and the test AStreamThatNeverSendsAFrameEndsInsideTheStreamBecauseTheStatusIsAlreadySent pins it at RequestPhaseTimeoutTests.cs:196. So TASK-34 really is numbers-and-policy, not a wire change. If the coding session's independent check disagrees, this criterion moves back behind an owner wire decision and TASK-34 is retitled accordingly.
+
+## TASK-32
+
+# TASK-32: 12 superseded comment(s), removed from the board body
+Nothing was deleted: this is the text that came out, and git history plus the cited commits and
+SPEC 15 rows keep the record. Newest two kept in the task.
+
+created: 2026-11-17T07:45:00Z
+
+---
+
+Kept over TASK-31: identical title, created two minutes later, and this copy carries the acceptance criterion and the board dependency. TASK-31 is archived rather than deleted so the ID and its links survive and a reader can see the duplicate was removed on purpose. Consequences, the one-line answer, the command and the minute cost are now in the description, which is what a person needs to close it without a follow-up question. The TASK-15 gate is gone from the prose because TASK-15 landed in 713ffdd and I re-verified the two-platform workflow myself.
+
+---
+
+created: 2026-11-17T07:53:00Z
+
+---
+
+Added the ancestry step after a review found the sequencing hazard: the workflow that runs is the one in the tagged commit, so a tag older than fbc48d6 would re-run the four-leg workflow and queue macOS jobs that no runner picks up. The check is git merge-base --is-ancestor fbc48d6 origin/main, and the tag is cut on the sha that check just cleared. This is the only reason the owner task now carries a command with three lines instead of one.
+
+---
+
+created: 2026-11-17T09:46:00Z
+
+---
+
+Rewritten to the owner-instruction standard: answer-first block at the top, one line per option, the exact commands, and links that resolve on specific files instead of the tasks folder - this task previously contained zero URLs for a decision about publishing a release. The floor is a command, not a sha, because it has moved five times today.
+
+---
+
+created: 2026-11-17T09:53:00Z
+
+---
+
+Now waits on the canary decision: cutting v0.1.0 on a gate that has never run for real makes the first release the test, which is the wrong order. The canary is the cheap falsifier; this stays a separate yes afterwards.
+
+---
+
+created: 2026-11-17T10:58:00Z
+
+---
+
+Reassigned under decision-16: the cut is an agent act, not an owner's keystroke. Wake: the canary in [TASK-42](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-42%20-%20Decision-prove-the-release-gate-on-a-canary-knowing-the-tag-name-is-burned.md) green, [TASK-44](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-44%20-%20Close-the-open-release-gate-review-findings-SPEC-v0-12-15-onward.md) closed, [TASK-45](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-45%20-%20Enable-GitHub-immutable-releases-before-the-first-tag.md) done. The command stays as written in the description — check the floor first, never tag a hardcoded sha: `git log -1 --format=%H -- .github/workflows/release.yml`, `git merge-base --is-ancestor …`, then `git tag -a v0.1.0 -m v0.1.0 "$(git rev-parse origin/main)"` and `git push origin v0.1.0`. Then read the run, do not assume it.
+
+---
+
+created: 2026-11-17T14:02:00Z
+
+---
+
+Blocked, not Waiting: the chain it sits behind now waits on a person. Its stated wake was the canary green, TASK-44 closed and TASK-45 done; the canary and the two repository settings are now Blocked on TASK-49, so no event short of an owner answer wakes this. Nothing about its own criteria changed.
+
+## TASK-33
+
+# TASK-33: 2 superseded comment(s), removed from the board body
+Nothing was deleted: this is the text that came out, and git history plus the cited commits and
+SPEC 15 rows keep the record. Newest two kept in the task.
+
+created: 2026-11-17T10:58:00Z
+
+---
+
+Reassigned under decision-16: the permission is no longer the owner's to type, so the task becomes a scoped act with a report. Answer recorded: **allow one lifecycle transaction on this host**, bounded to a named disposable engine that no other session is using, with the config committed as a sample-like file under `.local/`, and a report naming what was started, stopped and removed and how long each step took. That is a mutation of shared infrastructure on the owner's machine, so it stays reportable in the commit and in SPEC's verification wording, and it is reversible by `docker` inspection. If the run cannot be made bounded — no idle engine, or an unknown engine holding a slot — stop and put it back on the board rather than choosing which engine to disturb.
+
+## TASK-38
+
+# TASK-38: 6 superseded comment(s), removed from the board body
+Nothing was deleted: this is the text that came out, and git history plus the cited commits and
+SPEC 15 rows keep the record. Newest two kept in the task.
+
+created: 2026-11-17T10:58:00Z
+
+---
+
+Reassigned under decision-16: this was parked as a browser settings act, and it is not one. Measured on this repository: `GET /repos/{owner}/{repo}/git/tag-protection/branches` answers 404, so the tag-protection endpoints are unavailable here; `GET /repos/{owner}/{repo}/rulesets` answers `[]`, so a **repository ruleset** matching `v*` is the scriptable way to get what the review asked for (block delete and non-fast-forward moves on release tags). The ruleset API is a real mutation of a public repository: state the ruleset created, and read it back after. 'Who may publish' stays a written sentence: admins plus the Actions token, least privilege, with the token's own permissions being settled in [TASK-44](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-44%20-%20Close-the-open-release-gate-review-findings-SPEC-v0-12-15-onward.md) AC #4, not here.
+
+---
+
+created: 2026-11-17T11:31:00Z
+
+---
+
+Ownership, settled: as with TASK-45, this is a setting rather than YAML, but it is reachable —
+`GET .../git/tag-protection/branches` answers 404 on this repository while `GET .../rulesets` answers `[]`, so a
+repository ruleset on `v*` is created over REST with the token this machine already holds (measured
+`admin: true`). Agent work under decision-16, created and read back in the same report, and reversible. Not a
+prerequisite the canary can fake: TASK-42 proves nothing about tag protection unless this lands first.
+
+---
+
+created: 2026-11-17T13:56:00Z
+
+---
+
+Blocked on TASK-49 (c): whether one ruleset or two, because a `creation` rule with no bypass list blocks the release path itself. Nothing else waits — the payload shape, the readback and the measurements are all in this task and agent-owned.
+
+## TASK-42
+
+# TASK-42: 8 superseded comment(s), removed from the board body
+Nothing was deleted: this is the text that came out, and git history plus the cited commits and
+SPEC 15 rows keep the record. Newest two kept in the task.
+
+created: 2026-11-17T10:58:00Z
+
+---
+
+Reassigned under decision-16: an agent runs it. Wake: [TASK-44](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-44%20-%20Close-the-open-release-gate-review-findings-SPEC-v0-12-15-onward.md) merged and [TASK-45](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-45%20-%20Enable-GitHub-immutable-releases-before-the-first-tag.md) done, with CI green on the merge commit. Protocol, tightened by the round-8 review: tag current `main` as `v0.0.0-canary`, push, let the unmodified workflow run with its own token, capture the create and upload responses, the full asset inventory, the download SHA-256, the peeled tag SHA, the `PATCH` response, and `.immutable` on the published release; then try to replace an asset and to move the tag and **require both to be refused**; then delete the release with `--cleanup-tag`, because preflight refuses a tag that already carries a release, draft or published. Cost: public assets for a few minutes plus one runner leg. It is a mutation of a public repository and the report says so in those words.
+
+---
+
+created: 2026-11-17T11:06:00Z
+
+---
+
+Hardening from the TASK-39 answer: the canary is also the test bed for consumer verification. On the published canary, run the readback against the live URLs and try the documented user verification path; record the gh version used. Measured here: gh 2.46.0 has none of `gh release verify`, `gh release verify-asset`, `gh attestation` (each exits 1), so if the release README is to tell users those commands, the canary is where the version floor gets established — and if it tells them `sha256sum` plus a REST listing, the canary proves that works too.
+
+---
+
+created: 2026-11-17T11:31:00Z
+
+---
+
+Canary evidence items, from the seventh review's disposition
+(aa7ad23, fd76021). Record these from the live run rather than reasoning about them afterwards:
+(i) what `.target_commitish` says on the created release — this is the only way to see what the omitted parameter
+actually resolved to, and it is the item that replaces the rejected `target_commitish` hardening on TASK-44;
+(ii) whether the workflow-write guard fires at all for a tag cut at the head of main — by the endpoint note it
+should not, because the resolved target is the default-branch head and that diff is empty by construction, but
+our own tag commits touch `.github/workflows/release.yml`, so the answer matters and only a run gives it;
+(iii) whether `contents: write` from `GITHUB_TOKEN` suffices for asset upload and the un-draft `PATCH` in practice.
+
+Ownership caution: the canary cannot verify the two repository settings on TASK-45 (immutable releases) and
+TASK-38 (a `v*` ruleset) unless those are done **first**. A canary run against an unprotected repository proves
+nothing about protection that is not switched on, so the order is 45 and 38, then 42.
+
+---
+
+created: 2026-11-17T13:56:00Z
+
+---
+
+Blocked on TASK-49 (a) and (b): the canary decision and whether the destructive tests run in a throwaway repository. Not Waiting — no event will wake this; a person has to grant it.
+
+## TASK-45
+
+# TASK-45: 4 superseded comment(s), removed from the board body
+Nothing was deleted: this is the text that came out, and git history plus the cited commits and
+SPEC 15 rows keep the record. Newest two kept in the task.
+
+created: 2026-11-17T11:06:00Z
+
+---
+
+TASK-39's answer makes this a prerequisite rather than an option, and sharpens what to write in SPEC: immutability locks published assets and the tag while the release exists, and it does not lock drafts, the pre-publish window, the title or notes, or the prerelease/latest flags — and it will freeze a malicious set just as faithfully as a good one. Its attestation binds the GitHub-published release set, not the trustworthiness of the source, the approval, or the build execution.
+
+---
+
+created: 2026-11-17T11:31:00Z
+
+---
+
+Ownership, settled: the coding session reads this as an owner Decision because it is a
+repository setting and nothing in YAML. It is not an owner act here: it is a REST call from a machine whose
+working token already answers `admin: true` for this repository (measured today), so under decision-16 it is
+agent work — `gh api -X PUT repos/ArborealML/Inference-Router/immutable-releases`, then the same GET to prove the
+state moved. What makes it reportable rather than private: it changes a public repository's supply-chain posture,
+it reverses with `DELETE`, and it must be visible in SPEC and in the commit message before any release is published.
+The owner keeps the veto, not the keystrokes.
+
+## TASK-46
+
+# TASK-46: 2 superseded comment(s), removed from the board body
+Nothing was deleted: this is the text that came out, and git history plus the cited commits and
+SPEC 15 rows keep the record. Newest two kept in the task.
+
+created: 2026-11-17T13:43:00Z
+
+---
+
+**The image-prep half ran as a subagent in a scratch directory (no repo writes); it is done, and this board session re-measured its numbers rather than repeating them.** Artifacts are kept untracked under `.local/card-prep/`: `air-social-candidate-A.svg` + `-1280x640.png` (recommended), candidate B (tagline copy cut) and candidate C (full re-composition) with their rasters, a 640x320 preview raster of A, the measurement and downscale scripts, and the child's full report (`CARD-REPORT.md`).
+
+**Verified by this session, not inherited.** Rendering `.local/card-prep/air-social-candidate-A.svg` twice with the documented pipeline (resvg 2.6.2 via `@resvg/resvg-js`, `defaultFontFamily`/`sansSerifFamily` pinned to DejaVu Sans, `fitTo:{mode:'original'}`) gives the same bytes both times and equals the shipped PNG: 1280x640, 38,150 bytes, sha256 `cee3237b7f980d12259d6aad082a9473f12214115b36e0239d85c8147ec98f09`. Measured from pixels with the corrected measurer: text bands at rows 191-299, 332-380, 408-460 with cap heights **109 / 48 / 42 px** against AC #2's 40 px floor; ring ink 0 on all four sides at both the light threshold and the off-field threshold that also sees the `#2B806C` accent; rightmost ink at x=1200, so a 79 px right margin; 3/3 bands still carry ink at 640x320. The committed card, measured the same way in the same text column, gives caps **109 / 29 / 20 px** — the 20 px tagline is the defect AC #2 exists to kill, and A takes it to 42 px.
+
+**What the coding session owes before committing any of this** (a provenance claim is only as good as the check someone ran): (1) re-render inside the repo from the committed SVG and require the raster to match the artifact's sha256 byte-for-byte, so the PNG in `docs/images/` is provably the render of the SVG next to it; (2) re-measure dimensions and cap heights after that render rather than trusting this comment; (3) update the `docs/images/README.md` row with the renderer, the font that actually resolved, the size, the bytes and the sha256, and keep the note that the raster's lettering is **DejaVu Sans**, not the `system-ui` stack the SVG asks for — the child's honest limit, worth repeating: DejaVu Sans measures a cap ratio of about 0.73 em, and a face with a smaller cap ratio would pull A's font-size-56 tagline back under the 40 px floor, so the floor is proven for this box's face only.
+
+**The remaining choice is copy, not layout, and it is cheap to change now and expensive to change after upload.** A keeps all three lines verbatim and raises the tagline to font-size 56 — which puts it close to the 64 px name line, so the hierarchy rests on colour. B deletes the tagline copy entirely and gets bigger type (min cap 47) and a smaller file (29,005 B). C re-composes the card (mark centred on top, horizontal accent rule) with min cap 44 and the widest safety margins but the smallest mark. Which one ships is a taste call; A is the recommendation because it changes the least and loses no copy.
+
+## TASK-49
+
+# TASK-49: 2 superseded comment(s), removed from the board body
+Nothing was deleted: this is the text that came out, and git history plus the cited commits and
+SPEC 15 rows keep the record. Newest two kept in the task.
+
+created: 2026-11-17T14:10:00Z
+
+---
+
+**Rescoped, because the first version asked the owner for an agent's decision.** It previously carried a third answer about the scope of the `v*` ruleset — who may create a `v*` tag. That is a repository setting reachable over REST, which decision-16 assigns to the agent, so it now lives as a criterion on TASK-38 with its reasoning, and TASK-38 chooses between one ruleset and two layered rulesets itself. A fourth item, about swapping the social-preview card, moved to TASK-46, where a re-render is a one-line instruction to an agent. What stays here is exactly the two things decision-16 and decision-14 leave with a person: runner spend beyond what decision-10 already allows, and creating a new public repository under the organisation.

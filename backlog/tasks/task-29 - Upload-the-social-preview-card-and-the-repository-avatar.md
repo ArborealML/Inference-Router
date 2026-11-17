@@ -5,7 +5,7 @@ status: Blocked
 assignee:
   - '@claire'
 created_date: '2026-11-17T05:59:00Z'
-updated_date: '2026-11-17T15:54:00Z'
+updated_date: '2026-11-17T16:01:00Z'
 labels:
   - docs
 dependencies:
@@ -71,6 +71,8 @@ name, and in search results. **Already done** and verified from outside the form
 - Art provenance, renderer and resolved font: [docs/images/README.md](https://github.com/ArborealML/Inference-Router/blob/main/docs/images/README.md).
 
 **Fourth measurement, this session, at b214ce6:** the repository page still serves `og:image` = `repository-images.githubusercontent.com/1460450305/...`, and the link-preview object is 1200x600 at 88.7% light pixels against our card's 4.8% — GitHub is still showing its own generated image, so the upload has not taken. The organisation avatar **is** live and re-confirmed: 460x460, 82.6% dark / 16.7% light against our export's 82.4/16.7.
+
+Superseded log entries for this task: [board trim, 2026-11-17](https://github.com/ArborealML/Inference-Router/blob/main/backlog/archive/board-trim-2026-11-17.md).
 <!-- SECTION:NOTES:END -->
 
 ## Comments

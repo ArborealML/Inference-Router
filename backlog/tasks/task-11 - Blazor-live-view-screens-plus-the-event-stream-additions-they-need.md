@@ -5,7 +5,7 @@ status: Waiting
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-16T20:46:00Z'
-updated_date: '2026-11-17T15:54:00Z'
+updated_date: '2026-11-17T16:01:00Z'
 labels:
   - ui
 milestone: v0.10 - live view and robustness parity
@@ -74,6 +74,8 @@ Moved out of the Description under decision-18's word line — nothing deleted, 
    separate admin token. Recommendation: keep bind-address-only for the router itself and let the
    operator expose the UI behind a reverse proxy; add the admin token only when someone needs a
    remote admin. Say otherwise and I will do the token first.
+
+Superseded log entries for this task: [board trim, 2026-11-17](https://github.com/ArborealML/Inference-Router/blob/main/backlog/archive/board-trim-2026-11-17.md).
 <!-- SECTION:NOTES:END -->
 
 ## Comments

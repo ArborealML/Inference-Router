@@ -5,7 +5,7 @@ status: Waiting
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T10:52:00Z'
-updated_date: '2026-11-17T15:56:00Z'
+updated_date: '2026-11-17T16:01:00Z'
 labels:
   - docs
 dependencies: []
@@ -54,6 +54,14 @@ two minutes. The avatar is live and already verified from outside the form; see 
 - [x] #4 docs/images/README.md records the renderer, the font that actually resolved, and the byte size and sha256 of the committed PNG, quoted where the upload is tracked so the upload is checkable
 - [ ] #5 after a person presses Save, the public check is run and reported: curl -s https://github.com/ArborealML/Inference-Router | grep og:image
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Whether the mark competes with the wordmark is judged by the person at the upload moment: that judgement is a criterion on the upload task, not here. The card's renderer, the font that resolved, and the byte size and sha256 of the committed PNG are recorded in docs/images/README.md and re-read from the file before any upload claim is repeated.
+
+Superseded log entries for this task: [board trim, 2026-11-17](https://github.com/ArborealML/Inference-Router/blob/main/backlog/archive/board-trim-2026-11-17.md).
+<!-- SECTION:NOTES:END -->
 
 ## Comments
 
