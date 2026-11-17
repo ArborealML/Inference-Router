@@ -55,7 +55,7 @@ parked on. It confirms all four criteria: the exact-template compare "is right, 
 adding id and name to the read-backs is "not decoration"; excluding `.target_commitish` for an existing tag is
 "right". It also opened five new items — over-broad case folding, the URI-template suffix, the absent-tag
 fallback, the discarded `PATCH` response, and whether `contents: read` can create a release at all — which
-carry on in [TASK-44](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-44%20-%20Close-what-the-seventh-release-gate-review-found-over-v0-12-15.md). Harness re-run on this tree at close: 59 cases, 0 failures.
+carry on in [TASK-44](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-44%20-%20Close-what-the-seventh-and-eighth-release-gate-reviews-found-over-v0-12-15-and-v0-12-16.md). Harness re-run on this tree at close: 59 cases, 0 failures.
 
 ---
 <!-- COMMENTS:END -->

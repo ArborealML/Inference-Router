@@ -5,7 +5,7 @@ status: To Do
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T10:52:00Z'
-updated_date: '2026-11-17T11:31:00Z'
+updated_date: '2026-11-17T12:02:00Z'
 labels:
   - ci
   - release
@@ -50,6 +50,12 @@ the gate it protects: [.github/workflows/release.yml](https://github.com/Arborea
 - [ ] #2 SPEC says plainly what this does and does not lock: it locks a published release's assets and its tag, and nothing about drafts, the pre-publish window, the title and notes, or the prerelease/latest flags
 - [ ] #3 the canary in [TASK-42](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-42%20-%20Decision-run-a-canary-release-to-prove-the-release-gate-exists.md) tries an asset replacement and a tag move after publication and requires both to be refused
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Report line owed by whoever performs this (decision-16): the exact call used — `gh api -X PUT repos/ArborealML/Inference-Router/immutable-releases` — the before and after JSON from the GET, the blast radius in one sentence (every future release on this public repository: published assets and their tag locked, drafts and metadata still editable, release deletion still possible), and the reversal (DELETE on the same path). Blast radius is repository-wide, so the report is not optional.
+<!-- SECTION:NOTES:END -->
 
 ## Comments
 

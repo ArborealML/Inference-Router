@@ -5,7 +5,7 @@ status: To Do
 assignee:
   - '@qwen3.8-flash-next-board'
 created_date: '2026-11-17T11:03:00Z'
-updated_date: '2026-11-17T11:39:00Z'
+updated_date: '2026-11-17T12:03:00Z'
 labels: []
 dependencies: []
 priority: medium
@@ -18,8 +18,8 @@ ordinal: 46000
 <!-- SECTION:DESCRIPTION:BEGIN -->
 **Do this (about an hour, no code, no risk).** Nine open task Descriptions are over the 300-word standard; trim
 them by moving reasoning into Implementation Notes, deleting nothing. **The set moves every time a Description is
-trimmed, so re-run the checker rather than trusting the list below** — as I last measured it the open set is TASK-11, 14, 23, 28 —
-TASK-32, 33, 38 and 42 were trimmed while this task sat open; Done tasks are exempt history and keep their length on purpose.
+trimmed, so re-run the checker rather than trusting the list below** — as I last measured it the open set over 300 words is
+TASK-2, 6, 11, 14, 23, 28 (nine Done tasks are over it and are exempt under decision-18). Done tasks are exempt history and keep their length on purpose.
 
     python3 .local/board-standards.py      # counts Defects by check; WORDS is the only open class
     python3 .local/board-lint.py           # must stay at 0 defects, both before and after

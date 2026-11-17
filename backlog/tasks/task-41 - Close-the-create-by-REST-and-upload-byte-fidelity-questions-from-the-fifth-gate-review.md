@@ -7,7 +7,7 @@ status: Done
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T09:41:00Z'
-updated_date: '2026-11-17T11:38:00Z'
+updated_date: '2026-11-17T12:02:00Z'
 labels:
   - ci
   - release
@@ -124,9 +124,17 @@ created: 2026-11-17T11:38:00Z
 
 ---
 
-Closed by transfer, not by proof, so the distinction is on the record. AC #1-#4 were verified against the workflow at bff39e8 and are unchanged in shape by aa7ad23 and fd76021. AC #5 is met: SPEC's v0.12.15 and v0.12.16 rows now separate what is documented in gh 2.46.0 source from what is demonstrated only by GitHub's stored-bytes digest matching on a real run. AC #6 could never be closed at a desk — a live API run is the only evidence — so it was reworded as a transfer to [TASK-44](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-44%20-%20Close-what-the-seventh-release-gate-review-found-over-v0-12-15.md)-adjacent work: [TASK-42](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-42%20-%20Decision-run-a-canary-release-to-prove-the-release-gate-exists.md) (the canary) and [TASK-48](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-48%20-%20Prove-what-a-downloader-receives-post-publish-readback-and-free-build-attestation.md) (the download readback). Three release-gate carriers became two: this one closes, [TASK-43](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-43%20-%20Close-the-four-release-gate-defects-the-sixth-review-found-v0.12.14.md) is history, and TASK-44 is the live carrier.
+Closed by transfer, not by proof, so the distinction is on the record. AC #1-#4 were verified against the workflow at bff39e8 and are unchanged in shape by aa7ad23 and fd76021. AC #5 is met: SPEC's v0.12.15 and v0.12.16 rows now separate what is documented in gh 2.46.0 source from what is demonstrated only by GitHub's stored-bytes digest matching on a real run. AC #6 could never be closed at a desk — a live API run is the only evidence — so it was reworded as a transfer to [TASK-44](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-44%20-%20Close-what-the-seventh-and-eighth-release-gate-reviews-found-over-v0-12-15-and-v0-12-16.md)-adjacent work: [TASK-42](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-42%20-%20Decision-run-a-canary-release-to-prove-the-release-gate-exists.md) (the canary) and [TASK-48](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-48%20-%20Prove-what-a-downloader-receives-post-publish-readback-and-free-build-attestation.md) (the download readback). Three release-gate carriers became two: this one closes, [TASK-43](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-43%20-%20Close-the-four-release-gate-defects-the-sixth-review-found-v0.12.14.md) is history, and TASK-44 is the live carrier.
 
 **Numbers in this task are as-of.** The 52-case harness quote and every `release.yml:NNN` reference in its body belong to the commit each was written against; the release-job steps have moved twice since. The current count, re-run and counted by the board session at fd76021, is 73 cases with 0 failures. Future criteria must name a step by its name or its exact command text, never by a line number.
+
+---
+
+created: 2026-11-17T12:02:00Z
+
+---
+
+Condition from the coding session accepted and tested, not asserted: what this task's AC #5 and #6 promised now live as checkboxes, not prose — TASK-48 AC #2 (fetch each published asset over HTTPS and require the name-specific staged sha256 and size) carries the readback of served bytes, and TASK-42 ACs #2 and #3 carry the live authorization and workflow-guard answers plus `.target_commitish`. TASK-41 stays closed by transfer.
 
 ---
 <!-- COMMENTS:END -->
