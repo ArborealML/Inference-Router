@@ -68,4 +68,4 @@ artifacts are **designed but not yet demonstrated**. That is a runner-availabili
 account, tracked as TASK-15; nothing in the pipeline needs changing for it.
 The dry-run tag was deleted afterwards; no release exists yet.
 
-COMMIT REVIEW in flight (deep tier) over be69d2a^..9e08e65; findings dispositioned here when it lands.
+COMMIT REVIEW in flight over be69d2a^..9e08e65; findings dispositioned here when it lands.

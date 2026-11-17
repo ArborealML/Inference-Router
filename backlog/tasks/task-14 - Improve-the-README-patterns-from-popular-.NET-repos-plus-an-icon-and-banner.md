@@ -5,7 +5,7 @@ status: Waiting
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-16T22:26:00Z'
-updated_date: '2026-11-17T12:19:00Z'
+updated_date: '2026-11-17T13:56:00Z'
 labels:
   - docs
   - ui
@@ -121,6 +121,14 @@ created: 2026-11-17T07:55:00Z
 ---
 
 AC #4 is two badges and only one of them exists today: README lines 10-12 carry CI, license and .NET badges, and the CI badge resolves (checked the URL form against the workflow name). The release badge cannot resolve until a release exists, which is TASK-32 (owner go-ahead) then TASK-28 (the tag run). Dependency set to TASK-28 so the board shows the real wake instead of a prose promise. Assignee stays the main session: a README line during the tag run, not a separate change.
+
+---
+
+created: 2026-11-17T13:56:00Z
+
+---
+
+**Wake re-named, because its old wake is closed.** This task waited on TASK-23, which is now Done. Its only open criterion is the release badge, which cannot exist before the first release tag: wake is now the tag in TASK-28 landing and the workflow badge resolving on `main`. The README prose and identity half are unaffected.
 
 ---
 <!-- COMMENTS:END -->

@@ -1,11 +1,11 @@
 ---
 id: TASK-38
 title: 'Decision: protect release tags and decide who may publish releases'
-status: To Do
+status: Blocked
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T09:11:00Z'
-updated_date: '2026-11-17T13:30:00Z'
+updated_date: '2026-11-17T13:56:00Z'
 labels:
   - release
   - security
@@ -83,6 +83,14 @@ Ownership, settled: as with TASK-45, this is a setting rather than YAML, but it 
 repository ruleset on `v*` is created over REST with the token this machine already holds (measured
 `admin: true`). Agent work under decision-16, created and read back in the same report, and reversible. Not a
 prerequisite the canary can fake: TASK-42 proves nothing about tag protection unless this lands first.
+
+---
+
+created: 2026-11-17T13:56:00Z
+
+---
+
+Blocked on TASK-49 (c): whether one ruleset or two, because a `creation` rule with no bypass list blocks the release path itself. Nothing else waits — the payload shape, the readback and the measurements are all in this task and agent-owned.
 
 ---
 <!-- COMMENTS:END -->

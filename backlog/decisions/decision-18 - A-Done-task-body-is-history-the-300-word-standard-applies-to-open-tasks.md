@@ -24,3 +24,9 @@ Open tasks over the line are real work and are tracked on TASK-47: TASK-11, 14, 
 prose, which is where several dispositions are only written down once. If the checker is not changed, the board
 must keep quoting the two numbers separately — total defects, and open defects — so the gate stays honest without
 pretending history is a defect.
+
+**Addendum, recorded so the exemption is named rather than implied (owner question at b214ce6).** The over-length
+Done bodies are exactly nine tasks — TASK-7, 10, 20, 24, 27, 36, 37, 40, 41 — and they are history, not deferred
+work: each carries a disposition that exists nowhere else. Trimming them would delete the record the owner asked
+for, so they stay, and the checker reports them as an informational count, never as a defect. The open-task limit
+still bites: at b214ce6 the board measures 0 WORDS defects across 47 task files.

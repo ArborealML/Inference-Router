@@ -1,11 +1,11 @@
 ---
 id: TASK-45
 title: Enable GitHub immutable releases before the first tag
-status: To Do
+status: Blocked
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T10:52:00Z'
-updated_date: '2026-11-17T13:30:00Z'
+updated_date: '2026-11-17T13:56:00Z'
 labels:
   - ci
   - release
@@ -69,6 +69,14 @@ agent work — `gh api -X PUT repos/ArborealML/Inference-Router/immutable-releas
 state moved. What makes it reportable rather than private: it changes a public repository's supply-chain posture,
 it reverses with `DELETE`, and it must be visible in SPEC and in the commit message before any release is published.
 The owner keeps the veto, not the keystrokes.
+
+---
+
+created: 2026-11-17T13:56:00Z
+
+---
+
+Blocked on TASK-49 (a): enabling immutable releases makes a canary permanent-by-name, so the canary answer comes first. The enable itself is two API calls and measured readable today (`enabled: false`).
 
 ---
 <!-- COMMENTS:END -->

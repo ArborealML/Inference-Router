@@ -104,7 +104,7 @@ created: 2026-11-17T11:02:00Z
 
 ---
 
-Dispatched to @chatswarm 2026-11-17 11:02Z (tier high, reasoning-only, no repo access) with the facts it needs: response_timeout_ms default 600000 applies only before the first frame; the ceiling deliberately ends at the first frame; a committed stream fails in band with one error frame plus [DONE]; a caller abort reports cancelled, never a timeout; both the stalled-reader buffering and the post-first-frame silence are currently unbounded. Six questions: the default idle bound in ms and its unit; cancel upstream or detach; the slow-consumer bound and whether it counts frames or bytes; what mainstream OpenAI client libraries do with an in-band error frame versus a missing [DONE]; the ways a bound makes things worse; whether one knob beats two.
+Dispatched to the external reasoning service on 2026-11-17 at 11:02Z, with no repository access, and given the facts it needs: response_timeout_ms default 600000 applies only before the first frame; the ceiling deliberately ends at the first frame; a committed stream fails in band with one error frame plus [DONE]; a caller abort reports cancelled, never a timeout; both the stalled-reader buffering and the post-first-frame silence are currently unbounded. Six questions: the default idle bound in ms and its unit; cancel upstream or detach; the slow-consumer bound and whether it counts frames or bytes; what mainstream OpenAI client libraries do with an in-band error frame versus a missing [DONE]; the ways a bound makes things worse; whether one knob beats two.
 
 Wake: that answer landing. The coding session implements TASK-30 meanwhile, with the numbers filled in after — the shape is already pinned by TASK-30 AC #3 (one error frame plus [DONE], no new truncation format).
 

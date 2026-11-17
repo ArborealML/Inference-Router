@@ -1,11 +1,11 @@
 ---
 id: TASK-29
 title: Press Save on the social preview form (browser only)
-status: Waiting
+status: Blocked
 assignee:
   - '@claire'
 created_date: '2026-11-17T05:59:00Z'
-updated_date: '2026-11-17T13:44:00Z'
+updated_date: '2026-11-17T13:56:00Z'
 labels:
   - docs
 dependencies:
@@ -61,7 +61,7 @@ card, a mostly-white box that says nothing about what this is. Today it renders 
 name, and in search results. **Already done** and verified from outside the form.
 
 **Links**
-- Card PNG to pick, 1280x640 as GitHub asks: [docs/images/air-social-1280x640.png](https://github.com/ArborealML/Inference-Router/blob/main/docs/images/air-social-1280x640.png) (raw: [raw.githubusercontent.com/.../air-social-1280x640.png](https://raw.githubusercontent.com/ArborealML/Inference-Router/main/docs/images/air-social-1280x640.png)). 30,842 bytes, sha256 `b02b6d32...97e9`, well under the 1 MB ceiling.
+- Card PNG to pick, 1280x640 as GitHub asks: [docs/images/air-social-1280x640.png](https://github.com/ArborealML/Inference-Router/blob/main/docs/images/air-social-1280x640.png) (raw: [raw.githubusercontent.com/.../air-social-1280x640.png](https://raw.githubusercontent.com/ArborealML/Inference-Router/main/docs/images/air-social-1280x640.png)). 38,150 bytes, sha256 `cee3237b7f98…98f09` as committed in b214ce6, well under the 1 MB ceiling — re-read the hash from the file at upload time, because TASK-49 item (d) can still change it.
 - Avatar PNG (already uploaded, kept for a re-upload): [docs/images/air-mark-512.png](https://github.com/ArborealML/Inference-Router/blob/main/docs/images/air-mark-512.png).
 - Card vector source, if a different typeface is wanted: [air-social.svg](https://github.com/ArborealML/Inference-Router/blob/main/docs/images/air-social.svg). The committed raster lettering is DejaVu Sans, not the browser face the SVG stack asks for.
 - Do NOT upload the bare mark: [air-mark.svg](https://github.com/ArborealML/Inference-Router/blob/main/docs/images/air-mark.svg) strokes in `currentColor` with no field, so standalone it is black on transparent and invisible on a dark frame. `air-mark-avatar.svg` / `air-mark-512.png` is the standalone form.
@@ -69,6 +69,8 @@ name, and in search results. **Already done** and verified from outside the form
 - Upload form 2 (organisation picture): [organisation Settings -> Profile picture](https://github.com/organizations/ArborealML/settings/profile).
 - Check the result from outside the form: [the image link previews fetch](https://opengraph.githubassets.com/1/ArborealML/Inference-Router), and the repository page `og:image` meta tag.
 - Art provenance, renderer and resolved font: [docs/images/README.md](https://github.com/ArborealML/Inference-Router/blob/main/docs/images/README.md).
+
+**Fourth measurement, this session, at b214ce6:** the repository page still serves `og:image` = `repository-images.githubusercontent.com/1460450305/...`, and the link-preview object is 1200x600 at 88.7% light pixels against our card's 4.8% — GitHub is still showing its own generated image, so the upload has not taken. The organisation avatar **is** live and re-confirmed: 460x460, 82.6% dark / 16.7% light against our export's 82.4/16.7.
 <!-- SECTION:NOTES:END -->
 
 ## Comments
@@ -117,6 +119,14 @@ created: 2026-11-17T13:44:00Z
 ---
 
 **Heads-up on a number in this task's own text, so it is not trusted after it goes stale.** The byte size and sha256 quoted above (30,842 B, `b02b6d32...97e9`) belong to the card as committed today. [TASK-46] (https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-46%20-%20Render-the-final-social-preview-card-and-verify-it-from-outside-the-form.md) is replacing that image: the committed card's smallest text line measures 20 px cap height and a link preview shrinks it to about 9 px, which is unreadable. The replacement candidate is measured at 42 px on the same line and is already verified for determinism and geometry, but it is not committed yet. **Pick whatever `docs/images/air-social-1280x640.png` holds when the upload happens, and re-read its sha256 from the file rather than from this task.** Nothing here burns anything: replacing a social-preview image is a second trip to the same form.
+
+---
+
+created: 2026-11-17T13:56:00Z
+
+---
+
+**Nothing in the repository is outstanding for this task, so it is Blocked on a person again, not Waiting.** The card is committed and measured (b214ce6: 1280x640, 38,150 B, sha256 `cee3237b7f98…98f09`; smallest text line 42 px, four times the previous card's 20 px). What is missing is the upload: repo Settings -> Options -> Social preview, pick the committed `docs/images/air-social-1280x640.png`, then **press Save** — the form shows a thumbnail either way, which is how three 'card set' answers have produced no change. One optional answer can still change the image first: TASK-49 item (d).
 
 ---
 <!-- COMMENTS:END -->

@@ -3,11 +3,11 @@ id: TASK-23
 title: >-
   Identity art: keep or replace the mark, and export the card and an
   avatar-ready variant
-status: Waiting
+status: Done
 assignee:
   - '@qwen3.8-flash-next-board'
 created_date: '2026-11-17T02:26:00Z'
-updated_date: '2026-11-17T12:19:00Z'
+updated_date: '2026-11-17T13:56:00Z'
 labels:
   - docs
 dependencies: []
@@ -99,6 +99,14 @@ created: 2026-11-17T08:16:00Z
 ---
 
 AC #3 reworded to what was actually measured, and the human half moved where the human is. Measured on the committed raster by decoding the PNG directly (no tooling installed or used): canvas 1280x640; zero ink pixels in the 3px border ring on all four sides; ink spans rows 118-493 and columns 119-1059, so the longest text line ends 221px short of the right edge; the 150px line carries ink in rows 185-312, the name line 333-382, the tagline 393-432 - each where the SVG places it. AC #4 is closed by the provenance table in [docs/images/README.md](https://github.com/ArborealML/Inference-Router/blob/main/docs/images/README.md) (renderer resvg 2.6.2, resolved font DejaVu Sans, sizes, sha256 for both exports), landed in f1f880c and ba8e2fd. What I removed from AC #3 - legibility of the lettering and whether the mark competes with the wordmark - is a taste judgement and now lives as an acceptance criterion on TASK-29, where the person doing the upload sees the card full size in the settings form. Nothing else in this task is open.
+
+---
+
+created: 2026-11-17T13:56:00Z
+
+---
+
+**Closed because every criterion is checked and the one thing left is not this task's.** AC #1-#4 are all checked on measurement; the taste half that AC #3 used to carry was moved to TASK-29 AC #4, where the person who uploads actually sees the card, and the exports it owed are committed and re-rendered (b214ce6 for the card, and the avatar is live). Leaving it Waiting kept a park with no wake: the event it waited on has already happened.
 
 ---
 <!-- COMMENTS:END -->

@@ -1,11 +1,11 @@
 ---
 id: TASK-42
 title: 'Decision: prove the release gate on a canary, knowing the tag name is burned?'
-status: Waiting
+status: Blocked
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T09:53:00Z'
-updated_date: '2026-11-17T13:30:00Z'
+updated_date: '2026-11-17T13:56:00Z'
 labels:
   - release
   - ci
@@ -87,6 +87,14 @@ our own tag commits touch `.github/workflows/release.yml`, so the answer matters
 Ownership caution: the canary cannot verify the two repository settings on TASK-45 (immutable releases) and
 TASK-38 (a `v*` ruleset) unless those are done **first**. A canary run against an unprotected repository proves
 nothing about protection that is not switched on, so the order is 45 and 38, then 42.
+
+---
+
+created: 2026-11-17T13:56:00Z
+
+---
+
+Blocked on TASK-49 (a) and (b): the canary decision and whether the destructive tests run in a throwaway repository. Not Waiting — no event will wake this; a person has to grant it.
 
 ---
 <!-- COMMENTS:END -->

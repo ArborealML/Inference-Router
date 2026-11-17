@@ -1,11 +1,11 @@
 ---
 id: TASK-32
 title: 'Decision: cut the v0.1.0 tag'
-status: Waiting
+status: Blocked
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T07:30:00Z'
-updated_date: '2026-11-17T11:38:00Z'
+updated_date: '2026-11-17T14:02:00Z'
 labels:
   - release
 dependencies:
@@ -90,6 +90,14 @@ created: 2026-11-17T10:58:00Z
 ---
 
 Reassigned under decision-16: the cut is an agent act, not an owner's keystroke. Wake: the canary in [TASK-42](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-42%20-%20Decision-prove-the-release-gate-on-a-canary-knowing-the-tag-name-is-burned.md) green, [TASK-44](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-44%20-%20Close-the-open-release-gate-review-findings-SPEC-v0-12-15-onward.md) closed, [TASK-45](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-45%20-%20Enable-GitHub-immutable-releases-before-the-first-tag.md) done. The command stays as written in the description — check the floor first, never tag a hardcoded sha: `git log -1 --format=%H -- .github/workflows/release.yml`, `git merge-base --is-ancestor …`, then `git tag -a v0.1.0 -m v0.1.0 "$(git rev-parse origin/main)"` and `git push origin v0.1.0`. Then read the run, do not assume it.
+
+---
+
+created: 2026-11-17T14:02:00Z
+
+---
+
+Blocked, not Waiting: the chain it sits behind now waits on a person. Its stated wake was the canary green, TASK-44 closed and TASK-45 done; the canary and the two repository settings are now Blocked on TASK-49, so no event short of an owner answer wakes this. Nothing about its own criteria changed.
 
 ---
 <!-- COMMENTS:END -->

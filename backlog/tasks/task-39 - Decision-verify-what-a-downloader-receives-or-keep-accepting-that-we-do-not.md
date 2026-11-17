@@ -89,7 +89,7 @@ created: 2026-11-17T11:02:00Z
 
 ---
 
-Dispatched to @chatswarm 2026-11-17 11:02Z (tier high, reasoning-only) with the limits stated honestly rather than flattered: the stored-digest match proves GitHub-reported digest equals staged bytes at read time, not what a download serves; the gate never re-hashes the served bytes, and SPEC records that as an accepted gap. Two facts it is told: immutable releases are available on this repository and currently off, and will be enabled by TASK-45; and decision-10 refuses paid runner minutes, so anything added has to live inside the existing jobs — which is why a same-job download-and-hash step is judged on seconds, not on a new paid leg.
+Dispatched to the external reasoning service on 2026-11-17 at 11:02Z, with the limits stated honestly rather than flattered: the stored-digest match proves GitHub-reported digest equals staged bytes at read time, not what a download serves; the gate never re-hashes the served bytes, and SPEC records that as an accepted gap. Two facts it is told: immutable releases are available on this repository and currently off, and will be enabled by TASK-45; and decision-10 refuses paid runner minutes, so anything added has to live inside the existing jobs — which is why a same-job download-and-hash step is judged on seconds, not on a new paid leg.
 
 Wake: that answer landing, after which TASK-39 becomes either a written disposition or an implementation task for the coding session. Neither answer changes SPEC by itself.
 
