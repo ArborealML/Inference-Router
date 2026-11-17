@@ -5,7 +5,7 @@ status: Blocked
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-16T20:40:00Z'
-updated_date: '2026-11-17T02:30:00Z'
+updated_date: '2026-11-17T02:41:00Z'
 labels: []
 dependencies:
   - TASK-1
@@ -48,4 +48,6 @@ library and the map cannot show one source file owned by both executables.
 Blocked on TASK-19 — the next move is the map-model decision, which belongs to a human. Work here resumes when that task is closed.
 
 Two things gate this: the map-model decision, and the lifecycle work it is meant to pin (TASK-1), which is now unblocked and mine to start.
+
+The lifecycle work that was gating this has started, so the map will need pinning to the engine components once the provider seam settles.
 <!-- SECTION:NOTES:END -->

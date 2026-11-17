@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-16T20:39:00Z'
-updated_date: '2026-11-17T02:34:00Z'
+updated_date: '2026-11-17T02:41:00Z'
 labels: []
 milestone: v0.9 - native engine lifecycle
 dependencies:
@@ -56,6 +56,8 @@ Blocked on two decisions (decision-1 authorization model, decision-2 launch-tuni
 Blocked on TASK-20 — the next move is the lifecycle mechanism and authorisation decision, which belongs to a human. Work here resumes when that task is closed.
 
 Unblocked by checking rather than by a new decision: the provider shape is settled (raw Engine HTTP over a swappable seam), and the two decisions that used to gate it — refuse rather than escalate on ownership, and launch tuning — are recorded. Every acceptance criterion on this task can be met against a test fake with no daemon present, so implementation does not wait on anything. Only end-to-end verification against a real Docker host needs the daemon-route question answered.
+
+First slice in: the provider seam (ownership proof, preflight, stop-what-we-own, launch), the coordinator that owns that ordering, and the existing selector path wrapped as the delegated provider with its behaviour unchanged. Seven fake-backed tests pin the order, the refusal-before-mutation, the never-stop-what-we-do-not-own rule and single-flight per engine. Admission-close and cohort-drain are not in this slice and are a task of their own: draining to zero today would wait on the very request that asked for the switch.
 <!-- SECTION:NOTES:END -->
 
 ## Dependencies still open (decisions, not work)
