@@ -5,7 +5,7 @@ status: Blocked
 assignee:
   - '@claire'
 created_date: '2026-11-17T05:59:00Z'
-updated_date: '2026-11-17T17:42:00Z'
+updated_date: '2026-11-17T23:20:00Z'
 labels:
   - docs
 dependencies:
@@ -46,7 +46,7 @@ person's; the file, its measurements and the after-the-fact public check are age
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The social-preview image is set, or declined with a one-line reason, and the answer line is in this task
+- [x] #1 The social-preview image is set, or declined with a one-line reason, and the answer line is in this task
 - [x] #2 The organisation picture is set from the avatar-ready mark (TASK-23), or declined with a one-line reason
 - [ ] #3 The `og:image` meta tag on the public repository page prints `opengraph.githubassets.com`, quoted here
 - [ ] #4 The picked file's sha256 is recorded here and equals the committed card's `cee3237b7f98…98f09`
@@ -74,4 +74,11 @@ Superseded log entries for this task: [board trim, 2026-11-17](https://github.co
 ## Comments
 
 <!-- COMMENTS:BEGIN -->
+created: 2026-11-17T23:20:00Z
+
+---
+
+curl -s https://github.com/ArborealML/Inference-Router | grep -o '<meta property="og:image"[^>]*>'
+
+---
 <!-- COMMENTS:END -->

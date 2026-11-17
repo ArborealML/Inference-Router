@@ -24,8 +24,9 @@ The commit review of fd5e0cd returned REVISE with five blocking findings; all fi
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [ ] #1 a waiter is told Ready only when the snapshot still authorises it at resume, pinned by a test where a second claim lands between the end commit and the resume
+- [ ] #6 a failed own-target switch still ends Failed, not another turn of the loop, so a caller with no ceiling cannot relaunch forever
 - [ ] #2 two callers of one already-proved model cause exactly one launch, with the claim decision re-checked inside the transition gate
-- [ ] #3 the readiness task is settled before any injected callback runs
+- [ ] #3 the readiness task is settled before any injected callback runs, and a failing hint cannot rewrite the outcome of a completed switch
 - [ ] #4 a forced CAS retry, a duplicate own-target claim, and an end-to-end dispatch through RouterCore are each pinned by a test
 - [ ] #5 a thread-pool rejection at the claim (:602-610) and a shutdown during the claim both settle the readiness task and clear the marker, so no waiter waits on a switch that never ran
 <!-- AC:END -->
