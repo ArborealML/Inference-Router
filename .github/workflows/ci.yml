@@ -96,3 +96,23 @@ jobs:
         run: python3 tools/board-check.py --self-test
       - name: Check every task file against the task-content rules
         run: python3 tools/board-check.py
+
+  # The release-gate harness extracts the step bodies of release.yml and runs them against a stub gh
+  # that answers with the JSON the real endpoint answers with, including the caller's own --jq. TASK-44
+  # asks for harness counts re-measured against main at every landing, so the harness lives here with
+  # them: a tracked file a task can cite, and a gate, rather than one session's scratch directory.
+  release-gate-harness:
+    name: release gate harness (release.yml step bodies)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # differential cases compare an older revision's step bodies
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install the harness's only dependency
+        run: python3 -m pip install --quiet pyyaml
+      - name: Run every harness case
+        run: python3 tools/relgate.py
