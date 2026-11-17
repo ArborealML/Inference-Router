@@ -9,8 +9,18 @@ behaviour, and update it in the same commit as the change.
 ```bash
 dotnet build                       # solution: inference-router.slnx  (SDK pinned in global.json)
 dotnet test                        # xUnit; must stay green
+dotnet test --filter FullyQualifiedName~EventRingTests   # the focused form, for iterating
 dotnet publish src/Arboreal.InferenceRouter.Server -c Release -r linux-x64 /p:PublishAot=true
 ```
+
+**Test loop.** Run the tests for the feature you are changing while you change it
+(`--filter FullyQualifiedName~<Area>`), not the whole suite on every edit. CI runs the complete suite
+on every `main` push and is the regression gate: check it periodically
+(`gh run list --limit 5`, `gh run watch <id>`) rather than reproducing it locally. A full local run
+belongs at a real boundary — a change that crosses subsystems (concurrency, engine lifecycle, the wire
+contract), or a diagnosis, where a failure has to be seen to be intermittent rather than assumed.
+CI supersedes an in-flight run when a newer push lands, so read the newest run on the branch, not the
+one named after your commit; a `cancelled` run there is not a failure.
 
 The build runs with `TreatWarningsAsErrors` and an analyzer stack
 (`Directory.Build.props`, `Directory.Packages.props`, `BannedSymbols.txt`,
