@@ -6,7 +6,7 @@
 # is rejected in `preflight`, before any checkout, build or runner time is spent.
 #
 # Debugging without publishing: Actions → Release → Run workflow, with `dry_run` checked.
-# All four platform legs build and smoke-test; no release is created.
+# Every declared platform leg builds and smoke-tests; no release is created.
 name: release
 
 on:
@@ -112,14 +112,10 @@ jobs:
           - rid: win-x64
             os: windows-2022
             exe: air.exe
-          # macOS legs need macOS runner minutes; if the account has none, these jobs queue
-          # forever rather than failing. Check Actions billing before adding platforms.
-          - rid: osx-arm64
-            os: macos-14
-            exe: air
-          - rid: osx-x64
-            os: macos-13
-            exe: air
+          # Two legs, deliberately. The account has no macOS runner minutes, so a macos-* job queues
+          # forever rather than failing, and the asset gate below would then wait on an archive no
+          # runner ever produces. macOS stays a local build (`dotnet publish -r osx-arm64`); nothing
+          # is published, claimed or gated on it. Add a leg back only with minutes and a leg that runs.
     steps:
       - uses: actions/checkout@v4
         with:
@@ -212,10 +208,10 @@ jobs:
           pattern: "asset-*"
           path: out
           merge-multiple: true
-      - name: Verify all four assets and write checksums
+      - name: Verify every declared asset and write checksums
         run: |
           set -euo pipefail
-          for rid in linux-x64 win-x64 osx-arm64 osx-x64; do
+          for rid in linux-x64 win-x64; do
             f="out/air-${rid}.tar.gz"
             test -f "$f" || { echo "::error::missing $f — a platform leg did not produce an asset"; exit 1; }
           done

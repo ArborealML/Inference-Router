@@ -79,9 +79,11 @@ zero trim warnings. What is designed but unimplemented is specified in
 Requires the .NET 11 SDK (`global.json` pins `11.0.100`, `rollForward: latestFeature`). Native AOT
 also needs a C toolchain on the build machine — clang/LLVM on Linux, MSVC on Windows.
 
-There are no published binaries yet — the first tag will produce `air` archives for `linux-x64`,
-`win-x64`, `osx-arm64` and `osx-x64` with `SHA256SUMS` (see **CI and releases**). Until then, build
-it:
+There are no published binaries yet — the first tag will produce `air` archives for `linux-x64` and
+`win-x64` with `SHA256SUMS` (see **CI and releases**). macOS is not published: there are no macOS
+runner minutes, so a macOS leg would queue forever instead of failing, and an unverified macOS binary
+is not worth shipping. macOS still builds locally — use the command below with `-r osx-arm64`. On any
+platform, until the first tag, build it:
 
 ```bash
 git clone https://github.com/ArborealML/Inference-Router.git && cd Inference-Router
@@ -218,12 +220,13 @@ publish on every push to `main` and every pull request.
 
 `release.yml` runs on a tag such as `v0.1.0`. It first refuses the tag if its format is wrong, it
 does not resolve to a commit, or **any release (draft or published) already uses it** — that check
-runs before any build. It then builds a stripped Native-AOT `air` for `linux-x64`, `win-x64`,
-`osx-arm64` and `osx-x64` on native runners, smoke-tests each binary on its own operating system
-(`tools/ci/smoke.sh`), and only then creates the release: a draft with the four archives and
-`SHA256SUMS`, published once every asset is uploaded. A failed publish removes the draft that run
-created. To exercise the whole pipeline without releasing, run the workflow manually with
-`dry_run` checked.
+runs before any build. It then builds a stripped Native-AOT `air` for `linux-x64` and `win-x64` on
+native runners, smoke-tests each binary on its own operating system (`tools/ci/smoke.sh`), and only
+then creates the release: a draft with both archives, their per-archive `.sha256` files and
+`SHA256SUMS`, published once every asset is uploaded — and it refuses to publish if either declared
+asset is missing. A failed publish removes the draft that run created. To exercise the whole pipeline
+without releasing, run the workflow manually with `dry_run` checked. Two platforms is the published
+surface by decision: a macOS binary is something you build, never something this repository ships.
 
 ## Layout
 
