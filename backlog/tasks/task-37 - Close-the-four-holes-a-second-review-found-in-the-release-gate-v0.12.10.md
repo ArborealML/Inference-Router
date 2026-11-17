@@ -46,7 +46,7 @@ and only while it is still an unpublished draft of that tag (385-395); and prefl
 reporting more than one release on a tag as a conflict rather than picking the first hit (90-99).
 
 **Board verification, by reading the checked-out step bodies — the executions are not mine:** each mechanism above
-is present at the lines named. The behaviour-level proof is the coding session's harness (`.local/relgate.py`, 33
+is present at the lines named. The behaviour-level proof is the coding session's harness (`the release-gate harness (not in the repository yet; its case count is a fact to re-measure, not to quote)`, 33
 cases, zero failures on 6b91de4 and exactly the four forgeries failing on 6aa26cc) and the external reviews. CI for
 6b91de4 on main: completed, success.
 

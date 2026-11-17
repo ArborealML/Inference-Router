@@ -25,7 +25,7 @@ ordinal: 43000
 
 **Round discipline.** One row per review in SPEC §15, one line per finding's disposition, the revision-log line in the same commit as the fix. Thirteenth round: two P2s (an outer truncation still cuts a long `upload_url`'s tail; a string `"false"` prints like boolean `false`) plus a harness gap — `diag_fields_survive` proves nothing while its fixture keeps sibling fields short. Twelve earlier rounds are cited by SPEC version and sha, not repeated here.
 
-**Harness counts are re-measured against `main` at every landing** by this session (`python3 .local/relgate.py`); the series lives in git.
+**Harness counts are re-measured against `main` at every landing** by this session (`python3 the release-gate harness (not in the repository yet; its case count is a fact to re-measure, not to quote)`); the series lives in git.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

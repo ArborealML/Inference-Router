@@ -18,7 +18,7 @@ ordinal: 24000
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
 **You are being asked to say build it or defer it.** The design this task asked for exists: the external research
-and review service returned it (dispatched and answered 2026-11-17; transcript in `.local/reviews/`, not in the
+and review service returned it (dispatched and answered 2026-11-17; transcript in `the board's untracked review transcripts`, not in the
 repository). The board reviewed it against the two push paths this machine already runs and against who actually
 executes here. What is left is one answer, about 2 minutes.
 
@@ -65,7 +65,7 @@ Board audit: retitled from Design: to Decision: because the assignee is the owne
 
 What it unblocks: the first slice of the bus (publisher, store, one subscription), which is engineering work that starts the moment ACs 1-3 are answered; nothing on the board is blocked in the meantime, because today the same effect is obtained by hand — a research service that pushes results, a session-to-session message channel, and a human passing word along.
 
-DISPATCHED to the external research and review service at 2026-11-17 08:07 UTC, reasoning-only authority, mid reasoning tier, text deliverable. The brief put to it: authority model, store location and retention, and one first source to wire, with the two push paths that already exist named so the answer cannot casually duplicate them, and single-machine operational cost treated as a first-class criterion. Wake condition: the design lands. Then the board session reviews it against those existing paths, throws out what assumes infrastructure this box does not have, and files one owner approval task. Request bookkeeping lives in .local/reviews/dispatches.md, not on the board.
+DISPATCHED to the external research and review service at 2026-11-17 08:07 UTC, reasoning-only authority, mid reasoning tier, text deliverable. The brief put to it: authority model, store location and retention, and one first source to wire, with the two push paths that already exist named so the answer cannot casually duplicate them, and single-machine operational cost treated as a first-class criterion. Wake condition: the design lands. Then the board session reviews it against those existing paths, throws out what assumes infrastructure this box does not have, and files one owner approval task. Request bookkeeping lives in the board's untracked review log, not on the board.
 <!-- SECTION:NOTES:END -->
 
 ## Comments
@@ -91,7 +91,7 @@ created: 2026-11-17T08:14:00Z
 
 ---
 
-Design phase closed: dispatched 08:07 UTC, answered 08:1x UTC (transcript in .local/reviews/). The board's recommendation is DEFER, and the reason is a fact about this machine rather than a preference: every agent session and every poller here runs as the same OS user, so per-publisher token files guard against accident and not against a peer that can read the token - the isolation the authority model assumes does not exist unless a separate account is created. The review itself names the same counter-argument: two working push paths plus a scheduled check cover a handful of facts. Status Blocked: a person decides build-or-defer; nothing on the board waits on it, so deferring costs no work.
+Design phase closed: dispatched 08:07 UTC, answered 08:1x UTC (transcript in the board's untracked review transcripts). The board's recommendation is DEFER, and the reason is a fact about this machine rather than a preference: every agent session and every poller here runs as the same OS user, so per-publisher token files guard against accident and not against a peer that can read the token - the isolation the authority model assumes does not exist unless a separate account is created. The review itself names the same counter-argument: two working push paths plus a scheduled check cover a handful of facts. Status Blocked: a person decides build-or-defer; nothing on the board waits on it, so deferring costs no work.
 
 ---
 
