@@ -14,7 +14,21 @@ ordinal: 5000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
+
 First scan produced 18 elements. The C# scanner does not evaluate source generators or ASP.NET references, so treat those scan warnings as scan limits, not repo defects, and place components deliberately.
+
+**Curation findings worth a second look**
+- The scanner derives **no** inter-component relationships (it does not resolve DI or protocol wiring), so all
+  20+ rows are authored by hand from call sites. Where a row is an indirect data path rather than a call, the
+  row's own wording says so: `PrefixAwareScheduler -> PrefixTrie` ranks by a matched-prefix value the engine
+  runtime computes, and `EngineRuntime -> ThreadPriority` is a near-miss (the runtime never inspects priority).
+  Current rows cannot be deleted once written, so they were reworded rather than left false.
+- `PrefixTrie` is **not** referenced by the scheduler: each `EngineRuntime` owns a trie and the scheduler scores
+  `EngineRuntimeInfo.MatchedPrefixChars`. Worth knowing before anyone reads "prefix-aware scheduler" as a shared index.
+- The library project produces no container of its own in the scan (only the three executables do), so the
+  library's components sit directly under the system. A hand-drafted library container stays a ghost: `groma
+  accept` reports "no scan match". Left as-is and documented here.
+
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -47,16 +61,3 @@ today. **Do not change application code** as part of this task.
   CS0246/CS0103/CS0117/CS0165/CS0534/CS7036 can only come from unresolved packages/generators.
 - [x] #5 No application code changed: this task touched `groma/` and the board only.
 <!-- AC:END -->
-
-## Curation findings worth a second look
-
-- The scanner derives **no** inter-component relationships (it does not resolve DI or protocol wiring), so all
-  20+ rows are authored by hand from call sites. Where a row is an indirect data path rather than a call, the
-  row's own wording says so: `PrefixAwareScheduler -> PrefixTrie` ranks by a matched-prefix value the engine
-  runtime computes, and `EngineRuntime -> ThreadPriority` is a near-miss (the runtime never inspects priority).
-  Current rows cannot be deleted once written, so they were reworded rather than left false.
-- `PrefixTrie` is **not** referenced by the scheduler: each `EngineRuntime` owns a trie and the scheduler scores
-  `EngineRuntimeInfo.MatchedPrefixChars`. Worth knowing before anyone reads "prefix-aware scheduler" as a shared index.
-- The library project produces no container of its own in the scan (only the three executables do), so the
-  library's components sit directly under the system. A hand-drafted library container stays a ghost: `groma
-  accept` reports "no scan match". Left as-is and documented here.

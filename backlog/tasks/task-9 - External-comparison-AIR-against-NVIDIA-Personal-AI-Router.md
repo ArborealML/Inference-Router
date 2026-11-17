@@ -15,19 +15,10 @@ ordinal: 9000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
+
 An external comparison pass has been dispatched to compare our backend with NVIDIA's Personal AI Router capability by capability, with the bar being that our backend is at least as robust. It also inventories their UI for our planned Blazor live view and lists what their router cannot do (which is why we are building ours).
-<!-- SECTION:DESCRIPTION:END -->
 
-## Acceptance Criteria
-<!-- AC:BEGIN -->
-- [x] #1 Capability and robustness matrix with evidence from both codebases
-- [x] #2 Every gap in our backend turned into a task with acceptance criteria
-- [x] #3 UI screens rated borrow / borrow-with-changes / skip
-- [x] #4 The event-stream and status additions needed to make the live view cheap later are listed
-<!-- AC:END -->
-
-## Result (external review; the full digest stays outside the repository)
-
+**Result (external review; the full digest stays outside the repository)**
 Pinned review: this repo at `d3605fc136e` vs NVIDIA Personal-AI-Router at `1de8439a3811`,
 source only.
 
@@ -50,3 +41,13 @@ trends engine-first; skip the installer, model deletion, pairing, autostart/upda
 Fix order: P0 URI + readiness proof + dispatch progress → transport bounds → switches + error
 contract → owned lifecycle/recovery (TASK-1) → security + tests. P1 version pins, telemetry,
 durability, fairness, Blazor. P2 multi-host.
+
+<!-- SECTION:DESCRIPTION:END -->
+
+## Acceptance Criteria
+<!-- AC:BEGIN -->
+- [x] #1 Capability and robustness matrix with evidence from both codebases
+- [x] #2 Every gap in our backend turned into a task with acceptance criteria
+- [x] #3 UI screens rated borrow / borrow-with-changes / skip
+- [x] #4 The event-stream and status additions needed to make the live view cheap later are listed
+<!-- AC:END -->

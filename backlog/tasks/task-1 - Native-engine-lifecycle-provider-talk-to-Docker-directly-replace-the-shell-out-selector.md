@@ -19,6 +19,7 @@ ordinal: 1000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
+
 Replace the shell-out selector with a provider seam the router drives itself.
 
 Approved shape (reconciled from two external reviews, digested in unpublished notes):
@@ -31,6 +32,14 @@ API version, exec frame demux, image pin verification and **no pulls**; the CLI 
 fallback, and nothing in the router ever re-execs sudo. Serve `engines preflight` as a validate-only
 verb before any mutation. Keep `select.exec` working as a delegated-proof provider, mutually exclusive
 per model with native lifecycle.
+
+**Dependencies still open (decisions, not work)**
+Owner must record: (a) the posture when the container socket is unreachable or permission is denied —
+recommended: refuse and report as `lifecycle_privilege_denied`, never elevate; (b) where engine launch
+tuning lives — recommended hybrid: the router owns identity, ports, mounts, GPU device requests and
+readiness, the image entrypoint owns engine flags and surfaces them through the health probe. Both are
+written as SPEC 15.1 items 4 and 5 so the answer lands in the repo.
+
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -63,11 +72,3 @@ Seam, coordinator, delegated-exec provider and the native Docker provider are in
 
 Done with all five acceptance criteria verified against tests and both AOT publishes. What the reviewed design describes beyond this task lives in TASK-25 (reservation, admission close, cohort drain) and TASK-26 (image identity, GPU and mounts, exec/logs/events, latched failures, Windows transport). An external review of the two commits is still in flight: a confirmed finding becomes a task or a fix in the next commit, not a reopening of this one.
 <!-- SECTION:NOTES:END -->
-
-## Dependencies still open (decisions, not work)
-
-Owner must record: (a) the posture when the container socket is unreachable or permission is denied —
-recommended: refuse and report as `lifecycle_privilege_denied`, never elevate; (b) where engine launch
-tuning lives — recommended hybrid: the router owns identity, ports, mounts, GPU device requests and
-readiness, the image entrypoint owns engine flags and surfaces them through the health probe. Both are
-written as SPEC 15.1 items 4 and 5 so the answer lands in the repo.

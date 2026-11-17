@@ -15,17 +15,10 @@ ordinal: 8000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
+
 An external deep-review pass has been dispatched to settle which way the router should talk to Docker: the long-standing community client, the actively maintained fork used by cloud tooling, or hand-rolled Engine HTTP over the unix socket with source-generated JSON. The crux is whether each survives native AOT without reflection, plus unix-socket support, exec and events coverage, error fidelity between 'absent' and 'unreachable', and Engine API version pinning.
-<!-- SECTION:DESCRIPTION:END -->
 
-## Acceptance Criteria
-<!-- AC:BEGIN -->
-- [x] #1 A recommendation with package names, versions and an AOT verdict
-- [x] #2 The chosen seam is faked in tests without a live daemon
-<!-- AC:END -->
-
-## Result (external review; the full digest stays outside the repository)
-
+**Result (external review; the full digest stays outside the repository)**
 Verdict: **do not use a .NET Docker client library under Native AOT.** Talk to the Docker Engine
 HTTP API directly over the socket: `SocketsHttpHandler.ConnectCallback` +
 `UnixDomainSocketEndPoint` (npipe on Windows via `System.IO.Pipes`), `HttpClient` based at
@@ -41,3 +34,11 @@ Exec output needs the 8-byte multiplexed frame header parsed and exit code 0 req
 verify a pinned image (Id, RepoDigests, platform, layers) and refuse to run anything unpinned or
 unlabelled. Podman speaks Docker v1.40 semantics; containerd-native is a separate gRPC adapter.
 Docker group membership is root-equivalent — relevant to the authorization decision.
+
+<!-- SECTION:DESCRIPTION:END -->
+
+## Acceptance Criteria
+<!-- AC:BEGIN -->
+- [x] #1 A recommendation with package names, versions and an AOT verdict
+- [x] #2 The chosen seam is faked in tests without a live daemon
+<!-- AC:END -->

@@ -36,6 +36,24 @@ them can be built, so the stream work comes first.
 Nothing to decide here — the three questions this task waits on are written out on **TASK-21** with the
 answer format, in <https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/>. Answer those and this one starts on its own.
 
+**Blocked on one decision (owner)**
+The live view is a Blazor WASM app (SPEC §12.5). Two questions decide its shape, and both are product
+calls rather than technical ones:
+
+1. **Where does it come from?** Serve `air-ui` as static files from the router itself (one binary, one
+   origin, no CORS, but the router then ships a UI bundle and must serve a second content type), or as a
+   separate static site the operator hosts anywhere (cleaner separation, but then the browser needs a
+   reachable admin feed and CORS/origin policy). Recommendation: serve it from the router for v1 — one
+   process, same auth boundary, no new infrastructure — and keep the admin feed the only contract.
+2. **Who can see it?** `/admin/*` is currently unauthenticated and bind-address-only (§6.2). A live
+   dashboard makes that difference visible: an operator who exposes the router on the tailnet is
+   exposing the admin feed too. Options: keep bind-address-only and document it loudly, or add a
+   separate admin token. Recommendation: keep bind-address-only for the router itself and let the
+   operator expose the UI behind a reverse proxy; add the admin token only when someone needs a
+   remote admin. Say otherwise and I will do the token first.
+
+Nothing in this task is technically blocked; it is these two calls.
+
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -56,22 +74,3 @@ Blocked-state check: the blocker is a person, and the human task that carries it
 
 Wake condition, stated for the Waiting column: this task wakes when the live-view decisions are recorded (TASK-21 — audience, credential posture, and whether the event feed gains an explicit loss event), because the screens cannot be specified until the feed they read from is specified. Per the working contract the feed-contract plan also gets an external review before the code exists, so the second wake is that review landing. Nothing here is blocked on a person any more: the decisions that used to gate it moved to an agent task under the owner's instruction, and TASK-22's macOS answer does not touch this work.
 <!-- SECTION:NOTES:END -->
-
-## Blocked on one decision (owner)
-
-The live view is a Blazor WASM app (SPEC §12.5). Two questions decide its shape, and both are product
-calls rather than technical ones:
-
-1. **Where does it come from?** Serve `air-ui` as static files from the router itself (one binary, one
-   origin, no CORS, but the router then ships a UI bundle and must serve a second content type), or as a
-   separate static site the operator hosts anywhere (cleaner separation, but then the browser needs a
-   reachable admin feed and CORS/origin policy). Recommendation: serve it from the router for v1 — one
-   process, same auth boundary, no new infrastructure — and keep the admin feed the only contract.
-2. **Who can see it?** `/admin/*` is currently unauthenticated and bind-address-only (§6.2). A live
-   dashboard makes that difference visible: an operator who exposes the router on the tailnet is
-   exposing the admin feed too. Options: keep bind-address-only and document it loudly, or add a
-   separate admin token. Recommendation: keep bind-address-only for the router itself and let the
-   operator expose the UI behind a reverse proxy; add the admin token only when someone needs a
-   remote admin. Say otherwise and I will do the token first.
-
-Nothing in this task is technically blocked; it is these two calls.

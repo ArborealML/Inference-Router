@@ -14,18 +14,10 @@ ordinal: 3000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
+
 The spec claims request-path overhead is negligible but it is unmeasured. Benchmark router-fronted requests against direct engine calls at several concurrency levels and record the numbers the claim needs.
-<!-- SECTION:DESCRIPTION:END -->
 
-## Acceptance Criteria
-<!-- AC:BEGIN -->
-- [x] #1 A repeatable benchmark harness lives in the repo with documented run instructions
-- [x] #2 Measured p50/p95/p99 overhead at 1, 4, and 16 concurrent streams
-- [x] #3 SPEC section states the measured numbers instead of an unmeasured claim
-<!-- AC:END -->
-
-## Result (verified 2026-11-16)
-
+**Result (verified 2026-11-16)**
 Harness: `bench/Arboreal.InferenceRouter.Benchmarks` (JIT Release, one shared in-process fake
 engine per layer; `dotnet run -c Release --project bench/... -- 400 60`). Numbers, exclusions and
 the concurrency-16 HTTP cliff are recorded in `docs/benchmarks.md`; SPEC 9.1 quotes them.
@@ -41,3 +33,12 @@ first frame. The channel is now published at admission (before `Executing`) and
 Regression tests: `ServerWireTests.Streaming_With_Immediate_Engine_Reply_Never_Loses_Frames`,
 `EndToEndTests.Streaming_Channel_Is_Published_With_Executing_State`. 66/66 tests green, build and
 AOT publish clean.
+
+<!-- SECTION:DESCRIPTION:END -->
+
+## Acceptance Criteria
+<!-- AC:BEGIN -->
+- [x] #1 A repeatable benchmark harness lives in the repo with documented run instructions
+- [x] #2 Measured p50/p95/p99 overhead at 1, 4, and 16 concurrent streams
+- [x] #3 SPEC section states the measured numbers instead of an unmeasured claim
+<!-- AC:END -->

@@ -5,7 +5,7 @@ status: Done
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-16T20:50:00Z'
-updated_date: '2026-11-17T04:28:00Z'
+updated_date: '2026-11-17T06:35:00Z'
 labels:
   - ci
 milestone: v0.10 - live view and robustness parity
@@ -24,7 +24,7 @@ Implement exactly what the reviewed design specifies, then prove it: a push run,
 <!-- AC:BEGIN -->
 - [x] #1 ci.yml runs on push to main and on pull requests
 - [x] #2 release.yml refuses a duplicate tag before any build work starts
-- [ ] #3 All four RID artifacts build, verify, and only then publish
+- [ ] #3 The declared platform artifacts (linux-x64 and win-x64) build, verify on their own runners, and only then publish
 <!-- AC:END -->
 
 ## Comments
@@ -35,6 +35,14 @@ created: 2026-11-17T04:28:00Z
 ---
 
 AC 3 ("all four RID artifacts build, verify, and only then publish") is the only criterion left open, and it is an execution proof rather than more workflow code: the release job has to run once on a real tag, which needs the macOS runner decision (TASK-22) and then a v0.1.0 cut. That proof is tracked as TASK-15 (Blocked on those minutes), so this task is Done with AC 3 carried there — Done here means the workflows exist and are wired, not that a release has been published. Preflight, per-RID stripped AOT builds, per-OS smoke (tools/ci/smoke.sh) and the publish-needs-four-assets gate are all in .github/workflows/release.yml, and ci.yml runs build+test+AOT on push and PR; the ci workflow is green on every main push so far.
+
+---
+
+created: 2026-11-17T06:35:00Z
+
+---
+
+Criterion 3 reworded, not checked: it used to demand four RID artifacts, and decision-10 set the published surface at two (linux-x64, win-x64), so as written it could never close. It still waits on TASK-15, but TASK-15 now closes it by **dropping** the macOS legs from the workflow, the four-asset publish gate and the README platform copy — not by running them. The tag run that proves the two-platform gate is TASK-28.
 
 ---
 <!-- COMMENTS:END -->

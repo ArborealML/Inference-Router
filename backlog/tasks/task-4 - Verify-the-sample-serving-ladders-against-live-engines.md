@@ -14,16 +14,10 @@ ordinal: 4000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
+
 The shipped sample configs declare context/slot ladders that were written from expectation, not measurement. Probe a live engine per backend and correct the samples, or annotate which values are unverified.
-<!-- SECTION:DESCRIPTION:END -->
 
-## Acceptance Criteria
-<!-- AC:BEGIN -->
-- [x] #1 Each ladder entry in samples/router.toml has a measured context and slot count or is marked unverified
-<!-- AC:END -->
-
-## Result (verified 2026-11-16)
-
+**Result (verified 2026-11-16)**
 Probed the live engine on the reference box (key read from the container's own key file, never
 written into the repo): `/v1/models` reports `meta.n_ctx = 524288` for the loaded model and
 `/props` reports `total_slots = 1`, input modalities text+image.
@@ -34,3 +28,10 @@ engine `capabilities` block are explicitly marked UNVERIFIED with the probe they
 tier *name* still has to be reconciled with the selector's profile list — noted in the sample.
 `arboreal config` dry run loads the sample; `ConfigLoaderTests.Shipped_Sample_Configs_Load_As_Written`
 pins the measured tier (66/66 green).
+
+<!-- SECTION:DESCRIPTION:END -->
+
+## Acceptance Criteria
+<!-- AC:BEGIN -->
+- [x] #1 Each ladder entry in samples/router.toml has a measured context and slot count or is marked unverified
+<!-- AC:END -->
