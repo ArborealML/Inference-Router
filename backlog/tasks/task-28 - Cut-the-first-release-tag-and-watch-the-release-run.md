@@ -43,11 +43,10 @@ git tag -a v0.1.0 -m v0.1.0 "$(git rev-parse origin/main)"   # current main HEAD
 git push origin v0.1.0 && gh run watch <id>
 ```
 
-**Cut:** the releases page gains two archives plus `SHA256SUMS`, [TASK-14](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-14%20-%20Improve-the-README-patterns-from-popular-.NET-repos-plus-an-icon-and-banner.md) can point at real downloads, and
-this task reports what the gate proved. **Hold:** the README keeps telling readers to build from source and this task
-stays parked. Recommendation, stated not asked: cut `v0.1.0` only after [TASK-44](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-44%20-%20Close-the-open-release-gate-review-findings-SPEC-v0-12-15-onward.md) closes,
-[TASK-45](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-45%20-%20Enable-GitHub-immutable-releases-before-the-first-tag.md) is done and the canary on [TASK-42](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-42%20-%20Run-the-canary-through-the-real-gate-knowing-the-version-name-is-burned.md) has run — immutable releases freeze whatever ships
-first and a published name is never reused.
+**Cut:** the releases page gains two archives plus `SHA256SUMS` and the README can point at real downloads; this task
+reports what the gate proved. **Hold:** the README keeps telling readers to build from source. The canary has run,
+immutable releases are on, and a published name is never reused — so what is left in front of this tag is gate work, not
+a decision.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -69,14 +68,15 @@ repository proves nothing. That order is superseded, not forgotten. TASK-28 depe
 tag first; if a criterion ever reads as TASK-48 gating TASK-28 on a published release, that is a deadlock in
 prose and gets reworded, not an edge to add.
 
-**What gates this, as events.** [TASK-50](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-50%20-%20Decision-approve-the-first-public-version-number-v0.1.0-—-one-line.md)'s `go`; [TASK-38](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-38%20-%20Act-put-a-v-ruleset-on-the-repository-and-read-it-back.md)'s ruleset read back — a `creation` rule
-with empty `bypass_actors` blocks the principal that pushes the tag, so the ruleset and the first tag cannot both be
-first; [TASK-45](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-45%20-%20Enable-GitHub-immutable-releases-before-the-first-tag.md) done; [TASK-44](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-44%20-%20Close-the-open-release-gate-review-findings-SPEC-v0-12-15-onward.md) closed; CI green on the tagged commit.
+**What gates this, as events.** [TASK-38](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-38%20-%20Act-put-a-v-ruleset-on-the-repository-and-read-it-back.md)'s ruleset — landed and read back at 18:2xZ:
+it protects `update` and `deletion` and leaves `creation` out, so pushing a new `v*` tag succeeds and this tag is not
+blocked; [TASK-45](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-45%20-%20Enable-GitHub-immutable-releases-before-the-first-tag.md) done; [TASK-44](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-44%20-%20Close-the-open-release-gate-review-findings-SPEC-v0-12-15-onward.md) closed; CI green on the tagged commit.
+The board's earlier reason for sequencing the ruleset against this tag — a `creation` rule with empty `bypass_actors`
+blocking the pusher — is **untested**; that probe runs in the disposable repository.
 
 **Preconditions, not criteria:** two-platform legs (TASK-15, closed) and platform surface (decision-10). Which commit
 raised the floor last is history in git and the SPEC log; the rule above is the floor, so no sha here goes stale. Superseded log entries for this task: [board trim, 2026-11-17](https://github.com/ArborealML/Inference-Router/blob/main/backlog/archive/board-trim-2026-11-17.md).
 
-**Duplicate archived:** [TASK-32](https://github.com/ArborealML/Inference-Router/blob/main/backlog/archive/tasks/task-32%20-%20Decision-cut-the-v0.1.0-tag.md) was the same deliverable, actor and outcome; its go/hold analysis lives on TASK-50.
 <!-- SECTION:NOTES:END -->
 
 ## Comments

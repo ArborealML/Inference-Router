@@ -18,23 +18,23 @@ ordinal: 37000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-**An act, not a decision: create an active repository ruleset on `v*` that governs creating, moving and deleting release tags, then read it back.** Read the live state before posting: a ruleset is the scriptable route here (the tag-protection endpoint answers 404 for this token), and the answer at the moment of the act goes in the report. About 20 minutes with `gh api`, reversible with a DELETE.
+**An act, not a decision: create a `v*` tag ruleset and read it back.** Read the live state before posting: a ruleset is the scriptable route here (the tag-protection endpoint answers 404 for this token), and the answer at the moment of the act goes in the report. About 20 minutes with `gh api`, reversible with a DELETE.
 
     gh api repos/ArborealML/Inference-Router/rulesets      # read live, do not quote an older answer
 
-**Three corrections the plan review landed in SPEC v0.12.20; each changes the payload.** `enforcement` is `disabled | active | evaluate`, and `evaluate` is Enterprise-only — *create it observe-only, flip it after the canary* is not available: a ruleset enforces or it does nothing. `creation`, `update` and `deletion` are real rule types, and `bypass_actors: []` means **nobody** — not an admin, not the Actions app — may create, move or delete a `v*` tag, including whoever pushes the next release tag: the actor list is decided before the POST and [TASK-28](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-28%20-%20Cut-the-first-release-tag-and-watch-the-release-run.md) is sequenced against it. And a ruleset is not admin-proof: repository admins can always edit the ruleset itself.
+**Three corrections the plan review landed in SPEC v0.12.20; each changes the payload.** `enforcement` is `disabled | active | evaluate`, and `evaluate` is Enterprise-only — *create it observe-only, flip it after the canary* is not available: a ruleset enforces or it does nothing. And a ruleset is not admin-proof: repository admins can always edit the ruleset itself. The third correction — that `bypass_actors: []` means nobody, `creation` included — is what the act then measured and narrowed; the shape it led to is under Notes, and the superseded wording is in the archive.
 
-**A ruleset that silently matches nothing is worse than none**, so the GET after the POST is part of the act. This mutates a public repository; say so in the report and the commit message. **Order:** before the canary in [TASK-42](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-42%20-%20Run-the-canary-through-the-real-gate-knowing-the-version-name-is-burned.md), which proves nothing about protection that is not switched on.
+**A ruleset that silently matches nothing is worse than none:** the GET after the POST is part of the act. This mutates a public repository; say so in the report and the commit message. **Order:** before the canary in [TASK-42](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-42%20-%20Run-the-canary-through-the-real-gate-knowing-the-version-name-is-burned.md), which proves nothing about protection that is not switched on.
 
 **Wake: the disposable repository on TASK-49 existing**, because the ruleset's refusals have to be provable somewhere a tag can be destroyed without spending a real name. The rest is agent work: POST, readback, report.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 A ruleset targeting `v*` with `enforcement: active` exists, and the readback shows a refused tag move and a refused tag delete on an unpublished `v*` tag, causal error quoted — not merely a ruleset that exists
+- [x] #1 A ruleset targeting `v*` with `enforcement: active` exists, and the readback shows a refused tag move and a refused tag delete on an unpublished `v*` tag, causal error quoted — not merely a ruleset that exists
 - [ ] #2 If access is not widened, the pre-tag window is written as an accepted gap in SPEC 15 instead
-- [ ] #3 The ruleset's protected operations are decided by the agent and recorded with reasoning: the protection that matters is a published release tag that cannot be moved or deleted
-- [ ] #4 The report states who can still move a published release's tag, and that empty `bypass_actors` blocks the tag pusher as well
+- [x] #3 The ruleset's protected operations are decided by the agent and recorded with reasoning: the protection that matters is a published release tag that cannot be moved or deleted
+- [ ] #4 The report states who can still move a published release's tag, and the `creation` rule's effect on the tag pusher is probed, not assumed
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -42,16 +42,21 @@ ordinal: 37000
 <!-- SECTION:NOTES:BEGIN -->
 **What this closes.** The workflow already refuses a tag that carries a release, re-resolves the tag to the built
 commit and serialises its own runs. What YAML cannot stop is a principal with write access moving the tag between that
-check and the create: the release path publishes whatever the tag points at, under a version number people trust.
+check and the create.
 
-**The rule that makes this non-trivial,** measured at 8f78a73: a `creation` rule with `bypass_actors: []` blocks the
-publishing account as well as a person. Two layered rulesets was this board's answer to that; leaving `creation` out of
-the ruleset is the smaller shape, and the external analysis reached the same conclusion independently. Readback decides.
-The where-question is answered on TASK-49, not here.
+**Two measurements from the act itself change the payload.** (1) **A ruleset with no `conditions` object is
+inert:** the first create read back `enforcement: active` and protected nothing — probe pushes moved and then deleted the
+canary's tag under it. Adding `conditions: {ref_name: {include: ["refs/tags/v*"], exclude: []}}` by `PUT` (a `PATCH` on
+`/repos/{o}/{r}/rulesets/{id}` answers 404) made the same two probes refuse. The list endpoint shows no rules: read back
+`GET /repos/{o}/{r}/rulesets/{id}`. (2) **The shape, measured:** rules `update` and `deletion`, no
+`creation` rule — creating a new `v*` tag succeeds, moving one and deleting one are refused — so ruleset-then-tag is not a
+deadlock. **Untested, and no task may state it as fact:** whether a `creation`
+rule with `bypass_actors: []` blocks the account that pushes the tag. That probe belongs in the disposable repository on
+TASK-49, where a burned name costs nothing.
 
 Superseded log entries: [board trim, 2026-11-17](https://github.com/ArborealML/Inference-Router/blob/main/backlog/archive/board-trim-2026-11-17.md).
 
-**Order, corrected by the coding session on 2026-11-17, superseding this board's first:** ruleset on
-`v*` -> immutable releases -> the canary -> post-publish readback proof -> `v0.1.0`. **Shape, the coding session's recommendation pending readback:** protect `update` and `deletion` and leave `creation` free, because a
-`creation` rule with `bypass_actors: []` blocks the very principal that pushes the release tag.
+**Order, as performed:** ruleset on `v*` -> immutable releases -> the canary -> post-publish readback proof -> `v0.1.0`.
+Read live at 18:2xZ: `release-tag-protection`, target `tag`, `active`, `bypass_actors: []`, conditions `refs/tags/v*`,
+rules `update` + `deletion`.
 <!-- SECTION:NOTES:END -->

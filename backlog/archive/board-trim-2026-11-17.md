@@ -676,3 +676,15 @@ The stderr census behind a criterion that retired to SPEC §15 with the v0.12.20
 task keeps a pointer here, and the command below re-derives every number in it from the workflow on `main`.
 
 **The census behind the stderr criterion, retired into SPEC 15 with the v0.12.20 round** (re-run: `git show main:.github/workflows/release.yml | grep -c '2>/dev/null'`): 9 sites discard stderr, 6 jq shape guards discard stdout only, 1 discards both, 1 API read captures stderr to a temp file removed by an EXIT trap and reports only the exit code plus status-like numbers, 1 merge is compiler output (`dotnet publish … 2>&1 | tee aot-<rid>.log`). jq prints a value only for typed operations, truncated to ten characters, and every typed operation in those six guards sits behind a `type` guard — pinned by `shape_jq_stderr`.
+
+### TASK-38 (superseded payload wording, 18:2xZ)
+
+The plan review's third correction as it was first written, before the act measured the shape and narrowed it. It is kept
+because it explains why the board sequenced the first tag against the ruleset at all.
+
+> `creation`, `update` and `deletion` are real rule types, and `bypass_actors: []` means **nobody** — not an admin, not the
+> Actions app — may create, move or delete a `v*` tag, including whoever pushes the next release tag: the actor list is
+> decided before the POST and TASK-28 is sequenced against it.
+
+And the sentence the task's Notes no longer carries: "the release path publishes whatever the tag points at, under a
+version number people trust."

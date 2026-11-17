@@ -21,46 +21,51 @@ ordinal: 41000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-The release gate has never run against a real tag. This run is the rehearsal that proves the gate exists — and
-its cost is asymmetric: with immutable releases on, the version **name is burned either way**, so the canary is kept as a
-permanent prerelease or deleted with the name still reserved. That is the shape of the decision; the
-yes/no and the repository it runs in are answered on [TASK-49](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-49%20-%20Answer-the-throwaway-repository-question-for-the-destructive-gate-tests-spend-nothing-new.md),
-and the gate work it exercises is [TASK-44](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-44%20-%20Close-the-open-release-gate-review-findings-SPEC-v0-12-15-onward.md).
+**The gate has now run against a real tag, and the canary is published.** `v0.0.10-canary` (gate v0.12.23, tag peeled to
+9910c0f) answers `immutable: true`, prerelease, five assets. What this task still owns is the half only a *published*
+release can give: probing it after publication — an asset replacement attempt and a tag move attempt, both required to be
+refused, plus `.immutable` read back — and its disposition, kept as a permanent prerelease or deleted, the name reserved
+either way.
 
-**What this run must show, as facts not argument** (criteria below): whether `GITHUB_TOKEN` at `contents: write` is enough for asset upload plus the un-draft `PATCH`; what `.target_commitish` reports, and the tag-object versus peeled
-commit SHAs; and what a published immutable release refuses when an asset is replaced or a tag moved.
-**Not proven here**, and stated as unproven in SPEC: whether `POST /releases` rejects a second release on an existing
-tag with a `422` — never tested. A rehearsal cannot rehearse that, so it stays open on TASK-44.
+**Cost per retry, measured.** `v0.0.9-canary` never got a release, so its name is unburned, but the `v*` ruleset refuses
+to move or delete that tag: **every retry needs a new version name**, and the refused tags stay as immovable furniture.
+That is the price of proving the gate in public, and it is why the negative cases belong in the disposable repository
+(TASK-49), where names cost nothing.
+
+**Not proven here, and stated as unproven in SPEC:** whether `POST /releases` rejects a second release on an existing tag
+with a `422` — never observed, and rehearsing it here would spend another name.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 the decision to run it is recorded (yes, under decision-16); the canary tag `v0.0.0-canary` is cut and the run reported with the unmodified workflow and the job's own token
-- [ ] #2 The run answers, as evidence: whether `contents: write` from `GITHUB_TOKEN` suffices for asset upload plus the un-draft `PATCH`, and whether the workflow-write guard fires for a tag cut at the head of `main`
-- [ ] #3 the run records what `.target_commitish` says on a real create, and what the tag object SHA and the peeled commit SHA were
+- [x] #1 the decision to run is recorded and the run reported with the unmodified workflow and the job's own token, against the canary name actually used
+- [ ] #2 the run answers, as evidence: whether `contents: write` from `GITHUB_TOKEN` suffices for asset upload plus the un-draft `PATCH`, and whether the workflow-write guard fires for a tag cut at the head of `main`
+- [x] #3 the run records what `.target_commitish` says on a real create, and what the tag object SHA and the peeled commit SHA were
 - [ ] #4 the published canary is probed after publication: an asset replacement attempt and a tag move attempt, both required to be refused, plus `.immutable` read back
-- [ ] #5 The canary's disposition is decided before the tag is cut and recorded here: kept as a permanent prerelease, or deleted — the version name stays reserved either way once immutable releases are on
-- [ ] #6 Nothing auto-deletes a release whose disposition is uncertain; if the rehearsal is skipped, the skip and its reason are recorded here
-- [ ] #7 the run leaves what [TASK-48](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-48%20-%20Prove-what-a-downloader-receives-post-publish-readback-and-free-build-attestation.md) needs to prove a download: a published release, its asset inventory, and the digests of the bytes actually served
+- [ ] #5 the canary's disposition is decided and recorded here: kept as a permanent prerelease, or deleted — the name stays reserved either way
+- [ ] #6 nothing auto-deletes a release whose disposition is uncertain; if a probe is skipped, the skip and its reason are recorded here
+- [ ] #7 the run leaves what TASK-48 needs to prove a download: a published release, its asset inventory, and the digests of the bytes actually served
 <!-- AC:END -->
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-**Wake, as events:** TASK-49's repository existing, the ruleset read back on TASK-38, immutable releases enabled on TASK-45, the gate work closed on TASK-44, and CI green on the commit the canary tag points at.
+**Wake, as events:** TASK-49's disposable repository existing, and the gate work closed on TASK-44 with CI green on the
+commit the canary points at. The ruleset and immutable releases are in place and were read back.
 
-**Order, and it is a dependency now.** A canary against an unprotected repository proves nothing about protection: the
-ruleset on [TASK-38](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-38%20-%20Act-put-a-v-ruleset-on-the-repository-and-read-it-back.md) and immutable releases on [TASK-45](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-45%20-%20Enable-GitHub-immutable-releases-before-the-first-tag.md) come first. And a `creation` rule with
-`bypass_actors: []` would block whoever pushes the canary tag, so TASK-38's actor list is a precondition of this run.
+**Order, as performed.** The ruleset and immutable releases came first, because a canary against an unprotected repository
+proves nothing about protection. The live ruleset protects `update` and `deletion` and leaves `creation` out, so pushing a
+new `v*` tag succeeds — measured twice. Whether a `creation` rule with `bypass_actors: []` would have blocked the pusher
+is untested, and that probe belongs in the disposable repository.
 
-**No clean undo.** Deleting the canary's release frees the tag but the name stays reserved permanently, and turning
-immutability off does not unlock it. Never auto-delete a release whose disposition is uncertain: cleanup's
-`GET`-then-`DELETE` window plus a burned name is worse than a stray draft. If an extra runner leg is refused, record the
-refusal and run it here; if allowed, rehearsing in a throwaway repository saves the name and the audience, not the
-minutes.
+**Canary 1 is evidence the gate works, not that it failed.** It built and smoke-tested on both legs and then refused to
+publish: the gate byte-compared a checksum record whole, and Windows writes that record in binary mode where GNU coreutils
+writes text — equal digests, unequal lines, and the message blamed the digest. Fixed at 9910c0f (v0.12.23), harness to 132
+cases; the round's row is in [SPEC.md](https://github.com/ArborealML/Inference-Router/blob/main/SPEC.md) §15.
 
-**Proves only what the tagged commit's workflow can do.** The floor rule is a criterion on [TASK-28](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-28%20-%20Cut-the-first-release-tag-and-watch-the-release-run.md) and the gh
-version floor (no `gh release verify` or `gh attestation` in 2.46.0) on [TASK-48](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-48%20-%20Prove-what-a-downloader-receives-post-publish-readback-and-free-build-attestation.md) — cited here, not repeated.
+**Proves only what the tagged commit's workflow can do** — the floor rule is a criterion on TASK-28, and the gh version
+floor (no `gh release verify` or `gh attestation` in 2.46.0) is on TASK-48.
+
 Superseded log entries: [board trim, 2026-11-17](https://github.com/ArborealML/Inference-Router/blob/main/backlog/archive/board-trim-2026-11-17.md).
 <!-- SECTION:NOTES:END -->
 
