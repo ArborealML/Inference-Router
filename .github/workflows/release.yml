@@ -86,18 +86,13 @@ jobs:
           TAG: ${{ steps.resolve.outputs.tag }}
         run: |
           set -euo pipefail
-          # Same sanitizer as the publish step's brief(); the two steps are separate shells, so the
-          # definition is duplicated deliberately — change both. Response text is only ever logged
-          # after it has been made control-free.
-          brief() { printf '%s' "$1" | LC_ALL=C tr -c '\40-\176' '?' \
-                      | LC_ALL=C cut -c1-200 | sed -e 's/%/%25/g' -e 's/:/%3A/g'; }
-          # stderr is a diagnostic, not a value: at most the first line of at most 2 KiB, with anything
-          # shaped like a credential replaced before it is sanitized. gh's own errors are short and plain
-          # ("gh: Not Found (HTTP 404)"), so nothing needed for triage is lost, and a token that a debug
-          # build or a proxy puts on stderr cannot ride the first 200 characters into the workflow log.
-          redact() { head -c 2048 "$1" | head -n 1 \
-                       | sed -E -e 's/(gh[pousr]|github_pat)_[A-Za-z0-9]{16,}/[redacted]/g' \
-                                -e 's/[A-Za-z0-9._-]{36,}/[redacted]/g'; }
+          # stderr is a diagnostic, never a value: nothing gh writes is echoed. What is safe to say about
+          # it is the exit code and a three-digit HTTP status. Regex redaction was the obvious alternative
+          # and is not reliable — a short token, a Basic auth header, an x-access-token clone URL, base64
+          # broken by `+` or `/`, or a credential split by a byte cap all walk past a pattern. Reporting
+          # digits only removes the channel instead of filtering it.
+          http_codes() { grep -oE '(HTTP|status)[^0-9]{0,4}[1-5][0-9]{2}' "$1" 2>/dev/null \
+                           | grep -oE '[0-9]{3}' | head -n 3 | paste -sd, - || true; }
           # Note: the "release by tag name" endpoint hides drafts, so list and filter instead —
           # a half-finished draft from an earlier run must block a new build just as a published
           # release does. --paginate means a second page of releases cannot hide an existing one,
@@ -117,7 +112,7 @@ jobs:
           rc=0
           existing="$(gh api --paginate "repos/{owner}/{repo}/releases?per_page=100" 2>"$list_err")" || rc=$?
           if [ "$rc" != 0 ]; then
-            echo "::error::could not read this repository's releases (gh exited $rc; first line of stderr, redacted: $(brief "$(redact "$list_err")")) — a release for $TAG cannot be ruled out, so not building"
+            echo "::error::could not read this repository's releases (gh exited $rc; HTTP statuses named in stderr: $(http_codes "$list_err" | sed 's/^$/none/')) — a release for $TAG cannot be ruled out, so not building"
             exit 1
           fi
           if [ -z "$existing" ]; then
@@ -391,15 +386,22 @@ jobs:
           # cutting after tr (instead of head) means no producer dies of SIGPIPE under pipefail, so a
           # diagnostic cannot come out silently empty.
           brief() { printf '%s' "$1" | LC_ALL=C tr -c '\40-\176' '?' | LC_ALL=C cut -c1-200 | sed -e 's/%/%25/g' -e 's/:/%3A/g'; }
-          rsum() { printf '%s' "$1" | jq -r '((.upload_url // "")
-                       | if type == "string" then . else tojson end) as $u
-                       | [ "id=\(if .id == null then "absent" else (.id|tostring) end)",
-                           "tag=\(.tag_name // "absent")",
-                           "name=\(.name // "absent")",
-                           "draft=\(if .draft == null then "absent" else (.draft|tostring) end)",
-                           "pre=\(if .prerelease == null then "absent" else (.prerelease|tostring) end)",
-                           "upload_url=\($u[0:60])" + (if ($u|length) > 60 then "+(\($u|length) bytes)" else "" end)
-                         ] | join(" ")' 2>/dev/null || echo "unreadable response"; }
+          # One bounded field at a time. A value is shown as what it is — a string up to its cap with its
+          # true length after it, a number or boolean as JSON, a missing field as "absent" — so a long
+          # field cannot push the flags out of the summary, and a wrong type is visible as a wrong type
+          # instead of collapsing the line. This is a sanitizer, not a redactor: brief() makes the text
+          # control-free and escapes the workflow-command punctuation, and the caps keep it short; what a
+          # response chooses to put in its own name is still shown. Nothing here is compared against.
+          rsum() { printf '%s' "$1" | jq -r '
+              def f(v; n): (if v == null then "absent"
+                            elif (v | type) == "string"
+                              then (if (v | length) > n
+                                    then v[0:n] + "+(" + (v | length | tostring) + "ch)"
+                                    else v end)
+                            else (v | tojson) end);
+              "id=" + f(.id; 20) + " tag=" + f(.tag_name; 40) + " name=" + f(.name; 40)
+              + " draft=" + f(.draft; 12) + " pre=" + f(.prerelease; 12)
+              + " upload_url=" + f(.upload_url; 60)' 2>/dev/null || echo "unreadable response"; }
           # Preflight proved the tag exists, and the tag was never the thing at issue: a tag can move
           # after preflight. Re-resolve it and compare against what the legs
           # actually built, or a tag moved after preflight would publish somebody else's commit.
