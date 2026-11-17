@@ -1,0 +1,13 @@
+<!-- AIR identity, mark — avatar variant. Derived from air-mark.svg at the repository owner's request, same original paths, no third-party assets, no stock art. MIT (see LICENSE).
+     Why this variant exists: air-mark.svg strokes in currentColor and declares no field, so rendered on its own it is black on transparent and invisible on a dark avatar frame. This file fixes the field and stroke colours explicitly and adds padding so a circular crop loses nothing.
+     Palette is the repository identity palette: #10241F field, #F3F7F2 mark (see docs/images/README.md). Artwork is original vector markup, generated for this project by an external model service at the owner's request; this variant is a recolour and reframe of that same artwork. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 80" width="512" height="512" fill="none" role="img" aria-label="AIR: branching inference routes">
+  <rect width="80" height="80" fill="#10241F"/>
+  <g transform="translate(8 8)">
+    <path d="M32 58V31M32 39 15 22M32 39 49 22" stroke="#F3F7F2" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="32" cy="13" r="7" stroke="#F3F7F2" stroke-width="5"/>
+    <circle cx="12" cy="19" r="7" stroke="#F3F7F2" stroke-width="5"/>
+    <circle cx="52" cy="19" r="7" stroke="#F3F7F2" stroke-width="5"/>
+    <path d="M32 31V23" stroke="#F3F7F2" stroke-width="6" stroke-linecap="round"/>
+  </g>
+</svg>
