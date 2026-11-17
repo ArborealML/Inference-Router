@@ -360,8 +360,8 @@ jobs:
           created="$(gh api -X POST repos/{owner}/{repo}/releases \
             -f tag_name="$TAG" -f name="$TAG" -F draft=true -F prerelease="$prerelease" \
             -F generate_release_notes=true \
-            --jq '[.id,(.upload_url // ""),(.tag_name // ""),(if .draft == null then "null" else (.draft|tostring) end),(if .prerelease == null then "null" else (.prerelease|tostring) end)] | join(" ")')"
-          read -r rel_id upload_url made_tag made_draft made_pre <<<"$created"
+            --jq '[.id,(.upload_url // ""),(.tag_name // ""),(.name // ""),.draft,.prerelease] | join(" ")')"
+          read -r rel_id upload_url made_tag made_name made_draft made_pre <<<"$created"
           case "${rel_id:-}" in
             ''|*[!0-9]*)
               echo "::error::create returned no numeric release id (got ${rel_id:-nothing}) — not publishing, and leaving whatever exists for a human"
@@ -369,22 +369,27 @@ jobs:
               ;;
           esac
           # A numeric id is not yet this run's release: the response has to say it carries the tag we
-          # asked for, as a draft, with the prerelease flag we asked for. A 2xx that answers something
-          # else — a substituted or replayed response — stops here rather than getting our binaries.
-          if [ "${made_tag:-}" != "$TAG" ] || [ "${made_draft:-}" != "true" ] || [ "${made_pre:-}" != "$prerelease" ]; then
-            echo "::error::create answered release $rel_id as [$made_tag ${made_draft:-nothing} ${made_pre:-nothing}], expected [$TAG true $prerelease] — not publishing, and leaving whatever exists for a human"
+          # asked for, is titled with it, is a draft, and has the prerelease flag we asked for. A 2xx
+          # that answers something else — a substituted or replayed response — stops here rather than
+          # getting our binaries. (`.target_commitish` is deliberately not compared: the API says it is
+          # unused for a tag that already exists, so it proves nothing about which commit is released.)
+          if [ "${made_tag:-}" != "$TAG" ] || [ "${made_name:-}" != "$TAG" ] || [ "${made_draft:-}" != "true" ] || [ "${made_pre:-}" != "$prerelease" ]; then
+            echo "::error::create answered release $rel_id as [$made_tag ${made_name:-nothing} ${made_draft:-nothing} ${made_pre:-nothing}], expected [$TAG $TAG true $prerelease] — not publishing, and leaving whatever exists for a human"
             exit 1
           fi
-          # The upload address has to name this repository and this release id. A non-empty URL from
-          # somewhere else is not a reason to post binaries to it.
-          want_upload="https://uploads.github.com/repos/${GH_REPO}/releases/${rel_id}/assets"
-          case "${upload_url:-}" in
-            "$want_upload"*) : ;;
-            *)
-              echo "::error::release $rel_id came back with upload_url ${upload_url:-nothing}, expected a URL starting $want_upload — not publishing, and leaving draft $rel_id for a human"
-              exit 1
-              ;;
-          esac
+          # The upload address has to be exactly the documented one for this repository and this
+          # release id, template and all. A prefix match is weaker than it looks — `assets-extra` or a
+          # query the run did not ask for would pass it — and a non-empty URL from somewhere else is
+          # not a reason to post binaries to it. The compare ignores case, because the API returns the
+          # canonical owner/repo spelling and GitHub treats those path components case-insensitively;
+          # the upload then goes to the address the API actually gave, not the one we guessed. Exactness
+          # is a choice: if GitHub ever changes the template this gate stops, loudly, and a human
+          # updates it rather than a build posting bytes at a surprise host.
+          want_upload="https://uploads.github.com/repos/${GH_REPO}/releases/${rel_id}/assets{?name,label}"
+          if [ "${upload_url,,}" != "${want_upload,,}" ]; then
+            echo "::error::release $rel_id came back with upload_url ${upload_url:-nothing}, expected exactly $want_upload — not publishing, and leaving draft $rel_id for a human"
+            exit 1
+          fi
           echo "release_id=$rel_id" >> "$GITHUB_OUTPUT"
           echo "created draft $rel_id for $TAG at $tag_sha"
           # Upload by that id, through the upload_url the create returned with its own URI template.
@@ -435,11 +440,13 @@ jobs:
                 exit 1
               fi
             done
-            got_state="$(gh api "repos/{owner}/{repo}/releases/$rel_id" --jq '[(.tag_name // ""),.draft,.prerelease] | join(" ")')"
-            if [ "$got_state" != "$TAG true $prerelease" ]; then
+            got_state="$(gh api "repos/{owner}/{repo}/releases/$rel_id" --jq '[.id,(.tag_name // ""),(.name // ""),.draft,.prerelease] | join(" ")')"
+            if [ "$got_state" != "$rel_id $TAG $TAG true $prerelease" ]; then
               # The tag *ref* being re-resolved does not prove the release object still carries that
-              # tag: this is the only check that the release itself is still the one this run made.
-              echo "::error::release $rel_id carries [$got_state], expected [$TAG true $prerelease] — not publishing"
+              # tag: this is the only check that the release itself is still the one this run made —
+              # read back by id, so the id in the answer has to be ours as well as the tag, title and
+              # flags.
+              echo "::error::release read-back is [$got_state], expected [$rel_id $TAG $TAG true $prerelease] — not publishing"
               exit 1
             fi
           }
@@ -459,9 +466,9 @@ jobs:
           # By id, not by tag: the tag is not the thing this run made, and `gh release edit` would
           # resolve the operand as a tag name anyway.
           gh api -X PATCH "repos/{owner}/{repo}/releases/$rel_id" -F draft=false >/dev/null
-          after="$(gh api "repos/{owner}/{repo}/releases/$rel_id" --jq '[(.tag_name // ""),.draft,.prerelease] | join(" ")')"
-          if [ "$after" != "$TAG false $prerelease" ]; then
-            echo "::error::published release state is [$after], expected [$TAG false $prerelease] — check the releases page before trusting it"
+          after="$(gh api "repos/{owner}/{repo}/releases/$rel_id" --jq '[.id,(.tag_name // ""),(.name // ""),.draft,.prerelease] | join(" ")')"
+          if [ "$after" != "$rel_id $TAG $TAG false $prerelease" ]; then
+            echo "::error::published release read-back is [$after], expected [$rel_id $TAG $TAG false $prerelease] — check the releases page before trusting it"
             exit 1
           fi
           # The record of what went public, read back by id.

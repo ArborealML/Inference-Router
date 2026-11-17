@@ -1,6 +1,6 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.14)
+Status: draft, continuously revised (v0.12.15)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
@@ -352,6 +352,27 @@ daemon transaction per engine. 137 tests green.
   that answers no `upload_url`, an upload that dies or answers no asset id, an asset name listed twice on
   the release, and a tag that moves after the first resolve. No tag has run the gate: still configured,
   not proven.
+- v0.12.15 — a sixth deep review of the gate, over v0.12.14: the repair held, and the new checks were
+  weaker than they looked. The `upload_url` test was a **prefix** match, so `…/assets-extra` or a query
+  this run never asked for passed it; the comparison is now **exact against the documented template**
+  (`https://uploads.github.com/repos/{owner}/{repo}/releases/{id}/assets{?name,label}`), folded for case
+  because the API returns the canonical owner/repo spelling and treats those path components
+  case-insensitively, and the upload then goes to the address the API returned rather than the one this
+  file guessed. The two inspections and the post-publish read-back now compare the release **id** and the
+  pinned **title** as well as the tag and the flags, so a read-back that answers somebody else's release,
+  or a retitled draft, fails; `.target_commitish` is deliberately *not* compared, because the API says it
+  is unused for a tag that already exists and so proves nothing about the released commit. Three claims in
+  v0.12.14 were overstated and are corrected here: the stored-digest match proves that the digest GitHub
+  reports for an asset equals the staged bytes at the moment of the read — it does not identify which
+  upload produced the bytes, and it says nothing about what a download later serves; the scripted `gh`
+  cases prove the branches they exercise and nothing about GitHub's authorization decisions; and gh
+  attaches its token to the upload host through hostname normalization *subject to the configured token
+  and its own redirect safeguards*, which is narrower than “attaches”. One thing the review found that
+  YAML cannot do: GitHub's **immutable releases** (generally available) lock a published release's assets
+  and its associated tag afterwards and produce attestations, and GitHub recommends exactly the draft →
+  upload → publish order this gate uses — but it is a repository or organization setting, so it is an
+  operator decision on the board, not a step in this file. No tag has run the gate: still configured, not
+  proven.
 - v0.12.14 — a fifth deep review of the gate, over v0.12.13: the repair was right and four things around
   it were thin. The create response is now read as a whole, not just for an id: its `tag_name`, `draft`
   and `prerelease` must say what this run asked for before a single byte is uploaded, because a numeric
@@ -1415,9 +1436,9 @@ and cohort/residency hysteresis in the scheduler (§12.3 hook).
   draft is inspected on the remote from one list of that release's own assets: asset inventory, each
   asset's upload state, byte size and stored-bytes digest against the staged file (an asset whose digest
   the remote does not report fails the gate, and an asset name appearing more than once fails it), and
-  the release object's own tag and draft/prerelease flags; that inspection runs again, tag re-resolved,
-  immediately before publication, and publication is a REST update of that same id, read back after as
-  `tag false prerelease`.
+  the release object's own tag, title and draft/prerelease flags, read back together with its id; that
+  inspection runs again, tag re-resolved, immediately before publication, and publication is a REST update
+  of that same id, read back after as `id tag tag false prerelease`.
   A failed run deletes only
   that captured id, and only while it is still an unpublished draft of that tag; a run that captured no id
   deletes nothing, and one that attempted a create without capturing an id says so as a
@@ -1485,6 +1506,8 @@ router robust until rows 2, 4 and 6 close.
 | Deep review of v0.12.4 (request-side phase timeouts) | **completed, dispositioned in v0.12.5**: the timer-stops-at-headers gap, the late-response leak, the switch running on the initiating request's token, and the switch-state wedge on `no_select_command` are fixed with tests; the stream channel is now closed by the ticket's terminal transition (which also fixes the silent stream end). Two findings are **accepted gaps**, not fixes: (a) the selector's own failure reason is recorded on the feed as `engine.switch_failed` and deliberately kept out of the caller-facing `switch_failed` message, so the caller sees the outcome and the operator sees the cause — change this when §13 needs to distinguish them programmatically; (b) a phase-timeout value above `Int32.MaxValue` ms is rejected at DTO binding (a Tomlyn/STJ range error) rather than by the router's own `RouterConfigException` message — either way startup fails with a non-zero exit, so the operator is stopped, only with a less specific line |
 
 | Deep review of v0.12.5 (response gate, engine-owned switch token, stream-channel ownership) | **completed, dispositioned in v0.12.6**: fixed a false `Ready` — a waiter for one serving profile was answered by another profile's switch on the same model, so a request could be dispatched against a window it cannot serve (`SwitchFairnessTests` pins both directions: not ready on a stranger's success, not failed on a stranger's failure); fixed a shutdown race where disposing the switch token's source could throw before the switch task's own cleanup and strand every waiter on that engine (the token is read before the task is scheduled, the source is deliberately *not* disposed, and a switch that fails to start settles its waiters); the ceiling can no longer reassign blame for a failure inside the router's own terminal work, because the gate is passed the moment the owed bytes are in hand; stream acquisition sits inside the ceiling; a switch-failure message names the target that failed rather than whichever switch happened to be in flight. **Accepted deliberately**: a ceiling that loses the race with the engine's bytes does not fire (bytes in hand beat a timeout — the alternative is destroying an answer the caller can use), and there is **no idle bound after the first frame** — a stalled generation and a stalled reader are TASK-30, because each needs a wire decision (a truncation surface, a slow-consumer policy) rather than a constant |
+
+| Deep review of v0.12.14 (release gate: the upload address, what a read-back identifies, what a digest proves) | **completed, dispositioned in v0.12.15**. **Fixed**: the `upload_url` compare is exact against the documented template rather than a prefix (the prefix accepted `assets-extra` and an unrequested query), case-folded so the API's canonical owner/repo spelling is not a false rejection, with uploads addressed from the returned URL; the release id and the pinned title are checked in both inspections and in the post-publish read-back. **Corrected in this SPEC**: what the stored-digest match proves (GitHub's reported digest equals the staged bytes at read time — not which call uploaded them, not what a download serves); what the scripted harness proves (the exercised mocked branches only — coverage and pass counts were not independently verified by the reviewer either); gh's token attachment is conditional, not unconditional. **Verified, not assumed**: gh v2.46.0 opens `--input` and stores the file as the request body with an explicit `Content-Length`, passes a reader straight to `http.NewRequest` (JSON marshalling happens only for map parameters), honours a supplied `Content-Type`, uses a `://` endpoint as an absolute URL, and looks the token up via hostname normalization; `${upload_url%%\{*}` is the right cut for `{?name,label}`. **Deliberately not closed**: a release writer can still retitle, re-tag, replace assets on, or publish this draft between the last read and the `PATCH`, and a tag writer can move the tag after its final resolution — more reads move the window, they do not close it; `.author.login` would add a weak creator check only if the expected principal were stable, and would not stop a later authorized writer. **New, and not a code change**: GitHub's immutable releases lock assets and the associated tag after publication and emit attestations, the strongest available control for the post-publication half of this problem; enabling it is a repository/organization setting, so it is an operator decision on the board. **Harness counts are as-of**: the earlier rows in this table quote the case counts of their own round; the harness runs 59 cases at this revision, and what it does not prove is unchanged. **One review finding was an artifact of my own prompt**: the round-7 “blocker” was Markdown link syntax wrapped around the expected URL in the request I sent — `cat -A` on the file shows a plain URL, so nothing shipped broken. |
 
 | Deep review of v0.12.13 (release gate: what the create response proves, the upload address, the second look) | **completed, dispositioned in v0.12.14**. **Fixed**: the create response is validated as a whole (`tag_name`, `draft`, `prerelease`) before any upload; `upload_url` must name this repository and this release id; the release object's `tag_name` is checked in both inspections and in the post-publish read-back, not once before the first snapshot; the release title is pinned to the tag. **Corrected in this SPEC**: the workflow-write guard answers 404/403 rather than 422, and the same note applies to the update endpoint. **Verified, not assumed**: gh 2.46.0 passes `--input` as a raw reader with no JSON re-encoding and honours an explicit octet-stream content type, sends absolute endpoint URLs as given, and attaches the token by hostname normalization — so the upload leg is documented, and the digest match is what proves it behaved on a given run. **Deliberately not closed**: a response substitution or replay that carries a valid id and the right fields is not distinguishable by reading, so ownership rests on the create call plus tag protection and a restricted set of release writers (repository settings); reads and the un-draft `PATCH` are not atomic, and no number of reads makes them so; the generated notes body is GitHub's text, unreviewed by the gate; the workflow-write guard's behaviour for an existing tag is unknown until a run. **Harness limits, stated plainly**: 52 cases over a scripted `gh` prove this step's control flow and that it addresses the endpoints the way the step intends — they prove nothing about GitHub's authorization decisions, the real request bytes, or first-tag success. The one cheap live falsifier is a canary run on a disposable tag with the job's own token, which is an operator decision (it publishes for real for a few minutes), not a code change. |
 
