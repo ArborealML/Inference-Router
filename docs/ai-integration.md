@@ -8,9 +8,11 @@ POST JSON can use it. What it adds over pointing an agent straight at one engine
 - **A call that cannot over-run its budget.** A thread gets its configured share of the engine's
   context window and the queue gets bounded, so a runaway agent is rejected with `429` instead of
   pushing the engine into a context overflow.
-- **One place to watch what happened.** Every decision lands on a bounded event ring: `seq`,
-  `timestamp`, `kind`, and whichever of `threadId`, `ticketId`, `engine`, `model`, `reason`, `value`
-  apply. Kinds you will see on a healthy box: `request.enqueued`, `request.selected`,
+- **One place to watch what happened.** Every decision lands on a bounded event ring: `Seq`,
+  `Timestamp`, `Kind`, and whichever of `ThreadId`, `TicketId`, `Engine`, `Model`, `Reason`, `Value`
+  apply (admin JSON is PascalCase, and `EventSurfaceTests` pins it). `Seq` is monotonic, so a gap in
+  the numbers you receive means events were dropped — the ring keeps the last 4096, and a slow SSE
+  subscriber's buffer is bounded rather than allowed to grow. Kinds you will see on a healthy box: `request.enqueued`, `request.selected`,
   `request.streaming_first_token`, `request.completed`, `queue.rejected`, `engine.switch_started`,
   `engine.switch_completed`, `engine.switch_failed`, `engine.health`, `engine.profile`,
   `thread.priority_changed`.
@@ -88,7 +90,8 @@ characters.
 | The id of the request you just made | response header `X-Inference-Ticket` (streaming and non-streaming) |
 | Which models exist right now, and which engine owns each | `GET /v1/models` |
 | Who is running, queue depths, per-thread state | `GET /admin/status` |
-| What the router decided, replayably | `GET /admin/events?since=<seq>` (SSE) |
+| What the router decided, replayably | `GET /admin/events?since=<seq>` (SSE); filters `kinds=a,b`, `thread=`, `engine=`, `ticket=` |
+| Only the events for the request you own | `GET /admin/tickets/{id}/events?since=<seq>` (SSE) |
 | One request's state | `GET /admin/tickets/{id}` |
 | Cancel a queued or running request | `DELETE /admin/tickets/{id}` |
 | Load a model on a running engine | `POST /admin/switch {"engine":…,"model":…}` |

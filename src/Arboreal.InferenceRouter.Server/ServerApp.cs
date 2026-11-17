@@ -53,6 +53,7 @@ public static class ServerApp
         app.MapPost("/admin/threads", (HttpContext ctx, RouterCore r) => HandleThreads(ctx, r));
         app.MapPost("/admin/switch", (HttpContext ctx, RouterCore r) => HandleSwitch(ctx, r));
         app.MapGet("/admin/tickets/{id}", (string id, HttpContext ctx, RouterCore r) => HandleTicket(ctx, r, id));
+        app.MapGet("/admin/tickets/{id}/events", (string id, HttpContext ctx, RouterCore r) => HandleEvents(ctx, r, id));
         app.MapDelete("/admin/tickets/{id}", (string id, HttpContext ctx, RouterCore r) => HandleCancel(ctx, r, id));
 
         app.MapGet("/healthz", () => Results.Text("ok"));
@@ -298,43 +299,56 @@ public static class ServerApp
             AirServerJson.AirServerContext.Default.RouterStats, ctx.RequestAborted).ConfigureAwait(false);
     }
 
-    private static async Task HandleEvents(HttpContext ctx, RouterCore router)
+    private static Task HandleEvents(HttpContext ctx, RouterCore router, string? ticketOverride = null)
+        => WriteEventStreamAsync(ctx, router, BuildEventFilter(ctx, ticketOverride));
+
+    /// <summary>Filters come from the query string so one route serves the global feed, a thread's
+    /// feed and one ticket's feed. Unknown parameters are ignored, not errors: an agent that sends
+    /// `ticket=` to the global route gets what it asked for.</summary>
+    private static RouterEventFilter BuildEventFilter(HttpContext ctx, string? ticketOverride)
+    {
+        var q = ctx.Request.Query;
+        long since = 0;
+        if (q.TryGetValue("since", out var s)
+            && long.TryParse(s.ToString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var v))
+            since = v;
+        string[]? kinds = null;
+        if (q.TryGetValue("kinds", out var k) && !string.IsNullOrWhiteSpace(k.ToString()))
+            kinds = k.ToString().Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        string? Thread() => q.TryGetValue("thread", out var th) ? th.ToString() : null;
+        string? Engine() => q.TryGetValue("engine", out var en) ? en.ToString() : null;
+        string? Ticket() => ticketOverride ?? (q.TryGetValue("ticket", out var ti) ? ti.ToString() : null);
+        return new RouterEventFilter
+        {
+            SinceSeq = since,
+            Kinds = kinds,
+            ThreadId = Thread(),
+            Engine = Engine(),
+            TicketId = Ticket(),
+        };
+    }
+
+    private static async Task WriteEventStreamAsync(HttpContext ctx, RouterCore router, RouterEventFilter filter)
     {
         ctx.Response.StatusCode = 200;
         ctx.Response.Headers.ContentType = "text/event-stream";
         ctx.Response.Headers.CacheControl = "no-cache";
         var writer = ctx.Response.BodyWriter;
-        var ct = ctx.RequestAborted;
-        var since = ctx.Request.Query.TryGetValue("since", out var s) &&
-                    long.TryParse(s.ToString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var v) ? v : 0;
-
-        foreach (var e in router.Events.Replay(since))
-            await AirJson.WriteSseFrameAsync(writer, e, AirServerJson.AirServerContext.Default.RouterEvent, ct)
-                .ConfigureAwait(false);
-
-        // Live tail until client disconnects.
-        var queue = Channel.CreateUnbounded<RouterEvent>(
-            new UnboundedChannelOptions { SingleReader = true, SingleWriter = true });
-        void Handler(RouterEvent e) => queue.Writer.TryWrite(e);
-        router.Events.Subscribe(Handler);
+        // Headers out before the first event: a filtered stream that matches nothing (an unknown
+        // ticket, a quiet engine) must still answer 200 and hold the stream open, not appear to hang.
+        await writer.FlushAsync(ctx.RequestAborted).ConfigureAwait(false);
         try
         {
-            while (!ct.IsCancellationRequested)
+            await foreach (var e in router.SubscribeEvents(filter, ctx.RequestAborted).ConfigureAwait(false))
             {
-                while (queue.Reader.TryRead(out var e))
-                    await AirJson.WriteSseFrameAsync(writer, e, AirServerJson.AirServerContext.Default.RouterEvent, ct)
-                        .ConfigureAwait(false);
-                await writer.FlushAsync(ct).ConfigureAwait(false);
-                await queue.Reader.WaitToReadAsync(ct).ConfigureAwait(false);
+                await AirJson.WriteSseFrameAsync(writer, e, AirServerJson.AirServerContext.Default.RouterEvent, ctx.RequestAborted)
+                    .ConfigureAwait(false);
+                await writer.FlushAsync(ctx.RequestAborted).ConfigureAwait(false);
             }
         }
         catch (OperationCanceledException)
         {
             // client disconnect
-        }
-        finally
-        {
-            router.Events.Unsubscribe(Handler);
         }
     }
 

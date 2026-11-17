@@ -248,24 +248,37 @@ public sealed class RouterCore : IInferenceRouter
 
     private sealed class EventEnumerable(EventRing ring, RouterEventFilter filter, CancellationToken ct) : IAsyncEnumerable<RouterEvent>
     {
+        // A slow subscriber must not become an unbounded queue. Drops are visible to the consumer
+        // because Seq is monotonic: a gap means events were lost, so the feed stays honest.
+        private const int SubscriberBuffer = 256;
+
         public async IAsyncEnumerator<RouterEvent> GetAsyncEnumerator(CancellationToken token = default)
         {
             using var link = CancellationTokenSource.CreateLinkedTokenSource(ct, token);
+            // Replay is filtered as well as the live tail: a ticket-scoped reader must not be shown
+            // other tickets' history just because it arrived first.
             foreach (var e in ring.Replay(filter.SinceSeq))
-                yield return e;
-            var waiter = new TaskCompletionSource<RouterEvent>(TaskCreationOptions.RunContinuationsAsynchronously);
+                if (filter.Matches(e)) yield return e;
+
+            var queue = Channel.CreateBounded<RouterEvent>(new BoundedChannelOptions(SubscriberBuffer)
+            {
+                SingleReader = true,
+                FullMode = BoundedChannelFullMode.DropWrite,
+            });
             void Handler(RouterEvent e)
             {
-                if (filter.Matches(e)) waiter.TrySetResult(e);
+                if (filter.Matches(e)) queue.Writer.TryWrite(e);
             }
             ring.Subscribe(Handler);
             try
             {
-                while (!link.IsCancellationRequested)
+                while (true)
                 {
-                    var e = await waiter.Task.WaitAsync(link.Token).ConfigureAwait(false);
-                    waiter = new TaskCompletionSource<RouterEvent>(TaskCreationOptions.RunContinuationsAsynchronously);
-                    yield return e;
+                    bool more;
+                    try { more = await queue.Reader.WaitToReadAsync(link.Token).ConfigureAwait(false); }
+                    catch (OperationCanceledException) { break; }   // caller hung up
+                    if (!more) break;
+                    while (queue.Reader.TryRead(out var e)) yield return e;
                 }
             }
             finally

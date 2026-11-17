@@ -202,6 +202,10 @@ you need, so it switches profile instead of failing. While a request waits or a 
 stream carries `data: [router keepalive …]` frames rather than going silent, and a failed stream
 ends with an error frame plus `[DONE]`.
 
+[To follow one request you own — including why it is waiting — read only its events:
+`GET /admin/tickets/<id>/events?since=0`, where `<id>` came back in the `X-Inference-Ticket` header.
+Other filters on the global feed: `kinds=`, `thread=`, `engine=`, `ticket=`.
+
 [`samples/pi/inference-router-tools.json`](samples/pi/inference-router-tools.json)
 describes the same calls as tool definitions for a harness. Nothing in the router reads that file.
 

@@ -77,6 +77,17 @@ Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
   thread and engine slots reserved at pop stayed held. 92 tests green; test classes no longer run in
   parallel (in-process routers and servers starve each other's dispatch threads, which showed up as
   lifetime timeouts unrelated to the code under test).
+- v0.11 — an agent can now follow **its own** request. `GET /admin/tickets/{id}/events?since=<seq>`
+  replays one ticket's history and live tail on the SSE feed; `/admin/events` gained the filters
+  `kinds=`, `thread=`, `engine=`, `ticket=` (§6). The filter is applied to replayed events as well as
+  the live tail — previously `SubscribeEvents` replayed the whole ring unfiltered, and its live path
+  used a single-slot completion source that dropped events arriving while the consumer was busy.
+  Subscribers now have a bounded buffer (256 events, drops preferred over growth) and the monotonic
+  `Seq` makes any drop visible to the consumer (§10). Headers flush before the first frame, so a
+  stream that matches nothing is a quiet 200 rather than an apparent hang. `X-Inference-Ticket` was
+  already on every admitted response. Casing of the admin feed stays PascalCase and is now pinned by
+  a test; unifying it with the lowerCamel names that §10 and the tool manifest use is §15.1 #1.
+  95 tests green; wire tests share one `WireHarness` instead of three copies that can drift.
 
 ## 1. Overview
 
@@ -460,13 +471,21 @@ Admin/control (not OpenAI-compatible, our own contract):
 - `GET /admin/status` — engines, loaded models, queue depths, in-flight,
   stats per thread/model/engine.
 - `GET /admin/events?since=<seq>` — SSE feed of `RouterEvent`s (see §10),
-  `text/event-stream`, replayable from ring buffer by sequence.
+  `text/event-stream`, replayable from ring buffer by sequence. Optional filters:
+  `kinds=a,b` (exact kinds), `thread=<id>`, `engine=<name>`, `ticket=<id>`.
 - `GET /admin/tickets/{id}`, `DELETE /admin/tickets/{id}` (cancel).
+- `GET /admin/tickets/{id}/events?since=<seq>` — the same feed restricted to one ticket: the
+  replayed history and the live tail are both filtered, so an agent following its own request
+  never sees another session's traffic. Headers flush before the first event, so an unknown
+  ticket id is a quiet 200 stream, not a hang.
 - `POST /admin/queue` — future listener/host enqueue path (spec'd but
   hostless in v1; returns 501 until §12.1 ships).
 
 Admin JSON naming is currently **PascalCase** (the source-gen context's default;
-tests assert `"ThreadId"`, `"State"`, `"TicketId"`). That is a live wire contract,
+tests assert `"ThreadId"`, `"State"`, `"TicketId"`, and `EventSurfaceTests` asserts the event
+feed's `TicketId`/`Kind` casing too). §10 and `samples/pi/inference-router-tools.json` describe
+these fields in lowerCamel, which is the shape an OpenAI-style caller would expect — unifying the
+admin surface on lowerCamel is an open decision (§15.1), not a side effect of other work. That is a live wire contract,
 so the casing must be pinned deliberately before the Pi extension and the Blazor
 client start parsing it (§15 open question).
 
@@ -735,7 +754,10 @@ Status: **0 warnings / 0 errors with warnings-as-errors, and an AOT publish with
 
 ## 10. Observability
 
-`RouterEvent` ring buffer (per-host, ordered, monotonic `Seq`, replayable):
+`RouterEvent` ring buffer (per-host, ordered, monotonic `Seq`, replayable; capacity 4096).
+Subscribers get a bounded buffer (256 events): if a consumer falls behind, writes are dropped and
+the missing `Seq` numbers are visible to it, rather than the router holding unbounded memory for a
+dead client. Field names on the wire are PascalCase (§6).
 
 - `thread.registered`, `thread.priority_changed`
 - `request.enqueued {thread, ticket, model, priority, promptChars}`
@@ -933,7 +955,10 @@ model,eta}` in stats, `X-Inference-Required-Context` (declared context demand), 
 `/admin/switch` accepting `profile` (echoed in the ack, window-checked in the
 wait-for-ready loop).
 
-Still to add for the Pi extension (P1–P10): ticket-filtered replay on `/admin/events?ticket=&after=`;
+Shipped since: ticket-filtered replay — `GET /admin/tickets/{id}/events` and `ticket=` on
+`/admin/events` — and `X-Inference-Ticket` on every admitted response (§6).
+
+Still to add for the Pi extension (P1–P10):
 `/admin/switch` accepting `priority` + `requestId` and returning the ticket
 with `seq`/`leaseExpiresAt`; ready-ticket validation at inference time (atomic lease
 consume); `X-Inference-Request` / `X-Inference-Ticket` header plumbing; `POST

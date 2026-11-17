@@ -1,6 +1,10 @@
 namespace Arboreal.InferenceRouter;
 
-/// <summary>Router observability event. Monotonic Seq; replayable from the ring buffer.</summary>
+/// <summary>Router observability event. Monotonic Seq; replayable from the ring buffer.
+/// Wire names are PascalCase, like the rest of the admin surface (SPEC §6): the casing is a live
+/// contract, so `EventSurfaceTests` pins it rather than leaving it implicit. Unifying the admin
+/// surface on lowerCamel is an open owner decision (SPEC §10 and the tool manifest already describe
+/// the fields in lowerCamel), not something to change as a side effect of other work.</summary>
 public sealed record RouterEvent
 {
     public long Seq { get; init; }
@@ -21,12 +25,16 @@ public sealed record RouterEventFilter
     public string[]? Kinds { get; init; }
     public string? ThreadId { get; init; }
     public string? Engine { get; init; }
+    /// <summary>Set to see exactly one request's event history — the contract an agent harness uses
+    /// to follow its own ticket without reading other sessions' traffic.</summary>
+    public string? TicketId { get; init; }
 
     public bool Matches(RouterEvent e) =>
         e.Seq > SinceSeq
         && (Kinds is null || Kinds.Contains(e.Kind, StringComparer.Ordinal))
         && (ThreadId is null || e.ThreadId == ThreadId)
-        && (Engine is null || e.Engine == Engine);
+        && (Engine is null || e.Engine == Engine)
+        && (TicketId is null || e.TicketId == TicketId);
 }
 
 /// <summary>Bounded, thread-safe, replayable event ring (the Blazor/CLI live feed contract).</summary>

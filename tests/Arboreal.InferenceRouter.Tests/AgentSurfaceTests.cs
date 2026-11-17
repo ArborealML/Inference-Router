@@ -28,41 +28,8 @@ public class AgentSurfaceTests
         return null;
     }
 
-    private static async Task<(WebApplication App, FakeEngineHandler Fake, int Port)> StartHeldServerAsync()
-    {
-        var fake = new FakeEngineHandler { HoldCompletions = true };
-        int port;
-        using (var latch = new TcpListener(IPAddress.Loopback, 0))
-        {
-            latch.Start();
-            port = ((IPEndPoint)latch.LocalEndpoint).Port;
-            latch.Stop();
-        }
-
-        var cfg = new RouterConfig
-        {
-            Listen = $"http://127.0.0.1:{port}",
-            DefaultModel = "test-model",
-            Scheduler = new SchedulerConfig { MaxInflightPerEngine = 8, MaxQueuePerModel = 8 },
-            HttpHandlerFactory = _ => fake,
-        };
-        cfg.Engines = new Dictionary<string, EngineDefinition>
-        {
-            ["fake"] = new EngineDefinition
-            {
-                Name = "fake",
-                Kind = EngineKind.OpenAiCompatible,
-                Endpoint = new Uri("http://127.0.0.1:9/v1"),
-                Catalog = new Dictionary<string, EngineModelDefinition>
-                {
-                    ["test-model"] = new EngineModelDefinition { Name = "test-model" },
-                },
-            },
-        };
-        var app = ServerApp.Build([], configOverride: cfg);
-        await app.StartAsync();
-        return (app, fake, port);
-    }
+    private static Task<(WebApplication App, FakeEngineHandler Fake, int Port)> StartHeldServerAsync()
+        => WireHarness.StartAsync(holdCompletions: true);
 
     private static string Name(JsonElement tool) => tool.GetProperty("name").GetString()!;
 

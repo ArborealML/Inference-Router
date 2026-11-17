@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-16T20:40:00Z'
-updated_date: '2026-11-17T00:35:00Z'
+updated_date: '2026-11-17T01:10:00Z'
 labels: []
 dependencies: []
 ordinal: 2000
@@ -19,7 +19,7 @@ Closes the AIR side of the Pi protocol in SPEC 13.3: replay of session events fi
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Pi can replay only the events for its own ticket
+- [x] #1 Pi can replay only the events for its own ticket
 - [ ] #2 A ready ticket is validated against the switch that produced it
 - [ ] #3 Wire tests cover each addition and the OpenAI-compatible surface stays unchanged
 <!-- AC:END -->
@@ -33,10 +33,18 @@ no ticket field, and `AgentSurfaceTests` pins the tool manifest and `X-Inference
 AC #1 is unchecked again. What is actually shipped: `X-Inference-Ticket` on every admitted response
 (including handled failures), so a caller can reach the two ticket routes without scraping the stream.
 
-To close AC #1: add `TicketId` to `RouterEventFilter` and `Matches`, expose ticket-scoped replay
-(`GET /admin/tickets/{id}/events`, or `?ticket=` on `/admin/events`), and pin it with a wire test that
-asserts another ticket's events are absent. The `POST .../cancel` alias is listed in SPEC §13.3 as
-still needed, not as shipped.
+AC #1 closed as shipped: `GET /admin/tickets/{id}/events?since=<seq>` plus `ticket=` on
+`/admin/events`, both filtering replay **and** live tail. `EventSurfaceTests` proves isolation with two
+concurrent tickets (a frame carrying the other ticket id fails the test) and pins the admin feed's
+PascalCase field names. Fixing this surfaced two defects in the library's own subscriber:
+`SubscribeEvents` replayed the ring unfiltered, and its single-slot waiter dropped any event that
+arrived while the consumer was busy; subscribers now have a bounded 256-event buffer (drops are visible
+as `Seq` gaps) and SSE headers flush before the first frame, so an unknown ticket is a quiet 200.
+
+Still open: #2 needs the switch identity (`(target, epoch, completion)`, TASK-10 plan step 3);
+`/v1/models` still lacks AIR model metadata; the `POST /admin/tickets/{id}/cancel` alias remains
+SPEC §13.3 work. #3 is partly met — wire tests cover the replay additions and `ServerWireTests` keeps
+the OpenAI-compatible surface pinned — and stays open for additions that do not exist yet.
 
 Still open, and why:
 

@@ -110,7 +110,7 @@
     },
     {
       "name": "read_events",
-      "description": "Replay the router's decision log from a sequence number (SSE). Each event carries kind, threadId, ticketId, engine, model, reason and an optional numeric value. Kinds include request.enqueued, request.selected, request.streaming_first_token, request.completed, queue.rejected, engine.switch_started, engine.switch_completed, engine.switch_failed.",
+      "description": "Replay the router's decision log from a sequence number (SSE). Each event carries Kind, ThreadId, TicketId, Engine, Model, Reason and an optional Value (admin JSON is PascalCase). Kinds include request.enqueued, request.selected, request.streaming_first_token, request.completed, queue.rejected, engine.switch_started, engine.switch_completed, engine.switch_failed. Optional query filters: kinds (comma-separated), thread, engine, ticket.",
       "method": "GET",
       "path": "/admin/events?since={since_seq}",
       "parameters": {
@@ -122,6 +122,29 @@
           }
         },
         "required": [
+          "since_seq"
+        ]
+      }
+    },
+    {
+      "name": "read_ticket_events",
+      "description": "Replay only the events that belong to one ticket (SSE), from a sequence number. Use this to follow a request you own - enqueue, engine selection, switch waits, first token, terminal state - without reading other sessions' traffic. An unknown ticket id yields a stream with no events.",
+      "method": "GET",
+      "path": "/admin/tickets/{id}/events?since={since_seq}",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Ticket id from the X-Inference-Ticket response header."
+          },
+          "since_seq": {
+            "type": "integer",
+            "description": "Replay events after this sequence number; 0 replays everything still retained for that ticket."
+          }
+        },
+        "required": [
+          "id",
           "since_seq"
         ]
       }
