@@ -26,14 +26,18 @@ the map is a reviewed artifact, not agent scratch.
 
 Open finding, needs @claire's call before any map edit: the library's eleven components sit directly
 under the system (their metadata says `parent: inference-router`), so the rendered map files them under
-"Unidentified container" — the scan gives the two executables a container each and never sees one for
-the class library, because a library that is compiled into both executables has no runtime boundary of
-its own. Probed at 03736f2 in a throw-away worktree: a hand-drafted `router-library` container is never
-matched by a later scan (`groma accept router-library` → "no scan match"), and relocating a curated
-component is refused (`groma edit routercore --parent router-library` → "cannot move 'routercore'
-because it has authored meaning"). So clearing the group means either a scanner/groma option that
-declares a container for a class-library project (we do not have one), or a re-authoring pass: strip
-each component's overview, move it into a container, then rewrite its overview, relationships and the
-flow links that point at the old paths. Decision needed: is the .NET library a container in its own
-right, or do its components belong to the container that actually hosts them (`air-server`, with the
-CLI reaching them by relationship)?
+"Unidentified container" — the scan gives each executable an entry point and core places those in a
+container, but the class library has no executable entry of its own, being compiled into both
+executables. Probed at 03736f2 in a throw-away worktree: a hand-drafted `router-library` container did
+not match any scan finding in that probe (`groma accept router-library` → "no scan match"), and
+relocating a curated component is refused (`groma edit routercore --parent router-library` → "cannot
+move 'routercore' because it has authored meaning"). No supported in-place migration for curated
+components was found in the current tooling, and stripping each component's description to force the
+move is not a supported or lossless sequence, so this is a modelling decision first and a tooling
+question second.
+
+Decision needed: what is a container here. The C4 guidance treats a shared assembly as *not* a container,
+which argues for keeping the shared components unfiled until we choose a simplification, or for filing
+them under the process that actually hosts them — noting that `air serve` runs the HTTP host inside the
+CLI process and `air config` loads configuration locally, so the CLI is not merely a remote client of the
+library and the map cannot show one source file owned by both executables.
