@@ -1,11 +1,11 @@
 ---
 id: TASK-29
-title: Press Save on the social preview form (browser only)
+title: Upload the social preview card and the repository avatar
 status: Blocked
 assignee:
   - '@claire'
 created_date: '2026-11-17T05:59:00Z'
-updated_date: '2026-11-17T16:19:00Z'
+updated_date: '2026-11-17T17:42:00Z'
 labels:
   - docs
 dependencies:
@@ -18,53 +18,55 @@ ordinal: 23500
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-**Do this (2 minutes, browser only).** Open [repository Settings → Options → Social preview](https://github.com/ArborealML/Inference-Router/settings/options),
-pick [docs/images/air-social-1280x640.png](https://github.com/ArborealML/Inference-Router/blob/main/docs/images/air-social-1280x640.png),
-then **press Save** — the thumbnail looks the same whether you did or not. Then check from outside the form:
+**Two minutes in a browser, and the file is already on this machine.** Answer one line here: `card set`,
+`card declined: REASON`, or `cannot set it: REASON`.
 
-    curl -s https://github.com/ArborealML/Inference-Router | grep og:image
+1. Go to the repository's **Settings**, **General** tab, scroll to **Social preview images**:
+   [github.com/ArborealML/Inference-Router/settings](https://github.com/ArborealML/Inference-Router/settings).
+2. Choose an image and pick **`$HOME/Downloads/air-social-1280x640.png`** — an agent put that exact copy there at
+   17:2xZ and byte-checked it against the committed blob: 1280x640 PNG, 38,150 bytes, sha256
+   `cee3237b7f98…98f09`. If it is gone, download
+   [docs/images/air-social-1280x640.png](https://github.com/ArborealML/Inference-Router/blob/main/docs/images/air-social-1280x640.png)
+   ([raw bytes](https://github.com/ArborealML/Inference-Router/raw/main/docs/images/air-social-1280x640.png))
+   and `sha256sum` it before picking it: the hash must match.
+3. Press **Save**. The box shows a thumbnail whether Save worked or not — that is how three earlier `card set`
+   answers produced no change.
+4. Paste this into the task so the check is on the record:
 
-While no custom card is set that prints `repository-images.githubusercontent.com/1460450305/...` (GitHub's own
-generated image); with one it prints `opengraph.githubassets.com/<hash>/ArborealML/Inference-Router`. As of
-10:40Z it prints the first, so the upload is not live.
+       curl -s https://github.com/ArborealML/Inference-Router | grep -o '<meta property="og:image"[^>]*>'
 
-**Answer one line here:** `card set`, `card declined: REASON`, or `cannot set it: REASON`.
+   Ours prints `opengraph.githubassets.com/...` once the card is live; GitHub's generated card prints
+   `repository-images.githubusercontent.com/1460450305/...`. Re-checked at 17:3xZ: it prints the second, so the
+   upload still has not taken.
 
-**Why this one stays with a person:** GitHub has no API and no `gh` endpoint for the social-preview image. An
-agent can prepare the exact PNG and verify the public result, and has: the file is committed, 1280x640, and its
-size and sha256 are recorded by [TASK-46](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-46%20-%20Render-the-final-social-preview-card-and-verify-it-from-outside-the-form.md). The avatar is already live and verified from outside the form — nothing to do there; see [TASK-23](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-23%20-%20Review-the-README-identity-and-the-social-preview-upload.md).
-
-**If the card reads badly** at the moment you upload it — three text lines unreadable at full size, or the mark
-competing with the wordmark — name the typeface in your answer and it goes back to TASK-46 for a re-render
-instead of being uploaded twice.
+**Nothing to do for the avatar:** the organisation picture is live and verified from outside the form (TASK-23).
+GitHub exposes no API and no `gh` endpoint for the social-preview image, which is the only reason this task is a
+person's; the file, its measurements and the after-the-fact public check are agent work.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The social-preview image is set on the repository settings page, or declined with a one-line reason
-- [x] #2 The organisation profile picture is set from the avatar-ready mark (TASK-23), or declined with a one-line reason
-- [ ] #3 Both are confirmed from outside the settings form: the opengraph preview URL renders the new card, and the org page shows the new mark
-- [ ] #4 At the upload moment the three text lines read at full size and the mark does not compete with the wordmark; if it reads badly, name the typeface and the card is re-rendered
+- [ ] #1 The social-preview image is set, or declined with a one-line reason, and the answer line is in this task
+- [x] #2 The organisation picture is set from the avatar-ready mark (TASK-23), or declined with a one-line reason
+- [ ] #3 The `og:image` meta tag on the public repository page prints `opengraph.githubassets.com`, quoted here
+- [ ] #4 The picked file's sha256 is recorded here and equals the committed card's `cee3237b7f98…98f09`
+- [ ] #5 At the upload moment the three text lines read at full size and the mark does not compete with the wordmark; if it reads badly, name the typeface and the card goes back for one re-render
 <!-- AC:END -->
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-**Set the social card** -> every link preview of the repository renders our card. **Leave it** -> GitHub keeps rendering its own mostly-white generated card. Today it renders GitHub's.
-**Set the organisation picture** -> the mark appears on the org page, on the owner chip beside the repository
-name, and in search results. **Already done**, verified from outside the form.
+**What changes when it lands.** Every link preview of the repository — issues, PRs, a README shared outside GitHub —
+renders our card instead of GitHub's mostly-white generated one. Replacing the image later is a second trip to the same
+form, so nothing here is permanent and nothing is burned.
 
 **Links**
-- Card PNG to pick, 1280x640 as GitHub asks: [docs/images/air-social-1280x640.png](https://github.com/ArborealML/Inference-Router/blob/main/docs/images/air-social-1280x640.png). 38,150 bytes, sha256 `cee3237b7f98…98f09` as committed in b214ce6, well under the 1 MB ceiling — re-read the hash at upload time: TASK-49 item (d) can still change it.
-- Avatar PNG (already uploaded): [docs/images/air-mark-512.png](https://github.com/ArborealML/Inference-Router/blob/main/docs/images/air-mark-512.png).
-- Card vector source, if a different typeface is wanted: [air-social.svg](https://github.com/ArborealML/Inference-Router/blob/main/docs/images/air-social.svg). The committed raster uses DejaVu Sans, not the browser face the SVG asks for.
-- Do not upload the bare `air-mark.svg`: it strokes in `currentColor` with no field, so it is black on transparent and invisible on a dark frame. The standalone form is `air-mark-512.png`.
-- Upload form 1 (card): [repo Settings -> Options -> Social preview](https://github.com/ArborealML/Inference-Router/settings/options).
-- Upload form 2 (organisation picture): [organisation Settings -> Profile picture](https://github.com/organizations/ArborealML/settings/profile).
-- Check the result from outside the form: [the image link previews fetch](https://opengraph.githubassets.com/1/ArborealML/Inference-Router), and the repository page `og:image` meta tag.
-- Art provenance, renderer and resolved font: [docs/images/README.md](https://github.com/ArborealML/Inference-Router/blob/main/docs/images/README.md).
-
-**Fourth measurement, this session, at b214ce6:** the repository page still serves `og:image` = `repository-images.githubusercontent.com/1460450305/...`, and the link-preview object is 1200x600 at 88.7% light pixels against our card's 4.8% — GitHub is still showing its own generated image, so the upload has not taken. The organisation avatar **is** live and re-confirmed: 460x460, 82.6% dark / 16.7% light against our export's 82.4/16.7.
+- The settings page and the box: [repository Settings](https://github.com/ArborealML/Inference-Router/settings) -> **General** -> **Social preview images**.
+- The file to pick, committed at b214ce6: [docs/images/air-social-1280x640.png](https://github.com/ArborealML/Inference-Router/blob/main/docs/images/air-social-1280x640.png); [raw bytes](https://github.com/ArborealML/Inference-Router/raw/main/docs/images/air-social-1280x640.png); provenance, renderer and the resolved font in [docs/images/README.md](https://github.com/ArborealML/Inference-Router/blob/main/docs/images/README.md).
+- The card's measurements, from pixels not the SVG: text cap heights 109 / 48 / 42 px against a 40 px floor, right ink margin 79 px, and 3/3 text bands still separating at a 640x320 downscale. The card it replaced measured 109 / 29 / 20 — the 20 px tagline is why it was re-rendered.
+- Vector source, if a different typeface is wanted: [air-social.svg](https://github.com/ArborealML/Inference-Router/blob/main/docs/images/air-social.svg). The raster's lettering is DejaVu Sans, not the browser face the SVG asks for.
+- **Do not pick the bare mark:** [air-mark.svg](https://github.com/ArborealML/Inference-Router/blob/main/docs/images/air-mark.svg) strokes in `currentColor` on no field, so it is black on transparent and invisible on a dark frame. The standalone form is [air-mark-512.png](https://github.com/ArborealML/Inference-Router/blob/main/docs/images/air-mark-512.png), already used for the [organisation picture](https://github.com/organizations/ArborealML/settings/profile).
+- Readback from outside the form: [the link-preview object](https://opengraph.githubassets.com/1/ArborealML/Inference-Router) and the `og:image` tag quoted above.
 
 Superseded log entries for this task: [board trim, 2026-11-17](https://github.com/ArborealML/Inference-Router/blob/main/backlog/archive/board-trim-2026-11-17.md).
 <!-- SECTION:NOTES:END -->

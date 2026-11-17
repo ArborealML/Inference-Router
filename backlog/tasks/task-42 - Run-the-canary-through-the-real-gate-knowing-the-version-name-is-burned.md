@@ -5,7 +5,7 @@ status: Waiting
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T09:53:00Z'
-updated_date: '2026-11-17T16:55:00Z'
+updated_date: '2026-11-17T17:39:00Z'
 labels:
   - release
   - ci
@@ -13,6 +13,7 @@ dependencies:
   - TASK-38
   - TASK-44
   - TASK-45
+  - TASK-49
 priority: high
 ordinal: 41000
 ---
@@ -21,16 +22,15 @@ ordinal: 41000
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
 The release gate has never run against a real tag. This run is the rehearsal that proves the gate exists — and
-its cost is asymmetric: with immutable releases on, the version **name is burned whatever happens**, so the canary is
-either kept as a permanent prerelease or deleted with the name still reserved. That is the shape of the decision; the
-yes/no and the repository it runs in are answered on [TASK-49](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-49%20-%20Decision-approve-Actions-runner-minutes-and-a-second-public-repository-for-destructive-tests.md),
+its cost is asymmetric: with immutable releases on, the version **name is burned either way**, so the canary is kept as a
+permanent prerelease or deleted with the name still reserved. That is the shape of the decision; the
+yes/no and the repository it runs in are answered on [TASK-49](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-49%20-%20Answer-the-throwaway-repository-question-for-the-destructive-gate-tests-spend-nothing-new.md),
 and the gate work it exercises is [TASK-44](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-44%20-%20Close-the-open-release-gate-review-findings-SPEC-v0-12-15-onward.md).
 
-**What this run must show, as facts not argument** (criteria below): whether `GITHUB_TOKEN` at `contents: write` is
-enough for asset upload plus the un-draft `PATCH`; what `.target_commitish` reports and the tag-object versus peeled
-commit SHAs; and what a published immutable release refuses when a replacement asset or a tag move is attempted on it.
+**What this run must show, as facts not argument** (criteria below): whether `GITHUB_TOKEN` at `contents: write` is enough for asset upload plus the un-draft `PATCH`; what `.target_commitish` reports, and the tag-object versus peeled
+commit SHAs; and what a published immutable release refuses when an asset is replaced or a tag moved.
 **Not proven here**, and stated as unproven in SPEC: whether `POST /releases` rejects a second release on an existing
-tag with a `422` — never tested. A rehearsal cannot rehearse that, so it stays open on [TASK-44](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-44%20-%20Close-the-open-release-gate-review-findings-SPEC-v0-12-15-onward.md).
+tag with a `422` — never tested. A rehearsal cannot rehearse that, so it stays open on TASK-44.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -47,14 +47,14 @@ tag with a `422` — never tested. A rehearsal cannot rehearse that, so it stays
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-**Wake, as events:** the ruleset read back on TASK-38, immutable releases enabled on TASK-45, the gate work closed on TASK-44, and CI green on the commit the canary tag points at.
+**Wake, as events:** TASK-49's repository existing, the ruleset read back on TASK-38, immutable releases enabled on TASK-45, the gate work closed on TASK-44, and CI green on the commit the canary tag points at.
 
 **Order, and it is a dependency now.** A canary against an unprotected repository proves nothing about protection: the
 ruleset on [TASK-38](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-38%20-%20Act-put-a-v-ruleset-on-the-repository-and-read-it-back.md) and immutable releases on [TASK-45](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-45%20-%20Enable-GitHub-immutable-releases-before-the-first-tag.md) come first. And a `creation` rule with
 `bypass_actors: []` would block whoever pushes the canary tag, so TASK-38's actor list is a precondition of this run.
 
 **No clean undo.** Deleting the canary's release frees the tag but the name stays reserved permanently, and turning
-immutability off afterwards does not unlock it. Never auto-delete a release whose disposition is uncertain: cleanup's
+immutability off does not unlock it. Never auto-delete a release whose disposition is uncertain: cleanup's
 `GET`-then-`DELETE` window plus a burned name is worse than a stray draft. If an extra runner leg is refused, record the
 refusal and run it here; if allowed, rehearsing in a throwaway repository saves the name and the audience, not the
 minutes.

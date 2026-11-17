@@ -5,11 +5,12 @@ status: Waiting
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T09:11:00Z'
-updated_date: '2026-11-17T17:08:00Z'
+updated_date: '2026-11-17T17:39:00Z'
 labels:
   - release
   - security
-dependencies: []
+dependencies:
+  - TASK-49
 priority: medium
 ordinal: 37000
 ---
@@ -23,14 +24,14 @@ ordinal: 37000
 
 **Three corrections the plan review landed in SPEC v0.12.20; each changes the payload.** `enforcement` is `disabled | active | evaluate`, and `evaluate` is Enterprise-only — *create it observe-only, flip it after the canary* is not available: a ruleset enforces or it does nothing. `creation`, `update` and `deletion` are real rule types, and `bypass_actors: []` means **nobody** — not an admin, not the Actions app — may create, move or delete a `v*` tag, including whoever pushes the next release tag: the actor list is decided before the POST and [TASK-28](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-28%20-%20Cut-the-first-release-tag-and-watch-the-release-run.md) is sequenced against it. And a ruleset is not admin-proof: repository admins can always edit the ruleset itself.
 
-**A ruleset that silently matches nothing is worse than none**, so the GET after the POST is part of the act, quoted in the report. This mutates a public repository; say so in the report and the commit message. **Order:** before the canary in [TASK-42](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-42%20-%20Run-the-canary-through-the-real-gate-knowing-the-version-name-is-burned.md), which proves nothing about protection that is not switched on.
+**A ruleset that silently matches nothing is worse than none**, so the GET after the POST is part of the act. This mutates a public repository; say so in the report and the commit message. **Order:** before the canary in [TASK-42](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-42%20-%20Run-the-canary-through-the-real-gate-knowing-the-version-name-is-burned.md), which proves nothing about protection that is not switched on.
 
-**Wake: TASK-49's one line** about a throwaway repository, because a ruleset must be exercised where destructive tests can run. The rest is agent work — POST, readback, report.
+**Wake: the disposable repository on TASK-49 existing**, because the ruleset's refusals have to be provable somewhere a tag can be destroyed without spending a real name. The rest is agent work: POST, readback, report.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 A ruleset targeting `v*` with `enforcement: active` exists, and the readback shows a refused tag move and a refused tag delete on a `v*` tag — not merely a ruleset that exists
+- [ ] #1 A ruleset targeting `v*` with `enforcement: active` exists, and the readback shows a refused tag move and a refused tag delete on an unpublished `v*` tag, causal error quoted — not merely a ruleset that exists
 - [ ] #2 If access is not widened, the pre-tag window is written as an accepted gap in SPEC 15 instead
 - [ ] #3 The ruleset's protected operations are decided by the agent and recorded with reasoning: the protection that matters is a published release tag that cannot be moved or deleted
 - [ ] #4 The report states who can still move a published release's tag, and that empty `bypass_actors` blocks the tag pusher as well
@@ -43,16 +44,14 @@ ordinal: 37000
 commit and serialises its own runs. What YAML cannot stop is a principal with write access moving the tag between that
 check and the create: the release path publishes whatever the tag points at, under a version number people trust.
 
-**The rule that makes this non-trivial:** a `v*` ruleset with a `creation` rule and `bypass_actors: []` blocks the
-publishing account as well as a person, so one ruleset either blocks the release path or protects nothing, and two
-layered rulesets are the shape that does both. Measured at 8f78a73; the option analysis and the spend question are on
-[TASK-49](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-49%20-%20Decision-approve-Actions-runner-minutes-and-a-second-public-repository-for-destructive-tests.md), not here.
+**The rule that makes this non-trivial,** measured at 8f78a73: a `creation` rule with `bypass_actors: []` blocks the
+publishing account as well as a person. Two layered rulesets was this board's answer to that; leaving `creation` out of
+the ruleset is the smaller shape, and the external analysis reached the same conclusion independently. Readback decides.
+The where-question is answered on TASK-49, not here.
 
 Superseded log entries: [board trim, 2026-11-17](https://github.com/ArborealML/Inference-Router/blob/main/backlog/archive/board-trim-2026-11-17.md).
 
-**Order, corrected by the coding session on 2026-11-17 and superseding the order this board first wrote:** ruleset on
-`v*` -> immutable releases -> the canary -> post-publish readback proof -> `v0.1.0`. A canary that runs before the
-ruleset proves nothing about protection, so the ruleset goes first. **Shape, still the coding
-session's recommendation pending readback:** protect `update` and `deletion` and leave `creation` free, because a
+**Order, corrected by the coding session on 2026-11-17, superseding this board's first:** ruleset on
+`v*` -> immutable releases -> the canary -> post-publish readback proof -> `v0.1.0`. **Shape, the coding session's recommendation pending readback:** protect `update` and `deletion` and leave `creation` free, because a
 `creation` rule with `bypass_actors: []` blocks the very principal that pushes the release tag.
 <!-- SECTION:NOTES:END -->
