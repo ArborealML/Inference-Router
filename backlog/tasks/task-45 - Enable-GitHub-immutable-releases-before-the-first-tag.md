@@ -19,34 +19,43 @@ ordinal: 44000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-**Do this (~10 minutes, two API calls, before the first tag).** Check the state, enable it, check again:
+**Performed before the first tag;** the calls are recorded for anyone re-running them:
 
     gh api repos/ArborealML/Inference-Router/immutable-releases
     gh api -X PUT repos/ArborealML/Inference-Router/immutable-releases
     gh api repos/ArborealML/Inference-Router/immutable-releases
 
-Measured by this session at 8f78a73 the first line answers `{"enabled":false,"enforced_by_owner":false}`; the documented enable is `PUT` on the same hyphenated path (an underscore spelling 404s) and needs repository admin, which the working token has. Quote before-and-after JSON — this changes a public repository's supply-chain posture, and `DELETE` on the same path reverses it. It covers only releases published after it is turned on.
+The enable is `PUT` on the hyphenated path (an underscore spelling 404s) and needs repository admin, which the working token has. This changes a public repository's supply-chain posture and `DELETE` on the same path reverses it; it covers only releases published after it is turned on.
 
 **What it locks, corrected by measurement at 19:2xZ**: the version **name** — delete the release and the name stays burned
 (`422 tag_name was used by an immutable release`). Not the assets: on a published immutable release an asset was deleted
 and a different file uploaded under the same name, and the download URL serves the new bytes. Not the tag ref: with no
 ruleset `git push -f` moved a published immutable release's tag. Metadata stays mutable (`PATCH` 200).
 
-**What it does not lock** — corrections landed in SPEC v0.12.20 and by measurement: drafts, the window before publication, the release title and notes, the `prerelease`/`latest` flags; and **the release itself can be deleted, after which the tag can be deleted too — but the version name is burned for good**, and turning the setting off later does not unlock it. So there is no disposable canary once this is on ([TASK-42](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-42%20-%20Run-the-canary-through-the-real-gate-knowing-the-version-name-is-burned.md)), immutability can seal bad bytes as well as good ones, and this is not availability and not a build-provenance guarantee. It is not a substitute for the tag rule in [TASK-38](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-38%20-%20Act-put-a-v-ruleset-on-the-repository-and-read-it-back.md).
+**What it does not lock** — corrections landed in SPEC v0.12.20 and by measurement: drafts, the window before publication, the release title and notes, the `prerelease`/`latest` flags; and **the release itself can be deleted, after which the tag can be deleted too — but the version name is burned for good**, and turning the setting off later does not unlock it So there is no disposable canary once this is on ([TASK-42](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-42%20-%20Run-the-canary-through-the-real-gate-knowing-the-version-name-is-burned.md)): it seals bad bytes as well as good ones, and it is not the tag rule in [TASK-38](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-38%20-%20Act-put-a-v-ruleset-on-the-repository-and-read-it-back.md).
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 immutable releases are enabled over REST (or refused with a written reason), and the before/after state is quoted from the API rather than asserted
-- [ ] #2 SPEC says plainly what this does and does not lock: it locks a published release's assets and its tag, and nothing about drafts, the pre-publish window, the title and notes, or the prerelease/latest flags
+- [x] #1 immutable releases are enabled over REST (or refused with a written reason), and the before/after state is quoted from the API rather than asserted
+- [ ] #2 SPEC says plainly what this does and does not lock: it burns the published version name, and locks nothing measured about assets, the tag ref, drafts, the pre-publish window, the title and notes, or the prerelease/latest flags
 <!-- AC:END -->
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Report line owed by whoever performs this (decision-16): the exact call used — `gh api -X PUT repos/ArborealML/Inference-Router/immutable-releases` — the before and after JSON from the GET, the blast radius in one sentence (every future release on this public repository: published assets and their tag locked, drafts and metadata still editable, release deletion still possible), and the reversal (DELETE on the same path). Blast radius is repository-wide, so the report is not optional.
+**Report line (decision-16), performed.** Call: `gh api -X PUT repos/ArborealML/Inference-Router/immutable-releases`.
+Before, at 8f78a73: `{"enabled":false,"enforced_by_owner":false}`. After, read live at 20:0xZ: `{"enabled":true,"enforced_by_owner":false}`.
+Blast radius in one sentence: every future release on this public repository keeps its published version name burned, while
+drafts, metadata, assets and the tag ref stay reachable and the release itself can still be deleted. Reversal: `DELETE` on the
+same path. AC #1 closes on those two quotes. **Wake:** the SPEC wording pass AC #2 asks for (the coding session's file).
 
-**Org-level boundary, measured at 8f78a73:** `GET orgs/ArborealML/settings/immutable-releases` and `GET orgs/ArborealML/rulesets` both answer "This API operation needs the `admin:org` scope", so organisation-wide immutability is out of reach for this token and would be a person's act. Nothing here waits on it: the repository-level setting is readable and writable today (`enabled: false`, `enforced_by_owner: false`, and the repository answers `admin: true`).
+**AC #1 done, read live at 20:0xZ:** `GET .../immutable-releases` answers `{"enabled":true,"enforced_by_owner":false}`;
+the before state (`enabled: false`) is quoted above from 8f78a73. AC #2 is the remaining work: SPEC has to say plainly, in
+current-state prose rather than only in a revision-log row, that this locks the version name and nothing measured about
+assets or the tag ref. **Wake:** that SPEC wording pass, which belongs to the coding session.
+
+**Org-level boundary, measured at 8f78a73:** `GET orgs/ArborealML/settings/immutable-releases` and `GET orgs/ArborealML/rulesets` need the `admin:org` scope, so organisation-wide immutability is a person's act. Nothing waits on it; the repository-level setting answers `admin: true`.
 
 Superseded log entries for this task: [board trim, 2026-11-17](https://github.com/ArborealML/Inference-Router/blob/main/backlog/archive/board-trim-2026-11-17.md).
 <!-- SECTION:NOTES:END -->

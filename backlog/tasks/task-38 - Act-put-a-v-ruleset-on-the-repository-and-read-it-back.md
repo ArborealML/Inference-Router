@@ -1,7 +1,7 @@
 ---
 id: TASK-38
 title: 'Act: put a v* ruleset on the repository and read it back'
-status: Waiting
+status: Done
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T09:11:00Z'
@@ -34,7 +34,7 @@ ordinal: 37000
 - [x] #1 A ruleset targeting `v*` with `enforcement: active` exists, and the readback shows a refused tag move and a refused tag delete on an unpublished `v*` tag, causal error quoted — not merely a ruleset that exists
 - [x] #2 If access is not widened, the pre-tag window is written as an accepted gap in SPEC 15 instead
 - [x] #3 The ruleset's protected operations are decided by the agent and recorded with reasoning: the protection that matters is a published release tag that cannot be moved or deleted
-- [ ] #4 The report states who can still move a published release's tag, and the `creation` rule's effect on the tag pusher is probed, not assumed
+- [x] #4 The report states who can still move a published release's tag, and the `creation` rule's effect on the tag pusher is probed, not assumed
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -59,4 +59,11 @@ Superseded log entries: [board trim, 2026-11-17](https://github.com/ArborealML/I
 **Order, as performed:** ruleset on `v*` -> immutable releases -> the canary -> post-publish readback proof -> `v0.1.0`.
 Read live at 18:2xZ: `release-tag-protection`, target `tag`, `active`, `bypass_actors: []`, conditions `refs/tags/v*`,
 rules `update` + `deletion`.
+
+**AC #4 report line.** With `update` + `deletion` and `bypass_actors: []`, the Actions token's force-move of a protected
+`v*` tag is refused (GH013) and a tag delete is refused, so no ordinary principal can move a published release's tag: the
+route that remains is editing the ruleset itself, which any repository admin holds, and that is the residual risk this
+control accepts (immutability does not cover the tag ref — see TASK-45). The `creation` rule was probed in the throwaway
+repository, not assumed: it refused the Actions token's push *and* the owner PAT, so production omits it and a new `v*` tag
+can still be cut. Evidence: the readback above, and commit d9c3241.
 <!-- SECTION:NOTES:END -->
