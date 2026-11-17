@@ -5,7 +5,7 @@ status: To Do
 assignee:
   - '@chatswarm'
 created_date: '2026-11-16T22:26:00Z'
-updated_date: '2026-11-16T23:22:00Z'
+updated_date: '2026-11-16T23:40:00Z'
 labels:
   - docs
   - ui
@@ -30,7 +30,7 @@ feature-wall, no claim that is not measured (SPEC §9.1 gate).
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Pattern findings from popular .NET repos recorded in this task (or a short note under docs/)
+- [x] #1 Pattern findings from popular .NET repos recorded in this task (or a short note under docs/)
 - [ ] #2 README restructured with a recognised section order: identity, what it does, quick start,
   configuration, CI/release, status/scope, layout, license
 - [ ] #3 An icon and a banner image committed under `docs/images/` (or `.github/`), with alt text and
@@ -39,4 +39,41 @@ feature-wall, no claim that is not measured (SPEC §9.1 gate).
 - [ ] #5 No claim in the README that SPEC §9.1 does not back with measurements
 <!-- AC:END -->
 
-Status: not started — pattern research is in flight (deep tier, logged in `.local/research-notes.md`); the task moves to In Progress when the README itself changes. Icon/banner art comes after the structure lands.
+Status: step 1 landed (findings below); the task moves to In Progress when the README itself changes.
+Icon/banner art comes after the structure lands.
+
+## Pattern findings (15 public .NET/C# READMEs, external research request completed)
+
+The report's own stated limits: a purposive high-visibility sample, not a star-ranked top 15; no AIR
+binary was executed and no artwork was rendered. Treat each item as a recommendation to check against
+this repo, not as a measured fact.
+
+Recurring structure, in the order it recurs:
+
+1. Name, a two-line factual purpose, two or three badges.
+2. Status/version and prerequisites, separating what ships now from what is planned.
+3. Quick start: install (published binary plus checksum where one exists), configure, run, and one
+   request with captured output.
+4. A platform/release table (RID matrix plus `SHA256SUMS`) for tools distributed as binaries.
+5. Capabilities and limits, naming the compatible subset rather than claiming the whole API.
+6. A short neutral configuration sample, with the full schema linked rather than inlined.
+7. A CLI/HTTP surface table, with the contract detail left to the spec.
+8. A library integration example, only if it compiles exactly as written.
+9. Troubleshooting plus security caveats (binding, auth, key handling).
+10. Measured performance linked to a dated benchmark note.
+11. Minimal build/test/AOT commands, without reproducing CI YAML.
+12. Design, roadmap, contributing, license — future work labelled future.
+
+First screen: name, purpose, badges, current scope, one runnable command.
+
+Anti-patterns the survey calls out: marketing adjectives and feature walls; unqualified "OpenAI
+compatible"; unverified speed numbers; quick-start commands that no longer work; machine-specific TOML,
+keys or model ids; promises about unreleased assets; duplicating the spec, config schema, API contract or
+CI config into the README; badge spam and stale tables of contents.
+
+Art guidance: a 1:1 SVG mark that stays legible at 24–32px and displays around 96–160px; an optional
+banner at 3:1–4:1 (1200×360–400 source, rendered at ≤960px); GitHub's social preview image separately at
+1280×640 under 1 MB. Theme-aware via `<picture>` with a `prefers-color-scheme: dark` source and a
+fallback. Keep assets under `docs/images/` (`.github/` stays for workflows and community files), give
+every image alt text, and record generated art in `docs/images/ATTRIBUTION.md` with the generator, date,
+maintainer edits and reuse terms — without claiming rights beyond what the tool's terms give.
