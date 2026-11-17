@@ -506,3 +506,25 @@ created: 2026-11-17T14:02:00Z
 **Correction, and the board was wrong.** A comment here a moment ago claimed this task's wake had already happened and moved it to To Do. It has not, and the claim came from reading the board listing instead of the predecessor task. The predecessor TASK-21 records its three postures as **adopted**, but its remaining act is still open: writing them into SPEC as a revision with the revision-log line in the same commit — checked here, `SPEC.md` carries no operator-first posture text at b214ce6. **Wake, named:** that SPEC revision landing, after which TASK-21 closes and this starts.
 
 ---
+
+### TASK-14 pattern-findings block (second pass 16:3xZ)
+
+**Pattern findings (15 public .NET/C# READMEs, external research request completed)**
+The report's own stated limits: a purposive high-visibility sample, not a star-ranked top 15; no AIR
+binary was executed and no artwork was rendered. Treat each item as a recommendation to check against
+this repo, not as a measured fact.
+
+Recurring structure, in the order it recurs:
+
+First screen: name, purpose, badges, current scope, one runnable command.
+
+Anti-patterns the survey calls out: marketing adjectives and feature walls; unqualified "OpenAI
+compatible"; unverified speed numbers; quick-start commands that no longer work; machine-specific TOML,
+keys or model ids; promises about unreleased assets; duplicating the spec, config schema, API contract or
+CI config into the README; badge spam and stale tables of contents.
+
+**Links**
+- The file: [README.md](https://github.com/ArborealML/Inference-Router/blob/main/README.md) — banner [line 1](https://github.com/ArborealML/Inference-Router/blob/main/README.md#L1), badges [10-12](https://github.com/ArborealML/Inference-Router/blob/main/README.md#L10-L12), platform copy [82-84](https://github.com/ArborealML/Inference-Router/blob/main/README.md#L82-L84), CI section [214](https://github.com/ArborealML/Inference-Router/blob/main/README.md#L214).
+- Release badge cannot resolve until this is non-empty: [releases](https://github.com/ArborealML/Inference-Router/releases).
+- Art and provenance: [docs/images/](https://github.com/ArborealML/Inference-Router/tree/main/docs/images/), [docs/images/README.md](https://github.com/ArborealML/Inference-Router/blob/main/docs/images/README.md).
+- Numbers any claim must trace to: [docs/benchmarks.md](https://github.com/ArborealML/Inference-Router/blob/main/docs/benchmarks.md).

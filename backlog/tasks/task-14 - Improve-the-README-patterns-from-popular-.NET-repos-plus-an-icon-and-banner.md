@@ -5,7 +5,7 @@ status: Waiting
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-16T22:26:00Z'
-updated_date: '2026-11-17T16:01:00Z'
+updated_date: '2026-11-17T16:18:00Z'
 labels:
   - docs
   - ui
@@ -29,26 +29,6 @@ with prose instead of what the reader can do in 60 seconds. Two steps:
 
 Keep whatever the research recommends that does not fight the house style: no marketing voice, no
 feature-wall, no claim that is not measured (SPEC §9.1 gate).
-
-**Pattern findings (15 public .NET/C# READMEs, external research request completed)**
-The report's own stated limits: a purposive high-visibility sample, not a star-ranked top 15; no AIR
-binary was executed and no artwork was rendered. Treat each item as a recommendation to check against
-this repo, not as a measured fact.
-
-Recurring structure, in the order it recurs:
-
-First screen: name, purpose, badges, current scope, one runnable command.
-
-Anti-patterns the survey calls out: marketing adjectives and feature walls; unqualified "OpenAI
-compatible"; unverified speed numbers; quick-start commands that no longer work; machine-specific TOML,
-keys or model ids; promises about unreleased assets; duplicating the spec, config schema, API contract or
-CI config into the README; badge spam and stale tables of contents.
-
-**Links**
-- The file: [README.md](https://github.com/ArborealML/Inference-Router/blob/main/README.md) — banner [line 1](https://github.com/ArborealML/Inference-Router/blob/main/README.md#L1), badges [10-12](https://github.com/ArborealML/Inference-Router/blob/main/README.md#L10-L12), platform copy [82-84](https://github.com/ArborealML/Inference-Router/blob/main/README.md#L82-L84), CI section [214](https://github.com/ArborealML/Inference-Router/blob/main/README.md#L214).
-- Release badge cannot resolve until this is non-empty: [releases](https://github.com/ArborealML/Inference-Router/releases).
-- Art and provenance: [docs/images/](https://github.com/ArborealML/Inference-Router/tree/main/docs/images/), [docs/images/README.md](https://github.com/ArborealML/Inference-Router/blob/main/docs/images/README.md).
-- Numbers any claim must trace to: [docs/benchmarks.md](https://github.com/ArborealML/Inference-Router/blob/main/docs/benchmarks.md).
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -65,38 +45,15 @@ CI config into the README; badge spam and stale tables of contents.
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Why the image files are still missing: the README pattern review that is recorded here returned art *specifications* only — an aspect-ratio brief for the mark, banner and social preview, and where they should live — and explicitly rendered no artwork. Nothing has been sent to the image service yet, so the absence of `docs/images/` is an undispatched step, not a lost delivery. Next action is an art request (or an in-repo vector mark), then wire the badge/identity into the README.
+**What is left, and why it is not finished.** The mark, banner and social preview are in the repository as vector markup, wired into the README, with
+provenance and palette in `docs/images/README.md`. How they look — rendering in a browser and through GitHub's proxy,
+and taste — is for a person, and that half lives on the upload task.
 
-The mark, banner and social preview are in the repo under docs/images/ as original vector markup, wired into the README with alt text, with provenance and palette in docs/images/README.md. What cannot be verified here: how they look. The markup is well-formed, tiny and free of external references, but rendering (browser and GitHub proxy) and taste are for a human to judge. AC #4 stays open on purpose: the build and licence badges resolve, the release badge cannot exist until a tag is cut, which is a decision on the board.
+**The one open criterion is about a tag, not the README.** The build and licence badges resolve; a release badge cannot
+exist until a tag exists. **Wake, as an event:** the first tag run on [TASK-28](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-28%20-%20Cut-the-first-release-tag-and-watch-the-release-run.md) publishing real assets.
 
-The visual direction and the repository-settings upload are handed to a human decision task; the remaining README acceptance criteria wait on it.
-
-Wake condition, stated for the Waiting column: this task wakes when **TASK-23** is answered (the identity is kept, or a replacement direction is given, and the social-preview upload is done or declined) and when **TASK-22** cuts a release tag. AC #4 is the one still open, and it is open because of the tag, not because of the README: the CI badge and the licence badge resolve on the public repo (README lines 10-12, and the CI badge's workflow is green on every push to main), but a release badge cannot resolve while no release exists — the release listing on the public repo is empty, and release.yml only produces one from a tag. So nothing is waiting for a reader of this task: the wake is those two board events.
-
-Moved out of the Description under decision-18's word line — nothing deleted, nothing rewritten:
-
-1. Name, a two-line factual purpose, two or three badges.
-2. Status/version and prerequisites, separating what ships now from what is planned.
-3. Quick start: install (published binary plus checksum where one exists), configure, run, and one
-   request with captured output.
-4. A platform/release table (RID matrix plus `SHA256SUMS`) for tools distributed as binaries.
-5. Capabilities and limits, naming the compatible subset rather than claiming the whole API.
-6. A short neutral configuration sample, with the full schema linked rather than inlined.
-7. A CLI/HTTP surface table, with the contract detail left to the spec.
-8. A library integration example, only if it compiles exactly as written.
-9. Troubleshooting plus security caveats (binding, auth, key handling).
-10. Measured performance linked to a dated benchmark note.
-11. Minimal build/test/AOT commands, without reproducing CI YAML.
-12. Design, roadmap, contributing, license — future work labelled future.
-
-Art guidance: a 1:1 SVG mark that stays legible at 24–32px and displays around 96–160px; an optional
-banner at 3:1–4:1 (1200×360–400 source, rendered at ≤960px); GitHub's social preview image separately at
-1280×640 under 1 MB. Theme-aware via `<picture>` with a `prefers-color-scheme: dark` source and a
-fallback. Keep assets under `docs/images/` (`.github/` stays for workflows and community files), give
-every image alt text, and record generated art in `docs/images/ATTRIBUTION.md` with the generator, date,
-maintainer edits and reuse terms — without claiming rights beyond what the tool's terms give.
-
-Superseded log entries for this task: [board trim, 2026-11-17](https://github.com/ArborealML/Inference-Router/blob/main/backlog/archive/board-trim-2026-11-17.md).
+Earlier rounds of this task — the pattern review that returned art specifications only, the identity review, the
+argument over whether the mark was undispatched art — are superseded history: [board trim, 2026-11-17](https://github.com/ArborealML/Inference-Router/blob/main/backlog/archive/board-trim-2026-11-17.md).
 <!-- SECTION:NOTES:END -->
 
 ## Comments

@@ -5,7 +5,7 @@ status: Blocked
 assignee:
   - '@claire'
 created_date: '2026-11-17T05:59:00Z'
-updated_date: '2026-11-17T16:13:00Z'
+updated_date: '2026-11-17T16:19:00Z'
 labels:
   - docs
 dependencies:
@@ -19,10 +19,8 @@ ordinal: 23500
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
 **Do this (2 minutes, browser only).** Open [repository Settings → Options → Social preview](https://github.com/ArborealML/Inference-Router/settings/options),
-pick [docs/images/air-social-1280x640.png](https://github.com/ArborealML/Inference-Router/blob/main/docs/images/air-social-1280x640.png)
-(raw: [raw.githubusercontent.com/.../air-social-1280x640.png](https://raw.githubusercontent.com/ArborealML/Inference-Router/main/docs/images/air-social-1280x640.png)),
-then **press Save** — the thumbnail looks the same whether you did or not. Then check from outside the form,
-after about a minute for cache:
+pick [docs/images/air-social-1280x640.png](https://github.com/ArborealML/Inference-Router/blob/main/docs/images/air-social-1280x640.png),
+then **press Save** — the thumbnail looks the same whether you did or not. Then check from outside the form:
 
     curl -s https://github.com/ArborealML/Inference-Router | grep og:image
 
@@ -52,17 +50,15 @@ instead of being uploaded twice.
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-**Set the social card** -> every link preview of the repository renders our card: dark evergreen field, the
-branching-route mark, `AIR`, the name and the tagline. **Leave it** -> GitHub keeps rendering its own generated
-card, a mostly-white box that says nothing about what this is. Today it renders GitHub's card (verified below).
+**Set the social card** -> every link preview of the repository renders our card. **Leave it** -> GitHub keeps rendering its own mostly-white generated card. Today it renders GitHub's.
 **Set the organisation picture** -> the mark appears on the org page, on the owner chip beside the repository
 name, and in search results. **Already done**, verified from outside the form.
 
 **Links**
-- Card PNG to pick, 1280x640 as GitHub asks: [docs/images/air-social-1280x640.png](https://github.com/ArborealML/Inference-Router/blob/main/docs/images/air-social-1280x640.png) (raw: [raw.githubusercontent.com/.../air-social-1280x640.png](https://raw.githubusercontent.com/ArborealML/Inference-Router/main/docs/images/air-social-1280x640.png)). 38,150 bytes, sha256 `cee3237b7f98…98f09` as committed in b214ce6, well under the 1 MB ceiling — re-read the hash from the file at upload time, because TASK-49 item (d) can still change it.
-- Avatar PNG (already uploaded, kept for a re-upload): [docs/images/air-mark-512.png](https://github.com/ArborealML/Inference-Router/blob/main/docs/images/air-mark-512.png).
-- Card vector source, if a different typeface is wanted: [air-social.svg](https://github.com/ArborealML/Inference-Router/blob/main/docs/images/air-social.svg). The committed raster lettering is DejaVu Sans, not the browser face the SVG stack asks for.
-- Do NOT upload the bare mark: [air-mark.svg](https://github.com/ArborealML/Inference-Router/blob/main/docs/images/air-mark.svg) strokes in `currentColor` with no field, so standalone it is black on transparent and invisible on a dark frame. `air-mark-avatar.svg` / `air-mark-512.png` is the standalone form.
+- Card PNG to pick, 1280x640 as GitHub asks: [docs/images/air-social-1280x640.png](https://github.com/ArborealML/Inference-Router/blob/main/docs/images/air-social-1280x640.png). 38,150 bytes, sha256 `cee3237b7f98…98f09` as committed in b214ce6, well under the 1 MB ceiling — re-read the hash at upload time: TASK-49 item (d) can still change it.
+- Avatar PNG (already uploaded): [docs/images/air-mark-512.png](https://github.com/ArborealML/Inference-Router/blob/main/docs/images/air-mark-512.png).
+- Card vector source, if a different typeface is wanted: [air-social.svg](https://github.com/ArborealML/Inference-Router/blob/main/docs/images/air-social.svg). The committed raster uses DejaVu Sans, not the browser face the SVG asks for.
+- Do not upload the bare `air-mark.svg`: it strokes in `currentColor` with no field, so it is black on transparent and invisible on a dark frame. The standalone form is `air-mark-512.png`.
 - Upload form 1 (card): [repo Settings -> Options -> Social preview](https://github.com/ArborealML/Inference-Router/settings/options).
 - Upload form 2 (organisation picture): [organisation Settings -> Profile picture](https://github.com/organizations/ArborealML/settings/profile).
 - Check the result from outside the form: [the image link previews fetch](https://opengraph.githubassets.com/1/ArborealML/Inference-Router), and the repository page `og:image` meta tag.

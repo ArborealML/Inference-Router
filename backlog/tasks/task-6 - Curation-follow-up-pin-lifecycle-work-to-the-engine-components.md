@@ -5,7 +5,7 @@ status: To Do
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-16T20:40:00Z'
-updated_date: '2026-11-17T12:19:00Z'
+updated_date: '2026-11-17T16:15:00Z'
 labels: []
 dependencies:
   - TASK-1
@@ -52,25 +52,14 @@ question second.
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Blocked on TASK-19 — the next move is the map-model decision, which belongs to a human. Work here resumes when that task is closed.
+**Unblocked, and what is actually owed.** The map-model decision landed (TASK-19: the library is a container) and the
+lifecycle provider seam with its delegated-exec and Docker providers is on main, so the remaining work is the pinning
+this task always asked for: the map must say which files each engine component owns, including the new seam.
 
-Two things gate this: the map-model decision, and the lifecycle work it is meant to pin (TASK-1), which is now unblocked and mine to start.
+**Standing limitation of the tool, found by measurement at 18d7279 and still true:** a declared container is matched to
+a scan only when the scanner produces a container fact, and the C# scanner produces those only from application entry
+points — so a library never gets one, and a library container stays a permanent ghost in the map. Any pinning plan has
+to accept that or work around it rather than treating it as a defect to fix.
 
-The lifecycle work that was gating this has started, so the map will need pinning to the engine components once the provider seam settles.
-
-The lifecycle provider seam and the Docker provider are in main, so the map can pin the new lifecycle components once the map-model decision lands. Still blocked on TASK-19.
-
-Unblocked: the map-model decision is made and the library is a container (TASK-19). What is left here is the pinning the original task asked for — the new lifecycle seam (provider interface, coordinator, delegated-exec and Docker providers) now has components, and the map should say which files each owns; the duplicate air-cli / cli containers the earlier scan produced are also gone.
-
-Map state at 18d7279 (checked by exporting the map and reading its zones): no unidentified group remains; every component has a container parent, all 20 src files are claimed by a component, and the only zones are the four groups under the library container. The residual is that the library container is a permanent ghost: groma matches a declared container to a scan only when the scanner produces a container fact, and the C# scanner produces those only from application entry points, so a library never gets one and 'groma accept' prints 'no scan match'. The box will render outlined for as long as the library is one container. Pinning work to components (this task) is unaffected.
-
-Status check for the board: this task is not blocked. TASK-19's map-model decision landed and the library is one declared container (sixteen components under it, verified by counting the map tree), so the pinning named here is ordinary work now. It is also unaffected by TASK-27, the follow-on owner decision about that container rendering as an outline rather than a solid box: keeping the outline changes nothing here, and only a decision to split the library per executable would re-open this task's shape.
-
-Moved out of the Description under decision-18's word line — nothing deleted, nothing rewritten:
-
-Decision needed: what is a container here. The C4 guidance treats a shared assembly as *not* a container,
-which argues for keeping the shared components unfiled until we choose a simplification, or for filing
-them under the process that actually hosts them — noting that `air serve` runs the HTTP host inside the
-CLI process and `air config` loads configuration locally, so the CLI is not merely a remote client of the
-library and the map cannot show one source file owned by both executables.
+Superseded blocked/unblocked history: [board trim, 2026-11-17](https://github.com/ArborealML/Inference-Router/blob/main/backlog/archive/board-trim-2026-11-17.md).
 <!-- SECTION:NOTES:END -->
