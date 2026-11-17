@@ -86,31 +86,55 @@ jobs:
           TAG: ${{ steps.resolve.outputs.tag }}
         run: |
           set -euo pipefail
+          # Same sanitizer as the publish step's brief(); the two steps are separate shells, so the
+          # definition is duplicated deliberately — change both. Response text is only ever logged
+          # after it has been made control-free.
+          brief() { printf '%s' "$1" | LC_ALL=C tr -c '\40-\176' '?' \
+                      | LC_ALL=C cut -c1-200 | sed -e 's/%/%25/g' -e 's/:/%3A/g'; }
           # Note: the "release by tag name" endpoint hides drafts, so list and filter instead —
           # a half-finished draft from an earlier run must block a new build just as a published
           # release does. --paginate means a second page of releases cannot hide an existing one,
           # and more than one match is reported as a conflict rather than releasing the first hit.
-          # --paginate without --jq answers one JSON document per page, so the pages are slurped and
-          # only array documents are read. The tag goes to jq as an argument, never inside the filter.
-          # "Could not tell" is a refusal and not an absence: GitHub allows two releases to carry the
-          # same tag, so a failed or unparseable read must not be read as "nothing exists for $TAG".
-          existing="$(gh api --paginate "repos/{owner}/{repo}/releases?per_page=100" 2>/dev/null || true)"
+          # Measured on gh 2.46.0: --paginate over a REST array merges the pages into ONE top-level
+          # array, and a page that fails mid-walk still prints the pages it did fetch before exiting
+          # non-zero (a forced 422 printed 155 bytes and exited 1). So the exit status, not the
+          # emptiness of the output, is what proves the list is complete: a swallowed failure here
+          # would read as "no release for this tag", and GitHub lets two releases carry one tag.
+          # The shape is checked BEFORE the tag is selected — every document must be an array of
+          # objects carrying a string tag_name, so an error body or a junk element is a refusal and
+          # not an absence. The tag goes to jq as an argument, never inside the filter.
+          list_err="$(mktemp)"
+          rc=0
+          existing="$(gh api --paginate "repos/{owner}/{repo}/releases?per_page=100" 2>"$list_err")" || rc=$?
+          if [ "$rc" != 0 ]; then
+            echo "::error::could not read this repository's releases (gh exited $rc; stderr: $(brief "$(cat "$list_err")")) — a release for $TAG cannot be ruled out, so not building"
+            rm -f "$list_err"
+            exit 1
+          fi
+          rm -f "$list_err"
           if [ -z "$existing" ]; then
             echo "::error::could not read this repository's releases, so a release for $TAG cannot be ruled out — not building"
             exit 1
           fi
-          matches="$(printf '%s' "$existing" | jq -s --arg tag "$TAG" '[ .[] | select(type == "array") | .[] | select(.tag_name == $tag) | {id, draft}]' 2>/dev/null || true)"
-          if ! printf '%s' "$matches" | jq -e 'type == "array"' >/dev/null 2>&1; then
-            echo "::error::the release list did not parse as JSON, so a release for $TAG cannot be ruled out — not building"
+          if ! printf '%s' "$existing" | jq -s -e '
+                length >= 1
+                and all(.[]; type == "array")
+                and all(.[]; all(.[]; type == "object" and ((.tag_name | type) == "string")))' \
+               >/dev/null 2>&1; then
+            echo "::error::the release list was not a JSON array of release objects, so a release for $TAG cannot be ruled out — not building"
             exit 1
           fi
+          matches="$(printf '%s' "$existing" | jq -s -c --arg tag "$TAG" \
+                       '[ .[] | .[] | select(.tag_name == $tag) | {id, draft}]')"
           n_existing="$(printf '%s' "$matches" | jq 'length')"
           if [ "$n_existing" != "0" ]; then
+            # jq -c, never jq -r: a release id is a server-chosen field, and a string value carrying a
+            # newline would otherwise open its own workflow command inside this error annotation.
             if [ "$n_existing" = "1" ]; then
-              printf -v existing_ids '%s' "$(printf '%s' "$matches" | jq -r '.[0] | "id \(.id) draft \(.draft)"')"
+              printf -v existing_ids '%s' "$(printf '%s' "$matches" | jq -c '.[0]')"
               echo "::error::refusing to build: a release for $TAG already exists ($existing_ids) — delete it first if a re-release is intended"
             else
-              printf -v existing_ids '%s' "$(printf '%s' "$matches" | jq -c '[.[] | {id, draft}]')"
+              printf -v existing_ids '%s' "$(printf '%s' "$matches" | jq -c '.')"
               echo "::error::refusing to build: $n_existing releases already carry the tag $TAG ($existing_ids) — settle that before building"
             fi
             exit 1
@@ -359,7 +383,7 @@ jobs:
           # cutting after tr (instead of head) means no producer dies of SIGPIPE under pipefail, so a
           # diagnostic cannot come out silently empty.
           brief() { printf '%s' "$1" | LC_ALL=C tr -c '\40-\176' '?' | LC_ALL=C cut -c1-200 | sed -e 's/%/%25/g' -e 's/:/%3A/g'; }
-          rsum() { printf '%s' "$1" | jq -r '[.id,.tag_name,.name,.draft,.prerelease]
+          rsum() { printf '%s' "$1" | jq -r '[.id,.tag_name,.name,.draft,.prerelease,.upload_url]
                        | map(if . == null then "absent" else .|tostring end) | join(" ")' 2>/dev/null \
                      || echo "unreadable response"; }
           # Preflight proved the tag exists, and the tag was never the thing at issue: a tag can move
@@ -407,45 +431,36 @@ jobs:
           # deliberately not compared — the API says it is unused for a tag that already exists, so it
           # proves nothing about which commit is released — and deliberately not sent either: see the
           # §14 note on the workflow-write guard, which is evaluated against the target the API resolves.)
-          # One document, and a canonical integer id. `jq -e` reports the status of its LAST result, so a
-          # response that is two JSON documents — the first wrong, the second right — passes a bare
-          # predicate. `type == "number"` alone also admits 1.5, -3 and 1e999, and the id is used to build
-          # a URL and a compare target, so it has to be an exact integer in the range the tools can hold.
+          # One document, a canonical integer id, and the upload address compared INSIDE jq against the
+          # original JSON. `jq -e` reports the status of its LAST result, so a response that is two JSON
+          # documents — the first wrong, the second right — passes a bare predicate. `type == "number"`
+          # alone also admits 1.5, -3 and 1e999, and jq -r prints 1.0e2 as 1.0E+2 (measured on jq 1.8.1),
+          # so the printed form has to be plain ASCII digits in the range the tools can hold. And a shell
+          # variable is not the field: $( ) strips a trailing newline, so comparing a URL projected with
+          # jq -r would normalize away exactly the difference worth refusing. The prefix is folded for case
+          # only because the API returns the canonical owner/repo spelling and treats those path components
+          # case-insensitively; from the release id on the compare is exact, so `/Assets` and an added query
+          # are refusals rather than places to post binaries. (Asset names are this gate's own ASCII set, so
+          # nothing here needs percent-encoding; the exact compare is what keeps it that way.)
+          want_prefix="https://uploads.github.com/repos/${GH_REPO}"
           if ! printf '%s' "$created" | jq -s -e --arg tag "$TAG" --argjson pre "$prerelease" \
+               --arg want_prefix "$want_prefix" --argjson pfxlen "${#want_prefix}" \
                'length == 1 and ((.[0]
                  | (.id | type) == "number" and .id > 0 and .id == (.id | floor) and .id < 9007199254740992
+                   and ((.id | tostring) | test("\\A[1-9][0-9]*\\z"))
                    and ((.upload_url // "") | type) == "string"
+                   and ((.upload_url | .[0:$pfxlen] | ascii_downcase) == ($want_prefix | ascii_downcase))
+                   and (.upload_url[$pfxlen:] == ("/releases/" + (.id | tostring) + "/assets{?name,label}"))
                    and .tag_name == $tag and .name == $tag and .draft == true and .prerelease == $pre))' \
                >/dev/null; then
-            echo "::error::create did not answer with a numeric id, tag $TAG, title $TAG, draft=true, prerelease=$prerelease (fields: $(brief "$(rsum "$created")")) — not publishing, and leaving whatever exists for a human"
+            echo "::error::create did not answer with a canonical id, tag $TAG, title $TAG, draft=true, prerelease=$prerelease and the documented upload address for that id (fields: $(brief "$(rsum "$created")")) — not publishing, and leaving whatever exists for a human"
             exit 1
           fi
           rel_id="$(printf '%s' "$created" | jq -r '.id')"
           upload_url="$(printf '%s' "$created" | jq -r '.upload_url')"
-          # The upload address has to be exactly the documented one for this repository and this
-          # release id, template and all. A prefix match is weaker than it looks — `assets-extra` or a
-          # query the run did not ask for would pass it — and a non-empty URL from somewhere else is
-          # not a reason to post binaries to it. The compare ignores case, because the API returns the
-          # canonical owner/repo spelling and GitHub treats those path components case-insensitively;
-          # the upload then goes to the address the API actually gave, not the one we guessed. Exactness
-          # is a choice: if GitHub ever changes the template this gate stops, loudly, and a human
-          # updates it rather than a build posting bytes at a surprise host.
-          want_upload="https://uploads.github.com/repos/${GH_REPO}/releases/${rel_id}/assets{?name,label}"
-          # Only the scheme, host and owner/repo prefix is compared case-folded: the API answers the
-          # canonical owner/repo spelling and GitHub treats those path components case-insensitively, so
-          # folding them is not a weakening. From the release id onwards the compare is exact — a suffix
-          # this run did not ask for, or a URI template expanded into a query, is a refusal rather than a
-          # place to post binaries. (Asset names are this gate's own ASCII set, so nothing here needs
-          # percent-encoding; the exact compare is what keeps it that way.)
-          want_prefix="https://uploads.github.com/repos/${GH_REPO}"
-          n_prefix=${#want_prefix}
-          got_prefix="${upload_url:0:$n_prefix}"
-          got_rest="${upload_url:$n_prefix}"
-          if [ "${got_prefix,,}" != "${want_prefix,,}" ] \
-             || [ "$got_rest" != "/releases/${rel_id}/assets{?name,label}" ]; then
-            echo "::error::release $rel_id came back with upload_url $(brief "${upload_url:-nothing}"), expected exactly $want_upload — not publishing, and leaving draft $rel_id for a human"
-            exit 1
-          fi
+          # Exactness is a choice: if GitHub ever changes the template this gate stops, loudly, and a human
+          # updates it rather than a build posting bytes at a surprise host. The upload itself goes to the
+          # address the API gave, not the one we guessed.
           echo "release_id=$rel_id" >> "$GITHUB_OUTPUT"
           echo "created draft $rel_id for $TAG at $tag_sha"
           # Upload by that id, through the upload_url the create returned with its own URI template.
