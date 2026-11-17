@@ -7,7 +7,7 @@ status: Waiting
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T09:41:00Z'
-updated_date: '2026-11-17T09:54:00Z'
+updated_date: '2026-11-17T10:06:00Z'
 labels:
   - ci
   - release
@@ -52,18 +52,14 @@ archive member test also checks the member's type (283-299).
    the endpoint notes that the token must be authorized to modify workflows in that case? The job deliberately keeps
    `contents: write` only, so the first tag run is what tells us.
 
-Harness context, credited not claimed: 48 cases, zero failures, and the stub `gh` now refuses `releases/tags/`
+Harness context, credited not claimed: 52 cases, zero failures, and the stub `gh` now refuses `releases/tags/`
 outright, with cd4fcdd's publish step replayed from git and shown failing.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [x] #1 The create answers this run with a numeric release id and an upload_url, and every asset is uploaded to that id through the returned template - not addressed by tag
-- [x] #2 Verification reads one snapshot of the asset list, requires each expected name exactly once, and re-inspects plus re-resolves the tag immediately before the un-draft PATCH
-- [x] #3 Cleanup addresses only the captured id and re-checks id, tag and draft state before deleting anything
-- [x] #4 The gate harness stub refuses the published-only by-tag endpoint, so a run cannot pass green against a lookup that would fail in production
-- [ ] #5 A reviewer or a real tag run confirms that create-by-REST with a response-captured id is the whole repair, with no remaining window that needs the tag re-checked at create time
-- [ ] #6 Byte fidelity of the upload leg is established beyond GitHub's own stored-bytes digest matching, or the residual trust is written as an accepted gap
+- [ ] #1 Upload byte fidelity is documented in gh 2.46.0 source - --input becomes a raw reader with no JSON re-encoding, an explicit octet-stream type is honoured - and is still only DEMONSTRATED on a run by GitHub's stored-bytes digest matching the staged sha256; the split between documented and demonstrated stays named
+- [ ] #2 A run against the live API produces real asset digests, the workflow-write guard's actual answer for a tag whose commit edits the release workflow, the generated notes body, and a cleanup that leaves nothing behind - which is what TASK-42 asks permission for
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -74,6 +70,8 @@ Naming for the owner's convenience: this is the round-6 carrier; the deep review
 Dependency for the board's sake: TASK-28 waits on this round closing, so the tag is not cut against a gate under review.
 
 Wake condition, final form: a canary release run (TASK-42) or a real tag run that produces an asset digest from the live API. If the canary is declined, this task moves to Blocked naming the owner decision, because then nothing can close AC #5 or #6.
+
+Disposition of round 6 (review of e4b4683), now evidence in this task rather than the wake; the wake is the round-7 review of bff39e8 (dispatched 10:04Z). Round 6 confirmed the REST-create repair and bff39e8 added four things: the create response validated as a whole (tag_name, draft and prerelease must match what was asked before a byte uploads - a numeric id from a 2xx is not ownership on its own); upload_url validated against the exact uploads.github.com shape for this repository and id rather than merely non-empty; the release object's own tag_name checked in both inspections and in the post-publish read-back, because re-resolving the git ref proves the ref and not the release's tag association; and the release title pinned with name=$TAG, since generated notes with no name let GitHub invent a title and compose the body from merged PR text. The response-captured-id question is closed by that work: id plus those three fields plus the upload-address shape is as complete as reading can be, and a replay carrying valid fields is not distinguishable by reading at all - SPEC 15 now states that as an accepted gap rather than pretending it is solved.
 <!-- SECTION:NOTES:END -->
 
 ## Comments

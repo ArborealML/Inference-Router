@@ -1,11 +1,11 @@
 ---
 id: TASK-42
-title: 'Decision: run a canary release to prove the release gate exists'
+title: 'Decision: prove the release gate on a disposable tag before v0.1.0?'
 status: Blocked
 assignee:
   - '@claire'
 created_date: '2026-11-17T09:53:00Z'
-updated_date: '2026-11-17T09:53:00Z'
+updated_date: '2026-11-17T10:06:00Z'
 labels:
   - release
   - ci
