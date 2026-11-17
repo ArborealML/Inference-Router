@@ -111,3 +111,18 @@ assignee when you pick a task up and when you hand it over; do not leave it empt
 
 This project uses Groma. Before you scan, inspect, or curate architecture, or change files for a Backlog task, run `groma agent-instructions` and read the guide it names for that job. When it reports a first scan, ask the user whether they want you to curate the architecture. Do not edit Groma-owned architecture files directly.
 <!-- groma:end -->
+
+## Kanban columns
+
+`To Do → In Progress → Waiting → Blocked → Done`, set in `backlog/config.yml`.
+
+- **To Do** — not started. An assignee means claimed, not moving.
+- **In Progress** — repo state is being changed for this right now. One at a time.
+- **Waiting** — started, and parked on an event that will wake it: a review, a CI run, a pull request
+  gate, a predecessor task. The task body names the wake condition.
+- **Blocked** — no event will wake it; a person has to decide or grant something (an approval, a scope
+  call, runner minutes). This is what keeps the column meaning *a human must move*.
+
+Move the board at each work boundary — any commit or push that changes what the next move is — not at end
+of day. Anything sitting `Waiting` for a week without being woken gets re-triaged: dispatched, descoped,
+or parked out loud. A column that never changes is a bug in the board, not a fact about the work.
