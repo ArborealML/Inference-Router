@@ -26,6 +26,29 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
     private EngineCapability _cap = EngineCapability.Initial;
     private SwitchState _switchState = new();   // accessed via Volatile.Read/Write
 
+    // Test seam for switch-start ordering: invoked inside the transition gate immediately after the switch
+    // state is installed, so a test can read what the shared snapshot said at the exact moment the engine was
+    // claimed. Null everywhere else; one null check on a path that runs once per switch.
+    internal Action? AfterClaimForTests;
+
+    /// <summary>Pairs a switch-state change with its marker change and nothing else. The two are read by
+    /// different consumers — the scheduler's view takes "switching" from the capability marker
+    /// (RouterCore.BuildEngineInfos), the switch machinery from <c>_switchState</c> — so they have to move
+    /// together: state-installed-but-marker-absent lets a dispatch pass into an engine whose switch has
+    /// already been claimed, and marker-cleared-but-state-live tells a dispatcher the engine is free while
+    /// a model load is still running. Taken only around await-free work, so it is a short critical section,
+    /// and always acquired *after* <c>_switchLock</c>, never the other way round: EnsureLoadedAsync calls
+    /// EndSwitch while holding the switch lock, so the reverse order would deadlock it.</summary>
+    private readonly object _transitionGate = new();
+
+    /// <summary>Optional nudge to reconsider dispatch once a capability transition commits. The switch
+    /// outcome events are emitted *before* the transition commits, so a dispatcher woken by them sees the
+    /// marker still up and skips this engine; the marker clear itself emits nothing, so without this the
+    /// next look at the queue comes with the next health poll — correct, but up to a poll interval late
+    /// (§5.5). Wired to the same signal the request path uses, so there is no new event kind and no change
+    /// to any wire surface.</summary>
+    private readonly Action? _dispatchHint;
+
     /// <summary>The token a switch transaction runs on. A switch is an engine-level transaction, not a
     /// per-request one: the request that triggered it can hang up, fail, or give up at its switch ceiling,
     /// and the engine must still finish loading what the router decided to load. So the switch is tied to
@@ -56,11 +79,12 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
     }
 
     public EngineRuntime(EngineDefinition def, RouterConfig config, EventRing events, HttpMessageHandler? handler = null,
-                         IEngineLifecycleProvider? lifecycle = null)
+                         IEngineLifecycleProvider? lifecycle = null, Action? dispatchHint = null)
     {
         _def = def;
         _config = config;
         _events = events;
+        _dispatchHint = dispatchHint;
         var ownProvider = lifecycle is null;
         _lifecycle = new EngineLifecycleCoordinator(lifecycle ?? DefaultLifecycleProvider(def), ownsProvider: ownProvider);
         _maxInflight = Math.Max(1, config.Scheduler.MaxInflightPerEngine);
@@ -138,36 +162,98 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
     EngineCapability ICapabilitySource.Capability => Capability;
     bool ICapabilitySource.DeclaresModel(string model) => DeclaresModel(model);
 
-    /// <summary>Publish the result of a model probe as one snapshot. The reported array must not be mutated
-    /// afterwards — the snapshot owns it. An unchanged probe (same health, same array instance) is not a
-    /// change and does not move the version, so a poll that learned nothing cannot make a scan look unstable.</summary>
-    private void PublishProbe(bool healthy, string[] models)
+    /// <summary>Publish what a model probe learned, and only while nothing has published since the probe was
+    /// taken. <paramref name="expectedVersion"/> is read before the request goes out: a probe is a network
+    /// round trip, a model switch can land inside it, and writing the older answer afterwards would replace
+    /// fresher evidence with stale evidence — the failure the snapshot exists to prevent (§5.5). Dropping a
+    /// stale publication costs one poll interval, not an answer: the next tick reads the engine again. The
+    /// fence is re-checked inside every CAS retry, because the version can move between the read and the
+    /// exchange.</summary>
+    private void PublishProbeResult(long expectedVersion, bool healthy, string[] models)
     {
         while (true)
         {
             var cur = Volatile.Read(ref _cap);
-            if (cur.Healthy == healthy && ReferenceEquals(cur.LoadedModels, models)) return;
-            var next = cur with { Version = cur.Version + 1, Healthy = healthy, LoadedModels = models };
+            if (cur.Version != expectedVersion) return;   // someone else published; their answer is fresher
+            if (!healthy)
+            {
+                // A failed probe carries no list evidence, so it moves health only and keeps the models the
+                // engine last actually reported.
+                if (!cur.Healthy) return;
+                var unknown = cur with { Version = cur.Version + 1, Healthy = false };
+                if (Interlocked.CompareExchange(ref _cap, unknown, cur) == cur) return;
+                continue;
+            }
+            // A switch mutates this engine, so a poll that merely got an answer out of it — possibly from the
+            // process about to be stopped — is not evidence of capability. Only the switch's own proof may
+            // make a positive claim while the marker is up.
+            if (cur.SwitchingToward is not null) return;
+            var unchanged = cur.Healthy && SameModels(cur.LoadedModels, models);
+            if (unchanged) return;
+            var next = cur with
+            {
+                Version = cur.Version + 1,
+                Healthy = true,
+                LoadedModels = SameModels(cur.LoadedModels, models) ? cur.LoadedModels : models,
+            };
             if (Interlocked.CompareExchange(ref _cap, next, cur) == cur) return;
         }
     }
 
-    /// <summary>Publish a newly reported model set, leaving health and the switch marker as they are.</summary>
-    private void PublishModels(string[] models)
+    /// <summary>Publish a switch's readiness proof: the reported list and the health that came with it, in
+    /// one snapshot, while the switch marker is still up. Health is part of the proof, not a fact for the
+    /// next poll to supply: a switch that proved an engine healthy and left it reading unhealthy would be
+    /// skipped by the scheduler anyway, and the whole point of the proof is to remove that skip. The marker
+    /// is cleared only after this, so no snapshot ever reads "not switching and does not have it" for a
+    /// model that was in fact being loaded (§5.5).</summary>
+    private void PublishProof(string[] models)
     {
         while (true)
         {
             var cur = Volatile.Read(ref _cap);
-            if (ReferenceEquals(cur.LoadedModels, models)) return;
-            var next = cur with { Version = cur.Version + 1, LoadedModels = models };
+            if (cur.Healthy && SameModels(cur.LoadedModels, models)) return;
+            var next = cur with
+            {
+                Version = cur.Version + 1,
+                Healthy = true,
+                LoadedModels = SameModels(cur.LoadedModels, models) ? cur.LoadedModels : models,
+            };
             if (Interlocked.CompareExchange(ref _cap, next, cur) == cur) return;
         }
     }
 
-    /// <summary>Mirror a switch-marker change into the snapshot. The switch machinery keeps its own state;
-    /// what matters for capability is the order: at switch success the reported list is published *while the
-    /// marker is still up*, and only then is the marker cleared, so no snapshot ever reads as "not switching
-    /// and does not have it" for a model that is in fact being loaded (§5.5).</summary>
+    /// <summary>Make this engine's capability unknown: health false, the reported list kept as the last thing
+    /// the engine actually said, marker untouched. Published at every switch exit where the router had
+    /// already laid hands on the engine — stopped it, launched something, or left it restarting — because
+    /// after that the last good probe describes a process that may no longer exist. Unknown is the one
+    /// answer that cannot be wrong in either direction: the scheduler skips an unknown engine, and the
+    /// admission refusal refuses nothing while health is unknown (§5.5).</summary>
+    private void PublishUnknown()
+    {
+        while (true)
+        {
+            var cur = Volatile.Read(ref _cap);
+            if (!cur.Healthy) return;
+            var next = cur with { Version = cur.Version + 1, Healthy = false };
+            if (Interlocked.CompareExchange(ref _cap, next, cur) == cur) return;
+        }
+    }
+
+    /// <summary>Open a switch in the snapshot: the marker goes up and health becomes unknown in one
+    /// publication. What follows is a mutation of the engine, so its previous answer has to stop being
+    /// claimed at the moment the mutation is decided, not after it turns out to have failed.</summary>
+    private void PublishSwitchStarted(string model)
+    {
+        while (true)
+        {
+            var cur = Volatile.Read(ref _cap);
+            var next = cur with { Version = cur.Version + 1, SwitchingToward = model, Healthy = false };
+            if (Interlocked.CompareExchange(ref _cap, next, cur) == cur) return;
+        }
+    }
+
+    /// <summary>Move the switch marker only — used to clear it once a proof has been published. Opening a
+    /// switch goes through PublishSwitchStarted, which makes the engine unknown in the same publication.</summary>
     private void PublishSwitchMarker(string? toward)
     {
         while (true)
@@ -177,6 +263,21 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
             var next = cur with { Version = cur.Version + 1, SwitchingToward = toward };
             if (Interlocked.CompareExchange(ref _cap, next, cur) == cur) return;
         }
+    }
+
+    /// <summary>Do two reported model sets say the same thing? Content rather than identity: a probe
+    /// allocates a fresh array every tick, so comparing references made every ordinary poll a version bump,
+    /// and a scan straddling a poll then burned its one retry on a poll that had learned nothing (§5.5).
+    /// Pairwise and case-insensitive because every consumer of the list compares model names that way. The
+    /// scope is deliberate: a reorder, or a name reported twice instead of once, still counts as a change —
+    /// nothing in the router treats those as noise today.</summary>
+    private static bool SameModels(string[] a, string[] b)
+    {
+        if (ReferenceEquals(a, b)) return true;
+        if (a.Length != b.Length) return false;
+        for (var i = 0; i < a.Length; i++)
+            if (!string.Equals(a[i], b[i], StringComparison.OrdinalIgnoreCase)) return false;
+        return true;
     }
     public int Inflight => Volatile.Read(ref _inflight);
     private int _inflight;
@@ -210,17 +311,25 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
 #pragma warning disable CA2000
                 using var cts = new CancellationTokenSource(_def.Health?.TimeoutMs ?? 5_000);
 #pragma warning restore CA2000
+                // Read the version before the round trip: the publication is dropped if anything else
+                // published while the probe was in flight, so a poll can never overwrite fresher evidence
+                // with its own older answer (§5.5).
+                var capBefore = Capability.Version;
                 var models = await FetchLoadedModelsAsync(cts.Token).ConfigureAwait(false);
-                PublishProbe(true, models);
+                PublishProbeResult(capBefore, healthy: true, models);
                 Emit("engine.health", value: models.Length);
-                // Same payload family feeds the serving gauges (context window, slots).
-                await ProbeStateAsync(cts.Token).ConfigureAwait(false);
+                // Same payload family feeds the serving gauges (context window, slots). The readiness rule's
+                // verdict is deliberately not folded into Healthy: Healthy means this engine's /models probe
+                // answered, while health.expect decides whether a *switch* counts as ready — two different
+                // questions, and collapsing them would make a passing /models answer look like a passing
+                // readiness rule (§5.5). The discard is spelled out so nobody "fixes" it by accident.
+                _ = await ProbeStateAsync(cts.Token).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
                 // Health is the thing that failed: the last reported model set stays as the last thing the
                 // engine actually said, and Healthy=false makes it unknown rather than evidence of absence.
-                PublishProbe(false, Capability.LoadedModels);
+                PublishUnknown();
                 Emit("engine.health", reason: ex.Message, value: 0);
             }
             try
@@ -411,10 +520,20 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
 
     /// <summary>Loaded, and (when a profile is required) serving a window that fits it.
     /// An engine that reports no window (gauge 0) is never escalated blind.</summary>
+    /// <summary>Loaded, and (when a profile is required) serving a window that fits it.
+    /// An engine that reports no window (gauge 0) is never escalated blind.
+    /// The answer comes from one current, verified snapshot, not from the reported list alone: a list is
+    /// history once a switch has started, and health unknown means the router does not know what is running
+    /// now, so neither can license a dispatch (§5.5).</summary>
     public bool IsReadyFor(string canonical, ServingProfile? profile)
     {
-        if (!Capability.LoadedModels.Contains(canonical, StringComparer.OrdinalIgnoreCase)) return false;
-        return WindowFits(profile);
+        var cap = Capability;
+        if (!cap.Healthy || cap.SwitchingToward is not null) return false;
+        foreach (var name in cap.LoadedModels)
+        {
+            if (string.Equals(name, canonical, StringComparison.OrdinalIgnoreCase)) return WindowFits(profile);
+        }
+        return false;
     }
 
     /// <summary>Live window fits the profile (gauge 0 = unknown → never block on it).</summary>
@@ -444,7 +563,15 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
             await _switchLock.WaitAsync(ct).ConfigureAwait(false);
             try
             {
-                state = Volatile.Read(ref _switchState);
+                // The read and the claim move together. A switch's end runs outside the switch lock, so this is
+                // the point where a second waiter can meet a switch that is committing its last step: reading
+                // outside the gate lets this caller coalesce onto a readiness task that resolves a moment later
+                // and return "ready" for a model nobody loaded.
+                lock (_transitionGate)
+                {
+                    state = Volatile.Read(ref _switchState);
+                }
+
                 if (state.Model is null)
                 {
                     var newState = new SwitchState { Model = canonical, Profile = profileOverride?.Name, StartedAt = DateTimeOffset.UtcNow };
@@ -454,8 +581,17 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
                     // would strand `Ready` with no finally to settle it, and the waiters would sit out
                     // their ceiling on a switch that never ran.
                     var switchToken = _switchCts.Token;
-                    Volatile.Write(ref _switchState, newState);
-                    PublishSwitchMarker(canonical);
+                    // Marker and unknown first, both inside the gate: the scheduler reads "switching" from
+                    // the capability snapshot, so installing the switch state before the marker goes up
+                    // leaves a window in which a dispatch pass sees an engine whose switch has already been
+                    // claimed as idle, and sends a request into the engine this switch is about to stop
+                    // (§5.5).
+                    lock (_transitionGate)
+                    {
+                        PublishSwitchStarted(canonical);
+                        Volatile.Write(ref _switchState, newState);
+                        AfterClaimForTests?.Invoke();
+                    }
                     try
                     {
                         _ = Task.Run(
@@ -549,11 +685,24 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
     /// resumes.</summary>
     private void EndSwitch(SwitchState state, bool ready)
     {
-        if (ReferenceEquals(Volatile.Read(ref _switchState), state))
+        var committed = false;
+        lock (_transitionGate)
         {
-            Volatile.Write(ref _switchState, new SwitchState());
-            PublishSwitchMarker(null);
+            if (ReferenceEquals(Volatile.Read(ref _switchState), state))
+            {
+                Volatile.Write(ref _switchState, new SwitchState());
+                if (Volatile.Read(ref _switchState) is { Model: null, Profile: null })
+                {
+                    PublishSwitchMarker(null);
+                    committed = true;
+                }
+            }
+            // The reference guard runs inside the gate for a reason: without it, the switch that just
+            // finished can clear the marker a successor published in the gap between this switch writing
+            // idle state and this line, which would hide a running model load from the scheduler. A second
+            // EndSwitch for the same attempt (the finally block) sees a successor's state and does nothing.
         }
+        if (committed) _dispatchHint?.Invoke();
         state.Ready.TrySetResult(ready);
     }
 
@@ -565,6 +714,8 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
             if (!def.Catalog.TryGetValue(model, out var md))
             {
                 Emit("engine.switch_failed", model: model, reason: "no_select_command");
+                // Nothing was mutated on this path — the catalog was consulted and the switch refused — so
+                // the last probe is still a true account of the engine and health is left alone (§5.5).
                 EndSwitch(state, false);
                 // Reset, like every other exit: a request for a model this engine cannot select must not
                 // leave the engine permanently "switching", because every later waiter would join a
@@ -590,6 +741,9 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
                     detail = $"{detail} — {action}";
                 }
                 Emit("engine.switch_failed", model: model, reason: detail);
+                // A failed launch means the engine was stopped first: its previous answer described a
+                // process that is gone, so the capability becomes unknown before the marker comes down.
+                PublishUnknown();
                 EndSwitch(state, false);
                 return;
             }
@@ -605,9 +759,11 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
                     if (healthy && modelsNow.Contains(model, StringComparer.OrdinalIgnoreCase) &&
                         WindowFits(profileOverride))
                     {
-                        // Published before EndSwitch clears the marker: a snapshot in which the switch has
-                        // landed and the model is absent must never be observable (§5.5).
-                        PublishModels(modelsNow);
+                        // Published before EndSwitch clears the marker, and as a proof: the switch saw the
+                        // model reported, so it publishes the list *and* the health together rather than
+                        // leaving a successful switch sitting behind a stale unhealthy flag until the next
+                        // poll happens to answer (§5.5).
+                        PublishProof(modelsNow);
                         Emit("engine.switch_completed", model: model,
                             reason: state.Profile is null ? null : $"profile={state.Profile}",
                             value: (DateTimeOffset.UtcNow - state.StartedAt).TotalMilliseconds);
@@ -624,17 +780,27 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
                     $"never reported {model} serving: inspect what the {_lifecycle.Kind} provider started " +
                     "(for docker: containers labelled arboreal.engine=<name>) or raise the wait timeout; " +
                     "the router does not retry or fall back to another engine");
+                PublishUnknown();
                 EndSwitch(state, false);
                 return;
             }
-            try { PublishModels(await FetchLoadedModelsAsync(ct).ConfigureAwait(false)); }
-            catch { /* best-effort refresh; the switch itself succeeded */ }
+            // wait_health=false: the provider's exec says it launched, so the router asks what is loaded.
+            // A successful refresh is evidence of the list and of health, so it is published as a proof; a
+            // failed refresh leaves nothing to claim, and the engine becomes unknown rather than continuing
+            // to present the old list as current (§5.5).
+            string[]? refreshed = null;
+            try { refreshed = await FetchLoadedModelsAsync(ct).ConfigureAwait(false); }
+            catch { /* best-effort refresh: no evidence, so no claim */ }
+            if (refreshed is { } freshModels) PublishProof(freshModels);
+            else PublishUnknown();
             // wait_health=false: trust the exec, but still verify the window when a profile was requested
             // (the gauge may already reflect the new window, e.g. an engine that reloads in place).
             if (!WindowFits(profileOverride))
             {
                 Emit("engine.switch_failed", model: model,
                     reason: $"window_{ActiveContextWindow}_lt_{profileOverride!.MaxContext}");
+                // The engine has been relaunched by now, whatever the window says about it.
+                PublishUnknown();
                 EndSwitch(state, false);
                 return;
             }
@@ -646,6 +812,9 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
         catch (Exception ex)
         {
             Emit("engine.switch_failed", model: model, reason: ex.Message);
+            // An exception can escape after the engine was stopped and before anything was relaunched, and
+            // the router cannot tell from here which half happened. Unknown is the honest answer (§5.5).
+            PublishUnknown();
             EndSwitch(state, false);
         }
         finally

@@ -39,7 +39,11 @@ public sealed class RouterCore : IInferenceRouter
         _scheduler = scheduler ?? new PrefixAwareScheduler();
         _events = events ?? new EventRing(maxLiveSubscribers: config.MaxEventSubscribers);
         foreach (var (name, def) in config.Engines)
-            _engines[name] = new EngineRuntime(def, config, _events, config.HttpHandlerFactory?.Invoke(def));
+            // The dispatch hint closes the one wake gap the event feed leaves: switch outcome events are
+            // emitted before the capability transition commits, so a dispatcher woken by them still sees the
+            // engine marked as switching. Committing the transition nudges the loop again (§5.5).
+            _engines[name] = new EngineRuntime(def, config, _events, config.HttpHandlerFactory?.Invoke(def),
+                                               dispatchHint: SignalDispatch);
         foreach (var (id, td) in config.Threads)
             _threads[id] = new RouterThread(id, td.Priority, td.Weight, td.ModelAffinity);
         _capabilitySources = [.. _engines.Values];
