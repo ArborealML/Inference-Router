@@ -5,7 +5,7 @@ status: Waiting
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T10:52:00Z'
-updated_date: '2026-11-17T16:01:00Z'
+updated_date: '2026-11-17T16:11:00Z'
 labels:
   - docs
 dependencies: []
@@ -58,6 +58,8 @@ two minutes. The avatar is live and already verified from outside the form; see 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
+**Wake:** the owner presses Save in the repository's social-preview form; the public check below is then run and reported from outside GitHub's own UI.
+
 Whether the mark competes with the wordmark is judged by the person at the upload moment: that judgement is a criterion on the upload task, not here. The card's renderer, the font that resolved, and the byte size and sha256 of the committed PNG are recorded in docs/images/README.md and re-read from the file before any upload claim is repeated.
 
 Superseded log entries for this task: [board trim, 2026-11-17](https://github.com/ArborealML/Inference-Router/blob/main/backlog/archive/board-trim-2026-11-17.md).
@@ -66,15 +68,4 @@ Superseded log entries for this task: [board trim, 2026-11-17](https://github.co
 ## Comments
 
 <!-- COMMENTS:BEGIN -->
-
-created: 2026-11-17T13:56:00Z
-
----
-
-**Render and verification are done and committed: b214ce6.** The coding session replaced `docs/images/air-social.svg` in place and re-rendered; this session re-checked the claim rather than recording it: the committed PNG is 1280x640, 38,150 bytes, sha256 `cee3237b7f980d12259d6aad082a9473f12214115b36e0239d85c8147ec98f09`, and rendering the committed SVG twice reproduces those bytes exactly. Measured with the corrected measurer (the one whose ring check also sees the `#2B806C` accent): text cap heights **109 / 48 / 42 px** against AC #2's 40 px floor — the card it replaces measured 109 / 29 / 20 — ring ink 0 on all four sides at both thresholds, rightmost ink x=1200 (a 79 px margin), 3/3 bands still carrying ink at 640x320, light 4.8%. The provenance row and the cap-floor note are in [docs/images/README.md](https://github.com/ArborealML/Inference-Router/blob/main/docs/images/README.md), including the honest limit that the raster's lettering is DejaVu Sans at a cap ratio of about 0.73 em, so the 40 px floor is proven for this machine's face and not for one a browser would pick.
-
-AC #1, #2, #3 and #4 are checked on that evidence; **#5 stays open**, which is why the task is Waiting and not Done. **Wake: the owner pressing Save on TASK-29** — #5 is the public readback that only a live setting can answer. If the owner takes TASK-49 item (d) and asks for a different composition, this reopens for one render and one re-measure.
-
----
-
 <!-- COMMENTS:END -->
