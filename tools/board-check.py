@@ -56,6 +56,10 @@ EVIDENCE = re.compile(
 )
 DISPATCHED = re.compile(r"dispatch|request (id|landed|completed)|\d{2}:\d{2}(:\d{2})?Z", re.I)
 WAKE = re.compile(r"\bwake\b|\bwoken\b|\bwakes\b|not until|only after", re.I)
+# A criterion that asks for an answer, on a task parked in Waiting or Blocked, with no human assigned,
+# is a question nobody owes: the task sits there forever. An agent-assigned Decision still To Do is
+# fine (decision-14: some answers are derivable from facts), so this fires only on parked work.
+ASKS = re.compile(r"^(answer|choose|decide|confirm|approve|go ahead)|yes ?\| ?no|\b[a-d]\)\s*yes", re.I)
 
 
 def strip_markers(text: str) -> str:
@@ -201,6 +205,10 @@ def main() -> int:
                 bad(tid, "STATUS", "Blocked, and no human assignee: a task that waits on another task belongs in Waiting naming it")
         if status == "Waiting" and not WAKE.search(body):
             bad(tid, "STATUS", "Waiting with no named wake event")
+        if status in {"Waiting", "Blocked"} and not (set(assignees) - AGENT_HANDLES):
+            for i, item in enumerate(ac_items, 1):
+                if ASKS.search(re.sub(r"^#\d+\s*", "", item)):
+                    bad(tid, "STATUS", f"criterion #{i} asks for an answer and no human is assigned")
 
         # evidence on closed work
         if status == "Done" and not EVIDENCE.search(body):
