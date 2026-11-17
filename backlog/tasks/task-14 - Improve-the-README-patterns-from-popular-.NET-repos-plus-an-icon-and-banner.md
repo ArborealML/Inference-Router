@@ -3,14 +3,15 @@ id: TASK-14
 title: 'Improve the README: patterns from popular .NET repos, plus an icon and banner'
 status: Waiting
 assignee:
-  - '@claire'
   - '@qwen3.8-flash-next'
 created_date: '2026-11-16T22:26:00Z'
-updated_date: '2026-11-17T03:44:00Z'
+updated_date: '2026-11-17T05:26:00Z'
 labels:
   - docs
   - ui
-dependencies: []
+dependencies:
+  - TASK-23
+  - TASK-22
 priority: low
 ordinal: 14000
 ---
@@ -50,6 +51,8 @@ Why the image files are still missing: the README pattern review that is recorde
 The mark, banner and social preview are in the repo under docs/images/ as original vector markup, wired into the README with alt text, with provenance and palette in docs/images/README.md. What cannot be verified here: how they look. The markup is well-formed, tiny and free of external references, but rendering (browser and GitHub proxy) and taste are for a human to judge. AC #4 stays open on purpose: the build and licence badges resolve, the release badge cannot exist until a tag is cut, which is a decision on the board.
 
 The visual direction and the repository-settings upload are handed to a human decision task; the remaining README acceptance criteria wait on it.
+
+Wake condition, stated for the Waiting column: this task wakes when **TASK-23** is answered (the identity is kept, or a replacement direction is given, and the social-preview upload is done or declined) and when **TASK-22** cuts a release tag. AC #4 is the one still open, and it is open because of the tag, not because of the README: the CI badge and the licence badge resolve on the public repo (README lines 10-12, and the CI badge's workflow is green on every push to main), but a release badge cannot resolve while no release exists — the release listing on the public repo is empty, and release.yml only produces one from a tag. So nothing is waiting for a reader of this task: the wake is those two board events.
 <!-- SECTION:NOTES:END -->
 
 ## Comments
@@ -60,6 +63,14 @@ created: 2026-11-17T03:44:00Z
 ---
 
 AC #5 now holds, and it is checkable rather than a vibe: the only measured claims in the README are the benchmark paragraph, and every figure in it traces to the published run — routing +58.0/+90.6/+91.4 µs p50 and ~15 KB (README: ~58–91 µs, ~15 KB), full HTTP path +217.1/+320.7/+995.8 µs and ~26–32 KB (README: ~217–996 µs, ~26–32 KB, with the top of the range labelled as HTTP framing rather than routing), SSE relay +58.1/+97.5/+102.3 µs and ~24–25 KB (README: ~58–102 µs, ~25 KB) — with docs/benchmarks.md and SPEC 9.1 linked for the caveats. The compatibility claim is scoped to the two proxy routes in the works-today/not-built-yet table, and no other sentence in the README asserts performance.
+
+---
+
+created: 2026-11-17T05:26:00Z
+
+---
+
+Assignee reduced to one name. Two were listed (the owner and the agent): the owner's move on the README itself lives on TASK-23, so the next actor on this task is the agent who restructures it when TASK-23 lands. A task with two assignees reads as nobody.
 
 ---
 <!-- COMMENTS:END -->

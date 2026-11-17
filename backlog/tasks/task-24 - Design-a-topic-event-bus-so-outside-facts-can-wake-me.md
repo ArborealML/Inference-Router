@@ -1,10 +1,11 @@
 ---
 id: TASK-24
-title: 'Design: a topic event bus so outside facts can wake me'
+title: 'Decision: who may publish to the event bus, and where its store lives'
 status: To Do
 assignee:
   - '@claire'
 created_date: '2026-11-17T02:30:00Z'
+updated_date: '2026-11-17T05:27:00Z'
 labels:
   - tooling
   - notify
@@ -24,8 +25,16 @@ The gap: things that happen outside this session — a pull request merging, a d
 - [ ] #1 The authority model is stated: who may publish to a topic, and how a publisher proves it
 - [ ] #2 The store location and retention are decided, including what happens to events while no agent is running
 - [ ] #3 A first transport is chosen (the existing push path for research results, or a new one)
-- [ ] #4 One real source is wired end to end as the proof: a merged pull request, or a board decision landing
+- [ ] #4 The first source to wire end to end is named: a merged pull request, a board decision landing, or a machine coming back up
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Board audit: retitled from Design: to Decision: because the assignee is the owner and the only thing outstanding is their three answers — the working contract reserves the Design/plan shape for work someone executes, and human tasks for decisions. AC #4 used to read as an implementation step ("one real source is wired end to end"), which this task can never close by itself: the wiring is ordinary engineering once the answers land, and it becomes its own task with its own plan. What it now asks is the choice that has to precede that work.
+
+What it unblocks: the first slice of the bus (publisher, store, one subscription), which is engineering work that starts the moment ACs 1-3 are answered; nothing on the board is blocked in the meantime, because today the same effect is obtained by hand — a research service that pushes results, a session-to-session message channel, and a human passing word along.
+<!-- SECTION:NOTES:END -->
 
 ## Do this (about 5 minutes)
 

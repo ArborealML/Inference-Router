@@ -3,11 +3,12 @@ id: TASK-16
 title: Survey which inference APIs the router should front
 status: To Do
 assignee:
-  - '@chatswarm'
+  - '@qwen3.8-flash-next'
 created_date: '2026-11-16T23:02:00Z'
-updated_date: '2026-11-16T23:22:00Z'
+updated_date: '2026-11-17T05:26:00Z'
 labels: []
-dependencies: []
+dependencies:
+  - TASK-14
 priority: low
 ordinal: 16000
 ---
@@ -25,3 +26,15 @@ Owner ask (2026-11-16): find out which upstream inference APIs the router should
 - [ ] #3 A decision recorded in SPEC: which adapters are in for v0.2, which are explicitly out, and the engine 'kind' taxonomy that supports both
 - [ ] #4 Any new kind gets a fake-handler wire test before real engine wiring
 <!-- AC:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+created: 2026-11-17T05:26:00Z
+
+---
+
+Assignee changed from the external research service to the agent. Nothing has been dispatched: AC #1 is the dispatch itself, and it is sequenced behind TASK-14, so the next move is whoever submits the request, not the service that will answer it. The service owns a request only once it exists — the board has already used that convention on the tasks whose research actually ran. Dependency on TASK-14 recorded so the ordering is structural rather than a sentence in the description.
+
+---
+<!-- COMMENTS:END -->

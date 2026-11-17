@@ -1,11 +1,11 @@
 ---
 id: TASK-17
 title: Review, amend and merge the external rewrite of AGENTS.md
-status: Blocked
+status: Done
 assignee:
-  - '@qwen3.8-flash-next'
+  - '@claire'
 created_date: '2026-11-17T01:27:00Z'
-updated_date: '2026-11-17T02:39:00Z'
+updated_date: '2026-11-17T05:23:00Z'
 labels:
   - docs
   - process
@@ -27,7 +27,7 @@ An external deep-tier request is producing a rewrite of AGENTS.md as a pull requ
 - [x] #3 Every non-negotiable constraint is traced old-to-new, and anything the rewrite dropped or weakened is amended before merge rather than accepted
 - [x] #4 Each command in the rewritten file is run on this machine and produces what the file claims it produces
 - [x] #5 The hygiene scan is clean on the PR content and backlog/config.yml is untouched by the merge
-- [ ] #6 The PR is merged and the disposition of every rule change is recorded on the board
+- [x] #6 The PR is merged and the disposition of every rule change is recorded on the board
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -43,3 +43,15 @@ Deep review of the first two commits: not safe to merge, six findings, five corr
 
 Re-review of the pinned head: still not merge-ready, twice right again. The stale-binary rule named the wrong configuration (plain --no-build judges Debug, so the advice could have kept an agent testing old code), and the casing rule cited the future-commitments section instead of the HTTP surface section while overstating what the tests pin. Both fixed. The review confirms no rule was lost in the rewrite, the five kanban statuses are real on the branch, and the ordering fix puts the footgun before the commands. Remaining review preferences, deliberately not taken: redacted-by-default config output and a machine gate for the no-paste rule are features, not doc fixes; "operator" is left undefined because the file is read by whoever is working. Head is CI-green, AGENTS.md-only, managed regions byte-identical; ACs 1-5 are met and the merge (AC #6) waits on the human review task.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+created: 2026-11-17T05:23:00Z
+
+---
+
+Closed on the merge. AC #6 verified in two halves: the pull request is MERGED (merge commit 945fc69, 2026-11-17T04:36:17Z, single file AGENTS.md, tool-managed regions byte-identical, CI green on the merge push), and the disposition of each contested rule change is recorded in the notes above — three external review passes, each finding either fixed in the follow-up commit or declined with the reason (redacted-by-default config output and a machine gate for the no-paste rule are features, not doc fixes; "operator" left undefined on purpose). Where each *unchanged* rule landed is in the pull request description's rule-by-rule trace, which is public repository text, not board text: the board carries the contested dispositions, the merged file carries the outcome. Assignee is now the owner, who performed the merge.
+
+---
+<!-- COMMENTS:END -->

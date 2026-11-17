@@ -5,12 +5,13 @@ status: Blocked
 assignee:
   - '@claire'
 created_date: '2026-11-16T22:30:00Z'
-updated_date: '2026-11-17T02:19:00Z'
+updated_date: '2026-11-17T05:26:00Z'
 labels:
   - ci
 milestone: v0.9 - native engine lifecycle
 dependencies:
   - TASK-13
+  - TASK-22
 ordinal: 15000
 ---
 
@@ -37,6 +38,8 @@ binaries it has never produced.
 
 <!-- SECTION:NOTES:BEGIN -->
 Blocked on TASK-22 — the next move is macOS runner minutes and the release tag, which belongs to a human. Work here resumes when that task is closed.
+
+Blocked-state check: this task is blocked because a person has to grant something (macOS runner minutes) and agree the first tag; the human task that carries both answers is TASK-22, now also recorded as a dependency so the board's own dependency view agrees with the prose.
 <!-- SECTION:NOTES:END -->
 
 ## Do this (about 1 minute)

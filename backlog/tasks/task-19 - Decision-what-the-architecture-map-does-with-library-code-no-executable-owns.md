@@ -5,7 +5,7 @@ status: Done
 assignee:
   - '@claire'
 created_date: '2026-11-17T02:18:00Z'
-updated_date: '2026-11-17T03:25:00Z'
+updated_date: '2026-11-17T05:25:00Z'
 labels:
   - architecture
 dependencies: []
@@ -21,7 +21,7 @@ The map groups the library behind an entry labelled "Unidentified container", wh
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 One of A, B or C is chosen, in one line
+- [x] #1 One of A, B or C is chosen, in one line
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -38,6 +38,14 @@ created: 2026-11-17T03:25:00Z
 ---
 
 Correction after the owner looked at the map again: the unidentified group is gone (verified on the exported map at 18d7279: four zones, all group:* under the library container, every component has a container parent, and no scanned file is unclaimed). What remains is a different thing: the library container is still status draft, and groma renders hand-declared software as a ghost outline until a scan matches it. It can never match, because the C# scanner creates container facts only from application entry points and a library has none (accept prints 'no scan match'). So the box will stay outlined. If a solid box matters more than honesty about the boundary, the only shape the tool will accept is TASK-19 option C: the library's components under each executable container. Owner decision.
+
+---
+
+created: 2026-11-17T05:25:00Z
+
+---
+
+AC #1 is closed as answered, and the answer is checkable in the map files rather than only in this task's memory: option B. The library is a declared container — groma/systems/inference-router/containers/arboreal-inferencerouter/container.md, titled "Inference Router library", parent inference-router, status draft — and it holds the sixteen library components (routing core, queues, scheduler, config, events, lifecycle providers), with air-cli holding 1 and air-server holding 3: twenty components, all with a container parent, and nothing left at the map root (components/ is empty). That is the verification of the "no unidentified container" claim, done here by counting the tree rather than by trusting the earlier note.
 
 ---
 <!-- COMMENTS:END -->

@@ -2,7 +2,7 @@
 id: decision-1
 title: 'Docker authorization: refuse instead of escalating'
 date: '2026-11-16T20:40:00Z'
-status: proposed
+status: accepted
 ---
 ## Context
 
@@ -35,3 +35,4 @@ CLI path anyway.
 - The current selector's re-exec behaviour is not ported; whoever switches models by hand keeps that
   tool's behaviour, and the router's behaviour differs on purpose.
 
+- Accepted on the board audit, having sat `proposed` while already implemented: the Docker lifecycle provider refuses and reports one actionable message when it cannot reach the daemon, and nothing in the router re-execs itself under sudo. The one-time operator setup this bullet asks for is still open and is a question for the owner — the daemon-route answer on TASK-20.

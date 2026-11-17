@@ -5,7 +5,7 @@ status: To Do
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-16T20:40:00Z'
-updated_date: '2026-11-17T02:14:00Z'
+updated_date: '2026-11-17T05:27:00Z'
 labels: []
 dependencies: []
 ordinal: 2000
@@ -46,6 +46,8 @@ A deep-tier external review of the three board-only commits that recorded these 
 A second deep-tier pass over the fix slice found two more cursor holes, both now fixed: a `since` at the top of the number range overflowed checked arithmetic inside the replay helper and threw after the SSE headers were already flushed, and a cursor ahead of the ring (a reconnect after a restart) produced an empty replay and then filtered out every future event, so the feed was open but permanently silent — the cursor is now clamped to the ring head. It also found that a full feed was enforced by an exception thrown after the response had committed to SSE headers (fixed with a pre-flight 503 and a refusal that is a return value), and that the tests only ever exercised replay rather than the handover window: there is now a concurrent-producer ring test that asserts every sequence number arrives exactly once, and a feed test that subscribes before the flood. What it found that is NOT fixed stays open and is stated in SPEC rather than papered over: an ended feed says "reconnect", not "N events were lost"; an ended feed is indistinguishable from one that finished normally; a filtered reader cannot see that a terminal event was evicted from the ring; and the ring has no epoch, so a restart is not distinguishable from a quiet period. Those need a wire decision, and they are the shape of the remaining work.
 
 Moved out of In Progress: the replay slice is merged, and the remaining ticket-failure-path work is gated by nothing external — it waits for attention, so it belongs in the queue with its plan attached rather than in the WIP column.
+
+Prerequisite check on the two open criteria (board audit, no status change). AC #2 says it waits on the switch identity described as TASK-10 plan step 3 — immutable (target, epoch, completion) state that a completion can be validated against. TASK-10 is now Done, and the identity is not in the tree: the runtime holds one switch state per engine carrying model, profile and start time only, and nothing in the source names an epoch at all. SPEC 14.1 row 3 calls switch serialization and the error contract closed, and its "epoch" row (row 6) is the event-feed epoch awaiting the live-view decision on TASK-21 — a different thing. So the prerequisite AC #2 depends on is real, exists nowhere in the code, and is not owned by any open task. Flagging it, not deciding it: whether that step becomes a TASK-2 step or its own task is the code owner's call. Until someone owns it, AC #2 is not merely unstarted, it is un-buildable.
 <!-- SECTION:NOTES:END -->
 
 ## Status notes

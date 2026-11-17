@@ -1,6 +1,6 @@
 ---
 id: decision-4
-title: Board columns: Waiting, and a work-in-progress cap
+title: 'Board columns: Waiting, and a work-in-progress cap'
 date: '2026-11-17T02:20:00Z'
 status: accepted
 ---

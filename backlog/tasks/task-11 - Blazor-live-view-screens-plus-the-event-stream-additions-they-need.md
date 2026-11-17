@@ -5,12 +5,13 @@ status: Blocked
 assignee:
   - '@claire'
 created_date: '2026-11-16T20:46:00Z'
-updated_date: '2026-11-17T02:19:00Z'
+updated_date: '2026-11-17T05:26:00Z'
 labels:
   - ui
 milestone: v0.10 - live view and robustness parity
 dependencies:
   - TASK-9
+  - TASK-21
 ordinal: 11000
 ---
 
@@ -38,6 +39,8 @@ them can be built, so the stream work comes first.
 
 <!-- SECTION:NOTES:BEGIN -->
 Blocked on TASK-21 — the next move is the live-view audience, credential and wire-extension decisions, which belongs to a human. Work here resumes when that task is closed.
+
+Blocked-state check: the blocker is a person, and the human task that carries it is TASK-21 (audience, credential posture, and whether the event feed gains a loss event). The two questions restated in this task's body are context for whoever reads this task — the answers belong on TASK-21, so answering here does not move anything.
 <!-- SECTION:NOTES:END -->
 
 ## Blocked on one decision (owner)

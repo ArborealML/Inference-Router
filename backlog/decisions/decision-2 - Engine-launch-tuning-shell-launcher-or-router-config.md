@@ -2,7 +2,7 @@
 id: decision-2
 title: 'Engine launch tuning: shell launcher or router config'
 date: '2026-11-16T20:40:00Z'
-status: proposed
+status: accepted
 ---
 ## Context
 
@@ -41,3 +41,4 @@ that are not modelled yet.
 - In every option, ownership labels and the stop-others policy stay in the router: that is the safety
   rule, and it cannot live in a script the router cannot see.
 
+- Accepted on the board audit, having sat `proposed` while already implemented: option 3 is what shipped. Config declares what readiness proof can verify, the delegated `select.exec` path survives as a mutually exclusive provider, and the boundary is written into SPEC 5.3.1 rather than left as an agreement between files.
