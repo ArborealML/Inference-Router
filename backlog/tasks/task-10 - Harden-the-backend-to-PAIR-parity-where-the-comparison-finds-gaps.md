@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-16T20:46:00Z'
-updated_date: '2026-11-17T02:08:00Z'
+updated_date: '2026-11-17T03:25:00Z'
 labels:
   - backend
 milestone: v0.10 - live view and robustness parity
@@ -34,6 +34,26 @@ Event-feed correctness (exclusive replay cursor, full retained-window replay, at
 
 Cancellation had a hole that the AC checkbox hid. SPEC 5.5 says a client that hangs up takes the same path as DELETE /admin/tickets/{id}, but the HTTP layer never connected the request abort to the ticket: an abandoned stream was served to the end into a closed socket, kept its engine slot, and was counted as completed, and the pump swallowed cancellation and completed the ticket for the same reason. A stream whose engine answered an error status also left its channel open, so the caller waited forever for the error frame SPEC 6 promises. All three are fixed and pinned by fake-backed wire tests, which is what AC #8 is for: an AC that reads "cancellation reaches the engine" is only earned by a test that hangs up mid-stream. Remaining in this area, still open: the per-phase timeouts and the commit boundary (AC #2), and the fact that a disconnect is only noticed when the router next writes, so a caller that dies during a quiet stretch is noticed late.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+created: 2026-11-17T03:25:00Z
+
+---
+
+Flaky under load, twice in a row at 18d7279 while the box was busy: EndToEndTests.A_Switch_That_Never_Becomes_Ready_Fails_Once_With_An_Actionable_Message fails the Assert.NotNull on the engine.switch_failed event in a full -m:1 run but passes 3/3 in isolation. It is time-based (WaitTimeoutMs = 1500 with a 20 s outer wait), and it is the AC #2 phase-timeout area: a test whose assertion depends on wall-clock luck will read as a regression every time the runner is loaded. Make the switch's readiness clock injectable, or assert on the event after awaiting the terminal state rather than racing it.
+
+---
+
+created: 2026-11-17T03:25:00Z
+
+---
+
+Correction to the previous comment: observed once, not twice — the next full run was green. Still worth de-flaking before it becomes a regression everyone re-runs.
+
+---
+<!-- COMMENTS:END -->
 
 ## Plan (reordered after the deepest tier plan review; each step ships with fake-backed tests per AC #8)
 

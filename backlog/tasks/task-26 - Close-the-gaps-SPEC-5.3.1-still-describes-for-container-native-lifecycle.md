@@ -5,7 +5,7 @@ status: To Do
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T02:54:00Z'
-updated_date: '2026-11-17T02:54:00Z'
+updated_date: '2026-11-17T03:25:00Z'
 labels:
   - engine
   - lifecycle
@@ -29,10 +29,13 @@ TASK-1 put the seam and the first Docker provider into main; §5.3.1 describes m
 - [ ] #4 A failed switch is latched: a dispatcher wake-up cannot retry it, and the latch is cleared by an explicit operator action or a config change
 - [ ] #5 Daemon event subscription (or a documented polling substitute) replaces the assumption that nothing else changed the engine
 - [ ] #6 The Windows named-pipe transport is implemented or explicitly declined in SPEC with the reason
+- [ ] #7 A switch whose start call fails leaves no container behind: the provider reinspects the id it was given and removes what its own labels claim, instead of orphaning a dead container on the host
 <!-- AC:END -->
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
 Also waiting on the daemon-route answer in TASK-20 for end-to-end verification against a real Docker host; everything else is testable against the fake daemon handler.
+
+External review of the Docker provider (extra-high tier) landed in 18d7279: named interface for published ports (host_ip, loopback default), router_id required, stopped containers removed (remove_stopped), stop accepts 304/404/409, start accepts 304 only (the generic 404-for-POST swallow used to report a launch that never happened), malformed 200 list is a failed ownership query, list filter serialised through the source-generated context, ids URL-escaped, proxy/redirect disabled, bare socket path treated as a socket. What that review found and is STILL open here: an orphan container left by a create that succeeded and a start that failed (no reinspect, no remove, and the labels make it ours to clean up); image identity pinning (presence only, no Id/RepoDigests/platform compare); mounts/GPU/resource limits; exec frame demux, logs, daemon event subscription; npipe; the latched-failure rule. Per-engine (not per-target) single-flight is now stated in SPEC 5.3.1 rather than left implied.
 <!-- SECTION:NOTES:END -->

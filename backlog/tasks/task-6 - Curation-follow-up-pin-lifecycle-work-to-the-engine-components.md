@@ -5,7 +5,7 @@ status: To Do
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-16T20:40:00Z'
-updated_date: '2026-11-17T03:10:00Z'
+updated_date: '2026-11-17T03:25:00Z'
 labels: []
 dependencies:
   - TASK-1
@@ -54,4 +54,6 @@ The lifecycle work that was gating this has started, so the map will need pinnin
 The lifecycle provider seam and the Docker provider are in main, so the map can pin the new lifecycle components once the map-model decision lands. Still blocked on TASK-19.
 
 Unblocked: the map-model decision is made and the library is a container (TASK-19). What is left here is the pinning the original task asked for — the new lifecycle seam (provider interface, coordinator, delegated-exec and Docker providers) now has components, and the map should say which files each owns; the duplicate air-cli / cli containers the earlier scan produced are also gone.
+
+Map state at 18d7279 (checked by exporting the map and reading its zones): no unidentified group remains; every component has a container parent, all 20 src files are claimed by a component, and the only zones are the four groups under the library container. The residual is that the library container is a permanent ghost: groma matches a declared container to a scan only when the scanner produces a container fact, and the C# scanner produces those only from application entry points, so a library never gets one and 'groma accept' prints 'no scan match'. The box will render outlined for as long as the library is one container. Pinning work to components (this task) is unaffected.
 <!-- SECTION:NOTES:END -->

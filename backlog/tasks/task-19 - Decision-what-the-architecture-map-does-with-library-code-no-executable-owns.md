@@ -5,7 +5,7 @@ status: Done
 assignee:
   - '@claire'
 created_date: '2026-11-17T02:18:00Z'
-updated_date: '2026-11-17T03:10:00Z'
+updated_date: '2026-11-17T03:25:00Z'
 labels:
   - architecture
 dependencies: []
@@ -29,6 +29,18 @@ The map groups the library behind an entry labelled "Unidentified container", wh
 <!-- SECTION:NOTES:BEGIN -->
 Answered and implemented: option B. The library is now a declared container under the system, and all sixteen of its components (routing core, queues, scheduler, config, events, lifecycle providers) were moved into it through the groma CLI, so nothing in the library hangs off an unidentified container. The four empty project-named container shells the scanner had left behind are gone, and the two flows that named system-level components were rebuilt with the new links. One thing the CLI would not do: the container stays status draft because no scan matches it to the library project (accept needs that match), so it renders as a ghost box rather than a solid one. Repeated moves also required clearing and restoring each component's authored text, because the CLI only moves components with no meaning; descriptions and overviews were re-authored from the pre-change copies and are present again. Map commit 69a1cba.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+created: 2026-11-17T03:25:00Z
+
+---
+
+Correction after the owner looked at the map again: the unidentified group is gone (verified on the exported map at 18d7279: four zones, all group:* under the library container, every component has a container parent, and no scanned file is unclaimed). What remains is a different thing: the library container is still status draft, and groma renders hand-declared software as a ghost outline until a scan matches it. It can never match, because the C# scanner creates container facts only from application entry points and a library has none (accept prints 'no scan match'). So the box will stay outlined. If a solid box matters more than honesty about the boundary, the only shape the tool will accept is TASK-19 option C: the library's components under each executable container. Owner decision.
+
+---
+<!-- COMMENTS:END -->
 
 ## Do this (about 5 minutes)
 
