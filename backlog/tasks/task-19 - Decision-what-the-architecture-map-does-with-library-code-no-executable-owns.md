@@ -1,10 +1,11 @@
 ---
 id: TASK-19
 title: 'Decision: what the architecture map does with library code no executable owns'
-status: To Do
+status: Done
 assignee:
   - '@claire'
 created_date: '2026-11-17T02:18:00Z'
+updated_date: '2026-11-17T03:10:00Z'
 labels:
   - architecture
 dependencies: []
@@ -22,6 +23,12 @@ The map groups the library behind an entry labelled "Unidentified container", wh
 <!-- AC:BEGIN -->
 - [ ] #1 One of A, B or C is chosen, in one line
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Answered and implemented: option B. The library is now a declared container under the system, and all sixteen of its components (routing core, queues, scheduler, config, events, lifecycle providers) were moved into it through the groma CLI, so nothing in the library hangs off an unidentified container. The four empty project-named container shells the scanner had left behind are gone, and the two flows that named system-level components were rebuilt with the new links. One thing the CLI would not do: the container stays status draft because no scan matches it to the library project (accept needs that match), so it renders as a ghost box rather than a solid one. Repeated moves also required clearing and restoring each component's authored text, because the CLI only moves components with no meaning; descriptions and overviews were re-authored from the pre-change copies and are present again. Map commit 69a1cba.
+<!-- SECTION:NOTES:END -->
 
 ## Do this (about 5 minutes)
 

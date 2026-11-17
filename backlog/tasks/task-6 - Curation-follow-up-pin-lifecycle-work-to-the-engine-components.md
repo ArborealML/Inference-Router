@@ -1,11 +1,11 @@
 ---
 id: TASK-6
 title: 'Curation follow-up: pin lifecycle work to the engine components'
-status: Blocked
+status: To Do
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-16T20:40:00Z'
-updated_date: '2026-11-17T02:54:00Z'
+updated_date: '2026-11-17T03:10:00Z'
 labels: []
 dependencies:
   - TASK-1
@@ -52,4 +52,6 @@ Two things gate this: the map-model decision, and the lifecycle work it is meant
 The lifecycle work that was gating this has started, so the map will need pinning to the engine components once the provider seam settles.
 
 The lifecycle provider seam and the Docker provider are in main, so the map can pin the new lifecycle components once the map-model decision lands. Still blocked on TASK-19.
+
+Unblocked: the map-model decision is made and the library is a container (TASK-19). What is left here is the pinning the original task asked for — the new lifecycle seam (provider interface, coordinator, delegated-exec and Docker providers) now has components, and the map should say which files each owns; the duplicate air-cli / cli containers the earlier scan produced are also gone.
 <!-- SECTION:NOTES:END -->
