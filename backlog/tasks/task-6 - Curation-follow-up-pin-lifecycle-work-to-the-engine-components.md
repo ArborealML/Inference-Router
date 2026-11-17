@@ -5,7 +5,7 @@ status: To Do
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-16T20:40:00Z'
-updated_date: '2026-11-17T05:26:00Z'
+updated_date: '2026-11-17T06:05:00Z'
 labels: []
 dependencies:
   - TASK-1
@@ -22,7 +22,7 @@ After the native engine-lifecycle work lands, re-scan and make sure the map show
 <!-- AC:BEGIN -->
 - [ ] #1 Each lifecycle component in the map names the source files it owns: the provider seam, the coordinator, the delegated-exec provider and the Docker provider
 - [ ] #2 The relationships from those components to EngineRuntime are on the map, so a reader can follow a switch from the runtime to the provider that performs it
-- [ ] #3 The map edit is approved by @claire before commit, since the map is a reviewed artifact rather than agent scratch
+- [ ] #3 Any re-parenting that changes the map model is recorded as a decision record, so the reasoning is reversible without being re-derived
 <!-- AC:END -->
 
 ## Implementation Notes
