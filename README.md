@@ -233,7 +233,10 @@ archive. An artifact for a platform that is not declared, an artifact named for 
 leg folder with a stranger in it, or the same filename arriving from two artifacts fails the gate instead
 of being published or quietly overwritten. The release is created as a draft by the API call that answers
 with its id and upload address, so every later call — the uploads, the checks, publication, cleanup — is
-addressed by that id and not by the tag, which finds published releases only. Before anything is made
+addressed by that id and not by the tag, which finds published releases only. That answer is read as a
+whole before a byte is uploaded: it has to carry this tag, as a draft, with the prerelease flag that was
+asked for, and its upload address has to name this repository and that release id. The release title is
+the tag; GitHub writes the notes body. Before anything is made
 public the tag is resolved again and has to still name the commit the builds ran on, and the draft is read
 back from GitHub in one list of its own assets: each asset's upload state, byte size and stored-bytes
 digest against the file that was uploaded, and the draft and prerelease flags; that whole check runs a
