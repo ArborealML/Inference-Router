@@ -62,6 +62,21 @@ Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
   auto-switch test proves a lifecycle command changes what an engine serves, and the catalogue probe path
   (`models_endpoint`; `/models` by default, `/v1/models` for OpenAI-only engines) is pinned by samples and
   a loader test.
+- v0.10 — ticket lifetime (§5.5). The caller's `CancellationToken` is now wired to the ticket at
+  enqueue: a client that hangs up takes the same path as an explicit ticket cancel, so a queued request
+  loses its place and an in-flight one cancels the upstream engine call and releases the engine slot
+  (`cancelled`). A ticket now has exactly **one** terminal transition — complete, fail, cancel, queue
+  rejection and queue-deadline all claim it atomically, later racers are ignored — so exactly one of
+  `request.completed` / `request.failed` / `request.cancelled` is emitted and reserved capacity is
+  released once. `max_queue_time` is enforced by a timer armed at enqueue rather than a dispatch-time
+  check. Dispatch is level-triggered on engine state as well as edge-triggered by arrival. Shutdown
+  gives still-queued tickets a terminal state instead of leaving relays open. The ticket table is bounded
+  to the 4096 most recent finished tickets. Two defects the new tests caught: a request enqueued before
+  an engine's first health probe sat in the queue beside a free slot until something unrelated woke the
+  dispatcher, and `Task.Run(…, _shutdown.Token)` handed back a never-running task on shutdown while the
+  thread and engine slots reserved at pop stayed held. 92 tests green; test classes no longer run in
+  parallel (in-process routers and servers starve each other's dispatch threads, which showed up as
+  lifetime timeouts unrelated to the code under test).
 
 ## 1. Overview
 
@@ -401,6 +416,24 @@ engine forks land; the scheduler interface will not change shape.
   (`maxInflight = ceil(Weight)`), so heavy threads can't monopolize slots.
 - **Overflow**: per-model queue cap → reject with `408`-mapped error code and
   event `queue.rejected`.
+- **Cancellation**: the caller's `CancellationToken` is wired to the ticket at enqueue, so a client
+  that hangs up (an HTTP disconnect is `RequestAborted`) takes the same path as
+  `DELETE /admin/tickets/{id}`: a queued request gives its place back, an in-flight request cancels the
+  upstream engine call and releases the engine slot. Resulting code: `cancelled`.
+- **One terminal state**: every sink (complete, fail, cancel, queue rejection, queue deadline,
+  shutdown) claims the ticket's terminal transition atomically; the first wins and later racers are
+  ignored. A ticket therefore emits exactly one of `request.completed` / `request.failed` /
+  `request.cancelled`, and capacity reserved for it is released once.
+- **Queue deadline is a timer**: `max_queue_time` arms a timer when the request is enqueued. It bounds
+  the *wait* only — after dispatch the deadline no longer applies. A dispatch-time check is not
+  sufficient: a busy engine gives the dispatcher no reason to re-examine the queue.
+- **Dispatch is level-triggered on engine state**: the dispatcher wakes on arrival, on capacity
+  release, and on `engine.health` / `engine.profile` / `engine.switch_*`. A request that arrived before
+  the first health probe is dispatched when health arrives, not when the next request arrives.
+- **Shutdown**: in-flight work is cancelled and every still-queued ticket is given a terminal
+  `cancelled` state, so open relays end rather than waiting for the process to exit.
+- **Ticket retention**: finished tickets stay answerable on the admin surface for the most recent 4096
+  (the event ring's capacity); older ones are evicted so the ticket table cannot grow with traffic.
 
 ## 6. HTTP surface (server project)
 

@@ -32,6 +32,11 @@ public class FakeEngineHandler : HttpMessageHandler
     public string CompletionErrorBody { get; set; } =
         """{"error":{"type":"invalid_request_error","message":"messages must be a non-empty list"}}""";
 
+    /// <summary>Completions the router cancelled upstream while the fake was holding them. Ticket
+    /// lifetime tests assert a hung-up caller stops the engine request, not just the client side.</summary>
+    private int _cancelledCompletions;
+    public int CancelledCompletions => Volatile.Read(ref _cancelledCompletions);
+
     private string[] ActiveLoadedModels()
     {
         if (LoadedModelsFile is { Length: > 0 } path && File.Exists(path))
@@ -98,7 +103,7 @@ public class FakeEngineHandler : HttpMessageHandler
             if (HoldCompletions)
             {
                 try { await _gate.Task.WaitAsync(cancellationToken); }
-                catch (OperationCanceledException) { }
+                catch (OperationCanceledException) { Interlocked.Increment(ref _cancelledCompletions); }
             }
             ExecutionOrder.Add(tag);
             if (body.Contains("\"stream\":true"))

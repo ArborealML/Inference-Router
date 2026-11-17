@@ -87,6 +87,18 @@ public sealed class ModelQueue
     }
 
     /// <summary>Re-sort in place after a thread priority change; stable on enqueue sequence.</summary>
+    /// <summary>Takes everything still waiting (used at shutdown, where each queued ticket needs an
+    /// explicit terminal transition because it has no execution to cancel).</summary>
+    public List<QueuedRequest> DrainAll()
+    {
+        lock (_lock)
+        {
+            var all = new List<QueuedRequest>(_heap);
+            _heap.Clear();
+            return all;
+        }
+    }
+
     public void Resort()
     {
         lock (_lock) _heap.Sort(HeadFirst);

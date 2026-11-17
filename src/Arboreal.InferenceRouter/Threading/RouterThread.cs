@@ -112,6 +112,27 @@ public sealed class RouterTicket
     internal readonly TaskCompletionSource<byte[]> CompletionTcs =
         new(TaskCreationOptions.RunContinuationsAsynchronously);
     internal CancellationTokenSource? ExecCts;
+    /// <summary>Wiring from the caller's cancellation token to this ticket's cancel path. Dropped
+    /// when the ticket reaches a terminal state, because the registration is rooted in the caller's
+    /// token — for a server request that is the connection's abort token, which outlives the request.</summary>
+    internal CancellationTokenRegistration CallerLink;
+    /// <summary>Arms the queue-wait bound for a request that declared max_queue_time; disposed when
+    /// the ticket reaches a terminal state.</summary>
+    internal System.Threading.Timer? QueueTimer;
+    private int _terminal;
+    /// <summary>Claims the ticket's one terminal transition (complete, fail, cancel or queue
+    /// rejection). Every sink goes through this, so a ticket cannot be reported both completed and
+    /// failed — which is a real race in streaming, where a late pump cancellation meets a write that
+    /// already finished.</summary>
+    internal bool TryEnterTerminal() => Interlocked.CompareExchange(ref _terminal, 1, 0) == 0;
+    internal bool IsTerminal => Volatile.Read(ref _terminal) != 0;
+    internal void DetachWaitHooks()
+    {
+        // The queue timer is disposed by the code that created it (RouterCore owns it); this only
+        // drops the registration wired to the caller's token.
+        try { CallerLink.Dispose(); } catch (ObjectDisposedException) { }
+        CallerLink = default;
+    }
     /// <summary>Streaming responses: ordered upstream byte chunks (SSE frames as received).
     /// Null until admission creates the channel for a streaming request.</summary>
     public System.Threading.Channels.Channel<ReadOnlyMemory<byte>>? StreamChannel

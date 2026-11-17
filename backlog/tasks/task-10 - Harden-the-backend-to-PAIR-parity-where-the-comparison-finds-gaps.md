@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-16T20:46:00Z'
-updated_date: '2026-11-16T23:22:00Z'
+updated_date: '2026-11-16T23:55:00Z'
 labels:
   - backend
 milestone: v0.10 - live view and robustness parity
@@ -100,13 +100,35 @@ and AC #10 being done. AC #10 is open and belongs to step 4.
 <!-- AC:BEGIN -->
 - [x] #1 URI/path composition tested (base endpoint + probe paths, trailing slash, query string, relative `health_probe.path` resolution)
 - [ ] #2 Request bodies bounded; each phase (connect, headers, first token, idle stream) has a timeout; an explicit commit boundary decides whether in-flight work is recovered or declared lost
-- [ ] #3 Cancellation reaches the engine and releases reserved capacity; a queued ticket can neither spin nor starve (aging bound pinned by a test)
+- [x] #3 Cancellation reaches the engine and releases reserved capacity; a queued ticket can neither spin nor starve (aging bound pinned by a test)
 - [ ] #4 Switches serialized and coalesced; every failure path resets state; the error contract (codes + payload shape) pinned by a table test
 - [ ] #5 Ingress auth/TLS/rate caps and engine API keys enforced; resource identity fail-closed (unlabelled/unowned containers refused)
 - [ ] #6 Config reload atomic with the config pin recorded; engine crash produces readiness cleanup and a restart generation
 - [ ] #7 Telemetry bounded (event ring, request journal) with consumer-detectable sequence gaps
 - [ ] #8 Each fix ships with a fake-backed test; suite green, zero analyzer warnings, zero-warning AOT publish
 <!-- AC:END -->
+
+## Lifetime slice (AC #3) — what landed
+
+- The caller's `CancellationToken` is wired to the ticket at enqueue, so a client disconnect takes the
+  same path as an explicit cancel: a queued request gives its place back, an in-flight one cancels the
+  upstream engine call and releases the engine slot.
+- Exactly one terminal transition per ticket (complete / fail / cancel / queue rejection / queue
+  deadline / shutdown all claim it atomically), so exactly one terminal event is emitted and reserved
+  capacity is released once.
+- `max_queue_time` is now a timer armed at enqueue; it bounds the wait, not the execution.
+- Dispatch is level-triggered on engine state (`engine.health`, `engine.profile`, `engine.switch_*`).
+- Shutdown fails still-queued tickets instead of leaving relays open; the ticket table is bounded to the
+  4096 most recent finished tickets.
+
+Two defects the new tests exposed (both real, both pre-existing): a request enqueued before an engine's
+first health probe sat in the queue beside a free slot until something unrelated woke the dispatcher; and
+`Task.Run(…, _shutdown.Token)` returned a never-running task during shutdown while the thread and engine
+slots reserved at pop stayed held. Pinned in `TicketLifetimeTests` (5 tests).
+
+Still open in AC #2: request-body cap, per-phase timeouts (connect / headers / first token / idle stream),
+and the explicit commit boundary — the shipped post-commit framing (error frame then `[DONE]`) is what the
+docs currently describe, so the boundary change updates them with it.
 - [x] #9 The catalogue probe path is configurable (today it asks `/models` while inference goes to
   `/v1/models`); shipped configs and the fake engine stop relying on that asymmetry
 - [ ] #10 When every engine is unhealthy the OpenAI surface returns a prompt no-capacity error
