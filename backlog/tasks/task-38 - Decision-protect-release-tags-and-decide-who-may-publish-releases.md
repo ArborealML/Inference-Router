@@ -5,7 +5,7 @@ status: To Do
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T09:11:00Z'
-updated_date: '2026-11-17T10:58:00Z'
+updated_date: '2026-11-17T11:31:00Z'
 labels:
   - release
   - security
@@ -76,6 +76,18 @@ created: 2026-11-17T10:58:00Z
 ---
 
 Reassigned under decision-16: this was parked as a browser settings act, and it is not one. Measured on this repository: `GET /repos/{owner}/{repo}/git/tag-protection/branches` answers 404, so the tag-protection endpoints are unavailable here; `GET /repos/{owner}/{repo}/rulesets` answers `[]`, so a **repository ruleset** matching `v*` is the scriptable way to get what the review asked for (block delete and non-fast-forward moves on release tags). The ruleset API is a real mutation of a public repository: state the ruleset created, and read it back after. 'Who may publish' stays a written sentence: admins plus the Actions token, least privilege, with the token's own permissions being settled in [TASK-44](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-44%20-%20Close-what-the-eighth-release-gate-review-found-round-8-over-v0.12.15.md) AC #4, not here.
+
+---
+
+created: 2026-11-17T11:31:00Z
+
+---
+
+Ownership, settled: as with TASK-45, this is a setting rather than YAML, but it is reachable —
+`GET .../git/tag-protection/branches` answers 404 on this repository while `GET .../rulesets` answers `[]`, so a
+repository ruleset on `v*` is created over REST with the token this machine already holds (measured
+`admin: true`). Agent work under decision-16, created and read back in the same report, and reversible. Not a
+prerequisite the canary can fake: TASK-42 proves nothing about tag protection unless this lands first.
 
 ---
 <!-- COMMENTS:END -->

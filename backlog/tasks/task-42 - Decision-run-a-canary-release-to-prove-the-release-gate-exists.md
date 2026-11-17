@@ -5,7 +5,7 @@ status: Waiting
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T09:53:00Z'
-updated_date: '2026-11-17T11:06:00Z'
+updated_date: '2026-11-17T11:31:00Z'
 labels:
   - release
   - ci
@@ -70,6 +70,25 @@ created: 2026-11-17T11:06:00Z
 ---
 
 Hardening from the TASK-39 answer: the canary is also the test bed for consumer verification. On the published canary, run the readback against the live URLs and try the documented user verification path; record the gh version used. Measured here: gh 2.46.0 has none of `gh release verify`, `gh release verify-asset`, `gh attestation` (each exits 1), so if the release README is to tell users those commands, the canary is where the version floor gets established — and if it tells them `sha256sum` plus a REST listing, the canary proves that works too.
+
+---
+
+created: 2026-11-17T11:31:00Z
+
+---
+
+Canary evidence items, from the seventh review's disposition
+(aa7ad23, fd76021). Record these from the live run rather than reasoning about them afterwards:
+(i) what `.target_commitish` says on the created release — this is the only way to see what the omitted parameter
+actually resolved to, and it is the item that replaces the rejected `target_commitish` hardening on TASK-44;
+(ii) whether the workflow-write guard fires at all for a tag cut at the head of main — by the endpoint note it
+should not, because the resolved target is the default-branch head and that diff is empty by construction, but
+our own tag commits touch `.github/workflows/release.yml`, so the answer matters and only a run gives it;
+(iii) whether `contents: write` from `GITHUB_TOKEN` suffices for asset upload and the un-draft `PATCH` in practice.
+
+Ownership caution: the canary cannot verify the two repository settings on TASK-45 (immutable releases) and
+TASK-38 (a `v*` ruleset) unless those are done **first**. A canary run against an unprotected repository proves
+nothing about protection that is not switched on, so the order is 45 and 38, then 42.
 
 ---
 <!-- COMMENTS:END -->

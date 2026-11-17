@@ -5,7 +5,7 @@ status: To Do
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T10:52:00Z'
-updated_date: '2026-11-17T11:06:00Z'
+updated_date: '2026-11-17T11:31:00Z'
 labels:
   - ci
   - release
@@ -59,6 +59,20 @@ created: 2026-11-17T11:06:00Z
 ---
 
 TASK-39's answer makes this a prerequisite rather than an option, and sharpens what to write in SPEC: immutability locks published assets and the tag while the release exists, and it does not lock drafts, the pre-publish window, the title or notes, or the prerelease/latest flags — and it will freeze a malicious set just as faithfully as a good one. Its attestation binds the GitHub-published release set, not the trustworthiness of the source, the approval, or the build execution.
+
+---
+
+created: 2026-11-17T11:31:00Z
+
+---
+
+Ownership, settled: the coding session reads this as an owner Decision because it is a
+repository setting and nothing in YAML. It is not an owner act here: it is a REST call from a machine whose
+working token already answers `admin: true` for this repository (measured today), so under decision-16 it is
+agent work — `gh api -X PUT repos/ArborealML/Inference-Router/immutable-releases`, then the same GET to prove the
+state moved. What makes it reportable rather than private: it changes a public repository's supply-chain posture,
+it reverses with `DELETE`, and it must be visible in SPEC and in the commit message before any release is published.
+The owner keeps the veto, not the keystrokes.
 
 ---
 <!-- COMMENTS:END -->
