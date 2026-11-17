@@ -45,5 +45,10 @@ that adjacency is why this stays a separate task rather than growing a fifth cri
 <!-- SECTION:NOTES:BEGIN -->
 **Closed at 20a06fa** (AC #2, #3): CapabilityScanTests pins the coherence rule deterministically, and the capability read is one Volatile.Read(ref _cap) per engine per decision (Engines/EngineRuntime.cs:104-110). **Wire-visible posture, correct wherever it is restated:** an unservable model is refused 503 model_unavailable, not 429, and the feed carries one queue.rejected with reason model_unavailable and no request.enqueued. Queue overflow keeps 429 queue_overflow; the defect that overflow also emits request.enqueued is TASK-56, not this one.
 
+**Wording this half has to get right (from the plan review of TASK-55):** at the head of a queue the hopeless-model decision
+uses CapabilityScan.DefinitelyHopeless, not the scheduler's internal no_available_engine reason; and a ticket already queued
+that becomes unserviceable emits **request.failed** with reason model_unavailable, not queue.rejected — queue.rejected is the
+admission-time shape, and TASK-56 pins one event per refusal.
+
 **Wake: TASK-55, TASK-56 and TASK-57 closing.** This half acts on the refusal predicate, so it only goes in once that predicate is accurate — a quiet-poll version, a gated switch transition, and a snapshot nothing can mutate underneath it. Until then the queued-ticket remedy would be written against a moving predicate.
 <!-- SECTION:NOTES:END -->
