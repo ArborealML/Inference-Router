@@ -7,7 +7,7 @@ status: To Do
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T02:26:00Z'
-updated_date: '2026-11-17T06:06:00Z'
+updated_date: '2026-11-17T06:56:00Z'
 labels:
   - docs
 dependencies: []
@@ -44,8 +44,8 @@ Answer format: `TASK-23: keep, card set` or `TASK-23: replace: <direction>`.
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The mark, banner and social card are kept as they are, or replaced with a stated direction - decided against the rendered files, not the markup
-- [ ] #2 The social card is exported to PNG at 1280x640, and an avatar-ready mark variant exists with an explicit #10241F field, #F3F7F2 strokes and edge padding so a circular crop loses nothing
+- [x] #1 The mark, banner and social card are kept as they are, or replaced with a stated direction - decided against the rendered files, not the markup
+- [x] #2 The social card is exported to PNG at 1280x640, and an avatar-ready mark variant exists with an explicit #10241F field, #F3F7F2 strokes and edge padding so a circular crop loses nothing
 - [ ] #3 The exported card is checked as an image: all three text lines legible at 1280x640, nothing clipped, the mark not competing with the wordmark
 - [ ] #4 Provenance for the exports is recorded next to the source, so a raster is traceable to the SVG it came from
 <!-- AC:END -->
@@ -68,6 +68,14 @@ created: 2026-11-17T05:55:00Z
 ---
 
 Owner instruction, so reassigned — with the one human-only step split out rather than silently dropped. Judging the mark and banner, choosing a palette direction, and exporting the social card to PNG/JPEG are all doable here (the SVGs are in-repo vector source). Setting GitHubs social-preview image and the repository avatar is not: it is an authenticated web-settings upload with no API, so it now lives as TASK-29, one minute, one upload. AC #2 stays about that upload.
+
+---
+
+created: 2026-11-17T06:56:00Z
+
+---
+
+AC #1 checked on evidence, not on the answer: the mark is now the organisation identity — the live avatars colour signature matches air-mark-512.png to a tenth of a percent — so the identity was adopted rather than replaced. AC #2 checked: the avatar-ready variant is committed (docs/images/air-mark-avatar.svg) and both PNGs exist, rendered by resvg 2.6.2 in a scratch directory outside the repository, byte-identical on re-render: air-social-1280x640.png 1280×640 30,842 B sha256 b02b6d32…97e9, air-mark-512.png 512×512 9,935 B sha256 2e1b5e02…820a. Both far under the 1 MB ceiling.\n\nAC #3 deliberately NOT checked: it asks whether the exported card reads well, and that is a human judgement I have not made. One fact the judgement needs: this box has exactly one proportional sans face installed (DejaVu Sans), and the cards declared stack — system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif — resolves to none of them. resvgs default fallback here is DejaVu Sans **Mono**, so the exports pin the fallback to DejaVu Sans; the lettering in the PNG is DejaVu Sans, not the face your browser picks for that stack. Geometry, colours and layout are faithful; the type is a substitution. If the card typography matters, export it in your browser instead, or tell me which face to pin.\n\nAC #4 left open on a fence, not on work: the provenance is written inside the variant SVG itself, because the provenance note beside it (docs/images/README.md) sits outside the path this session was given for images. One added line closes it.
 
 ---
 <!-- COMMENTS:END -->

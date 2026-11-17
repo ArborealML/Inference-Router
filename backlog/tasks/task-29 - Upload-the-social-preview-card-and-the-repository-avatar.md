@@ -1,17 +1,17 @@
 ---
 id: TASK-29
 title: Upload the social preview card and the organisation avatar
-status: To Do
+status: Blocked
 assignee:
   - '@claire'
 created_date: '2026-11-17T05:59:00Z'
-updated_date: '2026-11-17T06:05:00Z'
+updated_date: '2026-11-17T06:56:00Z'
 labels:
   - docs
 dependencies:
   - TASK-23
 priority: low
-ordinal: 29000
+ordinal: 23000
 ---
 
 ## Description
@@ -97,6 +97,22 @@ already lives.
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [ ] #1 The social-preview image is set on the repository settings page, or declined with a one-line reason
-- [ ] #2 The organisation profile picture is set from the avatar-ready mark (TASK-23), or declined with a one-line reason
+- [x] #2 The organisation profile picture is set from the avatar-ready mark (TASK-23), or declined with a one-line reason
 - [ ] #3 Both are confirmed from outside the settings form: the opengraph preview URL renders the new card, and the org page shows the new mark
 <!-- AC:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+created: 2026-11-17T06:56:00Z
+
+---
+
+Answer received: `card set, avatar set`. Checked AC #2 (avatar) and NOT AC #1 (card), because only one of the two is true on the public side, and this task is graded on what a visitor sees, not on what was pressed.
+
+**Avatar — confirmed, from outside the form.** `https://github.com/ArborealML.png?size=512` returns 460×460 RGB whose colour histogram is 82.4% near-black field and 16.5% near-white mark. Our export `air-mark-512.png` is 82.4% #10241F and 16.7% #F3F7F2 — the same ratio to a tenth of a percent, with GitHub re-encoding the palette slightly (#101010 / #F3F3F3 instead of #10241F / #F3F7F2). That is the mark.
+
+**Card — not live.** Two independent checks: the repository page still serves `<meta property="og:image" content="https://repository-images.githubusercontent.com/1460450305/…">`, which is GitHubs **auto-generated repository image**, not an upload; and that images histogram is 87.6% white with 4.4% near-black — the inverse of our card, which is 93.6% #10241F field with 3.7% #F3F7F2 ink. A custom social preview would make the page point at `opengraph.githubassets.com/…` and serve the dark field. Re-checked after a pause, still the default.\n\nWhat to do: repo Settings → Options → Social preview → confirm the image is still shown in the box **and that Save was pressed** — the form silently keeps the previous state if Save is missed, and the removal/add state is easy to miss because the page shows a thumbnail either way. Then the check above should flip to the dark field; if you want the card ready to re-pick, the export is at `.local/exports/air-social-1280x640.png` (30,842 bytes, sha256 b02b6d32…97e9) and the mark at `.local/exports/air-mark-512.png` (9,935 bytes, sha256 2e1b5e02…820a). Stays Blocked: only a person can press that button.
+
+---
+<!-- COMMENTS:END -->
