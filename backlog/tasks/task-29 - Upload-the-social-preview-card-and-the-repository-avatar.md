@@ -17,6 +17,7 @@ ordinal: 29000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
+
 Two uploads on GitHub that no agent can do, and one correction to the task that used to carry them: **GitHub has
 no repository image except the social preview**, so the second upload is the **organisation** profile picture,
 not a repository avatar. Everything up to the upload is repository work and is handled elsewhere — the vector
@@ -39,17 +40,8 @@ render. `air-social.svg` sets its text in a `system-ui` stack, so a faithful ras
 stack, and the box this repository is developed on has no SVG rasteriser, no headless browser and no Python image
 library installed. The one-command export below is deliberately something to run where a browser or a converter
 already lives.
-<!-- SECTION:DESCRIPTION:END -->
 
-## Acceptance Criteria
-<!-- AC:BEGIN -->
-- [ ] #1 The social-preview image is set on the repository settings page, or declined with a one-line reason
-- [ ] #2 The organisation profile picture is set from the avatar-ready mark (TASK-23), or declined with a one-line reason
-- [ ] #3 Both are confirmed from outside the settings form: the opengraph preview URL renders the new card, and the org page shows the new mark
-<!-- AC:END -->
-
-## Links
-
+**Links**
 - Card source, opens at native 1280×640: [air-social.svg](https://github.com/ArborealML/Inference-Router/blob/main/docs/images/air-social.svg) — for browser capture use the raw form: [raw.githubusercontent.com/…/air-social.svg](https://raw.githubusercontent.com/ArborealML/Inference-Router/main/docs/images/air-social.svg).
 - Mark, do NOT upload raw (currentColor with no field renders black-on-transparent): [air-mark.svg](https://github.com/ArborealML/Inference-Router/blob/main/docs/images/air-mark.svg). Use the variant from TASK-23: [docs/images/](https://github.com/ArborealML/Inference-Router/tree/main/docs/images/).
 - Upload form 1 (card): [repo Settings → Options → Social preview](https://github.com/ArborealML/Inference-Router/settings/options).
@@ -57,8 +49,7 @@ already lives.
 - Confirm without the form: [the image link previews fetch](https://opengraph.githubassets.com/1/ArborealML/Inference-Router).
 - Art provenance: [docs/images/README.md](https://github.com/ArborealML/Inference-Router/blob/main/docs/images/README.md).
 
-## Do this (about 4 minutes, or 8 if a converter has to be installed)
-
+**Do this (about 4 minutes, or 8 if a converter has to be installed)**
 1. **Export the card** (1280×640 is already its native size — the file declares `width="1280" height="640"`, so
    it opens at exactly the size GitHub asks for). Any **one** of these, wherever a converter lives:
 
@@ -100,3 +91,12 @@ already lives.
 
 **What this waits on:** TASK-23, which owns the art judgement and the avatar-ready mark variant. If TASK-23 says
 `replace` with a new direction, this task waits for the replacement art and nothing is uploaded in the meantime.
+
+<!-- SECTION:DESCRIPTION:END -->
+
+## Acceptance Criteria
+<!-- AC:BEGIN -->
+- [ ] #1 The social-preview image is set on the repository settings page, or declined with a one-line reason
+- [ ] #2 The organisation profile picture is set from the avatar-ready mark (TASK-23), or declined with a one-line reason
+- [ ] #3 Both are confirmed from outside the settings form: the opengraph preview URL renders the new card, and the org page shows the new mark
+<!-- AC:END -->

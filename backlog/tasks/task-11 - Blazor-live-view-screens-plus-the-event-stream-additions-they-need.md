@@ -18,12 +18,24 @@ ordinal: 11000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
+
 Build the Blazor live view on the event stream, taking the good parts of PAIR's UI (workload
 rail, filters, topology, endpoint copy, actionable errors) and dropping the appliance parts
 (installer, model deletion, pairing, autostart/update/wipe). Our screens differ: global inference
 activity, queues and admission, engines/profiles/switches, topology and trends, a request timeline,
 and health/config/security. The event stream must carry the fields these screens need before any of
 them can be built, so the stream work comes first.
+
+**Links**
+- Feed the screens read from: [SPEC §10](https://github.com/ArborealML/Inference-Router/blob/main/SPEC.md#L946). Admin surface and error casing: [SPEC §6](https://github.com/ArborealML/Inference-Router/blob/main/SPEC.md#L635).
+- Borrow/change/skip list: [SPEC §12.5](https://github.com/ArborealML/Inference-Router/blob/main/SPEC.md#L1079).
+- Endpoints that exist today: [ServerApp.cs:51-57](https://github.com/ArborealML/Inference-Router/blob/main/src/Arboreal.InferenceRouter.Server/ServerApp.cs#L51-L57).
+- Gate this has to satisfy: [SPEC §14.1](https://github.com/ArborealML/Inference-Router/blob/main/SPEC.md#L1208). Decision that wakes it: [TASK-21](https://github.com/ArborealML/Inference-Router/tree/main/backlog/tasks).
+
+**Do this (about 1 minute)**
+Nothing to decide here — the three questions this task waits on are written out on **TASK-21** with the
+answer format, in <https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/>. Answer those and this one starts on its own.
+
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -63,15 +75,3 @@ calls rather than technical ones:
    remote admin. Say otherwise and I will do the token first.
 
 Nothing in this task is technically blocked; it is these two calls.
-
-## Links
-
-- Feed the screens read from: [SPEC §10](https://github.com/ArborealML/Inference-Router/blob/main/SPEC.md#L946). Admin surface and error casing: [SPEC §6](https://github.com/ArborealML/Inference-Router/blob/main/SPEC.md#L635).
-- Borrow/change/skip list: [SPEC §12.5](https://github.com/ArborealML/Inference-Router/blob/main/SPEC.md#L1079).
-- Endpoints that exist today: [ServerApp.cs:51-57](https://github.com/ArborealML/Inference-Router/blob/main/src/Arboreal.InferenceRouter.Server/ServerApp.cs#L51-L57).
-- Gate this has to satisfy: [SPEC §14.1](https://github.com/ArborealML/Inference-Router/blob/main/SPEC.md#L1208). Decision that wakes it: [TASK-21](https://github.com/ArborealML/Inference-Router/tree/main/backlog/tasks).
-
-## Do this (about 1 minute)
-
-Nothing to decide here — the three questions this task waits on are written out on **TASK-21** with the
-answer format, in <https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/>. Answer those and this one starts on its own.

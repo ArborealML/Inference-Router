@@ -17,9 +17,29 @@ ordinal: 20000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
+
 The mechanism is settled — raw Engine HTTP over the Docker socket, with the docker CLI kept as an operator fallback — and authorisation (refuse rather than escalate) and launch tuning are already decisions on this board. What is missing is a fact about the machine: whether the router is allowed to talk to the daemon on the inference host, and if so whether that is the unix socket or a TLS TCP endpoint. This gates real-engine verification of the lifecycle provider, not the provider itself, which is written against a test fake.
 
 What each answer changes: **unix socket** or **tcp+tls** means the native provider is verified end to end against a real daemon and TASK-26 proceeds as written; **no daemon access** narrows the shipped route to the delegated (exec) provider, and the container-native work in TASK-26 stops being worth building out. What it unblocks: the end-to-end verification half of TASK-26 — every other criterion there is testable against a fake daemon handler, so no task is blocked outright, but none of that verification can be *shown* until this is answered.
+
+**Links**
+- What the provider does without a daemon: [SPEC §5.3.1](https://github.com/ArborealML/Inference-Router/blob/main/SPEC.md#L420).
+- Read-only probe, safe config: `dotnet run --project src/Arboreal.InferenceRouter.Cli -- engines preflight -c samples/router.safe-smoke.toml` — [samples/router.safe-smoke.toml](https://github.com/ArborealML/Inference-Router/blob/main/samples/router.safe-smoke.toml). Never run the configs that carry lifecycle commands.
+- Fake-daemon tests that stand in until the route is known: [DockerLifecycleProviderTests.cs](https://github.com/ArborealML/Inference-Router/blob/main/tests/Arboreal.InferenceRouter.Tests/DockerLifecycleProviderTests.cs).
+
+**Do this (about 2 minutes)**
+The mechanism is already decided — raw Engine HTTP over the Docker socket, with the CLI as an operator
+fallback — and the authorisation and launch-tuning questions are answered in decisions 1 and 2. One thing
+is still missing, and it is about the machine rather than the design:
+
+- Is the router allowed to reach the Docker daemon on the inference host, and by what route: the unix
+  socket path, or a TLS TCP endpoint?
+- If it is not allowed at all, say so and the work narrows to the delegated (shell-out) provider.
+
+Answer format: `TASK-20: unix socket`, `TASK-20: tcp+tls`, or `TASK-20: no daemon access`. Keep the real
+path off the public board; a placeholder is enough here and the real value stays in the untracked
+config.
+
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -53,23 +73,3 @@ Owner instruction: the @claire queue is being worked by agents. Reassigned here 
 
 ---
 <!-- COMMENTS:END -->
-
-## Links
-
-- What the provider does without a daemon: [SPEC §5.3.1](https://github.com/ArborealML/Inference-Router/blob/main/SPEC.md#L420).
-- Read-only probe, safe config: `dotnet run --project src/Arboreal.InferenceRouter.Cli -- engines preflight -c samples/router.safe-smoke.toml` — [samples/router.safe-smoke.toml](https://github.com/ArborealML/Inference-Router/blob/main/samples/router.safe-smoke.toml). Never run the configs that carry lifecycle commands.
-- Fake-daemon tests that stand in until the route is known: [DockerLifecycleProviderTests.cs](https://github.com/ArborealML/Inference-Router/blob/main/tests/Arboreal.InferenceRouter.Tests/DockerLifecycleProviderTests.cs).
-
-## Do this (about 2 minutes)
-
-The mechanism is already decided — raw Engine HTTP over the Docker socket, with the CLI as an operator
-fallback — and the authorisation and launch-tuning questions are answered in decisions 1 and 2. One thing
-is still missing, and it is about the machine rather than the design:
-
-- Is the router allowed to reach the Docker daemon on the inference host, and by what route: the unix
-  socket path, or a TLS TCP endpoint?
-- If it is not allowed at all, say so and the work narrows to the delegated (shell-out) provider.
-
-Answer format: `TASK-20: unix socket`, `TASK-20: tcp+tls`, or `TASK-20: no daemon access`. Keep the real
-path off the public board; a placeholder is enough here and the real value stays in the untracked
-config.

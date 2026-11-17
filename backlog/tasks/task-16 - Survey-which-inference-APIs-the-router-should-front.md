@@ -16,7 +16,14 @@ ordinal: 16000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
+
 Owner ask (2026-11-16): find out which upstream inference APIs the router should speak besides OpenAI-compatible. Anthropic's Messages API is the obvious one. The open question is the local engine world: does Strata expose a native API (it already has /props and /models probes beyond OpenAI shape), and does Project Maya? Also worth pricing in: Ollama, llama.cpp's llama-server, vLLM/SGLang, LM Studio, and OpenAI's newer Responses API (versus chat/completions). Deliverable is a decision with consequences, not a survey dump: which 1-2 adapters to build, which to decline, and what the engine-kind seam in EngineRuntime/RouterConfig needs to support them. Sequence AFTER the README updates (TASK-14). The request goes to the external research service once TASK-14 lands; if a request has to be re-issued, re-issue the same one rather than inventing a new one.
+
+**Links**
+- Seam the answer must fit: [EngineRuntime.cs](https://github.com/ArborealML/Inference-Router/blob/main/src/Arboreal.InferenceRouter/Engines/EngineRuntime.cs), [Config/](https://github.com/ArborealML/Inference-Router/tree/main/src/Arboreal.InferenceRouter/Config/).
+- What is promised on the wire: [SPEC §6](https://github.com/ArborealML/Inference-Router/blob/main/SPEC.md#L635); engine configuration: [SPEC §5.3](https://github.com/ArborealML/Inference-Router/blob/main/SPEC.md#L379).
+- Local-engine probes already recorded: [samples/](https://github.com/ArborealML/Inference-Router/tree/main/samples/), [docs/ai-integration.md](https://github.com/ArborealML/Inference-Router/blob/main/docs/ai-integration.md).
+
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -46,9 +53,3 @@ Assignee is the external service again now that the owner has authorised handing
 
 ---
 <!-- COMMENTS:END -->
-
-## Links
-
-- Seam the answer must fit: [EngineRuntime.cs](https://github.com/ArborealML/Inference-Router/blob/main/src/Arboreal.InferenceRouter/Engines/EngineRuntime.cs), [Config/](https://github.com/ArborealML/Inference-Router/tree/main/src/Arboreal.InferenceRouter/Config/).
-- What is promised on the wire: [SPEC §6](https://github.com/ArborealML/Inference-Router/blob/main/SPEC.md#L635); engine configuration: [SPEC §5.3](https://github.com/ArborealML/Inference-Router/blob/main/SPEC.md#L379).
-- Local-engine probes already recorded: [samples/](https://github.com/ArborealML/Inference-Router/tree/main/samples/), [docs/ai-integration.md](https://github.com/ArborealML/Inference-Router/blob/main/docs/ai-integration.md).

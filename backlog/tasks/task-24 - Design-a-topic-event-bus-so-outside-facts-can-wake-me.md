@@ -17,7 +17,28 @@ ordinal: 24000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
+
 The gap: things that happen outside this session — a pull request merging, a decision landing on the board, a build finishing elsewhere, a machine coming back up — only reach me when a human tells me. The shape being proposed: a small durable event store with named topics; sources (scripts, services, a cron that checks a thing and emits when it changed) publish events, and an agent subscribes to the topics it cares about and gets woken the way it is woken today by asynchronous research results. Publisher identity and topic ownership matter, because otherwise anything can claim anything. What is needed from the owner is the authority model and where the store lives; the poller scripts and the subscription plumbing are ordinary work once the shape is fixed. Today the same effect is hand-rolled per case: a research service that pushes results, a session-to-session message channel, and a human passing word along.
+
+**Links**
+- Push paths it would generalise: [docs/ai-integration.md](https://github.com/ArborealML/Inference-Router/blob/main/docs/ai-integration.md), [SPEC §10](https://github.com/ArborealML/Inference-Router/blob/main/SPEC.md#L946).
+- Surface a decision landing would publish: [backlog/](https://github.com/ArborealML/Inference-Router/tree/main/backlog/).
+
+**Do this (about 5 minutes)**
+Three answers, and I can build the first slice:
+
+1. **Who may publish, and how does a publisher prove it?** Options: a shared secret per topic; a token
+   file the poller script already has; or "whatever user owns the store may publish anything" for a
+   single-machine setup.
+2. **Where does the store live, and what happens to events while I am not running?** A file under the
+   project directory, a local daemon, or the same transport the research notifications already use.
+   Retention matters: an event nobody consumed must not vanish.
+3. **What is the first source to wire?** Pick one and I will make it the proof: a merged pull request,
+   a board decision landing, or a machine coming back up.
+
+Answer format: `TASK-24: shared secret / file store / merged PR`. A written design is welcome instead;
+I will review it against how this repo's notification paths actually work.
+
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -47,24 +68,3 @@ Moved to the external service per the owner instruction: this tasks deliverable 
 
 ---
 <!-- COMMENTS:END -->
-
-## Links
-
-- Push paths it would generalise: [docs/ai-integration.md](https://github.com/ArborealML/Inference-Router/blob/main/docs/ai-integration.md), [SPEC §10](https://github.com/ArborealML/Inference-Router/blob/main/SPEC.md#L946).
-- Surface a decision landing would publish: [backlog/](https://github.com/ArborealML/Inference-Router/tree/main/backlog/).
-
-## Do this (about 5 minutes)
-
-Three answers, and I can build the first slice:
-
-1. **Who may publish, and how does a publisher prove it?** Options: a shared secret per topic; a token
-   file the poller script already has; or "whatever user owns the store may publish anything" for a
-   single-machine setup.
-2. **Where does the store live, and what happens to events while I am not running?** A file under the
-   project directory, a local daemon, or the same transport the research notifications already use.
-   Retention matters: an event nobody consumed must not vanish.
-3. **What is the first source to wire?** Pick one and I will make it the proof: a merged pull request,
-   a board decision landing, or a machine coming back up.
-
-Answer format: `TASK-24: shared secret / file store / merged PR`. A written design is welcome instead;
-I will review it against how this repo's notification paths actually work.

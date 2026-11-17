@@ -18,11 +18,25 @@ ordinal: 15000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
+
 `release.yml` declares `osx-arm64` (macos-14) and `osx-x64` (macos-13) legs, and the Linux and
 Windows legs have built and smoke-tested successfully on their own runners. The macOS jobs stayed
 queued and were never picked up, which means this account has no usable macOS runner minutes (or
 the image names need refreshing). Until one of those is fixed, the public repo advertises macOS
 binaries it has never produced.
+
+**Links**
+- Legs to remove: [release.yml:115-122](https://github.com/ArborealML/Inference-Router/blob/main/.github/workflows/release.yml#L115-L122).
+- Gate that counts four assets: [release.yml:216-222](https://github.com/ArborealML/Inference-Router/blob/main/.github/workflows/release.yml#L216-L222).
+- Copy claiming four platforms: [README.md:82-84](https://github.com/ArborealML/Inference-Router/blob/main/README.md#L82-L84) and [README.md:219-222](https://github.com/ArborealML/Inference-Router/blob/main/README.md#L219-L222).
+- Evidence either way: [release workflow runs](https://github.com/ArborealML/Inference-Router/actions/workflows/release.yml), [releases](https://github.com/ArborealML/Inference-Router/releases). Command: `gh run list --workflow release.yml --limit 5`.
+
+**Do this (about 1 minute)**
+The two answers this task needs (macOS runner minutes, and whether to cut the first tag) are on
+**TASK-22**, in <https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/>. The build legs themselves are already written:
+`.github/workflows/release.yml` builds four platform binaries and smoke-tests each on its own OS before
+a release is created. What is missing is only the paid minutes and a tag.
+
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -51,17 +65,3 @@ The decision in AC #1 is taken: **drop the macOS legs** — no paid runner minut
 
 ---
 <!-- COMMENTS:END -->
-
-## Links
-
-- Legs to remove: [release.yml:115-122](https://github.com/ArborealML/Inference-Router/blob/main/.github/workflows/release.yml#L115-L122).
-- Gate that counts four assets: [release.yml:216-222](https://github.com/ArborealML/Inference-Router/blob/main/.github/workflows/release.yml#L216-L222).
-- Copy claiming four platforms: [README.md:82-84](https://github.com/ArborealML/Inference-Router/blob/main/README.md#L82-L84) and [README.md:219-222](https://github.com/ArborealML/Inference-Router/blob/main/README.md#L219-L222).
-- Evidence either way: [release workflow runs](https://github.com/ArborealML/Inference-Router/actions/workflows/release.yml), [releases](https://github.com/ArborealML/Inference-Router/releases). Command: `gh run list --workflow release.yml --limit 5`.
-
-## Do this (about 1 minute)
-
-The two answers this task needs (macOS runner minutes, and whether to cut the first tag) are on
-**TASK-22**, in <https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/>. The build legs themselves are already written:
-`.github/workflows/release.yml` builds four platform binaries and smoke-tests each on its own OS before
-a release is created. What is missing is only the paid minutes and a tag.
