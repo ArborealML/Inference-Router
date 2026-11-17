@@ -55,6 +55,24 @@ public sealed class EngineDto
     [JsonPropertyName("health_probe")][TomlPropertyName("health_probe")] public HealthProbeDto? HealthProbe { get; set; }
     [JsonPropertyName("capabilities")][TomlPropertyName("capabilities")] public CapabilitiesDto? Capabilities { get; set; }
     [JsonPropertyName("catalog")][TomlPropertyName("catalog")] public Dictionary<string, ModelDto>? Catalog { get; set; }
+    [JsonPropertyName("lifecycle")][TomlPropertyName("lifecycle")] public string? Lifecycle { get; set; }
+    [JsonPropertyName("docker")][TomlPropertyName("docker")] public DockerDto? Docker { get; set; }
+}
+
+public sealed class DockerDto
+{
+    [JsonPropertyName("image")][TomlPropertyName("image")] public string? Image { get; set; }
+    [JsonPropertyName("socket")][TomlPropertyName("socket")] public string? Socket { get; set; }
+    [JsonPropertyName("api_version")][TomlPropertyName("api_version")] public string? ApiVersion { get; set; }
+    [JsonPropertyName("router_id")][TomlPropertyName("router_id")] public string? RouterId { get; set; }
+    [JsonPropertyName("command")][TomlPropertyName("command")] public string[]? Command { get; set; }
+    [JsonPropertyName("env")][TomlPropertyName("env")] public string[]? Env { get; set; }
+    [JsonPropertyName("stop_timeout_ms")][TomlPropertyName("stop_timeout_ms")] public int? StopTimeoutMs { get; set; }
+    [JsonPropertyName("host_port")][TomlPropertyName("host_port")] public int? HostPort { get; set; }
+    [JsonPropertyName("container_port")][TomlPropertyName("container_port")] public int? ContainerPort { get; set; }
+    [JsonPropertyName("network_mode")][TomlPropertyName("network_mode")] public string? NetworkMode { get; set; }
+    [JsonPropertyName("wait_health")][TomlPropertyName("wait_health")] public bool? WaitHealth { get; set; }
+    [JsonPropertyName("wait_timeout_ms")][TomlPropertyName("wait_timeout_ms")] public int? WaitTimeoutMs { get; set; }
 }
 
 public sealed class HealthProbeDto

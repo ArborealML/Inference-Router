@@ -124,6 +124,25 @@ Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
   request's own abort cancels the ticket. New `StreamingFailureTests` pins both cases against a live
   `ServerApp`, and the test fake can trickle a stream frame-by-frame so a mid-stream hang-up is
   observable rather than assumed. 109 tests green.
+- v0.12 — model loading runs through a **provider seam**, and the router can now drive Docker itself.
+  §5.3.1 was design prose; the seam is now what the switch path actually runs. `IEngineLifecycleProvider`
+  plus `EngineLifecycleCoordinator` own one ordering — prove ownership, preflight, stop only what the
+  ownership proof claims, launch the exact target — and the selector program that `select = { exec = … }`
+  always meant is wrapped as `DelegatedExecProvider`, same argv quoting, same pipe draining, same timeout
+  kill, so every existing config switches exactly as before with one more hop. `DockerLifecycleProvider`
+  speaks raw Engine HTTP (unix socket or TCP), pinned API version refused downward, **source-generated**
+  JSON, containers labelled `arboreal.router`/`arboreal.engine`/`arboreal.model`, image presence required
+  and no pull ever, and a daemon that is unreachable or refuses the router yields one actionable message
+  with no attempt to escalate. Three rules that used to be implied are now pinned by tests: a refused
+  preflight stops and starts nothing; a container the daemon lists but our labels do not claim is never
+  handed to the stop step; and a **failed ownership query is a refusal, not an empty list** — treating
+  "I could not ask" as "nothing is running" is how a router starts a second copy of a model that is
+  already loaded. Config is per engine (`lifecycle = "docker"` + `[engine.<name>.docker]`), and a model
+  that carries both a `select` command and native lifecycle is a load-time error, because two owners
+  cannot both prove ownership. What §5.3.1 still does not claim: image identity pinning, mounts/GPU
+  requests, exec/logs/daemon events, Windows `npipe`, closing admission and draining the cohort before a
+  mutation (it needs a lifecycle reservation, not an inference slot — that request would wait on itself),
+  and latched failures. 126 tests green.
 
 ## 1. Overview
 
@@ -339,11 +358,57 @@ modes that bite real `select-model` runs):
   context window to fit it, not merely that the model id appears in the models
   list (§7.6).
 
-#### 5.3.1 Container-native lifecycle (in design)
+#### 5.3.1 Container-native lifecycle (partly implemented)
 
 Shell-outs to a launcher script are an integration cost, not a feature: they hide the
 state the router needs, and a failed script leaves an orphaned container the scheduler
 cannot see. The target design drives the container runtime directly.
+
+**Implemented today.** The seam exists and is what the switch path runs through:
+`IEngineLifecycleProvider` (in `Engines/Lifecycle/`) over an `EngineLifecycleCoordinator` that owns the
+ordering, with the existing selector program wrapped as `DelegatedExecProvider` and the Docker Engine API
+implemented as `DockerLifecycleProvider`. A provider answers four questions in a fixed order — what exists
+that we own (`OwnedPeersAsync`), may this switch proceed (`PreflightAsync`, validate-only), stop these
+units (`StopAsync`), start this exact target (`LaunchAsync`) — and reports `LifecycleResult` with a short
+reason for the event feed plus one actionable sentence for the operator. The coordinator is single-flight
+per engine, never hands an unowned peer to the stop step, and treats a **failed ownership query as a
+refusal**, not as "nothing is running". Readiness is proved by whoever owns the engine's health probe (the
+runtime), on the provider's `ReadinessPolicy`.
+
+Config is per engine, and the two owners are mutually exclusive:
+
+```toml
+[engine.strata]
+lifecycle = "docker"            # or "exec" (default): a selector program owns the switch
+[engine.strata.docker]
+image = "registry.local/strata:2026-11"   # required: the router never pulls
+socket = "unix:///run/docker.sock"        # or http(s)://host:port
+api_version = "v1.44"                     # pinned; a daemon below it is refused
+router_id = "r1"                          # written into labels; this is the ownership proof
+command = ["--model", "{{model}}", "--ctx", "{{profile}}"]
+env = ["AIR_ENGINE={{endpoint}}"]
+host_port = 18020
+container_port = 8080
+stop_timeout_ms = 30000
+wait_health = true
+wait_timeout_ms = 600000
+```
+
+`lifecycle = "docker"` with a model that still carries `select = { exec = … }` is a **config error**:
+two owners cannot both prove ownership of one model's container. Ownership labels are
+`arboreal.router`, `arboreal.engine`, `arboreal.model`; the daemon's label filter is an optimisation and
+the labels are re-checked locally, so a daemon that hands back a foreign container does not make it ours
+to stop. A daemon that is unreachable, refuses the router, or is older than the pinned API version
+produces one actionable message and **no escalation** (§15.1 decision: refuse rather than re-exec under
+sudo).
+
+Not implemented yet, and not implied by the code above: image **identity** pinning (presence is checked,
+`Id`/`RepoDigests`/platform are not compared), `mounts`/`gpu`/resource limits, exec frame demux, logs and
+daemon event subscription, the `npipe` transport on Windows, closing admission and draining the cohort
+before a mutation (see the reservation note below — this needs a lifecycle reservation, not an inference
+slot), and the latched-failure rule that stops a dispatcher wake-up from turning a failed switch into a
+retry. What follows is the target shape, kept here because the implemented part is a subset of it, not a
+different design.
 
 **Seam.** Extract `IEngineLifecycle` out of the switch path (keeping switch
 serialization and failure reset exactly as above) and implement it over a fakeable,

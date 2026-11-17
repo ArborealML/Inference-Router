@@ -202,6 +202,80 @@ public class ConfigLoaderTests
         Assert.False(cfg.Engines["openai_only"].LoadedRequiresStatusLoaded);
     }
 
+    /// <summary>Native Docker lifecycle is opt-in per engine, and a half-configured one is a load-time
+    /// error: an engine that says "docker" with no image, or a model that keeps a select command while the
+    /// router owns the container, is two owners claiming one lifecycle.</summary>
+    [Fact]
+    public void Native_Docker_Lifecycle_Is_Configurable_And_Exclusive()
+    {
+        const string Text = """
+            listen = "http://127.0.0.1:9901"
+            default_model = "m1"
+            [engine.native]
+            kind = "openai-compatible"
+            endpoint = "http://127.0.0.1:9/v1"
+            lifecycle = "docker"
+            [engine.native.docker]
+            image = "registry.local/strata:2026-11"
+            socket = "unix:///run/docker.sock"
+            api_version = "v1.44"
+            command = ["--model", "{{model}}"]
+            host_port = 18021
+            container_port = 8080
+            [engine.native.catalog."m1"]
+            """;
+
+        var cfg = RouterConfigLoader.Load(Text, "test.toml");
+        var engine = cfg.Engines["native"];
+        Assert.Equal(EngineLifecycleKind.Docker, engine.Lifecycle);
+        Assert.NotNull(engine.Docker);
+        Assert.Equal("registry.local/strata:2026-11", engine.Docker!.Image);
+        Assert.Equal("unix:///run/docker.sock", engine.Docker.Socket);
+        Assert.Equal("v1.44", engine.Docker.ApiVersion);
+        Assert.Equal(["--model", "{{model}}"], engine.Docker.Command);
+        Assert.Equal(18021, engine.Docker.HostPort);
+        Assert.True(engine.Docker.WaitHealth);          // readiness is proved unless the operator says otherwise
+        Assert.Equal(30_000, engine.Docker.StopTimeoutMs);
+    }
+
+    [Fact]
+    public void Native_Docker_Lifecycle_RejectsAnIncompleteOrContradictoryConfig()
+    {
+        const string Base = """
+            listen = "http://127.0.0.1:9901"
+            default_model = "m1"
+            [engine.native]
+            kind = "openai-compatible"
+            endpoint = "http://127.0.0.1:9/v1"
+            """;
+
+        // "docker" with no block: the router would have nothing to start.
+        Assert.Throws<RouterConfigException>(() => RouterConfigLoader.Load(
+            Base + "\nlifecycle = \"docker\"\n[engine.native.catalog.\"m1\"]\n", "test.toml"));
+
+        // A block with no image: the router never pulls, so an unpinned image is not a default, it is a bug.
+        Assert.Throws<RouterConfigException>(() => RouterConfigLoader.Load(
+            Base + "\n[engine.native.docker]\nsocket = \"unix:///run/docker.sock\"\n[engine.native.catalog.\"m1\"]\n",
+            "test.toml"));
+
+        // Two owners for one model: the selector program and the router cannot both prove ownership.
+        Assert.Throws<RouterConfigException>(() => RouterConfigLoader.Load(
+            Base + """
+            [engine.native.docker]
+            image = "img:1"
+            [engine.native.catalog."m1"]
+            select = { exec = "/bin/true" }
+            """, "test.toml"));
+
+        // A made-up lifecycle kind is a typo, not a future extension.
+        Assert.Throws<RouterConfigException>(() => RouterConfigLoader.Load(
+            Base + "\nlifecycle = \"podman\"\n[engine.native.catalog.\"m1\"]\n", "test.toml"));
+
+        // Delegated stays the default, so every existing config keeps working unchanged.
+        Assert.Equal(EngineLifecycleKind.Delegated,
+            RouterConfigLoader.Load(Base + "\n[engine.native.catalog.\"m1\"]\n", "test.toml").Engines["native"].Lifecycle);
+    }
+
     /// <summary>The shipped samples must load as written: dotted model ids quoted (TOML table
     /// separators otherwise silently create bogus catalog entries) and the smoke config inert.</summary>
     [Fact]

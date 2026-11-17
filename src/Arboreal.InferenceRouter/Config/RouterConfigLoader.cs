@@ -200,6 +200,53 @@ public static class RouterConfigLoader
             }
         }
 
+        var lifecycle = EngineLifecycleKind.Delegated;
+        DockerLifecycleConfig? docker = null;
+        if (e.Lifecycle is { Length: > 0 } lcText)
+        {
+            var lc = lcText.Trim();
+            if (lc.Equals("docker", StringComparison.OrdinalIgnoreCase)) lifecycle = EngineLifecycleKind.Docker;
+            else if (lc.Equals("exec", StringComparison.OrdinalIgnoreCase) ||
+                     lc.Equals("delegated", StringComparison.OrdinalIgnoreCase)) lifecycle = EngineLifecycleKind.Delegated;
+            else throw new RouterConfigException($"engine.{name}.lifecycle must be \"docker\" or \"exec\" (got '{lc}')");
+        }
+        if (e.Docker is { } d)
+        {
+            lifecycle = EngineLifecycleKind.Docker;
+            if (string.IsNullOrWhiteSpace(d.Image))
+                throw new RouterConfigException(
+                    $"engine.{name}.docker.image is required: the router starts an image that is already on the host and never pulls one itself");
+            docker = new DockerLifecycleConfig
+            {
+                Image = d.Image!,
+                Socket = d.Socket ?? "unix:///var/run/docker.sock",
+                ApiVersion = d.ApiVersion ?? "v1.44",
+                RouterId = d.RouterId ?? "default",
+                Command = d.Command ?? [],
+                Env = d.Env ?? [],
+                StopTimeoutMs = d.StopTimeoutMs ?? 30_000,
+                HostPort = d.HostPort,
+                ContainerPort = d.ContainerPort ?? 8080,
+                NetworkMode = d.NetworkMode,
+                WaitHealth = d.WaitHealth ?? true,
+                WaitTimeoutMs = d.WaitTimeoutMs ?? 600_000,
+            };
+        }
+        else if (lifecycle == EngineLifecycleKind.Docker)
+        {
+            throw new RouterConfigException($"engine.{name}.lifecycle = \"docker\" needs an [engine.{name}.docker] block with image = …");
+        }
+        if (docker is not null)
+        {
+            foreach (var (modelName, model) in catalog)
+            {
+                if (model.Select is not null)
+                    throw new RouterConfigException(
+                        $"engine.{name} has native docker lifecycle, and model \"{modelName}\" still carries a select command: " +
+                        "pick one owner for this model's lifecycle (a delegated selector or the router) — they cannot both prove ownership");
+            }
+        }
+
         return new EngineDefinition
         {
             Name = name,
@@ -213,6 +260,8 @@ public static class RouterConfigLoader
             Capabilities = capabilities,
             Catalog = catalog,
             Remote = e.Remote ?? false,
+            Lifecycle = lifecycle,
+            Docker = docker,
         };
     }
 

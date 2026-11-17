@@ -11,7 +11,7 @@ public sealed record LifecycleTarget(
 /// <summary>A container (or equivalent unit) a provider found for this engine. <see cref="OwnedByUs"/>
 /// is the ownership proof: it is true only when the unit carries this launcher's labels, and the
 /// coordinator will never hand an unowned unit to <see cref="IEngineLifecycleProvider.StopAsync"/>.</summary>
-public sealed record EnginePeer(string Id, string Image, string? Model, bool OwnedByUs);
+public sealed record EnginePeer(string Id, string Image, string? Model, bool OwnedByUs, bool QueryFailed = false);
 
 /// <summary>Outcome of a lifecycle step. <see cref="Reason"/> is the short machine-readable form that
 /// goes on the event feed; <see cref="Action"/> is one sentence telling the operator what to do, and a

@@ -53,7 +53,8 @@ public sealed class EngineRuntime : IAsyncDisposable
         _def = def;
         _config = config;
         _events = events;
-        _lifecycle = new EngineLifecycleCoordinator(lifecycle ?? new DelegatedExecProvider());
+        var ownProvider = lifecycle is null;
+        _lifecycle = new EngineLifecycleCoordinator(lifecycle ?? DefaultLifecycleProvider(def), ownsProvider: ownProvider);
         _maxInflight = Math.Max(1, config.Scheduler.MaxInflightPerEngine);
         _trie = new PrefixTrie(config.Scheduler.PrefixTrieMaxNodes);
         _apiKey = ResolveApiKey(def);
@@ -69,6 +70,14 @@ public sealed class EngineRuntime : IAsyncDisposable
         _http.BaseAddress = def.Endpoint;
         _http.Timeout = TimeSpan.FromMilliseconds(Timeout.Infinite); // long streams; per-request CTS applies
     }
+
+    /// <summary>Config picks the provider: native Docker lifecycle when the engine declares it, the
+    /// delegated selector program otherwise. The router's own HTTP handler is deliberately not reused:
+    /// it is bound to the engine endpoint, not the daemon.</summary>
+    private static IEngineLifecycleProvider DefaultLifecycleProvider(EngineDefinition def) =>
+        def.Lifecycle == EngineLifecycleKind.Docker && def.Docker is { } docker
+            ? new DockerLifecycleProvider(docker, def.Name)
+            : new DelegatedExecProvider();
 
     public string Name => _def.Name;
     public EngineDefinition Definition => _def;
@@ -365,7 +374,15 @@ public sealed class EngineRuntime : IAsyncDisposable
             if (!launched.Succeeded)
             {
                 state.Ready.TrySetResult(false);
-                Emit("engine.switch_failed", model: model, reason: launched.Reason ?? "lifecycle_failed");
+                // The short reason goes on the feed for grepping; the provider's one actionable sentence
+                // rides along so the operator reading /admin/events does not have to go find a log.
+                var detail = launched.Reason ?? "lifecycle_failed";
+                if (launched.Action is { Length: > 0 } action)
+                {
+                    if (action.Length > 200) action = action[..200];
+                    detail = $"{detail} — {action}";
+                }
+                Emit("engine.switch_failed", model: model, reason: detail);
                 Volatile.Write(ref _switchState, new SwitchState());
                 return;
             }

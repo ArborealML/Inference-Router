@@ -13,6 +13,33 @@ public sealed class LifecycleCommand
     public int WaitTimeoutMs { get; init; } = 7_200_000;   // select-model strata waits up to 2h
 }
 
+/// <summary>How an engine's model loads are managed. Delegated means a selector program does it (the
+/// historical <c>select = { exec = … }</c>); Docker means the router drives the Engine API itself and can
+/// therefore prove which containers it owns.</summary>
+public enum EngineLifecycleKind : byte { Delegated, Docker }
+
+/// <summary>Native Docker lifecycle for one engine: the image, how it is launched, and how long the
+/// router waits for it to prove it is serving. What readiness must prove stays in config, because the
+/// router can only verify what it can name.</summary>
+public sealed class DockerLifecycleConfig
+{
+    public required string Image { get; init; }
+    /// <summary><c>unix:///path/to/sock</c> or <c>http(s)://host:port</c>.</summary>
+    public string Socket { get; init; } = "unix:///var/run/docker.sock";
+    /// <summary>Pinned so a daemon update cannot change the API under a running router.</summary>
+    public string ApiVersion { get; init; } = "v1.44";
+    /// <summary>Written into the container labels, and what makes a container ours on a shared host.</summary>
+    public string RouterId { get; init; } = "default";
+    public string[] Command { get; init; } = [];
+    public string[] Env { get; init; } = [];
+    public int StopTimeoutMs { get; init; } = 30_000;
+    public int? HostPort { get; init; }
+    public int ContainerPort { get; init; } = 8080;
+    public string? NetworkMode { get; init; }
+    public bool WaitHealth { get; init; } = true;
+    public int WaitTimeoutMs { get; init; } = 600_000;
+}
+
 /// <summary>Health probe definition. Expect is a tiny comparison DSL: "path OP value" with
 /// path = dotted JSON path, OP in { >, >=, ==, !=, <, <= }, value = number or string literal.</summary>
 public sealed class HealthProbeDefinition
@@ -77,6 +104,8 @@ public sealed class EngineDefinition
     public IReadOnlyDictionary<string, EngineModelDefinition> Catalog { get; init; } =
         new Dictionary<string, EngineModelDefinition>(StringComparer.Ordinal);
     public bool Remote { get; init; }                 // remote peer: no lifecycle commands
+    public EngineLifecycleKind Lifecycle { get; init; } = EngineLifecycleKind.Delegated;
+    public DockerLifecycleConfig? Docker { get; init; }
 }
 
 /// <summary>Thread pre-configuration from TOML.</summary>

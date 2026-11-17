@@ -14,12 +14,16 @@ namespace Arboreal.InferenceRouter.Lifecycle;
 public sealed class EngineLifecycleCoordinator : IDisposable
 {
     private readonly IEngineLifecycleProvider _provider;
+    private readonly bool _ownsProvider;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly Queue<string> _journal = new();
 
-    public EngineLifecycleCoordinator(IEngineLifecycleProvider provider)
+    /// <param name="ownsProvider">True when the coordinator created the provider and must close its
+    /// connection with itself; false when the caller injected it and stays responsible for it.</param>
+    public EngineLifecycleCoordinator(IEngineLifecycleProvider provider, bool ownsProvider = false)
     {
         _provider = provider ?? throw new ArgumentNullException(nameof(provider));
+        _ownsProvider = ownsProvider;
     }
 
     public string Kind => _provider.Kind;
@@ -52,6 +56,17 @@ public sealed class EngineLifecycleCoordinator : IDisposable
                 if (peer.OwnedByUs) ours.Add(peer);
             }
             Record($"ownership:{target.EngineName} ours={ours.Count} seen={peers.Count}");
+
+            // An ownership query that failed is not an ownership proof. Without this, "I could not ask"
+            // would look like "there is nothing to stop", and the switch would start a second copy of a
+            // model that is already running.
+            foreach (var peer in peers)
+            {
+                if (peer.QueryFailed)
+                    return LifecycleResult.Fail(
+                        $"ownership_query_failed {peer.Id}",
+                        "the router could not prove which containers it already owns, so it changed nothing: fix the daemon connection and switch again");
+            }
 
             // 2. Preflight before any mutation, so a refusal costs the engine nothing it had.
             var preflight = await _provider.PreflightAsync(target, ct).ConfigureAwait(false);
@@ -92,7 +107,16 @@ public sealed class EngineLifecycleCoordinator : IDisposable
         }
     }
 
-    public void Dispose() => _gate.Dispose();
+    // IDISP007 assumes an injected dependency stays the caller's; here the coordinator may have created
+    // the provider itself (EngineRuntime does), and _owns_provider is exactly that distinction.
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("IDisposableAnalyzers.Correctness",
+        "IDISP007:Don't dispose injected",
+        Justification = "The provider is disposed only when the coordinator constructed it (_ownsProvider).")]
+    public void Dispose()
+    {
+        _gate.Dispose();
+        if (_ownsProvider) (_provider as IDisposable)?.Dispose();   // only what we created
+    }
 
     private void Record(string line)
     {
