@@ -7,7 +7,7 @@ status: To Do
 assignee:
   - '@claire'
 created_date: '2026-11-17T08:10:00Z'
-updated_date: '2026-11-17T08:48:00Z'
+updated_date: '2026-11-17T09:13:00Z'
 labels:
   - stream
   - transport
@@ -78,4 +78,6 @@ implementation on the constants would have made a two-minute answer into a stall
 
 <!-- SECTION:NOTES:BEGIN -->
 Citations restated by section, not line, because the SPEC anchors in the original text went stale within hours: SPEC 6 (in-band ending for a committed stream), SPEC 14.1 row 2 (what is still open, and the shipped ceilings), and the pinning test RequestPhaseTimeoutTests.AStreamThatNeverSendsAFrameEndsInsideTheStreamBecauseTheStatusIsAlreadySent.
+
+Precedent confirmed independently by the coding session after my check, so it is no longer a single-agent claim: the pinning test is RequestPhaseTimeoutTests.AStreamThatNeverSendsAFrameEndsInsideTheStreamBecauseTheStatusIsAlreadySent at tests/Arboreal.InferenceRouter.Tests/RequestPhaseTimeoutTests.cs:196, and SPEC's quiet-engine wording (ends engine_timeout, one frame plus [DONE]) sits in the revision log near line 209 today. TASK-34 therefore stays numbers-and-policy for the owner and TASK-30 does not move behind a wire decision.
 <!-- SECTION:NOTES:END -->

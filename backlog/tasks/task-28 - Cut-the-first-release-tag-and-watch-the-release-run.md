@@ -5,13 +5,15 @@ status: Blocked
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T05:58:00Z'
-updated_date: '2026-11-17T08:49:00Z'
+updated_date: '2026-11-17T09:13:00Z'
 labels:
   - release
   - ci
 dependencies:
   - TASK-32
-  - TASK-37
+  - TASK-38
+  - TASK-39
+  - TASK-40
 priority: medium
 ordinal: 28000
 ---
@@ -70,6 +72,8 @@ Floor updated to 6aa26cc for the same reason: the workflow that runs is the one 
 Floor, stated as a rule instead of a sha so it cannot go stale: the tag must point at a commit that contains the newest release-gate work. Find the floor with `git log -1 --format=%H -- .github/workflows/release.yml` (at the time of writing that is 6b91de4), then check-then-tag: `git merge-base --is-ancestor "$(git log -1 --format=%H -- .github/workflows/release.yml)" "$(git rev-parse origin/main)" && git tag -a v0.1.0 -m v0.1.0 "$(git rev-parse origin/main)" && git push origin v0.1.0`. Actions runs the workflow file from the tagged commit, so a tag behind the floor runs an older, weaker gate.
 
 FIRST-RUN CHECKLIST - the first tag is the only real evidence the gate exists, so it is read by a person and not assumed green. Before pushing: (1) the ancestry rule above passes, and origin/main HEAD is recorded; (2) watch the two build legs and confirm each produced exactly two artifacts plus their expected names. Before un-drafting, from the run log: (3) the captured release id; (4) the tag-to-commit proof line naming the same commit the legs built; (5) the five asset names with state=uploaded and the byte sizes matching the staged files. After publishing: (6) the public URL, the prerelease flag (a tag with a -suffix publishes as a prerelease), the generated notes, and the downloadable SHA256SUMS verified against the archives by a downloader that is not the publishing run; (7) each binary's file type (ELF x64 / PE x64) and a smoke run on its own OS. Failure paths first: exercise them with a dispatch run or a scratch tag that is deleted afterwards, remembering that pushing a tag creates a real release - the workflow refuses a tag that already has a release, published or draft, so a scratch tag must be removed before v0.1.0 is cut.
+
+Three more confirmations only a live run can give, added after the fourth review: (1) the by-tag lookup returns the id of the draft THIS run created - the whole cleanup design rests on GitHub refusing a second release on a tag that already carries one, which nobody has yet observed in the wild; (2) the five assets each carry a non-null digest that matches the staged sha256 - if GitHub reports no digest the gate fails by design, and an operator must read that as the gate working, not as a false alarm; (3) the publish call flips exactly the captured id from draft to published and nothing else changes. Reminder kept: a scratch tag used to exercise the failure paths creates a real draft, and preflight then refuses that tag until the draft is deleted.
 <!-- SECTION:NOTES:END -->
 
 ## Comments
@@ -88,6 +92,14 @@ created: 2026-11-17T08:49:00Z
 ---
 
 Dependency added: the tag should not be cut while the gate is under review. TASK-28 now waits on the owner go-ahead (TASK-32) and on the release-gate round closing (TASK-37, wake = the review of 6b91de4 plus the SPEC 15 disposition row). The first-run checklist is in Implementation Notes.
+
+---
+
+created: 2026-11-17T09:13:00Z
+
+---
+
+Dependency set widened deliberately: TASK-38 (who may move a release tag) and TASK-39 (whether to pay for download-and-hash or signing) are repository-settings and money calls in front of the owner, and TASK-40 is the gate round whose load-bearing claim is untested. Cutting the first release before those land would mean proving the gate in production with the settings still open. If you would rather cut v0.1.0 with the settings question open, say so on TASK-32 and I will record that as the accepted posture rather than argue it.
 
 ---
 <!-- COMMENTS:END -->

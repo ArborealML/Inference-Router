@@ -1,0 +1,62 @@
+---
+id: TASK-39
+title: 'Decision: verify what a downloader receives, or keep accepting that we do not'
+status: To Do
+assignee:
+  - '@claire'
+created_date: '2026-11-17T09:11:00Z'
+updated_date: '2026-11-17T09:11:00Z'
+labels:
+  - release
+  - ci
+dependencies: []
+priority: medium
+ordinal: 38000
+---
+
+## Description
+
+<!-- SECTION:DESCRIPTION:BEGIN -->
+**What is being decided, in one sentence:** whether the release pipeline should prove what a downloader actually
+receives, or keep proving only what GitHub says it stored — the second is where it stands, and it is written down as
+an accepted gap rather than an oversight.
+
+**Where the line currently sits.** The gate builds each binary on its own platform, runs it there, uploads the archive
+plus a per-archive checksum, and then — after upload — reads back the published asset's name, upload state, byte size
+and the digest GitHub reports for the bytes it stored, and refuses to publish if any of that does not match the file
+it staged. That is real: it catches a wrong or truncated artifact, a mismatched upload, and a build that did not come
+from the tagged commit. What it does not do is download the published asset and hash it, so it proves *GitHub's
+account of storage*, not the bytes at the end of the download path. The published checksums and SHA256SUMS exist for
+exactly that reason: they are the downloader's check, not the publisher's proof. There is no signing and no
+attestation.
+
+**Options and what each costs:**
+1. **Leave it as the accepted gap** (what the spec says today). Cost: nothing. A downloader who does not verify the
+   published checksums gets whatever the CDN gives them; a downloader who does is covered.
+2. **Add a post-publish verification leg**: after un-drafting, a fresh job downloads each asset over the public URL
+   and compares it against the checksums, failing loudly on mismatch. Cost: one more CI job — runner minutes you have
+   told me you do not want to spend on macOS, and this is the same coin, roughly one job's worth per release — plus
+   the honesty caveat that a job running in the same trusted environment is closer to the publisher than to the
+   downloader, so it catches corruption, not deception.
+3. **Signing or attestation** (cosign-style signatures, or GitHub artifact attestation): makes verification meaningful
+   against a hostile publisher, not just a broken one. Cost: a trust anchor you have to keep, key custody, and a
+   documented verification step that users actually have to follow — the part that usually rots.
+
+**Recommendation:** option 1 for v0.1.0, with the trigger written down — reopen when binaries are being installed by
+people who did not build them, which is the moment verification stops being optional. Option 2 is worth its runner
+minutes only if releases become frequent enough that silent corruption would matter more than the once-per-release
+manual check the first tag run already includes.
+
+**Answer format (one line):** `keep the gap, revisit at TRIGGER`, or `add the download-and-hash leg`, or `do signing`.
+Cost: about 2 minutes to answer; option 2 is roughly an hour of implementation plus per-release runner minutes.
+
+**Links** — the disposition row that records the gap: [SPEC §15](https://github.com/ArborealML/Inference-Router/blob/main/SPEC.md#L1445);
+the published-surface acceptance criteria: [SPEC §14](https://github.com/ArborealML/Inference-Router/blob/main/SPEC.md#L1346);
+the gate itself: [release.yml](https://github.com/ArborealML/Inference-Router/blob/main/.github/workflows/release.yml);
+the task that runs the first release: [TASK-28](https://github.com/ArborealML/Inference-Router/tree/main/backlog/tasks).
+<!-- SECTION:DESCRIPTION:END -->
+
+## Acceptance Criteria
+<!-- AC:BEGIN -->
+- [ ] #1 One line: keep the accepted gap with a named trigger, add a post-publish download-and-hash leg (runner minutes), or add signing or attestation (trust anchor)
+<!-- AC:END -->
