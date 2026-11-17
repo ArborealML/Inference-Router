@@ -1,11 +1,11 @@
 ---
 id: TASK-14
 title: 'Improve the README: patterns from popular .NET repos, plus an icon and banner'
-status: To Do
+status: In Progress
 assignee:
   - '@chatswarm'
 created_date: '2026-11-16T22:26:00Z'
-updated_date: '2026-11-16T23:40:00Z'
+updated_date: '2026-11-17T00:20:00Z'
 labels:
   - docs
   - ui
@@ -31,7 +31,7 @@ feature-wall, no claim that is not measured (SPEC §9.1 gate).
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [x] #1 Pattern findings from popular .NET repos recorded in this task (or a short note under docs/)
-- [ ] #2 README restructured with a recognised section order: identity, what it does, quick start,
+- [x] #2 README restructured with a recognised section order: identity, what it does, quick start,
   configuration, CI/release, status/scope, layout, license
 - [ ] #3 An icon and a banner image committed under `docs/images/` (or `.github/`), with alt text and
   a source/attribution note; no third-party assets with unclear licences

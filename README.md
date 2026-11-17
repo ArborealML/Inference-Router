@@ -1,25 +1,49 @@
 # Arboreal Inference Router
 
-A .NET Native-AOT LLM **inference router**: one OpenAI-compatible front door in front of
-several local inference engines, with request prioritisation, model/context-window
-auto-switching, and queueing — configured entirely from TOML/JSON, with no reflection.
+An OpenAI-compatible HTTP front door for several local LLM inference engines. It queues, prioritises
+and routes requests, and switches which model an engine serves when a request needs one that is not
+loaded. Configured entirely from TOML/JSON, shipped as a Native-AOT single executable, with no
+reflection.
 
-It exists because a single GPU box running one model at a time is a scheduling problem:
-several agents want different models, some need a bigger context window than the one
-currently loaded, and switching a backend is slow and disruptive. The router holds the
-requests, decides which engine should serve them, and switches engines only when it has to.
+![CI](https://github.com/ArborealML/Inference-Router/actions/workflows/ci.yml/badge.svg?branch=main)
+![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)
+[![.NET](https://img.shields.io/badge/.NET-11.0-purple)](https://learn.microsoft.com/dotnet/)
 
-Library (`src/Arboreal.InferenceRouter`), server
-(`src/Arboreal.InferenceRouter.Server`), CLI (`src/Arboreal.InferenceRouter.Cli`).
-Design and decisions live in [`SPEC.md`](SPEC.md); the README is the entry point.
+It exists because a single GPU box running one model at a time is a scheduling problem: several
+agents want different models, some need a bigger context window than the one currently loaded, and
+switching a backend is slow and disruptive. The router holds the requests, decides which engine
+should serve them, and switches engines only when it has to.
 
-## Status
+## Feature status
 
-Working and tested (87 tests, warning-free build under `TreatWarningsAsErrors`, clean
-`PublishAot` with zero trim warnings). This is an early-stage internal tool: the request
-path, priority queue, scheduler, config and lifecycle handling are implemented; the
-router-host/listener split, multi-host scheduling and the live web dashboard are
-spec'd but not built (SPEC §12–§13).
+| Works today | Not built yet |
+| --- | --- |
+| OpenAI-compatible chat/completion proxying, streaming included | Ingress authentication and TLS termination |
+| Per-model queues with priority classes and tie-breaks | Router-host / listener split, multi-host routing |
+| Context-window escalation across serving profiles | Global impact-aware scheduling, suffix-cache reuse |
+| Engine and model switching driven by config (lifecycle commands) | Live web dashboard |
+| Health probes, capacity signals from the engine | Config reload without restart |
+| Admin surface: status, events (SSE replay), threads, switch, tickets | Published release binaries (first tag pending) |
+
+Early-stage internal tool. 92 tests, build clean under `TreatWarningsAsErrors`, `PublishAot` with
+zero trim warnings. What is designed but unimplemented is specified in
+[`SPEC.md`](SPEC.md) §12–§13, not guessed here.
+
+## Security and trust model
+
+- **Loopback by default**: `listen = "http://127.0.0.1:8321"`. Change it deliberately.
+- **No ingress authentication yet**, and requests are plaintext HTTP — the router does not terminate
+  TLS. Any caller that can reach the port can claim any thread priority and reach `/admin/*`. The
+  deployment posture is loopback, or behind your own proxy that authenticates and terminates TLS.
+- **Engine credentials** are per engine: `api_key` inline, or `api_key_file` pointing at a file read
+  at startup. Keep key files out of the repository.
+- **Telemetry holds no prompt text.** Events carry sequence, timestamp, kind, thread id, ticket id,
+  engine, model, reason and a numeric value. Prompt bodies are forwarded to engines and back to
+  callers; they are not journalled.
+- **Engine failures are proxied, not sanitised**: an upstream 4xx/5xx body reaches your client inside
+  an `engine_error` envelope, so engine-side detail (including paths and model ids) is visible.
+- Lifecycle commands run as the router's user. There is no container identity check yet
+  (`SPEC.md` §15.1).
 
 ## What it does
 
@@ -44,15 +68,38 @@ spec'd but not built (SPEC §12–§13).
   from the same status probe that drives health, so an engine advertising 2 slots does not
   get 8 concurrent requests.
 - **Operability** — `/admin/status`, `/admin/events` (replayable SSE), `/admin/threads`,
-  `/admin/switch`, `/admin/tickets/{id}`, `/healthz`; a `config` verb that validates a config
-  file and prints the resolved plan without binding sockets or running lifecycle commands.
+  `/admin/switch`, `/admin/tickets/{id}` (read and cancel), `/healthz`; a `config` verb that
+  validates a config file and prints the resolved plan without binding sockets or running
+  lifecycle commands.
+
+## Install
+
+Requires the .NET 11 SDK (`global.json` pins `11.0.100`, `rollForward: latestFeature`). Native AOT
+also needs a C toolchain on the build machine — clang/LLVM on Linux, MSVC on Windows.
+
+There are no published binaries yet — the first tag will produce `air` archives for `linux-x64`,
+`win-x64`, `osx-arm64` and `osx-x64` with `SHA256SUMS` (see **CI and releases**). Until then, build
+it:
+
+```bash
+git clone https://github.com/ArborealML/Inference-Router.git && cd Inference-Router
+dotnet build
+dotnet test
+
+# single-file native binary (named `air`)
+dotnet publish src/Arboreal.InferenceRouter.Cli -c Release -r linux-x64 \
+  /p:PublishAot=true /p:StripSymbols=true /p:DebugSymbols=false /p:DebugType=None
+```
+
+The server project publishes the same router as an ASP.NET host:
+
+```bash
+dotnet publish src/Arboreal.InferenceRouter.Server -c Release -r linux-x64 /p:PublishAot=true
+```
 
 ## Quick start
 
 ```bash
-dotnet build                                    # solution: inference-router.slnx
-dotnet test
-
 # validate a config and print the resolved engine/model/serving plan (safe: no sockets)
 dotnet run --project src/Arboreal.InferenceRouter.Cli -- config -c samples/router.toml
 
@@ -67,41 +114,48 @@ curl -s localhost:8321/v1/chat/completions \
   -d '{"model":"qwen-3.8-flash-next","messages":[{"role":"user","content":"hi"}]}'
 ```
 
-Native AOT:
+`samples/router.toml` is a reference config modelled on one developer's machine — the
+endpoints, model ids, serving tiers and key paths are examples, not defaults. Point it at
+your own engines. `samples/router.safe-smoke.toml` is an inert config (engines marked
+`remote`, no lifecycle commands) for testing without starting or stopping anything.
+`samples/router.ci-smoke.toml` is the self-contained config the smoke script uses.
+
+## Verify it works
+
+Against a real config, in this order — each step isolates a different layer:
 
 ```bash
-dotnet publish src/Arboreal.InferenceRouter.Server -c Release -r linux-x64 /p:PublishAot=true
-# the CLI (which also serves) publishes as a single executable named `air`
-dotnet publish src/Arboreal.InferenceRouter.Cli -c Release -r linux-x64 \
-  /p:PublishAot=true /p:StripSymbols=true /p:DebugSymbols=false /p:DebugType=None
+air config -c your.toml          # config loads, ladder and probes resolve
+curl -s localhost:8321/healthz   # the router is listening
+curl -s localhost:8321/admin/status | head -c 400   # engines healthy? models loaded? slots?
+curl -s localhost:8321/v1/models                    # what the engines report right now
 ```
 
-Smoke-test a built binary against a fake engine (starts nothing real, no keys needed):
+`/admin/status` reports each engine's `healthy`, `loaded` models, active profile and slot count; an
+engine listed unhealthy is a probe problem, not a routing problem. To watch decisions as they happen:
+`curl -N localhost:8321/admin/events`. A built binary can be exercised end-to-end against a fake
+engine, with no GPU, keys or network:
 
 ```bash
 tools/ci/smoke.sh ./src/Arboreal.InferenceRouter.Cli/bin/Release/net11.0/linux-x64/publish/air
 ```
 
+Every router failure is one lowercase body — `{"error":{"type":"air_error","code":…,"message":…}}` —
+and the code tells you where to look:
 
-`samples/router.toml` is a reference config modelled on one developer's machine — the
-endpoints, model ids, serving tiers and key paths are examples, not defaults. Point it at
-your own engines. `samples/router.safe-smoke.toml` is an inert config (engines marked
-`remote`, no lifecycle commands) for testing without starting or stopping anything.
-`samples/router.ci-smoke.toml` is the self-contained config `tools/ci/smoke.sh` uses.
+| Code | Status | Usual cause |
+| --- | --- | --- |
+| `invalid_request` | 400 | Malformed body or header, rejected before the engine sees it |
+| `not_found` | 404 | Unknown route, or a model no engine's catalogue declares |
+| `deadline_exceeded` | 408 | `max_queue_time` elapsed while the request waited |
+| `cancelled` | 499 | Caller hung up or `DELETE /admin/tickets/{id}` |
+| `queue_overflow` | 429 | Per-model queue full: back off, or raise `max_queue_per_model` |
+| `engine_error` / `engine_unreachable` | 502 | The engine answered wrongly, or is not answering; its own message is embedded |
+| `switch_failed` / `model_unavailable` | 503 | Lifecycle switch failed, or no engine can serve that model |
+| `no_available_engine` | 500 | Nothing eligible: check `/admin/status` for slots and health |
 
-## CI and releases
-
-`ci.yml` builds (warnings are errors), runs the tests and performs a trim-warning-free Native-AOT
-publish on every push to `main` and every pull request.
-
-`release.yml` runs on a tag such as `v0.1.0`. It first refuses the tag if its format is wrong, it
-does not resolve to a commit, or **any release (draft or published) already uses it** — that check
-runs before any build. It then builds a stripped Native-AOT `air` for `linux-x64`, `win-x64`,
-`osx-arm64` and `osx-x64` on native runners, smoke-tests each binary on its own operating system
-(`tools/ci/smoke.sh`), and only then creates the release: a draft with the four archives and
-`SHA256SUMS`, published once every asset is uploaded. A failed publish removes the draft that run
-created. To exercise the whole pipeline without releasing, run the workflow manually with
-`dry_run` checked.
+The same table, with the agent-facing headers and the worked "the log is too big" session, is in
+[`docs/ai-integration.md`](docs/ai-integration.md).
 
 ## Configuration shape
 
@@ -148,9 +202,22 @@ you need, so it switches profile instead of failing. While a request waits or a 
 stream carries `data: [router keepalive …]` frames rather than going silent, and a failed stream
 ends with an error frame plus `[DONE]`.
 
-[`docs/ai-integration.md`](docs/ai-integration.md) covers the admin surface, the error-code table,
-and a worked "the log is too big" session. [`samples/pi/inference-router-tools.json`](samples/pi/inference-router-tools.json)
+[`samples/pi/inference-router-tools.json`](samples/pi/inference-router-tools.json)
 describes the same calls as tool definitions for a harness. Nothing in the router reads that file.
+
+## CI and releases
+
+`ci.yml` builds (warnings are errors), runs the tests and performs a trim-warning-free Native-AOT
+publish on every push to `main` and every pull request.
+
+`release.yml` runs on a tag such as `v0.1.0`. It first refuses the tag if its format is wrong, it
+does not resolve to a commit, or **any release (draft or published) already uses it** — that check
+runs before any build. It then builds a stripped Native-AOT `air` for `linux-x64`, `win-x64`,
+`osx-arm64` and `osx-x64` on native runners, smoke-tests each binary on its own operating system
+(`tools/ci/smoke.sh`), and only then creates the release: a draft with the four archives and
+`SHA256SUMS`, published once every asset is uploaded. A failed publish removes the draft that run
+created. To exercise the whole pipeline without releasing, run the workflow manually with
+`dry_run` checked.
 
 ## Layout
 
@@ -163,7 +230,10 @@ describes the same calls as tool definitions for a harness. Nothing in the route
 | `bench/` | JIT overhead harness: engine → routing → HTTP ladder against one shared fake engine |
 | `docs/benchmarks.md` | measured overhead, what the numbers exclude, and the bug the harness caught |
 | `docs/ai-integration.md` | how an LLM agent (Pi or any HTTP client) should drive the router |
-| `samples/pi/` | tool manifest for agent harnesses |
+| `samples/` | reference and inert configs; `samples/pi/` holds the tool manifest for agent harnesses |
+| `tools/ci/` | the smoke script every release leg runs |
+| `backlog/` | planned and in-flight work as Markdown tasks |
+| `groma/` | architecture map: components, flows, relationships |
 | `SPEC.md` | specification and revision log |
 
 ## Roadmap (spec'd, not built)
