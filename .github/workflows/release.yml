@@ -470,18 +470,18 @@ jobs:
             exit 1
           fi
           rel_id="$(printf '%s' "$created" | jq -r '.id')"
-          upload_url="$(printf '%s' "$created" | jq -r '.upload_url')"
           # Exactness is a choice: if GitHub ever changes the template this gate stops, loudly, and a human
-          # updates it rather than a build posting bytes at a surprise host. The upload itself goes to the
-          # address the API gave, not the one we guessed.
+          # updates it rather than a build posting bytes at a surprise host. Nothing here copies the
+          # response's address into a request — the check above compares it, and the request target is built
+          # below from repository context and the validated id.
           echo "release_id=$rel_id" >> "$GITHUB_OUTPUT"
           echo "created draft $rel_id for $TAG at $tag_sha"
-          # Upload by that id, through the upload_url the create returned with its own URI template.
-          # gh does not expand templates — `…latest{?per_page}` is sent literally and 404s — so the
-          # template part is cut off here and the name is put in the query by hand. Asset names are
-          # this gate's own (air-<rid>.tar.gz, its .sha256, SHA256SUMS): ASCII with no characters
-          # that need percent-encoding. The body is the file itself over an octet-stream header; if
-          # anything mangled it on the way, the stored-digest check below stops the publication.
+          # Upload by that id, at the address this run builds. gh does not expand URI templates —
+          # `…latest{?per_page}` is sent literally and 404s — so the `{?name,label}` part of the documented
+          # address is never used, and the name goes in the query by hand. Asset names are this gate's own
+          # (air-<rid>.tar.gz, its .sha256, SHA256SUMS): ASCII with no characters that need
+          # percent-encoding. The body is the file itself over an octet-stream header; if anything mangled
+          # it on the way, the stored-digest check below stops the publication.
           # The request target is BUILT here, from repository context and the id this step validated as
           # digits — not sliced out of the server's `upload_url`. The equality check above still enforces
           # the documented contract (and fails the run if GitHub moves the host), but a server-supplied
