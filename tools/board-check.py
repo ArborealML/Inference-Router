@@ -129,6 +129,7 @@ def main() -> int:
         return 2
 
     titles: dict[str, str] = {}
+    graph: dict[str, tuple[list[str], str]] = {}
     for path in files:
         raw = path.read_text(encoding="utf-8")
         fields, body = body_of(raw)
@@ -205,6 +206,13 @@ def main() -> int:
                 bad(tid, "STATUS", "Blocked, and no human assignee: a task that waits on another task belongs in Waiting naming it")
         if status == "Waiting" and not WAKE.search(body):
             bad(tid, "STATUS", "Waiting with no named wake event")
+        # A Description that claims a status the task does not have is a misleading wake: the
+        # kanban column says one thing and the text a reader acts on says another.
+        if status != "Blocked":
+            desc = "\n".join(secs.get("Description", []))
+            claim = re.search(r"\*\*Blocked|\bis Blocked\b|Blocked on (TASK-\d+|the owner|one decision)|task (stays|remains|is) Blocked", desc)
+            if claim:
+                bad(tid, "STATUS", f"status is {status!r} but the Description claims {claim.group(0)!r}")
         if status in {"Waiting", "Blocked"} and not (set(assignees) - AGENT_HANDLES):
             for i, item in enumerate(ac_items, 1):
                 if ASKS.search(re.sub(r"^#\d+\s*", "", item)):
@@ -238,7 +246,18 @@ def main() -> int:
         elif key:
             titles[key] = tid
 
+        deps = re.findall(r"TASK-\d+", re.search(r"(?m)^dependencies:\n((?:  - .+\n)+)", raw).group(1)) if re.search(r"(?m)^dependencies:\n", raw) else []
+        open_ac_text = " ".join(it for it, line in zip(ac_items, [l for l in body.splitlines() if CHECKBOX.match(l)]) if "[ ]" in line)
+        graph[tid] = (deps, open_ac_text)
+
     open_words.sort()
+    # Closure cycles: A depends on B, and an open criterion of B asks for what only A can produce.
+    # The dependency graph alone looks acyclic; the criteria close it.
+    for tid_a, (deps, open_acs) in graph.items():
+        for dep in deps:
+            if dep in graph and re.search(rf"\b{re.escape(tid_a)}\b", graph[dep][1]):
+                bad(tid_a, "DEADLOCK", f"depends on {dep}, whose open criterion names {tid_a} — neither can close")
+
     total = sum(w for w, _ in open_words)
     median = open_words[len(open_words) // 2][0] if open_words else 0
     print(f"corpus: {len(open_words)} open task(s), {total} words total, median {median}, "

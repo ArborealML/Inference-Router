@@ -196,6 +196,13 @@ board makes the edit. Code and SPEC stay the coding session's, and the board rec
 - **Notes and Comments are a rolling window, not a log.** A new entry replaces the entry it supersedes.
   Round-by-round records belong in the SPEC revision log and in git, and the task body cites them by sha or
   SPEC version rather than reproducing them. If a reader would not act on an old entry, delete it.
+- **A destination has to be readable from `main`.** A superseded record goes to a tracked archive file, a SPEC
+  row or a commit — a link another reader and CI can open. A gitignored scratch directory is not a
+  destination, and "it is in the git history" is provenance, not the evidence the contract asks for.
+- **Name the kind before deleting an entry**: superseded argument, history, a measurement of the moment, or a
+  **standing rule a reader has to act on**. A standing rule — a sequencing constraint, a permission boundary,
+  a version floor — goes into the Description, a criterion, Notes or SPEC *before* its comment disappears.
+  Trimming by recency alone deletes the rules that nothing has superseded, because they are also the oldest.
 - **A criterion is one line.** An AC item states the checkable outcome in under 40 words; the reason it
   holds, the census behind it and the case that pins it belong in Notes or SPEC. An AC that needs three
   sentences to read is two criteria, or one criterion with an essay attached. **An open task carries fourteen
