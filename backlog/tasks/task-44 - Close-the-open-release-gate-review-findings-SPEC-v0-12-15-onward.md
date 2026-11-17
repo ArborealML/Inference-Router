@@ -5,7 +5,7 @@ status: Waiting
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T10:52:00Z'
-updated_date: '2026-11-17T12:40:00Z'
+updated_date: '2026-11-17T12:55:00Z'
 labels:
   - ci
   - release
@@ -19,27 +19,28 @@ ordinal: 43000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-**Wake: the tenth deep review, dispatched over a3d3087** (tier high, asynchronous); its completion is what wakes
-this task. Fix commit for the ninth round: **a3d3087 (SPEC v0.12.18)**. **Do not cut a tag while this is open.**
+**Wake: the eleventh deep review, dispatched over d8202bd..8f834f6** (tier high, asynchronous); its completion
+wakes this task. Fixes carried here: a3d3087 (v0.12.18) and d8202bd / a8d9a93 / 8f834f6 (v0.12.19). **No tag has
+ever run this gate — that is the open question, a decision on TASK-42 rather than more code. Do not cut a tag while
+this task is open.**
 
-**The strongest demonstrated result of the ninth round, stated in plain words:** under v0.12.17 a create response
-whose `upload_url` ended in a newline **published**. The address was compared as a shell variable and command
-substitution strips the trailing newline, so an address that was not the documented one compared equal to it.
-Reproduced as a differential pair: `pub_url_trailing_lf_old` publishes, `pub_url_trailing_lf` refuses.
+**What the tenth round changed, plainly:** the upload address is no longer cut out of the server's `upload_url`.
+The run builds it from its own repository context and the validated digits-only id, and the response must still
+equal exactly that address — a contract check, not an input. Cases: `built_upload_target` (5 uploads at the
+run's own address, 0 at the answer's spelling), `pre_errtoken`, `diag_fields_survive`, `url_wrong_type`.
 
-**And the opposite framing, so nobody overstates the other one:** the non-canonical release id (`1.0e2`, which jq
-prints as `1.0E+2`) is **not a bypass** — the previous revision stopped too, but only at the read-back, after five
-assets had been posted at an address spelled from that id. The harness counts the uploads: 5 under v0.12.17, 0 now.
-Hardening, not a hole.
+**Rejected finding, with evidence:** the tenth review claimed case-folding the owner/repo prefix admits spellings
+the previous revision refused. The replaced code folded the same prefix (`${got_prefix,,} != ${want_prefix,,}`);
+the fold scope has been deliberate since SPEC v0.12.15.
 
-**Open here:** the sanitizer does not yet cover every captured `gh`/`jq` stderr (AC #13), the release-write race
-that no YAML can close (AC #14, with its controls), and two authorization facts only a live run answers (AC #4, on
-the canary in TASK-42) plus `.immutable` behind TASK-45 (AC #5).
+**Three limits stay limits, not tasks** unless we act: a shorter-than-real array in a successful response is
+undetectable by exit status or shape; a repeated key defeats the tag match because jq keeps the last value and
+duplicate keys are not reported; the integer guard checks jq's printed form, not the wire spelling, and the
+`< 2^53` ceiling rejects a future larger id on purpose.
 
-**Harness counts are as-of their commit**, measured by the board session, never inherited: at a3d3087 — **104
-cases, 0 failures, exit 0** (90 at 05f224b, 73 at fd76021, 59 at c6c73f7). Rounds carried here: seventh, eighth,
-ninth; the title names the SPEC floor, not a round number. No criterion inside the release-job steps is written as
-a line number — name the step or the exact command.
+**Harness counts are as-of their commit**, measured by the board session, never inherited: **109 cases, 0 failures,
+exit 0 at 8f834f6** (108 at d8202bd, 104 at a3d3087, 90 at 05f224b, 73 at fd76021, 59 at c6c73f7). No criterion
+inside the release-job steps is a line number — name the step or the exact command.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -56,7 +57,7 @@ a line number — name the step or the exact command.
 - [x] #10 the preflight release-existence check fails closed: a release-list read that exits non-zero, answers a non-array body, or carries an unparseable item stops the run rather than reading as no existing release for $TAG (a3d3087; cases pre_partial_page, pre_errdoc_body, pre_junk_item, and the harness runs 05f224b itself answering 'no release' where it should have refused). History kept on purpose: this criterion was checked at 05f224b, the ninth review proved it false for a partial page followed by a failed page, and it is re-checked only now that the repair and the differential case exist
 - [x] #11 SPEC's own overstatements are corrected in place rather than kept (05f224b): the stdout claim, the asset state story, and the target_commitish claim as worded in AC #2
 - [x] #12 the ninth review's fail-open preflight is repaired and pinned: any failure of the release-list read — a failed page, a non-array body, or a page set that cannot be trusted — stops the run with an explicit error rather than reading as no release, and a harness case runs the previous revision failing open so the hole stays demonstrated rather than remembered
-- [ ] #13 every gh and jq invocation whose stderr the step captures passes its text through the same control-character sanitizer before it reaches stdout — the preflight read is routed now, the rest are not, so a tool's stderr can still write a workflow command into the runner log
+- [ ] #13 every gh and jq invocation whose stderr a step captures passes its text through the same control-character sanitizer before it reaches stdout. Done so far, at d8202bd: the preflight release-list read captures stderr to a file removed by an EXIT trap, caps it at the first line of 2 KiB, replaces credential-shaped runs, then sanitizes (case pre_errtoken: a 40-character token on gh stderr does not reach the log). Still open by design: nobody has swept the remaining steps of the two release jobs for other captured stderr paths, and this criterion stays open until that sweep is recorded here — the board's wording, not the coder's guess, decides the scope
 - [x] #14 SPEC's dispositions keep naming the release-write race as open rather than closed by gate changes: a release-write principal can publish first, replace assets, or create a second release on the tag between the last read and the un-draft PATCH, and can publish between cleanup's GET and its DELETE; the controls are the `v*` ruleset (TASK-38), a restricted set of release writers, and immutable releases (TASK-45, off today, locking only after publication). a3d3087 neither widens nor closes it
 <!-- AC:END -->
 
@@ -93,4 +94,6 @@ Eighth-round disposition, by commit. **Fixed in 05f224b** (code + harness, each 
 Ninth round, recorded before the fix lands so the board's position is on the record: the review completed and its preflight finding was independently re-checked against the workflow source before anything was written here. AC #10 is the first criterion on this board that a later review proved false after it had been checked — the check was made against a commit where the code read as failing closed for the case tested, and the untested case (partial output followed by a failed page) fails open. The disposition naming the fix sha will be appended when the coding session hands one over.
 
 Ninth-round disposition, naming the fix sha. **Repaired in a3d3087**: the release list is judged by gh's exit status rather than by whether a variable came back non-empty, an error body or an unparseable list item is refused with the rule that fired named, and the upload address is compared inside jq — which is what closes the trailing-newline equality above, because shell comparison cannot see the byte that mattered. **Harness counts the uploads** for the non-canonical-id case (5 then, 0 now), which is how the hardening-not-bypass claim is evidenced rather than asserted. **Deliberately not closed**: the sanitizer gap (AC #13) and the release-write race (AC #14). No .NET code changed in this commit, so no dotnet build or test was run.
+
+Tenth-round disposition, by sha. **d8202bd**: the run builds the upload target itself (repository context + validated digits-only id) and the response must equal exactly that address — a contract check, not routing; captured stderr is capped at one line of 2 KiB, credential-shaped runs replaced, then sanitized, and the temp file is removed by an EXIT trap; the create-refusal diagnostic prints one field at a time with the address bounded to 60 characters plus its length. **a8d9a93**: comment and dead variable only — the previous commit had left both describing the rule it had just replaced, which is the kind of stale comment that becomes the next reader's evidence. **8f834f6**: a wrong-typed `upload_url` collapsed the per-field diagnostic to 'unreadable response'; found while writing the next review's payload, not by the reviewer. **Rejected, with evidence:** the case-fold finding above. **Still open:** AC #4 (canary), AC #5 (.immutable, behind TASK-45), AC #13 (the stderr sweep), AC #14 (the release-write race: never claimable as fixed by YAML). No .NET code changed in these three commits, so no dotnet build or test was run.
 <!-- SECTION:NOTES:END -->
