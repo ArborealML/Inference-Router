@@ -78,3 +78,19 @@ jobs:
             aot-publish.log
           retention-days: 5
           if-no-files-found: ignore
+
+  # The board contract, in the repo rather than in one session's scratch directory: AGENTS.md says a
+  # zero-defect count is only worth what the checker measures, so the checker is tracked, reviewed and
+  # run here. It prints the corpus numbers (open-task words: total, median, largest) on every run, and
+  # fails on structural defects. Word budgets are advisory until the corpus fits them; when it does,
+  # --strict-budget joins this command in the same commit as the last task that came inside the limit.
+  board:
+    name: board contract (backlog/ against AGENTS.md)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # the checker looks cited commits up in git; a shallow clone reports them missing
+      - name: Check every task file against the task-content rules
+        run: python3 tools/board-check.py
