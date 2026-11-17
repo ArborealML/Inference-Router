@@ -528,3 +528,13 @@ CI config into the README; badge spam and stale tables of contents.
 - Release badge cannot resolve until this is non-empty: [releases](https://github.com/ArborealML/Inference-Router/releases).
 - Art and provenance: [docs/images/](https://github.com/ArborealML/Inference-Router/tree/main/docs/images/), [docs/images/README.md](https://github.com/ArborealML/Inference-Router/blob/main/docs/images/README.md).
 - Numbers any claim must trace to: [docs/benchmarks.md](https://github.com/ArborealML/Inference-Router/blob/main/docs/benchmarks.md).
+
+### TASK-21 (second pass 16:4xZ)
+
+created: 2026-11-17T14:02:00Z
+
+---
+
+Wake named explicitly for the task that parks behind this one (TASK-11, Waiting): **the SPEC revision that writes the three adopted postures into SPEC §6, §10 and §12.5**, with its revision-log line in the same commit. Measured at b214ce6: `SPEC.md` has no operator-first or `/admin`-tunnel posture text, so the act is not done and TASK-11 must not start. The adoption itself is recorded in the comment above; AC #1 and #2 stay unchecked until the SPEC revision exists, because this task is graded on the record, not on the recommendation.
+
+---

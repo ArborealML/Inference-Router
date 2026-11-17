@@ -4,7 +4,7 @@ title: >-
   A public version number is the owner's go-ahead; a test tag inside an
   agent-run protocol is an agent act
 date: '2026-11-17T14:26:00Z'
-status: proposed - pending owner ratification on TASK-50
+status: declined
 ---
 ## Context
 
@@ -29,3 +29,9 @@ TASK-49 asks one owner question (a second public repository) plus the go-ahead f
 tag on TASK-32. TASK-42's canary needs no permission: its body states the recommendation and the irreversible
 consequence. TASK-38's ruleset scope is decided by the agent, with the reasoning written where the act is
 recorded.
+
+## Disposition
+
+Declined by the owner on 2026-11-17, on TASK-50: "publishing does not need my go ahead". Decision-16 governs — a
+release act (tag cut, publish, report) is an agent act with no prior approval. A public version number is not a separate
+authority class; the board still reports what it published and what the run proved.

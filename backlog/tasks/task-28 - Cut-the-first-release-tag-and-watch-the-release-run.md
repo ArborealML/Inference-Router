@@ -10,7 +10,6 @@ labels:
   - release
   - ci
 dependencies:
-  - TASK-50
   - TASK-38
   - TASK-39
   - TASK-41
@@ -29,7 +28,7 @@ ordinal: 28000
 One tag, one run: the release workflow has only ever been exercised as a dry run, and it refuses to publish unless
 every declared leg produced a verified archive. decision-10 fixed the surface — linux-x64 and win-x64, nothing else.
 
-**Wake: the owner's `go | hold` on [TASK-50](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-50%20-%20Decision-approve-the-first-public-version-number-v0.1.0-—-one-line.md), and nothing else.** Under decision-16 the cut itself is an
+**Wake: agent predecessors only — no person is in this path any more.(https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-50%20-%20Decision-approve-the-first-public-version-number-v0.1.0-—-one-line.md), and nothing else.** Under decision-16 the cut itself is an
 agent act that gets reported; requiring a go-ahead first is decision-21, pending that same ratification. Everything
 else here is an agent act, so this task sits Waiting and names that event. A `hold` records a decision and does not
 release this task.
@@ -63,6 +62,12 @@ first and a published name is never reused.
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
+**Ordering fact the graph cannot express.** TASK-48's readback proof can only run against a release that already
+exists, so the real sequence is: canary release -> post-publish readback proof -> ruleset -> immutable releases ->
+the `v0.1.0` tag. TASK-28 depends on TASK-48 for its code and tests, never for a live proof that would need this
+tag first; if a criterion ever reads as TASK-48 gating TASK-28 on a published release, that is a deadlock in
+prose and gets reworded, not an edge to add.
+
 **What gates this, as events.** [TASK-50](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-50%20-%20Decision-approve-the-first-public-version-number-v0.1.0-—-one-line.md)'s `go`; [TASK-38](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-38%20-%20Act-put-a-v-ruleset-on-the-repository-and-read-it-back.md)'s ruleset read back — a `creation` rule
 with empty `bypass_actors` blocks the principal that pushes the tag, so the ruleset and the first tag cannot both be
 first; [TASK-45](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-45%20-%20Enable-GitHub-immutable-releases-before-the-first-tag.md) done; [TASK-44](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-44%20-%20Close-the-open-release-gate-review-findings-SPEC-v0-12-15-onward.md) closed; CI green on the tagged commit.

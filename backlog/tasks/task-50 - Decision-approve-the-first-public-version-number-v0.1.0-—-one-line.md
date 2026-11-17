@@ -1,11 +1,11 @@
 ---
 id: TASK-50
 title: 'Decision: approve the first public version number (v0.1.0) — one line'
-status: Blocked
+status: Done
 assignee:
   - '@claire'
 created_date: '2026-11-17T15:01:00Z'
-updated_date: '2026-11-17T16:00:00Z'
+updated_date: '2026-11-17T16:38:00Z'
 labels:
   - release
 dependencies: []
@@ -30,6 +30,18 @@ ordinal: 50000
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 the answer `v0.1.0: go | hold` is recorded here; a `go` releases the tag task and a `hold` parks it — this task performs no act
-- [ ] #2 the answer `ratify decision-21: yes | no` is recorded, and decision-21's status is changed to match
+- [x] #1 the answer `v0.1.0: go | hold` is recorded here; a `go` releases the tag task and a `hold` parks it — this task performs no act
+- [x] #2 the answer `ratify decision-21: yes | no` is recorded, and decision-21's status is changed to match
 <!-- AC:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+created: 2026-11-17T16:38:00Z
+
+---
+
+Owner answer, 2026-11-17, verbatim: **`0.1.0 go, publishing does not need my go ahead.`** AC #1 is therefore `v0.1.0: go`, and decision-21 is **declined** — publishing needs no prior approval, decision-16 governs, and the tag cut is an agent act that gets reported. This task recorded policy and approval only; it performed no act.
+
+---
+<!-- COMMENTS:END -->
