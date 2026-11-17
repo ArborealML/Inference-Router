@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-16T20:46:00Z'
-updated_date: '2026-11-16T23:55:00Z'
+updated_date: '2026-11-17T01:13:00Z'
 labels:
   - backend
 milestone: v0.10 - live view and robustness parity
@@ -26,6 +26,13 @@ TASK-1), then security and tests. Durability, fairness and version pins follow.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Event-feed correctness (exclusive replay cursor, full retained-window replay, atomic replay/subscribe handover, slow-subscriber feed closure, bounded subscribers) is being fixed in the ticket-surface task now, without changing the wire contract. What is deliberately left to this task is drop *accounting*: a slow subscriber's loss is currently visible only as a closed feed, and reporting it as an event kind is a wire extension that needs its own decision alongside the schema additions already listed here.
+<!-- SECTION:NOTES:END -->
+
 ## Plan (reordered after the deepest tier plan review; each step ships with fake-backed tests per AC #8)
 
 Review source: the research service deepest tier plan review, mirrored at `.local/reviews/r13-task10-plan-solpro.md`

@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@chatswarm'
 created_date: '2026-11-16T22:26:00Z'
-updated_date: '2026-11-17T00:20:00Z'
+updated_date: '2026-11-17T01:14:00Z'
 labels:
   - docs
   - ui
@@ -16,6 +16,7 @@ ordinal: 14000
 
 ## Description
 
+<!-- SECTION:DESCRIPTION:BEGIN -->
 Low priority. The README is accurate but plain: no identity (icon/banner), no badges, and it leads
 with prose instead of what the reader can do in 60 seconds. Two steps:
 
@@ -27,6 +28,7 @@ with prose instead of what the reader can do in 60 seconds. Two steps:
 
 Keep whatever the research recommends that does not fight the house style: no marketing voice, no
 feature-wall, no claim that is not measured (SPEC §9.1 gate).
+<!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
@@ -38,6 +40,12 @@ feature-wall, no claim that is not measured (SPEC §9.1 gate).
 - [ ] #4 Build status and release badges that actually resolve on the public repo
 - [ ] #5 No claim in the README that SPEC §9.1 does not back with measurements
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Why the image files are still missing: the README pattern review that is recorded here returned art *specifications* only — an aspect-ratio brief for the mark, banner and social preview, and where they should live — and explicitly rendered no artwork. Nothing has been sent to the image service yet, so the absence of `docs/images/` is an undispatched step, not a lost delivery. Next action is an art request (or an in-repo vector mark), then wire the badge/identity into the README.
+<!-- SECTION:NOTES:END -->
 
 Status: step 1 landed (findings below); the task moves to In Progress when the README itself changes.
 Icon/banner art comes after the structure lands.

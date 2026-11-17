@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-16T20:40:00Z'
-updated_date: '2026-11-17T00:47:00Z'
+updated_date: '2026-11-17T01:13:00Z'
 labels: []
 dependencies: []
 ordinal: 2000
@@ -23,6 +23,20 @@ Closes the AIR side of the Pi protocol in SPEC 13.3: replay of session events fi
 - [ ] #2 A ready ticket is validated against the switch that produced it
 - [ ] #3 Wire tests cover each addition and the OpenAI-compatible surface stays unchanged
 <!-- AC:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Fix slice (event-feed correctness first, ticket failure paths second). Each item lands with a test.
+
+1. Replay cursor semantics are exclusive, matching the filter that reads them. A cursor ahead of the ring (a client reconnecting with a seq from a previous router lifetime) yields nothing instead of computing a negative count and throwing after the SSE headers have already been flushed.
+2. Replay default cap = ring capacity, so a reconnect inside the retained window is never silently truncated; `OldestSeq` names the retention boundary, which becomes the only place events disappear.
+3. Replay snapshot and live subscription taken under one ring lock, so the handover window can neither lose an appended event nor deliver it twice.
+4. A subscriber that falls behind has its feed closed rather than silently dropping: a filtered reader sees no seq gap, so a dropped terminal event would otherwise look like a stream with nothing more coming. Live subscriber count is bounded, and a feed ends when the router shuts down instead of outliving it.
+5. Next half of the slice: every terminal failure path completes the admitted stream channel, so a caller is never left waiting on a stream that will not end; caller cancellation stays a cancellation rather than being counted as a completed request.
+
+Out of this slice, deliberately: counting per-subscriber drops and reporting the loss on the wire. That is a wire extension and it belongs with the event-schema work, so it is cross-linked to the hardening task rather than bundled here.
+<!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
 
