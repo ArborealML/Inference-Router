@@ -40,3 +40,5 @@ by `[DONE]`.
 - A phase-timeout value above `Int32.MaxValue` milliseconds fails at config binding rather than through
   the router's own validation message — startup still fails with a non-zero exit, only with a less
   specific line. Accepted gap, SPEC §15.
+
+**Corollary pinned in v0.12.6.** The response ceiling is passed before any terminal work, so a failure inside the router's own completion path cannot be relabelled `engine_timeout`, and stream acquisition sits inside the ceiling.

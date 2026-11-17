@@ -3,9 +3,9 @@ id: TASK-20
 title: 'Decision: may the router reach the Docker daemon, and by what route'
 status: To Do
 assignee:
-  - '@qwen3.8-flash-next'
+  - '@qwen3.8-flash-next-board'
 created_date: '2026-11-17T02:18:00Z'
-updated_date: '2026-11-17T05:55:00Z'
+updated_date: '2026-11-17T07:01:00Z'
 labels:
   - engine
   - lifecycle

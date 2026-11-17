@@ -38,3 +38,5 @@ owns; a caller's `switch_wait_timeout_ms` bounds only that caller's own wait.
   (decision-5).
 - A switch is a long operation holding a slot while it drains the engine; giving it a reservation of its
   own rather than an inference slot is still open and carried as TASK-25.
+
+**Extended in v0.12.6.** The same rule was extended: a waiter is never answered from a switch that is not its own target. A switch aimed at the same model under a different serving profile no longer answers a caller that asked for another profile, and a switch that failed for another target no longer fails it — the waiter takes its own turn (`SwitchFairnessTests`). The switch token is read before the transaction is scheduled and its source is deliberately not disposed, because an exception thrown before the switch task's own cleanup would strand every waiter on that engine.

@@ -3,9 +3,9 @@ id: TASK-6
 title: 'Curation follow-up: pin lifecycle work to the engine components'
 status: To Do
 assignee:
-  - '@qwen3.8-flash-next'
+  - '@qwen3.8-flash-next-board'
 created_date: '2026-11-16T20:40:00Z'
-updated_date: '2026-11-17T06:05:00Z'
+updated_date: '2026-11-17T07:01:00Z'
 labels: []
 dependencies:
   - TASK-1

@@ -3,9 +3,9 @@ id: TASK-2
 title: Ticket-aware Pi session surface
 status: To Do
 assignee:
-  - '@qwen3.8-flash-next'
+  - '@qwen3.8-flash-next-board'
 created_date: '2026-11-16T20:40:00Z'
-updated_date: '2026-11-17T05:27:00Z'
+updated_date: '2026-11-17T07:01:00Z'
 labels: []
 dependencies: []
 ordinal: 2000

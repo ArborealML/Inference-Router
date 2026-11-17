@@ -5,9 +5,9 @@ title: >-
   executable?
 status: To Do
 assignee:
-  - '@qwen3.8-flash-next'
+  - '@qwen3.8-flash-next-board'
 created_date: '2026-11-17T05:25:00Z'
-updated_date: '2026-11-17T05:55:00Z'
+updated_date: '2026-11-17T07:01:00Z'
 labels:
   - architecture
 dependencies: []

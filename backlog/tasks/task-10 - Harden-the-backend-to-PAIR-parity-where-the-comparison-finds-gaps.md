@@ -5,7 +5,7 @@ status: Done
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-16T20:46:00Z'
-updated_date: '2026-11-17T06:35:00Z'
+updated_date: '2026-11-17T07:01:00Z'
 labels:
   - backend
 milestone: v0.10 - live view and robustness parity
@@ -237,6 +237,14 @@ created: 2026-11-17T06:35:00Z
 ---
 
 Deep review of the v0.12.4 phase-timeout work (commit 4b806da) is dispositioned in 76374d6. Fixed: the response ceiling stopped at the response's headers rather than the body the caller is owed, so headers-then-silence hung instead of failing `engine_timeout`; an abandoned send leaked the upstream response; a model switch ran on the initiating request's token, so a waiter that gave up could stop the switch or latch its failure for everyone else; an instantly failed switch was worded as a timeout it never waited for; `no_select_command` left the engine permanently 'switching'. Found while testing, not by the review: the read pump closed the stream channel before the ticket was terminal, so a stream whose engine sent headers and no frame simply stopped with no error frame. Accepted gaps are written up in SPEC §15 — the selector's own reason stays on the event feed and out of the caller-facing message, and a timeout value above Int32.MaxValue ms is rejected at DTO binding rather than by the router's own validation message. SPEC §5.5, §6 and §14.1 now say what the tests pin, and revlog v0.12.5 supersedes three sentences of the v0.12.4 entry that described an intention the code did not keep. A second external review is in flight on 76374d6; disposition pending.
+
+---
+
+created: 2026-11-17T07:01:00Z
+
+---
+
+Second external review, covering 76374d6, dispositioned in v0.12.6: fixed a false `Ready` where a waiter for one serving profile was answered by another profile's switch on the same model; fixed a shutdown race that could strand every switch waiter on an engine (the switch token is now captured before the task is scheduled, the token source is no longer disposed, and a switch that fails to start settles its waiters); stopped the response ceiling from reassigning blame for a failure inside the router's own terminal work; moved stream acquisition inside the ceiling; switch-failure messages now name the target that failed rather than whichever switch happened to be in flight. Accepted deliberately and recorded in SPEC §15: a ceiling that loses the race with the engine's bytes does not fire — the caller gets an answer rather than a timeout — and there is no idle bound for a generation that stalls after its first frame, which is now TASK-30 with its acceptance criteria.
 
 ---
 <!-- COMMENTS:END -->
