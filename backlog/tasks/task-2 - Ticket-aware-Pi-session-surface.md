@@ -1,11 +1,11 @@
 ---
 id: TASK-2
 title: Ticket-aware Pi session surface
-status: In Progress
+status: To Do
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-16T20:40:00Z'
-updated_date: '2026-11-17T01:43:00Z'
+updated_date: '2026-11-17T02:14:00Z'
 labels: []
 dependencies: []
 ordinal: 2000
@@ -44,6 +44,8 @@ Out of this slice, deliberately: counting per-subscriber drops and reporting the
 A deep-tier external review of the three board-only commits that recorded these findings is in flight; it re-checks the findings against the code and the priority order of the fix slice. An in-flight review does not change this task status. Nothing from it is adopted until verified against this code.
 
 A second deep-tier pass over the fix slice found two more cursor holes, both now fixed: a `since` at the top of the number range overflowed checked arithmetic inside the replay helper and threw after the SSE headers were already flushed, and a cursor ahead of the ring (a reconnect after a restart) produced an empty replay and then filtered out every future event, so the feed was open but permanently silent — the cursor is now clamped to the ring head. It also found that a full feed was enforced by an exception thrown after the response had committed to SSE headers (fixed with a pre-flight 503 and a refusal that is a return value), and that the tests only ever exercised replay rather than the handover window: there is now a concurrent-producer ring test that asserts every sequence number arrives exactly once, and a feed test that subscribes before the flood. What it found that is NOT fixed stays open and is stated in SPEC rather than papered over: an ended feed says "reconnect", not "N events were lost"; an ended feed is indistinguishable from one that finished normally; a filtered reader cannot see that a terminal event was evicted from the ring; and the ring has no epoch, so a restart is not distinguishable from a quiet period. Those need a wire decision, and they are the shape of the remaining work.
+
+Moved out of In Progress: the replay slice is merged, and the remaining ticket-failure-path work is gated by nothing external — it waits for attention, so it belongs in the queue with its plan attached rather than in the WIP column.
 <!-- SECTION:NOTES:END -->
 
 ## Status notes

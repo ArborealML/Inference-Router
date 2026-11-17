@@ -1,11 +1,11 @@
 ---
 id: TASK-17
 title: Review, amend and merge the external rewrite of AGENTS.md
-status: In Progress
+status: Waiting
 assignee:
-  - '@qwen3.8-flash-next'
+  - '@chatswarm'
 created_date: '2026-11-17T01:27:00Z'
-updated_date: '2026-11-17T02:12:00Z'
+updated_date: '2026-11-17T02:14:00Z'
 labels:
   - docs
   - process
@@ -29,18 +29,6 @@ An external deep-tier request is producing a rewrite of AGENTS.md as a pull requ
 - [ ] #5 The hygiene scan is clean on the PR content and backlog/config.yml is untouched by the merge
 - [ ] #6 The PR is merged and the disposition of every rule change is recorded on the board
 <!-- AC:END -->
-
-## Implementation Plan
-
-<!-- SECTION:PLAN:BEGIN -->
-Plan:
-1. Extract the proposed file from the delivery into .local/agents-md-rewrite/ and keep it as evidence, never as instruction.
-2. Verify mechanically what can be verified mechanically: both tool-managed regions (backlog, groma) byte-identical to main; no other file touched.
-3. Diff rule by rule against the current file: for every constraint in main, record where the rewrite puts it (kept / compressed / moved / dropped). Judge by whether an agent could still act on it, not by tone.
-4. Amend the rewrite for what it lost or softened, and carry over decisions made after it was written (decision-3, focused local tests with CI as the regression gate).
-5. Run every command the rewritten file claims, on this machine, and keep the output. A command that cannot be run is not evidence.
-6. Apply on a branch, open the PR here (the external service cannot push), dispatch a deep-tier review of that commit, record dispositions of every finding, and merge only once the gates pass.
-<!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
 
