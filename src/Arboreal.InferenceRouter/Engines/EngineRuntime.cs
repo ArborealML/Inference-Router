@@ -100,6 +100,22 @@ public sealed class EngineRuntime : IAsyncDisposable
     public IReadOnlyList<string> LifecycleJournal => _lifecycle.Journal;
     public bool Healthy => _healthy;
     public string[] LoadedModels => _loadedModels;
+    /// <summary>Does this engine either declare the model in its configured catalog or report it loaded
+    /// right now? Case-insensitive, because the scheduler compares model names that way, and deliberately
+    /// silent about health and switching: those are separate questions with separate answers. A model the
+    /// engine serves out-of-band — loaded by hand, not named in any catalog — counts here, and that is not
+    /// a concession: the scheduler has always treated a reported model as eligible (§7).</summary>
+    public bool CanServeModel(string model)
+    {
+        // Loops, not LINQ: this runs on the admission path, and the catalog's own comparer is ordinal
+        // while model comparison here is case-insensitive, so a dictionary lookup would answer the wrong
+        // question. Enumerators over Keys and over the reported array are both structs: no allocation.
+        foreach (var name in _def.Catalog.Keys)
+            if (string.Equals(name, model, StringComparison.OrdinalIgnoreCase)) return true;
+        foreach (var name in _loadedModels)
+            if (string.Equals(name, model, StringComparison.OrdinalIgnoreCase)) return true;
+        return false;
+    }
     public int Inflight => Volatile.Read(ref _inflight);
     private int _inflight;
     public long InflightTokenProxy => Interlocked.Read(ref _tokenProxy);

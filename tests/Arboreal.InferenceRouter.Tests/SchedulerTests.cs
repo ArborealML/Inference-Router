@@ -35,12 +35,19 @@ public class SchedulerTests
 
     private static EngineRuntimeInfo Info(string name, string[] loaded, string[] catalog,
         int inflight = 0, bool healthy = true, long matched = 0, bool switching = false,
-        long activeContextWindow = 0, IReadOnlyList<ServingProfile>? profiles = null)
+        long activeContextWindow = 0, IReadOnlyList<ServingProfile>? profiles = null, string? model = null)
         => new()
         {
             Name = name,
             LoadedModels = loaded,
             CatalogModels = catalog,
+            // Production computes this on the engine itself (EngineRuntime.CanServeModel); the fixture
+            // derives it from the same two lists so no test can pose a combination no engine could produce.
+            // Pass `model` in the cases that are about the capability gate; leaving it out means "yes",
+            // which is what every other case here assumes.
+            CanServeModel = model is null
+                || loaded.Contains(model, StringComparer.OrdinalIgnoreCase)
+                || catalog.Contains(model, StringComparer.OrdinalIgnoreCase),
             SwitchingToward = [],
             Inflight = inflight,
             InflightTokenProxy = 0,
@@ -129,6 +136,20 @@ public class SchedulerTests
         var decision = new PrefixAwareScheduler().SelectNext(Make("m1", ThreadPriority.Normal(), 1), view, Config());
         Assert.Null(decision.Engine);
         Assert.Equal("no_available_engine", decision.RejectReason);
+    }
+
+    /// <summary>A model the engine reports but no catalog names is still eligible. This is the case the
+    /// admission refusal must not swallow: a model loaded out-of-band has no config entry, and the
+    /// scheduler has always served it (§7, TASK-35 review blocker).</summary>
+    [Fact]
+    public void Serves_A_Reported_Model_That_No_Catalog_Entry_Names()
+    {
+        var view = new SchedulerView(
+            new[] { Info("a", ["out-of-band"], [], model: "out-of-band") }, DateTimeOffset.UtcNow);
+        var decision = new PrefixAwareScheduler().SelectNext(
+            Make("out-of-band", ThreadPriority.Normal(), 1), view, Config());
+        Assert.Equal("a", decision.Engine);
+        Assert.False(decision.SwitchRequired);
     }
 
     // ── serving-profile escalation (§7.6) ────────────────────────────────────

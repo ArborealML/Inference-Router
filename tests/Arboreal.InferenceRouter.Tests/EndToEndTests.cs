@@ -27,6 +27,10 @@ public class FakeEngineHandler : HttpMessageHandler
     /// <summary>When set, /models re-reads the loaded set from this file (one id per line), so a
     /// lifecycle command can "load" a model mid-test the way a real switch does.</summary>
     public string? LoadedModelsFile { get; set; }
+    /// <summary>Status the fake answers /models with. Non-200 means the model probe fails, so the router
+    /// never learns what this engine can serve — an unknown capability, which is not the same as an
+    /// engine that has answered and named nothing.</summary>
+    public int ModelsStatus { get; set; } = 200;
     /// <summary>Context window reported by /props (0 = omit the field entirely).</summary>
     public long NCtx { get; set; }
     /// <summary>Slots reported by /props; also the engine's physical concurrency ceiling.</summary>
@@ -86,6 +90,9 @@ public class FakeEngineHandler : HttpMessageHandler
         SeenRoutes.Add(request.RequestUri!.PathAndQuery);
         if (Matches(path, "models"))
         {
+            if (ModelsStatus is not 200)
+                return new HttpResponseMessage((HttpStatusCode)ModelsStatus)
+                { Content = new StringContent("{\"error\":{\"message\":\"models probe down\"}}") };
             // The loaded set is mutable so tests can exercise availability: a model the engine does
             // not report must not be scheduled as if it were loaded.
             var items = string.Join(",", ActiveLoadedModels().Select(
@@ -266,9 +273,11 @@ public class FakeEngineHandler : HttpMessageHandler
 public class EndToEndTests
 {
     private static (RouterCore Router, FakeEngineHandler Fake) CreateRouter(
-        int maxInflight = 8, int maxQueue = 8)
+        int maxInflight = 8, int maxQueue = 8, int modelsStatus = 200)
     {
-        var fake = new FakeEngineHandler();
+        // Set before the router starts: an engine that has never answered /models is a capability the
+        // router does not know, which is a different state from an engine that answered and named nothing.
+        var fake = new FakeEngineHandler { ModelsStatus = modelsStatus };
         var cfg = new RouterConfig
         {
             DefaultModel = "test-model",
@@ -674,4 +683,132 @@ public class EndToEndTests
             File.Delete(windowFile);
         }
     }
+
+    // ── a model nothing in this configuration can serve (§7, TASK-35) ─────────────────
+
+    [Fact(Timeout = 30_000)]
+    public async Task A_Model_Nothing_Can_Serve_Is_Refused_At_Admission_With_No_Deadline_Set()
+    {
+        // The gap this closes: with no max_queue_time there is no timer, no ceiling and no terminal —
+        // a request for a model no engine declares or reports used to sit in its queue until the caller
+        // gave up. The refusal is a 503-shaped model_unavailable, which a caller may retry.
+        var (router, fake) = await WithHealthyRouterAsync();
+        await using var _ = router;
+        fake.LoadedModels = ["test-model"];               // the probe answered, and named nothing else
+        Assert.Contains("test-model", router.Engines["fake"].LoadedModels);
+
+        var clock = Stopwatch.StartNew();
+        var ticket = await router.EnqueueAsync("t-unknown", Request("nope", model: "not-here"));
+        var ex = await Assert.ThrowsAsync<RouterRequestException>(
+            () => ticket.CompletionTask.WaitAsync(TimeSpan.FromSeconds(5)));
+        clock.Stop();
+
+        Assert.Equal("model_unavailable", ex.Code);
+        Assert.Contains("not-here", ex.Message);
+        Assert.True(clock.Elapsed < TimeSpan.FromSeconds(2),
+            $"refusal took {clock.ElapsedMilliseconds} ms with no queue deadline set");
+        Assert.Equal(TicketState.Failed, ticket.State);
+        Assert.Equal("model_unavailable", ticket.ErrorCode);
+    }
+
+    [Fact(Timeout = 30_000)]
+    public async Task The_Admission_Rejection_Keeps_One_Enqueue_Event_Before_One_Terminal_Event()
+    {
+        var (router, fake) = await WithHealthyRouterAsync();
+        await using var _ = router;
+        fake.LoadedModels = ["test-model"];
+
+        var ticket = await router.EnqueueAsync("t-feed", Request("nope", model: "not-here"));
+        await Assert.ThrowsAsync<RouterRequestException>(
+            () => ticket.CompletionTask.WaitAsync(TimeSpan.FromSeconds(5)));
+
+        var feed = router.Events.Replay(0)
+                         .Where(e => e.TicketId == ticket.Id)
+                         .Select(e => e.Kind)
+                         .ToArray();
+        Assert.Equal(["request.enqueued", "request.failed"], feed);
+        var failed = router.Events.Replay(0).Single(e => e.TicketId == ticket.Id && e.Kind == "request.failed");
+        Assert.Contains("not-here", failed.Reason);
+        Assert.Equal("not-here", failed.Model);
+        Assert.Contains("not-here", ticket.Error ?? "");
+    }
+
+    [Fact(Timeout = 30_000)]
+    public async Task An_Engine_That_Has_Never_Answered_The_Model_Probe_Is_Not_A_Refusal()
+    {
+        // Unknown capability is not absent capability: an engine that has never answered /models says
+        // nothing about what it serves, so nothing here may be called hopeless and the request waits.
+        var (router, fake) = CreateRouter(modelsStatus: 503);
+        await using var _ = router;
+        var deadline = Stopwatch.GetTimestamp() + Stopwatch.Frequency * 15;
+        while (!router.Events.Replay(0).Any(e => e.Kind == "engine.health" && e.Value == 0)
+               && Stopwatch.GetTimestamp() < deadline)
+            Thread.Sleep(50);
+        Assert.False(router.Engines["fake"].Healthy);
+
+        var ticket = await router.EnqueueAsync("t-unprobed", Request("nope", model: "not-here"));
+        await Task.Delay(TimeSpan.FromSeconds(1));
+        Assert.Equal(TicketState.Queued, ticket.State);
+        Assert.True(router.TryCancel(ticket.Id));
+        var ex = await Assert.ThrowsAsync<RouterRequestException>(
+            () => ticket.CompletionTask.WaitAsync(TimeSpan.FromSeconds(5)));
+        Assert.Equal("cancelled", ex.Code);
+    }
+
+    [Fact(Timeout = 30_000)]
+    public async Task A_Model_Reported_By_The_Engine_But_In_No_Catalog_Is_Served_Not_Refused()
+    {
+        var (router, fake) = CreateRouter();
+        await using var _ = router;
+        fake.LoadedModels = ["out-of-band"];                // loaded by hand; named in no config entry
+        await WaitHealthyAsync(router);
+        var deadline = Stopwatch.GetTimestamp() + Stopwatch.Frequency * 15;
+        while (!router.Engines["fake"].LoadedModels.Contains("out-of-band")
+               && Stopwatch.GetTimestamp() < deadline)
+            Thread.Sleep(50);
+        Assert.Contains("out-of-band", router.Engines["fake"].LoadedModels);
+
+        var ticket = await router.EnqueueAsync("t-oob", Request("hi", model: "out-of-band"));
+        await ticket.CompletionTask.WaitAsync(TimeSpan.FromSeconds(15));
+        Assert.Equal(TicketState.Completed, ticket.State);
+    }
+
+    [Fact(Timeout = 30_000)]
+    public async Task Refused_Requests_For_An_Unservable_Model_Never_Crowd_Out_Serviceable_Ones()
+    {
+        // Queues are per-model with their own cap, which is why this gap mattered twice over: a hopeless
+        // request held a place in its model's queue and its head position forever. Refused at admission it
+        // occupies nothing, so the cap stays free for traffic the engine could actually take.
+        var (router, fake) = await WithHealthyRouterAsync(maxInflight: 1, maxQueue: 2);
+        await using var _ = router;
+        fake.HoldCompletions = true;
+        fake.LoadedModels = ["test-model"];
+
+        for (var i = 1; i <= 5; i++)
+        {
+            var ticket = await router.EnqueueAsync($"t-lost-{i}", Request($"nope-{i}", model: "not-here"));
+            var ex = await Assert.ThrowsAsync<RouterRequestException>(
+                () => ticket.CompletionTask.WaitAsync(TimeSpan.FromSeconds(5)));
+            Assert.Equal("model_unavailable", ex.Code);
+        }
+
+        // The cap belongs to the model's queue, and five hopeless requests never touched it: one
+        // in flight, two queued (the cap), and only the fourth is refused for depth.
+        var first = await router.EnqueueAsync("t1", Request("ping-1"));
+        await WaitStateAsync(first, TicketState.Executing);
+        var second = await router.EnqueueAsync("t2", Request("ping-2"));
+        var third = await router.EnqueueAsync("t3", Request("ping-3"));
+        Assert.Equal(TicketState.Queued, second.State);
+        Assert.Equal(TicketState.Queued, third.State);
+        var fourth = await router.EnqueueAsync("t4", Request("ping-4"));
+        var over = await Assert.ThrowsAsync<RouterRequestException>(
+            () => fourth.CompletionTask.WaitAsync(TimeSpan.FromSeconds(5)));
+        Assert.Equal("queue_overflow", over.Code);
+
+        fake.ReleaseGate();
+        await first.CompletionTask.WaitAsync(TimeSpan.FromSeconds(10));
+        await second.CompletionTask.WaitAsync(TimeSpan.FromSeconds(10));
+        await third.CompletionTask.WaitAsync(TimeSpan.FromSeconds(10));
+    }
+
 }

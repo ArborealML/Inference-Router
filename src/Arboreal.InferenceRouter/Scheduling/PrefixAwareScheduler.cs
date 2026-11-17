@@ -10,6 +10,11 @@ public sealed class EngineRuntimeInfo
     public required IReadOnlyList<string> CatalogModels { get; init; }
     /// <summary>Models queued elsewhere but this engine is mid-switch toward (approximate).</summary>
     public required IReadOnlyList<string> SwitchingToward { get; init; }
+    /// <summary>Does this engine declare the candidate request's model in its configured catalog, or report
+    /// it loaded right now? Precomputed by the view builder from the engine itself, so the scheduler and
+    /// the admission path ask one question of one implementation (§7, "a model nothing here can serve").
+    /// It says nothing about health or switching, which the scheduler weighs separately.</summary>
+    public required bool CanServeModel { get; init; }
     public required int Inflight { get; init; }
     /// <summary>Estimated token-proxy load: sum of prompt chars + expected output of in-flight.</summary>
     public required long InflightTokenProxy { get; init; }
@@ -66,8 +71,7 @@ public sealed class PrefixAwareScheduler : IRequestScheduler
             // Compare on the canonical model (Ticket.Model), not the raw requested alias.
             var model = request.Ticket.Model;
             var loaded = e.LoadedModels.Contains(model, StringComparer.OrdinalIgnoreCase);
-            var catalog = e.CatalogModels.Contains(model, StringComparer.OrdinalIgnoreCase);
-            if (!loaded && !catalog) continue;
+            if (!e.CanServeModel) continue;
 
             // Context-window escalation: the request needs more context than the engine serves.
             // A ladder change is a switch even when the model is already loaded; small windows buy

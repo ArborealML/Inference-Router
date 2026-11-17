@@ -166,8 +166,40 @@ public sealed class RouterCore : IInferenceRouter
             Model = canonical,
             Value = queued.PromptChars,
         });
+        // A model that nothing in this configuration can serve is refused now, at the head of its own
+        // queue, rather than parked there until a ceiling it may never have set expires. Checked after the
+        // enqueue event so the feed keeps one order for every terminal (§10), and by removal-before-fail
+        // so a ticket the dispatcher has already taken is left alone: the queue's own lock makes the
+        // removal an exclusive claim, and the ticket's single terminal transition makes it idempotent.
+        if (accepted && !AnyEngineCanServe(canonical))
+        {
+            if (GetQueue(canonical)?.TryRemoveById(ticket.Id) == true)
+            {
+                Fail(ticket, "model_unavailable",
+                    $"no engine in this configuration declares or currently reports model '{canonical}'");
+                return ValueTask.FromResult(ticket);
+            }
+        }
         SignalDispatch();
         return ValueTask.FromResult(ticket);
+    }
+
+    /// <summary>Could any engine here take this model: declared in its configured catalog, or reported by
+    /// its own model endpoint right now? False only when every engine has answered the model probe
+    /// (<c>Healthy</c>, so its reported set is a fact rather than an absence) and none of them names the
+    /// model. An engine that has never been reached says nothing either way, so an unreached engine makes
+    /// this true — unknown capability is never a refusal. Config cannot declare zero engines
+    /// (<c>RouterConfigLoader</c>: "at least one [engine.&lt;name&gt;] is required"), so the loop is never
+    /// vacuous. <c>_engines</c> is built once in the constructor and never mutated afterwards, which is
+    /// what makes reading it here, outside <c>_gate</c>, safe.</summary>
+    private bool AnyEngineCanServe(string model)
+    {
+        foreach (var e in _engines.Values)
+        {
+            if (!e.Healthy) return true;
+            if (e.CanServeModel(model)) return true;
+        }
+        return false;
     }
 
     public bool TryCancel(string ticketId)
@@ -365,7 +397,12 @@ public sealed class RouterCore : IInferenceRouter
                 var decision = _scheduler.SelectNext(head, new SchedulerView(infos, DateTimeOffset.UtcNow), _config);
                 if (decision.Engine is null)
                 {
-                    MaybeFailDeadline(head, decision.RejectReason ?? "no_available_engine");
+                    // The scheduler's reason (no_engines / no_available_engine) is a diagnostic for the
+                    // feed and for tests: it never reaches the caller, whose wait ends as
+                    // deadline_exceeded if it ends at all. A request that nothing here could ever take is
+                    // refused at admission instead (§7), so what reaches this line is a wait that could
+                    // still resolve.
+                    MaybeFailDeadline(head);
                     continue;
                 }
                 var e = _engines[decision.Engine];
@@ -432,6 +469,7 @@ public sealed class RouterCore : IInferenceRouter
                 LoadedModels = e.LoadedModels,
                 CatalogModels = e.Definition.Catalog.Keys.ToArray(),
                 SwitchingToward = e.SwitchingToward is null ? [] : [e.SwitchingToward],
+                CanServeModel = e.CanServeModel(head.Ticket.Model),
                 Inflight = e.Inflight,
                 InflightTokenProxy = e.InflightTokenProxy,
                 Healthy = e.Healthy,
@@ -461,7 +499,7 @@ public sealed class RouterCore : IInferenceRouter
         }
     }
 
-    private void MaybeFailDeadline(QueuedRequest head, string reason)
+    private void MaybeFailDeadline(QueuedRequest head)
     {
         var maxQueue = head.Request.Options.MaxQueueTime;
         if (maxQueue is { } window && DateTimeOffset.UtcNow - head.Ticket.QueuedAt > window)
