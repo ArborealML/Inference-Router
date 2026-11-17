@@ -91,8 +91,12 @@ jobs:
           # and is not reliable — a short token, a Basic auth header, an x-access-token clone URL, base64
           # broken by `+` or `/`, or a credential split by a byte cap all walk past a pattern. Reporting
           # digits only removes the channel instead of filtering it.
-          http_codes() { grep -oE '(HTTP|status)[^0-9]{0,4}[1-5][0-9]{2}' "$1" 2>/dev/null \
-                           | grep -oE '[0-9]{3}' | head -n 3 | paste -sd, - || true; }
+          # LC_ALL=C because the character ranges here are locale-dependent, and the label says what
+          # these are: numbers that look like statuses appearing in the text, not verified statuses. A
+          # response can write "mystatus=403" and forge one; that misleads triage and nothing else,
+          # because the refusal is decided by the exit status above, not by this.
+          http_codes() { LC_ALL=C grep -oE '(HTTP|status)[^0-9]{0,4}[1-5][0-9]{2}' "$1" 2>/dev/null \
+                           | LC_ALL=C grep -oE '[0-9]{3}' | head -n 3 | paste -sd, - || true; }
           # Note: the "release by tag name" endpoint hides drafts, so list and filter instead —
           # a half-finished draft from an earlier run must block a new build just as a published
           # release does. --paginate means a second page of releases cannot hide an existing one,
@@ -115,7 +119,7 @@ jobs:
           rc=0
           existing="$(gh api --paginate "repos/{owner}/{repo}/releases?per_page=100" 2>"$list_err")" || rc=$?
           if [ "$rc" != 0 ]; then
-            echo "::error::could not read this repository's releases (gh exited $rc; HTTP statuses named in stderr: $(http_codes "$list_err" | sed 's/^$/none/')) — a release for $TAG cannot be ruled out, so not building"
+            echo "::error::could not read this repository's releases (gh exited $rc; status-like numbers mentioned in stderr: $(http_codes "$list_err" | sed 's/^$/none/')) — a release for $TAG cannot be ruled out, so not building"
             exit 1
           fi
           if [ -z "$existing" ]; then
@@ -395,16 +399,21 @@ jobs:
           # instead of collapsing the line. This is a sanitizer, not a redactor: brief() makes the text
           # control-free and escapes the workflow-command punctuation, and the caps keep it short; what a
           # response chooses to put in its own name is still shown. Nothing here is compared against.
-          rsum() { printf '%s' "$1" | jq -r '
-              def f(v; n): (if v == null then "absent"
-                            elif (v | type) == "string"
-                              then (if (v | length) > n
-                                    then v[0:n] + "+(" + (v | length | tostring) + "ch)"
-                                    else v end)
-                            else (v | tojson) end);
-              "id=" + f(.id; 20) + " tag=" + f(.tag_name; 40) + " name=" + f(.name; 40)
-              + " draft=" + f(.draft; 12) + " pre=" + f(.prerelease; 12)
-              + " upload_url=" + f(.upload_url; 60)' 2>/dev/null || echo "unreadable response"; }
+          rsum() { printf '%s' "$1" | jq -s -r '
+              def sstr(v; n): ((v | length) as $L
+                               | if $L > n then v[0:((n / 2) | floor)] + "+(" + ($L | tostring) + "ch)+" + v[($L - ((n / 2) | floor)):]
+                                 else v end);
+              def show(v; n): ((if v == null then "absent"
+                                 elif (v | type) == "object" then "<object>"
+                                 elif (v | type) == "array" then "<array>"
+                                 elif (v | type) == "string" then v
+                                 else (v | tojson) end) as $t | sstr($t; n));
+              if length != 1 or ((.[0] | type) != "object") then "unreadable response"
+              else .[0] as $r
+                   | "id=" + show($r.id; 20) + " tag=" + show($r.tag_name; 40)
+                     + " name=" + show($r.name; 40) + " draft=" + show($r.draft; 12)
+                     + " pre=" + show($r.prerelease; 12) + " upload_url=" + show($r.upload_url; 60)
+              end' 2>/dev/null || echo "unreadable response"; }
           # Preflight proved the tag exists, and the tag was never the thing at issue: a tag can move
           # after preflight. Re-resolve it and compare against what the legs
           # actually built, or a tag moved after preflight would publish somebody else's commit.
@@ -462,6 +471,11 @@ jobs:
           # are refusals rather than places to post binaries. (Asset names are this gate's own ASCII set, so
           # nothing here needs percent-encoding; the exact compare is what keeps it that way.)
           want_prefix="https://uploads.github.com/repos/${GH_REPO}"
+          # The shape checks in this step redirect stdout only, so jq's own stderr goes to the log. That
+          # is deliberate: jq echoes the offending value only for typed operations, truncated to ten
+          # characters, and every typed operation below sits behind a type guard, so the errors that can
+          # actually fire here are the indexing family, which names the index and never the value. A jq
+          # program error exits 5, which fails closed into the refusal under it. `shape_jq_stderr` pins it.
           if ! printf '%s' "$created" | jq -s -e --arg tag "$TAG" --argjson pre "$prerelease" \
                --arg want_prefix "$want_prefix" --argjson pfxlen "${#want_prefix}" \
                'length == 1 and ((.[0]
@@ -640,15 +654,21 @@ jobs:
             exit 0
           fi
           brief() { printf '%s' "$1" | LC_ALL=C tr -c '\40-\176' '?' | LC_ALL=C cut -c1-200 | sed -e 's/%/%25/g' -e 's/:/%3A/g'; }
-          rsum() { printf '%s' "$1" | jq -r '
-              def f(v; n): (if v == null then "absent"
-                            elif (v | type) == "string"
-                              then (if (v | length) > n
-                                    then v[0:n] + "+(" + (v | length | tostring) + "ch)"
-                                    else v end)
-                            else (v | tojson) end);
-              "id=" + f(.id; 20) + " tag=" + f(.tag_name; 40) + " name=" + f(.name; 40)
-              + " draft=" + f(.draft; 12) + " pre=" + f(.prerelease; 12)' 2>/dev/null \
+          rsum() { printf '%s' "$1" | jq -s -r '
+              def sstr(v; n): ((v | length) as $L
+                               | if $L > n then v[0:((n / 2) | floor)] + "+(" + ($L | tostring) + "ch)+" + v[($L - ((n / 2) | floor)):]
+                                 else v end);
+              def show(v; n): ((if v == null then "absent"
+                                 elif (v | type) == "object" then "<object>"
+                                 elif (v | type) == "array" then "<array>"
+                                 elif (v | type) == "string" then v
+                                 else (v | tojson) end) as $t | sstr($t; n));
+              if length != 1 or ((.[0] | type) != "object") then "unreadable response"
+              else .[0] as $r
+                   | "id=" + show($r.id; 20) + " tag=" + show($r.tag_name; 40)
+                     + " name=" + show($r.name; 40) + " draft=" + show($r.draft; 12)
+                     + " pre=" + show($r.prerelease; 12)
+              end' 2>/dev/null \
                      || echo "unreadable response"; }
           # The empty string matches `*[!0-9]*` as "no bad characters" and would be deleted by name.
           # Nothing reaches here empty — the step exits earlier — but a DELETE guard that is only
