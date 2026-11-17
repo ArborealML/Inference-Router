@@ -24,6 +24,12 @@ public sealed class EngineRuntime : IAsyncDisposable
     private volatile string[] _loadedModels = [];
     private SwitchState _switchState = new();   // accessed via Volatile.Read/Write
 
+    /// <summary>The token a switch transaction runs on. A switch is an engine-level transaction, not a
+    /// per-request one: the request that triggered it can hang up, fail, or give up at its switch ceiling,
+    /// and the engine must still finish loading what the router decided to load. So the switch is tied to
+    /// this runtime's lifetime, never to a caller's — and it is what stops switches on shutdown.</summary>
+    private readonly CancellationTokenSource _switchCts = new();
+
     // ── serving-profile state (context-window escalation) ───────────────────
     // Active context window in tokens (0 = engine does not report it → no constraint),
     // active slot count (0 = unknown → fall back to configured max_inflight), and the
@@ -300,14 +306,28 @@ public sealed class EngineRuntime : IAsyncDisposable
         return null;
     }
 
+    /// <summary>How a switch attempt ended for the requests waiting on it. Failed and TimedOut are
+    /// different answers: a failed switch will not get better if you wait, and a switch that is still
+    /// running usually will, which is exactly the retry decision a caller has to make.</summary>
+    public enum SwitchOutcome { Ready, Failed, TimedOut }
+
+    /// <summary>A switch outcome plus what the caller was waiting on, phrased for an error body. The
+    /// switch's own one-line reason goes to the event feed as `engine.switch_failed`, where an operator
+    /// can read it without a log; this carries the caller-facing half.</summary>
+    public sealed record SwitchResult(SwitchOutcome Outcome, string? Detail)
+    {
+        public bool IsReady => Outcome == SwitchOutcome.Ready;
+    }
+
     /// <summary>Ensure the model is loaded on this engine: no-op when loaded; otherwise performs
-    /// (or waits for) the configured switch. Resolves true when loaded, false when it cannot.</summary>
-    public Task<bool> WaitForModelAsync(string model, TimeSpan timeout, CancellationToken ct)
+    /// (or waits for) the configured switch. Resolves Ready when loaded, Failed when the switch
+    /// itself failed, TimedOut when `timeout` ran out while the switch was still going.</summary>
+    public Task<SwitchResult> WaitForModelAsync(string model, TimeSpan timeout, CancellationToken ct)
         => EnsureLoadedAsync(model, null, timeout, ct);
 
     /// <summary>Ensure the model is loaded AND served under a context window that fits the profile.
     /// Exceeding the active window queues behind a profile switch instead of compacting.</summary>
-    public Task<bool> WaitForProfileAsync(string model, ServingProfile profile, TimeSpan timeout, CancellationToken ct)
+    public Task<SwitchResult> WaitForProfileAsync(string model, ServingProfile profile, TimeSpan timeout, CancellationToken ct)
         => EnsureLoadedAsync(model, profile, timeout, ct);
 
     /// <summary>Loaded, and (when a profile is required) serving a window that fits it.
@@ -326,38 +346,80 @@ public sealed class EngineRuntime : IAsyncDisposable
         return window == 0 || window >= profile.MaxContext;
     }
 
-    private async Task<bool> EnsureLoadedAsync(string model, ServingProfile? profileOverride, TimeSpan timeout, CancellationToken ct)
+    private async Task<SwitchResult> EnsureLoadedAsync(string model, ServingProfile? profileOverride, TimeSpan timeout, CancellationToken ct)
     {
         var canonical = CanonicalModel(model) ?? model;
-        if (IsReadyFor(canonical, profileOverride)) return true;
-        if (_def.Remote) return false; // remote peers switch themselves; we only route
+        if (IsReadyFor(canonical, profileOverride)) return new SwitchResult(SwitchOutcome.Ready, null);
+        if (_def.Remote) return new SwitchResult(SwitchOutcome.Failed, "remote engine loads its own models");
 
-        await _switchLock.WaitAsync(ct).ConfigureAwait(false);
-        try
+        // `timeout` bounds the *waiting*, never the switch: the transaction belongs to the engine and
+        // runs on _switchCts, so a caller that gives up leaves the engine switching rather than
+        // half-switched. The loop is what makes single-flight fair: if the switch in progress is aimed
+        // at another request's model, this caller waits for it and then takes its own turn rather than
+        // being failed by someone else's switch.
+        var deadline = timeout == Timeout.InfiniteTimeSpan ? DateTimeOffset.MaxValue : DateTimeOffset.UtcNow + timeout;
+        var last = new SwitchResult(SwitchOutcome.Failed, null);
+        while (true)
         {
-            var state = Volatile.Read(ref _switchState);
-            if (state.Model is null)
+            SwitchState state;
+            await _switchLock.WaitAsync(ct).ConfigureAwait(false);
+            try
             {
-                var newState = new SwitchState { Model = canonical, Profile = profileOverride?.Name, StartedAt = DateTimeOffset.UtcNow };
-                newState.Ready = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-                Volatile.Write(ref _switchState, newState);
-                _ = Task.Run(() => RunSwitchAsync(newState, canonical, profileOverride, ct), ct);
+                state = Volatile.Read(ref _switchState);
+                if (state.Model is null)
+                {
+                    var newState = new SwitchState { Model = canonical, Profile = profileOverride?.Name, StartedAt = DateTimeOffset.UtcNow };
+                    newState.Ready = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+                    Volatile.Write(ref _switchState, newState);
+                    _ = Task.Run(
+                        () => RunSwitchAsync(newState, canonical, profileOverride, _switchCts.Token),
+                        // Deliberately not the caller's token: the switch's own token above decides whether
+                        // the transaction runs, and a request that hangs up must not be able to abort it
+                        // halfway through a model load.
+                        CancellationToken.None);
+                    state = newState;
+                }
             }
-        }
-        finally
-        {
-            _switchLock.Release();
-        }
+            finally
+            {
+                _switchLock.Release();
+            }
 
-        // Wait on the current switch's readiness task (shared across waiters).
-        var st = Volatile.Read(ref _switchState);
-        try
-        {
-            await st.Ready.Task.WaitAsync(timeout, ct).ConfigureAwait(false);
+            var remaining = deadline == DateTimeOffset.MaxValue
+                ? Timeout.InfiniteTimeSpan
+                : deadline - DateTimeOffset.UtcNow;
+            // InfiniteTimeSpan is -1 ms, so the sentinel must never reach the comparison below: a
+            // request with no ceiling would otherwise be "timed out" before it ever waited.
+            if (deadline != DateTimeOffset.MaxValue && remaining <= TimeSpan.Zero)
+            {
+                return IsReadyFor(canonical, profileOverride)
+                    ? new SwitchResult(SwitchOutcome.Ready, null)
+                    : new SwitchResult(SwitchOutcome.TimedOut, last.Detail);
+            }
+
+            bool ready;
+            try
+            {
+                ready = await state.Ready.Task.WaitAsync(remaining, ct).ConfigureAwait(false);
+            }
+            catch (TimeoutException)
+            {
+                // The switch may have finished and loaded the model in the instant before the wait gave
+                // up, so re-check rather than trusting the timeout alone.
+                return IsReadyFor(canonical, profileOverride)
+                    ? new SwitchResult(SwitchOutcome.Ready, null)
+                    : new SwitchResult(SwitchOutcome.TimedOut, $"still switching to {state.Model} after {FormatWait(timeout)}");
+            }
+
+            last = new SwitchResult(ready ? SwitchOutcome.Ready : SwitchOutcome.Failed,
+                ready ? null : $"switch to {state.Model} failed");
+            if (IsReadyFor(canonical, profileOverride)) return last;
+            if (state.Model == canonical) return last;   // our own switch failed: waiting will not help
         }
-        catch (TimeoutException) { return IsReadyFor(canonical, profileOverride); }
-        return IsReadyFor(canonical, profileOverride);
     }
+
+    private static string FormatWait(TimeSpan wait) =>
+        wait == Timeout.InfiniteTimeSpan ? "the whole wait" : $"{wait.TotalMilliseconds.ToString(CultureInfo.InvariantCulture)} ms";
 
     /// <summary>
     /// Runs one switch transaction and resolves its shared readiness task. Ordering rule: the feed
@@ -374,6 +436,10 @@ public sealed class EngineRuntime : IAsyncDisposable
             {
                 Emit("engine.switch_failed", model: model, reason: "no_select_command");
                 state.Ready.TrySetResult(false);
+                // Reset, like every other exit: a request for a model this engine cannot select must not
+                // leave the engine permanently "switching", because every later waiter would join a
+                // readiness task that is already resolved false and never start a switch of its own.
+                Volatile.Write(ref _switchState, new SwitchState());
                 return;
             }
             var profileName = profileOverride?.Name ?? md.Profile;
@@ -457,6 +523,19 @@ public sealed class EngineRuntime : IAsyncDisposable
             state.Ready.TrySetResult(false);
             Volatile.Write(ref _switchState, new SwitchState());
         }
+        finally
+        {
+            // Two ways a switch can die without reaching any of the exits above: the task never starts
+            // (thread-pool starvation, provider disposed under it) or it throws on the way in. Either one
+            // would leave `Ready` unresolved forever and the engine latched mid-switch, so the state
+            // machine closes itself here: resolve the waiters, and put the engine back to "not switching"
+            // if this attempt is still the current one.
+            state.Ready.TrySetResult(false);
+            if (ReferenceEquals(Volatile.Read(ref _switchState), state))
+            {
+                Volatile.Write(ref _switchState, new SwitchState());
+            }
+        }
     }
 
 
@@ -519,6 +598,10 @@ public sealed class EngineRuntime : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
+        // Stop the switch before its engine goes away: cancelling the switch token is the only way an
+        // in-flight model load learns the router is shutting down.
+        _switchCts.Cancel();
+        _switchCts.Dispose();
         _http.Dispose();
         _ownedHandler?.Dispose();
         _switchLock.Dispose();

@@ -18,6 +18,12 @@ public class FakeEngineHandler : HttpMessageHandler
     /// <summary>A wedged backend: the connection is accepted and then nothing is ever written. The only
     /// way out for either side is cancellation, which is what the per-engine response cap provides.</summary>
     public bool NeverAnswersCompletions { get; set; }
+    /// <summary>A backend that answers — status and headers — and then goes quiet before any body byte.
+    /// Legal HTTP (a server may send 200 and stall), and the case a headers-only timeout would miss.</summary>
+    public bool HeadersThenStallCompletions { get; set; }
+    /// <summary>How long a held completion keeps answering *after* its cancellation. Models a handler
+    /// that ignores the token, so the response ceiling — not the abort — is what ends the request.</summary>
+    public int AnswerAfterCancellationMs { get; set; }
     /// <summary>When set, /models re-reads the loaded set from this file (one id per line), so a
     /// lifecycle command can "load" a model mid-test the way a real switch does.</summary>
     public string? LoadedModelsFile { get; set; }
@@ -110,10 +116,31 @@ public class FakeEngineHandler : HttpMessageHandler
                 await Task.Delay(Timeout.Infinite, cancellationToken).ConfigureAwait(false);
                 return Ok("{}");
             }
+            if (HeadersThenStallCompletions)
+            {
+                var stalled = new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StreamContent(new StallingStream()),
+                    RequestMessage = request,
+                };
+                stalled.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(
+                    body.Contains("\"stream\":true") ? "text/event-stream" : "application/json");
+                return stalled;
+            }
             if (HoldCompletions)
             {
                 try { await _gate.Task.WaitAsync(cancellationToken); }
-                catch (OperationCanceledException) { Interlocked.Increment(ref _cancelledCompletions); }
+                catch (OperationCanceledException)
+                {
+                    Interlocked.Increment(ref _cancelledCompletions);
+                    if (AnswerAfterCancellationMs > 0)
+                    {
+                        // Deliberately uncancellable: the router has already hung up, and this handler
+                        // answers late anyway — which is what makes the ceiling race worth pinning down.
+                        await Task.Delay(AnswerAfterCancellationMs, CancellationToken.None)
+                            .ConfigureAwait(false);
+                    }
+                }
             }
             ExecutionOrder.Add(tag);
             if (body.Contains("\"stream\":true"))
@@ -175,6 +202,33 @@ public class FakeEngineHandler : HttpMessageHandler
                 $"data: {{\"choices\":[{{\"delta\":{{\"content\":\"{payload}{_frame}\"}}}}]}}\n\n");
             _frame++;
             return await ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>A body that never yields a byte. It waits, and stops only when its reader cancels —
+    /// the stalled-after-headers backend, without the socket.</summary>
+    private sealed class StallingStream : Stream
+    {
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+        public override long Position
+        {
+            get => throw new NotSupportedException();
+            set => throw new NotSupportedException();
+        }
+        public override void Flush() { }
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+
+        public override async ValueTask<int> ReadAsync(
+            Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            await Task.Delay(Timeout.Infinite, cancellationToken).ConfigureAwait(false);
+            return 0;
         }
     }
 

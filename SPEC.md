@@ -1,6 +1,6 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.4)
+Status: draft, continuously revised (v0.12.5)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
@@ -202,6 +202,30 @@ daemon transaction per engine. 137 tests green.
   request, and `RouterCore.ExecuteAsync` now shares one `FinishWithResponseAsync` path between the capped
   and uncapped cases so the two cannot drift apart. 141 tests green; AOT publish stays warning-free on
   linux-x64.
+- v0.12.5 — the deep review of v0.12.4, dispositioned; and three sentences in the v0.12.4 entry below
+  described an intention the code did not keep, so read this one instead. The response ceiling now bounds
+  what the caller is still **owed** rather than the arrival of headers: a non-streaming completion and an
+  upstream error body stay under the gate until the body is read, so an engine that sends headers and then
+  goes quiet ends `engine_timeout` instead of hanging until the client gives up, and a stream that never
+  produced a frame is bounded by its first-frame ceiling too. `RouterCore` gained a `ResponseGate` with its
+  **own** cancellation source — the v0.12.4 claim that "the response timer rides the request's own
+  cancellation token" was false — and the arbitration now asks who won before it labels anything: a caller
+  that hung up reports `cancelled` even against an upstream handler that ignores cancellation, so an abort
+  can never be reported as `engine_timeout`. A response that arrives after the ceiling wins is disposed
+  rather than leaked. On the switch side the change is ownership: a switch runs on a token the **engine**
+  owns rather than the initiating request's, so a waiter that gives up neither stops the switch nor latches
+  a failure for everyone else; a waiter with a different target takes its own turn instead of being failed
+  on someone else's outcome, and a switch that fails instantly says what failed rather than "within N ms".
+  A ticket's terminal transition owns closing its stream channel rather than the read pump's `finally`,
+  which fixes a defect found while testing this and not reported by the review: a stream whose engine sent
+  headers and no frame simply stopped, with no error frame, because the relay saw a non-terminal ticket.
+  Streaming ceilings are in-band by construction — the `200` is already committed — and §6 now says so: a
+  504 means nothing was emitted yet, so a 504 stays safe to retry. Two review findings are accepted gaps
+  with their reasons in §15 (the selector's reason string stays on the feed; an over-large timeout value
+  is caught at DTO binding, not by the router's own message). New end-to-end fake modes
+  (`HeadersThenStallCompletions`, `AnswerAfterCancellationMs`, `StallingStream`) and five new
+  `RequestPhaseTimeoutTests` pin the behaviour; 146 tests green in Debug and Release, AOT publish stays
+  warning-free on linux-x64.
 
 ## 1. Overview
 
@@ -613,17 +637,34 @@ engine forks land; the scheduler interface will not change shape.
   (scheduler, default `0` = no ceiling) caps how long a queued request waits for a switch it triggered:
   past the ceiling that request fails `switch_failed` and its reserved slot is handed back, while the
   switch itself runs on under its command's own `wait_timeout_ms` — the ceiling is about the caller, not
-  about the engine's state machine. Per-engine `response_timeout_ms` (default `600000`, `0` disables)
-  caps how long an engine may sit on a request it already accepted: the clock runs until the response's
-  first bytes (headers) come back. A non-streaming engine sends those only when the completion is ready,
-  so in practice the cap covers a whole turn; a stream is covered up to its first frame and never cut off
-  afterwards — the router does not kill a generation in progress. An engine that goes quiet past the cap
-  fails `engine_timeout`
-  (504) and releases its slot. A queue deadline that expires while a request is *waiting for a switch*
-  is not a failure either: the wait continues and the request is dispatched when capacity and health
-  arrive (regression: `WaitForSwitchAndDispatchAsync` used to drop the ticket). The response timer rides
-  the request's own cancellation token, so a caller that hangs up still reports `cancelled` and only a
-  silent engine reports `engine_timeout`.
+  about the engine's state machine. That separation is ownership, not convention: the switch runs on a
+  token **the engine owns**, never the initiating request's, so a waiter that gives up neither stops the
+  switch it was waiting for nor latches a failure the other waiters did not cause
+  (`ARequestThatGivesUpOnASwitchDoesNotStopTheSwitchItWasWaitingFor`). Switch waiting stays single-flight
+  per engine and fair: a waiter whose target differs from the switch in flight is not judged by that
+  switch's outcome, it takes its own turn, and every failure path — including `no_select_command` —
+  resets the switch state, so one failed selector cannot wedge an engine
+  (`AMissingSelectCommandFailsThatRequestWithoutWedgingTheEngine`). A ceiling expiry and an instant
+  selector failure are worded differently: the first says the switch is still running, the second says the
+  selector could not serve that model.
+  Per-engine `response_timeout_ms` (default `600000`, `0` disables) caps how long an engine may sit on a
+  request it already accepted. The ceiling bounds what the caller is still owed, not merely the arrival of
+  headers: for a stream it ends at the **first frame**, and for a non-streaming request (and for an
+  upstream error body) it stays armed through the **body**, so headers-then-silence is a timeout rather
+  than a hang (`HeadersWithoutABodyAreNotAnAnswerSoTheCeilingStillEndsTheRequest`). A generation in
+  progress is never cut off: once the first frame is out the ceiling no longer applies, and a stream whose
+  engine goes quiet fails **in band** — one `engine_timeout` error frame and `[DONE]` on a response whose
+  `200` was already committed — because there is no status left to change (§6, and
+  `AStreamThatNeverSendsAFrameEndsInsideTheStreamBecauseTheStatusIsAlreadySent`). The ceiling never rides
+  the caller's cancellation token: the response gate has its own source, and when the ceiling wins the
+  router still asks whether the caller hung up first, so an abort reports `cancelled` even against an
+  upstream handler that ignores cancellation
+  (`ACallerThatHangsUpIsCancelledEvenIfTheEngineIgnoresTheCancellation`). A ticket's terminal transition
+  owns closing its stream channel — the read pump does not close it — which is what lets a stream whose
+  engine sent headers and no frame end with an error frame instead of stopping silently. A queue deadline
+  that expires while a request is *waiting for a switch* is not a failure either: the wait continues and
+  the request is dispatched when capacity and health arrive (regression:
+  `WaitForSwitchAndDispatchAsync` used to drop the ticket).
 - **Dispatch is level-triggered on engine state**: the dispatcher wakes on arrival, on capacity
   release, and on `engine.health` / `engine.profile` / `engine.switch_*`. A request that arrived before
   the first health probe is dispatched when health arrives, not when the next request arrives.
@@ -707,7 +748,10 @@ The shipped error contract is one lowercase body on every surface —
 429, `request_body_too_large` 413 (over `max_request_body_bytes`), `engine_error` / `engine_unreachable` 502,
 `switch_failed` / `model_unavailable` 503 (the first also covers a model switch that outlived
 `switch_wait_timeout_ms`), `engine_timeout` 504 (an engine that accepted the request and then went quiet
-past `response_timeout_ms`),
+past `response_timeout_ms`, **and only where no response has started**: a streaming request has already
+committed its `200`, so the same failure reaches the caller inside the stream as one `engine_timeout`
+error frame followed by `[DONE]` — a 504 therefore always means nothing was emitted yet, and a caller may
+retry one),
 `no_available_engine` 500 (`switch_in_progress` 409 and `unknown_profile` 400 on the admin side).
 An upstream engine's own 4xx/5xx arrives as `engine_error` with the engine's message embedded, so a
 caller can tell "my request was wrong" from "the engine is down". `docs/ai-integration.md` carries
@@ -1230,7 +1274,7 @@ rather than assumed; dispatch progress that cannot spin or starve.
 | Bar item | State | Where / what is still open |
 |---|---|---|
 | 1 URI + proven readiness + dispatch progress | **closed** | `EngineRuntime.Combine` one join rule (§7.5, `UriCompositionTests`); a switch is proven by health + loaded-model + window-fit probes and fails loudly with one actionable message (§5.3.1); dispatch and the feed relay are signal-driven (`_dispatchSignal`, `WaitToReadAsync`) — no polling loop, and the 200 ms TTFT poll is gone (v0.8.4) |
-| 2 transport discipline | **closed on the request side** | bounded bodies ✔ (`max_request_body_bytes`, 413 `request_body_too_large`, §6); cancellation reaches the engine ✔ (§5.5 wire tests); lifecycle phases are timed ✔ (`stop/wait/call_timeout_ms`, health `timeout_ms`); and every request-side wait now has its own ceiling ✔ (`switch_wait_timeout_ms` for a switch the request triggered — over the ceiling the request fails `switch_failed` with its slot handed back; per-engine `response_timeout_ms` for a turn at the engine — over the ceiling it fails `engine_timeout` 504 and the slot is released). `RequestPhaseTimeoutTests` pins all three outcomes, including that a caller's abort still reports `cancelled` and not a timeout. **Still open:** a wedged *engine process* is noticed through health probes rather than through the request path (§5.3.2), and a switch reserves an inference slot rather than its own lifecycle reservation (TASK-25) |
+| 2 transport discipline | **closed on the request side** | bounded bodies ✔ (`max_request_body_bytes`, 413 `request_body_too_large`, §6); cancellation reaches the engine ✔ (§5.5 wire tests); lifecycle phases are timed ✔ (`stop/wait/call_timeout_ms`, health `timeout_ms`); and every request-side wait now has its own ceiling ✔ (`switch_wait_timeout_ms` for a switch the request triggered — over the ceiling the request fails `switch_failed` with its slot handed back; per-engine `response_timeout_ms` for a turn at the engine — over the ceiling it fails `engine_timeout` 504 and the slot is released, or ends in band when the response had already started). `RequestPhaseTimeoutTests` pins all three outcomes, including that a caller's abort still reports `cancelled` and not a timeout, and that a switch survives the waiter that started it. **Still open:** a wedged *engine process* is noticed through health probes rather than through the request path (§5.3.2), and a switch reserves an inference slot rather than its own lifecycle reservation (TASK-25) |
 | 3 switch serialization + error contract | **closed** | single-flight per engine with `_switchState` reset on every failure path (§5.3.1); error codes and casing pinned by `ErrorContractTests` against the §6.1 table |
 | 4 owned lifecycle | **partly open** | provider seam + coordinator + Docker provider shipped (§5.3.1, §15); request-side phase bounds now exist (§5.5), so a select command that hangs no longer parks traffic indefinitely — the waiting request fails at `switch_wait_timeout_ms` while the switch runs on; **open:** a switch still occupies an inference slot instead of its own lifecycle reservation (TASK-25), and the §5.3.1 non-claims — image identity pinning, mounts/GPU, in-place model mutation, latched failures (TASK-26) |
 | 5 security | **open by deployment posture** | no ingress auth/TLS/rate caps yet: admin is unauthenticated and binds loopback (§6.1), engine keys are per-engine config; this is the v0.1 ingress work, not a silent hole |
@@ -1255,6 +1299,8 @@ router robust until rows 2, 4 and 6 close.
 | AOT-safe Docker access from .NET 11 (client library vs raw engine API) | **completed**: no client library — Docker.DotNet needs reflection roots (`DynamicDependency`, IL2026/IL3050 risk). Go raw: `SocketsHttpHandler.ConnectCallback` over `UnixDomainSocketEndPoint` (npipe on Windows), `HttpClient` based at `http://docker/`, STJ **source-generated** DTOs, API version pinned with `/_ping` + `/version` negotiation, exec demux of the 8-byte frame header, and error fidelity where **inspect 404 means absent and nothing else** while transport failure means *daemon unavailable*. Seam: `IEngineLifecycle` over a fakeable `IContainerRuntime` (§5.3) |
 | Robustness and UI comparison against NVIDIA Personal-AI-Router | **completed**: verdict + ordering in §14.1, feed prerequisites in §10, UI borrow/change/skip in §12.5. Where that router leads on robustness we have tasks; where we lead (priority, admission, profiles, prefix, generic endpoints, engine keys, per-engine instances) is not a gap to close |
 | Native engine-lifecycle design (transaction shape + container seam) | **completed**, adopted in §5.3.1: provider seam (`IEngineLifecycleProvider` over a coordinator), transaction order, single-flight per target with latched failures, ownership gate with no adoption of unowned resources, advisory journal, preflight as a validate-only verb, `select.exec` kept as a mutually-exclusive delegated provider. It preferred the docker CLI as the first Docker provider (smaller safety-critical surface); we keep **raw Engine HTTP** instead, because "no client library" from the review above is about reflection-rooted SDKs rather than `HttpClient` — the CLI stays as an operator fallback |
+
+| Deep review of v0.12.4 (request-side phase timeouts) | **completed, dispositioned in v0.12.5**: the timer-stops-at-headers gap, the late-response leak, the switch running on the initiating request's token, and the switch-state wedge on `no_select_command` are fixed with tests; the stream channel is now closed by the ticket's terminal transition (which also fixes the silent stream end). Two findings are **accepted gaps**, not fixes: (a) the selector's own failure reason is recorded on the feed as `engine.switch_failed` and deliberately kept out of the caller-facing `switch_failed` message, so the caller sees the outcome and the operator sees the cause — change this when §13 needs to distinguish them programmatically; (b) a phase-timeout value above `Int32.MaxValue` ms is rejected at DTO binding (a Tomlyn/STJ range error) rather than by the router's own `RouterConfigException` message — either way startup fails with a non-zero exit, so the operator is stopped, only with a less specific line |
 
 Findings feed §7 (TOML binding choice), §9 (AOT strategy), §5.4 (scheduler
 heuristics). Spec revisions cite them.

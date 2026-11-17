@@ -120,7 +120,12 @@ output.
 Two of those codes mean the router gave up on your behalf instead of waiting forever. If an engine
 takes the request and then says nothing past its `response_timeout_ms`, the request ends
 `engine_timeout` and the engine's slot is handed back — retrying is reasonable there, and aiming at a
-different model usually beats retrying the same one. If a request is parked in `WaitingForModel` while
+different model usually beats retrying the same one. On a streaming request the failure looks different
+once the answer has started: the `200` is already committed, so there is no status to change and the
+error arrives inside the stream — one `engine_timeout` error frame, then `[DONE]`. The ceiling covers the
+wait for that first frame and nothing after it, so a generation in progress is never cut off mid-token.
+That gives one reliable rule: a 504 means nothing was emitted, so retrying cannot duplicate output; an
+in-band error frame means part of an answer may already have reached you. If a request is parked in `WaitingForModel` while
 the router loads a bigger model, `switch_wait_timeout_ms` decides how long the queue will wait for that
 load before the request fails `switch_failed`; the load continues either way, so retrying the same
 request shortly after usually lands. Both are deployment config, so ask the operator what the ceilings

@@ -505,17 +505,21 @@ public sealed class RouterCore : IInferenceRouter
                 // ceiling, which is the old behaviour.
                 var ceilingMs = _config.Scheduler.SwitchWaitTimeoutMs;
                 var switchWait = ceilingMs <= 0 ? Timeout.InfiniteTimeSpan : TimeSpan.FromMilliseconds(ceilingMs);
-                var ready = targetProfile is null
+                // The caller's token bounds only its own wait: the switch transaction runs on the engine's
+                // token, so giving up here never leaves the engine half-switched with nothing loaded.
+                var switchResult = targetProfile is null
                     ? await engine.WaitForModelAsync(ticket.Model, switchWait, execCts.Token).ConfigureAwait(false)
                     : await engine.WaitForProfileAsync(ticket.Model, targetProfile, switchWait, execCts.Token).ConfigureAwait(false);
-                if (!ready)
+                if (!switchResult.IsReady)
                 {
                     var what = targetProfile is null ? ticket.Model : $"{ticket.Model} @ {targetProfile.Name}";
-                    // A ceiling that expires and a switch that failed both end the request here; the
-                    // wording says which one the caller was waiting on, so a retry decision is possible.
-                    Fail(ticket, "switch_failed", ceilingMs > 0
-                        ? $"engine {engine.Name} did not become ready to serve {what} within {ceilingMs} ms"
-                        : $"engine {engine.Name} could not serve {what}");
+                    // Failed and TimedOut answer the only question the caller has — retry now and hit the
+                    // same wall, or retry later and probably get through — so the message keeps them apart.
+                    var detail = switchResult.Detail is { Length: > 0 } d ? $" ({d})" : "";
+                    Fail(ticket, "switch_failed", switchResult.Outcome == EngineRuntime.SwitchOutcome.TimedOut
+                        ? $"engine {engine.Name} did not become ready to serve {what} within {ceilingMs} ms — " +
+                          $"the switch is still running, retry once it completes{detail}"
+                        : $"engine {engine.Name} could not serve {what}{detail}");
                     return;
                 }
                 ticket.State = TicketState.Executing;
@@ -533,52 +537,85 @@ public sealed class RouterCore : IInferenceRouter
                 var body = ModelRewriter.Rewrite(candidate.Request.Body, engine.CanonicalModel(ticket.Model) ?? ticket.Model);
                 var suffix = LooksLikeCompletion(candidate.Request.Body) ? "completions" : "chat/completions";
 
-                // Bound only the wait for the engine's first response byte: response headers for a
-                // non-stream call, first byte for a stream. A wedged engine otherwise holds a slot, a
-                // ticket and a caller until the caller gives up. Once the engine has answered, the timer
-                // is disarmed and a long generation runs to its end. One timer per request, not per token.
+                // The cap bounds the wait for the engine to *answer*: the whole response body for a
+                // non-stream call, the first byte of the body for a stream. Response headers are not an
+                // answer — an engine may send 200 and then go quiet, and holding a slot, a ticket and a
+                // caller through that is what this cap exists to prevent. Once the owed bytes are in hand
+                // the gate is disarmed and a long generation runs to its end: one gate per request, not
+                // per token.
                 var responseTimeout = engine.ResponseTimeout;
                 if (responseTimeout is null)
                 {
                     using var res = await SendAsync(engine, body, suffix, cts.Token).ConfigureAwait(false);
-                    await FinishWithResponseAsync(engine, ticket, res, candidate, cts.Token).ConfigureAwait(false);
+                    await FinishWithResponseAsync(engine, ticket, res, candidate, gate: null, cts.Token).ConfigureAwait(false);
                 }
                 else
                 {
-                    // The timer must NOT share the caller's token: cancelling that token would complete
-                    // the delay, Task.WhenAny would report the delay as the winner, and a caller who hung
-                    // up would be answered `engine_timeout` instead of `cancelled`. So the timer runs on
-                    // its own source, which is disarmed as soon as the send settles.
-                    using var timerCts = new CancellationTokenSource(responseTimeout.Value);
-                    var delay = Task.Delay(Timeout.Infinite, timerCts.Token);
+                    // The gate must NOT share the caller's token: cancelling that token would complete the
+                    // delay, Task.WhenAny would report the delay as the winner, and a caller who hung up
+                    // would be answered `engine_timeout` instead of `cancelled`. It runs on its own source,
+                    // which is disarmed when the request ends or when the engine delivers what it owed.
+                    using var gate = new ResponseGate(responseTimeout.Value);
+                    var delay = Task.Delay(Timeout.Infinite, gate.Token);
                     var send = SendAsync(engine, body, suffix, cts.Token);
-                    Task winner;
+                    HttpResponseMessage? res = null;
+                    bool silent;
                     try
                     {
-                        winner = await Task.WhenAny(send, delay).ConfigureAwait(false);
+                        if (await Task.WhenAny(send, delay).ConfigureAwait(false) == send)
+                        {
+                            res = await send.ConfigureAwait(false);
+                            try
+                            {
+                                await FinishWithResponseAsync(engine, ticket, res, candidate, gate, cts.Token).ConfigureAwait(false);
+                                silent = false;
+                            }
+                            catch (Exception) when (gate.Tripped && !cts.IsCancellationRequested)
+                            {
+                                // The gate tripped while the body was still owed. The caller did not go
+                                // away and the engine is not unreachable: it answered and then stalled.
+                                // Whether the read reports that as cancellation or as a broken connection
+                                // depends on the handler, so the ceiling — not the exception type — decides.
+                                silent = true;
+                            }
+                        }
+                        else
+                        {
+                            silent = true;
+                        }
                     }
                     finally
                     {
-                        // Always disarm the timer: a request that ends by caller abort, upstream failure or
-                        // timeout must not leave a pending timer holding the request alive.
-                        timerCts.Cancel();
+                        gate.Dispose();      // always disarm: no pending timer outlives the request
                         _ = delay.ContinueWith(static t => _ = t.Exception, TaskScheduler.Default);
+                        res?.Dispose();
+                        if (res is null)
+                        {
+                            _ = send.ContinueWith(static t =>
+                            {
+                                if (t.Status == TaskStatus.RanToCompletion) { t.Result.Dispose(); }
+                                else { _ = t.Exception; }
+                            }, TaskScheduler.Default);
+                        }
                     }
-                    // Only the timer firing counts as a timeout: with an unlinked source the delay cannot
-                    // complete any other way.
-                    if (winner != send)
+
+                    if (silent)
                     {
-                        // Nobody else will await the abandoned send: observe its outcome so a late
-                        // socket fault cannot surface as an unobserved task exception.
-                        _ = send.ContinueWith(static t => _ = t.Exception, TaskScheduler.Default);
                         cts.Cancel();          // release the connection to the engine that never answered
+                        if (execCts.IsCancellationRequested || _shutdown.IsCancellationRequested)
+                        {
+                            // Somebody upstream gave up before the ceiling did, and their reason is the
+                            // honest one: a request the caller abandoned stays `cancelled` even when the
+                            // engine's handler ignored the cancellation we sent and the ceiling fired first.
+                            Fail(ticket, "cancelled", "cancelled");
+                            return;
+                        }
+
                         Fail(ticket, "engine_timeout",
                             $"engine {engine.Name} sent no response to {ticket.Model} within " +
                             $"{responseTimeout.Value.TotalMilliseconds.ToString(CultureInfo.InvariantCulture)} ms");
                         return;
                     }
-                    using var res = await send.ConfigureAwait(false);
-                    await FinishWithResponseAsync(engine, ticket, res, candidate, cts.Token).ConfigureAwait(false);
                 }
             }
             finally
@@ -618,13 +655,22 @@ public sealed class RouterCore : IInferenceRouter
 
     /// <summary>What happens once the engine has answered: an error status becomes the router's own
     /// error contract, a stream is relayed frame by frame, a normal completion is returned as bytes.
-    /// Split out so the capped and uncapped send paths cannot drift apart.</summary>
+    /// Split out so the capped and uncapped send paths cannot drift apart. `gate` is the response cap;
+    /// for a non-streaming call it stays armed across the body read, and for a stream the pump disarms it
+    /// at the first byte so a generation in progress is never truncated.</summary>
     private async Task FinishWithResponseAsync(EngineRuntime engine, RouterTicket ticket,
-        HttpResponseMessage res, QueuedRequest candidate, CancellationToken ct)
+        HttpResponseMessage res, QueuedRequest candidate, ResponseGate? gate, CancellationToken ct)
     {
+        // The body is the answer, so the cap covers the body: linked with the caller's token so an abort
+        // still ends as cancelled rather than as a timeout.
+        using var bodyLink = gate is null
+            ? null
+            : CancellationTokenSource.CreateLinkedTokenSource(ct, gate.Token);
+        var bodyCt = bodyLink?.Token ?? ct;
+
         if (!res.IsSuccessStatusCode)
         {
-            var errBody = await res.Content.ReadAsByteArrayAsync(ct).ConfigureAwait(false);
+            var errBody = await res.Content.ReadAsByteArrayAsync(bodyCt).ConfigureAwait(false);
             Fail(ticket, "engine_error",
                 $"{(int)res.StatusCode}: {System.Text.Encoding.UTF8.GetString(errBody.AsSpan(0, Math.Min(errBody.Length, 256)))}");
             return;
@@ -633,64 +679,86 @@ public sealed class RouterCore : IInferenceRouter
         if (candidate.Request.Stream)
         {
             var channel = ticket.StreamChannel!;
-            await PumpStreamAsync(engine, ticket, res.Content, channel, ct).ConfigureAwait(false);
+            await PumpStreamAsync(engine, ticket, res.Content, channel, gate, ct).ConfigureAwait(false);
             Complete(ticket);
         }
         else
         {
-            var bytes = await res.Content.ReadAsByteArrayAsync(ct).ConfigureAwait(false);
+            var bytes = await res.Content.ReadAsByteArrayAsync(bodyCt).ConfigureAwait(false);
             Complete(ticket, bytes);
         }
     }
 
+    /// <summary>The response cap as a gate on the bytes the engine owes. Armed with the configured
+    /// ceiling; <see cref="Pass"/> disarms it once those bytes are in hand. Disarming is a cancel, so
+    /// <see cref="Tripped"/> is what tells "the engine went quiet" apart from "we let the timer go" —
+    /// and a caller's own cancellation lives on a different token entirely, which is what keeps a client
+    /// that hangs up reported as cancelled.</summary>
+    private sealed class ResponseGate : IDisposable
+    {
+        private readonly CancellationTokenSource _cts;
+        private int _passed;
+
+        public ResponseGate(TimeSpan dueIn) => _cts = new CancellationTokenSource(dueIn);
+        public CancellationToken Token => _cts.Token;
+        public void Pass() { Interlocked.Exchange(ref _passed, 1); _cts.Cancel(); }
+        public bool Tripped => Volatile.Read(ref _passed) == 0 && _cts.IsCancellationRequested;
+        public void Dispose() => _cts.Dispose();
+    }
+
     private async Task PumpStreamAsync(EngineRuntime engine, RouterTicket ticket, HttpContent content,
-        Channel<ReadOnlyMemory<byte>> channel, CancellationToken ct)
+        Channel<ReadOnlyMemory<byte>> channel, ResponseGate? gate, CancellationToken ct)
     {
         var firstToken = false;
         var sw = System.Diagnostics.Stopwatch.StartNew();
-        try
+        // Only the first read is bounded: a stream that has begun is relayed to its end whatever the
+        // engine's ceiling is, because cutting a generation mid-token is worse than a slow one.
+        using var firstReadLink = gate is null
+            ? null
+            : CancellationTokenSource.CreateLinkedTokenSource(ct, gate.Token);
+        var firstReadCt = firstReadLink?.Token ?? ct;
+        var buffer = new byte[16384];
+        using var stream = await content.ReadAsStreamAsync(ct).ConfigureAwait(false);
+        while (true)
         {
-            var buffer = new byte[16384];
-            using var stream = await content.ReadAsStreamAsync(ct).ConfigureAwait(false);
-            while (true)
+            int read;
+            try
             {
-                int read;
-                try
-                {
-                    read = await stream.ReadAsync(buffer, ct).ConfigureAwait(false);
-                }
-                catch (OperationCanceledException)
-                {
-                    break;
-                }
-                if (read == 0) break;
-                if (!firstToken)
-                {
-                    firstToken = true;
-                    _events.Append(new RouterEvent
-                    {
-                        Kind = "request.streaming_first_token",
-                        ThreadId = ticket.ThreadId,
-                        TicketId = ticket.Id,
-                        Engine = engine.Name,
-                        Value = sw.ElapsedMilliseconds,
-                    });
-                }
-                var chunk = new byte[read];
-                buffer.AsSpan(0, read).CopyTo(chunk);
-                await channel.Writer.WriteAsync(chunk, ct).ConfigureAwait(false);
+                read = firstToken
+                    ? await stream.ReadAsync(buffer, ct).ConfigureAwait(false)
+                    : await stream.ReadAsync(buffer, firstReadCt).ConfigureAwait(false);
             }
+            catch (OperationCanceledException)
+            {
+                // A cancelled first read is only the caller going away if the gate did not trip.
+                if (!firstToken && gate is not null && gate.Tripped) throw;
+                break;
+            }
+            if (read == 0) break;
+            if (!firstToken)
+            {
+                firstToken = true;
+                gate?.Pass();
+                _events.Append(new RouterEvent
+                {
+                    Kind = "request.streaming_first_token",
+                    ThreadId = ticket.ThreadId,
+                    TicketId = ticket.Id,
+                    Engine = engine.Name,
+                    Value = sw.ElapsedMilliseconds,
+                });
+            }
+            var chunk = new byte[read];
+            buffer.AsSpan(0, read).CopyTo(chunk);
+            await channel.Writer.WriteAsync(chunk, ct).ConfigureAwait(false);
+        }
 
-            // Reaching the end of the loop because the caller went away is not the same as reaching
-            // the end of the stream: a truncated stream must not be counted as a finished one.
-            ct.ThrowIfCancellationRequested();
-        }
-        // Cancellation propagates: ExecuteAsync records it as a cancelled request rather than a
-        // completed one, and the finally below closes the stream so the HTTP side stops waiting.
-        finally
-        {
-            channel.Writer.Complete();
-        }
+        // Reaching the end of the loop because the caller went away is not the same as reaching
+        // the end of the stream: a truncated stream must not be counted as a finished one.
+        ct.ThrowIfCancellationRequested();
+        // The channel is *not* closed here. The terminal transition (Complete / Fail) owns it, so the
+        // relay is never let go before the ticket knows its own outcome: close the channel first and the
+        // HTTP side reports a stream that merely stopped instead of the failure that stopped it.
     }
 
     private void Complete(RouterTicket ticket, byte[]? body = null)
@@ -715,6 +783,7 @@ public sealed class RouterCore : IInferenceRouter
             Engine = ticket.Engine,
             Model = ticket.Model,
         });
+        ticket.StreamChannel?.Writer.TryComplete();
         ticket.CompletionTcs.TrySetResult(body ?? []);
         SignalDispatch();
     }
