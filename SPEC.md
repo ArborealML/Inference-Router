@@ -1,6 +1,6 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.25)
+Status: draft, continuously revised (v0.12.26)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
@@ -352,6 +352,22 @@ daemon transaction per engine. 137 tests green.
   that answers no `upload_url`, an upload that dies or answers no asset id, an asset name listed twice on
   the release, and a tag that moves after the first resolve. No tag has run the gate: still configured,
   not proven.
+- v0.12.26 — documentation only: what the release controls actually lock, measured rather than assumed, from
+  the disposable-repository battery (TASK-49) and the first live tag. §14's published-surface bullet now says
+  what has run (one tag, four jobs green, five assets `uploaded`, served-byte digests equal to the records) and
+  what the two controls do: **the tag ruleset (`update` + `deletion`, `bypass_actors: []`) is the only measured
+  protection of the tag ref**, and it binds the Actions token as well as an admin token; a **`creation` rule
+  would break this pipeline** (it refused the Actions token's brand-new tag push, an admin push, and the release
+  API's implicit ref creation), so the shipped ruleset omits it; **immutable releases burn the version name**
+  (the name stays reserved after the release is deleted) **and lock nothing else measured** — assets were deleted
+  and a different file re-uploaded under the same name and the download serves the new bytes, release and asset
+  metadata answered `PATCH 200`, the release itself answered `DELETE 204`, and with no ruleset a force-push moved
+  a published immutable release's tag. Asset integrity therefore rests on the run's digest records and the
+  post-publish readback, which makes the readback load-bearing rather than optional. **One earlier claim
+  corrected in place**: this SPEC said GitHub allows two releases on one tag; it does not — a second published
+  release on the same tag answers `422 {"code":"already_exists","field":"tag_name"}`. The fail-closed list read
+  is kept for the reason that survives measurement: that same read omitted a release created moments earlier,
+  three times.
 - v0.12.25 — a request for a model nothing here can serve is refused **at admission** (§7). Before: the
   scheduler answered `Wait` and the request kept its place — and its head position — in that model's queue
   until `max_queue_time` expired (408 `deadline_exceeded`), or **forever**, because with no `max_queue_time`
@@ -1789,13 +1805,48 @@ and cohort/residency hysteresis in the scheduler (§12.3 hook).
   verified; a run that captured no id
   deletes nothing, and one that attempted a create without capturing an id says so as a
   manual-intervention annotation instead of finishing quietly. The step before the build refuses when a release
-  already carries the tag, and that refusal covers a release list it cannot read as well: "could not tell" is not
-  "does not exist", because GitHub allows two releases on one tag. macOS RIDs stay declared in the Cli project so a local
+  already carries the tag, and that refusal covers a release list it cannot read as well: "could not tell" is
+  not "does not exist". The reason this SPEC gave for that rule was wrong and is corrected here: a second
+  `POST /releases` for a tag that already has a **published** release is refused by GitHub —
+  `422 {"resource":"Release","code":"already_exists","field":"tag_name"}` — measured in a disposable
+  repository, not inferred (whether a *draft* on the same tag is refused the same way was not probed). The rule
+  still stands for the reason that survives: this step judges existence from a **list** read, and that read was
+  observed three times in a row to omit a release created moments earlier, so a page that does not show a
+  release is not evidence of absence. macOS RIDs stay declared in the Cli project so a local
   `-r osx-arm64` build works, but no macOS artifact is built, published, claimed or gated: the account has
   no macOS runner minutes, and a leg that queues forever is not a leg that passes. A platform is added
   back with runner minutes, a leg that actually runs, `EXPECTED_RIDS` updated, and README copy that
-  follows it. No tag has been published yet, so this gate is configured rather than proven; the first tag
-  run is the evidence. The published `SHA256SUMS` and per-archive sidecars are a transfer and collection
+  follows it. **The gate has now run for real once**: tag `v0.0.10-canary` at the commit the legs built, all
+  four jobs green, five assets in state `uploaded`, prerelease, `immutable: true`, and the digests read back
+  over HTTPS from the served bytes equal to the per-archive records and to `SHA256SUMS`. So the gate is
+  configured **and** proven for one tag; it is not proven against an attacker, and the two repository controls
+  around it are now measured rather than assumed, from a disposable repository created and archived for the
+  purpose:
+  - **The tag ruleset is the only measured protection of the tag ref.** With `update` + `deletion` and
+    `bypass_actors: []` on `refs/tags/v*`, both a repository-admin token and the Actions token are refused
+    (`Cannot update this protected ref.` / `Cannot delete this tag` / `GH013 … push declined due to repository
+    rule violations`), including a workflow running with `contents: write`. A ruleset created **without**
+    `conditions.ref_name` matches nothing and protects nothing — that was measured the hard way — and the same
+    shape leaves non-matching tag names untouched.
+  - **A `creation` rule would break this pipeline**, so the shipped ruleset omits it: with a creation rule
+    present, the Actions token's brand-new `v*` push is refused, an owner-token push is refused, and the release
+    API's implicit tag creation is refused (`pre_receive … Cannot create ref due to creations being
+    restricted`). With the shipped shape, the Actions token creates its tag normally and still cannot move one.
+  - **Immutable releases burn the version name and lock nothing else that was measured.** The name stays
+    reserved after the release is deleted — `422 {"field":"tag_name","message":"tag_name was used by an
+    immutable release"}` — and implicit ref creation is refused while creation is restricted. What is *not*
+    locked, each on a published release with the repository flag on: assets (deleted `204`, then a **different
+    file** re-uploaded under the same name, and the download URL serves the new bytes), release metadata
+    (`PATCH` on name and body answers `200`), asset metadata (`PATCH` `200`), the release object itself
+    (`DELETE 204`), and the tag ref (with no ruleset in place, a force-push moved the tag of a published
+    immutable release). A release created while the flag is on reports `immutable: true`; a draft reports
+    `false` until it is published; the repository flag is reversible (`DELETE` → `204`). The same-name upload
+    collision (`422 ReleaseAsset already_exists`) is an ordinary name collision, not an immutability guarantee:
+    an ordinary published release answers it identically. Consequence for this gate: **asset integrity rests on
+    the run's own digest records and the post-publish readback, not on the immutable flag** — an operator token
+    can rewrite a published release's assets — and the ruleset is what stops a buggy or captured workflow from
+    moving the tag those assets are named after.
+  The published `SHA256SUMS` and per-archive sidecars are a transfer and collection
   damage check, not provenance: there is no signing and no attestation.
 - **Compat test**: `curl` with stock `openai` python client against the
   server (chat, stream, models) — must pass unchanged.
