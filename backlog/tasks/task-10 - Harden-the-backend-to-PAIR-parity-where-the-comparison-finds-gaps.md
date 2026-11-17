@@ -28,7 +28,7 @@ TASK-1), then security and tests. Durability, fairness and version pins follow.
 Review source: an external plan review, requested at the deepest reasoning level the design warranted; the transcript is held outside the repository.
 (untrusted external output; the claims below were re-checked against the code by me).
 
-Facts this plan is written against (verified at 329970a):
+Facts this plan is written against (verified at [71efdb2](https://github.com/ArborealML/Inference-Router/commit/71efdb2)):
 - One flat `request_timeout_seconds` per engine, with an infinite `HttpClient` timeout so long streams
   survive (`EngineRuntime.cs:67`). No phase deadlines exist.
 - Admission **reserves engine capacity at selection** (`RouterCore.cs:284`) before the model-switch wait
@@ -138,7 +138,7 @@ admin surface has no authentication at all. So an untrusted local process can pr
 - Documented honestly in SPEC §6.1 and `docs/ai-integration.md` until then (loopback-or-proxy).
 
 **Slice 1 facts (URI composition + error casing)**
-Verified against the live strata engine (read-only probes; no tokens generated) at 329970a:
+Verified against the live strata engine (read-only probes; no tokens generated) at [71efdb2](https://github.com/ArborealML/Inference-Router/commit/71efdb2):
 
 | probe | result |
 | --- | --- |
