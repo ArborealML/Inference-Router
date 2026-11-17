@@ -3,9 +3,9 @@ id: TASK-23
 title: 'Review: the README identity, and the social-preview upload'
 status: To Do
 assignee:
-  - '@claire'
+  - '@qwen3.8-flash-next'
 created_date: '2026-11-17T02:26:00Z'
-updated_date: '2026-11-17T05:27:00Z'
+updated_date: '2026-11-17T05:55:00Z'
 labels:
   - docs
 dependencies: []
@@ -31,6 +31,18 @@ What each answer changes: **keep** leaves the committed art as it is and leaves 
 <!-- SECTION:NOTES:BEGIN -->
 Board audit: the steps, the cost, the upload that only a human can do and the answer format were already here. Added the consequences of each option and what this task unblocks, which the working contract requires on a human task.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+created: 2026-11-17T05:55:00Z
+
+---
+
+Owner instruction, so reassigned — with the one human-only step split out rather than silently dropped. Judging the mark and banner, choosing a palette direction, and exporting the social card to PNG/JPEG are all doable here (the SVGs are in-repo vector source). Setting GitHubs social-preview image and the repository avatar is not: it is an authenticated web-settings upload with no API, so it now lives as TASK-29, one minute, one upload. AC #2 stays about that upload.
+
+---
+<!-- COMMENTS:END -->
 
 ## Do this (about 3 minutes)
 

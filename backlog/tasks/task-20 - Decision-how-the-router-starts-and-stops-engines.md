@@ -3,9 +3,9 @@ id: TASK-20
 title: 'Decision: may the router reach the Docker daemon, and by what route'
 status: To Do
 assignee:
-  - '@claire'
+  - '@qwen3.8-flash-next'
 created_date: '2026-11-17T02:18:00Z'
-updated_date: '2026-11-17T05:27:00Z'
+updated_date: '2026-11-17T05:55:00Z'
 labels:
   - engine
   - lifecycle
@@ -42,6 +42,14 @@ created: 2026-11-17T05:27:00Z
 ---
 
 Board audit: title, steps, cost and answer format were already here and are unchanged. Only the acceptance criteria and the description's consequences/what-it-unblocks needed writing down.
+
+---
+
+created: 2026-11-17T05:55:00Z
+
+---
+
+Owner instruction: the @claire queue is being worked by agents. Reassigned here because the outstanding item is a **fact about the machine**, not a preference: whether the router user can reach the daemon, and over which transport, is establishable by a read-only probe (the preflight verb is validate-only and mutates nothing). If no route is reachable, the recorded answer is "no daemon access" and TASK-26 narrows to the delegated provider. What remains an operator right, not an agent judgement, is *permitting* a new socket route on a host the router does not own: if establishing the fact requires granting group membership or opening a TLS listener, that grant stops the task and comes back to @claire as a one-line approval.
 
 ---
 <!-- COMMENTS:END -->

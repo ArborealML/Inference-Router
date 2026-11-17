@@ -1,10 +1,11 @@
 ---
 id: TASK-22
 title: 'Decision: macOS runner minutes, and when to cut v0.1.0'
-status: To Do
+status: Done
 assignee:
   - '@claire'
 created_date: '2026-11-17T02:18:00Z'
+updated_date: '2026-11-17T05:58:00Z'
 labels:
   - release
   - ci
@@ -21,9 +22,28 @@ The release workflow builds and smoke-tests per-platform binaries; the macOS leg
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Minutes are enabled or explicitly declined
-- [ ] #2 A v0.1.0 tag is agreed, or held with the reason
+- [x] #1 Minutes are enabled or explicitly declined
 <!-- AC:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+created: 2026-11-17T05:55:00Z
+
+---
+
+Kept with @claire deliberately. The macOS half is a spend grant on a paid account, which the working contract names as the canonical human move ("an approval, a scope call, runner minutes"); no agent can authorise it and pretending otherwise would make the board lie about who can act. The **tag** half is agent work and has been split off to TASK-28 so the only thing waiting on a person is the minutes answer.
+
+---
+
+created: 2026-11-17T05:58:00Z
+
+---
+
+Answered by the owner: **no paid macOS runner minutes** — we publish Windows and Linux, and the expectation that macOS was trivial turned out to be true of the port and false of the release proof (a published native binary has to be built and smoke-tested on its own OS, which costs a paid runner, and the x64 macOS image was on a retirement path). AC #1 is checked on that answer. AC #2 (whether to cut v0.1.0) is removed from this Done task because it is a different question with different work behind it, and is carried as TASK-28, whose wake is the workflow stop-claiming-osx work in TASK-15. Recorded as decision-10. Status is Done and the assignee stays @claire as history: the human moved, and that was the whole task.
+
+---
+<!-- COMMENTS:END -->
 
 ## Do this (about 2 minutes)
 

@@ -5,8 +5,9 @@ title: >-
   executable?
 status: To Do
 assignee:
-  - '@claire'
+  - '@qwen3.8-flash-next'
 created_date: '2026-11-17T05:25:00Z'
+updated_date: '2026-11-17T05:55:00Z'
 labels:
   - architecture
 dependencies: []
@@ -25,6 +26,18 @@ TASK-19 chose option B, so the library is now one declared container on the map 
 - [ ] #1 The keep-or-split answer is given in one line
 - [ ] #2 The leftover empty container shell is approved for removal through the groma CLI, or kept with a reason
 <!-- AC:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+created: 2026-11-17T05:55:00Z
+
+---
+
+Owner instruction, so an agent takes it. This is a tool-behaviour trade, not a preference: groma solidifies a container box only from a scan match, and a class library can never produce one, so option Bs box stays outlined. Recorded as decision-8. Take the keep half and nothing moves; take the split half and the sixteen library components are re-parented under the two executables and TASK-6s pinning is redone. Map edits still go through the groma CLI only.
+
+---
+<!-- COMMENTS:END -->
 
 ## Do this (about 4 minutes)
 

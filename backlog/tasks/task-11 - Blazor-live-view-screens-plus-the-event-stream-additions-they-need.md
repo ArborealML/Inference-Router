@@ -1,11 +1,11 @@
 ---
 id: TASK-11
 title: 'Blazor live view: screens plus the event-stream additions they need'
-status: Blocked
+status: Waiting
 assignee:
-  - '@claire'
+  - '@qwen3.8-flash-next'
 created_date: '2026-11-16T20:46:00Z'
-updated_date: '2026-11-17T05:26:00Z'
+updated_date: '2026-11-17T05:59:00Z'
 labels:
   - ui
 milestone: v0.10 - live view and robustness parity
@@ -41,6 +41,8 @@ them can be built, so the stream work comes first.
 Blocked on TASK-21 — the next move is the live-view audience, credential and wire-extension decisions, which belongs to a human. Work here resumes when that task is closed.
 
 Blocked-state check: the blocker is a person, and the human task that carries it is TASK-21 (audience, credential posture, and whether the event feed gains a loss event). The two questions restated in this task's body are context for whoever reads this task — the answers belong on TASK-21, so answering here does not move anything.
+
+Wake condition, stated for the Waiting column: this task wakes when the live-view decisions are recorded (TASK-21 — audience, credential posture, and whether the event feed gains an explicit loss event), because the screens cannot be specified until the feed they read from is specified. Per the working contract the feed-contract plan also gets an external review before the code exists, so the second wake is that review landing. Nothing here is blocked on a person any more: the decisions that used to gate it moved to an agent task under the owner's instruction, and TASK-22's macOS answer does not touch this work.
 <!-- SECTION:NOTES:END -->
 
 ## Blocked on one decision (owner)

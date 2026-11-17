@@ -3,9 +3,9 @@ id: TASK-24
 title: 'Decision: who may publish to the event bus, and where its store lives'
 status: To Do
 assignee:
-  - '@claire'
+  - '@chatswarm'
 created_date: '2026-11-17T02:30:00Z'
-updated_date: '2026-11-17T05:27:00Z'
+updated_date: '2026-11-17T05:55:00Z'
 labels:
   - tooling
   - notify
@@ -35,6 +35,18 @@ Board audit: retitled from Design: to Decision: because the assignee is the owne
 
 What it unblocks: the first slice of the bus (publisher, store, one subscription), which is engineering work that starts the moment ACs 1-3 are answered; nothing on the board is blocked in the meantime, because today the same effect is obtained by hand — a research service that pushes results, a session-to-session message channel, and a human passing word along.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+created: 2026-11-17T05:55:00Z
+
+---
+
+Moved to the external service per the owner instruction: this tasks deliverable is a design with options — authority models for a publish/subscribe store, retention while no agent runs, and which first source proves the path — which is what that service is for, and the contract wants a plan reviewed before the code exists. Handback is the design plus answers to ACs 1-3; the first wired source (AC #4) stays engineering work for TASK-28 or this task once the shape is fixed.
+
+---
+<!-- COMMENTS:END -->
 
 ## Do this (about 5 minutes)
 

@@ -3,9 +3,9 @@ id: TASK-16
 title: Survey which inference APIs the router should front
 status: To Do
 assignee:
-  - '@qwen3.8-flash-next'
+  - '@chatswarm'
 created_date: '2026-11-16T23:02:00Z'
-updated_date: '2026-11-17T05:26:00Z'
+updated_date: '2026-11-17T05:55:00Z'
 labels: []
 dependencies:
   - TASK-14
@@ -35,6 +35,14 @@ created: 2026-11-17T05:26:00Z
 ---
 
 Assignee changed from the external research service to the agent. Nothing has been dispatched: AC #1 is the dispatch itself, and it is sequenced behind TASK-14, so the next move is whoever submits the request, not the service that will answer it. The service owns a request only once it exists — the board has already used that convention on the tasks whose research actually ran. Dependency on TASK-14 recorded so the ordering is structural rather than a sentence in the description.
+
+---
+
+created: 2026-11-17T05:55:00Z
+
+---
+
+Assignee is the external service again now that the owner has authorised handing this over: the deliverable is a comparison of upstream API shapes and a recommendation of which one or two adapters to build, which is a research deliverable, not local work. Dispatch still waits on TASK-14 by sequencing, so the task stays To Do and carries that dependency.
 
 ---
 <!-- COMMENTS:END -->
