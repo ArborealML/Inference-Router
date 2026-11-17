@@ -40,7 +40,17 @@ public sealed class DockerHostConfig
 
 public sealed class DockerPortBinding
 {
+    /// <summary>Empty HostIp is Docker's shorthand for "every interface on the host", which for an
+    /// unauthenticated inference backend is a public port. The provider always names one.</summary>
+    [JsonPropertyName("HostIp")] public required string HostIp { get; set; }
     [JsonPropertyName("HostPort")] public required string HostPort { get; set; }
+}
+
+/// <summary>The container-list filter. Built through the source-generated context rather than by hand,
+/// because a config-supplied router id or engine name inside pasted JSON is an injection point.</summary>
+public sealed class DockerListFilter
+{
+    [JsonPropertyName("label")] public required string[] Label { get; set; }
 }
 
 public sealed class DockerCreateResponse
@@ -54,7 +64,7 @@ public sealed class DockerCreateResponse
 [JsonSerializable(typeof(List<DockerContainerSummary>))]
 [JsonSerializable(typeof(DockerCreateRequest))]
 [JsonSerializable(typeof(DockerCreateResponse))]
-[JsonSerializable(typeof(Dictionary<string, string[]>))]
+[JsonSerializable(typeof(DockerListFilter))]
 internal sealed partial class DockerJsonContext : JsonSerializerContext
 {
 }

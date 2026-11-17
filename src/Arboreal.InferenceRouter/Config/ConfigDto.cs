@@ -70,6 +70,8 @@ public sealed class DockerDto
     [JsonPropertyName("env")][TomlPropertyName("env")] public string[]? Env { get; set; }
     [JsonPropertyName("stop_timeout_ms")][TomlPropertyName("stop_timeout_ms")] public int? StopTimeoutMs { get; set; }
     [JsonPropertyName("host_port")][TomlPropertyName("host_port")] public int? HostPort { get; set; }
+    [JsonPropertyName("host_ip")][TomlPropertyName("host_ip")] public string? HostIp { get; set; }
+    [JsonPropertyName("remove_stopped")][TomlPropertyName("remove_stopped")] public bool? RemoveStopped { get; set; }
     [JsonPropertyName("container_port")][TomlPropertyName("container_port")] public int? ContainerPort { get; set; }
     [JsonPropertyName("network_mode")][TomlPropertyName("network_mode")] public string? NetworkMode { get; set; }
     [JsonPropertyName("wait_health")][TomlPropertyName("wait_health")] public bool? WaitHealth { get; set; }

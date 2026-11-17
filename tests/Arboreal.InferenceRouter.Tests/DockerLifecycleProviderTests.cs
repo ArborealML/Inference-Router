@@ -238,4 +238,139 @@ public sealed class DockerLifecycleProviderTests
         Assert.Contains("ownership_query_failed", result.Reason);
         Assert.DoesNotContain(daemon.Requests, r => r.Contains("/containers/create", StringComparison.Ordinal));
     }
+
+    [Fact(Timeout = 20_000)]
+    public async Task AListThatAnswersTwoHundredWithGarbageIsNotReadAsNothingRunning()
+    {
+        // An unparsable 200 is not "no containers". Read as an empty list it would let the router start a
+        // second copy of a model that is already loaded, which is the exact mistake the ownership proof exists to stop.
+        using var daemon = new FakeDockerDaemonHandler
+        {
+            Responder = path => path.Contains("/containers/json")
+                ? (HttpStatusCode.OK, "this is not JSON")
+                : (HttpStatusCode.NoContent, ""),
+        };
+        using var provider = new DockerLifecycleProvider(Cfg(), "strata", daemon);
+        using var coordinator = new EngineLifecycleCoordinator(provider, ownsProvider: false);
+
+        var result = await coordinator.SwitchAsync(Target(), CancellationToken.None);
+
+        Assert.False(result.Succeeded);
+        Assert.Contains("ownership_query_failed daemon:unparsable_container_list", result.Reason);
+        Assert.DoesNotContain(daemon.Requests, r => r.Contains("/containers/create", StringComparison.Ordinal));
+    }
+
+    [Fact(Timeout = 20_000)]
+    public async Task APublishedPortAlwaysNamesTheInterfaceItBindsAndDefaultsToLoopback()
+    {
+        using var daemon = new FakeDockerDaemonHandler
+        {
+            Responder = path => path.Contains("/containers/create")
+                ? (HttpStatusCode.Created, """{"Id":"deadbeefcafebabe","Warnings":[]}""")
+                : (HttpStatusCode.NoContent, ""),
+        };
+        using var provider = new DockerLifecycleProvider(Cfg(), "strata", daemon);
+
+        var result = await provider.LaunchAsync(Target(), CancellationToken.None);
+
+        Assert.True(result.Succeeded);
+        var created = daemon.Bodies.Single(b => b.Contains("PortBindings", StringComparison.Ordinal));
+        Assert.Contains("\"HostIp\":\"127.0.0.1\"", created);   // an empty HostIp would mean every interface
+        Assert.Contains("\"HostPort\":\"18021\"", created);
+    }
+
+    [Fact(Timeout = 20_000)]
+    public async Task AnOperatorCanWidenTheInterfaceButTheRouterNeverInventsOne()
+    {
+        var cfg = Cfg();
+        cfg = new DockerLifecycleConfig
+        {
+            Image = cfg.Image, Socket = cfg.Socket, ApiVersion = cfg.ApiVersion, RouterId = cfg.RouterId,
+            Command = cfg.Command, Env = cfg.Env, HostPort = cfg.HostPort, ContainerPort = cfg.ContainerPort,
+            HostIp = "10.0.0.5",
+        };
+        using var daemon = new FakeDockerDaemonHandler
+        {
+            Responder = path => path.Contains("/containers/create")
+                ? (HttpStatusCode.Created, """{"Id":"deadbeefcafebabe","Warnings":[]}""")
+                : (HttpStatusCode.NoContent, ""),
+        };
+        using var provider = new DockerLifecycleProvider(cfg, "strata", daemon);
+
+        var result = await provider.LaunchAsync(Target(), CancellationToken.None);
+
+        Assert.True(result.Succeeded);
+        Assert.Contains("\"HostIp\":\"10.0.0.5\"", daemon.Bodies.Single(b => b.Contains("PortBindings", StringComparison.Ordinal)));
+    }
+
+    [Fact(Timeout = 20_000)]
+    public async Task StoppingRemovesTheContainerWeStoppedSoSwitchesDoNotAccumulateThem()
+    {
+        using var daemon = new FakeDockerDaemonHandler { Responder = _ => (HttpStatusCode.NoContent, "") };
+        using var provider = new DockerLifecycleProvider(Cfg(), "strata", daemon);
+
+        var result = await provider.StopAsync(Target(), [new EnginePeer(Ours, "img", "strata-8b", OwnedByUs: true)], CancellationToken.None);
+
+        Assert.True(result.Succeeded);
+        Assert.Equal(
+            ["POST /v1.44/containers/abc123def456/stop?t=30", "DELETE /v1.44/containers/abc123def456?force=true"],
+            daemon.Requests.ToArray());
+    }
+
+    [Fact(Timeout = 20_000)]
+    public async Task LeavingStoppedContainersBehindIsAnOptOutNotATypo()
+    {
+        var cfg = Cfg();
+        cfg = new DockerLifecycleConfig
+        {
+            Image = cfg.Image, Socket = cfg.Socket, ApiVersion = cfg.ApiVersion, RouterId = cfg.RouterId,
+            Command = cfg.Command, Env = cfg.Env, HostPort = cfg.HostPort, ContainerPort = cfg.ContainerPort,
+            RemoveStopped = false,
+        };
+        using var daemon = new FakeDockerDaemonHandler { Responder = _ => (HttpStatusCode.NoContent, "") };
+        using var provider = new DockerLifecycleProvider(cfg, "strata", daemon);
+
+        var result = await provider.StopAsync(Target(), [new EnginePeer(Ours, "img", "strata-8b", OwnedByUs: true)], CancellationToken.None);
+
+        Assert.True(result.Succeeded);
+        Assert.Equal(["POST /v1.44/containers/abc123def456/stop?t=30"], daemon.Requests.ToArray());
+    }
+
+    [Fact(Timeout = 20_000)]
+    public async Task AStartThatAnswersFourOhFourIsAFailureNotALaunchThatWorked()
+    {
+        // The daemon just handed us an id and then says that container does not exist. Reporting success here
+        // leaves the engine marked loaded with nothing behind it, and the first request gets a connection error.
+        using var daemon = new FakeDockerDaemonHandler
+        {
+            Responder = path => path.Contains("/containers/create")
+                ? (HttpStatusCode.Created, """{"Id":"deadbeefcafebabe","Warnings":[]}""")
+                : (HttpStatusCode.NotFound, """{"message":"No such container:"}"""),
+        };
+        using var provider = new DockerLifecycleProvider(Cfg(), "strata", daemon);
+
+        var result = await provider.LaunchAsync(Target(), CancellationToken.None);
+
+        Assert.False(result.Succeeded);
+        Assert.Contains("http_404", result.Reason);
+        Assert.Contains("404", result.Action);
+    }
+
+    [Fact(Timeout = 20_000)]
+    public async Task ACreateThatNamesNoContainerIsAFailureBeforeAnyStart()
+    {
+        using var daemon = new FakeDockerDaemonHandler
+        {
+            Responder = path => path.Contains("/containers/create")
+                ? (HttpStatusCode.Created, """{"Warnings":[]}""")
+                : (HttpStatusCode.NoContent, ""),
+        };
+        using var provider = new DockerLifecycleProvider(Cfg(), "strata", daemon);
+
+        var result = await provider.LaunchAsync(Target(), CancellationToken.None);
+
+        Assert.False(result.Succeeded);
+        Assert.Contains("create_returned_no_id", result.Reason);
+        Assert.Equal(["POST /v1.44/containers/create"], daemon.Requests.ToArray());
+    }
 }

@@ -28,12 +28,20 @@ public sealed class DockerLifecycleConfig
     public string Socket { get; init; } = "unix:///var/run/docker.sock";
     /// <summary>Pinned so a daemon update cannot change the API under a running router.</summary>
     public string ApiVersion { get; init; } = "v1.44";
-    /// <summary>Written into the container labels, and what makes a container ours on a shared host.</summary>
-    public string RouterId { get; init; } = "default";
+    /// <summary>Written into the container labels, and what makes a container ours on a shared host.
+    /// Required rather than defaulted: two routers sharing one daemon with the same id would each be
+    /// entitled to stop the other's containers.</summary>
+    public required string RouterId { get; init; }
     public string[] Command { get; init; } = [];
     public string[] Env { get; init; } = [];
     public int StopTimeoutMs { get; init; } = 30_000;
     public int? HostPort { get; init; }
+    /// <summary>Interface a published port binds to. Defaults to loopback, because a router with no
+    /// ingress credential must not hand the engine a public port.</summary>
+    public string HostIp { get; init; } = "127.0.0.1";
+    /// <summary>Remove the containers we stopped as part of a switch. Leaving them behind means every
+    /// model change adds another stopped container to the host.</summary>
+    public bool RemoveStopped { get; init; } = true;
     public int ContainerPort { get; init; } = 8080;
     public string? NetworkMode { get; init; }
     public bool WaitHealth { get; init; } = true;

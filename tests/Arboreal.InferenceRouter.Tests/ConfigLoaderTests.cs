@@ -217,6 +217,7 @@ public class ConfigLoaderTests
             lifecycle = "docker"
             [engine.native.docker]
             image = "registry.local/strata:2026-11"
+            router_id = "r-e2e"
             socket = "unix:///run/docker.sock"
             api_version = "v1.44"
             command = ["--model", "{{model}}"]
@@ -230,10 +231,13 @@ public class ConfigLoaderTests
         Assert.Equal(EngineLifecycleKind.Docker, engine.Lifecycle);
         Assert.NotNull(engine.Docker);
         Assert.Equal("registry.local/strata:2026-11", engine.Docker!.Image);
+        Assert.Equal("r-e2e", engine.Docker.RouterId);
         Assert.Equal("unix:///run/docker.sock", engine.Docker.Socket);
         Assert.Equal("v1.44", engine.Docker.ApiVersion);
         Assert.Equal(["--model", "{{model}}"], engine.Docker.Command);
         Assert.Equal(18021, engine.Docker.HostPort);
+        Assert.Equal("127.0.0.1", engine.Docker.HostIp);   // a published port is loopback unless named otherwise
+        Assert.True(engine.Docker.RemoveStopped);           // a switch does not leave stopped containers behind
         Assert.True(engine.Docker.WaitHealth);          // readiness is proved unless the operator says otherwise
         Assert.Equal(30_000, engine.Docker.StopTimeoutMs);
     }
@@ -258,11 +262,18 @@ public class ConfigLoaderTests
             Base + "\n[engine.native.docker]\nsocket = \"unix:///run/docker.sock\"\n[engine.native.catalog.\"m1\"]\n",
             "test.toml"));
 
+        // A block with no router_id: the label is the ownership proof, and a shared default would entitle
+        // two routers on one daemon to stop each other's containers.
+        Assert.Throws<RouterConfigException>(() => RouterConfigLoader.Load(
+            Base + "\n[engine.native.docker]\nimage = \"img:1\"\n[engine.native.catalog.\"m1\"]\n",
+            "test.toml"));
+
         // Two owners for one model: the selector program and the router cannot both prove ownership.
         Assert.Throws<RouterConfigException>(() => RouterConfigLoader.Load(
             Base + """
             [engine.native.docker]
             image = "img:1"
+            router_id = "r1"
             [engine.native.catalog."m1"]
             select = { exec = "/bin/true" }
             """, "test.toml"));

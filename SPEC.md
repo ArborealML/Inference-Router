@@ -143,6 +143,24 @@ Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
   requests, exec/logs/daemon events, Windows `npipe`, closing admission and draining the cohort before a
   mutation (it needs a lifecycle reservation, not an inference slot — that request would wait on itself),
   and latched failures. 126 tests green.
+- v0.12.2 — the Docker provider is hardened against the ways a shared daemon bites back (external review,
+Docker lifecycle). A published port now always names the interface it binds — `host_ip`, default
+`127.0.0.1`, because an empty `HostIp` is Docker's shorthand for every interface and the router has no
+ingress credential. `router_id` is **required** rather than defaulted to `"default"`: the label is the
+ownership proof, and two routers sharing one daemon with the same id could each stop the other's
+containers. A switch no longer leaves its stopped containers behind — `stop` now removes them
+(`remove_stopped`, default true) — and `stop` accepts `304`/`404`/`409` as "already in the state we
+want", so the second switch on an engine is not refused by the residue of the first. `start` accepts only
+`304`: a `404` there means the container the daemon just created is gone, and reporting a successful
+launch with nothing running is worse than failing. A `200` whose body cannot be parsed is a **failed
+ownership query**, not an empty list (the old `?? []` turned a weird daemon answer into a second copy of a
+loaded model), the list filter is built through the source-generated context instead of pasted JSON, since
+`router_id` and the engine name are config text, and container ids are URL-escaped on the way into paths.
+The HTTP handler sets `UseProxy = false` and `AllowAutoRedirect = false` — a system proxy or a daemon's
+redirect would send container control to a third host — and a bare `socket` value is read as a socket path
+rather than a host name. Single-flight is **per engine**, not per target: two switch requests for
+different models on one engine serialise, which is stricter than the target's identity but matches one
+daemon transaction per engine. 137 tests green.
 - v0.12.1 — a request body has a stated limit. The router buffers a body to forward it as bytes, so an
   unread limit was also no bound on what one request could make the process hold; `max_request_body_bytes`
   (16 MiB by default, refused below 1 KiB) is checked against `Content-Length` as a fast path and against
@@ -390,16 +408,25 @@ lifecycle = "docker"            # or "exec" (default): a selector program owns t
 image = "registry.local/strata:2026-11"   # required: the router never pulls
 socket = "unix:///run/docker.sock"        # or http(s)://host:port
 api_version = "v1.44"                     # pinned; a daemon below it is refused
-router_id = "r1"                          # written into labels; this is the ownership proof
+router_id = "r1"                          # required; written into labels, the ownership proof
 command = ["--model", "{{model}}", "--ctx", "{{profile}}"]
 env = ["AIR_ENGINE={{endpoint}}"]
 host_port = 18020
+host_ip = "127.0.0.1"                     # the interface a published port binds to; loopback by default
 container_port = 8080
+remove_stopped = true                     # delete the containers we stopped, instead of accumulating them
 stop_timeout_ms = 30000
 wait_health = true
 wait_timeout_ms = 600000
 call_timeout_ms = 15000                   # one Engine API call; a wedged daemon must not hold a switch
 ```
+
+`router_id` has no default on purpose: it is the label that says which router owns a container, and a
+shared default on a host with two routers would entitle each one to stop the other's work.
+`host_ip` exists because an empty `HostIp` in the Engine API means *every interface*, and an
+unauthenticated inference backend on `0.0.0.0` is a public port; the router always names one, and
+loopback is the default. `remove_stopped` is what keeps a long-lived host from collecting one stopped
+container per model change.
 
 `lifecycle = "docker"` with a model that still carries `select = { exec = … }` is a **config error**:
 two owners cannot both prove ownership of one model's container. Ownership labels are

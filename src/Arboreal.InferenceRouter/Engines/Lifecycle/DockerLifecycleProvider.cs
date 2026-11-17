@@ -40,7 +40,13 @@ public sealed class DockerLifecycleProvider : IEngineLifecycleProvider, IDisposa
         _engineName = engineName;
         if (handler is null)
         {
-            var sockets = new SocketsHttpHandler();
+            var sockets = new SocketsHttpHandler
+            {
+                // A daemon is not a web server: a system proxy would send container control to some
+                // third host, and a redirect would do the same on the daemon's say-so.
+                UseProxy = false,
+                AllowAutoRedirect = false,
+            };
             if (TryParseUnixSocket(cfg.Socket, out var socketPath))
                 sockets.ConnectCallback = (_, ct) => ConnectUnixAsync(socketPath, ct);
             _ownedHandler = sockets;
@@ -97,7 +103,13 @@ public sealed class DockerLifecycleProvider : IEngineLifecycleProvider, IDisposa
     {
         // Ask the daemon to filter, then prove the labels locally: the filter is an optimisation, the
         // labels are the ownership proof.
-        var filter = $"{{\"label\":[\"{LabelRouter}={_cfg.RouterId}\",\"{LabelEngine}={_engineName}\"]}}";
+        // Built through the source-generated context: router_id and the engine name come from config,
+        // and pasting them into JSON would let a quote or a brace change which containers are listed.
+        var filterBody = new DockerListFilter
+        {
+            Label = [$"{LabelRouter}={_cfg.RouterId}", $"{LabelEngine}={_engineName}"],
+        };
+        var filter = System.Text.Json.JsonSerializer.Serialize(filterBody, DockerJsonContext.Default.DockerListFilter);
         var (ok, bodies, failure) = await CallAsync(
             HttpMethod.Get, $"{_cfg.ApiVersion}/containers/json?all=true&filters={WebUtility.UrlEncode(filter)}", null, ct).ConfigureAwait(false);
         if (!ok)
@@ -107,9 +119,14 @@ public sealed class DockerLifecycleProvider : IEngineLifecycleProvider, IDisposa
             return [FailedPeer(failure!.Reason ?? "unknown")];
         }
 
-        // An empty body means no containers. Tolerating it matters: a daemon that answers 200 with
-        // nothing would otherwise turn a routine "nothing is running" into an exception mid-switch.
-        var list = TryRead(bodies, DockerJsonContext.Default.ListDockerContainerSummary) ?? [];
+        if (string.IsNullOrWhiteSpace(bodies)) return [];        // 204 / empty answer: nothing is running
+        var list = TryRead(bodies, DockerJsonContext.Default.ListDockerContainerSummary);
+        if (list is null)
+        {
+            // A body we cannot read is not "no containers". Treating a malformed answer as an empty
+            // list is how a router starts a second copy of a model that is already loaded.
+            return [FailedPeer("unparsable_container_list")];
+        }
         var peers = new List<EnginePeer>(list.Count);
         foreach (var c in list)
         {
@@ -133,9 +150,23 @@ public sealed class DockerLifecycleProvider : IEngineLifecycleProvider, IDisposa
                     "the lifecycle provider was asked to stop a container it did not start; this is a bug, not a configuration problem");
 
             var t = Math.Max(1, _cfg.StopTimeoutMs / 1000);
+            // 304 (already stopped), 404 (already gone) and 409 (not running) all mean the desired
+            // state holds. A previous switch leaves stopped containers behind, and treating that as a
+            // failure would refuse every switch after the first.
             var (ok, _, failure) = await CallAsync(
-                HttpMethod.Post, $"{_cfg.ApiVersion}/containers/{peer.Id}/stop?t={t}", null, ct).ConfigureAwait(false);
+                HttpMethod.Post, $"{_cfg.ApiVersion}/containers/{Uri.EscapeDataString(peer.Id)}/stop?t={t}", null, ct,
+                already: [304, 404, 409]).ConfigureAwait(false);
             if (!ok) return failure!;
+
+            if (_cfg.RemoveStopped)
+            {
+                // Removing is what keeps a model change from accumulating stopped containers on the
+                // host. It is refused for anything we do not own, which is the same proof as above.
+                var (removed, _, removeFailure) = await CallAsync(
+                    HttpMethod.Delete, $"{_cfg.ApiVersion}/containers/{Uri.EscapeDataString(peer.Id)}?force=true", null, ct,
+                    already: [404]).ConfigureAwait(false);
+                if (!removed) return removeFailure!;
+            }
         }
         return LifecycleResult.Ok($"stopped={peers.Count}");
     }
@@ -163,7 +194,13 @@ public sealed class DockerLifecycleProvider : IEngineLifecycleProvider, IDisposa
                 NetworkMode = _cfg.NetworkMode,
                 PortBindings = new Dictionary<string, DockerPortBinding[]>(StringComparer.Ordinal)
                 {
-                    [$"{_cfg.ContainerPort}/tcp"] = [new DockerPortBinding { HostPort = _cfg.HostPort.Value.ToString(CultureInfo.InvariantCulture) }],
+                    [$"{_cfg.ContainerPort}/tcp"] = [new DockerPortBinding
+                    {
+                        // Always name the interface: an empty HostIp is Docker's shorthand for every
+                        // interface, and an unauthenticated backend on 0.0.0.0 is a public port.
+                        HostIp = _cfg.HostIp,
+                        HostPort = _cfg.HostPort.Value.ToString(CultureInfo.InvariantCulture),
+                    }],
                 },
             };
         }
@@ -183,8 +220,11 @@ public sealed class DockerLifecycleProvider : IEngineLifecycleProvider, IDisposa
         if (string.IsNullOrEmpty(id))
             return LifecycleResult.Fail("create_returned_no_id", "the daemon created a container but did not name it: check the daemon's logs");
 
+        // 304 means it was already running. 404 must be a failure: the container we were just given an
+        // id for is gone, and reporting a successful launch with nothing running is worse than failing.
         var (started, _, startFailure) = await CallAsync(
-            HttpMethod.Post, $"{_cfg.ApiVersion}/containers/{id}/start", null, ct).ConfigureAwait(false);
+            HttpMethod.Post, $"{_cfg.ApiVersion}/containers/{Uri.EscapeDataString(id)}/start", null, ct,
+            already: [304]).ConfigureAwait(false);
         if (!started) return startFailure!;
 
         return LifecycleResult.Ok($"container={id[..Math.Min(12, id.Length)]}");
@@ -210,8 +250,15 @@ public sealed class DockerLifecycleProvider : IEngineLifecycleProvider, IDisposa
             path = socket["unix://".Length..];
             return path.Length > 0;
         }
-        path = "";
-        return false;
+        if (socket.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
+            socket.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+        {
+            path = "";
+            return false;
+        }
+        // A bare value is a socket path, which is what an operator writes most often.
+        path = socket;
+        return path.Length > 0;
     }
 
     private static string BaseAddressFor(string socket)
@@ -220,7 +267,7 @@ public sealed class DockerLifecycleProvider : IEngineLifecycleProvider, IDisposa
         if (socket.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
             socket.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
             return socket.EndsWith('/', StringComparison.Ordinal) ? socket : socket + "/";
-        // A bare path is still a socket.
+        // A bare path is a socket path, not a host name: it must not be sent to the HTTP base below.
         return "http://docker.engine/";
     }
 
@@ -267,7 +314,7 @@ public sealed class DockerLifecycleProvider : IEngineLifecycleProvider, IDisposa
     }
 
     private async ValueTask<(bool Ok, string Body, LifecycleResult? Failure)> CallAsync(
-        HttpMethod method, string path, HttpContent? content, CancellationToken ct)
+        HttpMethod method, string path, HttpContent? content, CancellationToken ct, int[]? already = null)
     {
         // Every call carries its own deadline. Without it a daemon that accepts the connection and then
         // says nothing holds a switch open indefinitely, the engine stays in "switching", and the request
@@ -281,14 +328,13 @@ public sealed class DockerLifecycleProvider : IEngineLifecycleProvider, IDisposa
             if (content is not null) request.Content = content;
             response = await _http.SendAsync(request, callCts.Token).ConfigureAwait(false);
             var body = await response.Content.ReadAsStringAsync(callCts.Token).ConfigureAwait(false);
-            if (response.IsSuccessStatusCode) return (true, body, default);
-
             var status = (int)response.StatusCode;
-            // A stop or start that answers 404 means the container is already in the state we wanted;
-            // a 404 from create means the image is missing, and that must never be swallowed here.
-            if (status == 404 && method == HttpMethod.Post &&
-                (path.Contains("/stop", StringComparison.Ordinal) || path.Contains("/start", StringComparison.Ordinal)))
-                return (true, body, default);      // already stopped: the desired state holds
+            if (response.IsSuccessStatusCode || (already is not null && Array.IndexOf(already, status) >= 0))
+                return (true, body, default);   // the desired state already holds
+
+            // Which statuses mean "already in the desired state" is decided per call site, not here: a
+            // 404 from stop means the container is gone, but a 404 from start means the container we were
+            // just given an id for does not exist, and calling that a successful launch is worse than failing.
 
             var snippet = body.Trim();
             if (snippet.Length > 180) snippet = snippet[..180];
