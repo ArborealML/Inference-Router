@@ -601,9 +601,11 @@ public sealed class RouterCore : IInferenceRouter
         DisposeQueueTimer(ticket);
         RetainTerminalTicket(ticket);
         ticket.State = TicketState.Completed;
-        ticket.CompletionTcs.TrySetResult(body ?? []);
+        // Count the ticket finished BEFORE waking the caller: a caller that awaits its own ticket and
+        // then reads /admin/status must see its own request accounted for, not a stale snapshot.
         var thread = TicketThread(ticket);
         if (thread is not null) Interlocked.Increment(ref thread.Completed);
+        ticket.CompletionTcs.TrySetResult(body ?? []);
         _events.Append(new RouterEvent
         {
             Kind = "request.completed",
