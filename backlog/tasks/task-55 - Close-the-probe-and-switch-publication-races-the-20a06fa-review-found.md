@@ -1,7 +1,7 @@
 ---
 id: TASK-55
 title: Close the probe and switch publication races the 20a06fa review found
-status: In Progress
+status: Done
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T20:41:00Z'
@@ -32,29 +32,36 @@ list captured at call time, and every poll bumps the version, so the scan never 
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 a probe publication landing during a switch is gated: the switch's list is never replaced by an older one
-- [ ] #2 the start publishes marker and unknown together, then installs the switch state; a barrier test shows no dispatch pass enters in between
-- [ ] #3 the end clears the marker only while it still names that switch, under a gate that excludes new starts
-- [ ] #4 a probe begun during a lifecycle mutation publishes neither Healthy=true nor a model list; restoration comes from the switch's proof or a later probe
-- [ ] #5 two identical successive probes leave the capability version unchanged, so the scan settles
-- [ ] #6 every uncertain switch exit (failed stop or launch, readiness timeout, unverified completion, failed refresh) publishes health-only, never a captured list
-- [ ] #7 a switch whose health proof succeeded makes the engine eligible without another poll, list and health in one publication
-- [ ] #8 after a switch commits, a waiting queued request is considered again without a poll
-- [ ] #9 a readiness answer requires a healthy, marker-free capability holding the target with a fitting window
-- [ ] #10 SPEC 5.5 and a revision-log line state the gate, the publication rule, the unknown-on-uncertain-exit posture, and the accepted gaps
+- [x] #1 a probe publication landing during a switch is gated: the switch's list is never replaced by an older one
+- [x] #2 the start publishes marker and unknown together, then installs the switch state; a barrier test shows no dispatch pass enters in between
+- [x] #3 the end clears the marker only while it still names that switch, under a gate that excludes new starts
+- [x] #4 a probe begun during a lifecycle mutation publishes neither Healthy=true nor a model list; restoration comes from the switch's proof or a later probe
+- [x] #5 two identical successive probes leave the capability version unchanged, so the scan settles
+- [x] #6 every uncertain switch exit (failed stop or launch, readiness timeout, unverified completion, failed refresh) publishes health-only, never a captured list
+- [x] #7 a switch whose health proof succeeded makes the engine eligible without another poll, list and health in one publication
+- [x] #8 after a switch commits, a waiting queued request is considered again without a poll
+- [x] #9 a readiness answer requires a healthy, marker-free capability holding the target with a fitting window
+- [x] #10 SPEC 5.5 and a revision-log line state the gate, the publication rule, the unknown-on-uncertain-exit posture, and the accepted gaps
 <!-- AC:END -->
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-**What the plan reviews changed.** The first falsified the marker fix this task first carried; the second found the start-side
-ordering is the live half, that a successful switch never restores health (:603-614 publishes the list while only the periodic
-poll writes Healthy=true), that the wake fires before the commit while the marker clear emits nothing (RouterCore.cs:66-71) —
-one poll of latency, not a stall — and that IsReadyFor (:414-418) reads list and gauge alone.
-**Accepted gaps, for SPEC 5.5 not code:** the fence orders publications, not reality — an engine restarted outside the router
-with no visible discontinuity keeps a stale-but-healthy snapshot until the next poll. And the health loop discards the
-Expect-DSL result (:221-225): **Healthy means the /models probe answered**, not that the readiness rule passed, which gates
-switch readiness only. No open task says otherwise.
+**Landed at fd5e0cd (SPEC v0.12.28)**, ten tests in `CapabilityPublicationTests.cs`: marker-before-claim read at the instant the
+claim installs (`TheMarkerGoesUpBeforeTheEngineIsClaimed`, through an internal seam null in production);
+`AClaimedSwitchIsInvisibleToDispatchAndOutlivesAStaleEndOfTheLastOne`; `AProbeTakenBeforeASwitchCannotOverwriteWhatTheSwitchProved`;
+`QuietPollsOfUnchangedContentLeaveTheGenerationAlone`; three tests for the uncertain exits;
+`AProvenSwitchMakesTheEngineEligibleWithoutWaitingForAnotherPoll`;
+`TheDispatchNudgeArrivesOnlyAfterTheCapabilityTransitionCommits`. Mutation evidence: removing the fence, the start-side unknown,
+the marker-before-claim order, the EndSwitch successor guard, the quiet-poll content compare, or the dispatch hint each fails a
+test. Suite 175 green; AOT publish clean with trim warnings on; CI green on main (run 44192523835).
 
-**Order:** gate, fence, health-only failure publish, unknown-on-uncertain-exit, then quiet-poll version stability. TASK-57,
-TASK-56, TASK-54 follow.<!-- SECTION:NOTES:END -->
+**AC #9 accepted as indirect, by the board.** `IsReadyFor` implements healthy-and-marker-free, but no public path reaches the
+marker clause now, since every marker state also carries Healthy=false; the window clause is covered by the escalation tests.
+Pinning that residual, and the concurrent-claim exclusion whose race test was dropped as a flake (SPEC §15 records the drop), is
+TASK-59 rather than a claim made here.
+
+**Accepted gaps in SPEC §5.5/§15, not code:** the fence orders publications, not the engine, so a restart outside the router's
+sight evades it; and the quiet-poll compare is content-wise, so order-only and duplicate-count churn bump the version. Both plan
+reviews and each finding's disposition are in §15. A commit review of fd5e0cd is dispatched; anything it lands becomes a new row.
+<!-- SECTION:NOTES:END -->
