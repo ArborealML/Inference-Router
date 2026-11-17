@@ -249,14 +249,24 @@ public sealed class RouterCore : IInferenceRouter
     private sealed class EventEnumerable(EventRing ring, RouterEventFilter filter, CancellationToken caller, CancellationToken shutdown)
         : IAsyncEnumerable<RouterEvent>
     {
-        // A slow subscriber must not become an unbounded queue. Dropping is only honest if the reader
-        // can tell: with DropWrite a *filtered* reader sees no Seq gap at all, so a dropped terminal
-        // event would look like a stream that simply has nothing more coming. Instead the first drop
-        // closes the feed, which is a signal the reader can act on — reconnect with the last Seq seen.
+        // A slow subscriber must not become an unbounded queue. Silent pruning is not acceptable: with
+        // DropWrite a *filtered* reader sees no Seq gap at all, so a dropped terminal event would look
+        // like a stream that simply has nothing more coming. Instead the first overflow closes the feed.
+        // That is the strongest signal available without a new event kind — it says "this stream is over,
+        // reconnect from the Seq you last saw" — but it does not say how much was missed, and it looks
+        // the same as a feed that legitimately ended. Counting the loss on the wire is an open decision
+        // (SPEC §10, `stream.gap`).
         private const int SubscriberBuffer = 256;
 
         public async IAsyncEnumerator<RouterEvent> GetAsyncEnumerator(CancellationToken token = default)
         {
+            // A cursor from a previous router lifetime must not silence the live tail: every event this
+            // router will ever emit has a smaller Seq than that cursor, so an unreconciled `since`
+            // subscribes a feed that can never deliver anything. Clamp it to the current head — the
+            // honest reading of "I have seen everything up to here" is "start from now".
+            var sinceSeq = Math.Min(filter.SinceSeq, ring.CurrentSeq);
+            var live = sinceSeq == filter.SinceSeq ? filter : filter with { SinceSeq = sinceSeq };
+
             using var link = CancellationTokenSource.CreateLinkedTokenSource(caller, token, shutdown);
             var queue = Channel.CreateBounded<RouterEvent>(new BoundedChannelOptions(SubscriberBuffer)
             {
@@ -266,7 +276,7 @@ public sealed class RouterCore : IInferenceRouter
             var dropped = false;
             void Handler(RouterEvent e)
             {
-                if (dropped || !filter.Matches(e)) return;
+                if (dropped || !live.Matches(e)) return;
                 // Never block inside the ring's lock. If the buffer is full the reader is too slow:
                 // close the feed instead of dropping, so the loss is visible as an ended stream.
                 if (!queue.Writer.TryWrite(e))
@@ -280,7 +290,7 @@ public sealed class RouterCore : IInferenceRouter
             // events appended in between, replaying first would lose them. A full ring refuses, and the
             // refusal is a return value so the HTTP layer can answer 503 before it commits to SSE
             // headers; a reader that gets here anyway sees an empty feed rather than an exception.
-            if (!ring.TrySubscribeReplay(filter.SinceSeq, Handler, out var replayed))
+            if (!ring.TrySubscribeReplay(sinceSeq, Handler, out var replayed))
             {
                 queue.Writer.TryComplete();
                 yield break;
@@ -290,7 +300,7 @@ public sealed class RouterCore : IInferenceRouter
                 foreach (var e in replayed)
                 {
                     if (link.Token.IsCancellationRequested) break;
-                    if (filter.Matches(e)) yield return e;
+                    if (live.Matches(e)) yield return e;
                 }
 
                 while (true)

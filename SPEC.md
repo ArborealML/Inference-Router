@@ -101,7 +101,15 @@ Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
   hung-up reader, the router's own shutdown ends every feed, and live subscribers are bounded by the new
   `max_event_subscribers` key (256 by default, counting the router's own internal subscription), with a
   feed that arrives past the limit refused `503 too_many_subscribers` before any SSE headers are sent —
-  a 200 that ends at once would read as a filter that matches nothing. Drop
+  a 200 that ends at once would read as a filter that matches nothing. An external review of that
+  commit then found two more cursor holes, both fixed here: `since=<long.MaxValue>` overflowed the
+  checked arithmetic in the replay helper and threw after the SSE headers were flushed, and a cursor
+  ahead of the ring — a client reconnecting after a restart — yielded nothing from replay **and**
+  filtered out every future event, so the feed was alive but permanently silent. The cursor is now
+  clamped to the ring head, and `Replay` refuses the arithmetic rather than the overflow. What remains
+  honestly unrepaired is stated rather than glossed: an ended feed says "reconnect", not "N events were
+  lost", it is indistinguishable from a feed that ended normally, and nothing separates a restart from a
+  quiet period because the ring carries no epoch. Those need the wire extension, not another local fix. Drop
   *accounting* and `stream.gap` remain open: they add an event kind, so they need a wire decision and
   belong with the parity work, not with this fix. 102 tests green.
 
@@ -772,14 +780,17 @@ Status: **0 warnings / 0 errors with warnings-as-errors, and an AOT publish with
 
 `RouterEvent` ring buffer (per-host, ordered, monotonic `Seq`, replayable; capacity 4096).
 Replay is **exclusive** on its cursor: `since=n` means "after n". A cursor inside the retained window
-gets every event still held for what was asked — there is no smaller cap than the ring itself — a
-cursor ahead of the ring (a client reconnecting with a sequence from a previous router lifetime) gets
-nothing rather than an error, and the retention boundary is the only place events disappear. A
-subscriber's snapshot and its live subscription are taken together, so an event appended between the
-two is neither lost nor delivered twice. Subscribers get a bounded buffer (256 events) and the feed of
-a consumer that falls behind is **ended** rather than silently pruned: on a filtered feed a dropped
-event leaves no `Seq` gap, so an ended stream is the signal a consumer can act on — it reconnects from
-the last `Seq` it saw. Reporting the size of a loss on the wire (`stream.gap`, below) is still open.
+gets every event still held for what was asked — there is no smaller cap than the ring itself — and a
+cursor ahead of the ring (a client reconnecting with a sequence from a previous router lifetime) is
+clamped to the current head, so the live tail still flows instead of a feed that can never deliver
+anything. The retention boundary is the only place events disappear. A subscriber's snapshot and its
+live subscription are taken together, so an event appended between the two is neither lost nor
+delivered twice. Subscribers get a bounded buffer (256 events) and the feed of a consumer that falls
+behind is **ended** rather than silently pruned: on a filtered feed a dropped event leaves no `Seq`
+gap, so an ended stream is the strongest signal available — reconnect from the last `Seq` you saw. It
+does **not** say how much was missed, and it looks the same as a feed that ended normally; nothing
+distinguishes a restart from a quiet period either, because the ring has no epoch. Reporting loss, and
+naming the epoch, need new fields on the wire (`stream.gap`, below) and are still open.
 Live subscriptions are bounded by `max_event_subscribers` (256 by default; the count includes the
 router's own internal subscription, so the key must be at least 2 to let one client feed through), and
 a feed that arrives when the ring is full is refused with `503 too_many_subscribers` **before** any SSE

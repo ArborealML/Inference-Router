@@ -169,6 +169,85 @@ public class EventRingTests
         Assert.Equal(Range(1, 200), seen);          // each exactly once, none lost
     }
 
+[Fact]
+    public void Replay_A_MaxLongCursor_DoesNotThrowAfterTheResponseIsCommitted()
+    {
+        var ring = new EventRing(capacity: 16);
+        ring.Append(Evt("request.enqueued"));
+
+        // The build is checked-arithmetic, so `since + 1` overflows on long.MaxValue. That happened
+        // after the SSE headers had already gone out, which is the worst place in the request path to
+        // throw: the client sees a 200 stream that dies, not an error.
+        Assert.Empty(ring.Replay(long.MaxValue));
+        Assert.Empty(ring.Replay(long.MaxValue - 1));
+        Assert.Single(ring.Replay(long.MaxValue - long.MaxValue));
+    }
+
+    [Fact]
+    public async Task SubscribeReplay_UnderConcurrentAppends_DeliversEveryEventExactlyOnce()
+    {
+        var ring = new EventRing(capacity: 4096);       // bigger than the load: no eviction in play
+        var live = new System.Collections.Concurrent.ConcurrentBag<long>();
+        Action<RouterEvent> handler = e => live.Add(e.Seq);
+
+        var producers = Enumerable.Range(0, 4).Select(_ => Task.Run(() =>
+        {
+            for (var i = 0; i < 500; i++) ring.Append(Evt("engine.health"));
+        })).ToArray();
+
+        // Subscribing while producers are mid-flight is the handover window. Every event is either in
+        // the snapshot or in the live tail, never in neither (lost) and never in both (duplicated).
+        Assert.True(ring.TrySubscribeReplay(0, handler, out var snapshot));
+        await Task.WhenAll(producers);
+        ring.Unsubscribe(handler);
+
+        var all = snapshot.Select(e => e.Seq).Concat(live).OrderBy(x => x).ToList();
+        Assert.Equal(ring.CurrentSeq, all.Count);
+        Assert.Equal(all.Distinct().Count(), all.Count);
+    }
+
+    [Fact(Timeout = 20_000)]
+    public async Task Feed_ACursorFromAPreviousRouterLifetime_StillTakesTheLiveTail()
+    {
+        var (router, events) = FeedHarness();
+        await using var _ = router;
+
+        events.Append(Evt("request.enqueued"));         // pins the ring head at 1 before subscribing
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        var enumerator = router.SubscribeEvents(new RouterEventFilter { SinceSeq = 9_000 }, cts.Token)
+                                   .GetAsyncEnumerator();
+        try
+        {
+            // The iterator runs synchronously to its first await, so the snapshot, the clamp and the
+            // subscription are all in place before MoveNextAsync returns — the flood below is live to it.
+            var pending = enumerator.MoveNextAsync();
+            await Task.Run(() =>
+            {
+                for (var i = 0; i < 5; i++) events.Append(Evt("engine.health"));
+            });
+
+            // A client that reconnects with a Seq from before a restart holds a cursor this router will
+            // never reach. Filtering the live tail with it subscribes a feed that can only be empty; the
+            // cursor is clamped to the head, so the live tail still arrives.
+            var seen = new List<long>();
+            if (await pending)
+            {
+                seen.Add(enumerator.Current.Seq);
+                // Stop at the fifth live event: the feed stays open by design, so waiting for it to
+                // end would wait for the caller's timeout instead of the thing under test.
+                while (seen.Count < 5 && await enumerator.MoveNextAsync()) seen.Add(enumerator.Current.Seq);
+            }
+
+            Assert.Equal([2, 3, 4, 5, 6], seen);
+            Assert.False(cts.IsCancellationRequested);
+        }
+        finally
+        {
+            await enumerator.DisposeAsync();
+        }
+    }
+
     private static (RouterCore Router, EventRing Events) FeedHarness()
     {
         var events = new EventRing();

@@ -77,7 +77,7 @@ public sealed class EventRing
     }
 
     /// <summary>Replay everything after <paramref name="sinceSeq"/> that the ring still holds.
-    /// A cursor ahead of the ring (a client that reconnects with a seq from a previous router
+    /// A cursor at or ahead of the ring (a client that reconnects with a seq from a previous router
     /// lifetime) yields nothing rather than throwing; a cursor older than the ring yields the whole
     /// retained window. <c>max</c> defaults to the ring capacity so a within-window reconnect is
     /// never silently truncated — the retention boundary is the only place events disappear.</summary>
@@ -89,7 +89,10 @@ public sealed class EventRing
     private IReadOnlyList<RouterEvent> ReplayLocked(long sinceSeq, int max)
     {
         // SinceSeq is exclusive, the same way RouterEventFilter reads it: the caller has already seen
-        // that Seq and is asking for what came after it.
+        // that Seq and asking for what came after it. A cursor at or ahead of the head yields nothing,
+        // and it must be checked before the addition: the build is checked-arithmetic, and a client can
+        // ask for long.MaxValue.
+        if (sinceSeq >= _head) return [];
         var first = Math.Max(1, _head + 1 - _ring.Length);
         var start = Math.Max(sinceSeq + 1, first);
         var n = (int)Math.Max(0, Math.Min(_head - start + 1, max));
