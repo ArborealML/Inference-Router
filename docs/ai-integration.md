@@ -10,9 +10,11 @@ POST JSON can use it. What it adds over pointing an agent straight at one engine
   pushing the engine into a context overflow.
 - **One place to watch what happened.** Every decision lands on a bounded event ring: `Seq`,
   `Timestamp`, `Kind`, and whichever of `ThreadId`, `TicketId`, `Engine`, `Model`, `Reason`, `Value`
-  apply (admin JSON is PascalCase, and `EventSurfaceTests` pins it). `Seq` is monotonic, so a gap in
-  the numbers you receive means events were dropped — the ring keeps the last 4096, and a slow SSE
-  subscriber's buffer is bounded rather than allowed to grow. Kinds you will see on a healthy box: `request.enqueued`, `request.selected`,
+  apply (admin JSON is PascalCase, and `EventSurfaceTests` pins it). `Seq` is monotonic, and the
+  feed tells you when it can no longer keep up: the ring keeps the last 4096 events, `since=` is
+  exclusive and replays everything still retained for what you asked for, and a slow SSE subscriber
+  gets its stream **ended** rather than silently pruned — reconnect with the last `Seq` you saw.
+  Nothing yet reports how many events were missed; that is a planned event kind, not a current one. Kinds you will see on a healthy box: `request.enqueued`, `request.selected`,
   `request.streaming_first_token`, `request.completed`, `queue.rejected`, `engine.switch_started`,
   `engine.switch_completed`, `engine.switch_failed`, `engine.health`, `engine.profile`,
   `thread.priority_changed`.

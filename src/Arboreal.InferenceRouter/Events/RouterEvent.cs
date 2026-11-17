@@ -67,18 +67,50 @@ public sealed class EventRing
 
     public long CurrentSeq => Volatile.Read(ref _head);
 
-    public IReadOnlyList<RouterEvent> Replay(long sinceSeq, int max = 1024)
+    /// <summary>Oldest Seq still replayable (1 once anything has been appended).</summary>
+    public long OldestSeq
+    {
+        get { lock (_lock) return Math.Max(1, _head + 1 - _ring.Length); }
+    }
+
+    /// <summary>Replay everything after <paramref name="sinceSeq"/> that the ring still holds.
+    /// A cursor ahead of the ring (a client that reconnects with a seq from a previous router
+    /// lifetime) yields nothing rather than throwing; a cursor older than the ring yields the whole
+    /// retained window. <c>max</c> defaults to the ring capacity so a within-window reconnect is
+    /// never silently truncated — the retention boundary is the only place events disappear.</summary>
+    public IReadOnlyList<RouterEvent> Replay(long sinceSeq, int? max = null)
+    {
+        lock (_lock) return ReplayLocked(sinceSeq, max ?? _ring.Length);
+    }
+
+    private IReadOnlyList<RouterEvent> ReplayLocked(long sinceSeq, int max)
+    {
+        // SinceSeq is exclusive, the same way RouterEventFilter reads it: the caller has already seen
+        // that Seq and is asking for what came after it.
+        var first = Math.Max(1, _head + 1 - _ring.Length);
+        var start = Math.Max(sinceSeq + 1, first);
+        var n = (int)Math.Max(0, Math.Min(_head - start + 1, max));
+        var list = new List<RouterEvent>(n);
+        for (var i = 0; i < n; i++) list.Add(_ring[(int)((start + i - 1) % _ring.Length)]);
+        return list;
+    }
+
+    /// <summary>Snapshot and subscribe under one lock. Doing the two separately leaves a window in
+    /// which an appended event is in neither the snapshot nor the live tail — the handover hole.
+    /// The handler therefore sees exactly the events appended after the snapshot.</summary>
+    public IReadOnlyList<RouterEvent> SubscribeReplay(long sinceSeq, Action<RouterEvent> handler, int? max = null)
     {
         lock (_lock)
         {
-            var first = Math.Max(1, _head + 1 - _ring.Length);
-            if (sinceSeq < first) sinceSeq = first;
-            var n = (int)Math.Min(_head + 1 - sinceSeq, max);
-            var list = new List<RouterEvent>(n);
-            for (var i = 0; i < n; i++) list.Add(_ring[(int)((sinceSeq + i - 1) % _ring.Length)]);
-            return list;
+            if (_subscribers.Count >= MaxSubscribers)
+                throw new InvalidOperationException($"Event ring already has {MaxSubscribers} live subscribers.");
+            var replayed = ReplayLocked(sinceSeq, max ?? _ring.Length);
+            _subscribers.Add(handler);
+            return replayed;
         }
     }
+
+    public const int MaxSubscribers = 256;
 
     public void Subscribe(Action<RouterEvent> handler)
     {

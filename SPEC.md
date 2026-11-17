@@ -88,6 +88,19 @@ Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
   already on every admitted response. Casing of the admin feed stays PascalCase and is now pinned by
   a test; unifying it with the lowerCamel names that §10 and the tool manifest use is §15.1 #1.
   95 tests green; wire tests share one `WireHarness` instead of three copies that can drift.
+- v0.11.1 — the replay and reconnect contract pinned to the code. `since=` is exclusive, matching the
+  filter that reads it. Replay returns the whole retained window: a default cap of 1024 was cutting a
+  4096-event ring down to a quarter of what a reconnecting client was entitled to, with no signal. A
+  cursor ahead of the ring computed a negative count and threw **after** the SSE headers were flushed,
+  so the client saw a truncated 200 instead of an error; it now yields nothing. Replay snapshot and
+  live subscription happen under one ring lock — an event appended in the old handover window reached
+  neither path. A subscriber that falls behind has its feed ended instead of its writes dropped
+  (`DropWrite` was uncounted, and a filtered reader has no `Seq` gap to notice); §10's "any drop is
+  visible" claim was true only of an unfiltered feed and is corrected here, as is the same claim in
+  `docs/ai-integration.md`. Caller cancellation now stops delivery instead of draining the buffer to a
+  hung-up reader, the router's own shutdown ends every feed, and live subscribers are capped. Drop
+  *accounting* and `stream.gap` remain open: they add an event kind, so they need a wire decision and
+  belong with the parity work, not with this fix. 102 tests green.
 
 ## 1. Overview
 
@@ -755,9 +768,17 @@ Status: **0 warnings / 0 errors with warnings-as-errors, and an AOT publish with
 ## 10. Observability
 
 `RouterEvent` ring buffer (per-host, ordered, monotonic `Seq`, replayable; capacity 4096).
-Subscribers get a bounded buffer (256 events): if a consumer falls behind, writes are dropped and
-the missing `Seq` numbers are visible to it, rather than the router holding unbounded memory for a
-dead client. Field names on the wire are PascalCase (§6).
+Replay is **exclusive** on its cursor: `since=n` means "after n". A cursor inside the retained window
+gets every event still held for what was asked — there is no smaller cap than the ring itself — a
+cursor ahead of the ring (a client reconnecting with a sequence from a previous router lifetime) gets
+nothing rather than an error, and the retention boundary is the only place events disappear. A
+subscriber's snapshot and its live subscription are taken together, so an event appended between the
+two is neither lost nor delivered twice. Subscribers get a bounded buffer (256 events) and the feed of
+a consumer that falls behind is **ended** rather than silently pruned: on a filtered feed a dropped
+event leaves no `Seq` gap, so an ended stream is the signal a consumer can act on — it reconnects from
+the last `Seq` it saw. Reporting the size of a loss on the wire (`stream.gap`, below) is still open.
+Live subscribers are bounded, a subscription ends when the router shuts down, and a caller that hangs
+up stops being delivered to immediately. Field names on the wire are PascalCase (§6).
 
 - `thread.registered`, `thread.priority_changed`
 - `request.enqueued {thread, ticket, model, priority, promptChars}`

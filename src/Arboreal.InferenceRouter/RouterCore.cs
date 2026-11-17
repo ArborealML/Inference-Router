@@ -244,46 +244,64 @@ public sealed class RouterCore : IInferenceRouter
     }
 
     public IAsyncEnumerable<RouterEvent> SubscribeEvents(RouterEventFilter? filter = null, CancellationToken ct = default)
-        => new EventEnumerable(_events, filter ?? new RouterEventFilter(), ct);
+        => new EventEnumerable(_events, filter ?? new RouterEventFilter(), ct, _shutdown.Token);
 
-    private sealed class EventEnumerable(EventRing ring, RouterEventFilter filter, CancellationToken ct) : IAsyncEnumerable<RouterEvent>
+    private sealed class EventEnumerable(EventRing ring, RouterEventFilter filter, CancellationToken caller, CancellationToken shutdown)
+        : IAsyncEnumerable<RouterEvent>
     {
-        // A slow subscriber must not become an unbounded queue. Drops are visible to the consumer
-        // because Seq is monotonic: a gap means events were lost, so the feed stays honest.
+        // A slow subscriber must not become an unbounded queue. Dropping is only honest if the reader
+        // can tell: with DropWrite a *filtered* reader sees no Seq gap at all, so a dropped terminal
+        // event would look like a stream that simply has nothing more coming. Instead the first drop
+        // closes the feed, which is a signal the reader can act on — reconnect with the last Seq seen.
         private const int SubscriberBuffer = 256;
 
         public async IAsyncEnumerator<RouterEvent> GetAsyncEnumerator(CancellationToken token = default)
         {
-            using var link = CancellationTokenSource.CreateLinkedTokenSource(ct, token);
-            // Replay is filtered as well as the live tail: a ticket-scoped reader must not be shown
-            // other tickets' history just because it arrived first.
-            foreach (var e in ring.Replay(filter.SinceSeq))
-                if (filter.Matches(e)) yield return e;
-
+            using var link = CancellationTokenSource.CreateLinkedTokenSource(caller, token, shutdown);
             var queue = Channel.CreateBounded<RouterEvent>(new BoundedChannelOptions(SubscriberBuffer)
             {
                 SingleReader = true,
-                FullMode = BoundedChannelFullMode.DropWrite,
+                FullMode = BoundedChannelFullMode.Wait,
             });
+            var dropped = false;
             void Handler(RouterEvent e)
             {
-                if (filter.Matches(e)) queue.Writer.TryWrite(e);
+                if (dropped || !filter.Matches(e)) return;
+                // Never block inside the ring's lock. If the buffer is full the reader is too slow:
+                // close the feed instead of dropping, so the loss is visible as an ended stream.
+                if (!queue.Writer.TryWrite(e))
+                {
+                    dropped = true;
+                    queue.Writer.TryComplete();
+                }
             }
-            ring.Subscribe(Handler);
+
+            // Snapshot and subscribe are one atomic step: subscribing first would double-count the
+            // events appended in between, replaying first would lose them.
+            var replayed = ring.SubscribeReplay(filter.SinceSeq, Handler);
             try
             {
+                foreach (var e in replayed)
+                {
+                    if (link.Token.IsCancellationRequested) break;
+                    if (filter.Matches(e)) yield return e;
+                }
+
                 while (true)
                 {
                     bool more;
                     try { more = await queue.Reader.WaitToReadAsync(link.Token).ConfigureAwait(false); }
-                    catch (OperationCanceledException) { break; }   // caller hung up
+                    catch (OperationCanceledException) { break; }   // caller hung up, or router stopping
                     if (!more) break;
-                    while (queue.Reader.TryRead(out var e)) yield return e;
+                    // Stop pulling as soon as the caller is gone: a reader that hung up must not be
+                    // fed the rest of its buffer while the router keeps producing.
+                    while (!link.Token.IsCancellationRequested && queue.Reader.TryRead(out var e)) yield return e;
                 }
             }
             finally
             {
                 ring.Unsubscribe(Handler);
+                queue.Writer.TryComplete();
             }
         }
     }
