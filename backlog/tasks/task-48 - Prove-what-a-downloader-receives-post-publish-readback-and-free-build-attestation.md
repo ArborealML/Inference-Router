@@ -39,7 +39,7 @@ It does not identify who uploaded, and it cannot say what a client in another re
 immutability then freezes the malicious set.** That is why the checksums stay documented as integrity references
 and not as publisher authentication.
 
-[TASK-44](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-44%20-%20Close-what-the-eighth-release-gate-review-found-round-8-over-v0.12.15.md) lands first — same file, and its AC #5 (read `.immutable` after publication) is shared with this
+[TASK-44](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-44%20-%20Close-what-the-seventh-release-gate-review-found-over-v0-12-15.md) lands first — same file, and its AC #5 (read `.immutable` after publication) is shared with this
 task, so do not write it twice. Test the consumer commands on the canary in [TASK-42](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-42%20-%20Decision-run-a-canary-release-to-prove-the-release-gate-exists.md).
 <!-- SECTION:DESCRIPTION:END -->
 

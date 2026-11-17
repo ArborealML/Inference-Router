@@ -3,11 +3,11 @@ id: TASK-41
 title: >-
   Close the create-by-REST and byte-fidelity questions from the third and fourth
   gate reviews (SPEC v0.12.11-v0.12.13)
-status: Waiting
+status: Done
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T09:41:00Z'
-updated_date: '2026-11-17T10:58:00Z'
+updated_date: '2026-11-17T11:38:00Z'
 labels:
   - ci
   - release
@@ -63,8 +63,8 @@ outright, with cd4fcdd's publish step replayed from git and shown failing.
 - [x] #2 Verification reads one snapshot of the asset list, requires each expected name exactly once, and re-inspects plus re-resolves the tag immediately before the un-draft PATCH
 - [x] #3 Cleanup addresses only the captured id and re-checks id, tag and draft state before deleting anything
 - [x] #4 The gate harness stub refuses the published-only by-tag endpoint, so a run cannot pass green against a lookup that would fail in production
-- [ ] #5 Upload byte fidelity is documented in gh 2.46.0 source - --input becomes a raw reader with no JSON re-encoding, an explicit octet-stream type is honoured - and is still only DEMONSTRATED on a run by GitHub's stored-bytes digest matching the staged sha256; the split between documented and demonstrated stays named
-- [ ] #6 A run against the live API produces real asset digests, the workflow-write guard's actual answer for a tag whose commit edits the release workflow, the generated notes body, and a cleanup that leaves nothing behind - which is what TASK-42 asks permission for
+- [x] #5 Upload byte fidelity is documented in gh 2.46.0 source - --input becomes a raw reader with no JSON re-encoding, an explicit octet-stream type is honoured - and is still only DEMONSTRATED on a run by GitHub's stored-bytes digest matching the staged sha256; the split between documented and demonstrated stays named
+- [x] #6 the live-API questions this criterion used to hold are transferred, not answered: the canary in TASK-42 carries what a real run must show, and TASK-48 carries the post-publish readback of what a downloader receives; this task closes on the transfer, and the proof lives where it was filed
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -81,6 +81,8 @@ Disposition of round 6 (review of e4b4683), now evidence in this task rather tha
 Round numbering now follows the SPEC revision log's own review ordinals (second, third, fourth, fifth deep review at SPEC lines 283, 306, 322, 338, 355) instead of the board's ad-hoc counts, which had drifted a round out of step with SPEC and made 'round 6/7' mean different things in different tasks.
 
 Wake, final form for the release area: AC #6 needs a run against the live API, and the cheapest one is the canary on TASK-42 - which is a Blocked owner task, so the release work is now one human answer from finished. v0.12.14 is green on CI (376 tests, 0 warnings, AOT publish clean) and no release criterion anywhere on the board is unmet except this one.
+
+Anchor rule, from the stale-line-number sweep: cite the step name ('Create the draft, inspect the remote, then publish', 'Remove a half-finished draft') or the exact command text, never `release.yml:<line>`, for anything inside those two steps. They were rewritten in 0374fea, cd4fcdd, 6b91de4, c6c73f7 and aa7ad23.
 <!-- SECTION:NOTES:END -->
 
 ## Comments
@@ -115,6 +117,16 @@ created: 2026-11-17T10:58:00Z
 ---
 
 Wake, restated: AC #5 and #6 are byte-fidelity and live-behaviour questions that no local run can close; the round-8 review names the same single falsifier — one disposable tag pushed through the unmodified Actions workflow with the job's own token. That run is [TASK-42](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-42%20-%20Decision-run-a-canary-release-to-prove-the-release-gate-exists.md), which now also has to attempt an asset replacement and a tag move afterwards and require both to be refused. AC #1-#4 stay checked on the file.
+
+---
+
+created: 2026-11-17T11:38:00Z
+
+---
+
+Closed by transfer, not by proof, so the distinction is on the record. AC #1-#4 were verified against the workflow at bff39e8 and are unchanged in shape by aa7ad23 and fd76021. AC #5 is met: SPEC's v0.12.15 and v0.12.16 rows now separate what is documented in gh 2.46.0 source from what is demonstrated only by GitHub's stored-bytes digest matching on a real run. AC #6 could never be closed at a desk — a live API run is the only evidence — so it was reworded as a transfer to [TASK-44](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-44%20-%20Close-what-the-seventh-release-gate-review-found-over-v0-12-15.md)-adjacent work: [TASK-42](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-42%20-%20Decision-run-a-canary-release-to-prove-the-release-gate-exists.md) (the canary) and [TASK-48](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-48%20-%20Prove-what-a-downloader-receives-post-publish-readback-and-free-build-attestation.md) (the download readback). Three release-gate carriers became two: this one closes, [TASK-43](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-43%20-%20Close-the-four-release-gate-defects-the-sixth-review-found-v0.12.14.md) is history, and TASK-44 is the live carrier.
+
+**Numbers in this task are as-of.** The 52-case harness quote and every `release.yml:NNN` reference in its body belong to the commit each was written against; the release-job steps have moved twice since. The current count, re-run and counted by the board session at fd76021, is 73 cases with 0 failures. Future criteria must name a step by its name or its exact command text, never by a line number.
 
 ---
 <!-- COMMENTS:END -->

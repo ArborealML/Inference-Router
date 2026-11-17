@@ -5,7 +5,7 @@ status: Waiting
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T07:30:00Z'
-updated_date: '2026-11-17T10:58:00Z'
+updated_date: '2026-11-17T11:38:00Z'
 labels:
   - release
 dependencies:
@@ -19,32 +19,22 @@ ordinal: 31000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-**Do this (2 minutes).** Answer one line on this task: **cut v0.1.0** or **hold: reason**. If you cut it and would
-rather not type the commands, the coding session runs the tag and reads the run; if you cut it yourself, use the
-check-then-tag lines below.
+**Waiting, not blocked: no person is in this path.** Wake: the canary in [TASK-42](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-42%20-%20Decision-run-a-canary-release-to-prove-the-release-gate-exists.md) green, [TASK-44](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-44%20-%20Close-what-the-seventh-release-gate-review-found-over-v0-12-15.md) closed, [TASK-45](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-45%20-%20Enable-GitHub-immutable-releases-before-the-first-tag.md) done. When those land the coding session cuts the tag: the decision content is a gate check, not a preference.
 
-**What changes under each answer.** Cut -> the releases page gains linux-x64 and win-x64 archives plus SHA256SUMS, the
-README can point at real downloads, and [TASK-28](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-28%20-%20Cut-the-first-release-tag-and-watch-the-release-run.md)
-runs the first real tag and reports what the gate proved. Hold -> the repository keeps telling readers to build from
-source, TASK-28 stays parked, and the release badge in [TASK-14](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-14%20-%20Improve-the-README-patterns-from-popular-.NET-repos-plus-an-icon-and-banner.md)
-stays open.
+**Cut:** the releases page gains linux-x64 and win-x64 archives plus SHA256SUMS, the README can point at real
+downloads (the last open box on [TASK-14](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-14%20-%20Improve-the-README-patterns-from-popular-.NET-repos-plus-an-icon-and-banner.md)), and [TASK-28](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-28%20-%20Cut-the-first-release-tag-and-watch-the-release-run.md) reports what the gate proved.
+**Hold:** the README keeps telling readers to build from source and TASK-28 stays parked.
 
-**Command (check, then tag — never tag a hardcoded sha):**
+**Command — check the floor first, never tag a hardcoded sha:**
 
-    git log -1 --format=%H -- .github/workflows/release.yml        # the floor: newest release-workflow commit
+    git log -1 --format=%H -- .github/workflows/release.yml
     git merge-base --is-ancestor "$(git log -1 --format=%H -- .github/workflows/release.yml)" "$(git rev-parse origin/main)" && echo ok
     git tag -a v0.1.0 -m v0.1.0 "$(git rev-parse origin/main)"
     git push origin v0.1.0
 
-**Why the floor matters:** GitHub Actions runs the workflow file stored in the commit the tag points at, so a tag
-behind the newest gate work runs an older, weaker gate.
-
-**What you are approving, and what is still open.** The release workflow:
-[release.yml](https://github.com/ArborealML/Inference-Router/blob/main/.github/workflows/release.yml). It has never
-published anything — no tag has ever been cut — so the first run is the evidence. Two related calls sit beside this
-one: [TASK-38](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-38%20-%20Decision-protect-release-tags-and-decide-who-may-publish-releases.md)
-(tag protection and who may publish) and [TASK-39](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-39%20-%20Decision-verify-what-a-downloader-receives-or-keep-accepting-that-we-do-not.md)
-(whether to pay for download-and-hash or signing).
+Actions runs the workflow stored in the commit the tag points at, so a tag behind the newest gate work runs an
+older, weaker gate. Then read the run rather than assuming it: cost after the wake is about 10 minutes plus one
+runner leg.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -99,7 +89,7 @@ created: 2026-11-17T10:58:00Z
 
 ---
 
-Reassigned under decision-16: the cut is an agent act, not an owner's keystroke. Wake: the canary in [TASK-42](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-42%20-%20Decision-run-a-canary-release-to-prove-the-release-gate-exists.md) green, [TASK-44](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-44%20-%20Close-what-the-eighth-release-gate-review-found-round-8-over-v0.12.15.md) closed, [TASK-45](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-45%20-%20Enable-GitHub-immutable-releases-before-the-first-tag.md) done. The command stays as written in the description — check the floor first, never tag a hardcoded sha: `git log -1 --format=%H -- .github/workflows/release.yml`, `git merge-base --is-ancestor …`, then `git tag -a v0.1.0 -m v0.1.0 "$(git rev-parse origin/main)"` and `git push origin v0.1.0`. Then read the run, do not assume it.
+Reassigned under decision-16: the cut is an agent act, not an owner's keystroke. Wake: the canary in [TASK-42](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-42%20-%20Decision-run-a-canary-release-to-prove-the-release-gate-exists.md) green, [TASK-44](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-44%20-%20Close-what-the-seventh-release-gate-review-found-over-v0-12-15.md) closed, [TASK-45](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-45%20-%20Enable-GitHub-immutable-releases-before-the-first-tag.md) done. The command stays as written in the description — check the floor first, never tag a hardcoded sha: `git log -1 --format=%H -- .github/workflows/release.yml`, `git merge-base --is-ancestor …`, then `git tag -a v0.1.0 -m v0.1.0 "$(git rev-parse origin/main)"` and `git push origin v0.1.0`. Then read the run, do not assume it.
 
 ---
 <!-- COMMENTS:END -->

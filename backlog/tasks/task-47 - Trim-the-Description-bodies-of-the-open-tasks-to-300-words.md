@@ -5,7 +5,7 @@ status: To Do
 assignee:
   - '@qwen3.8-flash-next-board'
 created_date: '2026-11-17T11:03:00Z'
-updated_date: '2026-11-17T11:07:00Z'
+updated_date: '2026-11-17T11:39:00Z'
 labels: []
 dependencies: []
 priority: medium
@@ -16,16 +16,26 @@ ordinal: 46000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-**Do this (about an hour, no code, no risk).** The owner standard is that a Description is human readable and not verbose; the lint puts the line at 300 words and 17 task files are over it. Nine of those are open tasks, so they are the ones a reader actually opens: TASK-2, 6, 11, 23, 24, 28, 33, 41, 42. The rest are Done history and stay as they are.
+**Do this (about an hour, no code, no risk).** Nine open task Descriptions are over the 300-word standard; trim
+them by moving reasoning into Implementation Notes, deleting nothing. **The set moves every time a Description is
+trimmed, so re-run the checker rather than trusting the list below** — as I last measured it the open set is TASK-11, 14, 23, 28 —
+TASK-32, 33, 38 and 42 were trimmed while this task sat open; Done tasks are exempt history and keep their length on purpose.
 
-**Method, in order, one task at a time.** Re-read the file, then move the reasoning paragraphs out of `## Description` into `## Implementation Notes` — never delete them — leaving the answer line, the do-this steps, the cost, and the links. Re-read the file after each `backlog task edit`, because a `--description` overwrite is total and the AC block is a separate managed region: `backlog task edit TASK-11 --description $'...'` and nothing else in the same call.
+    python3 .local/board-standards.py      # counts Defects by check; WORDS is the only open class
+    python3 .local/board-lint.py           # must stay at 0 defects, both before and after
 
-    python3 .local/board-standards.py      # 17 WORDS defects today
-    python3 .local/board-lint.py           # must stay at 0 defects
+**Method, one task at a time.** Re-read the file. Cut the reasoning paragraphs out of `## Description` and append
+them to `## Implementation Notes` with `--append-notes`. Leave in the Description the answer or wake line, the
+do-this steps, the cost in minutes, and the links. Re-read the file after every write: `--description` is a total
+overwrite, `--acceptance-criteria` replaces the whole AC list (repeat the flag once per criterion, in one call),
+and the AC block is a separate managed region.
 
-**What must not be lost while shrinking:** the answer line in the first 30 lines, at least one backticked command or path, a stated cost in minutes, a link to a file rather than a folder, and any wake or blocker sentence — the same lint checks the same things, so a trim that breaks one of those shows up as a new defect rather than as a quieter task.
+**What must survive the shrink** — the same linters check the same things, so a trim that breaks one shows up as a
+new defect rather than a quieter task: an answer or wake line inside the first 30 lines, at least one backticked
+command or path, a stated cost, a link to a file rather than a folder, and the wake or blocker sentence.
 
-**Done when** `board-standards.py` reports 0 WORDS defects for every non-Done task and `board-lint.py` still reports 0 defects. Commit as `board:` and do not touch anything outside `backlog/`.
+**Done when** `board-standards.py` reports 0 WORDS defects for every non-Done task and `board-lint.py` still
+reports 0 defects with exit 0. Commit as `board:` and stay inside `backlog/`.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

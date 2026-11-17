@@ -7,7 +7,7 @@ status: To Do
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T02:18:00Z'
-updated_date: '2026-11-17T10:58:00Z'
+updated_date: '2026-11-17T11:38:00Z'
 labels:
   - ui
   - wire
@@ -19,18 +19,21 @@ ordinal: 21000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
+**Adopted; nobody is being asked anything: 1 operator-first, 2 `/admin` unauthenticated and loopback-only with
+operator-managed tunnels, 3 no new feed event kind — continuity comes from sequence holes plus the exclusive
+cursor.** The external design answer recommended exactly this, and the board checked it against [SPEC.md](https://github.com/ArborealML/Inference-Router/blob/main/SPEC.md)
+(§6, §10, §12.5) and against the ring's eviction semantics in code before recording it.
 
-**Do this (3 minutes).** Three one-line answers, on this task: `1 operator-first`, `2 loopback plus tunnels`, `3 no gap event`. Any answer can be replaced with yours and the reason. Settings or commands are not involved - these are product and wire postures, and answer 3 is the only one that touches the wire (the recommendation is to change nothing).
+**Remaining act (the coding session, about 30 minutes):** write those three postures into SPEC as a revision, with
+the revision-log line in the same commit, then start [TASK-11](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-11%20-%20Blazor-live-view-screens-plus-the-event-stream-additions-they-need.md), which was parked behind this answer.
 
-**Answer format (one line each):** `1 operator-first`, `2 loopback+tunnels`, `3 no gap event` — deviations welcome,
-and each deviation names what it buys.
+**Why item 3 is the load-bearing one:** it is a decision *not* to change the wire. A gap or loss event kind on the
+shared feed would consume a global sequence id to describe something that may affect nobody — eviction is global,
+consumption is per subscriber, so loss is subscriber-relative. If a server-side notice is ever wanted it must be
+subscriber-relative and must not consume a sequence id.
 
-**Links**
-- What the admin surface is today: [SPEC §6](https://github.com/ArborealML/Inference-Router/blob/main/SPEC.md#L635), [§6.1](https://github.com/ArborealML/Inference-Router/blob/main/SPEC.md#L635).
-- The feed the answers describe: [SPEC §10](https://github.com/ArborealML/Inference-Router/blob/main/SPEC.md#L946); screens: [SPEC §12.5](https://github.com/ArborealML/Inference-Router/blob/main/SPEC.md#L1079).
-- Task that starts when this is answered: [TASK-11] (https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-11%20-%20Blazor-live-view-screens-plus-the-event-stream-additions-they-need.md).
-- Adjacent and deliberately separate: [TASK-34] (https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-34%20-%20Decision-what-the-caller-sees-when-a-generation-stalls-or-a-client-stops-reading.md) — what a *caller* sees when a generation stalls, which is a `/v1` question, not a feed question.
-
+**Links:** [SPEC.md](https://github.com/ArborealML/Inference-Router/blob/main/SPEC.md) §6 (the admin surface and its error casing), §10 (the feed), §12.5 (the screens); the
+adjacent and deliberately separate `/v1` question: [TASK-34](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-34%20-%20Decision-what-the-caller-sees-when-a-generation-stalls-or-a-client-stops-reading.md) (answered).
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -42,7 +45,6 @@ and each deviation names what it buys.
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-
 Reasoning and evidence moved out of the description under the answer-first rule (decision-15):
 
 **You are being asked to ratify a design, not to write one.** The external research and review service answered

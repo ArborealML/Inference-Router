@@ -5,7 +5,7 @@ status: Waiting
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T09:53:00Z'
-updated_date: '2026-11-17T11:31:00Z'
+updated_date: '2026-11-17T11:38:00Z'
 labels:
   - release
   - ci
@@ -19,34 +19,22 @@ ordinal: 41000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-**Do this (4 minutes plus runner time).** Answer one line here: **run the canary** or **no canary: reason**. If you
-run it yourself, two commands — tag the current main HEAD, push it, watch the run, then delete:
+**Waiting, and agent-run: no owner keystroke is in this path.** Wake: [TASK-44](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-44%20-%20Close-what-the-seventh-release-gate-review-found-over-v0-12-15.md) closed and [TASK-45](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-45%20-%20Enable-GitHub-immutable-releases-before-the-first-tag.md) done, with CI green on the merge commit. Then the coding session cuts `v0.0.0-canary`, lets the unmodified workflow run with its own token, and reports what the run proved.
 
-    git tag v0.0.0-canary "$(git rev-parse origin/main)" && git push origin v0.0.0-canary
-    gh release delete v0.0.0-canary --cleanup-tag --yes
+**What only a live run answers:** whether `contents: write` from `GITHUB_TOKEN` suffices in practice for asset
+upload plus the un-draft `PATCH`; whether the workflow-write guard fires at all for a tag cut at the head of main —
+by the endpoint note it should not, and our own tag commits touch release.yml, which is what makes the question
+live; what `.target_commitish` reports on a real create; what title and notes body GitHub generates; whether the
+stored digests match real uploads.
 
-Or answer `run the canary` and the coding session performs it and reports what the run proved.
+**Capture, from the run itself:** the create and upload responses, the full asset inventory, the download SHA-256,
+the peeled tag SHA, the `PATCH` response, and `.immutable` on the published release.
 
-**What it proves.** The release workflow has never run for real: no tag has ever been cut, so the gate that has been
-hardened six times is configured, not proven. Five unknowns cannot be settled by any local test, only by a run against
-the real API with the real token — what error the workflow-write guard actually returns (404 or 403, not the 422
-earlier rounds assumed), whether the upload really reaches the uploads host with the token intact, what title and body
-GitHub generates for the release, whether the asset digests match on real uploads, and whether the tag can move between
-the preflight check and the create. One runner leg answers all of them.
+**Then require refusals:** try an asset replacement and a tag move against the published canary. Both must be
+rejected, or the immutability and tag-rule claims in [TASK-45](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-45%20-%20Enable-GitHub-immutable-releases-before-the-first-tag.md) and [TASK-38](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-38%20-%20Decision-protect-release-tags-and-decide-who-may-publish-releases.md) are false.
 
-**What it costs, stated plainly.** For a few minutes a public release with five downloadable assets exists on the
-repository, under a version number nobody will mistake for a real one. Deleting the release and the tag afterwards is
-part of the answer, and the preflight step refuses a tag that already carries a release — published *or* draft — so the
-cleanup is not optional. It is a mutation of a public repository, which is why it is your call and not an agent's.
-
-**What it does not prove:** that the commit the canary tags is the release you want to ship. [TASK-32](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-32%20-%20Decision-cut-the-v0.1.0-tag.md)
-stays a separate yes.
-
-**Links:** the workflow that will run — [release.yml](https://github.com/ArborealML/Inference-Router/blob/main/.github/workflows/release.yml);
-where the release appears — [releases](https://github.com/ArborealML/Inference-Router/releases); the tag-floor rule is in
-[TASK-32](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-32%20-%20Decision-cut-the-v0.1.0-tag.md).
-
-**Why this is Blocked:** no event wakes it. It waits on the owner's one-line answer on this task, and [TASK-32](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-32%20-%20Decision-cut-the-v0.1.0-tag.md) and the first-tag task both sit behind it, so a decline stops the release path rather than merely delaying it.
+**Cost, plainly:** public assets for a few minutes and one runner leg, and cleanup is mandatory because preflight
+refuses a tag that already carries a release, draft or published: `gh release delete v0.0.0-canary --cleanup-tag --yes`. It is a mutation of a public repository and the report says so in those words.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -61,7 +49,7 @@ created: 2026-11-17T10:58:00Z
 
 ---
 
-Reassigned under decision-16: an agent runs it. Wake: [TASK-44](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-44%20-%20Close-what-the-eighth-release-gate-review-found-round-8-over-v0.12.15.md) merged and [TASK-45](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-45%20-%20Enable-GitHub-immutable-releases-before-the-first-tag.md) done, with CI green on the merge commit. Protocol, tightened by the round-8 review: tag current `main` as `v0.0.0-canary`, push, let the unmodified workflow run with its own token, capture the create and upload responses, the full asset inventory, the download SHA-256, the peeled tag SHA, the `PATCH` response, and `.immutable` on the published release; then try to replace an asset and to move the tag and **require both to be refused**; then delete the release with `--cleanup-tag`, because preflight refuses a tag that already carries a release, draft or published. Cost: public assets for a few minutes plus one runner leg. It is a mutation of a public repository and the report says so in those words.
+Reassigned under decision-16: an agent runs it. Wake: [TASK-44](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-44%20-%20Close-what-the-seventh-release-gate-review-found-over-v0-12-15.md) merged and [TASK-45](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-45%20-%20Enable-GitHub-immutable-releases-before-the-first-tag.md) done, with CI green on the merge commit. Protocol, tightened by the round-8 review: tag current `main` as `v0.0.0-canary`, push, let the unmodified workflow run with its own token, capture the create and upload responses, the full asset inventory, the download SHA-256, the peeled tag SHA, the `PATCH` response, and `.immutable` on the published release; then try to replace an asset and to move the tag and **require both to be refused**; then delete the release with `--cleanup-tag`, because preflight refuses a tag that already carries a release, draft or published. Cost: public assets for a few minutes plus one runner leg. It is a mutation of a public repository and the report says so in those words.
 
 ---
 

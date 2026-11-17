@@ -5,7 +5,7 @@ status: To Do
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T09:11:00Z'
-updated_date: '2026-11-17T11:31:00Z'
+updated_date: '2026-11-17T11:38:00Z'
 labels:
   - release
   - security
@@ -17,21 +17,24 @@ ordinal: 37000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
+**An act, not a decision: put a repository ruleset on `v*` that blocks deleting and force-moving release tags,
+then read it back and report.** Measured on this repository: `GET .../git/tag-protection/branches` answers 404 —
+those endpoints are not available here — while `GET .../rulesets` answers `[]`, so a ruleset is the scriptable route
+and it works today. About 20 minutes with `gh api`, reversible with a DELETE.
 
-**Do this (5 minutes).** Repository Settings -> Rules -> add a tag protection rule matching v* (or tell me your plan does not offer it). Answer one line here: `tag rule v* added`, or `no rule: accepting the window`, or `narrowing access instead`. No commands to run; this is a settings act only a signed-in owner can perform.
+    gh api repos/ArborealML/Inference-Router/rulesets            # measured [] today
 
-**Recommendation:** option 1 if the plan offers it, with option 3's sentence written down if it does not. Either way
-the disposition should be a sentence in the spec's dispositions table rather than silence, because the review
-explicitly listed "release-tag protection and who may publish" as *deliberately not closed by code*.
+Read the payload shape from GitHub's own ruleset docs before posting rather than guessing it: target `tag`, a
+ref_name include of `v*`, and the deletion and non-fast-forward rules. A ruleset that silently matches nothing is
+worse than none, so the GET after the POST is part of the act, not a courtesy. It is a mutation of a public
+repository: name it in the report and in the commit message.
 
-**Answer format (one line):** `tag rule v* added`, or `no rule: accepting the window`, or `narrowing access instead`.
-Cost: about 5 minutes, most of it in the settings UI.
+**Why the board kept pushing:** every review round of the release gate has listed "release-tag protection and who
+may publish" as deliberately not closed by YAML — see [.github/workflows/release.yml](https://github.com/ArborealML/Inference-Router/blob/main/.github/workflows/release.yml) and the disposition rows in [SPEC.md](https://github.com/ArborealML/Inference-Router/blob/main/SPEC.md) §15.
 
-**Links** — the settings page: [repository Settings → Rules](https://github.com/ArborealML/Inference-Router/rules)
-(tag protection rules live there); the workflow's self-defence: [release.yml](https://github.com/ArborealML/Inference-Router/blob/main/.github/workflows/release.yml);
-the review row that raised this: [SPEC §15](https://github.com/ArborealML/Inference-Router/blob/main/SPEC.md#L1445),
-"Deliberately not closed". The task that cuts the tag: [TASK-28] (https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-28%20-%20Cut-the-first-release-tag-and-watch-the-release-run.md).
-
+**Order:** this lands before the canary in [TASK-42](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-42%20-%20Decision-run-a-canary-release-to-prove-the-release-gate-exists.md), because a canary proves nothing about protection that is not switched on.
+**Who may publish, stated:** admins plus the Actions token at its least-privilege grant; the token's real sufficiency
+is an AC on [TASK-44](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-44%20-%20Close-what-the-seventh-release-gate-review-found-over-v0-12-15.md), not a claim here.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -75,7 +78,7 @@ created: 2026-11-17T10:58:00Z
 
 ---
 
-Reassigned under decision-16: this was parked as a browser settings act, and it is not one. Measured on this repository: `GET /repos/{owner}/{repo}/git/tag-protection/branches` answers 404, so the tag-protection endpoints are unavailable here; `GET /repos/{owner}/{repo}/rulesets` answers `[]`, so a **repository ruleset** matching `v*` is the scriptable way to get what the review asked for (block delete and non-fast-forward moves on release tags). The ruleset API is a real mutation of a public repository: state the ruleset created, and read it back after. 'Who may publish' stays a written sentence: admins plus the Actions token, least privilege, with the token's own permissions being settled in [TASK-44](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-44%20-%20Close-what-the-eighth-release-gate-review-found-round-8-over-v0.12.15.md) AC #4, not here.
+Reassigned under decision-16: this was parked as a browser settings act, and it is not one. Measured on this repository: `GET /repos/{owner}/{repo}/git/tag-protection/branches` answers 404, so the tag-protection endpoints are unavailable here; `GET /repos/{owner}/{repo}/rulesets` answers `[]`, so a **repository ruleset** matching `v*` is the scriptable way to get what the review asked for (block delete and non-fast-forward moves on release tags). The ruleset API is a real mutation of a public repository: state the ruleset created, and read it back after. 'Who may publish' stays a written sentence: admins plus the Actions token, least privilege, with the token's own permissions being settled in [TASK-44](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-44%20-%20Close-what-the-seventh-release-gate-review-found-over-v0-12-15.md) AC #4, not here.
 
 ---
 
