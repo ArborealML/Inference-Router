@@ -5,7 +5,7 @@ status: Waiting
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T09:53:00Z'
-updated_date: '2026-11-17T14:25:00Z'
+updated_date: '2026-11-17T15:56:00Z'
 labels:
   - release
   - ci
@@ -40,10 +40,11 @@ refuses a tag that already carries a release, draft or published: `gh release de
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [ ] #1 the decision to run it is recorded (yes, under decision-16); the canary tag `v0.0.0-canary` is cut and the run reported with the unmodified workflow and the job's own token
-- [ ] #2 the run answers, as evidence rather than argument, what TASK-41 AC #6 promised: whether `contents: write` from GITHUB_TOKEN is sufficient in practice for asset upload plus the un-draft PATCH, and whether the workflow-write guard fires for a tag cut at the head of main
+- [ ] #2 The run answers, as evidence: whether `contents: write` from `GITHUB_TOKEN` suffices for asset upload plus the un-draft `PATCH`, and whether the workflow-write guard fires for a tag cut at the head of `main`
 - [ ] #3 the run records what `.target_commitish` says on a real create, and what the tag object SHA and the peeled commit SHA were
 - [ ] #4 the published canary is probed after publication: an asset replacement attempt and a tag move attempt, both required to be refused, plus `.immutable` read back
-- [ ] #5 the disposition of the canary is decided before the tag is cut and recorded here: kept as a permanent prerelease, or deleted — in which case the version name stays reserved either way and the report names it. No automatic delete of an uncertain release, and if the rehearsal-in-a-throwaway-repository route is skipped, the reason is written down (it costs no extra runner minutes to rehearse; it saves the burned name)
+- [ ] #5 The canary's disposition is decided before the tag is cut and recorded here: kept as a permanent prerelease, or deleted — the version name stays reserved either way once immutable releases are on
+- [ ] #6 Nothing auto-deletes a release whose disposition is uncertain; if the rehearsal is skipped, the skip and its reason are recorded here
 <!-- AC:END -->
 
 ## Implementation Notes

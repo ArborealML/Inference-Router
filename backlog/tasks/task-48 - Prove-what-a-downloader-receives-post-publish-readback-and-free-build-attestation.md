@@ -7,7 +7,7 @@ status: To Do
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T11:06:00Z'
-updated_date: '2026-11-17T11:06:00Z'
+updated_date: '2026-11-17T15:54:00Z'
 labels:
   - ci
   - release
@@ -45,10 +45,15 @@ task, so do not write it twice. Test the consumer commands on the canary in [TAS
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 before any upload the run writes a run-local map of exact asset name to staged sha256 and size, and that map — not a checksum file fetched later and not GitHub's reported digest — is the oracle the rest of the step compares against
-- [ ] #2 after publication the publish job fetches each expected asset by its own published HTTPS download URL, streams the bytes into a fresh SHA-256, and requires the name-specific staged sha256 and size to match; a digest that appears somewhere in the expected set under the wrong name fails, and so does a missing name, an extra name, a duplicate, a non-uploaded asset, an HTML or redirect or TLS error, or a size mismatch; retries are bounded and never replace the expected hash
-- [ ] #3 the published SHA256SUMS and per-archive sidecars are checked against that map, and the existing stored-digest comparison is kept rather than replaced
-- [ ] #4 free keyless build attestation is produced for each archive inside the existing build jobs with a pinned attestation action (actions/attest has a v4 tag, verified by `git ls-remote` today), and the permissions diff it needs — `id-token: write` and `attestations: write` — is named in the commit message because it widens what the job can do
-- [ ] #5 consumer verification is tested on the canary release rather than copied from docs: measured on this box, gh 2.46.0 has no `gh release verify`, no `gh release verify-asset` and no `gh attestation` (each exits 1 as an unknown command), so whatever the README tells a user to run must name the minimum gh version, or ship a REST-and-sha256 check that works today
-- [ ] #6 a post-publish readback failure is treated as an incident with a written response — alert, remove or reissue, never repair published immutable assets in place — and SPEC's accepted-gaps table records what the readback cannot prove: it checks bytes served to one runner at one moment, and it happens after public exposure
+- [ ] #1 Before any upload the run writes a run-local map of asset name to staged sha256 and size, and that map — not a later checksum file or GitHub's reported digest — is the oracle
+- [ ] #2 Every readback compares against that map: nothing compares against `SHA256SUMS` or a `gh --jq` digest
+- [ ] #3 After publication the job fetches each expected asset by its HTTPS download URL, hashes the bytes, and requires the staged sha256 and size for that name to match
+- [ ] #4 A missing, extra, duplicate, wrong-name or un-uploaded asset, a redirect, HTML or TLS failure, and a size mismatch all fail; retries never replace the expected hash
+- [ ] #5 the published SHA256SUMS and per-archive sidecars are checked against that map, and the existing stored-digest comparison is kept rather than replaced
+- [ ] #6 Free keyless build attestation is produced per archive inside the existing build jobs with a pinned action (`actions/attest` has a v4 tag, checked by `git ls-remote`)
+- [ ] #7 The permissions it needs — `id-token: write`, `attestations: write` — are named in the commit message
+- [ ] #8 Consumer verification is measured, not copied: gh 2.46.0 has no `release verify`, `release verify-asset` or `attestation` (each exits 1)
+- [ ] #9 The README names a minimum gh version or ships a REST-and-sha256 check that works on the version this repository has
+- [ ] #10 A post-publish readback failure is an incident with a written response: alert, remove or reissue, never repair published immutable assets in place
+- [ ] #11 SPEC's accepted gaps state plainly that the readback proves bytes served to one runner at one moment, after publication
 <!-- AC:END -->

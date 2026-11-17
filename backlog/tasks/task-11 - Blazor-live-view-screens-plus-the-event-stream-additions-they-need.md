@@ -5,7 +5,7 @@ status: Waiting
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-16T20:46:00Z'
-updated_date: '2026-11-17T14:02:00Z'
+updated_date: '2026-11-17T15:54:00Z'
 labels:
   - ui
 milestone: v0.10 - live view and robustness parity
@@ -36,7 +36,7 @@ them can be built, so the stream work comes first.
 Nothing to decide here — the three questions this task waits on are written out on **TASK-21** with the
 answer format, in [TASK-21](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-21%20-%20Decision-what-the-live-view-shows-who-may-open-it-and-whether-the-wire-gains-loss-reporting.md). Answer those and this one starts on its own.
 
-**Blocked on one decision (owner)**
+**Wake: TASK-21's SPEC revision** (the live-view postures are adopted; the SPEC text that records them is the coding session's act, so no person is in this path)
 The live view is a Blazor WASM app (SPEC §12.5). Two questions decide its shape, and both are product
 calls rather than technical ones:
 
@@ -46,7 +46,7 @@ Nothing in this task is technically blocked; it is these two calls.
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [ ] #1 Ticket records expose owner, state, priority, queue, attempt, active profile, required/active context, capacity, timing, result, prompt/completion bytes, tokens, prefix hash, config pin and commit boundary
-- [ ] #2 Events cover request lifecycle, rejection, capacity change, queue, health/crash/restart, switch/profile and prefix. Whether the feed also gains an explicit stream-gap event is answered by TASK-21, whose incoming recommendation is NOT to add one and to derive continuity client-side; this criterion does not decide it
+- [ ] #2 Events cover request lifecycle, rejection, capacity change, queue, health/crash/restart, switch/profile and prefix. Whether the feed gains an explicit stream-gap event is TASK-21's answer, not this task's
 - [ ] #3 /admin/status reports active/queued/readiness/rates; /admin/events supports filtering, heartbeat and bounded sequence-gap handling; a bounded /admin/requests exists
 - [ ] #4 Admin JSON schema and casing pinned once (SPEC 15.1) and covered by contract tests
 - [ ] #5 Screens render from the event stream alone: global inference, queues/admission, engines/profiles/switches, topology/trends, request timeline, health/config/security
@@ -55,7 +55,7 @@ Nothing in this task is technically blocked; it is these two calls.
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Blocked on TASK-21 — the next move is the live-view audience, credential and wire-extension decisions, which belongs to a human. Work here resumes when that task is closed.
+Wakes on TASK-21: the three postures are adopted and the remaining act is writing them into SPEC, which the coding session owns. Work here resumes when that SPEC revision lands.
 
 Blocked-state check: the blocker is a person, and the human task that carries it is TASK-21 (audience, credential posture, and whether the event feed gains a loss event). The two questions restated in this task's body are context for whoever reads this task — the answers belong on TASK-21, so answering here does not move anything.
 

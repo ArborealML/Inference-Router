@@ -5,7 +5,7 @@ status: Waiting
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T10:52:00Z'
-updated_date: '2026-11-17T14:10:00Z'
+updated_date: '2026-11-17T15:56:00Z'
 labels:
   - docs
 dependencies: []
@@ -48,10 +48,10 @@ two minutes. The avatar is live and already verified from outside the form; see 
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [x] #1 the current card is measured before anything is redrawn and the numbers are recorded on the task: the three text lines are font-size 150, 39 and 27 in docs/images/air-social.svg, so cap heights are about 107 px, 28 px and 19 px in the 1280x640 raster
-- [x] #2 the smallest text line has a cap height of at least 40 px in the 1280x640 raster, measured from the pixels (ink bands per row) rather than read off the SVG; if it does not, the card is re-rendered with larger type or less text until it does
-- [x] #3 legibility is checked at the size a link preview actually shows, on a real 640x320 downscale rather than an estimate: every text line still separates as its own ink band, and the card keeps at least a 60 px right-edge ink margin. Whether the mark competes with the wordmark is a taste call, taken at the upload moment, and lives as TASK-29 AC #4
-- [x] #4 docs/images/README.md records the renderer, the font that actually resolved, the byte size and sha256 of the committed PNG, and those numbers are quoted in a comment on TASK-29 so the upload is download-and-pick
+- [x] #1 The card was measured before redrawing and the numbers recorded: the three text lines are `font-size` 150, 39 and 27 in `docs/images/air-social.svg`, so caps are about 107/28/19 px
+- [x] #2 The smallest text line's measured cap height is at least 40 px in the 1280x640 raster, from pixel ink bands not the SVG; otherwise the card is redrawn with larger type or less text
+- [x] #3 At a real 640x320 downscale every text line still separates as its own ink band, and ink ends at least 60 px from the right edge
+- [x] #4 docs/images/README.md records the renderer, the font that actually resolved, and the byte size and sha256 of the committed PNG, quoted where the upload is tracked so the upload is checkable
 - [ ] #5 after a person presses Save, the public check is run and reported: curl -s https://github.com/ArborealML/Inference-Router | grep og:image
 <!-- AC:END -->
 

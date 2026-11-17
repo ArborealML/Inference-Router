@@ -5,7 +5,7 @@ status: Blocked
 assignee:
   - '@claire'
 created_date: '2026-11-17T05:59:00Z'
-updated_date: '2026-11-17T13:56:00Z'
+updated_date: '2026-11-17T15:54:00Z'
 labels:
   - docs
 dependencies:
@@ -46,7 +46,7 @@ instead of being uploaded twice.
 - [ ] #1 The social-preview image is set on the repository settings page, or declined with a one-line reason
 - [x] #2 The organisation profile picture is set from the avatar-ready mark (TASK-23), or declined with a one-line reason
 - [ ] #3 Both are confirmed from outside the settings form: the opengraph preview URL renders the new card, and the org page shows the new mark
-- [ ] #4 Looking at the card at the upload moment: the three text lines read at full size and the mark does not compete with the wordmark; if it reads badly, name the typeface and the card is re-rendered (this is the human half of TASK-23 AC #3, moved here because this is where a person actually sees the image)
+- [ ] #4 At the upload moment the three text lines read at full size and the mark does not compete with the wordmark; if it reads badly, name the typeface and the card is re-rendered
 <!-- AC:END -->
 
 ## Implementation Notes

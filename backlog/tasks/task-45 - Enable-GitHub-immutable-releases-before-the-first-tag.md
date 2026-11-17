@@ -5,7 +5,7 @@ status: Waiting
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T10:52:00Z'
-updated_date: '2026-11-17T15:01:00Z'
+updated_date: '2026-11-17T15:56:00Z'
 labels:
   - ci
   - release
@@ -36,7 +36,6 @@ Measured by this session at 8f78a73 the first line answers `{"enabled":false,"en
 <!-- AC:BEGIN -->
 - [ ] #1 immutable releases are enabled over REST (or refused with a written reason), and the before/after state is quoted from the API rather than asserted
 - [ ] #2 SPEC says plainly what this does and does not lock: it locks a published release's assets and its tag, and nothing about drafts, the pre-publish window, the title and notes, or the prerelease/latest flags
-- [ ] #3 the canary in [TASK-42](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-42%20-%20Decision-prove-the-release-gate-on-a-canary-knowing-the-tag-name-is-burned.md) tries an asset replacement and a tag move after publication and requires both to be refused
 <!-- AC:END -->
 
 ## Implementation Notes

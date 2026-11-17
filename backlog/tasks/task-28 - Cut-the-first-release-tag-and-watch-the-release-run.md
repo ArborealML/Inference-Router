@@ -32,7 +32,7 @@ every declared leg produced a verified archive. Cutting a tag makes a public rel
 
 **Wake condition, current.** TASK-15 landed in 713ffdd and its follow-up fbc48d6 hardened the gate, so the
 workflow precondition is satisfied — that is no longer an acceptance criterion, it is a precondition that is true.
-The only outstanding wake is the owner answer on TASK-32, which is why this task is Blocked rather than Waiting.
+The only outstanding wake is the owner's `go | hold` on TASK-50; every other step here is an agent act, so this task sits Waiting and names that event.
 
 **Sequencing hazard, found by review, and it is real.** Actions runs the workflow file **from the commit the tag
 points at**. Tag anything older than fbc48d6 and the OLD four-leg workflow runs, the macOS jobs queue again, and

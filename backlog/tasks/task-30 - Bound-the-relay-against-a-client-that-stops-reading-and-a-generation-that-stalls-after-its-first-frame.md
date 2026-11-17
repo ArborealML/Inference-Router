@@ -7,7 +7,7 @@ status: To Do
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T07:01:00Z'
-updated_date: '2026-11-17T11:08:00Z'
+updated_date: '2026-11-17T15:54:00Z'
 labels:
   - stream
   - transport
@@ -27,8 +27,9 @@ Two halves of one gap, both on the response path after the first byte. (1) The s
 <!-- AC:BEGIN -->
 - [ ] #1 A stream whose downstream reader stops consuming ends within a stated bound, with the engine slot released and a named error code on the feed
 - [ ] #2 Buffering held for one stalled reader is bounded by a number that is in config, not a constant, and the bound's default is stated in SPEC - the number and whether it counts frames or bytes come from TASK-34
-- [ ] #3 A generation that produces no byte for a stated idle period after its first frame ends in band, using the shape SPEC 6 already defines for a committed stream - one error frame plus [DONE], pinned by RequestPhaseTimeoutTests and named in SPEC 14.1 row 2; no new truncation format. The idle bound and the error code name come from TASK-34
-- [ ] #4 SPEC 14.1 row 2 no longer lists this as open, and a test pins each of 1-3 without a real engine
+- [ ] #3 A generation silent past the stated idle bound after its first frame ends in band with SPEC 6's committed-stream shape: one error frame plus `[DONE]`, no new truncation format
+- [ ] #4 The bound and its code name come from TASK-34's adopted values; the behaviour is pinned by `RequestPhaseTimeoutTests` and named in the SPEC 14.1 row
+- [ ] #5 SPEC 14.1 row 2 no longer lists this as open, and a test pins each of 1-3 without a real engine
 <!-- AC:END -->
 
 ## Implementation Notes

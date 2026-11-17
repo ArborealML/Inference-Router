@@ -5,7 +5,7 @@ status: Waiting
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T09:11:00Z'
-updated_date: '2026-11-17T15:01:00Z'
+updated_date: '2026-11-17T15:54:00Z'
 labels:
   - release
   - security
@@ -25,13 +25,15 @@ ordinal: 37000
 
 **A ruleset that silently matches nothing is worse than none**, so the GET after the POST is part of the act, quoted in the report. This mutates a public repository; say so in the report and the commit message. **Order:** before the canary in [TASK-42](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-42%20-%20Decision-prove-the-release-gate-on-a-canary-knowing-the-tag-name-is-burned.md), which proves nothing about protection that is not switched on.
 
-**Blocked on TASK-49(b): it waits on** the owner's one line about a throwaway repository, because a ruleset must be exercised where destructive tests can run. The rest is agent work — POST, readback, report.
+**Wake: TASK-49's one line** about a throwaway repository, because a ruleset must be exercised where destructive tests can run. The rest is agent work — POST, readback, report.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 a repository ruleset exists that targets `v*` with `enforcement: active` and the tag creation/update/deletion rules, and the report quotes `GET repos/ArborealML/Inference-Router/rulesets` after the POST as the readback — not 'tag protection enabled', which this token cannot read (`.../tags/protection` answers 404 at 8f78a73); or the window is accepted with the reason written into SPEC 15, or access is narrowed instead
-- [ ] #2 the `creation`-rule scope is decided by the agent and recorded with its reasoning — one ruleset with release tags cut by hand, or two layered rulesets where creation is open to admin and the app and a second forbids moves and deletions — because this is a repository setting reachable over REST (decision-16), not an owner question; whichever is chosen, the body states who can still move a published release's tag afterwards
+- [ ] #1 A ruleset targeting `v*` with `enforcement: active` and the creation/update/deletion rules exists, and the report quotes the ruleset `GET` after the POST as the readback
+- [ ] #2 If access is not widened, the pre-tag window is written as an accepted gap in SPEC 15 instead
+- [ ] #3 The `creation`-rule scope is decided by the agent and recorded with its reasoning: one ruleset with tags cut by hand, or two layered rulesets
+- [ ] #4 The report states who can still move a published release's tag, and that empty `bypass_actors` blocks the tag pusher as well
 <!-- AC:END -->
 
 ## Implementation Notes
