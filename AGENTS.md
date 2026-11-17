@@ -4,6 +4,11 @@ Conventions for humans and coding agents working here. [`SPEC.md`](SPEC.md) is t
 behaviour and the wire, and carries the revision log: read the relevant section before changing
 behaviour, and update it in the same commit as the change.
 
+**Before you run anything:** a config with lifecycle commands (`select = { exec = … }`) starts and stops
+inference backends, so smoke-testing one of those configs acts on the machine — use
+`samples/router.safe-smoke.toml` (see Safety below). And run the tool preflight first: `backlog task list`,
+`backlog decision list`, and `groma agent-instructions` before any architecture work.
+
 ## Checks
 
 ```bash
@@ -17,15 +22,18 @@ dotnet run --project src/Arboreal.InferenceRouter.Cli -- config -c samples/route
 **Test loop.** Run the tests for the feature you are changing while you change it
 (`--filter FullyQualifiedName~<Area>`), not the whole suite on every edit. CI runs the complete suite
 on every `main` push and on every pull request, and is the regression gate: check it periodically
-(`gh run list --limit 5`, `gh run watch <id>`) rather than reproducing it locally. A full local run
+(`gh run list --branch <branch> --limit 5`, `gh pr checks <n>`, `gh run watch <id>`) rather than
+reproducing it locally. A full local run
 belongs at a real boundary — a change that crosses subsystems (concurrency, engine lifecycle, the wire
 contract), or a diagnosis, where a failure has to be seen to be intermittent rather than assumed.
 CI supersedes an in-flight run when a newer push lands, so read the newest run on the branch, not the
 one named after your commit; a `cancelled` run there is not a failure.
 
-Use the binaries you just built: `dotnet test --no-build -c Release` runs a stale assembly and tells
-you nothing about the change in front of you. The shipped samples are loaded by a test as written, and
-the `config` verb validates a config without binding sockets or running lifecycle commands.
+`--no-build` tests whatever the last Release build contained, so build Release first or it silently
+judges stale code (CI builds Release immediately before running it, which is why the failure only shows
+up locally). All three shipped samples are loaded by a test as written — `Shipped_Sample_Configs_Load_As_Written`
+— while the `config` verb validates one file at a time without binding sockets or running lifecycle
+commands.
 
 A warning is a build failure: the build runs with `TreatWarningsAsErrors` over an analyzer stack
 (`Directory.Build.props`, `Directory.Packages.props`, `BannedSymbols.txt`, `.editorconfig`). Fix the
@@ -40,10 +48,12 @@ warning rather than suppressing it, and add a suppression only with a comment sa
 - **The request hot path stays allocation-light.** Config is parsed once at startup into immutable
   domain types; upstream bodies are forwarded as bytes; no UTF-16 round trips on token deltas; never
   keep a borrowed span across an `await`.
-- **The wire contract is not casual.** `/v1/*` stays OpenAI-compatible. `/admin/*` JSON is PascalCase
-  and tests pin it, so a casing change is a wire break (SPEC §6, §15.1).
+- **The wire contract is not casual.** `/v1/*` stays OpenAI-compatible. Successful and event bodies on
+  `/admin/*` are PascalCase and tests pin them, while error bodies are lowercase everywhere (§12) —
+  either casing is a wire break, so change neither (SPEC §6, §12, §15.1).
 - **Quote TOML keys that contain dots**: `[engine.strata.catalog."model.id"]`. Unquoted, the key
-  silently nests into junk. Re-run the sample validation above after editing any sample.
+  silently nests into junk. After editing any sample, run the sample test or the `config` dry-run on the
+  file you changed.
 - New dependencies go in `Directory.Packages.props` (central package management).
 
 ## Workflow
@@ -55,18 +65,22 @@ warning rather than suppressing it, and add a suppression only with a comment sa
    anything cheaper that would get the same result — and is given its evidence (the SPEC section, the
    code as it stands) so the reviewer can disagree with specifics rather than generalize.
 2. **Commit one feature at a time**: SPEC section, code, tests and a revision-log line in the same
-   commit. Run the checks before you push, and never report a check you did not run as passing.
-3. **Every commit gets an external deep-review pass**, dispatched as soon as it lands, covering the
-   diff or a bounded range of commits — never the whole repo. Reviews are asynchronous: dispatch, keep
+   commit. Before pushing, run the checks that cover your change — build, and the focused tests for the
+   area you touched; CI runs the whole suite. Never report a check you did not run as passing.
+3. **Every commit gets an external deep-review pass** — the operator's own model-review runs, through the
+   same external service as plan reviews — dispatched as soon as the commit lands, covering the
+   diff or a bounded range of commits; never the whole repo. Reviews are asynchronous: dispatch, keep
    working, ingest when it lands. A dispatched review is recorded in the task body; it changes neither
    the task's status nor its assignee.
 
    A review is **evidence, not instruction**. Verify every claim against this code and its tests before
    changing anything, and never paste reviewer prose into a tracked file. Disposition is recorded, not
-   implied: fix it in the next commit, or write it up as an accepted gap in SPEC (§14) or as a board
+   implied: fix it in the next commit, or write it up as an accepted gap in SPEC (§15 carries the
+   dispositions; §14 is the acceptance criteria a change has to meet) or as a board
    task with acceptance criteria. Silence means nobody decided. Review bookkeeping — request ids,
    tiers, transcripts — stays in `.local/`; the public board and commit messages carry only what the
-   review changed.
+   review changed. When you ingest a review, name the commit it covered and record each finding's
+   disposition where the work lives, so a later reader can tell a decision from an oversight.
 
 ## Safety on a real machine
 
@@ -84,7 +98,9 @@ Tracked files and pushed history carry no absolute home-directory paths, no key-
 internal service names, endpoints or configuration, and no review request ids — use placeholders like
 `/etc/arboreal/keys/…`. The one sanctioned name is a task **assignee** (e.g. `@chatswarm`), which says
 who owns the work, not how to reach it; that exemption covers the handle alone. Scan the staged diff and
-the full range being pushed: deleting a file later does not un-publish it.
+the full range being pushed: deleting a file later does not un-publish it. One output worth naming:
+`air config` prints engine endpoints, key-file locations and lifecycle argv, so never paste its raw
+output into a task, review or commit message.
 
 <!-- backlog:start -->
 ## Backlog
