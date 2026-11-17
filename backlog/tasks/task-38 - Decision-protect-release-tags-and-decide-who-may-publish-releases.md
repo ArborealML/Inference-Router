@@ -5,7 +5,7 @@ status: Blocked
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T09:11:00Z'
-updated_date: '2026-11-17T13:56:00Z'
+updated_date: '2026-11-17T14:10:00Z'
 labels:
   - release
   - security
@@ -29,7 +29,7 @@ ordinal: 37000
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [ ] #1 a repository ruleset exists that targets `v*` with `enforcement: active` and the tag creation/update/deletion rules, and the report quotes `GET repos/ArborealML/Inference-Router/rulesets` after the POST as the readback — not 'tag protection enabled', which this token cannot read (`.../tags/protection` answers 404 at 8f78a73); or the window is accepted with the reason written into SPEC 15, or access is narrowed instead
-- [ ] #2 the bypass question is decided and written before the POST: who is in `bypass_actors` for tag creation, given that an empty list stops the release path itself, and what that means for the order of TASK-28
+- [ ] #2 the `creation`-rule scope is decided by the agent and recorded with its reasoning — one ruleset with release tags cut by hand, or two layered rulesets where creation is open to admin and the app and a second forbids moves and deletions — because this is a repository setting reachable over REST (decision-16), not an owner question; whichever is chosen, the body states who can still move a published release's tag afterwards
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -91,6 +91,14 @@ created: 2026-11-17T13:56:00Z
 ---
 
 Blocked on TASK-49 (c): whether one ruleset or two, because a `creation` rule with no bypass list blocks the release path itself. Nothing else waits — the payload shape, the readback and the measurements are all in this task and agent-owned.
+
+---
+
+created: 2026-11-17T14:10:00Z
+
+---
+
+Ownership corrected: the ruleset-scope question was parked on the owner by mistake and is now this task's own criterion. The measurement that makes it non-trivial stands — a `creation` rule with `bypass_actors: []` blocks the publishing account as well as a person, so one ruleset either blocks the release path or protects nothing, and two layered rulesets are the shape that does both. The only part that stayed with the owner is the runner spend and the second repository (TASK-49).
 
 ---
 <!-- COMMENTS:END -->

@@ -5,7 +5,7 @@ status: Waiting
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T10:52:00Z'
-updated_date: '2026-11-17T13:56:00Z'
+updated_date: '2026-11-17T14:10:00Z'
 labels:
   - ci
   - release
@@ -19,7 +19,7 @@ ordinal: 43000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-**Wake: the thirteenth deep review, dispatched over `79a21e0` at 13:47:18Z by the coding session**; its completion wakes this task. Fixes carried here: a3d3087 (v0.12.18), d8202bd / a8d9a93 / 8f834f6 (v0.12.19), 95410ba / 8f78a73 (v0.12.20), 79a21e0 (v0.12.21). **No tag has ever run this gate — what is left is a decision, not more code, and the decision is now [TASK-49](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-49%20-%20Decision-canary-yes-or-no-a-throwaway-repository-and-who-may-cut-a-v-tag.md). Do not cut a tag while this task is open.**
+**Wake: a plan review of the amended release-control sequence, dispatched by the coding session after the thirteenth code review closed; the commit review follows when code lands.** Its completion wakes this task. Fixes carried here: a3d3087 (v0.12.18), d8202bd / a8d9a93 / 8f834f6 (v0.12.19), 95410ba / 8f78a73 (v0.12.20), 79a21e0 (v0.12.21). **No tag has ever run this gate — what is left is a decision, not more code, and the decision is now [TASK-49](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-49%20-%20Decision-approve-Actions-runner-minutes-and-a-second-public-repository-for-destructive-tests.md). Do not cut a tag while this task is open.**
 
 **What the twelfth round changed, plainly:** a refusal summary that truncated to a head was deleting the part of a long `upload_url` that distinguishes one address from another, so a cut now keeps head **and** tail with the true length between; containers are named (`<object>`, `<array>`) instead of dumped through `tojson` with no bound; the summary is built with `jq -s` behind a shape guard, so one response yields one summary and empty or multi-document input says `unreadable response`; status extraction runs under `LC_ALL=C`, and the label now says what it is — status-like numbers mentioned in stderr, not decoded causes. Cases: `long_url_prev`, `url_object_prev` (differential pairs run against the revision they replace), `shape_jq_stderr`.
 
@@ -93,4 +93,6 @@ Tenth-round disposition, by sha. **d8202bd**: the run builds the upload target i
 **Twelfth-round disposition, by sha (SPEC v0.12.21, commit 79a21e0).** The refusal summary now bounds containers by naming them (`<object>`, `<array>`) rather than serialising them uncapped; truncation keeps the head and the tail with the true length between, because the old head-only cut was deleting the tail of a long `upload_url` — the part that distinguishes one address from another; the summary runs through `jq -s` with a shape guard so one response produces one summary and empty or multi-document input reports `unreadable response`; status extraction is pinned to `LC_ALL=C` so a locale cannot change what counts as a digit, and the label was reworded to "status-like numbers mentioned in stderr", which is what it actually is. Differential pairs `long_url_prev` (the old revision cut the tail) and `url_object_prev` (a nested 400-character string leaked) run against the revision they describe, so a regression in either direction fails loudly. **Harness 115 cases, 0 failures, exit 0 at b214ce6, measured here.**
 
 **The stderr census, corrected, and the board was wrong to leave a number it could not reproduce.** Measured at b214ce6 and unchanged from 8f78a73: **9** `2>/dev/null` sites, **6** stdout-only `>/dev/null` guards, **1** `>/dev/null 2>&1`, one stderr capture to a temp file, one compiler merge. The six stdout-only guards are a different question from a log leak: they can surface jq's own text, and `shape_jq_stderr` measures that no value text appears. Keeping the three kinds separate matters because "we discard stderr everywhere" and "nothing reaches the log" are different claims, and only the second one is pinned by a case.
+
+**Thirteenth code round, recorded before any fix exists, so the disposition is not written by the fix.** Two P2 findings, reproduced by the coding session at source: an outer truncation still deletes the tail of a long `upload_url` (the part that distinguishes one address from another), and a string `"false"` prints identically to the boolean `false`, so the refusal summary cannot tell a type error from a real value. There is also a **harness gap**, not a code defect: `diag_fields_survive` passes only because its fixture keeps the sibling fields short, so it does not prove what its name claims. AC count stays 12/14 until the fix and a fixture that fails without it both exist.
 <!-- SECTION:NOTES:END -->

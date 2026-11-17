@@ -5,7 +5,7 @@ status: Waiting
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T10:52:00Z'
-updated_date: '2026-11-17T14:02:00Z'
+updated_date: '2026-11-17T14:10:00Z'
 labels:
   - docs
 dependencies: []
@@ -17,12 +17,13 @@ ordinal: 45000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-**Do this (about 30 minutes, no browser, no GitHub settings).** The card half of the
-social-preview work, so that the only thing left for a person is picking a file in a form.
+**Rendering and measurement are done: b214ce6 committed the replacement card (1280x640, 38,150 bytes,
+sha256 `cee3237b7f98…98f09`, caps 109/48/42 against a 40 px floor). What is open is AC #5, the
+readback from outside the form, which waits for a person to press Save on TASK-29.**
 
 **The finding first: the type is small, and it is measured, not a matter of taste.** The committed
 [docs/images/air-social-1280x640.png](https://github.com/ArborealML/Inference-Router/blob/main/docs/images/air-social-1280x640.png)
-is 1280x640, 30,842 bytes, sha256 `b02b6d32...97e9`, rendered by resvg 2.6.2 with **DejaVu Sans** resolved —
+was 1280x640, 30,842 bytes, sha256 `b02b6d32...97e9` until b214ce6 replaced it, rendered by resvg 2.6.2 with **DejaVu Sans** resolved —
 the only proportional sans on this box, already documented in
 [docs/images/README.md](https://github.com/ArborealML/Inference-Router/blob/main/docs/images/README.md), so the
 font is not the problem. The three text lines in
