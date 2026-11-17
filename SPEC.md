@@ -179,7 +179,10 @@ daemon transaction per engine. 137 tests green.
   rule above, and it is what de-flaked the readiness-timeout end-to-end test, which had been racing
   exactly this window (it failed under a loaded runner and passed in isolation; three concurrent
   full-suite runs are green after the fix, and the test now asserts the event ordering itself).
-  137 tests green.
+  137 tests green. §14.1 also gains a per-row status of the robustness bar: what is closed, what is an
+  accepted gap with a named carrier (request-side phase timeouts; lifecycle reservations and the §5.3.1
+  non-claims via TASK-25/TASK-26; loss reporting behind the live-view decision in TASK-21), and what is
+  deliberately not started.
 
 ## 1. Overview
 
@@ -1182,6 +1185,22 @@ rather than assumed; dispatch progress that cannot spin or starve.
 6. **P1** — version/config pins, atomic reload, bounded telemetry with gap detection,
    durability of the request journal, fairness/starvation bound, then the live view (§12.5).
 7. **P2** — multi-host (§12.1–§12.3), which is L/XL effort and stays speculative until 1–5 hold.
+
+**Where the bar stands** (each line checked against the code and its tests, not against the review):
+
+| Bar item | State | Where / what is still open |
+|---|---|---|
+| 1 URI + proven readiness + dispatch progress | **closed** | `EngineRuntime.Combine` one join rule (§7.5, `UriCompositionTests`); a switch is proven by health + loaded-model + window-fit probes and fails loudly with one actionable message (§5.3.1); dispatch and the feed relay are signal-driven (`_dispatchSignal`, `WaitToReadAsync`) — no polling loop, and the 200 ms TTFT poll is gone (v0.8.4) |
+| 2 transport discipline | **partly open** | bounded bodies ✔ (`max_request_body_bytes`, 413 `request_body_too_large`, §6); cancellation reaches the engine ✔ (§5.5 wire tests); lifecycle phases are timed ✔ (`stop/wait/call_timeout_ms`, health `timeout_ms`). **Accepted gap for now:** request-side phase timeouts — the dispatcher waits for a model switch with `Timeout.Infinite`, the deadline bounds only the queue wait (§8), and `_http.Timeout` is infinite so an in-flight engine call is cut off only when the caller hangs up. A wedged engine can therefore hold a ticket until its caller gives up. Carried as the phase-timeout item on the parity task |
+| 3 switch serialization + error contract | **closed** | single-flight per engine with `_switchState` reset on every failure path (§5.3.1); error codes and casing pinned by `ErrorContractTests` against the §6.1 table |
+| 4 owned lifecycle | **partly open** | provider seam + coordinator + Docker provider shipped (§5.3.1, §15); **open:** a switch still occupies an inference slot instead of its own lifecycle reservation (TASK-25), and the §5.3.1 non-claims — image identity pinning, mounts/GPU, in-place model mutation, latched failures (TASK-26) |
+| 5 security | **open by deployment posture** | no ingress auth/TLS/rate caps yet: admin is unauthenticated and binds loopback (§6.1), engine keys are per-engine config; this is the v0.1 ingress work, not a silent hole |
+| 6 P1 set | **open in order** | bounded telemetry with gap detection is half-done: ring bounds, exclusive replay, ended-on-slow feeds, causal ordering (§10) exist, but loss reporting (`stream.gap`) and the epoch are wire additions awaiting the live-view decision (TASK-21 → TASK-11); request-journal durability and the fairness/starvation bound are not started |
+| 7 multi-host | **not started, deliberately** | §12.1–§12.3 stay speculative until rows 1–5 hold; no task is cut for it yet |
+
+Nothing in the open rows is a surprise to the design: each is either a task on the board or a row here
+with the reason it waits. What the review *did* change is the order of work and the refusal to call the
+router robust until rows 2, 4 and 6 close.
 
 ## 15. Research questions and dispositions
 

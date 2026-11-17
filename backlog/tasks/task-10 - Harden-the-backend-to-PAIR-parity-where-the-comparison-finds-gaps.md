@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-16T20:46:00Z'
-updated_date: '2026-11-17T03:25:00Z'
+updated_date: '2026-11-17T03:39:00Z'
 labels:
   - backend
 milestone: v0.10 - live view and robustness parity
@@ -26,6 +26,18 @@ TASK-1), then security and tests. Durability, fairness and version pins follow.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
+<!-- AC:BEGIN -->
+- [x] #1 Client hang-up reaches the engine: the request is cancelled, its engine slot is released, and the ticket is counted cancelled rather than completed (pinned by wire tests)
+- [x] #2 An engine error status or a failed stream always ends the response with the error frame and [DONE]; no channel is left open for the caller to wait on
+- [x] #3 Ingress bodies are bounded (max_request_body_bytes) and the refusal is the router's own error contract, not the host's
+- [x] #4 Engine URI composition is one rule across completions, health and catalogue probes, proven against an engine mounted under a base path
+- [x] #5 Readiness is proven (health + loaded model + window fit) and its failure is one hard, actionable error with no silent fallback; switch is single-flight per engine with state reset on every failure path
+- [x] #6 The error contract is table-pinned: codes, statuses and lowercase bodies pinned by contract tests
+- [x] #7 Event-feed replay is correct: exclusive cursor, full retained window, atomic replay/subscribe handover, a slow subscriber's feed ended rather than pruned, subscribers bounded and over-limit feeds refused before SSE headers
+- [x] #8 The feed records a terminal outcome before waking the waiter that outcome ends, so a failed request never outruns its own reason
+- [x] #9 Every remaining parity gap has a named carrier (SPEC 14.1 rows 2/4/5/6, TASK-25, TASK-26, TASK-21) rather than being implied by silence
+- [ ] #10 Request-side phase timeouts exist and are pinned: a bounded wait for a model switch, and a cap on an in-flight engine call so a wedged engine cannot hold a ticket until the caller gives up
+<!-- AC:END -->
 
 ## Implementation Notes
 
@@ -33,6 +45,8 @@ TASK-1), then security and tests. Durability, fairness and version pins follow.
 Event-feed correctness (exclusive replay cursor, full retained-window replay, atomic replay/subscribe handover, slow-subscriber feed closure, bounded subscribers) is being fixed in the ticket-surface task now, without changing the wire contract. What is deliberately left to this task is drop *accounting*: a slow subscriber's loss is currently visible only as a closed feed, and reporting it as an event kind is a wire extension that needs its own decision alongside the schema additions already listed here.
 
 Cancellation had a hole that the AC checkbox hid. SPEC 5.5 says a client that hangs up takes the same path as DELETE /admin/tickets/{id}, but the HTTP layer never connected the request abort to the ticket: an abandoned stream was served to the end into a closed socket, kept its engine slot, and was counted as completed, and the pump swallowed cancellation and completed the ticket for the same reason. A stream whose engine answered an error status also left its channel open, so the caller waited forever for the error frame SPEC 6 promises. All three are fixed and pinned by fake-backed wire tests, which is what AC #8 is for: an AC that reads "cancellation reaches the engine" is only earned by a test that hangs up mid-stream. Remaining in this area, still open: the per-phase timeouts and the commit boundary (AC #2), and the fact that a disconnect is only noticed when the router next writes, so a caller that dies during a quiet stretch is noticed late.
+
+Feed ordering is now an invariant, not a hope: every terminal outcome (engine switch, request completed/cancelled/failed) is appended to the ring before the waiter that outcome ends is woken — RunSwitchAsync and RouterCore.Complete/Fail (commit 0039b1e, SPEC 10 + revlog v0.12.3). That is what de-flaked the suite's last known flake and it is pinned by an assertion on event Seq order in the readiness-timeout test.
 <!-- SECTION:NOTES:END -->
 
 ## Comments
@@ -53,7 +67,17 @@ created: 2026-11-17T03:25:00Z
 Correction to the previous comment: observed once, not twice — the next full run was green. Still worth de-flaking before it becomes a regression everyone re-runs.
 
 ---
+
+created: 2026-11-17T03:39:00Z
+
+---
+
+The flake in comments 1-2 had a real cause, not a slow box: the switch outcome was appended to the feed *after* the shared readiness task was resolved, so the test awaited a terminal ticket state and then looked for engine.switch_failed, which had not been written yet. Fixed in the product rather than in the test (0039b1e): the feed records the outcome first, then wakes waiters. Evidence: the test passed in isolation before the change and failed in a full run on a loaded box; after the change, four concurrent full-suite runs are green (137/137 each), Debug and Release, and the AOT publish stays trim-clean. The test now also asserts switch_failed.Seq < request.failed.Seq, so the ordering cannot silently regress.
+
+---
 <!-- COMMENTS:END -->
+
+## Acceptance Criteria
 
 ## Plan (reordered after the deepest tier plan review; each step ships with fake-backed tests per AC #8)
 
