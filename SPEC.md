@@ -264,6 +264,22 @@ daemon transaction per engine. 137 tests green.
   admitted such tags, and they would otherwise have been released as final versions. README and §14 say
   plainly that the two-platform surface is configured and not yet proven — no tag has been published, so
   the gate has never run end to end.
+- v0.12.9 — the release gate now verifies bytes it can tie to the leg that built them. The deep review of
+  v0.12.8 caught that `sha256sum --check sidecar` follows the filenames written *inside* the sidecar: two
+  sidecars naming the Linux archive plus an unrelated Windows archive passed the gate, and the unchecked
+  Windows bytes would have shipped. Each archive is now compared against the whole record its own leg
+  produced — digest and filename together — so an archive whose bytes move afterwards fails. Downloaded
+  artifacts are no longer flattened into one directory: each leg artifact keeps its own folder, an artifact
+  named for no declared leg is refused, a file inside a leg folder that leg does not produce is refused,
+  and a basename arriving twice is refused instead of silently overwriting. Each archive must also unpack
+  and contain its `air` / `air.exe` entry. The upload list is now built from the same `EXPECTED_RIDS` list
+  the gate reads, replacing the publish globs, so nothing can be published that was not gated. The release
+  is created as a draft, read back from GitHub while it is still unpublished (asset inventory, `draft`,
+  `prerelease`), and only then made public, with the published state asserted afterwards; a failed run
+  deletes by release id and only when that draft was created at or after the run started, so a race with
+  another run cannot destroy its release. The checksums remain a damage check and not provenance: nothing
+  here signs the artifacts or proves which runner wrote them. No tag has been published, so the gate is
+  still configured rather than proven.
 
 ## 1. Overview
 
@@ -1290,14 +1306,21 @@ and cohort/residency hysteresis in the scheduler (§12.3 hook).
   warnings — on every push to `main` and every pull request. Tests are POSIX-aware today, so CI
   runs on Linux; each platform binary is still exercised natively at release time.
 - **Published surface** (`.github/workflows/release.yml`): `linux-x64` and `win-x64`, each built and
-  smoke-tested on its own runner, gated before publish: every declared archive and its sidecar must be
-  present and non-empty, each archive must match the checksum its own leg recorded, and the number of
-  archives must equal the number of declared legs. macOS RIDs stay declared in the Cli project so a local
+  smoke-tested on its own runner, gated before publish. Each leg artifact keeps its own download folder:
+  an artifact named for no declared leg, a file inside a leg folder that leg does not produce, and a
+  basename arriving from two artifacts are all refused. Every archive and sidecar must be present and
+  non-empty, the archive must unpack and contain its `air` / `air.exe` entry, and it must match the whole
+  checksum record its own leg wrote — digest and filename together — rather than a name read out of the
+  sidecar. The upload list is built from the same `EXPECTED_RIDS` list the gate reads, so a leg cannot be
+  verified by one set of names and published by another. The release is created as a draft, inspected on
+  the remote (asset inventory, draft, prerelease) before it is made public, and its published state is
+  asserted afterwards. macOS RIDs stay declared in the Cli project so a local
   `-r osx-arm64` build works, but no macOS artifact is built, published, claimed or gated: the account has
   no macOS runner minutes, and a leg that queues forever is not a leg that passes. A platform is added
-  back with runner minutes, a leg that actually runs, the gate's RID list updated, and README copy that
+  back with runner minutes, a leg that actually runs, `EXPECTED_RIDS` updated, and README copy that
   follows it. No tag has been published yet, so this gate is configured rather than proven; the first tag
-  run is the evidence.
+  run is the evidence. The published `SHA256SUMS` and per-archive sidecars are a transfer and collection
+  damage check, not provenance: there is no signing and no attestation.
 - **Compat test**: `curl` with stock `openai` python client against the
   server (chat, stream, models) — must pass unchanged.
 

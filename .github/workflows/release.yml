@@ -201,58 +201,136 @@ jobs:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       GH_REPO: ${{ github.repository }}
       TAG: ${{ needs.preflight.outputs.tag }}
+      # One manifest, two consumers: this list drives both the gate below and the upload list,
+      # so a leg cannot be verified by one set of names and published by another.
+      EXPECTED_RIDS: "linux-x64 win-x64"
     steps:
       - name: Collect assets
         uses: actions/download-artifact@v4
         with:
           pattern: "asset-*"
           path: out
-          merge-multiple: true
-      - name: Verify every declared asset and write checksums
+          # Deliberately not merge-multiple: each leg artifact keeps its own directory, so two
+          # artifacts carrying the same basename collide at staging instead of silently
+          # overwriting each other in one flattened folder.
+      - name: Stage, verify and bind every declared asset
         run: |
           set -euo pipefail
-          # This RID list is the release contract: the publish step uploads whatever the glob below
-          # finds, so an archive from a leg that is not named here would ship ungated.
-          expected_rids="linux-x64 win-x64"
-          set -- $expected_rids
-          for rid in $expected_rids; do
-            for f in "out/air-${rid}.tar.gz" "out/air-${rid}.tar.gz.sha256"; do
-              test -s "$f" || { echo "::error::missing or empty $f — a platform leg did not produce an asset"; exit 1; }
+          stage=stage
+          rm -rf "$stage"; mkdir -p "$stage"
+          # Anything downloaded that the declared legs do not name is refused here, so an
+          # unrelated artifact cannot supply an archive or a sidecar that then gets published.
+          for d in out/asset-*; do
+            [ -d "$d" ] || { echo "::error::no leg artifacts were downloaded"; exit 1; }
+            rid="${d#out/asset-}"
+            case " $EXPECTED_RIDS " in
+              *" $rid "*) ;;
+              *) echo "::error::artifact $d names no declared leg ($EXPECTED_RIDS) — refusing to publish"; exit 1 ;;
+            esac
+            while IFS= read -r f; do
+              base="${f##*/}"
+              case "$base" in
+                "air-${rid}.tar.gz"|"air-${rid}.tar.gz.sha256") ;;
+                *) echo "::error::$d carries $base, which the $rid leg does not produce"; exit 1 ;;
+              esac
+            done < <(find "$d" -maxdepth 1 -type f)
+          done
+          for rid in $EXPECTED_RIDS; do
+            d="out/asset-${rid}"
+            for n in "air-${rid}.tar.gz" "air-${rid}.tar.gz.sha256"; do
+              test -s "$d/$n" || { echo "::error::missing or empty $d/$n — the $rid leg did not produce an asset"; exit 1; }
+              if [ -e "$stage/$n" ]; then
+                echo "::error::$n arrived from more than one artifact — refusing to publish an overwritten asset"
+                exit 1
+              fi
+              cp "$d/$n" "$stage/$n"
             done
           done
-          found="$(find out -maxdepth 1 -name 'air-*.tar.gz' | wc -l)"
-          if [ "$found" -ne "$#" ]; then
-            echo "::error::found $found archives, expected $# (one per declared leg) — an undeclared leg produced one"
-            exit 1
-          fi
-          # Check each archive against the checksum its own build leg recorded, then publish the set.
-          if ! (cd out && sha256sum --check air-*.tar.gz.sha256); then
-            echo "::error::an archive does not match the checksum its build leg recorded — refusing to publish"
-            exit 1
-          fi
-          (cd out && sha256sum air-*.tar.gz > SHA256SUMS && cat SHA256SUMS)
+          # Present and non-empty is not a package. Unpack the tar and insist on the binary.
+          for rid in $EXPECTED_RIDS; do
+            case "$rid" in win-*) exe="air.exe" ;; *) exe="air" ;; esac
+            if ! entries="$(tar -tzf "$stage/air-${rid}.tar.gz" 2>/dev/null)"; then
+              echo "::error::air-${rid}.tar.gz is not a readable tar.gz"; exit 1
+            fi
+            if ! printf '%s\n' "$entries" | grep -qx "$exe"; then
+              echo "::error::air-${rid}.tar.gz does not contain $exe"; exit 1
+            fi
+          done
+          # Bind each archive to the record its own leg wrote, by comparing the whole producer
+          # line — digest and filename together — against what sha256sum computes for that RID's
+          # archive. `sha256sum --check sidecar` follows the names *inside* the sidecar instead,
+          # so a sidecar naming a different archive would pass while that archive shipped blind.
+          for rid in $EXPECTED_RIDS; do
+            if ! (cd "$stage" && sha256sum "air-${rid}.tar.gz" | cmp -s - "air-${rid}.tar.gz.sha256"); then
+              echo "::error::air-${rid}.tar.gz does not match the checksum record its own leg wrote — refusing to publish"
+              exit 1
+            fi
+          done
+          # A computed manifest, not a signature: it detects transfer and collection damage,
+          # and proves nothing about who produced the bytes.
+          (cd "$stage" && sha256sum air-*.tar.gz > SHA256SUMS && cat SHA256SUMS)
         shell: bash
-      - name: Create and publish the release
+      - name: Create the draft, inspect the remote, then publish
         run: |
           set -euo pipefail
+          assets=()
+          for rid in $EXPECTED_RIDS; do
+            assets+=("stage/air-${rid}.tar.gz" "stage/air-${rid}.tar.gz.sha256")
+          done
+          assets+=("stage/SHA256SUMS")
+          args=(--draft --verify-tag --generate-notes)
+          prerelease=false
           # preflight admits a tag with a -suffix; without --prerelease GitHub would list such a
           # release as a final one.
-          args=(--draft --verify-tag --generate-notes)
-          case "$TAG" in *-*) args+=(--prerelease) ;; esac
-          gh release create "$TAG" "${args[@]}" out/air-*.tar.gz out/air-*.tar.gz.sha256 out/SHA256SUMS
+          case "$TAG" in *-*) args+=(--prerelease); prerelease=true ;; esac
+          gh release create "$TAG" "${args[@]}" "${assets[@]}"
+          # Upload and publish are separate API calls, so read the draft back from GitHub before
+          # it goes public: the asset set and the flags have to be right while they are still
+          # fixable. Drafts are invisible to the by-tag endpoint, hence the list-and-filter.
+          rel_id="$(gh api "repos/{owner}/{repo}/releases?per_page=100" --jq ".[] | select(.tag_name==\"$TAG\") | .id")"
+          if [ -z "$rel_id" ]; then
+            echo "::error::no release for $TAG on the remote after create — not publishing"
+            exit 1
+          fi
+          got_assets="$(gh api "repos/{owner}/{repo}/releases/$rel_id/assets" --jq "[.[].name]|sort|join(\" \")")"
+          want_assets="$( { for rid in $EXPECTED_RIDS; do printf '%s\n' "air-$rid.tar.gz" "air-$rid.tar.gz.sha256"; done; printf 'SHA256SUMS\n'; } | sort | paste -sd' ' )"
+          if [ "$got_assets" != "$want_assets" ]; then
+            echo "::error::remote draft carries [$got_assets], expected [$want_assets] — not publishing"
+            exit 1
+          fi
+          got_flags="$(gh api "repos/{owner}/{repo}/releases/$rel_id" --jq "[.draft,.prerelease]|join(\" \")")"
+          if [ "$got_flags" != "true $prerelease" ]; then
+            echo "::error::remote draft state is [$got_flags], expected [true $prerelease] — not publishing"
+            exit 1
+          fi
+          echo "draft $rel_id for $TAG verified: $(printf '%s' "$got_assets")"
           gh release edit "$TAG" --draft=false
-          gh release view "$TAG" --json name,assets,url
+          after="$(gh api "repos/{owner}/{repo}/releases/$rel_id" --jq "[.draft,.prerelease]|join(\" \")")"
+          if [ "$after" != "false $prerelease" ]; then
+            echo "::error::published release state is [$after], expected [false $prerelease] — check the releases page before trusting it"
+            exit 1
+          fi
+          gh release view "$TAG" --json tagName,isDraft,isPrerelease,assets,url
         shell: bash
-      # Preflight already refused any pre-existing release, so a draft that exists here can only
-      # be this run's half-finished one — safe to remove so the next run is not blocked.
+      # Preflight already refused any pre-existing release, so a draft here is almost certainly
+      # this run's. Almost is not proof: delete by id, and only when that draft was created at or
+      # after this run started, so a preflight race with another run cannot delete its release.
       - name: Remove a half-finished draft
         if: failure()
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ needs.preflight.outputs.tag }}
+          STARTED: ${{ github.run_started_at }}
         run: |
-          if gh api "repos/{owner}/{repo}/releases/tags/$TAG" --jq .draft 2>/dev/null | grep -qx true; then
-            gh release delete "$TAG" --yes
-            echo "deleted draft release for $TAG"
+          set -euo pipefail
+          row="$(gh api "repos/{owner}/{repo}/releases?per_page=100" --jq "[.[] | select(.tag_name==\"$TAG\" and .draft==true)] | if length==1 then \"\(.id) \(.created_at)\" else \"\" end")"
+          if [ -z "$row" ]; then
+            echo "no single draft release for $TAG; nothing to delete"
+            exit 0
           fi
+          id="${row%% *}"; created="${row##* }"
+          if [[ "$created" < "$STARTED" ]]; then
+            echo "draft $id predates this run (created $created, run started $STARTED); leaving it for a human"
+            exit 0
+          fi
+          gh api -X DELETE "repos/{owner}/{repo}/releases/$id"
+          echo "deleted draft release $id for $TAG"
         shell: bash
