@@ -7,7 +7,7 @@ status: To Do
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T02:18:00Z'
-updated_date: '2026-11-17T16:39:00Z'
+updated_date: '2026-11-17T16:42:00Z'
 labels:
   - ui
   - wire
@@ -35,31 +35,27 @@ ordinal: 21000
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-**How these were reached.** The external research and review service recommended all three on 2026-11-17; this board checked
-each against [SPEC.md](https://github.com/ArborealML/Inference-Router/blob/main/SPEC.md) §6 (admin surface, loopback bind,
-casing), §10 (feed shape, replay, subscriber bounds) and the ring's eviction behaviour in code before recording them. The
-request bookkeeping is not published; the findings and their dispositions are here and in SPEC.
+**How these were reached.** The external research and review service recommended all three on 2026-11-17; this board checked each against
+[SPEC.md](https://github.com/ArborealML/Inference-Router/blob/main/SPEC.md) §6 and §10 and the ring's eviction behaviour in code. Findings and dispositions are here and in SPEC; request bookkeeping is not published.
 
 **1 — Operator dashboard first, not an agent debugger.** The feed reconstructs routing choices, engine-state transitions
 and terminal outcomes *within retention*; it never reconstructs a request trace, and an evicted transition cannot prove
-current engine state. So the live view bootstraps current state from the admin reads and labels the rest observed:
-read-only over the existing admin reads plus the SSE feed, counts scoped to retained events, no new event kinds. A debug
-surface would be new event and field contracts — stages, timings, correlation ids — a wire addition with its own
-approval, not a screen.
+current engine state. So the view bootstraps current state from the admin reads and labels the rest observed: read-only
+over the admin reads plus the SSE feed, counts scoped to retained events, no new event kinds. A debug surface would be
+new event and field contracts — stages, timings, correlation ids — a wire addition with its own approval, not a screen.
 
-**2 — `/admin` stays unauthenticated and loopback-only; no token.** The view is co-located, reached over an
-operator-managed localhost tunnel. One admin token authorises engine start/stop as much as viewing, so a stolen token is
-control rather than visibility, and a read-only credential is honest only if a read-only endpoint exists — it does not.
-Worth doing now, and not a wire change: browser-request hardening on a loopback control plane (Host and Origin checks,
-safe methods), because a hostile page can make a browser hit `localhost`. Remote or multi-user access returns as its own
-approval: TLS plus an authenticated read-only surface, separate from the mutating one.
+**2 — `/admin` stays unauthenticated and loopback-only; no token.** The view is co-located, reached over an operator tunnel. One admin token authorises engine start/stop as much as viewing, so a stolen token is control,
+not visibility; a read-only credential is honest only if a read-only endpoint exists — it does not.
+Worth doing now, not a wire change: browser-request hardening on a loopback control plane (Host
+and Origin checks, safe methods), since a hostile page can make a browser hit `localhost`. Remote or multi-user access
+returns as its own approval: TLS plus an authenticated read-only surface, separate from the mutating one.
 
-**3 — No loss/gap event kind.** Loss is subscriber-relative: an eviction event in the shared ring describes something that
-may affect nobody while consuming the ring's own capacity, and a viewer can already derive a gap from sequence holes plus
-the exclusive cursor. Continuity comes from the cursor, not from an event.
+**3 — No loss/gap event kind.** Loss is subscriber-relative: an eviction event in the shared ring describes
+something that may affect nobody while consuming ring capacity, and a gap is already derivable from sequence holes plus
+the exclusive cursor.
 
-**Owed by this task:** one SPEC revision recording the three postures with its revision-log line in the same commit;
-TASK-11 is parked behind it.
+**Owed by this task:** one SPEC revision recording the three postures, revision-log line in the same commit; TASK-11
+parks behind it.
 <!-- SECTION:NOTES:END -->
 
 ## Comments
