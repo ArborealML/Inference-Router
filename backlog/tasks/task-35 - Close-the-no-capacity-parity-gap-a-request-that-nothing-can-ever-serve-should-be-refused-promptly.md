@@ -3,7 +3,7 @@ id: TASK-35
 title: >-
   Close the no-capacity parity gap: a request that nothing can ever serve should
   be refused promptly
-status: To Do
+status: Done
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T08:16:00Z'
@@ -41,9 +41,9 @@ this one without a disposition reopens it.
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 One of fast-refuse, keep-waiting, or accepted-gap is chosen, and the SPEC 14.1 row for it says which, with the reason
-- [ ] #2 the no-`max_queue_time` hang is either refused or written up as an accepted gap, with a test pinning whichever was chosen
-- [ ] #3 every error code SPEC §6.1 declares is either emitted by the code or removed from the contract, and the missing `MapStatus` arm for `no_available_engine` is resolved deliberately
+- [x] #1 One of fast-refuse, keep-waiting, or accepted-gap is chosen, and the SPEC 14.1 row for it says which, with the reason
+- [x] #2 the no-`max_queue_time` hang is either refused or written up as an accepted gap, with a test pinning whichever was chosen
+- [x] #3 every error code SPEC §6.1 declares is either emitted by the code or removed from the contract, and the missing `MapStatus` arm for `no_available_engine` is resolved deliberately
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -74,3 +74,20 @@ changes. Summary as proposed:
 wait reason, is absent from `MapStatus` (so it would fall through to 500), and `MaybeFailDeadline` discards its `reason`
 argument for `deadline_exceeded` (RouterCore.cs:464-472): the reason a request waited is not the reason it fails.
 <!-- SECTION:NOTES:END -->
+
+**Closed at 83ebc75 (SPEC v0.12.25); everything below re-verified in this worktree, not copied from the report.**
+Disposition: fast-refuse, narrowly — refused at **admission**, not at dispatch, because dispatch examines only each
+model queue's head, so a hopeless ticket behind a stuck head would have gone on hanging (plan step 3 as written here was
+wrong; the external review caught it, and the shipped shape is the corrected one). Eligibility is **catalog ∪ models an
+engine reports live** through one shared predicate, `EngineRuntime.CanServeModel` (EngineRuntime.cs:108), pinned by
+`SchedulerTests.Serves_A_Reported_Model_That_No_Catalog_Entry_Names` — a plan that read the catalog alone would have
+refused a serviceable model. Unknown capability is never hopeless: an engine that has never answered `/models` says
+nothing, so the request waits while one is unreached, which is what stops a slow engine at startup from producing a 503
+for a model it could serve. The no-ceiling case is test-pinned by
+`EndToEndTests.A_Model_Nothing_Can_Serve_Is_Refused_At_Admission_With_No_Deadline_Set`. `no_available_engine` is gone from
+`MapStatus` and from SPEC §6.1 (measured: nothing ever emitted it), wait reasons are documented as diagnostics that never
+reach the wire, and `MaybeFailDeadline` no longer takes a reason argument it discards.
+
+**Not fixed here, and not bugs:** a *legitimate* queued request with no `max_queue_time` still has no ceiling at all, and
+the `required_context` fast path was left out because without the header the figure is partly an estimate. Both are
+separate tasks now.

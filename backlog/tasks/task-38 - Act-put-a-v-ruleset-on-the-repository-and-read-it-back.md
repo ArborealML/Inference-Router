@@ -5,7 +5,7 @@ status: Waiting
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T09:11:00Z'
-updated_date: '2026-11-17T17:39:00Z'
+updated_date: '2026-11-17T19:14:00Z'
 labels:
   - release
   - security
@@ -32,7 +32,7 @@ ordinal: 37000
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [x] #1 A ruleset targeting `v*` with `enforcement: active` exists, and the readback shows a refused tag move and a refused tag delete on an unpublished `v*` tag, causal error quoted — not merely a ruleset that exists
-- [ ] #2 If access is not widened, the pre-tag window is written as an accepted gap in SPEC 15 instead
+- [x] #2 If access is not widened, the pre-tag window is written as an accepted gap in SPEC 15 instead
 - [x] #3 The ruleset's protected operations are decided by the agent and recorded with reasoning: the protection that matters is a published release tag that cannot be moved or deleted
 - [ ] #4 The report states who can still move a published release's tag, and the `creation` rule's effect on the tag pusher is probed, not assumed
 <!-- AC:END -->
