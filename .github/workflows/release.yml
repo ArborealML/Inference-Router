@@ -328,6 +328,14 @@ jobs:
           # preflight admits a tag with a -suffix; without prerelease=true GitHub would list such a
           # release as a final one.
           case "$TAG" in *-*) prerelease=true ;; esac
+          # Two log helpers. brief() escapes what a response said before it goes into an "::error::"
+          # line: the runner scans stdout for workflow commands, so a field value from a server must
+          # not be able to speak as one, and a long value is cut. rsum() renders the fields this step
+          # cares about as text for the message only — nothing is compared against it.
+          brief() { printf '%s' "$1" | head -c 200 | tr -d '\r\n' | sed -e 's/%/%25/g' -e 's/:/%3A/g'; }
+          rsum() { printf '%s' "$1" | jq -r '[.id,.tag_name,.name,.draft,.prerelease]
+                       | map(if . == null then "absent" else .|tostring end) | join(" ")' 2>/dev/null \
+                     || echo "unreadable response"; }
           # Preflight proved the tag exists, and the tag was never the thing at issue: a tag can move
           # after preflight. Re-resolve it and compare against what the legs
           # actually built, or a tag moved after preflight would publish somebody else's commit.
@@ -359,24 +367,28 @@ jobs:
           # pinned here; the generated notes body stays GitHub's, and the first tag run reads it back.
           created="$(gh api -X POST repos/{owner}/{repo}/releases \
             -f tag_name="$TAG" -f name="$TAG" -F draft=true -F prerelease="$prerelease" \
-            -F generate_release_notes=true \
-            --jq '[.id,(.upload_url // ""),(.tag_name // ""),(.name // ""),.draft,.prerelease] | join(" ")')"
-          read -r rel_id upload_url made_tag made_name made_draft made_pre <<<"$created"
-          case "${rel_id:-}" in
-            ''|*[!0-9]*)
-              echo "::error::create returned no numeric release id (got ${rel_id:-nothing}) — not publishing, and leaving whatever exists for a human"
-              exit 1
-              ;;
-          esac
-          # A numeric id is not yet this run's release: the response has to say it carries the tag we
-          # asked for, is titled with it, is a draft, and has the prerelease flag we asked for. A 2xx
-          # that answers something else — a substituted or replayed response — stops here rather than
-          # getting our binaries. (`.target_commitish` is deliberately not compared: the API says it is
-          # unused for a tag that already exists, so it proves nothing about which commit is released.)
-          if [ "${made_tag:-}" != "$TAG" ] || [ "${made_name:-}" != "$TAG" ] || [ "${made_draft:-}" != "true" ] || [ "${made_pre:-}" != "$prerelease" ]; then
-            echo "::error::create answered release $rel_id as [$made_tag ${made_name:-nothing} ${made_draft:-nothing} ${made_pre:-nothing}], expected [$TAG $TAG true $prerelease] — not publishing, and leaving whatever exists for a human"
+            -F generate_release_notes=true)"
+          # The response has to say, in its own fields, that it carries the tag we asked for, is titled
+          # with it, is a draft, and has the prerelease flag we asked for; a 2xx that answers something
+          # else — a substituted or replayed response — stops here rather than getting our binaries.
+          # The comparison is done by jq against the JSON, never against a string this step splits
+          # again: a jq join(" ") projection read back with `read` loses field boundaries, because a
+          # null field leaves two adjacent spaces that IFS collapses and a space inside a string value
+          # starts a new field. A response with name "v0.1.0 true" and draft null flattens to
+          # "7 <url> v0.1.0 v0.1.0 true false" and satisfied tag, name, draft and prerelease at once —
+          # four comparisons passed by fields that were never there. Typed comparison refuses a string
+          # "true" where a boolean true is required, and refuses a string id. (`.target_commitish` is
+          # deliberately not compared: the API says it is unused for a tag that already exists, so it
+          # proves nothing about which commit is released.)
+          if ! printf '%s' "$created" | jq -e --arg tag "$TAG" --argjson pre "$prerelease" \
+               '(.id | type) == "number" and .id > 0 and ((.upload_url // "") | type) == "string"
+                and .tag_name == $tag and .name == $tag and .draft == true and .prerelease == $pre' \
+               >/dev/null; then
+            echo "::error::create did not answer with a numeric id, tag $TAG, title $TAG, draft=true, prerelease=$prerelease (fields: $(brief "$(rsum "$created")")) — not publishing, and leaving whatever exists for a human"
             exit 1
           fi
+          rel_id="$(printf '%s' "$created" | jq -r '.id')"
+          upload_url="$(printf '%s' "$created" | jq -r '.upload_url')"
           # The upload address has to be exactly the documented one for this repository and this
           # release id, template and all. A prefix match is weaker than it looks — `assets-extra` or a
           # query the run did not ask for would pass it — and a non-empty URL from somewhere else is
@@ -386,8 +398,19 @@ jobs:
           # is a choice: if GitHub ever changes the template this gate stops, loudly, and a human
           # updates it rather than a build posting bytes at a surprise host.
           want_upload="https://uploads.github.com/repos/${GH_REPO}/releases/${rel_id}/assets{?name,label}"
-          if [ "${upload_url,,}" != "${want_upload,,}" ]; then
-            echo "::error::release $rel_id came back with upload_url ${upload_url:-nothing}, expected exactly $want_upload — not publishing, and leaving draft $rel_id for a human"
+          # Only the scheme, host and owner/repo prefix is compared case-folded: the API answers the
+          # canonical owner/repo spelling and GitHub treats those path components case-insensitively, so
+          # folding them is not a weakening. From the release id onwards the compare is exact — a suffix
+          # this run did not ask for, or a URI template expanded into a query, is a refusal rather than a
+          # place to post binaries. (Asset names are this gate's own ASCII set, so nothing here needs
+          # percent-encoding; the exact compare is what keeps it that way.)
+          want_prefix="https://uploads.github.com/repos/${GH_REPO}"
+          n_prefix=${#want_prefix}
+          got_prefix="${upload_url:0:$n_prefix}"
+          got_rest="${upload_url:$n_prefix}"
+          if [ "${got_prefix,,}" != "${want_prefix,,}" ] \
+             || [ "$got_rest" != "/releases/${rel_id}/assets{?name,label}" ]; then
+            echo "::error::release $rel_id came back with upload_url $(brief "${upload_url:-nothing}"), expected exactly $want_upload — not publishing, and leaving draft $rel_id for a human"
             exit 1
           fi
           echo "release_id=$rel_id" >> "$GITHUB_OUTPUT"
@@ -413,12 +436,34 @@ jobs:
           # it goes public: the release object, the asset set and the flags all have to be right while
           # they are still fixable. Everything below addresses the id this run created, so a page of a
           # hundred other releases cannot hide it.
-          want_assets="$( { for rid in $EXPECTED_RIDS; do printf '%s\n' "air-$rid.tar.gz" "air-$rid.tar.gz.sha256"; done; printf 'SHA256SUMS\n'; } | sort | paste -sd' ' )"
+          want_names="$( { for rid in $EXPECTED_RIDS; do printf '%s\n' "air-$rid.tar.gz" "air-$rid.tar.gz.sha256"; done; printf 'SHA256SUMS\n'; } | sort )"
+          want_assets="$(printf '%s\n' "$want_names" | paste -sd' ' -)"
+          want_count="$(printf '%s\n' "$want_names" | grep -c .)"
           # One call, one snapshot. Five separate per-name lookups would each be true of some moment
           # on the server and none of them the same moment; here the inventory and every field read
           # from it come from a single list of this release's own assets, addressed by id.
           inspect_draft() {
-            snap="$(gh api "repos/{owner}/{repo}/releases/$rel_id/assets?per_page=100" --jq '.[] | [.name,.state,(.size|tostring),(.digest // "none"),("(\(.id))")] | join(" ")')"
+            assets_json="$(gh api "repos/{owner}/{repo}/releases/$rel_id/assets?per_page=100")"
+            # Each asset is read out of a line built from this list, name in column one — so the name
+            # is a field boundary, and an asset name is something a release writer chooses. An asset
+            # named "air-win-x64.tar.gz uploaded 41582 sha256:…" would put its own state, size and
+            # digest into the columns compared below, and that asset's honest metadata (four bytes of
+            # junk, and its digest) would sit further along the same line, never read: the row matches
+            # the staged file exactly while the bytes on the release are not the staged bytes. So the
+            # shape of every entry is required first — names restricted to the ones this gate makes,
+            # typed state and size, a digest that is absent or a sha256 — and the count is required
+            # too, so a list cut off by pagination is not an inventory that passes.
+            if ! printf '%s' "$assets_json" | jq -e --argjson want "$want_count" \
+                 'type == "array" and length == $want
+                  and all(.[]; ((.name | type) == "string" and (.name | test("^[A-Za-z0-9.-]+$")))
+                          and ((.state | type) == "string" and (.state | test("^[A-Za-z]+$")))
+                          and ((.size | type) == "number")
+                          and ((.digest == null) or ((.digest | type) == "string" and (.digest | test("^sha256:[0-9a-fA-F]{64}$"))))
+                          and ((.id | type) == "number"))' >/dev/null; then
+              echo "::error::the asset list for release $rel_id is not $want_count assets with this gate's own names and typed state, size and digest — not publishing"
+              exit 1
+            fi
+            snap="$(printf '%s' "$assets_json" | jq -r '.[] | [.name,.state,(.size|tostring),(.digest // "none"),("(\(.id))")] | join(" ")')"
             got_assets="$(printf '%s\n' "$snap" | awk '{print $1}' | sort | paste -sd' ' -)"
             if [ "$got_assets" != "$want_assets" ]; then
               echo "::error::remote draft carries [$got_assets], expected [$want_assets] — not publishing"
@@ -440,13 +485,17 @@ jobs:
                 exit 1
               fi
             done
-            got_state="$(gh api "repos/{owner}/{repo}/releases/$rel_id" --jq '[.id,(.tag_name // ""),(.name // ""),.draft,.prerelease] | join(" ")')"
-            if [ "$got_state" != "$rel_id $TAG $TAG true $prerelease" ]; then
-              # The tag *ref* being re-resolved does not prove the release object still carries that
-              # tag: this is the only check that the release itself is still the one this run made —
-              # read back by id, so the id in the answer has to be ours as well as the tag, title and
-              # flags.
-              echo "::error::release read-back is [$got_state], expected [$rel_id $TAG $TAG true $prerelease] — not publishing"
+            rel_json="$(gh api "repos/{owner}/{repo}/releases/$rel_id")"
+            # The tag *ref* being re-resolved does not prove the release object still carries that
+            # tag: this is the only check that the release itself is still the one this run made — read
+            # back by id, so the id in the answer has to be ours as well as the tag, title and flags.
+            # Typed fields again, for the same reason as the create response: a joined projection
+            # cannot tell boolean true from the string "true", and does not notice a tag name or title
+            # with a space in it.
+            if ! printf '%s' "$rel_json" | jq -e --argjson rid "$rel_id" --arg tag "$TAG" --argjson pre "$prerelease" \
+                 '.id == $rid and .tag_name == $tag and .name == $tag and .draft == true and .prerelease == $pre' \
+                 >/dev/null; then
+              echo "::error::release read-back is not this run's draft for $TAG (fields: $(brief "$(rsum "$rel_json")")), expected id $rel_id, title $TAG, draft=true, prerelease=$prerelease — not publishing"
               exit 1
             fi
           }
@@ -465,15 +514,27 @@ jobs:
           inspect_draft
           # By id, not by tag: the tag is not the thing this run made, and `gh release edit` would
           # resolve the operand as a tag name anyway.
-          gh api -X PATCH "repos/{owner}/{repo}/releases/$rel_id" -F draft=false >/dev/null
-          after="$(gh api "repos/{owner}/{repo}/releases/$rel_id" --jq '[.id,(.tag_name // ""),(.name // ""),.draft,.prerelease] | join(" ")')"
-          if [ "$after" != "$rel_id $TAG $TAG false $prerelease" ]; then
-            echo "::error::published release read-back is [$after], expected [$rel_id $TAG $TAG false $prerelease] — check the releases page before trusting it"
+          # The write itself is answered: the PATCH response is checked as a release object before the
+          # confirmation read, and the failure text says the release may already be public, because a
+          # PATCH that was sent and answered wrongly is not a run that published nothing.
+          patched="$(gh api -X PATCH "repos/{owner}/{repo}/releases/$rel_id" -F draft=false)"
+          if ! printf '%s' "$patched" | jq -e --argjson rid "$rel_id" --arg tag "$TAG" --argjson pre "$prerelease" \
+               '.id == $rid and .tag_name == $tag and .draft == false and .prerelease == $pre' >/dev/null; then
+            echo "::error::the un-draft call did not answer with release $rel_id published (fields: $(brief "$(rsum "$patched")")) — the release may be public regardless: check the releases page before deciding anything"
             exit 1
           fi
-          # The record of what went public, read back by id.
-          gh api "repos/{owner}/{repo}/releases/$rel_id" \
-            --jq "{id:.id,tag_name:.tag_name,draft:.draft,prerelease:.prerelease,assets:[.assets[]|{name:.name,size:.size}]}"
+          after_json="$(gh api "repos/{owner}/{repo}/releases/$rel_id")"
+          if ! printf '%s' "$after_json" | jq -e --argjson rid "$rel_id" --arg tag "$TAG" --argjson pre "$prerelease" \
+               '.id == $rid and .tag_name == $tag and .name == $tag and .draft == false and .prerelease == $pre' \
+               >/dev/null; then
+            echo "::error::published release read-back is not this run's published release (fields: $(brief "$(rsum "$after_json")")), expected id $rel_id, title $TAG, draft=false, prerelease=$prerelease — check the releases page before trusting it"
+            exit 1
+          fi
+          # The record of what went public, printed from what this run verified rather than from the
+          # response: text a server chose has no business on stdout, where the runner reads workflow
+          # commands. The read-back above is what proved these values are the server's.
+          jq -n --argjson id "$rel_id" --arg tag "$TAG" --argjson pre "$prerelease" --arg assets "$want_assets" \
+            '{id:$id,tag_name:$tag,draft:false,prerelease:$pre,assets:$assets}'
         shell: bash
       # Delete only the release this run can prove it made: the id its own create call answered with.
       # The old guard compared the draft's created_at against
@@ -499,10 +560,27 @@ jobs:
             fi
             exit 0
           fi
-          row="$(gh api "repos/{owner}/{repo}/releases/$CREATED_ID" --jq "[.id,.tag_name,.draft]|join(\" \")" 2>/dev/null || true)"
-          read -r id tag draft <<<"$row"
-          if [ "${id:-}" != "$CREATED_ID" ] || [ "${tag:-}" != "$TAG" ] || [ "${draft:-}" != "true" ]; then
-            echo "release $CREATED_ID is not an unpublished draft of $TAG (${row:-gone}); leaving it"
+          brief() { printf '%s' "$1" | head -c 200 | tr -d '\r\n' | sed -e 's/%/%25/g' -e 's/:/%3A/g'; }
+          rsum() { printf '%s' "$1" | jq -r '[.id,.tag_name,.name,.draft,.prerelease]
+                       | map(if . == null then "absent" else .|tostring end) | join(" ")' 2>/dev/null \
+                     || echo "unreadable response"; }
+          case "$CREATED_ID" in
+            *[!0-9]*) echo "release id $CREATED_ID is not a number; leaving whatever it names"; exit 0 ;;
+          esac
+          rel="$(gh api "repos/{owner}/{repo}/releases/$CREATED_ID" 2>/dev/null || true)"
+          if [ -z "$rel" ]; then
+            echo "release $CREATED_ID is gone; nothing to delete"
+            exit 0
+          fi
+          # The same rule as the publish step, and here it is the destructive one: the fields are
+          # compared as JSON, not as the columns of a joined string. A release object answering
+          # tag_name "v0.1.0 true" with a null draft reads back, column by column, as this run's tag
+          # and draft=true — and the DELETE that follows would take a published release down. Only a
+          # response that is typed, id-matching and draft==true is ever deleted.
+          if ! printf '%s' "$rel" | jq -e --argjson rid "$CREATED_ID" --arg tag "$TAG" \
+               '(.id | type) == "number" and .id == $rid and .tag_name == $tag and .draft == true' \
+               >/dev/null; then
+            echo "release $CREATED_ID is not provably this run's unpublished draft of $TAG (fields: $(brief "$(rsum "$rel")")); leaving it"
             exit 0
           fi
           gh api -X DELETE "repos/{owner}/{repo}/releases/$CREATED_ID"
