@@ -1,6 +1,6 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.10)
+Status: draft, continuously revised (v0.12.11)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
@@ -303,6 +303,22 @@ daemon transaction per engine. 137 tests green.
   storage between upload and publish is not detected — the published sidecars and `SHA256SUMS` cover the
   downloader, not the gate. The first tag run still has to confirm the real `download-artifact` layout, the
   `gh release create --json id` output, draft visibility, and asset `state`/`size` against live uploads.
+- v0.12.11 — the published half of the gate could never have published anything, and a third deep
+  review of the gate said so before any tag ran. `gh release create` has no `--json`/`--jq`: against
+  gh 2.46.0 the shipped call fails at argument parsing (`unknown flag: --json`, exit 1) before it
+  reaches the API. `gh release view`/`edit` also resolve their operand as a tag name, not a release id
+  (`gh release view 443387629 -R cli/cli` answers `release not found`), so the id-addressed publish
+  that v0.12.10 described was not id-addressed at all. Create now passes only flags the CLI really
+  has, and every remote call after it is REST: the id comes from `GET /releases/tags/{tag}` — sound
+  because a create for a tag that already carries a release is refused, so after a successful create
+  the release carrying the tag is the one this run made — publish is `PATCH /releases/{id}` and
+  cleanup is `DELETE /releases/{id}`, and the published record is read back by id. The step records a
+  `create_attempted` output before calling create, so a run that dies between the call and the id
+  capture leaves a loud "manual review required" annotation rather than a quiet success: an orphan
+  draft may exist and no later step can prove which release is this run's. The reason this survived
+  two review rounds is the harness: its stub `gh` swallowed `--json`/`--jq` and printed an id. The
+  stub now enforces the documented flag set, and the harness runs v0.12.10's publish step against it
+  and watches it fail. No tag has run the gate: still configured, not proven.
 
 ## 1. Overview
 
