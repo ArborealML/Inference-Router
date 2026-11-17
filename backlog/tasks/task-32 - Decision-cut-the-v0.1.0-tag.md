@@ -5,10 +5,11 @@ status: To Do
 assignee:
   - '@claire'
 created_date: '2026-11-17T07:30:00Z'
-updated_date: '2026-11-17T09:46:00Z'
+updated_date: '2026-11-17T09:53:00Z'
 labels:
   - release
-dependencies: []
+dependencies:
+  - TASK-42
 priority: medium
 ordinal: 31000
 ---
@@ -81,6 +82,14 @@ created: 2026-11-17T09:46:00Z
 ---
 
 Rewritten to the owner-instruction standard: answer-first block at the top, one line per option, the exact commands, and links that resolve on specific files instead of the tasks folder - this task previously contained zero URLs for a decision about publishing a release. The floor is a command, not a sha, because it has moved five times today.
+
+---
+
+created: 2026-11-17T09:53:00Z
+
+---
+
+Now waits on the canary decision: cutting v0.1.0 on a gate that has never run for real makes the first release the test, which is the wrong order. The canary is the cheap falsifier; this stays a separate yes afterwards.
 
 ---
 <!-- COMMENTS:END -->

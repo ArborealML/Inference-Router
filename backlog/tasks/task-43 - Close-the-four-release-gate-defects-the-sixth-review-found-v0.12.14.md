@@ -1,0 +1,30 @@
+---
+id: TASK-43
+title: Close the four release-gate defects the sixth review found (v0.12.14)
+status: Waiting
+assignee:
+  - '@qwen3.8-flash-next'
+created_date: '2026-11-17T09:53:00Z'
+updated_date: '2026-11-17T09:53:00Z'
+labels:
+  - ci
+  - release
+  - security
+dependencies: []
+priority: high
+ordinal: 42000
+---
+
+## Description
+
+<!-- SECTION:DESCRIPTION:BEGIN -->
+Round 7 carrier. Round 6 reviewed e4b4683 and confirmed the round-5 repair is right - the response-captured id is the documented identity of the draft, and gh 2.46.0 --input sends the file as a raw reader with no JSON re-encoding - while finding four defects the coding session is fixing in v0.12.14: the second inspection re-reads the draft flags but not the draft tag_name (the git ref is proven, the release object is not); the release title is uncontrolled because generate_release_notes with no name lets GitHub invent one; upload_url is only checked for non-empty rather than for the exact uploads.github.com shape for this repository and id; and the workflow-write guard's real behaviour is 404, sometimes 403, with documented ambiguity about whether it fires when the tag already exists. Wake: the deep review of the v0.12.14 commit. Do not cut a tag while this round is open.
+<!-- SECTION:DESCRIPTION:END -->
+
+## Acceptance Criteria
+<!-- AC:BEGIN -->
+- [ ] #1 The draft's tag_name is re-checked against the expected tag in the final inspection, not only its flags
+- [ ] #2 The release title is pinned by passing the tag as the release name on create
+- [ ] #3 upload_url is validated against the exact expected shape for this repository and release id
+- [ ] #4 The workflow-write guard is described by its observed status codes, not by the 422 earlier rounds assumed, and the ambiguity about an existing tag is written down as ambiguity
+<!-- AC:END -->

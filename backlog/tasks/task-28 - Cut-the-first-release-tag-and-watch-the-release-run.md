@@ -5,7 +5,7 @@ status: Blocked
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T05:58:00Z'
-updated_date: '2026-11-17T09:47:00Z'
+updated_date: '2026-11-17T09:53:00Z'
 labels:
   - release
   - ci
@@ -13,8 +13,9 @@ dependencies:
   - TASK-32
   - TASK-38
   - TASK-39
-  - TASK-40
   - TASK-41
+  - TASK-42
+  - TASK-43
 priority: medium
 ordinal: 28000
 ---
@@ -74,7 +75,7 @@ Floor, stated as a rule instead of a sha so it cannot go stale: the tag must poi
 
 FIRST-RUN CHECKLIST - the first tag is the only real evidence the gate exists, so it is read by a person and not assumed green. Before pushing: (1) the ancestry rule above passes, and origin/main HEAD is recorded; (2) watch the two build legs and confirm each produced exactly two artifacts plus their expected names. Before un-drafting, from the run log: (3) the captured release id; (4) the tag-to-commit proof line naming the same commit the legs built; (5) the five asset names with state=uploaded and the byte sizes matching the staged files. After publishing: (6) the public URL, the prerelease flag (a tag with a -suffix publishes as a prerelease), the generated notes, and the downloadable SHA256SUMS verified against the archives by a downloader that is not the publishing run; (7) each binary's file type (ELF x64 / PE x64) and a smoke run on its own OS. Failure paths first: exercise them with a dispatch run or a scratch tag that is deleted afterwards, remembering that pushing a tag creates a real release - the workflow refuses a tag that already has a release, published or draft, so a scratch tag must be removed before v0.1.0 is cut.
 
-Three confirmations only a live run can give, REPLACING the three by-tag ones written at 09:16 UTC, which were obsolete before anyone used them (the by-tag endpoint answers only PUBLISHED releases, so a draft this run created is not findable by tag): (1) the create answers with a numeric release id and an upload_url, and those are what the rest of the run addresses; (2) all five assets come back in one snapshot with non-null digests equal to the staged sha256 - that match is also the only current evidence that the upload leg moved bytes faithfully, so a mismatch is the gate working, not a false alarm; (3) creating a release for a tag whose commit edits the release workflow is NOT refused with 422 by the workflow-write rule - the job deliberately keeps contents: write only, so the first tag run is what tells us whether that rule bites. Reminder kept: a scratch tag used to exercise failure paths creates a real draft, and preflight then refuses that tag until the draft is deleted.
+Three confirmations only a live run can give, REPLACING the three by-tag ones written at 09:16 UTC, which were obsolete before anyone used them (the by-tag endpoint answers only PUBLISHED releases, so a draft this run created is not findable by tag): (1) the create answers with a numeric release id and an upload_url, and those are what the rest of the run addresses; (2) all five assets come back in one snapshot with non-null digests equal to the staged sha256 - that match is also the only current evidence that the upload leg moved bytes faithfully, so a mismatch is the gate working, not a false alarm; (3) the workflow-write guard's real behaviour, which earlier rounds guessed wrong: on create and on update it answers 404, and sometimes 403 with "Resource not accessible by integration" - not 422 - and whether it fires at all when the tag already exists is documented ambiguity rather than settled fact, so the first run is the observation. The other half of the same hazard: if the tag vanished between preflight and create, an omitted target_commitish lets the endpoint create the tag from the DEFAULT branch, so a run could publish a build of a commit nobody chose. Reminder kept: a scratch tag used to exercise failure paths creates a real draft, and preflight then refuses that tag until the draft is deleted.
 
 ## Comments
 

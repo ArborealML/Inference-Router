@@ -7,7 +7,7 @@ status: Done
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T09:11:00Z'
-updated_date: '2026-11-17T09:41:00Z'
+updated_date: '2026-11-17T09:54:00Z'
 labels:
   - ci
   - release
@@ -69,6 +69,12 @@ about verifying what a downloader actually receives.
 - [x] #5 The gate harness stub enforces the real gh flag set, so a contract error like an unsupported flag cannot pass green again
 - [x] #6 The by-tag id read-back is retired as unsafe-by-design, not merely untested: GET /releases/tags/{tag} is documented as returning a PUBLISHED release, and drafts are listed only for push-capable users, so a draft this run created was never findable that way
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Round numbering for the record: TASK-40 is the round-5 carrier. After e4b4683 changed the lines it cites, boxes 2-4 were re-verified against the current file (create by REST answering id plus upload_url at 355-359; one-snapshot verification with exactly-once at 399-409; cleanup addressing only the captured id and re-checking id/tag/draft at 465-482). Box 5 (member type) was verified at 283-299. Box 1, the by-tag claim, needed no re-verification: the mechanism it condemns no longer exists.
+<!-- SECTION:NOTES:END -->
 
 ## Comments
 

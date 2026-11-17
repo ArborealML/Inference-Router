@@ -7,7 +7,7 @@ status: Waiting
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T09:41:00Z'
-updated_date: '2026-11-17T09:47:00Z'
+updated_date: '2026-11-17T09:54:00Z'
 labels:
   - ci
   - release
@@ -72,6 +72,8 @@ outright, with cd4fcdd's publish step replayed from git and shown failing.
 Naming for the owner's convenience: this is the round-6 carrier; the deep review of e4b4683 is what wakes it.
 
 Dependency for the board's sake: TASK-28 waits on this round closing, so the tag is not cut against a gate under review.
+
+Wake condition, final form: a canary release run (TASK-42) or a real tag run that produces an asset digest from the live API. If the canary is declined, this task moves to Blocked naming the owner decision, because then nothing can close AC #5 or #6.
 <!-- SECTION:NOTES:END -->
 
 ## Comments
@@ -82,6 +84,14 @@ created: 2026-11-17T09:41:00Z
 ---
 
 Boxes 1-4 checked by reading e4b4683 at current line numbers: create_attempted 355, POST create with tag/draft/prerelease/notes 357-358, id plus upload_url read from the response 359, no-upload_url stop 366-367, upload by id 380, tag re-resolve 393, single snapshot 399, exactly-once 409, PATCH by id 446, cleanup re-check 465-482, member type 283-299. Boxes 5-6 are the open questions: only a reviewer or a real tag run settles them, and box 6 partly merges into TASK-39. Wake: the deep review of e4b4683 (dispatched 09:14 UTC).
+
+---
+
+created: 2026-11-17T09:54:00Z
+
+---
+
+Wake restated, as the board rule wants the event rather than the artifact: the review of e4b4683 has LANDED and is now evidence in this task, not the thing that wakes it. What wakes it is AC #5 and AC #6 being settled - and both can only be settled by a run against the real API, which is exactly what the canary decision on TASK-42 asks for. Round 6's verdict is recorded here because it closes half the argument: the response-captured id is the documented identity of the draft, and gh 2.46.0 sends an --input body as a raw reader with no JSON re-encoding, so the upload path is byte-faithful by construction - but the only observation that a real upload matched bytes is the stored digest, so AC #6 stays open until a real run produces one. Four refinements round 6 found (draft tag_name re-check, pinned release title, exact upload_url shape, and the guard's real status codes being 404/403 rather than the 422 assumed) are on TASK-43, not here.
 
 ---
 <!-- COMMENTS:END -->

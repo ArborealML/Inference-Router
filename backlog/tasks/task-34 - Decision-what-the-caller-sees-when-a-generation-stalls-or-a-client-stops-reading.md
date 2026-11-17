@@ -20,11 +20,41 @@ ordinal: 33000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-**Do this (4 minutes).** Three constants and one policy, in one line: `1 120000`, `2 cancel`, `3 frames`. 1 = how many milliseconds a stream may stay silent after its first frame before the router ends it (0 disables); 2 = whether the router cancels the upstream engine request when the caller stops reading, or lets it finish into a buffer nobody drains; 3 = whether the buffer bound counts frames or bytes. Nothing in this ask changes what a caller sees on the wire - that shape is already shipped and pinned by tests - so there is no new wire decision here.
 
 **What this is actually asking, after checking what the router already does.** The coding session flagged TASK-30 as
 pre-deciding a `/v1` wire change. Checked against the code and SPEC, that is half right, and the half that is wrong
 makes this a smaller ask than it looked like.
+
+**What is genuinely new, and needs your number rather than an agent's guess:**
+
+**Answer format (one line):** `1 120000, 2 cancel, 3 frames` — any single answer can be replaced with your number
+and the rest stands.
+
+**What is *not* waiting on this:** the coding session has been told to start TASK-30's machinery now — the relay
+bound, stall detection, the tests that pin each path — with the numbers filled in when this lands. Blocking the
+implementation on the constants would have made a two-minute answer into a stalled week.
+
+**Links**
+- The task that implements it: [TASK-30] (https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-30%20-%20Bound-the-relay-against-a-client-that-stops-reading-and-a-generation-that-stalls-after-its-first-frame.md).
+- The acceptance criterion this feeds: TASK-30 AC #3, now worded to name this task for the numbers and SPEC §6 for the shape.
+- Existing timeouts to line the new one up with: `response_timeout_ms` (per-engine turn ceiling) and `switch_wait_timeout_ms`, both described at [SPEC §5.5 / §14.1](https://github.com/ArborealML/Inference-Router/blob/main/SPEC.md#L1329).
+
+
+<!-- SECTION:DESCRIPTION:END -->
+
+## Acceptance Criteria
+<!-- AC:BEGIN -->
+- [ ] #1 Answer in one line: the idle bound after the first frame in ms (recommend 120000, 0 disables), cancel or let-finish for a caller that stops reading, and frames or bytes for the relay bound
+<!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+
+Evidence and reasoning moved out of the description under the answer-first rule (decision-15), so the description stays answerable in one sitting:
+
+
+**Do this (4 minutes).** Three constants and one policy, in one line: `1 120000`, `2 cancel`, `3 frames`. 1 = how many milliseconds a stream may stay silent after its first frame before the router ends it (0 disables); 2 = whether the router cancels the upstream engine request when the caller stops reading, or lets it finish into a buffer nobody drains; 3 = whether the buffer bound counts frames or bytes. Nothing in this ask changes what a caller sees on the wire - that shape is already shipped and pinned by tests - so there is no new wire decision here.
 
 **Already shipped, so not on the menu:** how a committed stream ends when the upstream goes quiet. SPEC §6 already
 says a stream whose 200 is committed fails **in band** — one `engine_timeout` error frame followed by `[DONE]`
@@ -33,8 +63,6 @@ says a stream whose 200 is committed fails **in band** — one `engine_timeout` 
 streaming ceilings are in-band by construction at [SPEC:222](https://github.com/ArborealML/Inference-Router/blob/main/SPEC.md#L222)).
 That shape is precedent, pinned by tests, not a new surface. So TASK-30 does not get to invent a truncation format,
 and you do not have to approve one.
-
-**What is genuinely new, and needs your number rather than an agent's guess:**
 
 1. **An idle bound after the first frame.** Today, once a stream has produced its first frame, an engine that goes
    silent is waited on forever ([SPEC §14.1 row 2](https://github.com/ArborealML/Inference-Router/blob/main/SPEC.md#L1329)
@@ -58,27 +86,6 @@ and you do not have to approve one.
    low hundreds, plus a named error code on the feed for both stalls so an operator can tell "the engine stalled"
    from "the caller stalled". Ask: approve a frame-count bound, or insist on bytes.
 
-**Answer format (one line):** `1 120000, 2 cancel, 3 frames` — any single answer can be replaced with your number
-and the rest stands.
-
-**What is *not* waiting on this:** the coding session has been told to start TASK-30's machinery now — the relay
-bound, stall detection, the tests that pin each path — with the numbers filled in when this lands. Blocking the
-implementation on the constants would have made a two-minute answer into a stalled week.
-
-**Links**
-- The task that implements it: [TASK-30] (https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-30%20-%20Bound-the-relay-against-a-client-that-stops-reading-and-a-generation-that-stalls-after-its-first-frame.md).
-- The acceptance criterion this feeds: TASK-30 AC #3, now worded to name this task for the numbers and SPEC §6 for the shape.
-- Existing timeouts to line the new one up with: `response_timeout_ms` (per-engine turn ceiling) and `switch_wait_timeout_ms`, both described at [SPEC §5.5 / §14.1](https://github.com/ArborealML/Inference-Router/blob/main/SPEC.md#L1329).
-<!-- SECTION:DESCRIPTION:END -->
-
-## Acceptance Criteria
-<!-- AC:BEGIN -->
-- [ ] #1 Answer in one line: the idle bound after the first frame in ms (recommend 120000, 0 disables), cancel or let-finish for a caller that stops reading, and frames or bytes for the relay bound
-<!-- AC:END -->
-
-## Implementation Notes
-
-<!-- SECTION:NOTES:BEGIN -->
 Citations restated by section, not line, because the SPEC anchors in the original text went stale within hours: SPEC 6 (in-band ending for a committed stream), SPEC 14.1 row 2 (what is still open, and the shipped ceilings), and the pinning test RequestPhaseTimeoutTests.AStreamThatNeverSendsAFrameEndsInsideTheStreamBecauseTheStatusIsAlreadySent.
 
 Precedent confirmed independently by the coding session after my check, so it is no longer a single-agent claim: the pinning test is RequestPhaseTimeoutTests.AStreamThatNeverSendsAFrameEndsInsideTheStreamBecauseTheStatusIsAlreadySent at tests/Arboreal.InferenceRouter.Tests/RequestPhaseTimeoutTests.cs:196, and SPEC's quiet-engine wording (ends engine_timeout, one frame plus [DONE]) sits in the revision log near line 209 today. TASK-34 therefore stays numbers-and-policy for the owner and TASK-30 does not move behind a wire decision.
