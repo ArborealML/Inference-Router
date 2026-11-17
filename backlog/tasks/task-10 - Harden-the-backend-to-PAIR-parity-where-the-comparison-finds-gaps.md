@@ -1,11 +1,11 @@
 ---
 id: TASK-10
 title: Harden the backend to PAIR parity where the comparison finds gaps
-status: In Progress
+status: Done
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-16T20:46:00Z'
-updated_date: '2026-11-17T03:39:00Z'
+updated_date: '2026-11-17T04:20:00Z'
 labels:
   - backend
 milestone: v0.10 - live view and robustness parity
@@ -36,8 +36,14 @@ TASK-1), then security and tests. Durability, fairness and version pins follow.
 - [x] #7 Event-feed replay is correct: exclusive cursor, full retained window, atomic replay/subscribe handover, a slow subscriber's feed ended rather than pruned, subscribers bounded and over-limit feeds refused before SSE headers
 - [x] #8 The feed records a terminal outcome before waking the waiter that outcome ends, so a failed request never outruns its own reason
 - [x] #9 Every remaining parity gap has a named carrier (SPEC 14.1 rows 2/4/5/6, TASK-25, TASK-26, TASK-21) rather than being implied by silence
-- [ ] #10 Request-side phase timeouts exist and are pinned: a bounded wait for a model switch, and a cap on an in-flight engine call so a wedged engine cannot hold a ticket until the caller gives up
+- [x] #10 Request-side phase timeouts exist and are pinned: a bounded wait for a model switch, and a cap on an in-flight engine call so a wedged engine cannot hold a ticket until the caller gives up
 <!-- AC:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Complete: AC 1-10 all landed. AC 10 (request-side phase timeouts) shipped in 4b806da — per-engine `response_timeout_ms` (default 600000, 0 disables) bounds how long an engine may sit on a request it accepted before starting to answer, so a wedged engine ends `engine_timeout` (504) and hands its slot back instead of holding a ticket until the caller gives up; a non-streaming completion is covered whole and a stream is never cut off after its first frame. Scheduler `switch_wait_timeout_ms` (default 0 = no ceiling) bounds the wait for a model switch the request triggered: over the ceiling the request fails `switch_failed` and its reserved slot goes back while the switch runs on under the select command own `wait_timeout_ms`. External deep review dispatched for 4b806da; its disposition lands in SPEC 15 and here.
+<!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
 
@@ -47,6 +53,8 @@ Event-feed correctness (exclusive replay cursor, full retained-window replay, at
 Cancellation had a hole that the AC checkbox hid. SPEC 5.5 says a client that hangs up takes the same path as DELETE /admin/tickets/{id}, but the HTTP layer never connected the request abort to the ticket: an abandoned stream was served to the end into a closed socket, kept its engine slot, and was counted as completed, and the pump swallowed cancellation and completed the ticket for the same reason. A stream whose engine answered an error status also left its channel open, so the caller waited forever for the error frame SPEC 6 promises. All three are fixed and pinned by fake-backed wire tests, which is what AC #8 is for: an AC that reads "cancellation reaches the engine" is only earned by a test that hangs up mid-stream. Remaining in this area, still open: the per-phase timeouts and the commit boundary (AC #2), and the fact that a disconnect is only noticed when the router next writes, so a caller that dies during a quiet stretch is noticed late.
 
 Feed ordering is now an invariant, not a hope: every terminal outcome (engine switch, request completed/cancelled/failed) is appended to the ring before the waiter that outcome ends is woken — RunSwitchAsync and RouterCore.Complete/Fail (commit 0039b1e, SPEC 10 + revlog v0.12.3). That is what de-flaked the suite's last known flake and it is pinned by an assertion on event Seq order in the readiness-timeout test.
+
+Verified: 141 tests (3 new in RequestPhaseTimeoutTests) green in Debug and Release and across three concurrent full-suite runs; AOT publish linux-x64 warning-free; all three shipped samples still validate with the Cli `config` verb. Semantics settled while writing tests: the cap runs until the response first bytes (headers) — an engine sends non-streaming headers with the body, so in practice a whole completion is covered, while a stream that has begun runs to its end. Test-caught bug: the response timer must not share the caller token, otherwise a client abort completes the delay and gets answered `engine_timeout` instead of `cancelled`; the timer now runs on its own source, disarmed in `finally`, and the winner check is exact. `EngineRuntime.ResponseTimeout` is computed once at startup; capped and uncapped send paths share `FinishWithResponseAsync` so they cannot drift.
 <!-- SECTION:NOTES:END -->
 
 ## Comments
@@ -73,6 +81,14 @@ created: 2026-11-17T03:39:00Z
 ---
 
 The flake in comments 1-2 had a real cause, not a slow box: the switch outcome was appended to the feed *after* the shared readiness task was resolved, so the test awaited a terminal ticket state and then looked for engine.switch_failed, which had not been written yet. Fixed in the product rather than in the test (0039b1e): the feed records the outcome first, then wakes waiters. Evidence: the test passed in isolation before the change and failed in a full run on a loaded box; after the change, four concurrent full-suite runs are green (137/137 each), Debug and Release, and the AOT publish stays trim-clean. The test now also asserts switch_failed.Seq < request.failed.Seq, so the ordering cannot silently regress.
+
+---
+
+created: 2026-11-17T04:20:00Z
+
+---
+
+AC 10 landed in 4b806da (config + RouterCore + EngineRuntime + ServerApp 504 mapping + samples + SPEC 5.5/6/7 and the 14.1 row-2 status + integrator docs + 3 wire tests). The task is Done on my verification; the external deep review for that commit is in flight and its disposition will be recorded in SPEC 15 and here when it lands.
 
 ---
 <!-- COMMENTS:END -->

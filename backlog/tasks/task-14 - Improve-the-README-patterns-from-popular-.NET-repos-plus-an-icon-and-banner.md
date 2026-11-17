@@ -3,9 +3,10 @@ id: TASK-14
 title: 'Improve the README: patterns from popular .NET repos, plus an icon and banner'
 status: Waiting
 assignee:
-  - '@chatswarm'
+  - '@claire'
+  - '@qwen3.8-flash-next'
 created_date: '2026-11-16T22:26:00Z'
-updated_date: '2026-11-17T02:26:00Z'
+updated_date: '2026-11-17T03:44:00Z'
 labels:
   - docs
   - ui
@@ -38,7 +39,7 @@ feature-wall, no claim that is not measured (SPEC §9.1 gate).
 - [x] #3 An icon and a banner image committed under `docs/images/` (or `.github/`), with alt text and
   a source/attribution note; no third-party assets with unclear licences
 - [ ] #4 Build status and release badges that actually resolve on the public repo
-- [ ] #5 No claim in the README that SPEC §9.1 does not back with measurements
+- [x] #5 No claim in the README that SPEC §9.1 does not back with measurements
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -50,6 +51,18 @@ The mark, banner and social preview are in the repo under docs/images/ as origin
 
 The visual direction and the repository-settings upload are handed to a human decision task; the remaining README acceptance criteria wait on it.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+created: 2026-11-17T03:44:00Z
+
+---
+
+AC #5 now holds, and it is checkable rather than a vibe: the only measured claims in the README are the benchmark paragraph, and every figure in it traces to the published run — routing +58.0/+90.6/+91.4 µs p50 and ~15 KB (README: ~58–91 µs, ~15 KB), full HTTP path +217.1/+320.7/+995.8 µs and ~26–32 KB (README: ~217–996 µs, ~26–32 KB, with the top of the range labelled as HTTP framing rather than routing), SSE relay +58.1/+97.5/+102.3 µs and ~24–25 KB (README: ~58–102 µs, ~25 KB) — with docs/benchmarks.md and SPEC 9.1 linked for the caveats. The compatibility claim is scoped to the two proxy routes in the works-today/not-built-yet table, and no other sentence in the README asserts performance.
+
+---
+<!-- COMMENTS:END -->
 
 Status: step 1 landed (findings below); the task moves to In Progress when the README itself changes.
 Icon/banner art comes after the structure lands.
