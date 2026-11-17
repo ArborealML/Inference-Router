@@ -1,11 +1,11 @@
 ---
 id: TASK-43
-title: Close the four release-gate defects the sixth review found (v0.12.14)
+title: Close the four release-gate defects the fifth review found (SPEC v0.12.14)
 status: Waiting
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T09:53:00Z'
-updated_date: '2026-11-17T10:20:00Z'
+updated_date: '2026-11-17T10:25:00Z'
 labels:
   - ci
   - release
@@ -28,6 +28,12 @@ Round 7 carrier. Round 6 reviewed e4b4683 and confirmed the round-5 repair is ri
 - [x] #3 upload_url is validated against the exact expected shape for this repository and release id
 - [x] #4 The workflow-write guard is described by its observed status codes, not by the 422 earlier rounds assumed, and the ambiguity about an existing tag is written down as ambiguity
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Confirmed against the revision log: bff39e8 carries v0.12.14, the fifth deep review's fixes (SPEC line 355). The review now in flight was dispatched 10:04Z over that commit; its findings would land as v0.12.15 and need their own carrier, not this one.
+<!-- SECTION:NOTES:END -->
 
 ## Comments
 

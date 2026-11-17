@@ -1,13 +1,13 @@
 ---
 id: TASK-41
 title: >-
-  Close the create-by-REST and upload byte-fidelity questions from the fifth
-  gate review
+  Close the create-by-REST and byte-fidelity questions from the third and fourth
+  gate reviews (SPEC v0.12.11-v0.12.13)
 status: Waiting
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T09:41:00Z'
-updated_date: '2026-11-17T10:11:00Z'
+updated_date: '2026-11-17T10:25:00Z'
 labels:
   - ci
   - release
@@ -76,6 +76,8 @@ Dependency for the board's sake: TASK-28 waits on this round closing, so the tag
 Wake condition, final form: a canary release run (TASK-42) or a real tag run that produces an asset digest from the live API. If the canary is declined, this task moves to Blocked naming the owner decision, because then nothing can close AC #5 or #6.
 
 Disposition of round 6 (review of e4b4683), now evidence in this task rather than the wake; the wake is the round-7 review of bff39e8 (dispatched 10:04Z). Round 6 confirmed the REST-create repair and bff39e8 added four things: the create response validated as a whole (tag_name, draft and prerelease must match what was asked before a byte uploads - a numeric id from a 2xx is not ownership on its own); upload_url validated against the exact uploads.github.com shape for this repository and id rather than merely non-empty; the release object's own tag_name checked in both inspections and in the post-publish read-back, because re-resolving the git ref proves the ref and not the release's tag association; and the release title pinned with name=$TAG, since generated notes with no name let GitHub invent a title and compose the body from merged PR text. The response-captured-id question is closed by that work: id plus those three fields plus the upload-address shape is as complete as reading can be, and a replay carrying valid fields is not distinguishable by reading at all - SPEC 15 now states that as an accepted gap rather than pretending it is solved.
+
+Round numbering now follows the SPEC revision log's own review ordinals (second, third, fourth, fifth deep review at SPEC lines 283, 306, 322, 338, 355) instead of the board's ad-hoc counts, which had drifted a round out of step with SPEC and made 'round 6/7' mean different things in different tasks.
 <!-- SECTION:NOTES:END -->
 
 ## Comments
