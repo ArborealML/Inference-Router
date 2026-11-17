@@ -40,7 +40,7 @@ implicit.
 `no live daemon runs: keep it on fakes`. Nothing else is needed to unblock the verification work.
 
 **Links**
-- The route, already established: [TASK-20](https://github.com/ArborealML/Inference-Router/tree/main/backlog/tasks).
+- The route, already established: [TASK-20] (https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-20%20-%20Decision-how-the-router-starts-and-stops-engines.md).
 - Provider behaviour and its fakes: [SPEC §5.3.1](https://github.com/ArborealML/Inference-Router/blob/main/SPEC.md#L420), [DockerLifecycleProviderTests.cs](https://github.com/ArborealML/Inference-Router/blob/main/tests/Arboreal.InferenceRouter.Tests/DockerLifecycleProviderTests.cs).
 - Read-only check an agent can run any time, no mutation: `dotnet run --project src/Arboreal.InferenceRouter.Cli -- engines preflight -c samples/router.safe-smoke.toml` with [samples/router.safe-smoke.toml](https://github.com/ArborealML/Inference-Router/blob/main/samples/router.safe-smoke.toml). Never smoke-test a config that carries lifecycle commands.
 <!-- SECTION:DESCRIPTION:END -->

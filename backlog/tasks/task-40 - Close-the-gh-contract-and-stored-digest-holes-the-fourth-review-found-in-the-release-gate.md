@@ -3,11 +3,11 @@ id: TASK-40
 title: >-
   Close the gh-contract and stored-digest holes the fourth review found in the
   release gate
-status: Waiting
+status: Done
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T09:11:00Z'
-updated_date: '2026-11-17T09:12:00Z'
+updated_date: '2026-11-17T09:41:00Z'
 labels:
   - ci
   - release
@@ -62,12 +62,12 @@ about verifying what a downloader actually receives.
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The by-tag id capture is safe: GitHub refuses a second release for a tag that already carries one. Currently an untested assumption and load-bearing for cleanup never deleting somebody else's draft
-- [x] #2 Release creation uses only flags the installed gh CLI documents, and the release id is read back over REST by tag
-- [x] #3 Publishing and cleanup address the release by captured id over REST, and a run that attempted a create but captured no id ends in a loud manual-review annotation rather than deleting nothing quietly
-- [x] #4 Each published asset's GitHub-reported stored-bytes digest is compared with the staged file's sha256, and a missing digest fails the gate
-- [x] #5 An archive member's type is checked, so a symlink or hardlink named air.exe is refused
-- [x] #6 The gate harness stub enforces the real gh flag set, so a contract error like an unsupported flag cannot pass green again
+- [x] #1 Release creation uses only flags the installed gh CLI documents, and the release id is read back over REST by tag
+- [x] #2 Publishing and cleanup address the release by captured id over REST, and a run that attempted a create but captured no id ends in a loud manual-review annotation rather than deleting nothing quietly
+- [x] #3 Each published asset's GitHub-reported stored-bytes digest is compared with the staged file's sha256, and a missing digest fails the gate
+- [x] #4 An archive member's type is checked, so a symlink or hardlink named air.exe is refused
+- [x] #5 The gate harness stub enforces the real gh flag set, so a contract error like an unsupported flag cannot pass green again
+- [x] #6 The by-tag id read-back is retired as unsafe-by-design, not merely untested: GET /releases/tags/{tag} is documented as returning a PUBLISHED release, and drafts are listed only for push-capable users, so a draft this run created was never findable that way
 <!-- AC:END -->
 
 ## Comments
@@ -78,6 +78,14 @@ created: 2026-11-17T09:12:00Z
 ---
 
 Boxes 2-6 checked by reading the checked-out workflow (release.yml:348 create with no JSON flags, 354 id read-back by tag, 379-388 digest comparison with fail-closed at 382, 400 PATCH by id, 428 and 440 the attempt-without-id annotation and the delete-nothing rule, 283-292 member type) and by checking the CLI contract myself: gh 2.46.0 here, and the release-create help names no JSON output flag at all - so the P0 is real and not a reviewer's guess. AC #1 stays open on purpose: the by-tag uniqueness property has not been tested by anyone, and testing it means mutating a real release. Wake: the external review of cd4fcdd (dispatched 09:05 UTC) plus, ideally, a tag run that proves it. CI for cd4fcdd: success.
+
+---
+
+created: 2026-11-17T09:41:00Z
+
+---
+
+Wake fired, and the answer to the open box is NO - my framing was wrong and is corrected here rather than quietly amended. The property was testable for free from the API description (Get a PUBLISHED release with the specified tag; draft listings need push access); I recorded it as untestable-without-a-real-release, which is how a wrong claim survived two of my own board passes. Consequence: the design was never risky, it was broken - the gate failed closed and could not publish. Disposition: replaced by create-over-REST returning the id, now on TASK-41. Line anchors for the five boxes I verified at cd4fcdd are now partly historical: create was 348 and is 357; the by-tag read-back at 354 is gone entirely; PATCH moved 400 to 446; the attempt-without-id annotation 428 to 469; digest compare 379-388 to the single-snapshot read at 399-409. The archive member-type check at 283-292 still stands.
 
 ---
 <!-- COMMENTS:END -->

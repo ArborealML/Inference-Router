@@ -5,13 +5,14 @@ status: Waiting
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-16T20:46:00Z'
-updated_date: '2026-11-17T05:59:00Z'
+updated_date: '2026-11-17T09:42:00Z'
 labels:
   - ui
 milestone: v0.10 - live view and robustness parity
 dependencies:
   - TASK-9
   - TASK-21
+priority: medium
 ordinal: 11000
 ---
 
@@ -30,7 +31,7 @@ them can be built, so the stream work comes first.
 - Feed the screens read from: [SPEC §10](https://github.com/ArborealML/Inference-Router/blob/main/SPEC.md#L946). Admin surface and error casing: [SPEC §6](https://github.com/ArborealML/Inference-Router/blob/main/SPEC.md#L635).
 - Borrow/change/skip list: [SPEC §12.5](https://github.com/ArborealML/Inference-Router/blob/main/SPEC.md#L1079).
 - Endpoints that exist today: [ServerApp.cs:51-57](https://github.com/ArborealML/Inference-Router/blob/main/src/Arboreal.InferenceRouter.Server/ServerApp.cs#L51-L57).
-- Gate this has to satisfy: [SPEC §14.1](https://github.com/ArborealML/Inference-Router/blob/main/SPEC.md#L1208). Decision that wakes it: [TASK-21](https://github.com/ArborealML/Inference-Router/tree/main/backlog/tasks).
+- Gate this has to satisfy: [SPEC §14.1](https://github.com/ArborealML/Inference-Router/blob/main/SPEC.md#L1208). Decision that wakes it: [TASK-21] (https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-21%20-%20Decision-what-the-live-view-shows-who-may-open-it-and-whether-the-wire-gains-loss-reporting.md).
 
 **Do this (about 1 minute)**
 Nothing to decide here — the three questions this task waits on are written out on **TASK-21** with the
@@ -72,5 +73,5 @@ Blocked on TASK-21 — the next move is the live-view audience, credential and w
 
 Blocked-state check: the blocker is a person, and the human task that carries it is TASK-21 (audience, credential posture, and whether the event feed gains a loss event). The two questions restated in this task's body are context for whoever reads this task — the answers belong on TASK-21, so answering here does not move anything.
 
-Wake condition, stated for the Waiting column: this task wakes when the live-view decisions are recorded (TASK-21 — audience, credential posture, and whether the event feed gains an explicit loss event), because the screens cannot be specified until the feed they read from is specified. Per the working contract the feed-contract plan also gets an external review before the code exists, so the second wake is that review landing. Nothing here is blocked on a person any more: the decisions that used to gate it moved to an agent task under the owner's instruction, and TASK-22's macOS answer does not touch this work.
+Wake condition, stated for the Waiting column: this task wakes when the live-view decisions are recorded (TASK-21 — audience, credential posture, and whether the event feed gains an explicit loss event), because the screens cannot be specified until the feed they read from is specified. Per the working contract the feed-contract plan also gets an external review before the code exists, so the second wake is that review landing. What is true now: TASK-21 is a BLOCKED owner task again - the external design recommendation landed and the three answers (audience, credential posture, and whether the feed gains a loss event) are ratifications only the owner can make. So this task does wait on a person, and the Waiting column is correct only because that person's task exists. The earlier sentence claiming nothing here waits on a person was written when the questions were still with an agent, and is withdrawn.
 <!-- SECTION:NOTES:END -->

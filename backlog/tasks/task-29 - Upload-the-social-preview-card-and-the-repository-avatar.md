@@ -17,6 +17,8 @@ ordinal: 23000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
+**Do this (2 minutes).** Download docs/images/air-social-1280x640.png from the repository, open repository Settings -> Options -> Social preview, choose it, press **Save**, then run: curl -s https://github.com/ArborealML/Inference-Router | grep og:image - and the URL printed should change from repository-images to opengraph.githubassets.com. Answer one line here when it does: `card set`. The avatar is already live; nothing else to upload.
+
 Two one-time uploads on GitHub that only a browser session can do. Everything up to the upload is done: the
 vector sources are committed, and the two PNGs the settings forms want are committed in the repository, so the
 upload is now download-and-pick, not export-and-hope.

@@ -19,6 +19,8 @@ ordinal: 21000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
+**Do this (3 minutes).** Three one-line answers, on this task: `1 operator-first`, `2 loopback plus tunnels`, `3 no gap event`. Any answer can be replaced with yours and the reason. Settings or commands are not involved - these are product and wire postures, and answer 3 is the only one that touches the wire (the recommendation is to change nothing).
+
 **You are being asked to ratify a design, not to write one.** The external research and review service answered
 the three questions this task posed (dispatched and answered 2026-11-17, transcript kept in `.local/reviews/`, not
 in the repository). The board checked each answer against how this repository's admin surface and event feed
@@ -61,8 +63,8 @@ and each deviation names what it buys.
 **Links**
 - What the admin surface is today: [SPEC §6](https://github.com/ArborealML/Inference-Router/blob/main/SPEC.md#L635), [§6.1](https://github.com/ArborealML/Inference-Router/blob/main/SPEC.md#L635).
 - The feed the answers describe: [SPEC §10](https://github.com/ArborealML/Inference-Router/blob/main/SPEC.md#L946); screens: [SPEC §12.5](https://github.com/ArborealML/Inference-Router/blob/main/SPEC.md#L1079).
-- Task that starts when this is answered: [TASK-11](https://github.com/ArborealML/Inference-Router/tree/main/backlog/tasks).
-- Adjacent and deliberately separate: [TASK-34](https://github.com/ArborealML/Inference-Router/tree/main/backlog/tasks) — what a *caller* sees when a generation stalls, which is a `/v1` question, not a feed question.
+- Task that starts when this is answered: [TASK-11] (https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-11%20-%20Blazor-live-view-screens-plus-the-event-stream-additions-they-need.md).
+- Adjacent and deliberately separate: [TASK-34] (https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-34%20-%20Decision-what-the-caller-sees-when-a-generation-stalls-or-a-client-stops-reading.md) — what a *caller* sees when a generation stalls, which is a `/v1` question, not a feed question.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

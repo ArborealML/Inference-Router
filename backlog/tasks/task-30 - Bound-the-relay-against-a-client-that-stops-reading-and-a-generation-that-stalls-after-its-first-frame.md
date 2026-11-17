@@ -7,12 +7,13 @@ status: To Do
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T07:01:00Z'
-updated_date: '2026-11-17T09:13:00Z'
+updated_date: '2026-11-17T09:42:00Z'
 labels:
   - stream
   - transport
 dependencies:
   - TASK-34
+priority: high
 ordinal: 29000
 ---
 

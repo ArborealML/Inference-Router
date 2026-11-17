@@ -17,6 +17,8 @@ ordinal: 37000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
+**Do this (5 minutes).** Repository Settings -> Rules -> add a tag protection rule matching v* (or tell me your plan does not offer it). Answer one line here: `tag rule v* added`, or `no rule: accepting the window`, or `narrowing access instead`. No commands to run; this is a settings act only a signed-in owner can perform.
+
 **Why this is yours and not the workflow's.** The release workflow now defends itself against everything it can see:
 it refuses a tag that already carries a release (published or draft), re-resolves the tag to a commit and refuses
 unless that commit is the one the binaries were built from, and its concurrency group serialises this repository's
@@ -50,7 +52,7 @@ Cost: about 5 minutes, most of it in the settings UI.
 **Links** — the settings page: [repository Settings → Rules](https://github.com/ArborealML/Inference-Router/rules)
 (tag protection rules live there); the workflow's self-defence: [release.yml](https://github.com/ArborealML/Inference-Router/blob/main/.github/workflows/release.yml);
 the review row that raised this: [SPEC §15](https://github.com/ArborealML/Inference-Router/blob/main/SPEC.md#L1445),
-"Deliberately not closed". The task that cuts the tag: [TASK-28](https://github.com/ArborealML/Inference-Router/tree/main/backlog/tasks).
+"Deliberately not closed". The task that cuts the tag: [TASK-28] (https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-28%20-%20Cut-the-first-release-tag-and-watch-the-release-run.md).
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

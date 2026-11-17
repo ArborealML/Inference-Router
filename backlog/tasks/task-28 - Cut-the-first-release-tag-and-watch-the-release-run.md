@@ -5,7 +5,7 @@ status: Blocked
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T05:58:00Z'
-updated_date: '2026-11-17T09:13:00Z'
+updated_date: '2026-11-17T09:47:00Z'
 labels:
   - release
   - ci
@@ -14,6 +14,7 @@ dependencies:
   - TASK-38
   - TASK-39
   - TASK-40
+  - TASK-41
 priority: medium
 ordinal: 28000
 ---
@@ -46,7 +47,7 @@ The same ancestry line is on TASK-32, because the owner may cut the tag personal
 
 **Links**
 - Workflow a tag runs: [release.yml](https://github.com/ArborealML/Inference-Router/blob/main/.github/workflows/release.yml); preflight refusal at [96-104](https://github.com/ArborealML/Inference-Router/blob/main/.github/workflows/release.yml#L96-L104); asset gate and archive-count check at [216-231](https://github.com/ArborealML/Inference-Router/blob/main/.github/workflows/release.yml#L216-L231); prerelease handling at [238-241](https://github.com/ArborealML/Inference-Router/blob/main/.github/workflows/release.yml#L238-L241).
-- Where it appears: [releases](https://github.com/ArborealML/Inference-Router/releases). Decision behind the platform set: [decision-10](https://github.com/ArborealML/Inference-Router/tree/main/backlog/decisions). Owner go-ahead it waits on: [TASK-32](https://github.com/ArborealML/Inference-Router/tree/main/backlog/tasks).
+- Where it appears: [releases](https://github.com/ArborealML/Inference-Router/releases). Decision behind the platform set: [decision-10](https://github.com/ArborealML/Inference-Router/tree/main/backlog/decisions). Owner go-ahead it waits on: [TASK-32] (https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-32%20-%20Decision-cut-the-v0.1.0-tag.md).
 
 A tag with a `-suffix` publishes as a GitHub prerelease (fbc48d6); `v0.1.0` with no suffix publishes as final.
 <!-- SECTION:DESCRIPTION:END -->
@@ -73,8 +74,7 @@ Floor, stated as a rule instead of a sha so it cannot go stale: the tag must poi
 
 FIRST-RUN CHECKLIST - the first tag is the only real evidence the gate exists, so it is read by a person and not assumed green. Before pushing: (1) the ancestry rule above passes, and origin/main HEAD is recorded; (2) watch the two build legs and confirm each produced exactly two artifacts plus their expected names. Before un-drafting, from the run log: (3) the captured release id; (4) the tag-to-commit proof line naming the same commit the legs built; (5) the five asset names with state=uploaded and the byte sizes matching the staged files. After publishing: (6) the public URL, the prerelease flag (a tag with a -suffix publishes as a prerelease), the generated notes, and the downloadable SHA256SUMS verified against the archives by a downloader that is not the publishing run; (7) each binary's file type (ELF x64 / PE x64) and a smoke run on its own OS. Failure paths first: exercise them with a dispatch run or a scratch tag that is deleted afterwards, remembering that pushing a tag creates a real release - the workflow refuses a tag that already has a release, published or draft, so a scratch tag must be removed before v0.1.0 is cut.
 
-Three more confirmations only a live run can give, added after the fourth review: (1) the by-tag lookup returns the id of the draft THIS run created - the whole cleanup design rests on GitHub refusing a second release on a tag that already carries one, which nobody has yet observed in the wild; (2) the five assets each carry a non-null digest that matches the staged sha256 - if GitHub reports no digest the gate fails by design, and an operator must read that as the gate working, not as a false alarm; (3) the publish call flips exactly the captured id from draft to published and nothing else changes. Reminder kept: a scratch tag used to exercise the failure paths creates a real draft, and preflight then refuses that tag until the draft is deleted.
-<!-- SECTION:NOTES:END -->
+Three confirmations only a live run can give, REPLACING the three by-tag ones written at 09:16 UTC, which were obsolete before anyone used them (the by-tag endpoint answers only PUBLISHED releases, so a draft this run created is not findable by tag): (1) the create answers with a numeric release id and an upload_url, and those are what the rest of the run addresses; (2) all five assets come back in one snapshot with non-null digests equal to the staged sha256 - that match is also the only current evidence that the upload leg moved bytes faithfully, so a mismatch is the gate working, not a false alarm; (3) creating a release for a tag whose commit edits the release workflow is NOT refused with 422 by the workflow-write rule - the job deliberately keeps contents: write only, so the first tag run is what tells us whether that rule bites. Reminder kept: a scratch tag used to exercise failure paths creates a real draft, and preflight then refuses that tag until the draft is deleted.
 
 ## Comments
 

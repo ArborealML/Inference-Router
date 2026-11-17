@@ -20,6 +20,8 @@ ordinal: 33000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
+**Do this (4 minutes).** Three constants and one policy, in one line: `1 120000`, `2 cancel`, `3 frames`. 1 = how many milliseconds a stream may stay silent after its first frame before the router ends it (0 disables); 2 = whether the router cancels the upstream engine request when the caller stops reading, or lets it finish into a buffer nobody drains; 3 = whether the buffer bound counts frames or bytes. Nothing in this ask changes what a caller sees on the wire - that shape is already shipped and pinned by tests - so there is no new wire decision here.
+
 **What this is actually asking, after checking what the router already does.** The coding session flagged TASK-30 as
 pre-deciding a `/v1` wire change. Checked against the code and SPEC, that is half right, and the half that is wrong
 makes this a smaller ask than it looked like.
@@ -64,7 +66,7 @@ bound, stall detection, the tests that pin each path — with the numbers filled
 implementation on the constants would have made a two-minute answer into a stalled week.
 
 **Links**
-- The task that implements it: [TASK-30](https://github.com/ArborealML/Inference-Router/tree/main/backlog/tasks).
+- The task that implements it: [TASK-30] (https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-30%20-%20Bound-the-relay-against-a-client-that-stops-reading-and-a-generation-that-stalls-after-its-first-frame.md).
 - The acceptance criterion this feeds: TASK-30 AC #3, now worded to name this task for the numbers and SPEC §6 for the shape.
 - Existing timeouts to line the new one up with: `response_timeout_ms` (per-engine turn ceiling) and `switch_wait_timeout_ms`, both described at [SPEC §5.5 / §14.1](https://github.com/ArborealML/Inference-Router/blob/main/SPEC.md#L1329).
 <!-- SECTION:DESCRIPTION:END -->
