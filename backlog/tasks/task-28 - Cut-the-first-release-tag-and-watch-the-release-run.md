@@ -78,19 +78,4 @@ go/hold analysis now lives on TASK-50, and its `Decision:` title contradicted an
 ## Comments
 
 <!-- COMMENTS:BEGIN -->
-created: 2026-11-17T13:30:00Z
-
----
-
-Sequencing trap, from the plan review dispositioned in SPEC v0.12.20 and re-measured by the board at 8f78a73 (0 tags, 0 releases, `[]` rulesets): a `v*` repository ruleset with a `creation` rule and empty `bypass_actors` stops **anyone** — an admin included — from pushing a `v*` tag, so it cannot land before the tag this task cuts unless an actor is listed. Either the ruleset's `bypass_actors` names the tag pusher (TASK-38 AC #2) or this tag is cut first and the ruleset follows. Enforcement has no observe-only setting: `enforcement` is `disabled`, `active`, or Enterprise-only `evaluate`.
-
----
-
-created: 2026-11-17T15:01:00Z
-
----
-
-**Waiting, not Blocked:** every assignee here is an agent, so per the revised rule a task that waits on another task sits in Waiting and names it. **Wake:** TASK-50's `go` (or the owner's `ratify decision-21: no`, which removes the gate), plus the `v*` ruleset read back on TASK-38 and TASK-45 done — the ruleset's `creation` rule must be settled before a `v*` tag can be pushed at all.
-
----
 <!-- COMMENTS:END -->

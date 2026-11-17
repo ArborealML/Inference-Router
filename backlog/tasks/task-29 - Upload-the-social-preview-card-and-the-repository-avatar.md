@@ -5,7 +5,7 @@ status: Blocked
 assignee:
   - '@claire'
 created_date: '2026-11-17T05:59:00Z'
-updated_date: '2026-11-17T16:01:00Z'
+updated_date: '2026-11-17T16:13:00Z'
 labels:
   - docs
 dependencies:
@@ -52,13 +52,11 @@ instead of being uploaded twice.
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Reasoning and evidence moved out of the description under the answer-first rule (decision-15):
-
 **Set the social card** -> every link preview of the repository renders our card: dark evergreen field, the
 branching-route mark, `AIR`, the name and the tagline. **Leave it** -> GitHub keeps rendering its own generated
 card, a mostly-white box that says nothing about what this is. Today it renders GitHub's card (verified below).
 **Set the organisation picture** -> the mark appears on the org page, on the owner chip beside the repository
-name, and in search results. **Already done** and verified from outside the form.
+name, and in search results. **Already done**, verified from outside the form.
 
 **Links**
 - Card PNG to pick, 1280x640 as GitHub asks: [docs/images/air-social-1280x640.png](https://github.com/ArborealML/Inference-Router/blob/main/docs/images/air-social-1280x640.png) (raw: [raw.githubusercontent.com/.../air-social-1280x640.png](https://raw.githubusercontent.com/ArborealML/Inference-Router/main/docs/images/air-social-1280x640.png)). 38,150 bytes, sha256 `cee3237b7f98…98f09` as committed in b214ce6, well under the 1 MB ceiling — re-read the hash from the file at upload time, because TASK-49 item (d) can still change it.
@@ -78,13 +76,4 @@ Superseded log entries for this task: [board trim, 2026-11-17](https://github.co
 ## Comments
 
 <!-- COMMENTS:BEGIN -->
-
-created: 2026-11-17T13:56:00Z
-
----
-
-**Nothing in the repository is outstanding for this task, so it is Blocked on a person again, not Waiting.** The card is committed and measured (b214ce6: 1280x640, 38,150 B, sha256 `cee3237b7f98…98f09`; smallest text line 42 px, four times the previous card's 20 px). What is missing is the upload: repo Settings -> Options -> Social preview, pick the committed `docs/images/air-social-1280x640.png`, then **press Save** — the form shows a thumbnail either way, which is how three 'card set' answers have produced no change. One optional answer can still change the image first: TASK-49 item (d).
-
----
-
 <!-- COMMENTS:END -->

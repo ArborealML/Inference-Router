@@ -454,3 +454,55 @@ created: 2026-11-17T13:56:00Z
 AC #1, #2, #3 and #4 are checked on that evidence; **#5 stays open**, which is why the task is Waiting and not Done. **Wake: the owner pressing Save on TASK-29** — #5 is the public readback that only a live setting can answer. If the owner takes TASK-49 item (d) and asks for a different composition, this reopens for one render and one re-measure.
 
 ---
+
+### TASK-29 (second pass 16:2xZ)
+
+created: 2026-11-17T13:56:00Z
+
+---
+
+**Nothing in the repository is outstanding for this task, so it is Blocked on a person again, not Waiting.** The card is committed and measured (b214ce6: 1280x640, 38,150 B, sha256 `cee3237b7f98…98f09`; smallest text line 42 px, four times the previous card's 20 px). What is missing is the upload: repo Settings -> Options -> Social preview, pick the committed `docs/images/air-social-1280x640.png`, then **press Save** — the form shows a thumbnail either way, which is how three 'card set' answers have produced no change. One optional answer can still change the image first: TASK-49 item (d).
+
+---
+
+### TASK-28 (second pass 16:2xZ)
+
+created: 2026-11-17T13:30:00Z
+
+---
+
+Sequencing trap, from the plan review dispositioned in SPEC v0.12.20 and re-measured by the board at 8f78a73 (0 tags, 0 releases, `[]` rulesets): a `v*` repository ruleset with a `creation` rule and empty `bypass_actors` stops **anyone** — an admin included — from pushing a `v*` tag, so it cannot land before the tag this task cuts unless an actor is listed. Either the ruleset's `bypass_actors` names the tag pusher (TASK-38 AC #2) or this tag is cut first and the ruleset follows. Enforcement has no observe-only setting: `enforcement` is `disabled`, `active`, or Enterprise-only `evaluate`.
+
+---
+
+created: 2026-11-17T15:01:00Z
+
+---
+
+**Waiting, not Blocked:** every assignee here is an agent, so per the revised rule a task that waits on another task sits in Waiting and names it. **Wake:** TASK-50's `go` (or the owner's `ratify decision-21: no`, which removes the gate), plus the `v*` ruleset read back on TASK-38 and TASK-45 done — the ruleset's `creation` rule must be settled before a `v*` tag can be pushed at all.
+
+---
+
+### TASK-30 (second pass 16:2xZ)
+
+created: 2026-11-17T11:08:00Z
+
+---
+
+Numbers and policy are decided (TASK-34 answered; the external answer was adopted because it contradicts nothing measured here). Ship defaults: `stream_idle_timeout_ms = 300000` **per engine**, `0` disables, measured on **upstream byte arrival** — reset by upstream bytes, never by keepalives or downstream writes, and bytes in hand beat an expiry race. `stream_buffer_limit_bytes = 262144` **global**, counted in bytes rather than frames, because frames vary in size. On idle expiry: cancel upstream, release the lease exactly once in a `finally`, and record `upstream_cancel_requested` always and `upstream_stop_confirmed` only when established — otherwise the feed says `backend_execution_unknown`, because cancelling an HTTP request does not guarantee GPU compute stopped. At high water with no drain: cancel upstream, close or reset downstream, release the lease, emit `slow_consumer`. Caller-visible shape stays exactly as SPEC §6 has it: one in-band error frame plus `[DONE]` on a stream that is still writable, close without ceremony when it is not, no new truncation format. A caller abort stays `cancelled`, never a timeout. The 30 s pending-write no-progress watchdog lives inside the relay as a safety rule, not a config key.
+
+**Do not land the defaults as a bare config PR.** Two gates come first, and this task is not Done without them: per-engine gap replay (measured gap histograms; ~10,000 representative successful reasoning/tool/batched streams with zero false expiries; injections at 299999 and 300001 ms; timeout-versus-byte races; an upstream that ignores cancellation) and a slow-reader soak (stopped reader, one-byte blocked flush, frames larger than the cap, HTTP/1.1 and HTTP/2, abort and slot saturation) showing bounded backlog, bounded RSS, expiry at high water, and no leaks.
+
+**Measure the premise before writing it into SPEC.** This task's Description says the router buffers a stalled reader without limit. That was written from reasoning, not measurement, and Kestrel plus TCP may already apply backpressure; AC #2's number and SPEC's wording should say what the code actually does, with the test that shows it.
+
+---
+
+### TASK-11 (second pass 16:2xZ)
+
+created: 2026-11-17T14:02:00Z
+
+---
+
+**Correction, and the board was wrong.** A comment here a moment ago claimed this task's wake had already happened and moved it to To Do. It has not, and the claim came from reading the board listing instead of the predecessor task. The predecessor TASK-21 records its three postures as **adopted**, but its remaining act is still open: writing them into SPEC as a revision with the revision-log line in the same commit — checked here, `SPEC.md` carries no operator-first posture text at b214ce6. **Wake, named:** that SPEC revision landing, after which TASK-21 closes and this starts.
+
+---

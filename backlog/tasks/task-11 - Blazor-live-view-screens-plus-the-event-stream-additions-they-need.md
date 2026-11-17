@@ -5,7 +5,7 @@ status: Waiting
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-16T20:46:00Z'
-updated_date: '2026-11-17T16:01:00Z'
+updated_date: '2026-11-17T16:13:00Z'
 labels:
   - ui
 milestone: v0.10 - live view and robustness parity
@@ -55,39 +55,19 @@ Nothing in this task is technically blocked; it is these two calls.
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Wakes on TASK-21: the three postures are adopted and the remaining act is writing them into SPEC, which the coding session owns. Work here resumes when that SPEC revision lands.
+**Wake, as events:** the SPEC revision that records the three live-view postures (adopted already; writing them into
+SPEC is the coding session's act on [TASK-21](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-21%20-%20Decision-what-the-live-view-shows-who-may-open-it-and-whether-the-wire-gains-loss-reporting.md)),
+and the external review of the feed-contract plan landing before the code exists.
 
-Blocked-state check: the blocker is a person, and the human task that carries it is TASK-21 (audience, credential posture, and whether the event feed gains a loss event). The two questions restated in this task's body are context for whoever reads this task — the answers belong on TASK-21, so answering here does not move anything.
+**Open design question this task must answer first:** serve `air-ui` as static files from the router itself (one
+binary, one origin, no CORS; the router then ships a UI bundle and serves a second content type), or as a separate
+static site the operator hosts anywhere (cleaner separation, another thing to deploy). The choice changes the packaging
+criterion, so it is decided in this task's plan, not in code.
 
-Wake condition, stated for the Waiting column: this task wakes when the live-view decisions are recorded (TASK-21 — audience, credential posture, and whether the event feed gains an explicit loss event), because the screens cannot be specified until the feed they read from is specified. Per the working contract the feed-contract plan also gets an external review before the code exists, so the second wake is that review landing. What is true now: TASK-21 is a BLOCKED owner task again - the external design recommendation landed and the three answers (audience, credential posture, and whether the feed gains a loss event) are ratifications only the owner can make. So this task does wait on a person, and the Waiting column is correct only because that person's task exists. The earlier sentence claiming nothing here waits on a person was written when the questions were still with an agent, and is withdrawn.
-
-Moved out of the Description under decision-18's word line — nothing deleted, nothing rewritten:
-
-1. **Where does it come from?** Serve `air-ui` as static files from the router itself (one binary, one
-   origin, no CORS, but the router then ships a UI bundle and must serve a second content type), or as a
-   separate static site the operator hosts anywhere (cleaner separation, but then the browser needs a
-   reachable admin feed and CORS/origin policy). Recommendation: serve it from the router for v1 — one
-   process, same auth boundary, no new infrastructure — and keep the admin feed the only contract.
-2. **Who can see it?** `/admin/*` is currently unauthenticated and bind-address-only (§6.2). A live
-   dashboard makes that difference visible: an operator who exposes the router on the tailnet is
-   exposing the admin feed too. Options: keep bind-address-only and document it loudly, or add a
-   separate admin token. Recommendation: keep bind-address-only for the router itself and let the
-   operator expose the UI behind a reverse proxy; add the admin token only when someone needs a
-   remote admin. Say otherwise and I will do the token first.
-
-Superseded log entries for this task: [board trim, 2026-11-17](https://github.com/ArborealML/Inference-Router/blob/main/backlog/archive/board-trim-2026-11-17.md).
+Superseded log entries, including the older wake claims: [board trim, 2026-11-17](https://github.com/ArborealML/Inference-Router/blob/main/backlog/archive/board-trim-2026-11-17.md).
 <!-- SECTION:NOTES:END -->
 
 ## Comments
 
 <!-- COMMENTS:BEGIN -->
-
-created: 2026-11-17T14:02:00Z
-
----
-
-**Correction, and the board was wrong.** A comment here a moment ago claimed this task's wake had already happened and moved it to To Do. It has not, and the claim came from reading the board listing instead of the predecessor task. The predecessor TASK-21 records its three postures as **adopted**, but its remaining act is still open: writing them into SPEC as a revision with the revision-log line in the same commit — checked here, `SPEC.md` carries no operator-first posture text at b214ce6. **Wake, named:** that SPEC revision landing, after which TASK-21 closes and this starts.
-
----
-
 <!-- COMMENTS:END -->
