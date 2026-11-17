@@ -92,5 +92,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0   # the checker looks cited commits up in git; a shallow clone reports them missing
+      - name: Check the checker on fixtures
+        run: python3 tools/board-check.py --self-test
       - name: Check every task file against the task-content rules
         run: python3 tools/board-check.py

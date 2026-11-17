@@ -82,7 +82,8 @@ warning rather than suppressing it, and add a suppression only with a comment sa
    dispositions; §14 is the acceptance criteria a change has to meet) or as a board
    task with acceptance criteria. Silence means nobody decided. Review bookkeeping — request ids,
    tiers, transcripts — stays in `.local/`; the public board and commit messages carry only what the
-   review changed. When you ingest a review, name the commit it covered and record each finding's
+   review changed, and say **what** was reviewed and answered rather than **where** the transcript
+   sits. When you ingest a review, name the commit it covered and record each finding's
    disposition where the work lives, so a later reader can tell a decision from an oversight.
 
 ## Safety on a real machine
@@ -95,7 +96,11 @@ mutation of shared infrastructure and say so in your report.
 ## Repo hygiene
 
 `.local/` is gitignored and holds working notes, handoffs, review bookkeeping, and anything specific to
-one person's machine or to internal services. Keep it out of commits and out of published files.
+one person's machine or to internal services. Keep it out of commits and out of published files. A
+tracked file cites **only paths a clone can read**: if the evidence lives outside the repository, say so
+in words ("the transcript is held outside the repository") and leave the path out, or move the file under
+a tracked path and cite that. `tools/board-check.py` reports a citation of a gitignored path as
+`GITREF`.
 
 Tracked files and pushed history carry no absolute home-directory paths, no key-file locations, no
 internal service names, endpoints or configuration, and no review request ids — use placeholders like

@@ -6,7 +6,7 @@ anyone else, so a "0 defects" claim there cannot be audited. This one is the con
 gate. Word budgets are reported and only fatal with --strict-budget, so the corpus can be
 brought under the limit without turning every other check green-or-red at the same time.
 
-Usage: python3 tools/board-check.py [--strict-budget] [--root PATH]
+Usage: python3 tools/board-check.py [--strict-budget] [--root PATH] [--self-test]
 Exit 0 with no defects; 1 with defects; 2 if the board cannot be read at all.
 """
 from __future__ import annotations
@@ -66,6 +66,13 @@ def strip_markers(text: str) -> str:
     return re.sub(r"<!--[^>]*-->", " ", text)
 
 
+# Front matter written by the backlog CLI uses folded block scalars (`title: >-`). A line-only
+# parser reads the indicator as the value: the title becomes ">-", which normalises to an empty
+# key, and the duplicate-title rule silently skips the file. Twelve of forty-eight open tasks
+# are written that way, so this is not a cosmetic parser gap.
+BLOCK_SCALAR = re.compile(r"^([a-z_]+):\s*([|>])([+-]?[0-9]*|[0-9]*[+-]?)\s*$")
+
+
 def body_of(raw: str) -> tuple[dict[str, str], str]:
     parts = raw.split("---\n", 2)
     if len(parts) < 3 or not parts[0].strip() == "":
@@ -73,14 +80,58 @@ def body_of(raw: str) -> tuple[dict[str, str], str]:
     front, body = parts[1], parts[2]
     fields: dict[str, str] = {}
     key = None
-    for line in front.splitlines():
+    lines = front.splitlines()
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        m = BLOCK_SCALAR.match(line)
+        if m:
+            key = m.group(1)
+            joiner = " " if m.group(2) == ">" else "\n"
+            chunk: list[str] = []
+            i += 1
+            while i < len(lines):
+                if lines[i].startswith("  "):
+                    chunk.append(lines[i].strip())
+                    i += 1
+                    continue
+                if not lines[i].strip() and any(x.startswith("  ") for x in lines[i + 1:i + 2]):
+                    i += 1
+                    continue
+                break
+            fields[key] = joiner.join(x for x in chunk if x)
+            continue
         m = re.match(r"^([a-z_]+):\s*(.*)$", line)
         if m:
             key, val = m.group(1), m.group(2).strip()
             fields[key] = val if val else ""
         elif key and re.match(r"^\s+-\s", line):
             fields[key] = (fields[key] + " " + line.strip()[1:].strip()).strip()
+        i += 1
     return fields, body
+
+
+def title_key(title: str) -> str:
+    return re.sub(r"[^a-z0-9]+", " ", title.lower()).strip()
+
+
+def private_path_patterns(gitignore: Path) -> list[re.Pattern[str]]:
+    """Patterns for citations of paths this repository does not publish, read from .gitignore.
+
+    A task that says "the harness is at .local/relgate.py" is unreadable from a clone: the same
+    defect as an evidence link that does not resolve on main (AGENTS.md, Repo hygiene).
+    """
+    pats: list[re.Pattern[str]] = []
+    if not gitignore.is_file():
+        return pats
+    for line in gitignore.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or any(c in line for c in "*?"):
+            continue
+        name = line.strip("/")
+        if name and "/" not in name:
+            pats.append(re.compile(r"(?<![A-Za-z0-9._/-])" + re.escape(name) + r"/[A-Za-z0-9_./-]*"))
+    return pats
 
 
 def sections(body: str) -> dict[str, list[str]]:
@@ -104,12 +155,90 @@ def ac_block(body: str) -> tuple[str, list[str]]:
     return "\n".join(chunks), items
 
 
+def private_citations(text: str, patterns: list[re.Pattern[str]]) -> list[str]:
+    hits = {m.group(0) for pat in patterns for m in pat.finditer(text)}
+    return sorted(hits)
+
+
+FIXTURE = """---
+id: TASK-{n}
+title: >-
+  {title}
+status: To Do
+assignee:
+  - '@qwen3.8-flash-next'
+---
+
+## Description
+
+<!-- SECTION:DESCRIPTION:BEGIN -->
+{body}
+<!-- SECTION:DESCRIPTION:END -->
+
+## Acceptance Criteria
+<!-- AC:BEGIN -->
+- [ ] #1 the criterion fits one line
+<!-- AC:END -->
+"""
+
+
+def self_test() -> int:
+    """Prove the checker sees what it claims to see, on fixtures, before anyone trusts its zero."""
+    import tempfile
+
+    failures: list[str] = []
+
+    def run(files: dict[str, str]) -> tuple[int, str]:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp, "backlog", "tasks")
+            root.mkdir(parents=True)
+            for name, text in files.items():
+                (root / name).write_text(text, encoding="utf-8")
+            proc = subprocess.run(
+                [sys.executable, str(Path(__file__).resolve()), "--root", str(root.parent)],
+                capture_output=True, text=True, check=False)
+            return proc.returncode, proc.stdout + proc.stderr
+
+    clean = {"task-1 - A.md": FIXTURE.format(n=1, title="First task", body="Build the thing.")}
+    code, out = run(clean)
+    if code != 0:
+        failures.append(f"clean fixture should pass, exit {code}: {out.strip()[:400]}")
+
+    folded = {
+        "task-1 - A.md": FIXTURE.format(n=1, title="Cut the release tag", body="Build the thing."),
+        "task-2 - B.md": FIXTURE.format(n=2, title="Cut the release tag", body="Build the other thing."),
+    }
+    code, out = run(folded)
+    if code != 1 or "DUPLICATE" not in out:
+        failures.append(f"folded titles should collide and be reported: exit {code}: {out.strip()[:400]}")
+
+    cited = {"task-1 - A.md": FIXTURE.format(
+        n=1, title="First task",
+        body="Run .local/relgate.py, not src/app.cs, backlog/tasks/x.md or docs/images/a.png.")}
+    code, out = run(cited)
+    hits = [line for line in out.splitlines() if "GITREF" in line]
+    if code != 1 or len(hits) != 1 or ".local/relgate.py" not in hits[0]:
+        failures.append(f"one unpublished-path citation expected, got: {hits}")
+
+    for f in failures:
+        print(f"self-test FAILED: {f}")
+    print(f"board-check self-test: {'FAILED' if failures else 'ok'} "
+          f"(folded titles, duplicate titles, unpublished paths, clean fixture)")
+    return 1 if failures else 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--strict-budget", action="store_true", help="make word budgets fatal")
     ap.add_argument("--root", default="backlog")
+    ap.add_argument("--gitignore", default=str(Path(__file__).resolve().parents[1] / ".gitignore"))
+    ap.add_argument("--self-test", action="store_true", help="check the checker on fixtures and exit")
     args = ap.parse_args()
 
+    if args.self_test:
+        return self_test()
+
+    private = private_path_patterns(Path(args.gitignore))
     tasks_dir = Path(args.root) / "tasks"
     if not tasks_dir.is_dir():
         print(f"cannot read {tasks_dir}", file=sys.stderr)
@@ -240,7 +369,11 @@ def main() -> int:
         if "chatswarm" in assignees and not DISPATCHED.search(body):
             bad(tid, "DISPATCH", "assigned to @chatswarm with no dispatched request named in the body")
 
-        key = re.sub(r"[^a-z0-9]+", " ", title.lower()).strip()
+        for hit in private_citations(body, private):
+            bad(tid, "GITREF", f"cites the unpublished path {hit} — a clone cannot read it: "
+                               f"state the fact in the task, or move the file under a tracked path")
+
+        key = title_key(title)
         if key and key in titles:
             bad(tid, "DUPLICATE", f"same title as {titles[key]}")
         elif key:
@@ -249,6 +382,30 @@ def main() -> int:
         deps = re.findall(r"TASK-\d+", re.search(r"(?m)^dependencies:\n((?:  - .+\n)+)", raw).group(1)) if re.search(r"(?m)^dependencies:\n", raw) else []
         open_ac_text = " ".join(it for it, line in zip(ac_items, [l for l in body.splitlines() if CHECKBOX.match(l)]) if "[ ]" in line)
         graph[tid] = (deps, open_ac_text)
+
+    # The same hygiene rule for every other tracked board file: decisions, and the archive the
+    # task loop does not walk.
+    for md in sorted(Path(args.root).rglob("*.md")):
+        if md.parent == tasks_dir:
+            continue
+        for hit in private_citations(md.read_text(encoding="utf-8"), private):
+            bad(str(md.relative_to(args.root)), "GITREF",
+                f"cites the unpublished path {hit} — a clone cannot read it: "
+                f"state the fact in the file, or move the file under a tracked path")
+
+    # An open task that repeats an archived title has an undocumented predecessor.
+    archive_dir = tasks_dir.parent / "archive" / "tasks"
+    if archive_dir.is_dir():
+        archived: dict[str, str] = {}
+        for path in sorted(archive_dir.glob("*.md")):
+            fields, _ = body_of(path.read_text(encoding="utf-8"))
+            key = title_key(" ".join(fields.get("title", "").split()))
+            if key:
+                archived.setdefault(key, path.name)
+        for key, tid in titles.items():
+            if key in archived:
+                notes.append(f"{tid}: ARCHIVETITLE: title matches archived {archived[key]} — "
+                             f"name the predecessor or retitle")
 
     open_words.sort()
     # Closure cycles: A depends on B, and an open criterion of B asks for what only A can produce.
