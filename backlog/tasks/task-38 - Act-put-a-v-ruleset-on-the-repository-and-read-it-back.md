@@ -1,11 +1,11 @@
 ---
 id: TASK-38
-title: 'Decision: protect release tags and decide who may publish releases'
+title: 'Act: put a v* ruleset on the repository and read it back'
 status: Blocked
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T09:11:00Z'
-updated_date: '2026-11-17T14:10:00Z'
+updated_date: '2026-11-17T14:25:00Z'
 labels:
   - release
   - security
@@ -17,9 +17,9 @@ ordinal: 37000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-**An act, not a decision: create an active repository ruleset on `v*` that governs creating, moving and deleting release tags, then read it back.** Measured by this session at 8f78a73: `GET .../rulesets` answers `[]`, `GET .../tags/protection` answers 404 for this token, and the repository answers `admin: true`, so a ruleset is the scriptable route. About 20 minutes with `gh api`, reversible with a DELETE.
+**An act, not a decision: create an active repository ruleset on `v*` that governs creating, moving and deleting release tags, then read it back.** Read the live state with the block below before posting; a ruleset is the scriptable route on this repository (the tag-protection endpoint answers 404 for this token), and the answer at the time of the act is what goes in the report. About 20 minutes with `gh api`, reversible with a DELETE.
 
-    gh api repos/ArborealML/Inference-Router/rulesets      # measured [] at 8f78a73
+    gh api repos/ArborealML/Inference-Router/rulesets      # read live, do not quote an older answer
 
 **Three corrections the plan review landed in SPEC v0.12.20, and each one changes the payload.** `enforcement` is `disabled | active | evaluate`, and `evaluate` is Enterprise-only — *create it observe-only, flip it after the canary* is not available: a ruleset enforces or it does nothing. `creation`, `update` and `deletion` are real rule types, and `bypass_actors: []` means **nobody** — not an admin, not the Actions app — may create, move or delete a `v*` tag, which includes whoever pushes the next release tag, so the actor list is decided before the POST and [TASK-28](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-28%20-%20Cut-the-first-release-tag-and-watch-the-release-run.md) is sequenced against it. And a ruleset is not admin-proof: repository admins can always edit the ruleset itself.
 

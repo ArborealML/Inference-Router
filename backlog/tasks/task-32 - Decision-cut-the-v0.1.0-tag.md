@@ -1,11 +1,11 @@
 ---
 id: TASK-32
 title: 'Decision: cut the v0.1.0 tag'
-status: Blocked
+status: Waiting
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T07:30:00Z'
-updated_date: '2026-11-17T14:02:00Z'
+updated_date: '2026-11-17T14:25:00Z'
 labels:
   - release
 dependencies:
@@ -98,6 +98,14 @@ created: 2026-11-17T14:02:00Z
 ---
 
 Blocked, not Waiting: the chain it sits behind now waits on a person. Its stated wake was the canary green, TASK-44 closed and TASK-45 done; the canary and the two repository settings are now Blocked on TASK-49, so no event short of an owner answer wakes this. Nothing about its own criteria changed.
+
+---
+
+created: 2026-11-17T14:25:00Z
+
+---
+
+Status corrected: the body's first line has always said this is agent-run with no person in the path, so Blocked was a contradiction. **Wake:** the canary reported green on TASK-42, TASK-44 closed and TASK-45 done.
 
 ---
 <!-- COMMENTS:END -->

@@ -1,11 +1,11 @@
 ---
 id: TASK-42
 title: 'Decision: prove the release gate on a canary, knowing the tag name is burned?'
-status: Blocked
+status: Waiting
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T09:53:00Z'
-updated_date: '2026-11-17T13:56:00Z'
+updated_date: '2026-11-17T14:25:00Z'
 labels:
   - release
   - ci
@@ -31,7 +31,7 @@ stored digests match real uploads.
 the peeled tag SHA, the `PATCH` response, and `.immutable` on the published release.
 
 **Then require refusals:** try an asset replacement and a tag move against the published canary. Both must be
-rejected, or the immutability and tag-rule claims in [TASK-45](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-45%20-%20Enable-GitHub-immutable-releases-before-the-first-tag.md) and [TASK-38](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-38%20-%20Decision-protect-release-tags-and-decide-who-may-publish-releases.md) are false.
+rejected, or the immutability and tag-rule claims in [TASK-45](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-45%20-%20Enable-GitHub-immutable-releases-before-the-first-tag.md) and [TASK-38](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-38%20-%20Act-put-a-v-ruleset-on-the-repository-and-read-it-back.md) are false.
 
 **Cost, plainly:** public assets for a few minutes and one runner leg, and cleanup is mandatory because preflight
 refuses a tag that already carries a release, draft or published: `gh release delete v0.0.0-canary --cleanup-tag --yes`. It is a mutation of a public repository and the report says so in those words.
@@ -95,6 +95,14 @@ created: 2026-11-17T13:56:00Z
 ---
 
 Blocked on TASK-49 (a) and (b): the canary decision and whether the destructive tests run in a throwaway repository. Not Waiting — no event will wake this; a person has to grant it.
+
+---
+
+created: 2026-11-17T14:25:00Z
+
+---
+
+Status corrected to match the body: agent-run, no owner keystroke. **Wake:** TASK-44 closed, TASK-38's ruleset read back, TASK-45 done, CI green on the merge commit. Recommendation, stated rather than asked: run the proving tag **after** the throwaway-repository rehearsal if TASK-49 answers yes, and treat the canary as a kept prerelease, because a published version name cannot be reused.
 
 ---
 <!-- COMMENTS:END -->
