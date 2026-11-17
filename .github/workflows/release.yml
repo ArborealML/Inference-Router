@@ -279,7 +279,10 @@ jobs:
           # member per archive, so the gate asks for exactly one, matched as a literal string:
           # `grep -qx "$exe"` is a regex, so `airXexe` satisfies it in place of `air.exe`; `-F` matches
           # it as a name. A member named `./air` or `sub/air` fails the literal test, so nothing nested
-          # or extra can ride along inside a published archive.
+          # or extra can ride along inside a published archive. A name is not a member *type* either:
+          # `tar -tzf` lists names only, so a symlink or hardlink member called air.exe passes a name
+          # test while unpacking into nothing runnable — the verbose listing puts the type character
+          # first, and only a regular file (`-`) is accepted.
           for rid in $EXPECTED_RIDS; do
             case "$rid" in
               linux-x64) exe="air" ;;
@@ -289,8 +292,12 @@ jobs:
             if ! members="$(tar -tzf "$stage/air-${rid}.tar.gz" 2>/dev/null)"; then
               echo "::error::air-${rid}.tar.gz is not a readable tar.gz"; exit 1
             fi
-            if [ "$(printf '%s\n' "$members" | wc -l)" -ne 1 ] || ! grep -Fqx -- "$exe" <<< "$members"; then
-              echo "::error::air-${rid}.tar.gz must hold exactly one member named $exe; it holds: $(printf '%s' "$members" | tr '\n' ' ')"
+            if ! listing="$(tar -tzvf "$stage/air-${rid}.tar.gz" 2>/dev/null)"; then
+              echo "::error::air-${rid}.tar.gz does not list verbosely"; exit 1
+            fi
+            if [ "$(printf '%s\n' "$members" | wc -l)" -ne 1 ] || [ "$(printf '%s\n' "$listing" | wc -l)" -ne 1 ] \
+               || [ "${listing:0:1}" != "-" ] || ! grep -Fqx -- "$exe" <<< "$members"; then
+              echo "::error::air-${rid}.tar.gz must hold exactly one regular member named $exe; it holds: $(printf '%s' "$listing" | tr '\n' ' ')"
               exit 1
             fi
           done
@@ -368,14 +375,17 @@ jobs:
             echo "::error::remote draft carries [$got_assets], expected [$want_assets] — not publishing"
             exit 1
           fi
-          # A name on the inventory is not a byte. Each asset has to have finished uploading, and
-          # its size has to equal the staged file's, so a truncated or still-uploading asset stops
-          # the publication instead of becoming the download link.
+          # A name on the inventory is not a byte. Each asset has to have finished uploading, its size
+          # has to equal the staged file's, and the digest GitHub reports for the bytes it stored has to
+          # equal the staged file's sha256 — so a truncated, replaced or still-uploading asset stops the
+          # publication instead of becoming the download link, and an equal-size substitution stops too.
+          # A digest the remote does not report fails the gate: an unverifiable field is not a passing one.
           for n in $want_assets; do
-            read -r state size <<<"$(gh api "repos/{owner}/{repo}/releases/$rel_id/assets?per_page=100" --jq "[.[] | select(.name==\"$n\")] | if length==1 then \"\(.[0].state) \(.[0].size)\" else \"absent 0\" end")"
+            read -r state size digest <<<"$(gh api "repos/{owner}/{repo}/releases/$rel_id/assets?per_page=100" --jq "[.[] | select(.name==\"$n\")] | if length==1 then \"\(.[0].state) \(.[0].size) \(.[0].digest // \"none\")\" else \"absent 0 none\" end")"
             want_size="$(stat -c %s "stage/$n")"
-            if [ "$state" != "uploaded" ] || [ "$size" != "$want_size" ]; then
-              echo "::error::asset $n is [$state $size], expected [uploaded $want_size] — not publishing"
+            want_digest="sha256:$(sha256sum "stage/$n" | cut -d' ' -f1)"
+            if [ "$state" != "uploaded" ] || [ "$size" != "$want_size" ] || [ "$digest" != "$want_digest" ]; then
+              echo "::error::asset $n is [$state $size $digest], expected [uploaded $want_size $want_digest] — not publishing"
               exit 1
             fi
           done

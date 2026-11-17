@@ -1,6 +1,6 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.11)
+Status: draft, continuously revised (v0.12.12)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
@@ -319,6 +319,22 @@ daemon transaction per engine. 137 tests green.
   two review rounds is the harness: its stub `gh` swallowed `--json`/`--jq` and printed an id. The
   stub now enforces the documented flag set, and the harness runs v0.12.10's publish step against it
   and watches it fail. No tag has run the gate: still configured, not proven.
+- v0.12.12 — the rest of the third review's findings, one of which was about the harness rather than
+  the workflow. The gate now compares a third property of every published asset: the digest GitHub
+  reports for the bytes it stored, against the staged file's own sha256. Name, `uploaded` state and
+  byte size together admitted an equal-size substitution — the pre-fix comparison is now a standing
+  harness case that is shown accepting a stored asset of exactly the right size and the wrong bytes.
+  An asset whose digest the remote does not report fails the gate too: an unverifiable field is not a
+  passing one. The archive member test asks for the member's *type* as well as its name, because
+  `tar -tzf` lists names only and a symlink member named `air.exe` satisfied the name test while
+  unpacking into nothing runnable; the verbose listing's type character must be a regular file. Two
+  further findings are written down rather than papered over. The gate still never downloads the
+  served bytes and hashes them itself: it proves what GitHub says it stored, not what a downloader
+  receives, and that is the accepted gap recorded in §15. And the workspace-internal tricks (a symlink
+  or hardlink above the leg folder, PAX extension oddities, a decompression bound) plus the window
+  between re-resolving the tag and creating the release are outside what a workflow can decide: the
+  tag-scoped `concurrency` group already serializes this repo's own runs, and excluding an external
+  writer is a repository-settings decision, not a line of YAML.
 
 ## 1. Overview
 
@@ -1349,15 +1365,19 @@ and cohort/residency hysteresis in the scheduler (§12.3 hook).
   matched by exact leg name: an artifact named for no declared leg (or for two legs at once), a leg folder
   holding any entry other than the two that leg produces — a directory or a symlink included — and a
   basename arriving from two artifacts are all refused. Every archive and sidecar must be present, a regular
-  non-symlink file, and non-empty; the archive must unpack and hold exactly one member named literally
-  `air` / `air.exe`; and it must match the whole checksum record its own leg wrote — digest and filename
-  together — rather than a name read out of the sidecar. The upload list is built from the same
+  non-symlink file, and non-empty; the archive must unpack and hold exactly one member, a regular file
+  whose *type* is checked and not only its name, named literally `air` / `air.exe`; and it must match the
+  whole checksum record its own leg wrote — digest and filename together — rather than a name read out of
+  the sidecar. The upload list is built from the same
   `EXPECTED_RIDS` list the gate reads, so a leg cannot be verified by one set of names and published by
   another. Before publication the tag is re-resolved and must still name the commit the legs built, and the
   draft is inspected on the remote by the release id this run created: asset inventory, each asset's upload
-  state and byte size against the staged file, and the draft/prerelease flags. A failed run deletes only
+  state, byte size and stored-bytes digest against the staged file (an asset whose digest the remote does
+  not report fails the gate), and the draft/prerelease flags; publication is a REST update of that same id.
+  A failed run deletes only
   that captured id, and only while it is still an unpublished draft of that tag; a run that captured no id
-  deletes nothing. macOS RIDs stay declared in the Cli project so a local
+  deletes nothing, and one that attempted a create without capturing an id says so as a
+  manual-intervention annotation instead of finishing quietly. macOS RIDs stay declared in the Cli project so a local
   `-r osx-arm64` build works, but no macOS artifact is built, published, claimed or gated: the account has
   no macOS runner minutes, and a leg that queues forever is not a leg that passes. A platform is added
   back with runner minutes, a leg that actually runs, `EXPECTED_RIDS` updated, and README copy that
@@ -1421,6 +1441,8 @@ router robust until rows 2, 4 and 6 close.
 | Deep review of v0.12.4 (request-side phase timeouts) | **completed, dispositioned in v0.12.5**: the timer-stops-at-headers gap, the late-response leak, the switch running on the initiating request's token, and the switch-state wedge on `no_select_command` are fixed with tests; the stream channel is now closed by the ticket's terminal transition (which also fixes the silent stream end). Two findings are **accepted gaps**, not fixes: (a) the selector's own failure reason is recorded on the feed as `engine.switch_failed` and deliberately kept out of the caller-facing `switch_failed` message, so the caller sees the outcome and the operator sees the cause — change this when §13 needs to distinguish them programmatically; (b) a phase-timeout value above `Int32.MaxValue` ms is rejected at DTO binding (a Tomlyn/STJ range error) rather than by the router's own `RouterConfigException` message — either way startup fails with a non-zero exit, so the operator is stopped, only with a less specific line |
 
 | Deep review of v0.12.5 (response gate, engine-owned switch token, stream-channel ownership) | **completed, dispositioned in v0.12.6**: fixed a false `Ready` — a waiter for one serving profile was answered by another profile's switch on the same model, so a request could be dispatched against a window it cannot serve (`SwitchFairnessTests` pins both directions: not ready on a stranger's success, not failed on a stranger's failure); fixed a shutdown race where disposing the switch token's source could throw before the switch task's own cleanup and strand every waiter on that engine (the token is read before the task is scheduled, the source is deliberately *not* disposed, and a switch that fails to start settles its waiters); the ceiling can no longer reassign blame for a failure inside the router's own terminal work, because the gate is passed the moment the owed bytes are in hand; stream acquisition sits inside the ceiling; a switch-failure message names the target that failed rather than whichever switch happened to be in flight. **Accepted deliberately**: a ceiling that loses the race with the engine's bytes does not fire (bytes in hand beat a timeout — the alternative is destroying an answer the caller can use), and there is **no idle bound after the first frame** — a stalled generation and a stalled reader are TASK-30, because each needs a wire decision (a truncation surface, a slow-consumer policy) rather than a constant |
+
+| Deep review of v0.12.9–v0.12.11 (release gate: artifact forgeries, cleanup ownership, the gh CLI contract) | **completed, dispositioned in v0.12.10–v0.12.12**: four artifact forgeries (an artifact named for two legs, a regex dot standing in for `air.exe`, an extra archive member, a symlink or directory wearing an expected name) are each reproduced as a forgery that passed the shipped gate and then fixed, and are standing cases in the local gate harness; cleanup ownership moved off `github.run_started_at` (not a documented Actions context property, so read as empty it protects nothing) to the release id this run captured; and the publish path moved to REST because `gh release create` has no `--json`/`--jq` (gh 2.46.0 fails at argument parsing) and `gh release view`/`edit` resolve their operand as a tag name, not a release id. The harness's stub `gh` was what let the contract error survive two reviews: it now enforces the documented flag set. **Accepted gap, and this is the row §14's published-surface bullet points at**: the gate compares each remote asset's name, `uploaded` state, byte size and GitHub's reported stored-bytes `digest` against the staged file, but never downloads the served bytes and hashes them itself — it proves what GitHub says it stored, not what a downloader receives. Closing that fully means a post-publish download-and-hash leg or a signing/attestation story, which is runner minutes plus a trust-anchor decision rather than a constant; the published per-archive sidecars and `SHA256SUMS` remain what a downloader verifies. **Deliberately not closed**: workspace-internal link tricks above the leg folder, PAX extension handling and decompression bounds in the archive inspection, and the window between re-resolving the tag and creating the release — `concurrency: release-${{ github.ref }}` serializes this repo's own runs, but no workflow line excludes an external actor with write access, so release-tag protection and who may publish are repository-settings decisions for the operator. |
 
 Findings feed §7 (TOML binding choice), §9 (AOT strategy), §5.4 (scheduler
 heuristics). Spec revisions cite them.
