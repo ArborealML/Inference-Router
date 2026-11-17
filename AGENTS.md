@@ -112,6 +112,14 @@ assignee when you pick a task up and when you hand it over; do not leave it empt
 This project uses Groma. Before you scan, inspect, or curate architecture, or change files for a Backlog task, run `groma agent-instructions` and read the guide it names for that job. When it reports a first scan, ask the user whether they want you to curate the architecture. Do not edit Groma-owned architecture files directly.
 <!-- groma:end -->
 
+## When a human has the next move
+
+Open a task **for that person** — assign them, title it `Review:` or `Decision:` — naming exactly what
+they have to decide or approve, what changes under each option, and what it unblocks. Then mark the
+dependent task **Blocked** and name the task it waits on. A question asked in chat, or a paragraph
+inside another task's body, is not a blocker anybody can act on: if work stops on a person, that
+person's task list has to show it.
+
 ## Kanban columns
 
 `To Do → In Progress → Waiting → Blocked → Done`, set in `backlog/config.yml`.
