@@ -52,4 +52,12 @@ created: 2026-11-17T12:20:00Z
 Closing counts, measured by the board session on this tree, not inherited: `python3 .local/board-lint.py` -> 0 defects, exit 0. `python3 .local/board-standards.py` -> 0 defects, exit 0, plus its informational line: 9 Done tasks over 300 words (TASK-7, 10, 20, 24, 27, 36, 37, 40, 41), history under decision-18. Before this pass the same command reported 6 defects exit 1 (5 WORDS on open tasks plus 1 ORDINAL collision between TASK-23 and TASK-29 at 23000). Five Descriptions were shortened by moving whole paragraphs to Implementation Notes — TASK-2 to 281 words (357 moved), TASK-6 to 256 (96), TASK-11 to 200 (182), TASK-14 to 283 (241), TASK-23 to 258 (106) — counts are the checker's own, as-of this commit.--plain
 
 ---
+
+created: 2026-11-17T12:20:00Z
+
+---
+
+The trims landed in 2c31eb4 (board: TASK-47 done — every open Description is under 300 words), pushed to main. Prior board commits in the same pass: 564ee7b (ordinal collision), ecd1f19 (ninth review on TASK-44), 24e3058 (TASK-17/18 history comments).
+
+---
 <!-- COMMENTS:END -->
