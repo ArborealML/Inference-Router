@@ -29,9 +29,10 @@ contract), or a diagnosis, where a failure has to be seen to be intermittent rat
 CI supersedes an in-flight run when a newer push lands, so read the newest run on the branch, not the
 one named after your commit; a `cancelled` run there is not a failure.
 
-`--no-build` tests whatever the last Release build contained, so build Release first or it silently
-judges stale code (CI builds Release immediately before running it, which is why the failure only shows
-up locally). All three shipped samples are loaded by a test as written — `Shipped_Sample_Configs_Load_As_Written`
+`--no-build` judges whatever the last build **in the configuration you named** contained: plain
+`dotnet test` means Debug, `dotnet test --no-build -c Release` means Release, and whichever one you pick
+is silently stale if that configuration was not rebuilt after your edit. CI is safe only because it builds
+Release immediately before testing it. All three shipped samples are loaded by a test as written — `Shipped_Sample_Configs_Load_As_Written`
 — while the `config` verb validates one file at a time without binding sockets or running lifecycle
 commands.
 
@@ -48,9 +49,10 @@ warning rather than suppressing it, and add a suppression only with a comment sa
 - **The request hot path stays allocation-light.** Config is parsed once at startup into immutable
   domain types; upstream bodies are forwarded as bytes; no UTF-16 round trips on token deltas; never
   keep a borrowed span across an `await`.
-- **The wire contract is not casual.** `/v1/*` stays OpenAI-compatible. Successful and event bodies on
-  `/admin/*` are PascalCase and tests pin them, while error bodies are lowercase everywhere (§12) —
-  either casing is a wire break, so change neither (SPEC §6, §12, §15.1).
+- **The wire contract is not casual.** `/v1/*` stays OpenAI-compatible. Router-generated success and event
+  bodies on `/admin/*` are PascalCase and error bodies are one lowercase shape on every surface; the tests
+  pin selected fields and that split rather than every field, so treat either casing as frozen — changing
+  one is a wire break (SPEC §6, §6.1, and the unresolved decision in §15.1).
 - **Quote TOML keys that contain dots**: `[engine.strata.catalog."model.id"]`. Unquoted, the key
   silently nests into junk. After editing any sample, run the sample test or the `config` dry-run on the
   file you changed.
