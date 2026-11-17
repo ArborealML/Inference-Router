@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-16T20:40:00Z'
-updated_date: '2026-11-17T01:10:00Z'
+updated_date: '2026-11-17T00:47:00Z'
 labels: []
 dependencies: []
 ordinal: 2000
@@ -23,6 +23,12 @@ Closes the AIR side of the Pi protocol in SPEC 13.3: replay of session events fi
 - [ ] #2 A ready ticket is validated against the switch that produced it
 - [ ] #3 Wire tests cover each addition and the OpenAI-compatible surface stays unchanged
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+A deep-tier external review of the three board-only commits that recorded these findings is in flight; it re-checks the findings against the code and the priority order of the fix slice. An in-flight review does not change this task status. Nothing from it is adopted until verified against this code.
+<!-- SECTION:NOTES:END -->
 
 ## Status notes
 The replay slice's external review found six gaps, each verified against the code at that commit and all of them fixed in the next slice rather than left as notes: replay is snapshotted before the live subscription starts, so an event appended in that window reaches neither path, and the per-frame SSE flush widens the hole; replay caps at 1024 events while the ring holds 4096, so a reconnecting client can be silently missing a thousand events it is entitled to; the subscriber buffer drops with `DropWrite` and no counter, so a dropped terminal event can be invisible to a reader that is already filtering; a `since` cursor ahead of the ring makes the replay helper compute a negative count and throw after the SSE headers are already sent; the per-subscription channel is never completed and is not linked to shutdown, so a reader of an unknown ticket stays subscribed and the subscriber list is uncapped; and the tests open the feed only after requests finish, which proves replay isolation but never exercises the handover window. Two related items are decisions rather than fixes: a ticket-scoped reader cannot see the engine-switch events it is promised because switch events carry no ticket id, and the docs' promise that a gap in `Seq` always reveals loss is true only for an unfiltered feed. Both are recorded as acceptance gaps to settle with the fix.
