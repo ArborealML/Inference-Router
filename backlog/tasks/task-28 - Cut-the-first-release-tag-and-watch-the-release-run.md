@@ -5,13 +5,12 @@ status: Waiting
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T05:58:00Z'
-updated_date: '2026-11-17T07:28:00Z'
+updated_date: '2026-11-17T07:30:00Z'
 labels:
   - release
   - ci
 dependencies:
   - TASK-15
-  - TASK-31
 priority: medium
 ordinal: 28000
 ---
@@ -38,4 +37,6 @@ decision-10 settled the platform surface: release linux-x64 and win-x64, nothing
 
 <!-- SECTION:NOTES:BEGIN -->
 Precondition, not an acceptance criterion: the workflow must declare and gate two platforms first (TASK-15). Cut off as a criterion because that change already has an owner and a criterion of its own. Also gated by the owner task asking whether to publish at all: a tag creates a public release, and no decision on the board grants that. Status returns to Waiting when both clear.
+
+Precondition, not a criterion (it is TASK-15 AC #2 and has one owner): the workflow must no longer declare or gate on osx artifacts. Owner authorisation to publish at all is a separate task; TASK-28 is Blocked on it.
 <!-- SECTION:NOTES:END -->

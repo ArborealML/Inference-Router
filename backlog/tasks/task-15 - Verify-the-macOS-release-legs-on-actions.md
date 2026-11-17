@@ -5,12 +5,11 @@ status: In Progress
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-16T22:30:00Z'
-updated_date: '2026-11-17T07:28:00Z'
+updated_date: '2026-11-17T07:30:00Z'
 labels:
   - ci
 milestone: v0.9 - native engine lifecycle
 dependencies:
-  - TASK-13
   - TASK-22
 ordinal: 15000
 ---
@@ -18,14 +17,15 @@ ordinal: 15000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-The published surface is two platforms: decision-10 (accepted) chose to drop the macOS legs rather than buy runner minutes. What is left is implementation, and it is the repo session: release.yml still declares osx-arm64 (macos-14) and osx-x64 (macos-13), its publish gate requires four verified assets, the SHA256SUMS matrix enumerates four RIDs, and the README still tells readers that macOS binaries are coming. Until those say two, the repository claims artifacts it will never produce.
+DECIDED: the macOS legs are dropped, not funded — decision-10 is accepted. The release surface is linux-x64 and win-x64; the repository must stop advertising osx artifacts it has never built. What is left is implementation, not a decision: remove the two osx matrix legs from the release workflow, move the publish gate from four verified assets to two, correct the checksum matrix, and fix the README platform copy. Nothing here needs paid runner minutes, and no macOS binary is published; a mac user builds from source.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [x] #1 decision-10 is implemented: the workflow stops declaring osx legs and stops gating on four verified assets
+- [x] #1 Closed by decision-10: the decision to drop, fund, or publish unverified is taken (drop)
   documented warning (owner decision)
-- [ ] #2 The SHA256SUMS matrix and the README platform copy name linux-x64 and win-x64 and nothing else
+- [ ] #2 The release workflow builds and smoke-tests only linux-x64 and win-x64 on their own runners, and the publish gate counts two verified assets
+- [ ] #3 The workflow, the checksum matrix and the README stop claiming osx artifacts
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -46,6 +46,14 @@ created: 2026-11-17T06:00:00Z
 ---
 
 The decision in AC #1 is taken: **drop the macOS legs** — no paid runner minutes (decision-10). Two criteria removed rather than left as holes on a resolved task: the "if kept, one dry run completes both macOS legs green" branch can never be reached now, and "the runner image names are current for the account" stopped mattering the moment the legs went away (worth recording that they were never exercised, so nobody re-adds a leg from memory of the workflow file). What remains is AC #3 and it is code and documentation, not a decision: the workflow stops declaring and gating on osx artifacts, and the README platform table, the download copy and the checksum matrix name two platforms instead of four. Assignee is the code session because the next move is that edit.
+
+---
+
+created: 2026-11-17T07:30:00Z
+
+---
+
+Body rewritten to the accepted branch. AC #1 is closed by decision-10 and cites it rather than restating it; the old wording (paid minutes plus a tag) contradicted an accepted decision and is gone. AC #2 is now the implementation criterion the repo session is working; AC #3 covers the copy and checksum matrix. Deps on TASK-22 removed by the decision: TASK-22 is Done and its answer was the drop.
 
 ---
 <!-- COMMENTS:END -->

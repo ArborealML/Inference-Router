@@ -5,7 +5,7 @@ status: Done
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-16T20:50:00Z'
-updated_date: '2026-11-17T07:28:00Z'
+updated_date: '2026-11-17T07:30:00Z'
 labels:
   - ci
 milestone: v0.10 - live view and robustness parity
@@ -24,7 +24,7 @@ Implement exactly what the reviewed design specifies, then prove it: a push run,
 <!-- AC:BEGIN -->
 - [x] #1 ci.yml runs on push to main and on pull requests
 - [x] #2 release.yml refuses a duplicate tag before any build work starts
-- [ ] #3 The declared platform artifacts (linux-x64, win-x64) build, verify on their own runners, and only then publish - carried by TASK-15 (drop the macOS legs) and proven by TASK-28 (the first tag run)
+- [ ] #3 The declared platform artifacts (linux-x64, win-x64) build, verify on their own runners, and only then publish — carried by TASK-15 (workflow and copy) and TASK-28 (the tag run)
 <!-- AC:END -->
 
 ## Comments
