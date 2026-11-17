@@ -5,7 +5,7 @@ status: Waiting
 assignee:
   - '@claire'
 created_date: '2026-11-17T05:59:00Z'
-updated_date: '2026-11-17T13:30:00Z'
+updated_date: '2026-11-17T13:44:00Z'
 labels:
   - docs
 dependencies:
@@ -109,6 +109,14 @@ created: 2026-11-17T13:30:00Z
 **Fourth check, measured by the board at 8f78a73 (13:2xZ), and the card is still not live.** The repository page serves `og:image` = `repository-images.githubusercontent.com/1460450305/...`, GitHub's generated image. Fetched the link-preview object directly: 1200x600, 88.7% light pixels — our committed card is 96.1% dark field, 3.9% light, so the card GitHub shows is not ours. The avatar **is** live and re-confirmed independently: 460x460, 82.6% dark / 16.7% light against our export's 82.4/16.7.
 
 Moved to **Waiting** rather than Blocked because there is now an event that wakes it: [TASK-46](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-46%20-%20Render-the-final-social-preview-card-and-verify-it-from-outside-the-form.md) is re-rendering the card, because the committed one fails its own legibility bar — its smallest text line has ~19 px caps in the 1280x640 raster and a GitHub link preview shows the card at about 600 px wide, so that line lands near 9 px. Uploading today's PNG is still open to anyone who wants a card now: it is 30,842 bytes, under GitHub's 1 MB ceiling, and replacing it later is a second trip to the same form with nothing burned. What the board does not want is a third upload of an image that fails the measurement in TASK-46 AC #2.
+
+---
+
+created: 2026-11-17T13:44:00Z
+
+---
+
+**Heads-up on a number in this task's own text, so it is not trusted after it goes stale.** The byte size and sha256 quoted above (30,842 B, `b02b6d32...97e9`) belong to the card as committed today. [TASK-46] (https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-46%20-%20Render-the-final-social-preview-card-and-verify-it-from-outside-the-form.md) is replacing that image: the committed card's smallest text line measures 20 px cap height and a link preview shrinks it to about 9 px, which is unreadable. The replacement candidate is measured at 42 px on the same line and is already verified for determinism and geometry, but it is not committed yet. **Pick whatever `docs/images/air-social-1280x640.png` holds when the upload happens, and re-read its sha256 from the file rather than from this task.** Nothing here burns anything: replacing a social-preview image is a second trip to the same form.
 
 ---
 <!-- COMMENTS:END -->

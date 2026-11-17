@@ -5,7 +5,7 @@ status: To Do
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T10:52:00Z'
-updated_date: '2026-11-17T10:58:00Z'
+updated_date: '2026-11-17T13:43:00Z'
 labels:
   - docs
 dependencies: []
@@ -53,3 +53,21 @@ two minutes. The avatar is live and already verified from outside the form; see 
 - [ ] #4 docs/images/README.md records the renderer, the font that actually resolved, the byte size and sha256 of the committed PNG, and those numbers are quoted in a comment on TASK-29 so the upload is download-and-pick
 - [ ] #5 after a person presses Save, the public check is run and reported: curl -s https://github.com/ArborealML/Inference-Router | grep og:image
 <!-- AC:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+created: 2026-11-17T13:43:00Z
+
+---
+
+**The image-prep half ran as a subagent in a scratch directory (no repo writes); it is done, and this board session re-measured its numbers rather than repeating them.** Artifacts are kept untracked under `.local/card-prep/`: `air-social-candidate-A.svg` + `-1280x640.png` (recommended), candidate B (tagline copy cut) and candidate C (full re-composition) with their rasters, a 640x320 preview raster of A, the measurement and downscale scripts, and the child's full report (`CARD-REPORT.md`).
+
+**Verified by this session, not inherited.** Rendering `.local/card-prep/air-social-candidate-A.svg` twice with the documented pipeline (resvg 2.6.2 via `@resvg/resvg-js`, `defaultFontFamily`/`sansSerifFamily` pinned to DejaVu Sans, `fitTo:{mode:'original'}`) gives the same bytes both times and equals the shipped PNG: 1280x640, 38,150 bytes, sha256 `cee3237b7f980d12259d6aad082a9473f12214115b36e0239d85c8147ec98f09`. Measured from pixels with the corrected measurer: text bands at rows 191-299, 332-380, 408-460 with cap heights **109 / 48 / 42 px** against AC #2's 40 px floor; ring ink 0 on all four sides at both the light threshold and the off-field threshold that also sees the `#2B806C` accent; rightmost ink at x=1200, so a 79 px right margin; 3/3 bands still carry ink at 640x320. The committed card, measured the same way in the same text column, gives caps **109 / 29 / 20 px** — the 20 px tagline is the defect AC #2 exists to kill, and A takes it to 42 px.
+
+**What the coding session owes before committing any of this** (a provenance claim is only as good as the check someone ran): (1) re-render inside the repo from the committed SVG and require the raster to match the artifact's sha256 byte-for-byte, so the PNG in `docs/images/` is provably the render of the SVG next to it; (2) re-measure dimensions and cap heights after that render rather than trusting this comment; (3) update the `docs/images/README.md` row with the renderer, the font that actually resolved, the size, the bytes and the sha256, and keep the note that the raster's lettering is **DejaVu Sans**, not the `system-ui` stack the SVG asks for — the child's honest limit, worth repeating: DejaVu Sans measures a cap ratio of about 0.73 em, and a face with a smaller cap ratio would pull A's font-size-56 tagline back under the 40 px floor, so the floor is proven for this box's face only.
+
+**The remaining choice is copy, not layout, and it is cheap to change now and expensive to change after upload.** A keeps all three lines verbatim and raises the tagline to font-size 56 — which puts it close to the 64 px name line, so the hierarchy rests on colour. B deletes the tagline copy entirely and gets bigger type (min cap 47) and a smaller file (29,005 B). C re-composes the card (mark centred on top, horizontal accent rule) with min cap 44 and the widest safety margins but the smallest mark. Which one ships is a taste call; A is the recommendation because it changes the least and loses no copy.
+
+---
+<!-- COMMENTS:END -->
