@@ -36,7 +36,7 @@ ordinal: 23500
        curl -s https://github.com/ArborealML/Inference-Router | grep -o '<meta property="og:image"[^>]*>'
 
    Ours prints `opengraph.githubassets.com/...` once the card is live; GitHub's generated card prints
-   `repository-images.githubusercontent.com/1460450305/...`. Re-checked at 17:3xZ: it prints the second, so the
+   `repository-images.githubusercontent.com/1460450305/...`. Re-checked at 19:0xZ: it prints the second, so the
    upload still has not taken.
 
 **Nothing to do for the avatar:** the organisation picture is live and verified from outside the form (TASK-23).

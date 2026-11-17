@@ -40,7 +40,7 @@ never observed, and rehearsing it here would spend another name.
 - [ ] #2 evidence for whether `contents: write` from `GITHUB_TOKEN` suffices for upload plus the un-draft `PATCH`, and whether the workflow-write guard fires for a tag at the head of `main`
 - [x] #3 the run records what `.target_commitish` says on a real create, and what the tag object SHA and the peeled commit SHA were
 - [ ] #4 the refusal of an asset replacement and of a tag move on a **published immutable release** is observed, and the task records where it was measured — the disposable repository is an acceptable venue, the published canary is not
-- [ ] #5 the canary's disposition is decided and recorded here: kept as a permanent prerelease, or deleted — the name stays reserved either way
+- [x] #5 the canary's disposition is decided and recorded here: **kept** as a permanent prerelease, the owner's word at 18:5xZ (`keep`) — the name stays reserved either way
 - [ ] #6 nothing auto-deletes a release whose disposition is uncertain; if a probe is skipped, the skip and its reason are recorded here
 - [ ] #7 TASK-48 has what it needs to prove a download: a published release, its asset inventory, and digests of the bytes served
 <!-- AC:END -->
