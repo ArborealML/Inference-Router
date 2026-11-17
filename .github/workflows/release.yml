@@ -95,8 +95,8 @@ jobs:
           # these are: numbers that look like statuses appearing in the text, not verified statuses. A
           # response can write "mystatus=403" and forge one; that misleads triage and nothing else,
           # because the refusal is decided by the exit status above, not by this.
-          http_codes() { LC_ALL=C grep -oE '(HTTP|status)[^0-9]{0,4}[1-5][0-9]{2}' "$1" 2>/dev/null \
-                           | LC_ALL=C grep -oE '[0-9]{3}' | head -n 3 | paste -sd, - || true; }
+          http_codes() { LC_ALL=C grep -oE '(HTTP/[0-9][0-9.]*[[:space:]]+|HTTP[[:space:]]+|status[^0-9]{0,4})[1-5][0-9]{2}([^0-9A-Za-z]|$)' "$1" 2>/dev/null \
+                           | LC_ALL=C grep -oE '[1-5][0-9]{2}' | head -n 3 | paste -sd, - || true; }
           # Note: the "release by tag name" endpoint hides drafts, so list and filter instead —
           # a half-finished draft from an earlier run must block a new build just as a published
           # release does. --paginate means a second page of releases cannot hide an existing one,
@@ -119,7 +119,7 @@ jobs:
           rc=0
           existing="$(gh api --paginate "repos/{owner}/{repo}/releases?per_page=100" 2>"$list_err")" || rc=$?
           if [ "$rc" != 0 ]; then
-            echo "::error::could not read this repository's releases (gh exited $rc; status-like numbers mentioned in stderr: $(http_codes "$list_err" | sed 's/^$/none/')) — a release for $TAG cannot be ruled out, so not building"
+            printf '%s\n' "::error::could not read this repository's releases (gh exited $rc; status-like numbers mentioned in stderr: $(http_codes "$list_err" | sed 's/^$/none/')) — a release for $TAG cannot be ruled out, so not building"
             exit 1
           fi
           if [ -z "$existing" ]; then
@@ -388,11 +388,28 @@ jobs:
           # line: the runner scans stdout for workflow commands, so a field value from a server must
           # not be able to speak as one, and a long value is cut. rsum() renders the fields this step
           # cares about as text for the message only — nothing is compared against it. brief() reduces a
-          # value to printable ASCII before the length cut: a control character, an ANSI escape, a bidi
-          # override or a mid-sequence UTF-8 byte from a response has no business in the log either, and
-          # cutting after tr (instead of head) means no producer dies of SIGPIPE under pipefail, so a
-          # diagnostic cannot come out silently empty.
-          brief() { printf '%s' "$1" | LC_ALL=C tr -c '\40-\176' '?' | LC_ALL=C cut -c1-200 | sed -e 's/%/%25/g' -e 's/:/%3A/g'; }
+          # value to printable ASCII first: a control character, an ANSI escape, a bidi override or a
+          # mid-sequence UTF-8 byte from a response has no business in the log either. Then it cuts,
+          # KEEPING THE END of the value, and only then escapes: cutting before escaping means no %25 or
+          # %3A is ever split in half, and the bound counts characters, so the emitted bytes are at most
+          # three times the bound (a value that is all colons is the worst case). A head-only cut was the
+          # defect: the fields this step prints end with upload_url, so a long tag or name erased exactly
+          # the field that explains the refusal. Cutting with tr upstream (instead of head) also means no
+          # producer dies of SIGPIPE under pipefail, so a diagnostic cannot come out silently empty.
+          brief() {
+            local v bound n half
+            v="$(printf '%s' "$1" | LC_ALL=C tr -c '\40-\176' '?')"
+            bound="${2:-200}"; n=${#v}
+            if [ "$n" -gt "$bound" ]; then
+              half=$((bound / 2)); v="${v:0:half}+(${n}ch)+${v:n-half}"
+            fi
+            printf '%s' "$v" | sed -e 's/%/%25/g' -e 's/:/%3A/g'
+          }
+          # rsum_line is the longest rsum() can emit for these six fields: six caps (20+40+40+12+12+60),
+          # two quote characters and one "+(Nch)+" marker per string field, and the labels. 340 is above
+          # that, so brief() never cuts an rsum line; the harness case with maximally long tag AND url
+          # proves it by requiring the whole rendered line to survive.
+          rsum_line=340
           # One bounded field at a time. A value is shown as what it is — a string up to its cap with its
           # true length after it, a number or boolean as JSON, a missing field as "absent" — so a long
           # field cannot push the flags out of the summary, and a wrong type is visible as a wrong type
@@ -400,20 +417,36 @@ jobs:
           # control-free and escapes the workflow-command punctuation, and the caps keep it short; what a
           # response chooses to put in its own name is still shown. Nothing here is compared against.
           rsum() { printf '%s' "$1" | jq -s -r '
-              def sstr(v; n): ((v | length) as $L
-                               | if $L > n then v[0:((n / 2) | floor)] + "+(" + ($L | tostring) + "ch)+" + v[($L - ((n / 2) | floor)):]
-                                 else v end);
-              def show(v; n): ((if v == null then "absent"
-                                 elif (v | type) == "object" then "<object>"
-                                 elif (v | type) == "array" then "<array>"
-                                 elif (v | type) == "string" then v
-                                 else (v | tojson) end) as $t | sstr($t; n));
+              def q(x): x | tojson | .[1:-1];            # JSON-escape a piece, drop its own quotes
+              def show(r; k; n):
+                if (r | has(k) | not) then "<missing>"
+                elif r[k] == null then "<null>"
+                elif (r[k] | type) == "object" then "<object>"
+                elif (r[k] | type) == "array" then "<array>"
+                elif (r[k] | type) == "string"
+                  then ((r[k] | length) as $L
+                        | if $L > n
+                          then "\"" + q(r[k][0:((n / 2) | floor)]) + "+(" + ($L | tostring) + "ch)+" + q(r[k][$L - ((n / 2) | floor):]) + "\""
+                          else r[k] | tojson end)
+                else (r[k] | tojson) end;
               if length != 1 or ((.[0] | type) != "object") then "unreadable response"
               else .[0] as $r
-                   | "id=" + show($r.id; 20) + " tag=" + show($r.tag_name; 40)
-                     + " name=" + show($r.name; 40) + " draft=" + show($r.draft; 12)
-                     + " pre=" + show($r.prerelease; 12) + " upload_url=" + show($r.upload_url; 60)
+                   | "id=" + show($r; "id"; 20) + " tag=" + show($r; "tag_name"; 40)
+                     + " name=" + show($r; "name"; 40) + " draft=" + show($r; "draft"; 12)
+                     + " pre=" + show($r; "prerelease"; 12) + " upload_url=" + show($r; "upload_url"; 60)
               end' 2>/dev/null || echo "unreadable response"; }
+          # A head+tail cut cannot tell two long addresses apart when they differ in the middle: two
+          # 124-character upload_urls differing only at character 71 render IDENTICALLY. So the refusal
+          # that is about an address names where the two part instead of pretending a rendering is a
+          # comparison. Message only — the decision is still made by jq against the JSON.
+          fdiff() {
+            local a="$1" b="$2" i=0
+            while [ "$i" -lt "${#a}" ] && [ "$i" -lt "${#b}" ] && [ "${a:i:1}" = "${b:i:1}" ]; do
+              i=$((i + 1))
+            done
+            printf 'first difference at char %d (got %s | want %s)' "$((i + 1))" \
+              "$(brief "${a:i:12}" 24)" "$(brief "${b:i:12}" 24)"
+          }
           # Preflight proved the tag exists, and the tag was never the thing at issue: a tag can move
           # after preflight. Re-resolve it and compare against what the legs
           # actually built, or a tag moved after preflight would publish somebody else's commit.
@@ -486,7 +519,12 @@ jobs:
                    and (.upload_url[$pfxlen:] == ("/releases/" + (.id | tostring) + "/assets{?name,label}"))
                    and .tag_name == $tag and .name == $tag and .draft == true and .prerelease == $pre))' \
                >/dev/null; then
-            echo "::error::create did not answer with a canonical id, tag $TAG, title $TAG, draft=true, prerelease=$prerelease and the documented upload address for that id (fields: $(brief "$(rsum "$created")")) — not publishing, and leaving whatever exists for a human"
+            # Diagnostics only: the jq check above made the decision. The address pair is reported by
+            # where it first differs, because a head+tail rendering of two 124-character addresses that
+            # differ at character 71 is the same string twice.
+            got_url="$(printf '%s' "$created" | jq -s -r 'if length == 1 and ((.[0] | type) == "object") then ((.[0].upload_url // "") | tostring) else "" end' 2>/dev/null || true)"
+            got_id="$(printf '%s' "$created" | jq -s -r 'if length == 1 and ((.[0] | type) == "object") and ((.[0].id | type) == "number") then (.[0].id | tostring) else "<not-a-number>" end' 2>/dev/null || true)"
+            printf '%s\n' "::error::create did not answer with a canonical id, tag $TAG, title $TAG, draft=true, prerelease=$prerelease and the documented upload address for that id (fields: $(brief "$(rsum "$created")" "$rsum_line"); upload_url $(fdiff "$got_url" "${want_prefix}/releases/${got_id}/assets{?name,label}")) — not publishing, and leaving whatever exists for a human"
             exit 1
           fi
           rel_id="$(printf '%s' "$created" | jq -r '.id')"
@@ -511,7 +549,7 @@ jobs:
             asset_id="$(gh api -X POST "${upload_base}?name=$n" -H 'Content-Type: application/octet-stream' --input "stage/$n" --jq '.id')"
             case "${asset_id:-}" in
               ''|*[!0-9]*)
-                echo "::error::upload of $n to release $rel_id returned no asset id (got ${asset_id:-nothing}) — not publishing, and leaving draft $rel_id for a human"
+                printf '%s\n' "::error::upload of $n to release $rel_id returned no asset id (got ${asset_id:-nothing}) — not publishing, and leaving draft $rel_id for a human"
                 exit 1
                 ;;
             esac
@@ -571,7 +609,7 @@ jobs:
               want_size="$(stat -c %s "stage/$n")"
               want_digest="sha256:$(sha256sum "stage/$n" | cut -d' ' -f1)"
               if [ "$(printf '%s\n' "$rows" | grep -c .)" != "1" ] || [ "${state:-absent}" != "uploaded" ] || [ "${size:-0}" != "$want_size" ] || [ "${digest:-none}" != "$want_digest" ]; then
-                echo "::error::asset $n is [${state:-absent} ${size:-0} ${digest:-none}] ($(printf '%s\n' "$rows" | grep -c .) row(s)), expected [uploaded $want_size $want_digest] in exactly one row — not publishing"
+                printf '%s\n' "::error::asset $n is [${state:-absent} ${size:-0} ${digest:-none}] ($(printf '%s\n' "$rows" | grep -c .) row(s)), expected [uploaded $want_size $want_digest] in exactly one row — not publishing"
                 exit 1
               fi
             done
@@ -586,7 +624,7 @@ jobs:
                  'length == 1 and ((.[0]
                    | .id == $rid and .tag_name == $tag and .name == $tag and .draft == true and .prerelease == $pre))' \
                  >/dev/null; then
-              echo "::error::release read-back is not this run's draft for $TAG (fields: $(brief "$(rsum "$rel_json")")), expected id $rel_id, title $TAG, draft=true, prerelease=$prerelease — not publishing"
+              printf '%s\n' "::error::release read-back is not this run's draft for $TAG (fields: $(brief "$(rsum "$rel_json")" "$rsum_line")), expected id $rel_id, title $TAG, draft=true, prerelease=$prerelease — not publishing"
               exit 1
             fi
           }
@@ -653,23 +691,35 @@ jobs:
             fi
             exit 0
           fi
-          brief() { printf '%s' "$1" | LC_ALL=C tr -c '\40-\176' '?' | LC_ALL=C cut -c1-200 | sed -e 's/%/%25/g' -e 's/:/%3A/g'; }
+          brief() {
+            local v bound n half
+            v="$(printf '%s' "$1" | LC_ALL=C tr -c '\40-\176' '?')"
+            bound="${2:-200}"; n=${#v}
+            if [ "$n" -gt "$bound" ]; then
+              half=$((bound / 2)); v="${v:0:half}+(${n}ch)+${v:n-half}"
+            fi
+            printf '%s' "$v" | sed -e 's/%/%25/g' -e 's/:/%3A/g'
+          }
+          rsum_line=340
           rsum() { printf '%s' "$1" | jq -s -r '
-              def sstr(v; n): ((v | length) as $L
-                               | if $L > n then v[0:((n / 2) | floor)] + "+(" + ($L | tostring) + "ch)+" + v[($L - ((n / 2) | floor)):]
-                                 else v end);
-              def show(v; n): ((if v == null then "absent"
-                                 elif (v | type) == "object" then "<object>"
-                                 elif (v | type) == "array" then "<array>"
-                                 elif (v | type) == "string" then v
-                                 else (v | tojson) end) as $t | sstr($t; n));
+              def q(x): x | tojson | .[1:-1];            # JSON-escape a piece, drop its own quotes
+              def show(r; k; n):
+                if (r | has(k) | not) then "<missing>"
+                elif r[k] == null then "<null>"
+                elif (r[k] | type) == "object" then "<object>"
+                elif (r[k] | type) == "array" then "<array>"
+                elif (r[k] | type) == "string"
+                  then ((r[k] | length) as $L
+                        | if $L > n
+                          then "\"" + q(r[k][0:((n / 2) | floor)]) + "+(" + ($L | tostring) + "ch)+" + q(r[k][$L - ((n / 2) | floor):]) + "\""
+                          else r[k] | tojson end)
+                else (r[k] | tojson) end;
               if length != 1 or ((.[0] | type) != "object") then "unreadable response"
               else .[0] as $r
-                   | "id=" + show($r.id; 20) + " tag=" + show($r.tag_name; 40)
-                     + " name=" + show($r.name; 40) + " draft=" + show($r.draft; 12)
-                     + " pre=" + show($r.prerelease; 12)
-              end' 2>/dev/null \
-                     || echo "unreadable response"; }
+                   | "id=" + show($r; "id"; 20) + " tag=" + show($r; "tag_name"; 40)
+                     + " name=" + show($r; "name"; 40) + " draft=" + show($r; "draft"; 12)
+                     + " pre=" + show($r; "prerelease"; 12)
+              end' 2>/dev/null || echo "unreadable response"; }
           # The empty string matches `*[!0-9]*` as "no bad characters" and would be deleted by name.
           # Nothing reaches here empty — the step exits earlier — but a DELETE guard that is only
           # accidentally correct is not a guard.
@@ -690,7 +740,7 @@ jobs:
                'length == 1 and ((.[0]
                  | (.id | type) == "number" and .id == $rid and .tag_name == $tag and .draft == true))' \
                >/dev/null; then
-            echo "release $CREATED_ID is not provably this run's unpublished draft of $TAG (fields: $(brief "$(rsum "$rel")")); leaving it"
+            printf '%s\n' "release $CREATED_ID is not provably this run's unpublished draft of $TAG (fields: $(brief "$(rsum "$rel")" "$rsum_line")); leaving it"
             exit 0
           fi
           gh api -X DELETE "repos/{owner}/{repo}/releases/$CREATED_ID"

@@ -257,6 +257,8 @@ $CREATE_EXTRA_DOC"; fi
         ;;
       *"/releases?"*)                                 # the releases list, for preflight
         if [ "${PREFLIGHT_FAIL:-0}" = 1 ]; then echo "HTTP 502: Bad Gateway" >&2; exit 1; fi
+        # arbitrary stderr text, to pin which numbers the diagnostic may call a status
+        if [ -n "${PREFLIGHT_STDERR:-}" ]; then printf '%s\n' "$PREFLIGHT_STDERR" >&2; exit 1; fi
         # a credential-bearing stderr line: the step may log the failure, never the credential
         if [ "${PREFLIGHT_ERRTOKEN:-0}" = 1 ]; then
           echo "gh: HTTP 502 (proxy) token=ghp_$(printf 'a%.0s' {1..40})" >&2; exit 1
@@ -895,9 +897,10 @@ def main():
     p = run_step(b["publish"], wd, {"CREATED_NAME": nasty}, "publish")
     outw = p.stdout + p.stderr
     seg = outw.split("(fields: ", 1)[1].split(")", 1)[0] if "(fields: " in outw else ""
-    ok = (p.returncode != 0 and "\x1b" not in outw and "?[31mred?[0m" in outw
-          and seg.isascii() and "caf\u00e9" not in outw and "\u202e" not in outw)
-    print(f"{'PASS' if ok else 'FAIL'}  publish: pub_log_control      esc_bytes={int(chr(27) in outw)} encoded={int('?31mred?' in outw)} field_text_ascii={int(seg.isascii())}  a response's control characters and non-ASCII reach the log only as ?")
+    ok = (p.returncode != 0 and "\x1b" not in outw
+          and ("?[31mred?[0m" in outw or "\\u001b[31mred" in outw)
+          and seg.isascii() and "caf\u00e9" not in outw and "\u202e" not in outw and "red" in outw)
+    print(f"{'PASS' if ok else 'FAIL'}  publish: pub_log_control      esc_bytes={int(chr(27) in outw)} encoded={int('?31mred?' in outw)} field_text_ascii={int(seg.isascii())}  a response's control characters and non-ASCII reach the log only as ? or as a visible JSON escape, never raw")
     if not ok:
         fails += 1
         print("      ", " | ".join(outw.splitlines()[-3:])[:300])
@@ -1086,6 +1089,79 @@ def main():
     ok = (p.returncode != 0 and "draft=true" in out and "pre=false" in out and "upload_url=" in out
           and "y" * 200 not in out)
     print(f"{'PASS' if ok else 'FAIL'}  publish: {'name_crowding':<18} rc={p.returncode} draft={int('draft=true' in out)} pre={int('pre=false' in out)} url={int('upload_url=' in out)}  a 300-character title cannot hide the flags behind it")
+    if not ok:
+        fails += 1
+        print("      ", " | ".join(msgs(p)[-2:])[:300])
+
+    # The declared line bound must never bite: with a long tag AND a long upload address, every label
+    # and the END of the address still reach the log, and no marker carries the length of the whole
+    # line (that would mean brief() cut the line rather than a field). Escaping still applies, so the
+    # segment is ASCII and every colon is %3A.
+    long_tag = "v0.1.0" + "T" * 94                                  # 100 characters
+    long_url = ("https://uploads.github.com/repos/o/r/releases/12345/assets"
+                + "u" * 34 + "-TAILMARK")                          # 103 characters
+    raw_long = ('{"id":12345,"tag_name":"%s","name":"v0.1.0","draft":true,"prerelease":false,'
+                '"upload_url":"%s"}') % (long_tag, long_url)
+    wd = make_fixture("pub_line_bound", "good")
+    p = run_step(b["publish"], wd, {"CREATE_BODY_RAW": raw_long}, "publish")
+    out = p.stdout + p.stderr
+    seg = out.split("(fields: ", 1)[1].split(") \u2014 not publishing", 1)[0] if "(fields: " in out else ""
+    marks = [int(m) for m in re.findall(r"\+\((\d+)ch\)+", seg)]
+    ok = (p.returncode != 0 and all(lbl in seg for lbl in
+          ("id=", " tag=", " name=", " draft=", " pre=", " upload_url="))
+          and "TAILMARK" in seg and seg.isascii() and "%3A" in seg
+          and bool(marks) and max(marks) <= 103)
+    print(f"{'PASS' if ok else 'FAIL'}  publish: {'line_bound_tail':<18} rc={p.returncode} labels={int(all(l in seg for l in ('id=',' tag=',' name=',' draft=',' pre=',' upload_url=')))} tail={int('TAILMARK' in seg)} maxmark={max(marks) if marks else 0}  a long tag and a long address cannot erase the field that explains the refusal")
+    if not ok:
+        fails += 1
+        print("      ", " | ".join(msgs(p)[-2:])[:300])
+
+    # Type and presence are visible: the string "false" is quoted and a boolean is not, an absent field
+    # says <missing>, a null says <null>, and a value that happens to spell "absent" is quoted so it
+    # cannot be read as a missing field.
+    for raw, want, label in (
+        ('{"id":12345,"tag_name":"v0.1.0","name":"v0.1.0","draft":"false","prerelease":false,'
+         '"upload_url":"https://uploads.github.com/repos/o/r/releases/12345/assets{?name,label}"}',
+         'draft="false"', "a string flag is quoted where a boolean is not"),
+        ('{"id":12345,"tag_name":"v0.1.0","name":"v0.1.0","draft":false,"prerelease":false}',
+         'draft=false pre=false upload_url=<missing>', "an absent field says <missing>"),
+        ('{"id":12345,"tag_name":"v0.1.0","name":"absent","draft":null,"prerelease":false}',
+         'name="absent" draft=<null>', "a value that spells absent is quoted; a null says <null>"),
+    ):
+        wd = make_fixture("pub_type_presence", "good")
+        p = run_step(b["publish"], wd, {"CREATE_BODY_RAW": raw}, "publish")
+        out = p.stdout + p.stderr
+        seg = out.split("(fields: ", 1)[1].split(") \u2014 not publishing", 1)[0] if "(fields: " in out else ""
+        ok = p.returncode != 0 and want in seg
+        print(f"{'PASS' if ok else 'FAIL'}  publish: {'type_presence':<18} want={want!r:<42} rc={p.returncode}  {label}")
+        if not ok:
+            fails += 1
+            print("      ", " | ".join(msgs(p)[-2:])[:300])
+
+    # Which numbers the diagnostic may call a status: HTTP/2 500 is one, and HTTP/2 5000, 500ms and
+    # 4040 are not. A wrong census sends a human hunting for a status that was never returned.
+    for err, want_codes in (("curl: (22) The requested URL returned error: HTTP/2 500", "500"),
+                            ("note: HTTP/2 5000 and 500ms and 4040 in one line", "none")):
+        wd = make_fixture("pre_http2_status", "good")
+        p = run_step(b["preflight_release_check"], wd, {"PREFLIGHT_STDERR": err}, "preflight")
+        out = p.stdout + p.stderr
+        ok = p.returncode != 0 and ("mentioned in stderr: " + want_codes) in out
+        print(f"{'PASS' if ok else 'FAIL'}  preflight: {'http2_status':<16} rc={p.returncode} census={want_codes!r:<6} text={err[:24]!r}  an HTTP/2 status line is read; a length or a longer number is not")
+        if not ok:
+            fails += 1
+            print("      ", " | ".join(msgs(p)[-2:])[:300])
+
+    # A refusal about an upload address names where the address first parts from the documented one.
+    want_addr = "https://uploads.github.com/repos/o/r/releases/12345/assets{?name,label}"
+    got_addr = want_addr[:70] + "x" + want_addr[71:]
+    wd = make_fixture("pub_fdiff_offset", "good")
+    raw_fdiff = ('{"id":12345,"tag_name":"v0.1.0","name":"v0.1.0","draft":true,"prerelease":false,'
+                 '"upload_url":"%s"}') % got_addr
+    p = run_step(b["publish"], wd, {"CREATE_BODY_RAW": raw_fdiff}, "publish")
+    out = p.stdout + p.stderr
+    ok = (p.returncode != 0 and "first difference at char 71" in out
+          and "upload_url " in out and "not publishing" in out)
+    print(f"{'PASS' if ok else 'FAIL'}  publish: {'fdiff_offset':<18} rc={p.returncode} offset={int('first difference at char 71' in out)}  an address that differs in the middle is reported by where it differs, not by a rendering")
     if not ok:
         fails += 1
         print("      ", " | ".join(msgs(p)[-2:])[:300])
