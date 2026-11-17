@@ -516,6 +516,15 @@ public class EndToEndTests
         Assert.Contains("does not retry or fall back", failure.Reason);
         // One terminal failure, not a retry loop wearing the engine down.
         Assert.Single(router.Events.Replay(0), e => e.Kind == "engine.switch_failed");
+        // Ordering invariant (§10): the feed records the switch outcome before the request that waited
+        // on it fails, so nobody tailing /admin/events sees a failed ticket whose reason is still
+        // missing. This is also what keeps this test from racing the switch's own failure.
+        var feed = router.Events.Replay(0);
+        var switchFailure = feed.First(e => e.Kind == "engine.switch_failed");
+        var requestFailure = feed.FirstOrDefault(e => e.Kind == "request.failed" && e.TicketId == ticket.Id);
+        Assert.NotNull(requestFailure);
+        Assert.True(switchFailure.Seq < requestFailure!.Seq,
+            "engine.switch_failed must reach the feed before the request.failed it causes");
     }
 
     /// <summary>Context-window escalation (§7.6): the model is loaded but serving a smaller window

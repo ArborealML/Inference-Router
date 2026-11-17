@@ -1,6 +1,6 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.8.8)
+Status: draft, continuously revised (v0.12.3)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
@@ -167,6 +167,19 @@ daemon transaction per engine. 137 tests green.
   the counted copy, so a caller that understates its length is still cut off. Refusal is the router's own
   error contract — 413 `request_body_too_large`, lowercase like every other error body — rather than
   whatever the host would have answered. 130 tests green.
+- v0.12.3 — the event feed records a terminal outcome **before** it wakes the waiters that outcome ends.
+  `EngineRuntime.RunSwitchAsync` completed the shared readiness task and only then appended
+  `engine.switch_failed`/`engine.switch_completed`, and `RouterCore.Complete`/`Fail` resolved the ticket's
+  completion task before appending `request.completed`/`request.failed`/`request.cancelled`. Both left a
+  window: a ticket could be observably `Failed` (caller already answered 503 `switch_failed`) while the
+  feed still had nothing to explain it, and a client that awaited its ticket and immediately replayed its
+  own history (`/admin/tickets/{id}/events`) could read a stream that had not reached its ending. An
+  operator watching `/admin/events` saw a failed request with no reason and no way to tell whether the
+  router was retrying. Every path now appends first and wakes waiters second. This is the §10 ordering
+  rule above, and it is what de-flaked the readiness-timeout end-to-end test, which had been racing
+  exactly this window (it failed under a loaded runner and passed in isolation; three concurrent
+  full-suite runs are green after the fix, and the test now asserts the event ordering itself).
+  137 tests green.
 
 ## 1. Overview
 
@@ -897,7 +910,10 @@ cursor ahead of the ring (a client reconnecting with a sequence from a previous 
 clamped to the current head, so the live tail still flows instead of a feed that can never deliver
 anything. The retention boundary is the only place events disappear. A subscriber's snapshot and its
 live subscription are taken together, so an event appended between the two is neither lost nor
-delivered twice. Subscribers get a bounded buffer (256 events) and the feed of a consumer that falls
+delivered twice. The feed is also **causally ordered**: every terminal outcome — an engine switch, a
+completed, cancelled or failed request — is appended before the caller waiting on it is woken, so a
+client that awaits its own ticket and then replays its history, or an operator tailing `/admin/events`,
+never arrives a moment before the explanation does. Subscribers get a bounded buffer (256 events) and the feed of a consumer that falls
 behind is **ended** rather than silently pruned: on a filtered feed a dropped event leaves no `Seq`
 gap, so an ended stream is the strongest signal available — reconnect from the last `Seq` you saw. It
 does **not** say how much was missed, and it looks the same as a feed that ended normally; nothing

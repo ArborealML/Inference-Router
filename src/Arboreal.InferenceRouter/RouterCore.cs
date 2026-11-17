@@ -641,7 +641,9 @@ public sealed class RouterCore : IInferenceRouter
         // then reads /admin/status must see its own request accounted for, not a stale snapshot.
         var thread = TicketThread(ticket);
         if (thread is not null) Interlocked.Increment(ref thread.Completed);
-        ticket.CompletionTcs.TrySetResult(body ?? []);
+        // And the same rule for the feed (§10): the terminal event is appended before the caller is
+        // woken, so a client that awaits its own ticket and then replays its history (or tails
+        // /admin/events) finds its ending already there instead of racing it.
         _events.Append(new RouterEvent
         {
             Kind = "request.completed",
@@ -650,6 +652,7 @@ public sealed class RouterCore : IInferenceRouter
             Engine = ticket.Engine,
             Model = ticket.Model,
         });
+        ticket.CompletionTcs.TrySetResult(body ?? []);
         SignalDispatch();
     }
 
@@ -666,7 +669,6 @@ public sealed class RouterCore : IInferenceRouter
         // channel until its writer completes, so a failure that leaves the channel open parks the
         // caller on a 200 response that can no longer say anything — not even its own error frame.
         ticket.StreamChannel?.Writer.TryComplete();
-        ticket.CompletionTcs.TrySetException(new RouterRequestException(code, message));
         _events.Append(new RouterEvent
         {
             Kind = code is "cancelled" ? "request.cancelled" : "request.failed",
@@ -676,6 +678,7 @@ public sealed class RouterCore : IInferenceRouter
             Model = ticket.Model,
             Reason = message,
         });
+        ticket.CompletionTcs.TrySetException(new RouterRequestException(code, message));
         SignalDispatch();
     }
 

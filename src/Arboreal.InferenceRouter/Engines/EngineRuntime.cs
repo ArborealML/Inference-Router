@@ -352,6 +352,12 @@ public sealed class EngineRuntime : IAsyncDisposable
         return IsReadyFor(canonical, profileOverride);
     }
 
+    /// <summary>
+    /// Runs one switch transaction and resolves its shared readiness task. Ordering rule: the feed
+    /// records the outcome *before* the waiters are woken. A ticket that fails because a switch failed
+    /// is observable the instant `Ready` completes, so an event published afterwards leaves a window
+    /// where an operator (or a test) sees a failed request with no explanation on the feed yet.
+    /// </summary>
     private async Task RunSwitchAsync(SwitchState state, string model, ServingProfile? profileOverride, CancellationToken ct)
     {
         try
@@ -359,8 +365,8 @@ public sealed class EngineRuntime : IAsyncDisposable
             var def = _config.Engines[_def.Name];
             if (!def.Catalog.TryGetValue(model, out var md))
             {
-                state.Ready.TrySetResult(false);
                 Emit("engine.switch_failed", model: model, reason: "no_select_command");
+                state.Ready.TrySetResult(false);
                 return;
             }
             var profileName = profileOverride?.Name ?? md.Profile;
@@ -373,7 +379,6 @@ public sealed class EngineRuntime : IAsyncDisposable
             var launched = await _lifecycle.SwitchAsync(target, ct).ConfigureAwait(false);
             if (!launched.Succeeded)
             {
-                state.Ready.TrySetResult(false);
                 // The short reason goes on the feed for grepping; the provider's one actionable sentence
                 // rides along so the operator reading /admin/events does not have to go find a log.
                 var detail = launched.Reason ?? "lifecycle_failed";
@@ -383,6 +388,7 @@ public sealed class EngineRuntime : IAsyncDisposable
                     detail = $"{detail} — {action}";
                 }
                 Emit("engine.switch_failed", model: model, reason: detail);
+                state.Ready.TrySetResult(false);
                 Volatile.Write(ref _switchState, new SwitchState());
                 return;
             }
@@ -398,17 +404,16 @@ public sealed class EngineRuntime : IAsyncDisposable
                     if (healthy && modelsNow.Contains(model, StringComparer.OrdinalIgnoreCase) &&
                         WindowFits(profileOverride))
                     {
-                        state.Ready.TrySetResult(true);
                         _loadedModels = modelsNow;
                         Emit("engine.switch_completed", model: model,
                             reason: state.Profile is null ? null : $"profile={state.Profile}",
                             value: (DateTimeOffset.UtcNow - state.StartedAt).TotalMilliseconds);
+                        state.Ready.TrySetResult(true);
                         Volatile.Write(ref _switchState, new SwitchState());
                         return;
                     }
                     try { await Task.Delay(2_000, ct).ConfigureAwait(false); } catch (OperationCanceledException) { }
                 }
-                state.Ready.TrySetResult(false);
                 // A readiness timeout is the one failure that has no exit code and no stderr, so the
                 // message has to carry the actionable part itself: what to look at, and the fact that
                 // the router will not quietly retry or route elsewhere.
@@ -417,6 +422,7 @@ public sealed class EngineRuntime : IAsyncDisposable
                     $"never reported {model} serving: inspect what the {_lifecycle.Kind} provider started " +
                     "(for docker: containers labelled arboreal.engine=<name>) or raise the wait timeout; " +
                     "the router does not retry or fall back to another engine");
+                state.Ready.TrySetResult(false);
                 Volatile.Write(ref _switchState, new SwitchState());
                 return;
             }
@@ -426,22 +432,22 @@ public sealed class EngineRuntime : IAsyncDisposable
             // (the gauge may already reflect the new window, e.g. an engine that reloads in place).
             if (!WindowFits(profileOverride))
             {
-                state.Ready.TrySetResult(false);
                 Emit("engine.switch_failed", model: model,
                     reason: $"window_{ActiveContextWindow}_lt_{profileOverride!.MaxContext}");
+                state.Ready.TrySetResult(false);
                 Volatile.Write(ref _switchState, new SwitchState());
                 return;
             }
-            state.Ready.TrySetResult(true);
             Emit("engine.switch_completed", model: model,
                 reason: state.Profile is null ? null : $"profile={state.Profile}",
                 value: (DateTimeOffset.UtcNow - state.StartedAt).TotalMilliseconds);
+            state.Ready.TrySetResult(true);
             Volatile.Write(ref _switchState, new SwitchState());
         }
         catch (Exception ex)
         {
-            state.Ready.TrySetResult(false);
             Emit("engine.switch_failed", model: model, reason: ex.Message);
+            state.Ready.TrySetResult(false);
             Volatile.Write(ref _switchState, new SwitchState());
         }
     }
