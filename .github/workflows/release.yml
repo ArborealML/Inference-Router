@@ -101,7 +101,10 @@ jobs:
           # array, and a page that fails mid-walk still prints the pages it did fetch before exiting
           # non-zero (a forced 422 printed 155 bytes and exited 1). So the exit status, not the
           # emptiness of the output, is what proves the list is complete: a swallowed failure here
-          # would read as "no release for this tag", and GitHub lets two releases carry one tag.
+          # would read as "no release for this tag". Whether one tag can carry two releases is NOT
+          # documented and not verified — review rounds have asserted both answers — so this read is
+          # treated as load-bearing either way: it also blocks on a half-finished draft and stops a
+          # build that would be refused at create time anyway.
           # The shape is checked BEFORE the tag is selected — every document must be an array of
           # objects carrying a string tag_name, so an error body or a junk element is a refusal and
           # not an absence. The tag goes to jq as an argument, never inside the filter.
