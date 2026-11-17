@@ -4,7 +4,7 @@ title: RouterThread
 status: stable
 groma:
   id: routerthread
-  parent: inference-router
+  parent: arboreal-inferencerouter
   code:
     - scanner: csharp
       file: src/Arboreal.InferenceRouter/Threading/RouterThread.cs
@@ -18,4 +18,4 @@ Ties a series of requests to a priority class, weight and optional model affinit
 
 | Source | Target | Description | Technology |
 | --- | --- | --- | --- |
-| [src/Arboreal.InferenceRouter/Threading/RouterThread.cs](../../../../src/Arboreal.InferenceRouter/Threading/RouterThread.cs) | [src/Arboreal.InferenceRouter/Priority/ThreadPriority.cs](../../../../src/Arboreal.InferenceRouter/Priority/ThreadPriority.cs) | Carries priority class | in-process call |
+| [src/Arboreal.InferenceRouter/Threading/RouterThread.cs](../../../../../../src/Arboreal.InferenceRouter/Threading/RouterThread.cs) | [src/Arboreal.InferenceRouter/Priority/ThreadPriority.cs](../../../../../../src/Arboreal.InferenceRouter/Priority/ThreadPriority.cs) | Carries priority class | in-process call |

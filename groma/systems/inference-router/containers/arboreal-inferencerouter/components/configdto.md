@@ -4,7 +4,7 @@ title: ConfigDto
 status: stable
 groma:
   id: configdto
-  parent: inference-router
+  parent: arboreal-inferencerouter
   code:
     - scanner: csharp
       file: src/Arboreal.InferenceRouter/Config/ConfigDto.cs

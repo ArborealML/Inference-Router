@@ -4,7 +4,7 @@ title: PrefixAwareScheduler
 status: stable
 groma:
   id: prefixawarescheduler
-  parent: inference-router
+  parent: arboreal-inferencerouter
   code:
     - scanner: csharp
       file: src/Arboreal.InferenceRouter/Scheduling/PrefixAwareScheduler.cs
@@ -18,4 +18,4 @@ Takes a SchedulerView (engine health, load, loaded models) plus the startup conf
 
 | Source | Target | Description | Technology |
 | --- | --- | --- | --- |
-| [src/Arboreal.InferenceRouter/Scheduling/PrefixAwareScheduler.cs](../../../../src/Arboreal.InferenceRouter/Scheduling/PrefixAwareScheduler.cs) | [src/Arboreal.InferenceRouter/Prefix/PrefixTrie.cs](../../../../src/Arboreal.InferenceRouter/Prefix/PrefixTrie.cs) | Ranks by matched prefix | value from the engine runtime's trie |
+| [src/Arboreal.InferenceRouter/Scheduling/PrefixAwareScheduler.cs](../../../../../../src/Arboreal.InferenceRouter/Scheduling/PrefixAwareScheduler.cs) | [src/Arboreal.InferenceRouter/Prefix/PrefixTrie.cs](../../../../../../src/Arboreal.InferenceRouter/Prefix/PrefixTrie.cs) | Ranks by matched prefix | value from the engine runtime's trie |

@@ -4,7 +4,7 @@ title: RouterEvent and EventRing
 status: stable
 groma:
   id: routerevent
-  parent: inference-router
+  parent: arboreal-inferencerouter
   code:
     - scanner: csharp
       file: src/Arboreal.InferenceRouter/Events/RouterEvent.cs

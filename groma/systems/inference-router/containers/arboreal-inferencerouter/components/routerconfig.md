@@ -4,7 +4,7 @@ title: RouterConfig
 status: stable
 groma:
   id: routerconfig
-  parent: inference-router
+  parent: arboreal-inferencerouter
   code:
     - scanner: csharp
       file: src/Arboreal.InferenceRouter/Config/RouterConfig.cs

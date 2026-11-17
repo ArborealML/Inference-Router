@@ -4,7 +4,7 @@ title: PrefixTrie
 status: stable
 groma:
   id: prefixtrie
-  parent: inference-router
+  parent: arboreal-inferencerouter
   code:
     - scanner: csharp
       file: src/Arboreal.InferenceRouter/Prefix/PrefixTrie.cs

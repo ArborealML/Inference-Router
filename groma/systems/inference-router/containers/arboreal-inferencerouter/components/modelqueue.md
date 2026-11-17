@@ -4,7 +4,7 @@ title: ModelQueue
 status: stable
 groma:
   id: modelqueue
-  parent: inference-router
+  parent: arboreal-inferencerouter
   code:
     - scanner: csharp
       file: src/Arboreal.InferenceRouter/Queue/ModelQueue.cs
@@ -18,4 +18,4 @@ Ordering is thread priority class first, then enqueue sequence, re-sorted in pla
 
 | Source | Target | Description | Technology |
 | --- | --- | --- | --- |
-| [src/Arboreal.InferenceRouter/Queue/ModelQueue.cs](../../../../src/Arboreal.InferenceRouter/Queue/ModelQueue.cs) | [src/Arboreal.InferenceRouter/Priority/ThreadPriority.cs](../../../../src/Arboreal.InferenceRouter/Priority/ThreadPriority.cs) | Orders by priority | in-process call |
+| [src/Arboreal.InferenceRouter/Queue/ModelQueue.cs](../../../../../../src/Arboreal.InferenceRouter/Queue/ModelQueue.cs) | [src/Arboreal.InferenceRouter/Priority/ThreadPriority.cs](../../../../../../src/Arboreal.InferenceRouter/Priority/ThreadPriority.cs) | Orders by priority | in-process call |
