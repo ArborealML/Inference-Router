@@ -1,11 +1,11 @@
 ---
 id: TASK-39
 title: 'Decision: verify what a downloader receives, or keep accepting that we do not'
-status: Waiting
+status: Done
 assignee:
   - '@chatswarm'
 created_date: '2026-11-17T09:11:00Z'
-updated_date: '2026-11-17T11:02:00Z'
+updated_date: '2026-11-17T11:06:00Z'
 labels:
   - release
   - ci
@@ -36,7 +36,7 @@ the task that runs the first release: [TASK-28] (https://github.com/ArborealML/I
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 One line: keep the accepted gap with a named trigger, add a post-publish download-and-hash leg (runner minutes), or add signing or attestation (trust anchor)
+- [x] #1 One line: keep the accepted gap with a named trigger, add a post-publish download-and-hash leg (runner minutes), or add signing or attestation (trust anchor)
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -92,6 +92,14 @@ created: 2026-11-17T11:02:00Z
 Dispatched to @chatswarm 2026-11-17 11:02Z (tier high, reasoning-only) with the limits stated honestly rather than flattered: the stored-digest match proves GitHub-reported digest equals staged bytes at read time, not what a download serves; the gate never re-hashes the served bytes, and SPEC records that as an accepted gap. Two facts it is told: immutable releases are available on this repository and currently off, and will be enabled by TASK-45; and decision-10 refuses paid runner minutes, so anything added has to live inside the existing jobs — which is why a same-job download-and-hash step is judged on seconds, not on a new paid leg.
 
 Wake: that answer landing, after which TASK-39 becomes either a written disposition or an implementation task for the coding session. Neither answer changes SPEC by itself.
+
+---
+
+created: 2026-11-17T11:06:00Z
+
+---
+
+Answer, under decision-16: **do not keep the gap as it stands — close the cheap half and name the rest.** The external answer recommended: immutable releases on (TASK-45), the stored-digest gate kept, a post-publish HTTPS readback of every asset inside the existing publish job, and free keyless build attestation; no OpenPGP or paid certificate without an independent custody plan. Adopted: it conflicts with nothing measured here, and it costs no runner minutes because both additions live in jobs that already run. One claim in it I falsified locally rather than trusting: the verification commands it suggests — `gh release verify`, `gh release verify-asset`, `gh attestation verify` — do not exist in gh 2.46.0, the version on this machine (each exits 1 as an unknown command), so the docs it recommends cannot be shipped as written. Implementation is [TASK-48](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-48%20-%20Prove-what-a-downloader-receives-post-publish-readback-and-free-build-attestation.md). Reopen trigger written down: before merging any unattended installer, auto-updater, or non-GitHub release mirror for deployments that hold API keys, the threat model and signing decision are revisited; any real digest or attestation failure is an incident at that moment, not a deferred item.
 
 ---
 <!-- COMMENTS:END -->

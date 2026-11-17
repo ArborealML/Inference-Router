@@ -5,7 +5,7 @@ status: Blocked
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T05:58:00Z'
-updated_date: '2026-11-17T10:58:00Z'
+updated_date: '2026-11-17T11:06:00Z'
 labels:
   - release
   - ci
@@ -18,6 +18,7 @@ dependencies:
   - TASK-43
   - TASK-44
   - TASK-45
+  - TASK-48
 priority: medium
 ordinal: 28000
 ---
@@ -111,6 +112,14 @@ created: 2026-11-17T10:58:00Z
 ---
 
 Board update after the round-8 review: this stays Blocked, and the blockers are all agent work now, not an owner's keystrokes (decision-16). Floor for the tag moves to the merge commit of [TASK-44](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-44%20-%20Close-what-the-eighth-release-gate-review-found-round-8-over-v0.12.15.md); TASK-42 (canary) proves the gate first, TASK-45 turns on immutable releases before any release is published, TASK-38 puts a `v*` ruleset on the tag. No tag has run the gate: configured, not proven.
+
+---
+
+created: 2026-11-17T11:06:00Z
+
+---
+
+Board update: [TASK-39](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-39%20-%20Decision-verify-what-a-downloader-receives-or-keep-accepting-that-we-do-not.md) is answered (adopt posture), and the work it produced is [TASK-48](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-48%20-%20Prove-what-a-downloader-receives-post-publish-readback-and-free-build-attestation.md), which now also gates this task. The first real tag should therefore be the canary in [TASK-42](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-42%20-%20Decision-run-a-canary-release-to-prove-the-release-gate-exists.md), not v0.1.0: the canary is where the readback and the consumer-verification commands get tested on a release nobody will install.
 
 ---
 <!-- COMMENTS:END -->

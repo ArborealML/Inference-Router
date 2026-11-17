@@ -5,7 +5,7 @@ status: To Do
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T10:52:00Z'
-updated_date: '2026-11-17T10:58:00Z'
+updated_date: '2026-11-17T11:06:00Z'
 labels:
   - ci
   - release
@@ -50,3 +50,15 @@ the gate it protects: [.github/workflows/release.yml](https://github.com/Arborea
 - [ ] #2 SPEC says plainly what this does and does not lock: it locks a published release's assets and its tag, and nothing about drafts, the pre-publish window, the title and notes, or the prerelease/latest flags
 - [ ] #3 the canary in [TASK-42](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-42%20-%20Decision-run-a-canary-release-to-prove-the-release-gate-exists.md) tries an asset replacement and a tag move after publication and requires both to be refused
 <!-- AC:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+created: 2026-11-17T11:06:00Z
+
+---
+
+TASK-39's answer makes this a prerequisite rather than an option, and sharpens what to write in SPEC: immutability locks published assets and the tag while the release exists, and it does not lock drafts, the pre-publish window, the title or notes, or the prerelease/latest flags — and it will freeze a malicious set just as faithfully as a good one. Its attestation binds the GitHub-published release set, not the trustworthiness of the source, the approval, or the build execution.
+
+---
+<!-- COMMENTS:END -->
