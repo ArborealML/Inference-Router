@@ -47,7 +47,7 @@ git push origin v0.1.0 && gh run watch <id>
 **Cut:** the releases page gains two archives plus `SHA256SUMS`, [TASK-14](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-14%20-%20Improve-the-README-patterns-from-popular-.NET-repos-plus-an-icon-and-banner.md) can point at real downloads, and
 this task reports what the gate proved. **Hold:** the README keeps telling readers to build from source and this task
 stays parked. Recommendation, stated not asked: cut `v0.1.0` only after [TASK-44](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-44%20-%20Close-the-open-release-gate-review-findings-SPEC-v0-12-15-onward.md) closes,
-[TASK-45](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-45%20-%20Enable-GitHub-immutable-releases-before-the-first-tag.md) is done and the canary on [TASK-42](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-42%20-%20Decision-prove-the-release-gate-on-a-canary-knowing-the-tag-name-is-burned.md) has run — immutable releases freeze whatever ships
+[TASK-45](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-45%20-%20Enable-GitHub-immutable-releases-before-the-first-tag.md) is done and the canary on [TASK-42](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-42%20-%20Run-the-canary-through-the-real-gate-knowing-the-version-name-is-burned.md) has run — immutable releases freeze whatever ships
 first and a published name is never reused.
 <!-- SECTION:DESCRIPTION:END -->
 
@@ -76,7 +76,7 @@ first; [TASK-45](https://github.com/ArborealML/Inference-Router/blob/main/backlo
 commit last raised the floor is history and lives in git and the SPEC revision log; the rule above is the floor, so no
 sha quoted here can go stale. Superseded log entries for this task: [board trim, 2026-11-17](https://github.com/ArborealML/Inference-Router/blob/main/backlog/archive/board-trim-2026-11-17.md).
 
-**Duplicate archived:** [TASK-32](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-32%20-%20Decision-cut-the-v0.1.0-tag.md) carried the same deliverable, actor and outcome and is in the archive; its
+**Duplicate archived:** [TASK-32](https://github.com/ArborealML/Inference-Router/blob/main/backlog/archive/tasks/task-32%20-%20Decision-cut-the-v0.1.0-tag.md) carried the same deliverable, actor and outcome and is in the archive; its
 go/hold analysis now lives on TASK-50, and its `Decision:` title contradicted an agent assignee.
 <!-- SECTION:NOTES:END -->
 

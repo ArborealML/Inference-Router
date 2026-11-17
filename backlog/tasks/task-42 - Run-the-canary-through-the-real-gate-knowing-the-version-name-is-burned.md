@@ -1,11 +1,11 @@
 ---
 id: TASK-42
-title: 'Decision: prove the release gate on a canary, knowing the tag name is burned?'
+title: Run the canary through the real gate, knowing the version name is burned
 status: Waiting
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T09:53:00Z'
-updated_date: '2026-11-17T16:11:00Z'
+updated_date: '2026-11-17T16:55:00Z'
 labels:
   - release
   - ci
@@ -41,6 +41,7 @@ tag with a `422` — never tested. A rehearsal cannot rehearse that, so it stays
 - [ ] #4 the published canary is probed after publication: an asset replacement attempt and a tag move attempt, both required to be refused, plus `.immutable` read back
 - [ ] #5 The canary's disposition is decided before the tag is cut and recorded here: kept as a permanent prerelease, or deleted — the version name stays reserved either way once immutable releases are on
 - [ ] #6 Nothing auto-deletes a release whose disposition is uncertain; if the rehearsal is skipped, the skip and its reason are recorded here
+- [ ] #7 the run leaves what [TASK-48](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-48%20-%20Prove-what-a-downloader-receives-post-publish-readback-and-free-build-attestation.md) needs to prove a download: a published release, its asset inventory, and the digests of the bytes actually served
 <!-- AC:END -->
 
 ## Implementation Notes

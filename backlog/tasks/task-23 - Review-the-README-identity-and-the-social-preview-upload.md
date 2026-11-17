@@ -64,7 +64,7 @@ export, not the mark.
 - Art to judge: [air-mark.svg](https://github.com/ArborealML/Inference-Router/blob/main/docs/images/air-mark.svg), [air-banner.svg](https://github.com/ArborealML/Inference-Router/blob/main/docs/images/air-banner.svg), [air-social.svg](https://github.com/ArborealML/Inference-Router/blob/main/docs/images/air-social.svg); committed rasters: [air-social-1280x640.png](https://github.com/ArborealML/Inference-Router/blob/main/docs/images/air-social-1280x640.png), [air-mark-512.png](https://github.com/ArborealML/Inference-Router/blob/main/docs/images/air-mark-512.png).
 - Palette, provenance, renderer, resolved font: [docs/images/README.md](https://github.com/ArborealML/Inference-Router/blob/main/docs/images/README.md).
 - Where the banner is wired: [README.md:1](https://github.com/ArborealML/Inference-Router/blob/main/README.md#L1).
-- The upload this waits on: [TASK-29] (https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-29%20-%20Upload-the-social-preview-card-and-the-repository-avatar.md). The release badge in TASK-14 waits on a tag, which is now [TASK-32] (https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-32%20-%20Decision-cut-the-v0.1.0-tag.md), not on this task.
+- The upload this waits on: [TASK-29] (https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-29%20-%20Upload-the-social-preview-card-and-the-repository-avatar.md). The release badge in TASK-14 waits on a tag, which is now [TASK-32] (https://github.com/ArborealML/Inference-Router/blob/main/backlog/archive/tasks/task-32%20-%20Decision-cut-the-v0.1.0-tag.md), not on this task.
 <!-- SECTION:NOTES:END -->
 
 ## Comments
