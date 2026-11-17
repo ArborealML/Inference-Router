@@ -7,7 +7,7 @@ status: Waiting
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T09:41:00Z'
-updated_date: '2026-11-17T10:06:00Z'
+updated_date: '2026-11-17T10:11:00Z'
 labels:
   - ci
   - release
@@ -58,8 +58,12 @@ outright, with cd4fcdd's publish step replayed from git and shown failing.
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Upload byte fidelity is documented in gh 2.46.0 source - --input becomes a raw reader with no JSON re-encoding, an explicit octet-stream type is honoured - and is still only DEMONSTRATED on a run by GitHub's stored-bytes digest matching the staged sha256; the split between documented and demonstrated stays named
-- [ ] #2 A run against the live API produces real asset digests, the workflow-write guard's actual answer for a tag whose commit edits the release workflow, the generated notes body, and a cleanup that leaves nothing behind - which is what TASK-42 asks permission for
+- [x] #1 The create answers this run with a numeric release id and an upload_url, and every asset is uploaded to that id through the returned template - not addressed by tag
+- [x] #2 Verification reads one snapshot of the asset list, requires each expected name exactly once, and re-inspects plus re-resolves the tag immediately before the un-draft PATCH
+- [x] #3 Cleanup addresses only the captured id and re-checks id, tag and draft state before deleting anything
+- [x] #4 The gate harness stub refuses the published-only by-tag endpoint, so a run cannot pass green against a lookup that would fail in production
+- [ ] #5 Upload byte fidelity is documented in gh 2.46.0 source - --input becomes a raw reader with no JSON re-encoding, an explicit octet-stream type is honoured - and is still only DEMONSTRATED on a run by GitHub's stored-bytes digest matching the staged sha256; the split between documented and demonstrated stays named
+- [ ] #6 A run against the live API produces real asset digests, the workflow-write guard's actual answer for a tag whose commit edits the release workflow, the generated notes body, and a cleanup that leaves nothing behind - which is what TASK-42 asks permission for
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -90,6 +94,14 @@ created: 2026-11-17T09:54:00Z
 ---
 
 Wake restated, as the board rule wants the event rather than the artifact: the review of e4b4683 has LANDED and is now evidence in this task, not the thing that wakes it. What wakes it is AC #5 and AC #6 being settled - and both can only be settled by a run against the real API, which is exactly what the canary decision on TASK-42 asks for. Round 6's verdict is recorded here because it closes half the argument: the response-captured id is the documented identity of the draft, and gh 2.46.0 sends an --input body as a raw reader with no JSON re-encoding, so the upload path is byte-faithful by construction - but the only observation that a real upload matched bytes is the stored digest, so AC #6 stays open until a real run produces one. Four refinements round 6 found (draft tag_name re-check, pinned release title, exact upload_url shape, and the guard's real status codes being 404/403 rather than the 422 assumed) are on TASK-43, not here.
+
+---
+
+created: 2026-11-17T10:11:00Z
+
+---
+
+Board repair, disclosed: an earlier pass used --acceptance-criteria with only two values, and that flag REPLACES the whole list, so the four boxes verified against e4b4683 were wiped. All six are restored in order and boxes 1-4 re-checked against the current file (create plus id and upload_url at release.yml:355-359 with whole-response validation of tag_name, draft and prerelease added in bff39e8; one-snapshot verification with exactly-once at 399-409 plus the release object tag_name check; cleanup by captured id with id/tag/draft re-check at 465-482; the harness stub now refusing the published-only by-tag endpoint). Boxes 5 and 6 stay open for the reasons in their own wording.
 
 ---
 <!-- COMMENTS:END -->
