@@ -5,7 +5,7 @@ status: Done
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-16T20:50:00Z'
-updated_date: '2026-11-17T05:24:00Z'
+updated_date: '2026-11-17T08:06:00Z'
 labels:
   - ci
 milestone: v0.10 - live view and robustness parity
@@ -27,6 +27,12 @@ Design pass handed to the external flagship reviewer; it returns complete commen
 - [x] #3 Every binary is smoke-verified headlessly with the inert sample before the release exists
 - [x] #4 No CI job can invoke a lifecycle command or a real engine
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Proof: the design landed as the two workflows - [ci.yml](https://github.com/ArborealML/Inference-Router/blob/main/.github/workflows/ci.yml) and [release.yml](https://github.com/ArborealML/Inference-Router/blob/main/.github/workflows/release.yml) - with the preflight refusal exercised in commits 1acdaf8, fc3401a and d3dd153 (draft releases are visible to preflight only with write scope), and the published-surface acceptance criteria now written into [SPEC 14](https://github.com/ArborealML/Inference-Router/blob/main/SPEC.md#L1264). Dry-run only: no tag has ever been published, which is TASK-32 and TASK-28.
+<!-- SECTION:NOTES:END -->
 
 ## Comments
 

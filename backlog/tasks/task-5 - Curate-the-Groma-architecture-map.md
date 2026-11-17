@@ -5,7 +5,7 @@ status: Done
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-16T20:40:00Z'
-updated_date: '2026-11-16T23:22:00Z'
+updated_date: '2026-11-17T08:06:00Z'
 labels: []
 dependencies: []
 ordinal: 5000
@@ -14,7 +14,6 @@ ordinal: 5000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-
 First scan produced 18 elements. The C# scanner does not evaluate source generators or ASP.NET references, so treat those scan warnings as scan limits, not repo defects, and place components deliberately.
 
 **Curation findings worth a second look**
@@ -29,13 +28,10 @@ First scan produced 18 elements. The C# scanner does not evaluate source generat
   library's components sit directly under the system. A hand-drafted library container stays a ghost: `groma
   accept` reports "no scan match". Left as-is and documented here.
 
-<!-- SECTION:DESCRIPTION:END -->
-
-## Acceptance Criteria
-
 **Owner instruction (on record):** curate this repository's architecture with Groma — run
 `groma agent-instructions` and follow its curation workflow, describing the architecture as it exists
 today. **Do not change application code** as part of this task.
+<!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
@@ -61,3 +57,9 @@ today. **Do not change application code** as part of this task.
   CS0246/CS0103/CS0117/CS0165/CS0534/CS7036 can only come from unresolved packages/generators.
 - [x] #5 No application code changed: this task touched `groma/` and the board only.
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Proof: map triage closed out in commit 2121140 ([2121140](https://github.com/ArborealML/Inference-Router/commit/2121140)); the library container that decision-8 produced is [containers/arboreal-inferencerouter/container.md](https://github.com/ArborealML/Inference-Router/blob/main/groma/systems/inference-router/containers/arboreal-inferencerouter/container.md). The scanner warnings are documented in this task as scan limits, and the hand-declared container staying outlined is recorded as accepted in TASK-27.
+<!-- SECTION:NOTES:END -->

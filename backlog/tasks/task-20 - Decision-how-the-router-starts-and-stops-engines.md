@@ -1,11 +1,11 @@
 ---
 id: TASK-20
 title: 'Decision: may the router reach the Docker daemon, and by what route'
-status: To Do
+status: Done
 assignee:
   - '@qwen3.8-flash-next-board'
 created_date: '2026-11-17T02:18:00Z'
-updated_date: '2026-11-17T07:01:00Z'
+updated_date: '2026-11-17T07:54:00Z'
 labels:
   - engine
   - lifecycle
@@ -17,7 +17,6 @@ ordinal: 20000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-
 The mechanism is settled — raw Engine HTTP over the Docker socket, with the docker CLI kept as an operator fallback — and authorisation (refuse rather than escalate) and launch tuning are already decisions on this board. What is missing is a fact about the machine: whether the router is allowed to talk to the daemon on the inference host, and if so whether that is the unix socket or a TLS TCP endpoint. This gates real-engine verification of the lifecycle provider, not the provider itself, which is written against a test fake.
 
 What each answer changes: **unix socket** or **tcp+tls** means the native provider is verified end to end against a real daemon and TASK-26 proceeds as written; **no daemon access** narrows the shipped route to the delegated (exec) provider, and the container-native work in TASK-26 stops being worth building out. What it unblocks: the end-to-end verification half of TASK-26 — every other criterion there is testable against a fake daemon handler, so no task is blocked outright, but none of that verification can be *shown* until this is answered.
@@ -40,12 +39,14 @@ Answer format: `TASK-20: unix socket`, `TASK-20: tcp+tls`, or `TASK-20: no daemo
 path off the public board; a placeholder is enough here and the real value stays in the untracked
 config.
 
+**Verdict.** Route: unix socket. The daemon is reachable by this account (group membership verified), no TLS endpoint is in play, so the native provider stays the shipped route and the delegated exec provider stays the fallback. Whether the router may drive the live daemon is a permission, not a fact, and it now lives on TASK-33.
+
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The daemon-access answer is given in one line: unix socket, tcp+tls, or no daemon access
-- [ ] #2 If the answer is no daemon access, the narrowing is recorded on the board: the native provider is not built out further and the delegated path stays the shipped route
+- [x] #1 The daemon-access route is answered in one line: unix socket, tcp+tls, or no daemon access
+- [x] #2 The narrowing a no-daemon-access answer would force is either recorded or shown to be inapplicable: the route exists, so the native provider stays the shipped route and the delegated exec provider stays the fallback
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -70,6 +71,22 @@ created: 2026-11-17T05:55:00Z
 ---
 
 Owner instruction: the @claire queue is being worked by agents. Reassigned here because the outstanding item is a **fact about the machine**, not a preference: whether the router user can reach the daemon, and over which transport, is establishable by a read-only probe (the preflight verb is validate-only and mutates nothing). If no route is reachable, the recorded answer is "no daemon access" and TASK-26 narrows to the delegated provider. What remains an operator right, not an agent judgement, is *permitting* a new socket route on a host the router does not own: if establishing the fact requires granting group membership or opening a TLS listener, that grant stops the task and comes back to @claire as a one-line approval.
+
+---
+
+created: 2026-11-17T07:54:00Z
+
+---
+
+Answer: unix socket. Established by reading this box, not by asking anyone, and every claim here is something I ran: /var/run/docker.sock exists as a root:docker socket; getent group docker lists this account and id confirms the membership; docker version returns a Server 29.1.3 over that socket, read-only. No TLS TCP endpoint is in use or needed, so the tcp+tls branch is dead. The provider already speaks raw Engine HTTP over that socket, so nothing in the code changes on this answer.
+
+---
+
+created: 2026-11-17T07:54:00Z
+
+---
+
+What this task does not answer, and where that went instead: whether the router may start, stop and remove containers on the inference host as a live test. That is a permission over shared infrastructure, not a machine fact, and the working contract puts it in front of a person - it is now TASK-33, one line to answer, with the read-only preflight command on it so an agent can keep verifying without touching anything. TASK-26 is deliberately not made Blocked on TASK-33: all seven of its criteria are buildable against the fake daemon handler, and only the showing-not-building half waits.
 
 ---
 <!-- COMMENTS:END -->

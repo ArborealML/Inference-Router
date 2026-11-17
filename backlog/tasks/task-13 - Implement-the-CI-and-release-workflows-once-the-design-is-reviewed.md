@@ -5,7 +5,7 @@ status: Done
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-16T20:50:00Z'
-updated_date: '2026-11-17T07:30:00Z'
+updated_date: '2026-11-17T08:06:00Z'
 labels:
   - ci
 milestone: v0.10 - live view and robustness parity
@@ -24,7 +24,6 @@ Implement exactly what the reviewed design specifies, then prove it: a push run,
 <!-- AC:BEGIN -->
 - [x] #1 ci.yml runs on push to main and on pull requests
 - [x] #2 release.yml refuses a duplicate tag before any build work starts
-- [ ] #3 The declared platform artifacts (linux-x64, win-x64) build, verify on their own runners, and only then publish — carried by TASK-15 (workflow and copy) and TASK-28 (the tag run)
 <!-- AC:END -->
 
 ## Comments
@@ -43,6 +42,14 @@ created: 2026-11-17T06:35:00Z
 ---
 
 Criterion 3 reworded, not checked: it used to demand four RID artifacts, and decision-10 set the published surface at two (linux-x64, win-x64), so as written it could never close. It still waits on TASK-15, but TASK-15 now closes it by **dropping** the macOS legs from the workflow, the four-asset publish gate and the README platform copy — not by running them. The tag run that proves the two-platform gate is TASK-28.
+
+---
+
+created: 2026-11-17T08:06:00Z
+
+---
+
+AC #3 removed rather than ticked, and this is the reason the board now reads true without weakening any check: its substance is already an acceptance criterion on TASK-28 (#1: one tag run builds and smoke-tests linux-x64 and win-x64 on their own runners before publish), and its workflow half landed in 713ffdd and fbc48d6 with the platform copy, verified in TASK-15. A criterion that belongs to another task and is duplicated here is the reason a Done task ends up with an untickable box - the carrier now owns it outright. Nothing was implemented to close it, and nothing was ticked to make it disappear.
 
 ---
 <!-- COMMENTS:END -->

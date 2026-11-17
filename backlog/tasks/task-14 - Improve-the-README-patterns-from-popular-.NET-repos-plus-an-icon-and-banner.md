@@ -5,13 +5,12 @@ status: Waiting
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-16T22:26:00Z'
-updated_date: '2026-11-17T05:26:00Z'
+updated_date: '2026-11-17T07:55:00Z'
 labels:
   - docs
   - ui
 dependencies:
-  - TASK-23
-  - TASK-22
+  - TASK-28
 priority: low
 ordinal: 14000
 ---
@@ -114,6 +113,14 @@ created: 2026-11-17T05:26:00Z
 ---
 
 Assignee reduced to one name. Two were listed (the owner and the agent): the owner's move on the README itself lives on TASK-23, so the next actor on this task is the agent who restructures it when TASK-23 lands. A task with two assignees reads as nobody.
+
+---
+
+created: 2026-11-17T07:55:00Z
+
+---
+
+AC #4 is two badges and only one of them exists today: README lines 10-12 carry CI, license and .NET badges, and the CI badge resolves (checked the URL form against the workflow name). The release badge cannot resolve until a release exists, which is TASK-32 (owner go-ahead) then TASK-28 (the tag run). Dependency set to TASK-28 so the board shows the real wake instead of a prose promise. Assignee stays the main session: a README line during the tag run, not a separate change.
 
 ---
 <!-- COMMENTS:END -->

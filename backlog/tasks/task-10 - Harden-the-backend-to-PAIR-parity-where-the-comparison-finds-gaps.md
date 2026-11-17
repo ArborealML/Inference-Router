@@ -5,7 +5,7 @@ status: Done
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-16T20:46:00Z'
-updated_date: '2026-11-17T07:01:00Z'
+updated_date: '2026-11-17T08:17:00Z'
 labels:
   - backend
 milestone: v0.10 - live view and robustness parity
@@ -17,7 +17,6 @@ ordinal: 10000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-
 The external comparison against NVIDIA Personal-AI-Router (TASK-9) concluded this router is
 **not yet as robust as PAIR, even single-host**, while already leading on priority, admission,
 serving profiles and prefix policy. This task closes the robustness gap in the recommended order:
@@ -114,11 +113,11 @@ slots reserved at pop stayed held. Pinned in `TicketLifetimeTests` (5 tests).
 Still open in AC #2: request-body cap, per-phase timeouts (connect / headers / first token / idle stream),
 and the explicit commit boundary — the shipped post-commit framing (error frame then `[DONE]`) is what the
 docs currently describe, so the boundary change updates them with it.
-- [x] #9 The catalogue probe path is configurable (today it asks `/models` while inference goes to
+- The catalogue probe path is configurable (today it asks `/models` while inference goes to
   `/v1/models`); shipped configs and the fake engine stop relying on that asymmetry
-- [ ] #10 When every engine is unhealthy the OpenAI surface returns a prompt no-capacity error
+- When every engine is unhealthy the OpenAI surface returns a prompt no-capacity error
   instead of queueing forever, with the deadline visible to the client
-- [x] #11 The test fake honours `LoadedModels` so availability logic is actually under test
+- The test fake honours `LoadedModels` so availability logic is actually under test
 
 Progress: #9 and #11 are done (the probe path was already configurable via `models_endpoint`; it is
 now pinned by `samples/router.toml`, `samples/router.ci-smoke.toml` and a loader test; the fake engine
@@ -162,7 +161,6 @@ Two further findings for later steps:
 2. **The sample's catalog names do not match the ids strata reports on `/models`.** Either the sample gains the
    loaded id (or an alias) or the loader test should assert the catalog id appears in the engine's reported set
    for a documented live configuration. Belongs with TASK-14 (README/sample patterns), not here.
-
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -175,7 +173,7 @@ Two further findings for later steps:
 - [x] #6 The error contract is table-pinned: codes, statuses and lowercase bodies pinned by contract tests
 - [x] #7 Event-feed replay is correct: exclusive cursor, full retained window, atomic replay/subscribe handover, a slow subscriber's feed ended rather than pruned, subscribers bounded and over-limit feeds refused before SSE headers
 - [x] #8 The feed records a terminal outcome before waking the waiter that outcome ends, so a failed request never outruns its own reason
-- [x] #9 Every remaining parity gap has a named carrier (SPEC 14.1 rows 2/4/5/6, TASK-25, TASK-26, TASK-21) rather than being implied by silence
+- Every remaining parity gap has a named carrier (SPEC 14.1 rows 2/4/5/6, TASK-25, TASK-26, TASK-21) rather than being implied by silence
 - [x] #10 Request-side phase timeouts exist and are pinned: a bounded wait for a model switch, and a cap on an in-flight engine call so a wedged engine cannot hold a ticket until the caller gives up
 <!-- AC:END -->
 
@@ -195,6 +193,8 @@ Cancellation had a hole that the AC checkbox hid. SPEC 5.5 says a client that ha
 Feed ordering is now an invariant, not a hope: every terminal outcome (engine switch, request completed/cancelled/failed) is appended to the ring before the waiter that outcome ends is woken — RunSwitchAsync and RouterCore.Complete/Fail (commit 0039b1e, SPEC 10 + revlog v0.12.3). That is what de-flaked the suite's last known flake and it is pinned by an assertion on event Seq order in the readiness-timeout test.
 
 Verified: 141 tests (3 new in RequestPhaseTimeoutTests) green in Debug and Release and across three concurrent full-suite runs; AOT publish linux-x64 warning-free; all three shipped samples still validate with the Cli `config` verb. Semantics settled while writing tests: the cap runs until the response first bytes (headers) — an engine sends non-streaming headers with the body, so in practice a whole completion is covered, while a stream that has begun runs to its end. Test-caught bug: the response timer must not share the caller token, otherwise a client abort completes the delay and gets answered `engine_timeout` instead of `cancelled`; the timer now runs on its own source, disarmed in `finally`, and the winner check is exact. `EngineRuntime.ResponseTimeout` is computed once at startup; capped and uncapped send paths share `FinishWithResponseAsync` so they cannot drift.
+
+The three checkbox lines that sat in the Description are prose history, not criteria, and were stripped of checkbox syntax under the one-AC-block rule; their text stays readable where it is. The one genuine gap they carried - a prompt no-capacity answer when every engine is unhealthy - is not implemented and was never closed: verified today that the scheduler returns Wait("no_engines") and the caller is answered 503 only after a ceiling expires. It now has a carrier: TASK-35. Nothing was ticked to make it go away.
 <!-- SECTION:NOTES:END -->
 
 ## Comments
@@ -248,5 +248,3 @@ Second external review, covering 76374d6, dispositioned in v0.12.6: fixed a fals
 
 ---
 <!-- COMMENTS:END -->
-
-## Acceptance Criteria

@@ -5,7 +5,7 @@ status: Done
 assignee:
   - '@chatswarm'
 created_date: '2026-11-16T20:46:00Z'
-updated_date: '2026-11-16T23:22:00Z'
+updated_date: '2026-11-17T08:06:00Z'
 labels:
   - external
 dependencies: []
@@ -15,7 +15,6 @@ ordinal: 7000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-
 An external reasoning pass has been dispatched to produce the design and a file-by-file implementation plan for TASK-1 (porting the operator's selector into AIR, driven by the Docker API rather than the command line). The result is held outside this repository; once reviewed it is written into TASK-1 as its plan before any code is written.
 
 **Result (external design review; full 452 KB artifact stays outside the repo)**
@@ -44,7 +43,6 @@ defensible for a single-model engine — while a switch is in flight there is no
 can serve — but it must become an explicit, non-inference reservation once the router performs drains
 itself, or a switch will look like a busy engine to the scheduler. Recorded as a design requirement
 rather than a bug.
-
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -53,3 +51,9 @@ rather than a bug.
 - [x] #2 Decision points surfaced to the owner (see decision-1, decision-2)
 - [x] #3 Approved plan recorded in TASK-1 before implementation
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Proof: this was a request to the external research and review service, and its answer is mirrored in the repository rather than in a transcript - the disposition row in [SPEC 15 at line 1353](https://github.com/ArborealML/Inference-Router/blob/main/SPEC.md#L1353) (native engine-lifecycle design), which is what the code and SPEC follow. Where the answer was not adopted, the reason is in the same row.
+<!-- SECTION:NOTES:END -->

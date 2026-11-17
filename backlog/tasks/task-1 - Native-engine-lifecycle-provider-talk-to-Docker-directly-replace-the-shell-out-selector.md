@@ -7,7 +7,7 @@ status: Done
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-16T20:39:00Z'
-updated_date: '2026-11-17T02:54:00Z'
+updated_date: '2026-11-17T08:06:00Z'
 labels: []
 milestone: v0.9 - native engine lifecycle
 dependencies:
@@ -19,7 +19,6 @@ ordinal: 1000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-
 Replace the shell-out selector with a provider seam the router drives itself.
 
 Approved shape (reconciled from two external reviews, digested in unpublished notes):
@@ -39,7 +38,6 @@ recommended: refuse and report as `lifecycle_privilege_denied`, never elevate; (
 tuning lives — recommended hybrid: the router owns identity, ports, mounts, GPU device requests and
 readiness, the image entrypoint owns engine flags and surfaces them through the health probe. Both are
 written as SPEC 15.1 items 4 and 5 so the answer lands in the repo.
-
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -71,4 +69,6 @@ First slice in: the provider seam (ownership proof, preflight, stop-what-we-own,
 Seam, coordinator, delegated-exec provider and the native Docker provider are in main (two commits). AC #1 tested against a fake daemon; #2 holds for the checks that exist today — reachability, pinned API version, image presence — before anything is stopped or started; #3 tested both directions (a listed-but-unlabelled container is never handed to stop, and a failed ownership query refuses the whole transaction); #4 tested end to end, including that the ticket fails rather than being served elsewhere; #5 verified by zero trim or warning lines on both AOT publishes. Still open in this task, and listed in SPEC 5.3.1 rather than hidden: image identity pinning, mounts and GPU requests, exec frame demux, logs and daemon events, the Windows pipe transport, latched failures with no automatic retry, and the admission-close/cohort-drain step which is TASK-25. An external review of these two commits is in flight; it targets container-ownership safety, injection in the label filter, and calls that could hang forever. Nothing from it is adopted until verified against this code.
 
 Done with all five acceptance criteria verified against tests and both AOT publishes. What the reviewed design describes beyond this task lives in TASK-25 (reservation, admission close, cohort drain) and TASK-26 (image identity, GPU and mounts, exec/logs/events, latched failures, Windows transport). An external review of the two commits is still in flight: a confirmed finding becomes a task or a fix in the next commit, not a reopening of this one.
+
+Proof, added on the board rule that closed work names its evidence: lifecycle mutations moved behind the provider seam in one fixed order (commit 1191525) and the router loading a model in Docker itself, with proof of what it owns, in commit c2e7e42 - linked: [1191525](https://github.com/ArborealML/Inference-Router/commit/1191525), [c2e7e42](https://github.com/ArborealML/Inference-Router/commit/c2e7e42). Design authority: [SPEC 5.3.1](https://github.com/ArborealML/Inference-Router/blob/main/SPEC.md#L482) and the [native-lifecycle disposition in SPEC 15](https://github.com/ArborealML/Inference-Router/blob/main/SPEC.md#L1353). Tests that stand in for a daemon: [DockerLifecycleProviderTests.cs](https://github.com/ArborealML/Inference-Router/blob/main/tests/Arboreal.InferenceRouter.Tests/DockerLifecycleProviderTests.cs), [LifecycleCoordinatorTests.cs](https://github.com/ArborealML/Inference-Router/blob/main/tests/Arboreal.InferenceRouter.Tests/LifecycleCoordinatorTests.cs). Live-daemon verification is explicitly not claimed here - that permission is TASK-33.
 <!-- SECTION:NOTES:END -->

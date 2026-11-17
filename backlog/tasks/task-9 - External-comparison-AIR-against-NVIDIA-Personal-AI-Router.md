@@ -5,7 +5,7 @@ status: Done
 assignee:
   - '@chatswarm'
 created_date: '2026-11-16T20:46:00Z'
-updated_date: '2026-11-16T23:22:00Z'
+updated_date: '2026-11-17T08:06:00Z'
 labels:
   - external
 dependencies: []
@@ -15,7 +15,6 @@ ordinal: 9000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-
 An external comparison pass has been dispatched to compare our backend with NVIDIA's Personal AI Router capability by capability, with the bar being that our backend is at least as robust. It also inventories their UI for our planned Blazor live view and lists what their router cannot do (which is why we are building ours).
 
 **Result (external review; the full digest stays outside the repository)**
@@ -41,7 +40,6 @@ trends engine-first; skip the installer, model deletion, pairing, autostart/upda
 Fix order: P0 URI + readiness proof + dispatch progress → transport bounds → switches + error
 contract → owned lifecycle/recovery (TASK-1) → security + tests. P1 version pins, telemetry,
 durability, fairness, Blazor. P2 multi-host.
-
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -51,3 +49,9 @@ durability, fairness, Blazor. P2 multi-host.
 - [x] #3 UI screens rated borrow / borrow-with-changes / skip
 - [x] #4 The event-stream and status additions needed to make the live view cheap later are listed
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Proof: this was a request to the external research and review service, and its answer is mirrored in the repository rather than in a transcript - the disposition row in [SPEC 15 at line 1352](https://github.com/ArborealML/Inference-Router/blob/main/SPEC.md#L1352) (robustness and UI comparison against the other router), which is what the code and SPEC follow. Where the answer was not adopted, the reason is in the same row.
+<!-- SECTION:NOTES:END -->

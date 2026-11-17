@@ -5,7 +5,7 @@ status: Done
 assignee:
   - '@chatswarm'
 created_date: '2026-11-16T20:46:00Z'
-updated_date: '2026-11-16T23:22:00Z'
+updated_date: '2026-11-17T08:06:00Z'
 labels:
   - external
 dependencies: []
@@ -15,7 +15,6 @@ ordinal: 8000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-
 An external deep-review pass has been dispatched to settle which way the router should talk to Docker: the long-standing community client, the actively maintained fork used by cloud tooling, or hand-rolled Engine HTTP over the unix socket with source-generated JSON. The crux is whether each survives native AOT without reflection, plus unix-socket support, exec and events coverage, error fidelity between 'absent' and 'unreachable', and Engine API version pinning.
 
 **Result (external review; the full digest stays outside the repository)**
@@ -34,7 +33,6 @@ Exec output needs the 8-byte multiplexed frame header parsed and exit code 0 req
 verify a pinned image (Id, RepoDigests, platform, layers) and refuse to run anything unpinned or
 unlabelled. Podman speaks Docker v1.40 semantics; containerd-native is a separate gRPC adapter.
 Docker group membership is root-equivalent — relevant to the authorization decision.
-
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -42,3 +40,9 @@ Docker group membership is root-equivalent — relevant to the authorization dec
 - [x] #1 A recommendation with package names, versions and an AOT verdict
 - [x] #2 The chosen seam is faked in tests without a live daemon
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Proof: this was a request to the external research and review service, and its answer is mirrored in the repository rather than in a transcript - the disposition row in [SPEC 15 at line 1351](https://github.com/ArborealML/Inference-Router/blob/main/SPEC.md#L1351) (AOT-safe Docker access from .NET 11), which is what the code and SPEC follow. Where the answer was not adopted, the reason is in the same row.
+<!-- SECTION:NOTES:END -->

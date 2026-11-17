@@ -1,16 +1,16 @@
 ---
 id: TASK-28
 title: Cut the first release tag and watch the release run
-status: Waiting
+status: Blocked
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T05:58:00Z'
-updated_date: '2026-11-17T07:30:00Z'
+updated_date: '2026-11-17T08:18:00Z'
 labels:
   - release
   - ci
 dependencies:
-  - TASK-15
+  - TASK-32
 priority: medium
 ordinal: 28000
 ---
@@ -18,12 +18,34 @@ ordinal: 28000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-decision-10 settled the platform surface: release linux-x64 and win-x64, nothing else. What is left is the first actual tag run — the release workflow has only ever been exercised as a dry run, and it refuses to publish unless every declared leg produced a verified artifact. Cutting a tag makes a public release, so this needs a one-line go-ahead (`cut v0.1.0`) from the main session rather than an assumption.
+decision-10 settled the platform surface: release linux-x64 and win-x64, nothing else. What is left is the first
+actual tag run — the release workflow has only ever been exercised as a dry run, and it refuses to publish unless
+every declared leg produced a verified archive. Cutting a tag makes a public release, so the go-ahead lives on
+TASK-32 as a one-line owner answer; this task carries the run once that answer is `cut`.
+
+**Wake condition, current.** TASK-15 landed in 713ffdd and its follow-up fbc48d6 hardened the gate, so the
+workflow precondition is satisfied — that is no longer an acceptance criterion, it is a precondition that is true.
+The only outstanding wake is the owner answer on TASK-32, which is why this task is Blocked rather than Waiting.
+
+**Sequencing hazard, found by review, and it is real.** Actions runs the workflow file **from the commit the tag
+points at**. Tag anything older than fbc48d6 and the OLD four-leg workflow runs, the macOS jobs queue again, and
+the run hangs on archives no runner will ever produce. So, before pushing the tag:
+
+```bash
+git merge-base --is-ancestor fbc48d6 "$(git rev-parse origin/main)" && echo ok
+git rev-parse origin/main                       # tag THIS sha, the current main HEAD
+git tag -a v0.1.0 -m v0.1.0 "$(git rev-parse origin/main)"
+git push origin v0.1.0
+gh run watch <id>
+```
+
+The same ancestry line is on TASK-32, because the owner may cut the tag personally.
 
 **Links**
-- Workflow a tag runs: [release.yml](https://github.com/ArborealML/Inference-Router/blob/main/.github/workflows/release.yml); preflight refusal at [96-104](https://github.com/ArborealML/Inference-Router/blob/main/.github/workflows/release.yml#L96-L104).
-- Where it appears: [releases](https://github.com/ArborealML/Inference-Router/releases). Commands: `git tag -a v0.1.0 -m v0.1.0 && git push origin v0.1.0`, then `gh run watch <id>`.
-- Must land first: [TASK-15](https://github.com/ArborealML/Inference-Router/tree/main/backlog/tasks). Decision behind the platform set: [decision-10](https://github.com/ArborealML/Inference-Router/tree/main/backlog/decisions).
+- Workflow a tag runs: [release.yml](https://github.com/ArborealML/Inference-Router/blob/main/.github/workflows/release.yml); preflight refusal at [96-104](https://github.com/ArborealML/Inference-Router/blob/main/.github/workflows/release.yml#L96-L104); asset gate and archive-count check at [216-231](https://github.com/ArborealML/Inference-Router/blob/main/.github/workflows/release.yml#L216-L231); prerelease handling at [238-241](https://github.com/ArborealML/Inference-Router/blob/main/.github/workflows/release.yml#L238-L241).
+- Where it appears: [releases](https://github.com/ArborealML/Inference-Router/releases). Decision behind the platform set: [decision-10](https://github.com/ArborealML/Inference-Router/tree/main/backlog/decisions). Owner go-ahead it waits on: [TASK-32](https://github.com/ArborealML/Inference-Router/tree/main/backlog/tasks).
+
+A tag with a `-suffix` publishes as a GitHub prerelease (fbc48d6); `v0.1.0` with no suffix publishes as final.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -39,4 +61,20 @@ decision-10 settled the platform surface: release linux-x64 and win-x64, nothing
 Precondition, not an acceptance criterion: the workflow must declare and gate two platforms first (TASK-15). Cut off as a criterion because that change already has an owner and a criterion of its own. Also gated by the owner task asking whether to publish at all: a tag creates a public release, and no decision on the board grants that. Status returns to Waiting when both clear.
 
 Precondition, not a criterion (it is TASK-15 AC #2 and has one owner): the workflow must no longer declare or gate on osx artifacts. Owner authorisation to publish at all is a separate task; TASK-28 is Blocked on it.
+
+Wake condition, updated 07:45 UTC: the TASK-15 precondition is satisfied - commit 713ffdd dropped the osx legs and the gate now counts two archives, re-verified on the checked-out file. What is left is one human act: the go-ahead on TASK-32. That is why this moved from Waiting to Blocked - no event wakes it until a person answers cut or hold.
+
+Floor updated to 6aa26cc for the same reason: the workflow that runs is the one in the tagged commit, so a tag older than 6aa26cc runs the older gate that could pass unchecked bytes. Check-then-tag, never a hardcoded sha as the target.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+created: 2026-11-17T07:53:00Z
+
+---
+
+Wake condition rewritten, and a new step added from an external review of the release work, checked against the file: Actions runs the workflow from the commit the tag points at, so a tag on anything older than fbc48d6 runs the old four-leg workflow and the macOS legs queue again. Verified on the checked-out HEAD: matrix legs parse to [linux-x64, win-x64]; the gate names the same two in expected_rids (line 216); the archive-count refusal is at 225; prerelease handling at 238-241. The same ancestry check is now on TASK-32 for the case where the owner cuts the tag personally. Two external deep reviews of this area (713ffdd, fbc48d6) are recorded as in flight; per the contract that changes neither status nor assignee, and their request bookkeeping stays out of the board.
+
+---
+<!-- COMMENTS:END -->
