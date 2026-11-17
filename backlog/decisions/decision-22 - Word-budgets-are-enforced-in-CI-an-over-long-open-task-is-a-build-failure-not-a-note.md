@@ -28,7 +28,13 @@ because one session pushed them down, and a limit that lives in prose is a prefe
 Budgets are a gate. The CI `board contract` job runs `python3 tools/board-check.py --strict-budget`, so an open task over
 **600 words in its whole body** or **300 words in any one section** fails the build. The evidence at the moment the gate
 closed (commit 5b05ab7, measured in a fresh clone of `origin/main` at 2a68e4c): **0 defects, 48 task files, 20 open tasks,
-9,693 words, median 529, largest 596, note list empty, `--strict-budget` exits 0**.
+9,693 words, median 529, largest 596 (TASK-2), note list empty, `--strict-budget` exits 0**.
+
+**Median, and the instrument that printed it.** The checker that produced 529 took the upper-middle element of an
+even-length list — a real bug, fixed in the same tool a day later. Re-measured with the corrected tool over a fresh
+extract of `2a68e4c` and of `5b05ab7`, the median of that corpus is still **529**, so the figure above stands as
+measured; the corpus at the time of the correction sits at 520. Where a median is quoted, name the corpus and the
+tool that read it.
 
 ## Consequences
 

@@ -6,9 +6,16 @@ Acceptance Criteria, Notes or SPEC. Nothing here is current guidance; it is the 
 why, kept so a later reader can tell a decision from an oversight. Disposition of each round's findings is in
 SPEC §15 and the commit that closed it.
 
+
+**Entry counts, recomputed from the blocks on 2026-11-17 at 17:2xZ** by counting `created:` lines per section
+rather than trusting the numbers written when each entry was moved: TASK-11 4, TASK-14 3, TASK-16 1, TASK-21 4, TASK-28 7, TASK-29 6, TASK-30 3, TASK-32 6, TASK-33 1, TASK-38 5, TASK-42 5, TASK-45 2, TASK-46 2, TASK-49 1 — 50 entries in 23
+sections (a task whose second-pass entries sat under another heading is counted once, and each section header
+now states its own count). The counts this file originally claimed were wrong; the blocks below are the record.
+
 ## TASK-11
 
-# TASK-11: 6 superseded comment(s), removed from the board body
+
+# TASK-11: 3 superseded comment(s), removed from the board body
 Nothing was deleted: this is the text that came out, and git history plus the cited commits and
 SPEC 15 rows keep the record. Newest two kept in the task.
 
@@ -36,7 +43,8 @@ created: 2026-11-17T13:56:00Z
 
 ## TASK-14
 
-# TASK-14: 6 superseded comment(s), removed from the board body
+
+# TASK-14: 3 superseded comment(s), removed from the board body
 Nothing was deleted: this is the text that came out, and git history plus the cited commits and
 SPEC 15 rows keep the record. Newest two kept in the task.
 
@@ -64,7 +72,8 @@ AC #4 is two badges and only one of them exists today: README lines 10-12 carry 
 
 ## TASK-16
 
-# TASK-16: 2 superseded comment(s), removed from the board body
+
+# TASK-16: 1 superseded comment(s), removed from the board body
 Nothing was deleted: this is the text that came out, and git history plus the cited commits and
 SPEC 15 rows keep the record. Newest two kept in the task.
 
@@ -76,7 +85,8 @@ Assignee changed from the external research service to the agent. Nothing has be
 
 ## TASK-21
 
-# TASK-21: 6 superseded comment(s), removed from the board body
+
+# TASK-21: 3 superseded comment(s), removed from the board body
 Nothing was deleted: this is the text that came out, and git history plus the cited commits and
 SPEC 15 rows keep the record. Newest two kept in the task.
 
@@ -104,7 +114,8 @@ Reassigned under decision-16 and **adopted as recommended** by the external desi
 
 ## TASK-28
 
-# TASK-28: 10 superseded comment(s), removed from the board body
+
+# TASK-28: 5 superseded comment(s), removed from the board body
 Nothing was deleted: this is the text that came out, and git history plus the cited commits and
 SPEC 15 rows keep the record. Newest two kept in the task.
 
@@ -148,7 +159,8 @@ Board update: [TASK-39](https://github.com/ArborealML/Inference-Router/blob/main
 
 ## TASK-29
 
-# TASK-29: 10 superseded comment(s), removed from the board body
+
+# TASK-29: 5 superseded comment(s), removed from the board body
 Nothing was deleted: this is the text that came out, and git history plus the cited commits and
 SPEC 15 rows keep the record. Newest two kept in the task.
 
@@ -198,7 +210,8 @@ created: 2026-11-17T13:44:00Z
 
 ## TASK-30
 
-# TASK-30: 4 superseded comment(s), removed from the board body
+
+# TASK-30: 2 superseded comment(s), removed from the board body
 Nothing was deleted: this is the text that came out, and git history plus the cited commits and
 SPEC 15 rows keep the record. Newest two kept in the task.
 
@@ -218,7 +231,8 @@ Precedent claim verified independently, and the line anchors in my first wording
 
 ## TASK-32
 
-# TASK-32: 12 superseded comment(s), removed from the board body
+
+# TASK-32: 6 superseded comment(s), removed from the board body
 Nothing was deleted: this is the text that came out, and git history plus the cited commits and
 SPEC 15 rows keep the record. Newest two kept in the task.
 
@@ -270,7 +284,8 @@ Blocked, not Waiting: the chain it sits behind now waits on a person. Its stated
 
 ## TASK-33
 
-# TASK-33: 2 superseded comment(s), removed from the board body
+
+# TASK-33: 1 superseded comment(s), removed from the board body
 Nothing was deleted: this is the text that came out, and git history plus the cited commits and
 SPEC 15 rows keep the record. Newest two kept in the task.
 
@@ -282,7 +297,8 @@ Reassigned under decision-16: the permission is no longer the owner's to type, s
 
 ## TASK-38
 
-# TASK-38: 6 superseded comment(s), removed from the board body
+
+# TASK-38: 3 superseded comment(s), removed from the board body
 Nothing was deleted: this is the text that came out, and git history plus the cited commits and
 SPEC 15 rows keep the record. Newest two kept in the task.
 
@@ -314,7 +330,8 @@ Blocked on TASK-49 (c): whether one ruleset or two, because a `creation` rule wi
 
 ## TASK-42
 
-# TASK-42: 8 superseded comment(s), removed from the board body
+
+# TASK-42: 4 superseded comment(s), removed from the board body
 Nothing was deleted: this is the text that came out, and git history plus the cited commits and
 SPEC 15 rows keep the record. Newest two kept in the task.
 
@@ -361,7 +378,8 @@ Blocked on TASK-49 (a) and (b): the canary decision and whether the destructive 
 
 ## TASK-45
 
-# TASK-45: 4 superseded comment(s), removed from the board body
+
+# TASK-45: 2 superseded comment(s), removed from the board body
 Nothing was deleted: this is the text that came out, and git history plus the cited commits and
 SPEC 15 rows keep the record. Newest two kept in the task.
 
@@ -387,7 +405,8 @@ The owner keeps the veto, not the keystrokes.
 
 ## TASK-46
 
-# TASK-46: 2 superseded comment(s), removed from the board body
+
+# TASK-46: 1 superseded comment(s), removed from the board body
 Nothing was deleted: this is the text that came out, and git history plus the cited commits and
 SPEC 15 rows keep the record. Newest two kept in the task.
 
@@ -405,7 +424,8 @@ created: 2026-11-17T13:43:00Z
 
 ## TASK-49
 
-# TASK-49: 2 superseded comment(s), removed from the board body
+
+# TASK-49: 1 superseded comment(s), removed from the board body
 Nothing was deleted: this is the text that came out, and git history plus the cited commits and
 SPEC 15 rows keep the record. Newest two kept in the task.
 
@@ -415,8 +435,10 @@ created: 2026-11-17T14:10:00Z
 
 **Rescoped, because the first version asked the owner for an agent's decision.** It previously carried a third answer about the scope of the `v*` ruleset — who may create a `v*` tag. That is a repository setting reachable over REST, which decision-16 assigns to the agent, so it now lives as a criterion on TASK-38 with its reasoning, and TASK-38 chooses between one ruleset and two layered rulesets itself. A fourth item, about swapping the social-preview card, moved to TASK-46, where a re-render is a one-line instruction to an agent. What stays here is exactly the two things decision-16 and decision-14 leave with a person: runner spend beyond what decision-10 already allows, and creating a new public repository under the organisation.
 
-### TASK-38 (second pass, 16:1xZ)
 
+## TASK-38 (second pass, 16:1xZ)
+# TASK-38: 2 superseded comment(s), removed from the board body
+Nothing was deleted: this is the text that came out, and git history plus the cited commits and SPEC 15 rows keep the record.
 created: 2026-11-17T14:10:00Z
 
 ---
@@ -433,8 +455,10 @@ created: 2026-11-17T15:01:00Z
 
 ---
 
-### TASK-42 (second pass, 16:1xZ)
 
+## TASK-42 (second pass, 16:1xZ)
+# TASK-42: 1 superseded comment(s), removed from the board body
+Nothing was deleted: this is the text that came out, and git history plus the cited commits and SPEC 15 rows keep the record.
 created: 2026-11-17T14:25:00Z
 
 ---
@@ -443,8 +467,10 @@ Status corrected to match the body: agent-run, no owner keystroke. **Wake:** TAS
 
 ---
 
-### TASK-46 (second pass, 16:1xZ)
 
+## TASK-46 (second pass, 16:1xZ)
+# TASK-46: 1 superseded comment(s), removed from the board body
+Nothing was deleted: this is the text that came out, and git history plus the cited commits and SPEC 15 rows keep the record.
 created: 2026-11-17T13:56:00Z
 
 ---
@@ -455,8 +481,10 @@ AC #1, #2, #3 and #4 are checked on that evidence; **#5 stays open**, which is w
 
 ---
 
-### TASK-29 (second pass 16:2xZ)
 
+## TASK-29 (second pass 16:2xZ)
+# TASK-29: 1 superseded comment(s), removed from the board body
+Nothing was deleted: this is the text that came out, and git history plus the cited commits and SPEC 15 rows keep the record.
 created: 2026-11-17T13:56:00Z
 
 ---
@@ -465,8 +493,10 @@ created: 2026-11-17T13:56:00Z
 
 ---
 
-### TASK-28 (second pass 16:2xZ)
 
+## TASK-28 (second pass 16:2xZ)
+# TASK-28: 2 superseded comment(s), removed from the board body
+Nothing was deleted: this is the text that came out, and git history plus the cited commits and SPEC 15 rows keep the record.
 created: 2026-11-17T13:30:00Z
 
 ---
@@ -483,8 +513,10 @@ created: 2026-11-17T15:01:00Z
 
 ---
 
-### TASK-30 (second pass 16:2xZ)
 
+## TASK-30 (second pass 16:2xZ)
+# TASK-30: 1 superseded comment(s), removed from the board body
+Nothing was deleted: this is the text that came out, and git history plus the cited commits and SPEC 15 rows keep the record.
 created: 2026-11-17T11:08:00Z
 
 ---
@@ -497,8 +529,10 @@ Numbers and policy are decided (TASK-34 answered; the external answer was adopte
 
 ---
 
-### TASK-11 (second pass 16:2xZ)
 
+## TASK-11 (second pass 16:2xZ)
+# TASK-11: 1 superseded comment(s), removed from the board body
+Nothing was deleted: this is the text that came out, and git history plus the cited commits and SPEC 15 rows keep the record.
 created: 2026-11-17T14:02:00Z
 
 ---
@@ -507,8 +541,10 @@ created: 2026-11-17T14:02:00Z
 
 ---
 
-### TASK-14 pattern-findings block (second pass 16:3xZ)
 
+## TASK-14 pattern-findings block (second pass 16:3xZ)
+# TASK-14: 0 superseded block(s), removed from the board body
+Nothing was deleted: this is the text that came out, and git history plus the cited commits and SPEC 15 rows keep the record.
 **Pattern findings (15 public .NET/C# READMEs, external research request completed)**
 The report's own stated limits: a purposive high-visibility sample, not a star-ranked top 15; no AIR
 binary was executed and no artwork was rendered. Treat each item as a recommendation to check against
@@ -529,8 +565,10 @@ CI config into the README; badge spam and stale tables of contents.
 - Art and provenance: [docs/images/](https://github.com/ArborealML/Inference-Router/tree/main/docs/images/), [docs/images/README.md](https://github.com/ArborealML/Inference-Router/blob/main/docs/images/README.md).
 - Numbers any claim must trace to: [docs/benchmarks.md](https://github.com/ArborealML/Inference-Router/blob/main/docs/benchmarks.md).
 
-### TASK-21 (second pass 16:4xZ)
 
+## TASK-21 (second pass 16:4xZ)
+# TASK-21: 1 superseded comment(s), removed from the board body
+Nothing was deleted: this is the text that came out, and git history plus the cited commits and SPEC 15 rows keep the record.
 created: 2026-11-17T14:02:00Z
 
 ---
@@ -538,3 +576,103 @@ created: 2026-11-17T14:02:00Z
 Wake named explicitly for the task that parks behind this one (TASK-11, Waiting): **the SPEC revision that writes the three adopted postures into SPEC §6, §10 and §12.5**, with its revision-log line in the same commit. Measured at b214ce6: `SPEC.md` has no operator-first or `/admin`-tunnel posture text, so the act is not done and TASK-11 must not start. The adoption itself is recorded in the comment above; AC #1 and #2 stay unchecked until the SPEC revision exists, because this task is graded on the record, not on the recommendation.
 
 ---
+
+## TASK-2
+
+# TASK-2: 11 superseded prose block(s), removed from the board body in c9a7dfc
+Not comments: this is prose cut from the Description, Implementation Plan and Notes when TASK-2 came
+inside the whole-body word budget (1,431 words -> 596). Nothing was rewritten out of existence; the text
+below is what came out, verbatim. The task now carries the conclusions these paragraphs argued for, and
+the code and SPEC rows carry the fixes.
+
+**Status notes**
+The replay slice's external review found six gaps, each verified against the code at that commit and all of them fixed in the next slice rather than left as notes: replay is snapshotted before the live subscription starts, so an event appended in that window reaches neither path, and the per-frame SSE flush widens the hole; replay caps at 1024 events while the ring holds 4096, so a reconnecting client can be silently missing a thousand events it is entitled to; the subscriber buffer drops with `DropWrite` and no counter, so a dropped terminal event can be invisible to a reader that is already filtering; a `since` cursor ahead of the ring makes the replay helper compute a negative count and throw after the SSE headers are already sent; the per-subscription channel is never completed and is not linked to shutdown, so a reader of an unknown ticket stays subscribed and the subscriber list is uncapped; and the tests open the feed only after requests finish, which proves replay isolation but never exercises the handover window. Two related items are decisions rather than fixes: a ticket-scoped reader cannot see the engine-switch events it is promised because switch events carry no ticket id, and the docs' promise that a gap in `Seq` always reveals loss is true only for an unfiltered feed. Both are recorded as acceptance gaps to settle with the fix.
+
+Fix slice (event-feed correctness first, ticket failure paths second). Each item lands with a test.
+
+An external review of the three board-only commits that recorded these findings is in flight; it re-checks the findings against the code and the priority order of the fix slice. An in-flight review does not change this task status. Nothing from it is adopted until verified against this code.
+
+A second external pass over the fix slice found two more cursor holes, both now fixed: a `since` at the top of the number range overflowed checked arithmetic inside the replay helper and threw after the SSE headers were already flushed, and a cursor ahead of the ring (a reconnect after a restart) produced an empty replay and then filtered out every future event, so the feed was open but permanently silent — the cursor is now clamped to the ring head. It also found that a full feed was enforced by an exception thrown after the response had committed to SSE headers (fixed with a pre-flight 503 and a refusal that is a return value), and that the tests only ever exercised replay rather than the handover window: there is now a concurrent-producer ring test that asserts every sequence number arrives exactly once, and a feed test that subscribes before the flood. What it found that is NOT fixed stays open and is stated in SPEC rather than papered over: an ended feed says "reconnect", not "N events were lost"; an ended feed is indistinguishable from one that finished normally; a filtered reader cannot see that a terminal event was evicted from the ring; and the ring has no epoch, so a restart is not distinguishable from a quiet period. Those need a wire decision, and they are the shape of the remaining work.
+
+Moved out of In Progress: the replay slice is merged, and the remaining ticket-failure-path work is gated by nothing external — it waits for attention, so it belongs in the queue with its plan attached rather than in the WIP column.
+
+Prerequisite check on the two open criteria (board audit, no status change). AC #2 says it waits on the switch identity described as TASK-10 plan step 3 — immutable (target, epoch, completion) state that a completion can be validated against. TASK-10 is now Done, and the identity is not in the tree: the runtime holds one switch state per engine carrying model, profile and start time only, and nothing in the source names an epoch at all. SPEC 14.1 row 3 calls switch serialization and the error contract closed, and its "epoch" row (row 6) is the event-feed epoch awaiting the live-view decision on TASK-21 — a different thing. So the prerequisite AC #2 depends on is real, exists nowhere in the code, and is not owned by any open task. Flagging it, not deciding it: whether that step becomes a TASK-2 step or its own task is the code owner's call. Until someone owns it, AC #2 is not merely unstarted, it is un-buildable.
+
+**Correction:** the note here previously claimed `GET /admin/tickets/{id}/events`,
+`POST /admin/tickets/{id}/cancel` and a ticket-scoped replay test had landed. They had not: the surface
+is `GET /admin/tickets/{id}` (read) and `DELETE /admin/tickets/{id}` (cancel), `RouterEventFilter` has
+no ticket field, and `AgentSurfaceTests` pins the tool manifest and `X-Inference-Ticket`, not replay.
+AC #1 is unchecked again. What is actually shipped: `X-Inference-Ticket` on every admitted response
+(including handled failures), so a caller can reach the two ticket routes without scraping the stream.
+
+AC #1 closed as shipped: `GET /admin/tickets/{id}/events?since=<seq>` plus `ticket=` on
+`/admin/events`, both filtering replay **and** live tail. `EventSurfaceTests` proves isolation with two
+concurrent tickets (a frame carrying the other ticket id fails the test) and pins the admin feed's
+PascalCase field names. Fixing this surfaced two defects in the library's own subscriber:
+`SubscribeEvents` replayed the ring unfiltered, and its single-slot waiter dropped any event that
+arrived while the consumer was busy; subscribers now have a bounded 256-event buffer (drops are visible
+as `Seq` gaps) and SSE headers flush before the first frame, so an unknown ticket is a quiet 200.
+
+Still open: #2 needs the switch identity (`(target, epoch, completion)`, TASK-10 plan step 3);
+`/v1/models` still lacks AIR model metadata; the `POST /admin/tickets/{id}/cancel` alias remains
+SPEC §13.3 work. #3 is partly met — wire tests cover the replay additions and `ServerWireTests` keeps
+the OpenAI-compatible surface pinned — and stays open for additions that do not exist yet.
+
+- #2 needs the switch identity the validation is checked against — that is TASK-10 plan step 3
+  (immutable `(target, epoch, completion)` switch state). Validating against today's mutable
+  per-target flag would pass the test and still mis-attribute a switch.
+- `/v1/models` does not yet carry AIR model metadata (context window, slots, availability), and the
+  Pi-side half (session extension) is a different repo entirely.
+
+**Links**
+- Surface still owed: [SPEC §13.3](https://github.com/ArborealML/Inference-Router/blob/main/SPEC.md#L1157) — the delta list is the spec of this task.
+- Admin routes as mapped today: [ServerApp.cs:51-57](https://github.com/ArborealML/Inference-Router/blob/main/src/Arboreal.InferenceRouter.Server/ServerApp.cs#L51-L57) — read, cancel, and both event feeds.
+- Tests to extend: [EventSurfaceTests.cs](https://github.com/ArborealML/Inference-Router/blob/main/tests/Arboreal.InferenceRouter.Tests/EventSurfaceTests.cs) for ticket filtering, [ServerWireTests.cs](https://github.com/ArborealML/Inference-Router/blob/main/tests/Arboreal.InferenceRouter.Tests/ServerWireTests.cs) for the OpenAI-compatible surface.
+- Protocol write-up to keep honest: [docs/ai-integration.md](https://github.com/ArborealML/Inference-Router/blob/main/docs/ai-integration.md).
+
+## TASK-6
+
+# TASK-6: 8 superseded prose block(s), removed from the board body in 6e98830
+Prose cut from Implementation Notes when the task's Notes were reduced to current state plus the standing
+tool limitation. The blocked/unblocked history below is the record of which predecessor moved when; the
+tool limit that survives is in the task.
+
+Blocked on TASK-19 — the next move is the map-model decision, which belongs to a human. Work here resumes when that task is closed.
+
+Two things gate this: the map-model decision, and the lifecycle work it is meant to pin (TASK-1), which is now unblocked and mine to start.
+
+The lifecycle work that was gating this has started, so the map will need pinning to the engine components once the provider seam settles.
+
+The lifecycle provider seam and the Docker provider are in main, so the map can pin the new lifecycle components once the map-model decision lands. Still blocked on TASK-19.
+
+Unblocked: the map-model decision is made and the library is a container (TASK-19). What is left here is the pinning the original task asked for — the new lifecycle seam (provider interface, coordinator, delegated-exec and Docker providers) now has components, and the map should say which files each owns; the duplicate air-cli / cli containers the earlier scan produced are also gone.
+
+Map state at 18d7279 (checked by exporting the map and reading its zones): no unidentified group remains; every component has a container parent, all 20 src files are claimed by a component, and the only zones are the four groups under the library container. The residual is that the library container is a permanent ghost: groma matches a declared container to a scan only when the scanner produces a container fact, and the C# scanner produces those only from application entry points, so a library never gets one and 'groma accept' prints 'no scan match'. The box will render outlined for as long as the library is one container. Pinning work to components (this task) is unaffected.
+
+Status check for the board: this task is not blocked. TASK-19's map-model decision landed and the library is one declared container (sixteen components under it, verified by counting the map tree), so the pinning named here is ordinary work now. It is also unaffected by TASK-27, the follow-on owner decision about that container rendering as an outline rather than a solid box: keeping the outline changes nothing here, and only a decision to split the library per executable would re-open this task's shape.
+
+Decision needed: what is a container here. The C4 guidance treats a shared assembly as *not* a container,
+which argues for keeping the shared components unfiled until we choose a simplification, or for filing
+them under the process that actually hosts them — noting that `air serve` runs the HTTP host inside the
+CLI process and `air config` loads configuration locally, so the CLI is not merely a remote client of the
+library and the map cannot show one source file owned by both executables.
+
+## Duplicate archived titles
+
+[backlog/archive/tasks/task-31 - Decision-cut-the-v0.1.0-tag.md](https://github.com/ArborealML/Inference-Router/blob/main/backlog/archive/tasks/task-31%20-%20Decision-cut-the-v0.1.0-tag.md)
+and
+[backlog/archive/tasks/task-32 - Decision-cut-the-v0.1.0-tag.md](https://github.com/ArborealML/Inference-Router/blob/main/backlog/archive/tasks/task-32%20-%20Decision-cut-the-v0.1.0-tag.md)
+are the **same decision filed twice**, created five minutes apart with identical titles. TASK-32 is the
+duplicate that was kept as the live record (it carried the acceptance criterion and the board dependency)
+and TASK-31 was archived beside it so the id and its inbound links survive. The question both asked —
+whether to cut `v0.1.0` — is closed by [TASK-50](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-50%20-%20Decision-approve-the-first-public-version-number-v0.1.0-%E2%80%94-one-line.md)
+and neither archived id is a live dependency. A reader who follows either link is reading superseded
+history, not the current gate.
+
+## TASK-44
+
+# TASK-44: 1 superseded prose block, retired from Implementation Notes on 2026-11-17
+The stderr census behind a criterion that retired to SPEC §15 with the v0.12.20 round. It is not open work: the
+task keeps a pointer here, and the command below re-derives every number in it from the workflow on `main`.
+
+**The census behind the stderr criterion, retired into SPEC 15 with the v0.12.20 round** (re-run: `git show main:.github/workflows/release.yml | grep -c '2>/dev/null'`): 9 sites discard stderr, 6 jq shape guards discard stdout only, 1 discards both, 1 API read captures stderr to a temp file removed by an EXIT trap and reports only the exit code plus status-like numbers, 1 merge is compiler output (`dotnet publish … 2>&1 | tee aot-<rid>.log`). jq prints a value only for typed operations, truncated to ten characters, and every typed operation in those six guards sits behind a `type` guard — pinned by `shape_jq_stderr`.

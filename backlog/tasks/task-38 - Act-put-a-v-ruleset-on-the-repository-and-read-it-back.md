@@ -5,7 +5,7 @@ status: Waiting
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T09:11:00Z'
-updated_date: '2026-11-17T16:54:00Z'
+updated_date: '2026-11-17T17:08:00Z'
 labels:
   - release
   - security
@@ -17,7 +17,7 @@ ordinal: 37000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-**An act, not a decision: create an active repository ruleset on `v*` that governs creating, moving and deleting release tags, then read it back.** Read the live state with the block below before posting: a ruleset is the scriptable route here (the tag-protection endpoint answers 404 for this token), and the answer at the time of the act goes in the report. About 20 minutes with `gh api`, reversible with a DELETE.
+**An act, not a decision: create an active repository ruleset on `v*` that governs creating, moving and deleting release tags, then read it back.** Read the live state before posting: a ruleset is the scriptable route here (the tag-protection endpoint answers 404 for this token), and the answer at the moment of the act goes in the report. About 20 minutes with `gh api`, reversible with a DELETE.
 
     gh api repos/ArborealML/Inference-Router/rulesets      # read live, do not quote an older answer
 
@@ -50,10 +50,9 @@ layered rulesets are the shape that does both. Measured at 8f78a73; the option a
 
 Superseded log entries: [board trim, 2026-11-17](https://github.com/ArborealML/Inference-Router/blob/main/backlog/archive/board-trim-2026-11-17.md).
 
-**Shape, as the coding session's recommendation until readback settles it:** protect `update` and `deletion` on `v*` and do not restrict `creation` — a `creation` rule with `bypass_actors: []` blocks the very principal that pushes the release tag, so a creation rule and the first tag cannot both be first. What must be proven is a refused move and a refused delete on a published tag.
+**Order, corrected by the coding session on 2026-11-17 and superseding the order this board first wrote:** ruleset on
+`v*` -> immutable releases -> the canary -> post-publish readback proof -> `v0.1.0`. A canary that runs before the
+ruleset proves nothing about protection, so the ruleset goes first. **Shape, still the coding
+session's recommendation pending readback:** protect `update` and `deletion` and leave `creation` free, because a
+`creation` rule with `bypass_actors: []` blocks the very principal that pushes the release tag.
 <!-- SECTION:NOTES:END -->
-
-## Comments
-
-<!-- COMMENTS:BEGIN -->
-<!-- COMMENTS:END -->

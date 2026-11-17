@@ -7,7 +7,7 @@ status: To Do
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T02:18:00Z'
-updated_date: '2026-11-17T16:42:00Z'
+updated_date: '2026-11-17T17:07:00Z'
 labels:
   - ui
   - wire
@@ -28,15 +28,15 @@ ordinal: 21000
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 #1 The audience and the credential posture are stated
-- [ ] #2 #2 The loss-reporting event kind is approved or declined, with a one-line reason
+- [ ] #1 The audience and the credential posture are stated
+- [ ] #2 The loss-reporting event kind is approved or declined, with a one-line reason
 <!-- AC:END -->
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
 **How these were reached.** The external research and review service recommended all three on 2026-11-17; this board checked each against
-[SPEC.md](https://github.com/ArborealML/Inference-Router/blob/main/SPEC.md) §6 and §10 and the ring's eviction behaviour in code. Findings and dispositions are here and in SPEC; request bookkeeping is not published.
+[SPEC.md](https://github.com/ArborealML/Inference-Router/blob/main/SPEC.md) §6 and §10 and the ring's eviction behaviour in code. Findings and dispositions are here and in SPEC.
 
 **1 — Operator dashboard first, not an agent debugger.** The feed reconstructs routing choices, engine-state transitions
 and terminal outcomes *within retention*; it never reconstructs a request trace, and an evicted transition cannot prove
@@ -47,8 +47,7 @@ new event and field contracts — stages, timings, correlation ids — a wire ad
 **2 — `/admin` stays unauthenticated and loopback-only; no token.** The view is co-located, reached over an operator tunnel. One admin token authorises engine start/stop as much as viewing, so a stolen token is control,
 not visibility; a read-only credential is honest only if a read-only endpoint exists — it does not.
 Worth doing now, not a wire change: browser-request hardening on a loopback control plane (Host
-and Origin checks, safe methods), since a hostile page can make a browser hit `localhost`. Remote or multi-user access
-returns as its own approval: TLS plus an authenticated read-only surface, separate from the mutating one.
+and Origin checks, safe methods), since a hostile page can make a browser hit `localhost`. Remote or multi-user access returns as its own approval: TLS plus an authenticated read-only surface.
 
 **3 — No loss/gap event kind.** Loss is subscriber-relative: an eviction event in the shared ring describes
 something that may affect nobody while consuming ring capacity, and a gap is already derivable from sequence holes plus
@@ -56,6 +55,8 @@ the exclusive cursor.
 
 **Owed by this task:** one SPEC revision recording the three postures, revision-log line in the same commit; TASK-11
 parks behind it.
+
+Superseded log entries for this task: [board trim, 2026-11-17](https://github.com/ArborealML/Inference-Router/blob/main/backlog/archive/board-trim-2026-11-17.md).
 <!-- SECTION:NOTES:END -->
 
 ## Comments

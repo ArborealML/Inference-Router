@@ -5,7 +5,7 @@ status: To Do
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-16T20:40:00Z'
-updated_date: '2026-11-17T16:40:00Z'
+updated_date: '2026-11-17T17:05:00Z'
 labels: []
 dependencies: []
 priority: medium
@@ -22,9 +22,9 @@ Closes the AIR side of [SPEC §13.3](https://github.com/ArborealML/Inference-Rou
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [x] #1 #1 Pi can replay only the events for its own ticket
-- [ ] #2 #2 A ready ticket is validated against the switch that produced it
-- [ ] #3 #3 Wire tests cover each addition and the OpenAI-compatible surface stays unchanged
+- [x] #1 Pi can replay only the events for its own ticket
+- [ ] #2 A ready ticket is validated against the switch that produced it
+- [ ] #3 Wire tests cover each addition and the OpenAI-compatible surface stays unchanged
 <!-- AC:END -->
 
 ## Implementation Plan

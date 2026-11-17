@@ -5,7 +5,7 @@ status: Waiting
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T05:58:00Z'
-updated_date: '2026-11-17T16:00:00Z'
+updated_date: '2026-11-17T17:08:00Z'
 labels:
   - release
   - ci
@@ -28,10 +28,9 @@ ordinal: 28000
 One tag, one run: the release workflow has only ever been exercised as a dry run, and it refuses to publish unless
 every declared leg produced a verified archive. decision-10 fixed the surface — linux-x64 and win-x64, nothing else.
 
-**Wake: agent predecessors only — no person is in this path any more.(https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-50%20-%20Decision-approve-the-first-public-version-number-v0.1.0-—-one-line.md), and nothing else.** Under decision-16 the cut itself is an
-agent act that gets reported; requiring a go-ahead first is decision-21, pending that same ratification. Everything
-else here is an agent act, so this task sits Waiting and names that event. A `hold` records a decision and does not
-release this task.
+**Wake: the agent predecessors in front matter — TASK-38, TASK-42, TASK-44, TASK-45, TASK-48 — and nothing
+else.** Under decision-16 the cut is an agent act that gets reported; decision-21, which would have required a
+go-ahead first, was **declined** on 2026-11-17. A `hold` records a decision and does not release this task.
 
 **Standing rule — the floor a tag must clear.** Actions runs the workflow from the commit the tag points at, so a tag
 on an older commit runs an older, weaker gate: it could publish unchecked bytes, and before decision-10 it also
@@ -63,8 +62,10 @@ first and a published name is never reused.
 
 <!-- SECTION:NOTES:BEGIN -->
 **Ordering fact the graph cannot express.** TASK-48's readback proof can only run against a release that already
-exists, so the real sequence is: canary release -> post-publish readback proof -> ruleset -> immutable releases ->
-the `v0.1.0` tag. TASK-28 depends on TASK-48 for its code and tests, never for a live proof that would need this
+exists, so the sequence is: **ruleset on `v*` (protect `update` and `deletion`, leave `creation` free) -> immutable releases
+on -> the canary through the real gate -> post-publish readback proof -> the `v0.1.0` tag.** The coding session corrected the order on
+2026-11-17: an earlier line here put the canary first, contradicting TASK-42's rule that a canary against an unprotected
+repository proves nothing. That order is superseded, not forgotten. TASK-28 depends on TASK-48 for its code and tests, never for a live proof that would need this
 tag first; if a criterion ever reads as TASK-48 gating TASK-28 on a published release, that is a deadlock in
 prose and gets reworded, not an edge to add.
 
@@ -72,12 +73,10 @@ prose and gets reworded, not an edge to add.
 with empty `bypass_actors` blocks the principal that pushes the tag, so the ruleset and the first tag cannot both be
 first; [TASK-45](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-45%20-%20Enable-GitHub-immutable-releases-before-the-first-tag.md) done; [TASK-44](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-44%20-%20Close-the-open-release-gate-review-findings-SPEC-v0-12-15-onward.md) closed; CI green on the tagged commit.
 
-**Preconditions, not criteria:** two-platform legs (TASK-15, closed) and the platform surface (decision-10). Which
-commit last raised the floor is history and lives in git and the SPEC revision log; the rule above is the floor, so no
-sha quoted here can go stale. Superseded log entries for this task: [board trim, 2026-11-17](https://github.com/ArborealML/Inference-Router/blob/main/backlog/archive/board-trim-2026-11-17.md).
+**Preconditions, not criteria:** two-platform legs (TASK-15, closed) and platform surface (decision-10). Which commit
+raised the floor last is history in git and the SPEC log; the rule above is the floor, so no sha here goes stale. Superseded log entries for this task: [board trim, 2026-11-17](https://github.com/ArborealML/Inference-Router/blob/main/backlog/archive/board-trim-2026-11-17.md).
 
-**Duplicate archived:** [TASK-32](https://github.com/ArborealML/Inference-Router/blob/main/backlog/archive/tasks/task-32%20-%20Decision-cut-the-v0.1.0-tag.md) carried the same deliverable, actor and outcome and is in the archive; its
-go/hold analysis now lives on TASK-50, and its `Decision:` title contradicted an agent assignee.
+**Duplicate archived:** [TASK-32](https://github.com/ArborealML/Inference-Router/blob/main/backlog/archive/tasks/task-32%20-%20Decision-cut-the-v0.1.0-tag.md) was the same deliverable, actor and outcome; its go/hold analysis lives on TASK-50.
 <!-- SECTION:NOTES:END -->
 
 ## Comments

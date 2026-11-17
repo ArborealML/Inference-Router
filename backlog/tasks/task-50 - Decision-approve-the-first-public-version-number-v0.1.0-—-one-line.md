@@ -34,6 +34,16 @@ ordinal: 50000
 - [x] #2 the answer `ratify decision-21: yes | no` is recorded, and decision-21's status is changed to match
 <!-- AC:END -->
 
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+**The record of this answer.** The owner's line and both criteria are in the comment below; the board commit that recorded
+it, declined decision-21 and reworded the tag task is c9a7dfc. decision-21's disposition is written in
+[decision-21](https://github.com/ArborealML/Inference-Router/blob/main/backlog/decisions/decision-21%20-%20A-public-version-number-is-the-owners-go-ahead-a-test-tag-inside-an-agent-run-protocol-is-an-agent-act.md),
+and the act itself — cutting `v0.1.0` — is [TASK-28](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-28%20-%20Cut-the-first-release-tag-and-watch-the-release-run.md).
+This task performed no act and owns no work beyond the two answers.
+<!-- SECTION:NOTES:END -->
+
 ## Comments
 
 <!-- COMMENTS:BEGIN -->
