@@ -113,3 +113,10 @@ banner at 3:1–4:1 (1200×360–400 source, rendered at ≤960px); GitHub's soc
 fallback. Keep assets under `docs/images/` (`.github/` stays for workflows and community files), give
 every image alt text, and record generated art in `docs/images/ATTRIBUTION.md` with the generator, date,
 maintainer edits and reuse terms — without claiming rights beyond what the tool's terms give.
+
+## Links
+
+- The file: [README.md](https://github.com/ArborealML/Inference-Router/blob/main/README.md) — banner [line 1](https://github.com/ArborealML/Inference-Router/blob/main/README.md#L1), badges [10-12](https://github.com/ArborealML/Inference-Router/blob/main/README.md#L10-L12), platform copy [82-84](https://github.com/ArborealML/Inference-Router/blob/main/README.md#L82-L84), CI section [214](https://github.com/ArborealML/Inference-Router/blob/main/README.md#L214).
+- Release badge cannot resolve until this is non-empty: [releases](https://github.com/ArborealML/Inference-Router/releases).
+- Art and provenance: [docs/images/](https://github.com/ArborealML/Inference-Router/tree/main/docs/images/), [docs/images/README.md](https://github.com/ArborealML/Inference-Router/blob/main/docs/images/README.md).
+- Numbers any claim must trace to: [docs/benchmarks.md](https://github.com/ArborealML/Inference-Router/blob/main/docs/benchmarks.md).

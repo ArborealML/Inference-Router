@@ -34,6 +34,12 @@ Three things gate the live view (TASK-11). What it is for: an operator dashboard
 Read the decisions against SPEC §6.1 (admin surface: unauthenticated, loopback bind) and §10 (feed shape, replay, subscriber bounds): https://github.com/ArborealML/Inference-Router/blob/main/SPEC.md — those two sections are the whole evidence base for the audience and credential questions, and §6.1 plus the §6.1 casing table is what a new event kind has to be added through. Per the owner instruction this decision is now the agents to take and record as a decision record; the wire addition is still a §6 change with contract tests, so the loss-event half lands as code only with a decision record naming it. TASK-11 wakes when that record exists.
 <!-- SECTION:NOTES:END -->
 
+## Links
+
+- Admin surface as it ships: [SPEC §6](https://github.com/ArborealML/Inference-Router/blob/main/SPEC.md#L635) — unauthenticated, loopback bound.
+- Feed a loss event would extend: [SPEC §10](https://github.com/ArborealML/Inference-Router/blob/main/SPEC.md#L946).
+- Screens the answers shape: [SPEC §12.5](https://github.com/ArborealML/Inference-Router/blob/main/SPEC.md#L1079). Task that wakes on the answer: [TASK-11](https://github.com/ArborealML/Inference-Router/tree/main/backlog/tasks).
+
 ## Do this (about 5 minutes)
 
 Three one-line answers, and the live view stops being un-startable:

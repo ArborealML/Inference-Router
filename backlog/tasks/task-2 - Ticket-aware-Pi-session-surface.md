@@ -80,3 +80,10 @@ Still open, and why:
   per-target flag would pass the test and still mis-attribute a switch.
 - `/v1/models` does not yet carry AIR model metadata (context window, slots, availability), and the
   Pi-side half (session extension) is a different repo entirely.
+
+## Links
+
+- Surface still owed: [SPEC §13.3](https://github.com/ArborealML/Inference-Router/blob/main/SPEC.md#L1157) — the delta list is the spec of this task.
+- Admin routes as mapped today: [ServerApp.cs:51-57](https://github.com/ArborealML/Inference-Router/blob/main/src/Arboreal.InferenceRouter.Server/ServerApp.cs#L51-L57) — read, cancel, and both event feeds.
+- Tests to extend: [EventSurfaceTests.cs](https://github.com/ArborealML/Inference-Router/blob/main/tests/Arboreal.InferenceRouter.Tests/EventSurfaceTests.cs) for ticket filtering, [ServerWireTests.cs](https://github.com/ArborealML/Inference-Router/blob/main/tests/Arboreal.InferenceRouter.Tests/ServerWireTests.cs) for the OpenAI-compatible surface.
+- Protocol write-up to keep honest: [docs/ai-integration.md](https://github.com/ArborealML/Inference-Router/blob/main/docs/ai-integration.md).

@@ -66,3 +66,10 @@ which argues for keeping the shared components unfiled until we choose a simplif
 them under the process that actually hosts them — noting that `air serve` runs the HTTP host inside the
 CLI process and `air config` loads configuration locally, so the CLI is not merely a remote client of the
 library and the map cannot show one source file owned by both executables.
+
+## Links
+
+- Map tree edited through the CLI: [groma/systems/inference-router/](https://github.com/ArborealML/Inference-Router/tree/main/groma/systems/inference-router/).
+- Library container as declared: [container.md](https://github.com/ArborealML/Inference-Router/blob/main/groma/systems/inference-router/containers/arboreal-inferencerouter/container.md).
+- Code the components must name: [Engines/Lifecycle/](https://github.com/ArborealML/Inference-Router/tree/main/src/Arboreal.InferenceRouter/Engines/Lifecycle/) and [EngineRuntime.cs](https://github.com/ArborealML/Inference-Router/blob/main/src/Arboreal.InferenceRouter/Engines/EngineRuntime.cs).
+- Claim being pinned to: [SPEC §5.3.1](https://github.com/ArborealML/Inference-Router/blob/main/SPEC.md#L420).

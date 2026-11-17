@@ -39,6 +39,12 @@ Owner instruction, so an agent takes it. This is a tool-behaviour trade, not a p
 ---
 <!-- COMMENTS:END -->
 
+## Links
+
+- Container in question: [container.md](https://github.com/ArborealML/Inference-Router/blob/main/groma/systems/inference-router/containers/arboreal-inferencerouter/container.md).
+- Empty shell awaiting an approve-or-leave call: [containers/inference-router-library/](https://github.com/ArborealML/Inference-Router/tree/main/groma/systems/inference-router/containers/inference-router-library/).
+- Decision that made the current shape: [decision-8](https://github.com/ArborealML/Inference-Router/tree/main/backlog/decisions). Commands: `groma view`, `groma web`.
+
 ## Do this (about 4 minutes)
 
 1. Run `groma view` in the repo (or `groma web` for the browser map) and look at the library box: it renders as a ghost outline, not a solid container.

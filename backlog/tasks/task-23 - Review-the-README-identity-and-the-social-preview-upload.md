@@ -53,6 +53,13 @@ Owner instruction, so reassigned — with the one human-only step split out rath
 ---
 <!-- COMMENTS:END -->
 
+## Links
+
+- Art to judge: [air-mark.svg](https://github.com/ArborealML/Inference-Router/blob/main/docs/images/air-mark.svg), [air-banner.svg](https://github.com/ArborealML/Inference-Router/blob/main/docs/images/air-banner.svg), [air-social.svg](https://github.com/ArborealML/Inference-Router/blob/main/docs/images/air-social.svg); palette and provenance: [docs/images/README.md](https://github.com/ArborealML/Inference-Router/blob/main/docs/images/README.md).
+- Where the banner is wired: [README.md:1](https://github.com/ArborealML/Inference-Router/blob/main/README.md#L1).
+- Where exports land: [docs/images/](https://github.com/ArborealML/Inference-Router/tree/main/docs/images/) — proposed `air-social-1280x640.png`, `air-mark-avatar.svg`, `air-mark-avatar-512.png`.
+- Upload that waits on the exports: [TASK-29](https://github.com/ArborealML/Inference-Router/tree/main/backlog/tasks).
+
 ## Do this (about 3 minutes)
 
 1. Open `docs/images/air-banner.svg` and `docs/images/air-mark.svg` in a browser, or just look at

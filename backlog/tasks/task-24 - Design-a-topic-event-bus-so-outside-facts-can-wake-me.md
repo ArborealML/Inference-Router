@@ -48,6 +48,11 @@ Moved to the external service per the owner instruction: this tasks deliverable 
 ---
 <!-- COMMENTS:END -->
 
+## Links
+
+- Push paths it would generalise: [docs/ai-integration.md](https://github.com/ArborealML/Inference-Router/blob/main/docs/ai-integration.md), [SPEC §10](https://github.com/ArborealML/Inference-Router/blob/main/SPEC.md#L946).
+- Surface a decision landing would publish: [backlog/](https://github.com/ArborealML/Inference-Router/tree/main/backlog/).
+
 ## Do this (about 5 minutes)
 
 Three answers, and I can build the first slice:

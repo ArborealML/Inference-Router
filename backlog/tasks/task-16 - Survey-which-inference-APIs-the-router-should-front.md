@@ -46,3 +46,9 @@ Assignee is the external service again now that the owner has authorised handing
 
 ---
 <!-- COMMENTS:END -->
+
+## Links
+
+- Seam the answer must fit: [EngineRuntime.cs](https://github.com/ArborealML/Inference-Router/blob/main/src/Arboreal.InferenceRouter/Engines/EngineRuntime.cs), [Config/](https://github.com/ArborealML/Inference-Router/tree/main/src/Arboreal.InferenceRouter/Config/).
+- What is promised on the wire: [SPEC §6](https://github.com/ArborealML/Inference-Router/blob/main/SPEC.md#L635); engine configuration: [SPEC §5.3](https://github.com/ArborealML/Inference-Router/blob/main/SPEC.md#L379).
+- Local-engine probes already recorded: [samples/](https://github.com/ArborealML/Inference-Router/tree/main/samples/), [docs/ai-integration.md](https://github.com/ArborealML/Inference-Router/blob/main/docs/ai-integration.md).

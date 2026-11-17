@@ -54,6 +54,12 @@ Owner instruction: the @claire queue is being worked by agents. Reassigned here 
 ---
 <!-- COMMENTS:END -->
 
+## Links
+
+- What the provider does without a daemon: [SPEC §5.3.1](https://github.com/ArborealML/Inference-Router/blob/main/SPEC.md#L420).
+- Read-only probe, safe config: `dotnet run --project src/Arboreal.InferenceRouter.Cli -- engines preflight -c samples/router.safe-smoke.toml` — [samples/router.safe-smoke.toml](https://github.com/ArborealML/Inference-Router/blob/main/samples/router.safe-smoke.toml). Never run the configs that carry lifecycle commands.
+- Fake-daemon tests that stand in until the route is known: [DockerLifecycleProviderTests.cs](https://github.com/ArborealML/Inference-Router/blob/main/tests/Arboreal.InferenceRouter.Tests/DockerLifecycleProviderTests.cs).
+
 ## Do this (about 2 minutes)
 
 The mechanism is already decided — raw Engine HTTP over the Docker socket, with the CLI as an operator

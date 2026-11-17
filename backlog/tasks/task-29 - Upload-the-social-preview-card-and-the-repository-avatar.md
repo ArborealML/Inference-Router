@@ -48,6 +48,15 @@ already lives.
 - [ ] #3 Both are confirmed from outside the settings form: the opengraph preview URL renders the new card, and the org page shows the new mark
 <!-- AC:END -->
 
+## Links
+
+- Card source, opens at native 1280×640: [air-social.svg](https://github.com/ArborealML/Inference-Router/blob/main/docs/images/air-social.svg) — for browser capture use the raw form: [raw.githubusercontent.com/…/air-social.svg](https://raw.githubusercontent.com/ArborealML/Inference-Router/main/docs/images/air-social.svg).
+- Mark, do NOT upload raw (currentColor with no field renders black-on-transparent): [air-mark.svg](https://github.com/ArborealML/Inference-Router/blob/main/docs/images/air-mark.svg). Use the variant from TASK-23: [docs/images/](https://github.com/ArborealML/Inference-Router/tree/main/docs/images/).
+- Upload form 1 (card): [repo Settings → Options → Social preview](https://github.com/ArborealML/Inference-Router/settings/options).
+- Upload form 2 (organisation picture): [organisation Settings → Profile picture](https://github.com/organizations/ArborealML/settings/profile).
+- Confirm without the form: [the image link previews fetch](https://opengraph.githubassets.com/1/ArborealML/Inference-Router).
+- Art provenance: [docs/images/README.md](https://github.com/ArborealML/Inference-Router/blob/main/docs/images/README.md).
+
 ## Do this (about 4 minutes, or 8 if a converter has to be installed)
 
 1. **Export the card** (1280×640 is already its native size — the file declares `width="1280" height="640"`, so
