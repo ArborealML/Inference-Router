@@ -17,6 +17,7 @@ import datetime
 import re
 import subprocess
 import sys
+import urllib.parse
 from pathlib import Path
 
 RENDERED = {
@@ -43,6 +44,9 @@ NO_PERSON = re.compile(
     re.I,
 )
 HANDLE = re.compile(r"@([A-Za-z0-9._-]+)")
+# A link into this repository on the main branch. The tools write these, and an archive move or a
+# rename leaves the old path behind: it still reads as evidence and resolves as a 404.
+LINK_URL = re.compile(r"https://github\.com/[^)\s]+/blob/main/[^\s)]+")
 CHECKBOX = re.compile(r"^\s*[-*] \[[ xX]\] ")
 HEADING = re.compile(r"^## +(.+?)\s*$")
 # A short hex token next to a commit cue. File digests in this board are written truncated
@@ -167,6 +171,7 @@ title: >-
 status: To Do
 assignee:
   - '@qwen3.8-flash-next'
+dependencies: []
 ---
 
 ## Description
@@ -220,10 +225,36 @@ def self_test() -> int:
     if code != 1 or len(hits) != 1 or ".local/relgate.py" not in hits[0]:
         failures.append(f"one unpublished-path citation expected, got: {hits}")
 
+    linked = {"task-1 - A.md": FIXTURE.format(
+        n=1, title="First task",
+        body="See [the archived decision](https://github.com/o/r/blob/main/backlog/tasks/task-99%20-%20gone.md).")}
+    code, out = run(linked)
+    if code != 1 or "LINKPATH" not in out:
+        failures.append(f"a link to a path that is not on main should be reported: exit {code}")
+
+    doubled = {"task-1 - A.md": FIXTURE.format(n=1, title="First task", body="Build the thing.")}
+    doubled["task-1 - A.md"] = doubled["task-1 - A.md"].replace(
+        "- [ ] #1 the criterion fits one line", "- [ ] #1 #1 the criterion fits one line")
+    code, out = run(doubled)
+    if code != 1 or "ACDUP" not in out:
+        failures.append(f"a doubled criterion label should be reported: exit {code}")
+
+    cycle = {
+        "task-1 - A.md": FIXTURE.format(n=1, title="First task", body="Build the thing.").replace(
+            "dependencies: []", "dependencies:\n  - TASK-2"),
+        "task-2 - B.md": FIXTURE.format(
+            n=2, title="Second task",
+            body="Wake: TASK-1 lands the thing, and only after that does this run."),
+    }
+    code, out = run(cycle)
+    if code != 1 or "DEADLOCK" not in out:
+        failures.append(f"a wake sentence that closes a cycle should be reported: exit {code}: {out.strip()[:300]}")
+
     for f in failures:
         print(f"self-test FAILED: {f}")
     print(f"board-check self-test: {'FAILED' if failures else 'ok'} "
-          f"(folded titles, duplicate titles, unpublished paths, clean fixture)")
+          f"(folded titles, duplicate titles, unpublished paths, link paths, doubled labels, "
+          f"wake-sentence cycles, clean fixture)")
     return 1 if failures else 0
 
 
@@ -239,6 +270,7 @@ def main() -> int:
         return self_test()
 
     private = private_path_patterns(Path(args.gitignore))
+    repo_root = Path(__file__).resolve().parents[1]
     tasks_dir = Path(args.root) / "tasks"
     if not tasks_dir.is_dir():
         print(f"cannot read {tasks_dir}", file=sys.stderr)
@@ -379,9 +411,25 @@ def main() -> int:
         elif key:
             titles[key] = tid
 
+        # A markdown link into the repository must name a file that exists: the tools write these
+        # links, and a rename or an archive move leaves the old path behind, which reads as evidence
+        # and resolves as a 404.
+        for url in set(LINK_URL.findall(body)):
+            path, _frag = urllib.parse.urldefrag(urllib.parse.unquote(url.split("/blob/main/", 1)[1]))
+            if not path or not (repo_root / path).is_file():
+                bad(tid, "LINKPATH", f"links {path}, which is not a file on main")
+
+        for i, item in enumerate(ac_items, start=1):
+            if re.match(r"#\d+\s+#\d+\s", item):
+                bad(tid, "ACDUP", f"criterion #{i} carries its label twice ({item[:40]!r})")
+
         deps = re.findall(r"TASK-\d+", re.search(r"(?m)^dependencies:\n((?:  - .+\n)+)", raw).group(1)) if re.search(r"(?m)^dependencies:\n", raw) else []
         open_ac_text = " ".join(it for it, line in zip(ac_items, [l for l in body.splitlines() if CHECKBOX.match(l)]) if "[ ]" in line)
-        graph[tid] = (deps, open_ac_text)
+        # A task can also close a cycle in prose: its wake sentence names the task that is waiting on
+        # it. That is invisible to a rule that reads only the criteria block, and it is the same
+        # deadlock — neither side can ever be woken by the other.
+        wake_text = " ".join(line for line in body.splitlines() if WAKE.search(line))
+        graph[tid] = (deps, open_ac_text, wake_text, status)
 
     # The same hygiene rule for every other tracked board file: decisions, and the archive the
     # task loop does not walk.
@@ -410,13 +458,27 @@ def main() -> int:
     open_words.sort()
     # Closure cycles: A depends on B, and an open criterion of B asks for what only A can produce.
     # The dependency graph alone looks acyclic; the criteria close it.
-    for tid_a, (deps, open_acs) in graph.items():
+    for tid_a, (deps, open_acs, _wake, _st) in graph.items():
+        if _st == "Done":
+            continue
         for dep in deps:
-            if dep in graph and re.search(rf"\b{re.escape(tid_a)}\b", graph[dep][1]):
+            if dep not in graph or graph[dep][3] == "Done":
+                continue   # a closed task's wake sentence is history, not a live wait
+            acs, wake = graph[dep][1], graph[dep][2]
+            if re.search(rf"\b{re.escape(tid_a)}\b", acs):
                 bad(tid_a, "DEADLOCK", f"depends on {dep}, whose open criterion names {tid_a} — neither can close")
+            elif re.search(rf"\b{re.escape(tid_a)}\b", wake):
+                bad(tid_a, "DEADLOCK", f"depends on {dep}, whose wake sentence waits on {tid_a} — neither can close")
 
     total = sum(w for w, _ in open_words)
-    median = open_words[len(open_words) // 2][0] if open_words else 0
+    if open_words:
+        mid = len(open_words) // 2
+        if len(open_words) % 2:
+            median = open_words[mid][0]
+        else:
+            median = (open_words[mid - 1][0] + open_words[mid][0]) // 2
+    else:
+        median = 0
     print(f"corpus: {len(open_words)} open task(s), {total} words total, median {median}, "
           f"max {open_words[-1][0] if open_words else 0} ({open_words[-1][1] if open_words else '-'})")
     print(f"corpus as-of {datetime.datetime.now(datetime.timezone.utc):%Y-%m-%dT%H:%MZ}; "
