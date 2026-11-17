@@ -27,4 +27,5 @@ The commit review of fd5e0cd returned REVISE with five blocking findings; all fi
 - [ ] #2 two callers of one already-proved model cause exactly one launch, with the claim decision re-checked inside the transition gate
 - [ ] #3 the readiness task is settled before any injected callback runs
 - [ ] #4 a forced CAS retry, a duplicate own-target claim, and an end-to-end dispatch through RouterCore are each pinned by a test
+- [ ] #5 a thread-pool rejection at the claim (:602-610) and a shutdown during the claim both settle the readiness task and clear the marker, so no waiter waits on a switch that never ran
 <!-- AC:END -->
