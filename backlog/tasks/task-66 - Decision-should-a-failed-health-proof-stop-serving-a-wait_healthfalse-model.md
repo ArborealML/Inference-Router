@@ -22,5 +22,5 @@ For an engine configured wait_health=false — one the operator has told the rou
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [ ] #1 one line: keep the operator promise, or make a failed proof refuse the request
-- [ ] #2 the choice is recorded as a decision, and TASK-62 names the wording changes if the posture changes
+- [ ] #2 the choice is recorded as a decision, naming the wire wording that moves if the posture changes
 <!-- AC:END -->
