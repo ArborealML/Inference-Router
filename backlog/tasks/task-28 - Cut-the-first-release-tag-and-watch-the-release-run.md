@@ -112,7 +112,7 @@ created: 2026-11-17T10:58:00Z
 
 ---
 
-Board update after the round-8 review: this stays Blocked, and the blockers are all agent work now, not an owner's keystrokes (decision-16). Floor for the tag moves to the merge commit of [TASK-44](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-44%20-%20Close-what-the-seventh-and-eighth-release-gate-reviews-found-over-v0-12-15-and-v0-12-16.md); TASK-42 (canary) proves the gate first, TASK-45 turns on immutable releases before any release is published, TASK-38 puts a `v*` ruleset on the tag. No tag has run the gate: configured, not proven.
+Board update after the round-8 review: this stays Blocked, and the blockers are all agent work now, not an owner's keystrokes (decision-16). Floor for the tag moves to the merge commit of [TASK-44](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-44%20-%20Close-the-open-release-gate-review-findings-SPEC-v0-12-15-onward.md); TASK-42 (canary) proves the gate first, TASK-45 turns on immutable releases before any release is published, TASK-38 puts a `v*` ruleset on the tag. No tag has run the gate: configured, not proven.
 
 ---
 
