@@ -14,6 +14,29 @@ namespace Arboreal.InferenceRouter.Tests;
 /// </summary>
 public class ErrorContractTests
 {
+
+    [Fact(Timeout = 30_000)]
+    public async Task AnOversizedBodyIsRefusedWithTheErrorContract_NotAnOpaqueHostFailure()
+    {
+        // The router buffers a request body to forward it, so this cap is also the bound on what one
+        // request can make the process hold. Kestrel's own limit would answer something a caller cannot
+        // branch on; the router answers the shape every other error uses.
+        var (app, _, port) = await WireHarness.StartAsync(holdCompletions: false, maxRequestBodyBytes: 2048);
+        using var _ = app;
+        using var http = new HttpClient { BaseAddress = new Uri($"http://127.0.0.1:{port}") };
+
+        var oversized = """
+            {"model":"test-model","messages":[{"role":"user","content":"X"}]}
+            """.Trim().Replace("X", new string('x', 4096));
+        using var content = new StringContent(oversized, Encoding.UTF8, "application/json");
+        var res = await http.PostAsync("/v1/chat/completions", content);
+
+        Assert.Equal(HttpStatusCode.RequestEntityTooLarge, res.StatusCode);
+        var text = await res.Content.ReadAsStringAsync();
+        Assert.Contains("request_body_too_large", text);
+        Assert.Contains("2048", text);
+        Assert.DoesNotContain("\"Error\"", text);        // error bodies stay lowercase on every surface
+    }
     private static async Task<(WebApplication App, FakeEngineHandler Fake, int Port)> StartAsync(
         FakeEngineHandler fake, int maxInflight = 2, int maxQueue = 4)
     {

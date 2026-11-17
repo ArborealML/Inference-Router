@@ -143,6 +143,12 @@ Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
   requests, exec/logs/daemon events, Windows `npipe`, closing admission and draining the cohort before a
   mutation (it needs a lifecycle reservation, not an inference slot — that request would wait on itself),
   and latched failures. 126 tests green.
+- v0.12.1 — a request body has a stated limit. The router buffers a body to forward it as bytes, so an
+  unread limit was also no bound on what one request could make the process hold; `max_request_body_bytes`
+  (16 MiB by default, refused below 1 KiB) is checked against `Content-Length` as a fast path and against
+  the counted copy, so a caller that understates its length is still cut off. Refusal is the router's own
+  error contract — 413 `request_body_too_large`, lowercase like every other error body — rather than
+  whatever the host would have answered. 130 tests green.
 
 ## 1. Overview
 
@@ -620,7 +626,8 @@ to integrators.
 The shipped error contract is one lowercase body on every surface —
 `{"error":{"type":"air_error","code":…,"message":…}}` — and the code picks the status:
 `invalid_request` 400, `not_found` 404, `deadline_exceeded` 408, `cancelled` 499, `queue_overflow`
-429, `engine_error` / `engine_unreachable` 502, `switch_failed` / `model_unavailable` 503,
+429, `request_body_too_large` 413 (over `max_request_body_bytes`), `engine_error` / `engine_unreachable` 502,
+`switch_failed` / `model_unavailable` 503,
 `no_available_engine` 500 (`switch_in_progress` 409 and `unknown_profile` 400 on the admin side).
 An upstream engine's own 4xx/5xx arrives as `engine_error` with the engine's message embedded, so a
 caller can tell "my request was wrong" from "the engine is down". `docs/ai-integration.md` carries

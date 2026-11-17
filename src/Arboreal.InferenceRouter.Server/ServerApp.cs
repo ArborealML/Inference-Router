@@ -82,9 +82,9 @@ public static class ServerApp
     private static async Task HandleInference(HttpContext ctx, RouterCore router)
     {
         var ct = ctx.RequestAborted;
-        using var body = new MemoryStream(4096);
-        await ctx.Request.Body.CopyToAsync(body, ct).ConfigureAwait(false);
-        var payload = body.ToArray();
+        var read = await ReadBodyAsync(ctx, router, ct).ConfigureAwait(false);
+        if (read is null) return;              // the refusal is already on the wire
+        var payload = read;
 
         // Minimal probe of the raw body (model, stream) — full passthrough otherwise.
         string? requestedModel = null;
@@ -252,6 +252,40 @@ public static class ServerApp
             : AirJson.Frame($"[router keepalive seq={seq}]");
         await AirJson.WriteFrameAsync(writer, frame, ct).ConfigureAwait(false);
         return status;
+    }
+
+    /// <summary>Read a request body under the configured cap. Content-Length is a fast path, not the
+    /// check: a caller that understates it is still cut off, because the copy counts bytes. Refusing with
+    /// the error contract matters more than it looks — the alternative is Kestrel's own opaque failure,
+    /// which is not a shape a caller can branch on.</summary>
+    private static async Task<byte[]?> ReadBodyAsync(HttpContext ctx, RouterCore router, CancellationToken ct)
+    {
+        var limit = router.Config.MaxRequestBodyBytes;
+        if (ctx.Request.ContentLength is { } declared && declared > limit)
+        {
+            await WriteErrorAsync(ctx, StatusCodes.Status413PayloadTooLarge, "request_body_too_large",
+                $"the request body is {declared} bytes and this router reads at most {limit}; raise max_request_body_bytes if that is really intended")
+                .ConfigureAwait(false);
+            return null;
+        }
+
+        using var body = new MemoryStream(4096);
+        var buffer = new byte[64 * 1024];
+        long total = 0;
+        int read;
+        while ((read = await ctx.Request.Body.ReadAsync(buffer, ct).ConfigureAwait(false)) > 0)
+        {
+            total += read;
+            if (total > limit)
+            {
+                await WriteErrorAsync(ctx, StatusCodes.Status413PayloadTooLarge, "request_body_too_large",
+                    $"the request body exceeded {limit} bytes; raise max_request_body_bytes if that is really intended")
+                    .ConfigureAwait(false);
+                return null;
+            }
+            body.Write(buffer, 0, read);
+        }
+        return body.ToArray();
     }
 
     private static async Task WriteErrorAsync(HttpContext ctx, int status, string code, string message)

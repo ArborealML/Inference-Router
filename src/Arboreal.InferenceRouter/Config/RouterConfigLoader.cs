@@ -57,6 +57,11 @@ public static class RouterConfigLoader
         if (dto.Listen is { } listen) cfg.Listen = listen;
         if (dto.DefaultModel is { } dm) cfg.DefaultModel = dm;
         if (dto.AutoSwitch is { } autoSwitch) cfg.AutoSwitch = autoSwitch;
+        if (dto.MaxRequestBodyBytes is { } maxBody)
+        {
+            if (maxBody < 1024) throw new RouterConfigException("max_request_body_bytes must be at least 1024");
+            cfg.MaxRequestBodyBytes = maxBody;
+        }
         if (dto.MaxEventSubscribers is { } maxSubs)
         {
             if (maxSubs < 1) throw new RouterConfigException("max_event_subscribers must be at least 1");

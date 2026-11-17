@@ -143,6 +143,11 @@ public sealed class RouterConfig
     public SchedulerConfig Scheduler { get; set; } = new();
     public IReadOnlyDictionary<string, ThreadDefinition> Threads { get; set; } =
         new Dictionary<string, ThreadDefinition>(StringComparer.Ordinal);
+    /// <summary>Largest request body the router will read, on any surface. Bodies are buffered whole
+    /// (the router forwards them as bytes), so this is also the bound on what one request can make the
+    /// process hold. A caller that lies about Content-Length is still cut off, because the copy counts.</summary>
+    public int MaxRequestBodyBytes { get; set; } = 16 * 1024 * 1024;
+
     /// <summary>How many live event-feed subscriptions the router will hold. Each one is a stream a
     /// client keeps open; the cap is what stops the admin feed from being the thing that runs the
     /// process out of handles. Feeds beyond it are refused with 503.</summary>

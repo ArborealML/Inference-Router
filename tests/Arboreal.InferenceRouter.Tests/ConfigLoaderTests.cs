@@ -329,6 +329,19 @@ public class ConfigLoaderTests
     }
 
     [Fact]
+    public void RequestBodyCap_IsConfigurableAndHasADefault()
+    {
+        Assert.Equal(16 * 1024 * 1024, RouterConfigLoader.Load(TomlConfig, "test.toml").MaxRequestBodyBytes);
+
+        var cfg = RouterConfigLoader.Load(
+            TomlConfig.Replace("auto_switch = true", "auto_switch = true\nmax_request_body_bytes = 4096"), "test.toml");
+        Assert.Equal(4096, cfg.MaxRequestBodyBytes);
+
+        Assert.Throws<RouterConfigException>(() => RouterConfigLoader.Load(
+            TomlConfig.Replace("auto_switch = true", "auto_switch = true\nmax_request_body_bytes = 10"), "test.toml"));
+    }
+
+    [Fact]
     public void EventFeedCap_IsConfigurableAndMustBePositive()
     {
         var cfg = RouterConfigLoader.Load(
