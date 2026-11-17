@@ -7,7 +7,7 @@ namespace Arboreal.InferenceRouter;
 
 /// <summary>Runtime for one configured engine: health probing, loaded-model detection,
 /// prefix trie, switch execution (serialized per engine), busy-ness accounting.</summary>
-public sealed class EngineRuntime : IAsyncDisposable
+public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
 {
     private readonly EngineDefinition _def;
     private readonly RouterConfig _config;
@@ -20,8 +20,10 @@ public sealed class EngineRuntime : IAsyncDisposable
     private readonly EngineLifecycleCoordinator _lifecycle;
     private readonly int _maxInflight;
 
-    private volatile bool _healthy;
-    private volatile string[] _loadedModels = [];
+    /// <summary>The one place health, reported models and the switch marker live. Written only by Publish*,
+    /// which publish a whole snapshot through a CAS loop, so a reader never gets a state no writer ever
+    /// wrote and never sees data change without its version moving with it.</summary>
+    private EngineCapability _cap = EngineCapability.Initial;
     private SwitchState _switchState = new();   // accessed via Volatile.Read/Write
 
     /// <summary>The token a switch transaction runs on. A switch is an engine-level transaction, not a
@@ -98,30 +100,90 @@ public sealed class EngineRuntime : IAsyncDisposable
     /// <summary>Advisory trace of the last lifecycle transactions on this engine: why a switch was
     /// refused, what was stopped, what was launched. Not part of the wire contract.</summary>
     public IReadOnlyList<string> LifecycleJournal => _lifecycle.Journal;
-    public bool Healthy => _healthy;
-    public string[] LoadedModels => _loadedModels;
-    /// <summary>Does this engine either declare the model in its configured catalog or report it loaded
-    /// right now? Case-insensitive, because the scheduler compares model names that way, and deliberately
-    /// silent about health and switching: those are separate questions with separate answers. A model the
-    /// engine serves out-of-band — loaded by hand, not named in any catalog — counts here, and that is not
-    /// a concession: the scheduler has always treated a reported model as eligible (§7).</summary>
-    public bool CanServeModel(string model)
+    public bool Healthy => Volatile.Read(ref _cap).Healthy;
+    public string[] LoadedModels => Volatile.Read(ref _cap).LoadedModels;
+
+    /// <summary>This engine's capability claim as one atomic, versioned snapshot. The scheduler's view and
+    /// the admission refusal both read it exactly once per engine per decision, so a decision cannot mix an
+    /// old model list with a new one (§5.5).</summary>
+    public EngineCapability Capability => Volatile.Read(ref _cap);
+
+    /// <summary>Does this engine's configured catalog name the model? Static configuration, so it needs no
+    /// snapshot; case-insensitive to match the scheduler's comparison, not the catalog's own ordinal one.</summary>
+    public bool DeclaresModel(string model)
     {
-        // Loops, not LINQ: this runs on the admission path, and the catalog's own comparer is ordinal
-        // while model comparison here is case-insensitive, so a dictionary lookup would answer the wrong
-        // question. Enumerators over Keys and over the reported array are both structs: no allocation.
+        // Loops, not a dictionary lookup: the catalog's comparer is ordinal and model comparison here is
+        // case-insensitive, so a lookup would answer the wrong question. Enumerator over Keys is a struct.
         foreach (var name in _def.Catalog.Keys)
             if (string.Equals(name, model, StringComparison.OrdinalIgnoreCase)) return true;
-        foreach (var name in _loadedModels)
+        return false;
+    }
+
+    /// <summary>Does this engine either declare the model in its configured catalog or report it loaded in
+    /// <paramref name="cap"/>? Case-insensitive, and deliberately silent about health and switching: those
+    /// are separate questions with separate answers. A model the engine serves out-of-band — loaded by hand,
+    /// not named in any catalog — counts here, and that is not a concession: the scheduler has always
+    /// treated a reported model as eligible (§5.5).</summary>
+    public bool CanServeModel(string model, EngineCapability cap)
+    {
+        if (DeclaresModel(model)) return true;
+        foreach (var name in cap.LoadedModels)
             if (string.Equals(name, model, StringComparison.OrdinalIgnoreCase)) return true;
         return false;
+    }
+
+    /// <summary>Convenience for a caller that has no snapshot of its own: takes one, then answers.</summary>
+    public bool CanServeModel(string model) => CanServeModel(model, Capability);
+
+    EngineCapability ICapabilitySource.Capability => Capability;
+    bool ICapabilitySource.DeclaresModel(string model) => DeclaresModel(model);
+
+    /// <summary>Publish the result of a model probe as one snapshot. The reported array must not be mutated
+    /// afterwards — the snapshot owns it. An unchanged probe (same health, same array instance) is not a
+    /// change and does not move the version, so a poll that learned nothing cannot make a scan look unstable.</summary>
+    private void PublishProbe(bool healthy, string[] models)
+    {
+        while (true)
+        {
+            var cur = Volatile.Read(ref _cap);
+            if (cur.Healthy == healthy && ReferenceEquals(cur.LoadedModels, models)) return;
+            var next = cur with { Version = cur.Version + 1, Healthy = healthy, LoadedModels = models };
+            if (Interlocked.CompareExchange(ref _cap, next, cur) == cur) return;
+        }
+    }
+
+    /// <summary>Publish a newly reported model set, leaving health and the switch marker as they are.</summary>
+    private void PublishModels(string[] models)
+    {
+        while (true)
+        {
+            var cur = Volatile.Read(ref _cap);
+            if (ReferenceEquals(cur.LoadedModels, models)) return;
+            var next = cur with { Version = cur.Version + 1, LoadedModels = models };
+            if (Interlocked.CompareExchange(ref _cap, next, cur) == cur) return;
+        }
+    }
+
+    /// <summary>Mirror a switch-marker change into the snapshot. The switch machinery keeps its own state;
+    /// what matters for capability is the order: at switch success the reported list is published *while the
+    /// marker is still up*, and only then is the marker cleared, so no snapshot ever reads as "not switching
+    /// and does not have it" for a model that is in fact being loaded (§5.5).</summary>
+    private void PublishSwitchMarker(string? toward)
+    {
+        while (true)
+        {
+            var cur = Volatile.Read(ref _cap);
+            if (string.Equals(cur.SwitchingToward, toward, StringComparison.Ordinal)) return;
+            var next = cur with { Version = cur.Version + 1, SwitchingToward = toward };
+            if (Interlocked.CompareExchange(ref _cap, next, cur) == cur) return;
+        }
     }
     public int Inflight => Volatile.Read(ref _inflight);
     private int _inflight;
     public long InflightTokenProxy => Interlocked.Read(ref _tokenProxy);
     private long _tokenProxy;
     public bool Switching => Volatile.Read(ref _switchState).Model is not null;
-    public string? SwitchingToward => Volatile.Read(ref _switchState).Model;
+    public string? SwitchingToward => Volatile.Read(ref _cap).SwitchingToward;
 
     private static string? ResolveApiKey(EngineDefinition def)
     {
@@ -149,15 +211,16 @@ public sealed class EngineRuntime : IAsyncDisposable
                 using var cts = new CancellationTokenSource(_def.Health?.TimeoutMs ?? 5_000);
 #pragma warning restore CA2000
                 var models = await FetchLoadedModelsAsync(cts.Token).ConfigureAwait(false);
-                _loadedModels = models;
-                _healthy = true;
+                PublishProbe(true, models);
                 Emit("engine.health", value: models.Length);
                 // Same payload family feeds the serving gauges (context window, slots).
                 await ProbeStateAsync(cts.Token).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
-                _healthy = false;
+                // Health is the thing that failed: the last reported model set stays as the last thing the
+                // engine actually said, and Healthy=false makes it unknown rather than evidence of absence.
+                PublishProbe(false, Capability.LoadedModels);
                 Emit("engine.health", reason: ex.Message, value: 0);
             }
             try
@@ -350,7 +413,7 @@ public sealed class EngineRuntime : IAsyncDisposable
     /// An engine that reports no window (gauge 0) is never escalated blind.</summary>
     public bool IsReadyFor(string canonical, ServingProfile? profile)
     {
-        if (!_loadedModels.Contains(canonical, StringComparer.OrdinalIgnoreCase)) return false;
+        if (!Capability.LoadedModels.Contains(canonical, StringComparer.OrdinalIgnoreCase)) return false;
         return WindowFits(profile);
     }
 
@@ -392,6 +455,7 @@ public sealed class EngineRuntime : IAsyncDisposable
                     // their ceiling on a switch that never ran.
                     var switchToken = _switchCts.Token;
                     Volatile.Write(ref _switchState, newState);
+                    PublishSwitchMarker(canonical);
                     try
                     {
                         _ = Task.Run(
@@ -488,6 +552,7 @@ public sealed class EngineRuntime : IAsyncDisposable
         if (ReferenceEquals(Volatile.Read(ref _switchState), state))
         {
             Volatile.Write(ref _switchState, new SwitchState());
+            PublishSwitchMarker(null);
         }
         state.Ready.TrySetResult(ready);
     }
@@ -540,7 +605,9 @@ public sealed class EngineRuntime : IAsyncDisposable
                     if (healthy && modelsNow.Contains(model, StringComparer.OrdinalIgnoreCase) &&
                         WindowFits(profileOverride))
                     {
-                        _loadedModels = modelsNow;
+                        // Published before EndSwitch clears the marker: a snapshot in which the switch has
+                        // landed and the model is absent must never be observable (§5.5).
+                        PublishModels(modelsNow);
                         Emit("engine.switch_completed", model: model,
                             reason: state.Profile is null ? null : $"profile={state.Profile}",
                             value: (DateTimeOffset.UtcNow - state.StartedAt).TotalMilliseconds);
@@ -560,7 +627,7 @@ public sealed class EngineRuntime : IAsyncDisposable
                 EndSwitch(state, false);
                 return;
             }
-            try { _loadedModels = await FetchLoadedModelsAsync(ct).ConfigureAwait(false); }
+            try { PublishModels(await FetchLoadedModelsAsync(ct).ConfigureAwait(false)); }
             catch { /* best-effort refresh; the switch itself succeeded */ }
             // wait_health=false: trust the exec, but still verify the window when a profile was requested
             // (the gauge may already reflect the new window, e.g. an engine that reloads in place).

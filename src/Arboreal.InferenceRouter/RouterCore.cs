@@ -12,6 +12,9 @@ public sealed class RouterCore : IInferenceRouter
     private readonly IRequestScheduler _scheduler;
     private readonly EventRing _events;
     private readonly Dictionary<string, EngineRuntime> _engines = new(StringComparer.OrdinalIgnoreCase);
+    /// <summary>The same engines as the capability scan sees, fixed once at construction. A stable list is
+    /// what lets one scan prove that no engine published while it was deciding (§5.5).</summary>
+    private ICapabilitySource[] _capabilitySources = [];
     private readonly Dictionary<string, ModelQueue> _queues = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, RouterThread> _threads = new(StringComparer.Ordinal);
     // Ticket lookup has its own lock. A full queue rejects a ticket from inside the queue's lock,
@@ -39,6 +42,7 @@ public sealed class RouterCore : IInferenceRouter
             _engines[name] = new EngineRuntime(def, config, _events, config.HttpHandlerFactory?.Invoke(def));
         foreach (var (id, td) in config.Threads)
             _threads[id] = new RouterThread(id, td.Priority, td.Weight, td.ModelAffinity);
+        _capabilitySources = [.. _engines.Values];
     }
 
     public EventRing Events => _events;
@@ -140,6 +144,16 @@ public sealed class RouterCore : IInferenceRouter
         // it from the cancel path would race a dispatch that is concurrently starting.
         ticket.ExecCts = new CancellationTokenSource();
         lock (_ticketGate) _tickets[ticket.Id] = ticket;
+        // A model that nothing in this configuration can serve is refused before it ever reaches a queue
+        // (§5.5). The check sits ahead of the cap on purpose: for a model no engine could take, "come back
+        // later" (429) is a worse answer than "nobody here serves this" (503), and refusing puts nothing in
+        // that queue, so the cap stays free for traffic that could actually run.
+        if (CapabilityScan.DefinitelyHopeless(_capabilitySources, canonical))
+        {
+            RejectAtAdmission(queued, "model_unavailable",
+                $"no engine in this configuration declares or currently reports model '{canonical}'");
+            return ValueTask.FromResult(ticket);
+        }
         var accepted = GetOrCreateQueue(canonical).TryEnqueue(queued);
         if (accepted && ct.CanBeCanceled)
         {
@@ -166,40 +180,8 @@ public sealed class RouterCore : IInferenceRouter
             Model = canonical,
             Value = queued.PromptChars,
         });
-        // A model that nothing in this configuration can serve is refused now, at the head of its own
-        // queue, rather than parked there until a ceiling it may never have set expires. Checked after the
-        // enqueue event so the feed keeps one order for every terminal (§10), and by removal-before-fail
-        // so a ticket the dispatcher has already taken is left alone: the queue's own lock makes the
-        // removal an exclusive claim, and the ticket's single terminal transition makes it idempotent.
-        if (accepted && !AnyEngineCanServe(canonical))
-        {
-            if (GetQueue(canonical)?.TryRemoveById(ticket.Id) == true)
-            {
-                Fail(ticket, "model_unavailable",
-                    $"no engine in this configuration declares or currently reports model '{canonical}'");
-                return ValueTask.FromResult(ticket);
-            }
-        }
         SignalDispatch();
         return ValueTask.FromResult(ticket);
-    }
-
-    /// <summary>Could any engine here take this model: declared in its configured catalog, or reported by
-    /// its own model endpoint right now? False only when every engine has answered the model probe
-    /// (<c>Healthy</c>, so its reported set is a fact rather than an absence) and none of them names the
-    /// model. An engine that has never been reached says nothing either way, so an unreached engine makes
-    /// this true — unknown capability is never a refusal. Config cannot declare zero engines
-    /// (<c>RouterConfigLoader</c>: "at least one [engine.&lt;name&gt;] is required"), so the loop is never
-    /// vacuous. <c>_engines</c> is built once in the constructor and never mutated afterwards, which is
-    /// what makes reading it here, outside <c>_gate</c>, safe.</summary>
-    private bool AnyEngineCanServe(string model)
-    {
-        foreach (var e in _engines.Values)
-        {
-            if (!e.Healthy) return true;
-            if (e.CanServeModel(model)) return true;
-        }
-        return false;
     }
 
     public bool TryCancel(string ticketId)
@@ -397,11 +379,11 @@ public sealed class RouterCore : IInferenceRouter
                 var decision = _scheduler.SelectNext(head, new SchedulerView(infos, DateTimeOffset.UtcNow), _config);
                 if (decision.Engine is null)
                 {
-                    // The scheduler's reason (no_engines / no_available_engine) is a diagnostic for the
-                    // feed and for tests: it never reaches the caller, whose wait ends as
-                    // deadline_exceeded if it ends at all. A request that nothing here could ever take is
-                    // refused at admission instead (§7), so what reaches this line is a wait that could
-                    // still resolve.
+                    // The scheduler's reason (no_engines / no_available_engine) is internal: read by the
+                    // scheduler's own tests, never emitted to the feed and never the caller's answer, whose
+                    // wait ends as deadline_exceeded if it ends at all (§6.1). A request that nothing here
+                    // could ever take is refused before it is queued (§5.5), so what reaches this line is a
+                    // wait that could still resolve.
                     MaybeFailDeadline(head);
                     continue;
                 }
@@ -463,17 +445,21 @@ public sealed class RouterCore : IInferenceRouter
         var list = new List<EngineRuntimeInfo>(_engines.Count);
         foreach (var e in _engines.Values)
         {
+            // One snapshot per engine, and every capability-shaped field derived from that one read: the
+            // loaded list, the switch marker and the eligibility bit cannot come from different instants and
+            // then disagree inside one scheduling decision (§5.5).
+            var cap = e.Capability;
             list.Add(new EngineRuntimeInfo
             {
                 Name = e.Name,
-                LoadedModels = e.LoadedModels,
+                LoadedModels = cap.LoadedModels,
                 CatalogModels = e.Definition.Catalog.Keys.ToArray(),
-                SwitchingToward = e.SwitchingToward is null ? [] : [e.SwitchingToward],
-                CanServeModel = e.CanServeModel(head.Ticket.Model),
+                SwitchingToward = cap.SwitchingToward is null ? [] : [cap.SwitchingToward],
+                CanServeModel = e.CanServeModel(head.Ticket.Model, cap),
                 Inflight = e.Inflight,
                 InflightTokenProxy = e.InflightTokenProxy,
-                Healthy = e.Healthy,
-                Switching = e.Switching,
+                Healthy = cap.Healthy,
+                Switching = cap.SwitchingToward is not null,
                 MatchedPrefixChars = e.MatchedPrefixChars(messages),
                 ActiveContextWindow = e.ActiveContextWindow,
                 ServingProfiles = e.ProfilesForModel(head.Ticket.Model),
@@ -921,6 +907,14 @@ public sealed class RouterCore : IInferenceRouter
     }
 
     private void OnQueueRejected(QueuedRequest item, string reason)
+        => RejectAtAdmission(item, reason, $"queue for {item.Ticket.Model} is full");
+
+    /// <summary>One shape for every request refused before it joins a queue: terminal once, thread counter
+    /// moved, caller answered with the code, and exactly one <c>queue.rejected</c> event — no
+    /// <c>request.enqueued</c>, because this ticket never entered a queue and the feed does not pretend
+    /// otherwise (§10). The queue-cap rejection and the unservable-model refusal (§5.5) are the two callers, so
+    /// their shapes cannot drift apart.</summary>
+    private void RejectAtAdmission(QueuedRequest item, string reason, string message)
     {
         Interlocked.Increment(ref item.Thread.Rejected);
         if (!item.Ticket.TryEnterTerminal()) return;
@@ -929,8 +923,8 @@ public sealed class RouterCore : IInferenceRouter
         RetainTerminalTicket(item.Ticket);
         item.Ticket.State = TicketState.Failed;
         item.Ticket.ErrorCode = reason;
-        item.Ticket.Error = $"queue for {item.Ticket.Model} is full";
-        item.Ticket.CompletionTcs.TrySetException(new RouterRequestException(reason, item.Ticket.Error));
+        item.Ticket.Error = message;
+        item.Ticket.CompletionTcs.TrySetException(new RouterRequestException(reason, message));
         _events.Append(new RouterEvent
         {
             Kind = "queue.rejected",

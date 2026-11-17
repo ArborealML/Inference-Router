@@ -712,8 +712,10 @@ public class EndToEndTests
     }
 
     [Fact(Timeout = 30_000)]
-    public async Task The_Admission_Rejection_Keeps_One_Enqueue_Event_Before_One_Terminal_Event()
+    public async Task The_Admission_Refusal_Never_Enters_A_Queue_And_Emits_One_Rejection_Event()
     {
+        // A request for a model nothing here can serve never joins a queue, so the feed never claims it did:
+        // one queue.rejected with the capability reason, and no request.enqueued (§7, §10).
         var (router, fake) = await WithHealthyRouterAsync();
         await using var _ = router;
         fake.LoadedModels = ["test-model"];
@@ -726,11 +728,13 @@ public class EndToEndTests
                          .Where(e => e.TicketId == ticket.Id)
                          .Select(e => e.Kind)
                          .ToArray();
-        Assert.Equal(["request.enqueued", "request.failed"], feed);
-        var failed = router.Events.Replay(0).Single(e => e.TicketId == ticket.Id && e.Kind == "request.failed");
-        Assert.Contains("not-here", failed.Reason);
-        Assert.Equal("not-here", failed.Model);
+        Assert.Equal(["queue.rejected"], feed);
+        var rejected = router.Events.Replay(0).Single(e => e.TicketId == ticket.Id);
+        Assert.Equal("model_unavailable", rejected.Reason);
+        Assert.Equal("not-here", rejected.Model);
+        Assert.Equal("model_unavailable", ticket.ErrorCode);
         Assert.Contains("not-here", ticket.Error ?? "");
+        Assert.Equal(TicketState.Failed, ticket.State);
     }
 
     [Fact(Timeout = 30_000)]
