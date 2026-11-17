@@ -1,6 +1,6 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.16)
+Status: draft, continuously revised (v0.12.17)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
@@ -352,6 +352,38 @@ daemon transaction per engine. 137 tests green.
   that answers no `upload_url`, an upload that dies or answers no asset id, an asset name listed twice on
   the release, and a tag that moves after the first resolve. No tag has run the gate: still configured,
   not proven.
+- v0.12.17 — an eighth deep review of the gate, over v0.12.16: the comparisons were typed and per-field, and
+  three ways to satisfy a check with more than one answer were still open, plus one fail-open found while
+  re-reading the file for this round. **Fixed, each with cases in the harness**: (1) `jq -e` reports the status
+  of its *last* result, so a response that is two JSON documents is judged by the last one — and the release
+  read-back, the un-draft `PATCH` answer and the cleanup lookup are read as predicates with no field extracted
+  from them. Under v0.12.16 a `GET /releases/{id}` that answered a published release first and a draft second
+  passed cleanup's ownership guard and **deleted a published release** (`hole_cleanup_two_docs`), and a read-back
+  that answered another tag's published release first let the run reach publication and stop only afterwards
+  (`hole_readback_two_docs@fd76021`); every answer the gate trusts is now required to be exactly one document
+  (`jq -s … length == 1`). (2) `^…$` is not a whole-string guard in Oniguruma, because `$` also matches before a
+  final newline: `state "uploaded\n"` and an asset named `"air-win-x64.tar.gz\n"` were hygiene-clean, and the
+  snapshot that reads one physical line per asset was a field boundary short of what it claimed; the three
+  patterns are now `\A…\z`. Neither revision published on those two, which is why they are pattern cases and not
+  differential pairs. (3) `type == "number"` on ids admits `1.5`, `-3` and `1e999`, and the release id is used to
+  build an upload address and a compare target, so ids must be canonical integers below 2^53. (4) The asset
+  inventory is one page of 100 required to equal the declared count — a complete inventory only while the page
+  is not full — so a declared set of 100 or more is refused before anything is created. (5) The log sanitizer now
+  reduces a response's text to printable ASCII *before* the 200-character cut, so control characters, ANSI
+  escapes, bidi overrides and split UTF-8 become `?`, and cutting after `tr` rather than `head` means a
+  diagnostic cannot come out empty under `pipefail`. (6) `GET /releases?per_page=100` in the preflight was piped
+  through `2>/dev/null || true`, so a failed or unparseable read answered "no release exists for this tag" and
+  the build went ahead; GitHub permits two releases to carry one tag, so an unreadable list is a refusal now, and
+  the harness shows v0.12.16 failing open on it. **Three claims from v0.12.16 corrected here**: "no server-chosen
+  text reaches stdout" was false as written — diagnostics carry validated asset names, validated ids, and
+  sanitized field text; what holds is that the success record is assembled from values this step verified.
+  The `target_commitish` reasoning overreached too: the same endpoint documents the field as *unused when the tag
+  already exists*, so for a pre-existing tag the resolved target is GitHub's rather than the default-branch head,
+  and the "empty by construction" benefit is an untested hypothesis, not a construction — the parameter stays
+  omitted and both directions are canary evidence. And the asset `state` compared exactly is `uploaded`, which is
+  documented, while `uploader` is a different object field and a failed upload is documented to leave `starter`;
+  digest presence beyond the documentation's example is a first-tag reading, not a local proof. **Harness as of
+  this revision**: 90 cases, 0 failures. No tag has run the gate: still configured, not proven.
 - v0.12.16 — a seventh deep review of the gate, over v0.12.15: the checks were right and the way they
   read the answers was not. Every response check in the publish and cleanup steps was built by projecting
   the JSON into one string with jq `join(" ")` and splitting it again with `read`, and **a whitespace split
@@ -1481,20 +1513,31 @@ and cohort/residency hysteresis in the scheduler (§12.3 hook).
   cannot be authorized for that, answering `404` and sometimes `403` — is evaluated against whatever target
   it resolves. Naming the tag commit would make the answer depend on how that commit differs from the default
   branch at the moment of the call, a comparison this run cannot evaluate before making it; leaving it unset
-  resolves to the default-branch head, where that comparison is empty by construction. That reading is an
-  inference from the endpoint note, not a test: it says the tag commit and the default-branch head are the
-  same commit for a tag cut at the head, and what happens when they differ is unknown until a run — and this
-  repo's own tag commits do touch `release.yml`. Every such comparison is made
+  resolves to whatever target GitHub picks for this tag. Whether that makes the guarded comparison empty is
+  **not** a construction this run can lean on: the same endpoint documents `target_commitish` as unused when the
+  tag already exists, so for a pre-existing tag the resolved target is GitHub's — the tag's commit, or the target
+  the release already stores — and the direction of the comparison for a tag behind the default branch is not
+  specified anywhere. The inference is recorded as an inference, the parameter stays omitted, and what the guard
+  actually answers is canary evidence rather than a desk conclusion — and this repo's own tag commits do touch
+  `release.yml`. Every such comparison is made
   against the JSON object with **typed** equality, and no response is ever flattened into a string and split
   again: `join(" ")` plus `read` collapses the gap a null field leaves and turns a space inside a string
   value into a column separator, so a `name` of `"v0.1.0 true"` with no `draft` field would satisfy a tag,
-  title, draft and prerelease check at once. Response text reaches the log only escaped and truncated,
-  because the runner scans stdout for workflow commands.
+  title, draft and prerelease check at once. Every answer the gate acts on is also exactly **one** JSON document
+  (`jq -s` with `length == 1`), because `jq -e` reports the status of its last result and a two-document answer
+  is otherwise judged only by its last document. Response text reaches the log only after it is reduced to
+  printable ASCII, cut at 200 characters after that reduction, and escaped for `%` and `:`: the runner scans
+  stdout for workflow commands, and a control character, an ANSI escape, a bidi override or a split UTF-8
+  sequence from a response has no business in a log line either.
   Before publication the tag is re-resolved and must still name the commit the legs built, and the
   draft is inspected on the remote from one list of that release's own assets, every entry of which is
   required to be well-formed before any of it is parsed — the length equal to the expected count, so a list
-  cut off by pagination is not an inventory that passes; each name drawn only from the characters this
-  gate's own asset names use; `state` and `size` typed; `digest` absent or a sha256 — because the asset name
+  cut off by pagination is not an inventory that passes, with a declared set of 100 or more assets refused
+  before anything is created because one page of 100 would stop being complete; each name drawn only from the
+  characters this gate's own asset names use and matched with `\A…\z` rather than `^…$`, since `$` in
+  Oniguruma also matches before a final newline and an asset named `"air-win-x64.tar.gz\n"` would split one
+  snapshot row into two; `state` and `size` typed, `digest` absent or a sha256, and ids canonical integers below
+  2^53 — because the asset name
   is the field boundary of the line each entry is read from, and an asset named
   `"<wanted> uploaded <size> <digest>"` would otherwise carry its own state, size and digest into the
   columns compared. Then: asset inventory, each
@@ -1506,12 +1549,16 @@ and cohort/residency hysteresis in the scheduler (§12.3 hook).
   of that same id whose own response is checked the same way before the confirmation read-back — and a
   failure there says the release may already be public, because a `PATCH` that was sent is not a run that
   published nothing. The record the run prints of what went public is built from the values it verified, not
-  from the response: text a server chose does not go on stdout, where the runner reads workflow commands.
+  copied from the response; everything else the step writes — asset names and ids it verified, field text it did
+  not — reaches the log through the sanitizer above. An earlier §14 sentence claimed no server-chosen text
+  reaches stdout at all, and that is not true of the diagnostics; the corrected claim is the one here.
   A failed run deletes only
   that captured id, and only from a response whose numeric id, tag and boolean `draft` field are all
   verified; a run that captured no id
   deletes nothing, and one that attempted a create without capturing an id says so as a
-  manual-intervention annotation instead of finishing quietly. macOS RIDs stay declared in the Cli project so a local
+  manual-intervention annotation instead of finishing quietly. The step before the build refuses when a release
+  already carries the tag, and that refusal covers a release list it cannot read as well: "could not tell" is not
+  "does not exist", because GitHub allows two releases on one tag. macOS RIDs stay declared in the Cli project so a local
   `-r osx-arm64` build works, but no macOS artifact is built, published, claimed or gated: the account has
   no macOS runner minutes, and a leg that queues forever is not a leg that passes. A platform is added
   back with runner minutes, a leg that actually runs, `EXPECTED_RIDS` updated, and README copy that
@@ -1576,6 +1623,7 @@ router robust until rows 2, 4 and 6 close.
 
 | Deep review of v0.12.5 (response gate, engine-owned switch token, stream-channel ownership) | **completed, dispositioned in v0.12.6**: fixed a false `Ready` — a waiter for one serving profile was answered by another profile's switch on the same model, so a request could be dispatched against a window it cannot serve (`SwitchFairnessTests` pins both directions: not ready on a stranger's success, not failed on a stranger's failure); fixed a shutdown race where disposing the switch token's source could throw before the switch task's own cleanup and strand every waiter on that engine (the token is read before the task is scheduled, the source is deliberately *not* disposed, and a switch that fails to start settles its waiters); the ceiling can no longer reassign blame for a failure inside the router's own terminal work, because the gate is passed the moment the owed bytes are in hand; stream acquisition sits inside the ceiling; a switch-failure message names the target that failed rather than whichever switch happened to be in flight. **Accepted deliberately**: a ceiling that loses the race with the engine's bytes does not fire (bytes in hand beat a timeout — the alternative is destroying an answer the caller can use), and there is **no idle bound after the first frame** — a stalled generation and a stalled reader are TASK-30, because each needs a wire decision (a truncation surface, a slow-consumer policy) rather than a constant |
 
+| Deep review of v0.12.16 (release gate: how many answers a check accepts, what a regex anchors, what a sanitizer strips) | **completed, dispositioned in v0.12.17**. **Fixed, each reproduced first**: a check that pipes an answer through `jq -e` judges a multi-document answer by its **last** document, and the read-back, the un-draft `PATCH` and the cleanup lookup extract no fields, so v0.12.16 published on a read-back that answered someone else's published release first and deleted a **published** release on a lookup that answered `draft:false` then `draft:true` (`hole_readback_two_docs`, `hole_cleanup_two_docs`); `^…$` in jq's Oniguruma also matches before a trailing newline, so `state "uploaded\n"` and an asset name ending in `\n` cleared the hygiene patterns and the one-row-per-asset snapshot lost a field boundary (`\A…\z` now, and `pub_asset_*_newline` — **no demonstrated bypass in either revision**, so these are pattern cases, not a hole claimed); `type == "number"` admitted fractional, negative and exponent ids that this step interpolates into an upload address; one page of 100 assets is only an inventory while the page is not full, so a declared set of 100 or more is refused before create. **Also fixed, found while re-reading rather than by the review**: the preflight release-existence check swallowed API failures (`2>/dev/null || true`), so an unreadable list read as "no release for this tag" and the build went on to put a second release on a tag — the harness runs v0.12.16 failing open there. **Claims this SPEC had made that are now corrected in place**: "no server-chosen text reaches stdout" (false: diagnostics carry validated names, ids and sanitized field text — the accurate claim is that the success record is assembled from verified values); `target_commitish` omitted makes the workflow-write guard's comparison "empty by construction" (not guaranteed — the field is documented as unused when the tag exists, so the resolved target is GitHub's; both directions are canary evidence); and the asset `state` story (`uploaded` is documented and compared exactly, `uploader` is a different object field, a failed upload may leave `starter`, and digest availability beyond the docs example is a first-tag reading). **Deliberately not closed, and not closeable in YAML**: reads and the `PATCH` still do not serialize against another writer, so a release writer can retarget, retitle or replace assets between the last read and publication, and a tag writer can move the tag — tag rulesets (TASK-38), a restricted set of publishers, and immutable releases (TASK-45) stay the controls, and immutability does not stop a malicious *initial* publication; a response forged between this run and GitHub is outside any authority boundary the gate has, so the duplicate-key and counterfeit-field variants are stated as limits rather than chased; the ceiling refuses rather than paginates, which is the cheap correct shape while the declared set is five. **Harness as of this revision**: 90 cases, 0 failures, including the first differential pairs run against v0.12.16 itself (`bodies_at("fd76021")`); it still proves control flow and response reading only, and no tag has run the gate.
 | Deep review of v0.12.15 (release gate: how a response is read — field boundaries, types, and what a joined string can be made to say) | **completed, dispositioned in v0.12.16**. **Fixed, each with a counterexample in the harness**: a response projected with `join(" ")` and re-split with `read` has fewer fields than it appears to — a null collapses to nothing and a space inside a string value becomes a separator — so a create answer of `name "v0.1.0 true"` with `draft` absent passed the tag, title, draft and prerelease comparisons at once; an asset named `"<wanted> uploaded <size> <digest>"` reported its own size and digest into the columns being compared, so four bytes of junk passed as the staged file while the asset's honest metadata sat unread further along the same line; `draft: "true"` (a string) passed as a draft and the run un-drafted on it; and a cleanup lookup answered with `tag_name "v0.1.0 true"` and `draft` null passed as this run's own draft, which would have deleted a **published** release. The comparisons are now `jq -e` over the JSON with typed equality, expected values passed as jq arguments rather than interpolated into a filter; the asset list's length, name characters and field types are required before any of it is parsed; a response's own text is escaped and truncated before it reaches the log, because the runner reads stdout for workflow commands. **Verified rather than assumed**: the exact `assets{?name,label}` template is what the create and get examples show and cutting at `{` is the right cut; `${var,,}` is bash 4+, ASCII-stable for these URLs, and an empty read fails the compare rather than passing it; a supplied `name` is used rather than a generated one even with `generate_release_notes=true`; `GET /releases/{id}` is documented to answer the id asked for, so checking the returned id stays; GHES answers a different upload host and path, so github.com-only exactness is a deliberate choice and not a portable claim. **Recorded where the review stops short**: it held that the two whole-string read-back comparisons were safe — true against the null-collapse it was testing, false against a documented boolean arriving as a string — so those comparisons are gone too. **Still not closed, and not closeable in YAML**: a release writer can retitle, re-tag, add or replace assets, or publish this draft between the last read and the `PATCH`, and a tag writer can move the tag afterwards; immutable releases (generally available, off by default, a repository/organization setting) lock assets and the associated tag only *after* publication, leave title, notes and prerelease/latest editable and drafts fully mutable, so cleanup must never widen to a published release — the operator decision on the board stands. **Folded, not deferred from the same round**: the case-fold covers only scheme/host/owner-repo (a differently-cased path segment from the release id on is refused); the un-draft `PATCH` response is read and checked as a release object, and its failure text does not imply nothing shipped; the run's record of what went public is printed from verified values, so no server-chosen text reaches stdout. **A trap the harness caught in the act**: `${var:0:$n,,}` is an arithmetic error in bash that does not abort a `set -euo pipefail` step, and it made six `upload_url` cases pass for the wrong reason until the expansion was split. **Counter-evidence against one suggested repair**: passing `target_commitish=<pinned sha>` on the create was proposed as a hardening and is not taken — the endpoint note makes the workflow-write guard a function of the *resolved* target relative to the default branch, and the Actions `GITHUB_TOKEN` can never satisfy that guard, so naming the tag commit turns a comparison that is empty by construction (omitted target = default-branch head) into one this run cannot evaluate before the call. What the tag commit resolves to, and what happens when it is behind the default branch, is a first-tag question, now written into §14. **Harness as of this revision**: 73 cases, 0 failures, over a stub `gh` that now builds the JSON each endpoint answers and applies the caller's own `--jq` to it the way gh does, so older revisions are shown reading the same answer through the projection they asked for. That still proves control flow and response *reading* only — nothing about GitHub's authorization decisions or the bytes on the network — and no tag has run the gate. |
 | Deep review of v0.12.14 (release gate: the upload address, what a read-back identifies, what a digest proves) | **completed, dispositioned in v0.12.15**. **Fixed**: the `upload_url` compare is exact against the documented template rather than a prefix (the prefix accepted `assets-extra` and an unrequested query), case-folded so the API's canonical owner/repo spelling is not a false rejection, with uploads addressed from the returned URL; the release id and the pinned title are checked in both inspections and in the post-publish read-back. **Corrected in this SPEC**: what the stored-digest match proves (GitHub's reported digest equals the staged bytes at read time — not which call uploaded them, not what a download serves); what the scripted harness proves (the exercised mocked branches only — coverage and pass counts were not independently verified by the reviewer either); gh's token attachment is conditional, not unconditional. **Verified, not assumed**: gh v2.46.0 opens `--input` and stores the file as the request body with an explicit `Content-Length`, passes a reader straight to `http.NewRequest` (JSON marshalling happens only for map parameters), honours a supplied `Content-Type`, uses a `://` endpoint as an absolute URL, and looks the token up via hostname normalization; `${upload_url%%\{*}` is the right cut for `{?name,label}`. **Deliberately not closed**: a release writer can still retitle, re-tag, replace assets on, or publish this draft between the last read and the `PATCH`, and a tag writer can move the tag after its final resolution — more reads move the window, they do not close it; `.author.login` would add a weak creator check only if the expected principal were stable, and would not stop a later authorized writer. **New, and not a code change**: GitHub's immutable releases lock assets and the associated tag after publication and emit attestations, the strongest available control for the post-publication half of this problem; enabling it is a repository/organization setting, so it is an operator decision on the board. **Harness counts are as-of**: the earlier rows in this table quote the case counts of their own round; the harness runs 59 cases at this revision, and what it does not prove is unchanged. **One review finding was an artifact of my own prompt**: the round-7 “blocker” was Markdown link syntax wrapped around the expected URL in the request I sent — `cat -A` on the file shows a plain URL, so nothing shipped broken. |
 

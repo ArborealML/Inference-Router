@@ -90,15 +90,29 @@ jobs:
           # a half-finished draft from an earlier run must block a new build just as a published
           # release does. --paginate means a second page of releases cannot hide an existing one,
           # and more than one match is reported as a conflict rather than releasing the first hit.
-          flags="$(gh api --paginate "repos/{owner}/{repo}/releases?per_page=100" --jq ".[] | select(.tag_name==\"$TAG\") | .draft" 2>/dev/null | tr '\n' ' ' || true)"
-          set -- ${flags}   # unquoted on purpose: $# is then the number of releases on this tag
-          case "$#" in
-            0) kind=absent ;;
-            1) if [ "$1" = "true" ]; then kind=draft; else kind=published; fi ;;
-            *) kind="conflicting ($#)" ;;
-          esac
-          if [ "$kind" != "absent" ]; then
-            echo "::error::refusing to build: a $kind release for $TAG already exists (delete it first if a re-release is intended)"
+          # --paginate without --jq answers one JSON document per page, so the pages are slurped and
+          # only array documents are read. The tag goes to jq as an argument, never inside the filter.
+          # "Could not tell" is a refusal and not an absence: GitHub allows two releases to carry the
+          # same tag, so a failed or unparseable read must not be read as "nothing exists for $TAG".
+          existing="$(gh api --paginate "repos/{owner}/{repo}/releases?per_page=100" 2>/dev/null || true)"
+          if [ -z "$existing" ]; then
+            echo "::error::could not read this repository's releases, so a release for $TAG cannot be ruled out — not building"
+            exit 1
+          fi
+          matches="$(printf '%s' "$existing" | jq -s --arg tag "$TAG" '[ .[] | select(type == "array") | .[] | select(.tag_name == $tag) | {id, draft}]' 2>/dev/null || true)"
+          if ! printf '%s' "$matches" | jq -e 'type == "array"' >/dev/null 2>&1; then
+            echo "::error::the release list did not parse as JSON, so a release for $TAG cannot be ruled out — not building"
+            exit 1
+          fi
+          n_existing="$(printf '%s' "$matches" | jq 'length')"
+          if [ "$n_existing" != "0" ]; then
+            if [ "$n_existing" = "1" ]; then
+              printf -v existing_ids '%s' "$(printf '%s' "$matches" | jq -r '.[0] | "id \(.id) draft \(.draft)"')"
+              echo "::error::refusing to build: a release for $TAG already exists ($existing_ids) — delete it first if a re-release is intended"
+            else
+              printf -v existing_ids '%s' "$(printf '%s' "$matches" | jq -c '[.[] | {id, draft}]')"
+              echo "::error::refusing to build: $n_existing releases already carry the tag $TAG ($existing_ids) — settle that before building"
+            fi
             exit 1
           fi
           echo "no existing release for $TAG"
@@ -324,6 +338,14 @@ jobs:
             assets+=("air-${rid}.tar.gz" "air-${rid}.tar.gz.sha256")
           done
           assets+=("SHA256SUMS")
+          # The inventory check below reads one page of 100 and requires it to be exactly the declared
+          # count long, which is a complete inventory only while the page is not full. A declared set big
+          # enough for that to stop being true is refused here, before anything is created, rather than
+          # published on a partial read.
+          if [ "${#assets[@]}" -ge 100 ]; then
+            echo "::error::${#assets[@]} declared assets is more than one page of the asset list reads — the inventory would be incomplete; paginate before publishing"
+            exit 1
+          fi
           prerelease=false
           # preflight admits a tag with a -suffix; without prerelease=true GitHub would list such a
           # release as a final one.
@@ -331,8 +353,12 @@ jobs:
           # Two log helpers. brief() escapes what a response said before it goes into an "::error::"
           # line: the runner scans stdout for workflow commands, so a field value from a server must
           # not be able to speak as one, and a long value is cut. rsum() renders the fields this step
-          # cares about as text for the message only — nothing is compared against it.
-          brief() { printf '%s' "$1" | head -c 200 | tr -d '\r\n' | sed -e 's/%/%25/g' -e 's/:/%3A/g'; }
+          # cares about as text for the message only — nothing is compared against it. brief() reduces a
+          # value to printable ASCII before the length cut: a control character, an ANSI escape, a bidi
+          # override or a mid-sequence UTF-8 byte from a response has no business in the log either, and
+          # cutting after tr (instead of head) means no producer dies of SIGPIPE under pipefail, so a
+          # diagnostic cannot come out silently empty.
+          brief() { printf '%s' "$1" | LC_ALL=C tr -c '\40-\176' '?' | LC_ALL=C cut -c1-200 | sed -e 's/%/%25/g' -e 's/:/%3A/g'; }
           rsum() { printf '%s' "$1" | jq -r '[.id,.tag_name,.name,.draft,.prerelease]
                        | map(if . == null then "absent" else .|tostring end) | join(" ")' 2>/dev/null \
                      || echo "unreadable response"; }
@@ -381,9 +407,15 @@ jobs:
           # deliberately not compared — the API says it is unused for a tag that already exists, so it
           # proves nothing about which commit is released — and deliberately not sent either: see the
           # §14 note on the workflow-write guard, which is evaluated against the target the API resolves.)
-          if ! printf '%s' "$created" | jq -e --arg tag "$TAG" --argjson pre "$prerelease" \
-               '(.id | type) == "number" and .id > 0 and ((.upload_url // "") | type) == "string"
-                and .tag_name == $tag and .name == $tag and .draft == true and .prerelease == $pre' \
+          # One document, and a canonical integer id. `jq -e` reports the status of its LAST result, so a
+          # response that is two JSON documents — the first wrong, the second right — passes a bare
+          # predicate. `type == "number"` alone also admits 1.5, -3 and 1e999, and the id is used to build
+          # a URL and a compare target, so it has to be an exact integer in the range the tools can hold.
+          if ! printf '%s' "$created" | jq -s -e --arg tag "$TAG" --argjson pre "$prerelease" \
+               'length == 1 and ((.[0]
+                 | (.id | type) == "number" and .id > 0 and .id == (.id | floor) and .id < 9007199254740992
+                   and ((.upload_url // "") | type) == "string"
+                   and .tag_name == $tag and .name == $tag and .draft == true and .prerelease == $pre))' \
                >/dev/null; then
             echo "::error::create did not answer with a numeric id, tag $TAG, title $TAG, draft=true, prerelease=$prerelease (fields: $(brief "$(rsum "$created")")) — not publishing, and leaving whatever exists for a human"
             exit 1
@@ -454,13 +486,18 @@ jobs:
             # shape of every entry is required first — names restricted to the ones this gate makes,
             # typed state and size, a digest that is absent or a sha256 — and the count is required
             # too, so a list cut off by pagination is not an inventory that passes.
-            if ! printf '%s' "$assets_json" | jq -e --argjson want "$want_count" \
-                 'type == "array" and length == $want
-                  and all(.[]; ((.name | type) == "string" and (.name | test("^[A-Za-z0-9.-]+$")))
-                          and ((.state | type) == "string" and (.state | test("^[A-Za-z]+$")))
-                          and ((.size | type) == "number")
-                          and ((.digest == null) or ((.digest | type) == "string" and (.digest | test("^sha256:[0-9a-fA-F]{64}$"))))
-                          and ((.id | type) == "number"))' >/dev/null; then
+            # Absolute anchors, not ^ and $: in Oniguruma (jq's regex engine) `$` also matches before a
+            # final newline, so test("^[A-Za-z]+$") is true for "uploaded\n" and an asset named
+            # "air-win-x64.tar.gz\n" is hygiene-clean — and then the snapshot below, which is one line per
+            # asset, acquires an extra physical row from a field boundary nobody chose.
+            if ! printf '%s' "$assets_json" | jq -s -e --argjson want "$want_count" \
+                 'length == 1 and ((.[0]
+                   | type == "array" and length == $want
+                     and all(.[]; ((.name | type) == "string" and (.name | test("\\A[A-Za-z0-9.-]+\\z")))
+                             and ((.state | type) == "string" and (.state | test("\\A[A-Za-z]+\\z")))
+                             and ((.size | type) == "number")
+                             and ((.digest == null) or ((.digest | type) == "string" and (.digest | test("\\Asha256:[0-9a-fA-F]{64}\\z"))))
+                             and ((.id | type) == "number" and (.id | floor) == .id))))' >/dev/null; then
               echo "::error::the asset list for release $rel_id is not $want_count assets with this gate's own names and typed state, size and digest — not publishing"
               exit 1
             fi
@@ -493,8 +530,9 @@ jobs:
             # Typed fields again, for the same reason as the create response: a joined projection
             # cannot tell boolean true from the string "true", and does not notice a tag name or title
             # with a space in it.
-            if ! printf '%s' "$rel_json" | jq -e --argjson rid "$rel_id" --arg tag "$TAG" --argjson pre "$prerelease" \
-                 '.id == $rid and .tag_name == $tag and .name == $tag and .draft == true and .prerelease == $pre' \
+            if ! printf '%s' "$rel_json" | jq -s -e --argjson rid "$rel_id" --arg tag "$TAG" --argjson pre "$prerelease" \
+                 'length == 1 and ((.[0]
+                   | .id == $rid and .tag_name == $tag and .name == $tag and .draft == true and .prerelease == $pre))' \
                  >/dev/null; then
               echo "::error::release read-back is not this run's draft for $TAG (fields: $(brief "$(rsum "$rel_json")")), expected id $rel_id, title $TAG, draft=true, prerelease=$prerelease — not publishing"
               exit 1
@@ -519,14 +557,16 @@ jobs:
           # confirmation read, and the failure text says the release may already be public, because a
           # PATCH that was sent and answered wrongly is not a run that published nothing.
           patched="$(gh api -X PATCH "repos/{owner}/{repo}/releases/$rel_id" -F draft=false)"
-          if ! printf '%s' "$patched" | jq -e --argjson rid "$rel_id" --arg tag "$TAG" --argjson pre "$prerelease" \
-               '.id == $rid and .tag_name == $tag and .draft == false and .prerelease == $pre' >/dev/null; then
+          if ! printf '%s' "$patched" | jq -s -e --argjson rid "$rel_id" --arg tag "$TAG" --argjson pre "$prerelease" \
+               'length == 1 and ((.[0]
+                 | .id == $rid and .tag_name == $tag and .draft == false and .prerelease == $pre))' >/dev/null; then
             echo "::error::the un-draft call did not answer with release $rel_id published (fields: $(brief "$(rsum "$patched")")) — the release may be public regardless: check the releases page before deciding anything"
             exit 1
           fi
           after_json="$(gh api "repos/{owner}/{repo}/releases/$rel_id")"
-          if ! printf '%s' "$after_json" | jq -e --argjson rid "$rel_id" --arg tag "$TAG" --argjson pre "$prerelease" \
-               '.id == $rid and .tag_name == $tag and .name == $tag and .draft == false and .prerelease == $pre' \
+          if ! printf '%s' "$after_json" | jq -s -e --argjson rid "$rel_id" --arg tag "$TAG" --argjson pre "$prerelease" \
+               'length == 1 and ((.[0]
+                 | .id == $rid and .tag_name == $tag and .name == $tag and .draft == false and .prerelease == $pre))' \
                >/dev/null; then
             echo "::error::published release read-back is not this run's published release (fields: $(brief "$(rsum "$after_json")")), expected id $rel_id, title $TAG, draft=false, prerelease=$prerelease — check the releases page before trusting it"
             exit 1
@@ -561,12 +601,15 @@ jobs:
             fi
             exit 0
           fi
-          brief() { printf '%s' "$1" | head -c 200 | tr -d '\r\n' | sed -e 's/%/%25/g' -e 's/:/%3A/g'; }
+          brief() { printf '%s' "$1" | LC_ALL=C tr -c '\40-\176' '?' | LC_ALL=C cut -c1-200 | sed -e 's/%/%25/g' -e 's/:/%3A/g'; }
           rsum() { printf '%s' "$1" | jq -r '[.id,.tag_name,.name,.draft,.prerelease]
                        | map(if . == null then "absent" else .|tostring end) | join(" ")' 2>/dev/null \
                      || echo "unreadable response"; }
+          # The empty string matches `*[!0-9]*` as "no bad characters" and would be deleted by name.
+          # Nothing reaches here empty — the step exits earlier — but a DELETE guard that is only
+          # accidentally correct is not a guard.
           case "$CREATED_ID" in
-            *[!0-9]*) echo "release id $CREATED_ID is not a number; leaving whatever it names"; exit 0 ;;
+            ''|*[!0-9]*) echo "release id ${CREATED_ID:-nothing} is not a number; leaving whatever it names"; exit 0 ;;
           esac
           rel="$(gh api "repos/{owner}/{repo}/releases/$CREATED_ID" 2>/dev/null || true)"
           if [ -z "$rel" ]; then
@@ -578,8 +621,9 @@ jobs:
           # tag_name "v0.1.0 true" with a null draft reads back, column by column, as this run's tag
           # and draft=true — and the DELETE that follows would take a published release down. Only a
           # response that is typed, id-matching and draft==true is ever deleted.
-          if ! printf '%s' "$rel" | jq -e --argjson rid "$CREATED_ID" --arg tag "$TAG" \
-               '(.id | type) == "number" and .id == $rid and .tag_name == $tag and .draft == true' \
+          if ! printf '%s' "$rel" | jq -s -e --argjson rid "$CREATED_ID" --arg tag "$TAG" \
+               'length == 1 and ((.[0]
+                 | (.id | type) == "number" and .id == $rid and .tag_name == $tag and .draft == true))' \
                >/dev/null; then
             echo "release $CREATED_ID is not provably this run's unpublished draft of $TAG (fields: $(brief "$(rsum "$rel")")); leaving it"
             exit 0
