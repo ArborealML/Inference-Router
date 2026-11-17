@@ -236,6 +236,6 @@ was about.
 
 The gate is **`tools/board-check.py`**, tracked in the repo and run by CI, so "the checker says zero" is
 something a reader can reproduce. Scripts under `.local/` are the board's own analysis and can add to it, but
-they are not the pass. Word budgets there are advisory until the corpus comes under them; when they fit, the
-`--strict-budget` flag goes into the workflow in the same commit that brings the last over-budget task inside,
-and nobody moves a limit back down to meet the work.
+they are not the pass. Word budgets are **enforced** in CI (`--strict-budget`): the corpus came inside them and
+the flag landed in the same push window as the last task that was over. Nobody moves a limit back down to meet
+the work — a task that busts its budget gets trimmed, or split into two tasks, in the commit that fixes it.

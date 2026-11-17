@@ -82,8 +82,9 @@ jobs:
   # The board contract, in the repo rather than in one session's scratch directory: AGENTS.md says a
   # zero-defect count is only worth what the checker measures, so the checker is tracked, reviewed and
   # run here. It prints the corpus numbers (open-task words: total, median, largest) on every run, and
-  # fails on structural defects. Word budgets are advisory until the corpus fits them; when it does,
-  # --strict-budget joins this command in the same commit as the last task that came inside the limit.
+  # fails on structural defects. Word budgets are enforced: the corpus came inside them, and the flag
+  # landed in the same push window as the last task that was over. A limit never moves down to meet the
+  # work - a task that busts the budget gets trimmed, or split into two tasks.
   board:
     name: board contract (backlog/ against AGENTS.md)
     runs-on: ubuntu-24.04
@@ -95,7 +96,7 @@ jobs:
       - name: Check the checker on fixtures
         run: python3 tools/board-check.py --self-test
       - name: Check every task file against the task-content rules
-        run: python3 tools/board-check.py
+        run: python3 tools/board-check.py --strict-budget
 
   # The release-gate harness extracts the step bodies of release.yml and runs them against a stub gh
   # that answers with the JSON the real endpoint answers with, including the caller's own --jq. TASK-44
