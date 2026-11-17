@@ -19,7 +19,33 @@ ordinal: 21000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
+
+
 **Do this (3 minutes).** Three one-line answers, on this task: `1 operator-first`, `2 loopback plus tunnels`, `3 no gap event`. Any answer can be replaced with yours and the reason. Settings or commands are not involved - these are product and wire postures, and answer 3 is the only one that touches the wire (the recommendation is to change nothing).
+
+**Answer format (one line each):** `1 operator-first`, `2 loopback+tunnels`, `3 no gap event` — deviations welcome,
+and each deviation names what it buys.
+
+**Links**
+- What the admin surface is today: [SPEC §6](https://github.com/ArborealML/Inference-Router/blob/main/SPEC.md#L635), [§6.1](https://github.com/ArborealML/Inference-Router/blob/main/SPEC.md#L635).
+- The feed the answers describe: [SPEC §10](https://github.com/ArborealML/Inference-Router/blob/main/SPEC.md#L946); screens: [SPEC §12.5](https://github.com/ArborealML/Inference-Router/blob/main/SPEC.md#L1079).
+- Task that starts when this is answered: [TASK-11] (https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-11%20-%20Blazor-live-view-screens-plus-the-event-stream-additions-they-need.md).
+- Adjacent and deliberately separate: [TASK-34] (https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-34%20-%20Decision-what-the-caller-sees-when-a-generation-stalls-or-a-client-stops-reading.md) — what a *caller* sees when a generation stalls, which is a `/v1` question, not a feed question.
+
+
+<!-- SECTION:DESCRIPTION:END -->
+
+## Acceptance Criteria
+<!-- AC:BEGIN -->
+- [ ] #1 The audience and the credential posture are stated
+- [ ] #2 The loss-reporting event kind is approved or declined, with a one-line reason
+<!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+
+Reasoning and evidence moved out of the description under the answer-first rule (decision-15):
 
 **You are being asked to ratify a design, not to write one.** The external research and review service answered
 the three questions this task posed (dispatched and answered 2026-11-17, transcript kept in `.local/reviews/`, not
@@ -57,25 +83,6 @@ change, TASK-30's wire surface stays exactly as it is, and the live view shows a
 "incomplete history" qualifier instead. **If you decline the recommendation:** it becomes a versioned feed change
 with per-subscriber state and replay races, and it needs its own task and SPEC section.
 
-**Answer format (one line each):** `1 operator-first`, `2 loopback+tunnels`, `3 no gap event` — deviations welcome,
-and each deviation names what it buys.
-
-**Links**
-- What the admin surface is today: [SPEC §6](https://github.com/ArborealML/Inference-Router/blob/main/SPEC.md#L635), [§6.1](https://github.com/ArborealML/Inference-Router/blob/main/SPEC.md#L635).
-- The feed the answers describe: [SPEC §10](https://github.com/ArborealML/Inference-Router/blob/main/SPEC.md#L946); screens: [SPEC §12.5](https://github.com/ArborealML/Inference-Router/blob/main/SPEC.md#L1079).
-- Task that starts when this is answered: [TASK-11] (https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-11%20-%20Blazor-live-view-screens-plus-the-event-stream-additions-they-need.md).
-- Adjacent and deliberately separate: [TASK-34] (https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-34%20-%20Decision-what-the-caller-sees-when-a-generation-stalls-or-a-client-stops-reading.md) — what a *caller* sees when a generation stalls, which is a `/v1` question, not a feed question.
-<!-- SECTION:DESCRIPTION:END -->
-
-## Acceptance Criteria
-<!-- AC:BEGIN -->
-- [ ] #1 The audience and the credential posture are stated
-- [ ] #2 The loss-reporting event kind is approved or declined, with a one-line reason
-<!-- AC:END -->
-
-## Implementation Notes
-
-<!-- SECTION:NOTES:BEGIN -->
 Read the decisions against SPEC §6.1 (admin surface: unauthenticated, loopback bind) and §10 (feed shape, replay, subscriber bounds): https://github.com/ArborealML/Inference-Router/blob/main/SPEC.md — those two sections are the whole evidence base for the audience and credential questions, and §6.1 plus the §6.1 casing table is what a new event kind has to be added through. Per the owner instruction this decision is now the agents to take and record as a decision record; the wire addition is still a §6 change with contract tests, so the loss-event half lands as code only with a decision record naming it. TASK-11 wakes when that record exists.
 
 DISPATCHED to the external research and review service at 2026-11-17 08:07 UTC, reasoning-only authority, top reasoning tier, text deliverable. The brief put to it: the three questions above, with the feed semantics it has to respect (bounded ring, exclusive replay cursor, slow subscriber ended not pruned, subscribers bounded, 503 before SSE headers) and the AOT/no-reflection constraint. Wake condition: the recommendation lands in this session, and it is expected as three recommendations each with its strongest counter-argument. Request bookkeeping (id, hash, tier) lives in .local/reviews/dispatches.md, not on the board. When it lands: review against how this repository's admin surface and feed actually behave, then file one owner task with the approval lines written out.

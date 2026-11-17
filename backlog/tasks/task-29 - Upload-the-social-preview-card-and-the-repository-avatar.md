@@ -17,21 +17,48 @@ ordinal: 23000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
+
+
 **Do this (2 minutes).** Download docs/images/air-social-1280x640.png from the repository, open repository Settings -> Options -> Social preview, choose it, press **Save**, then run: curl -s https://github.com/ArborealML/Inference-Router | grep og:image - and the URL printed should change from repository-images to opengraph.githubassets.com. Answer one line here when it does: `card set`. The avatar is already live; nothing else to upload.
 
 Two one-time uploads on GitHub that only a browser session can do. Everything up to the upload is done: the
 vector sources are committed, and the two PNGs the settings forms want are committed in the repository, so the
 upload is now download-and-pick, not export-and-hope.
 
+**Why this task cannot be done by an agent:** both settings sit behind an authenticated web form. There is no
+API, no `gh` endpoint, and no committed file that stands in for the upload. A session can prepare the exact PNG
+and verify the result afterwards; it cannot press the button.
+
+**Do this (about 2 minutes)**
+1. Download `docs/images/air-social-1280x640.png` (link above) or `git pull` and take it from the working tree.
+2. Open [repo Settings -> Options -> Social preview](https://github.com/ArborealML/Inference-Router/settings/options), pick the PNG, then **press Save**. The form keeps showing the old state if Save is missed, which is the failure mode this task has now hit twice.
+3. Confirm from either surface, after about a minute for cache: `curl -s https://github.com/ArborealML/Inference-Router | grep og:image`. While no custom card is set it prints `repository-images.githubusercontent.com/1460450305/...` (GitHub's generated image). Once a custom card is set it prints `opengraph.githubassets.com/<hash>/ArborealML/Inference-Router`, the same shape a repository with a custom card shows.
+4. Answer in one line on this task: `TASK-29: card set` , `card declined: REASON`, or `cannot set it: REASON`.
+
+**Current state, re-checked 2026-11-17 07:33 UTC.** Avatar live, card not live. See the comments for the
+measurements and for what to look at in the form.
+
+
+<!-- SECTION:DESCRIPTION:END -->
+
+## Acceptance Criteria
+<!-- AC:BEGIN -->
+- [ ] #1 The social-preview image is set on the repository settings page, or declined with a one-line reason
+- [x] #2 The organisation profile picture is set from the avatar-ready mark (TASK-23), or declined with a one-line reason
+- [ ] #3 Both are confirmed from outside the settings form: the opengraph preview URL renders the new card, and the org page shows the new mark
+- [ ] #4 Looking at the card at the upload moment: the three text lines read at full size and the mark does not compete with the wordmark; if it reads badly, name the typeface and the card is re-rendered (this is the human half of TASK-23 AC #3, moved here because this is where a person actually sees the image)
+<!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Reasoning and evidence moved out of the description under the answer-first rule (decision-15):
+
 **Set the social card** -> every link preview of the repository renders our card: dark evergreen field, the
 branching-route mark, `AIR`, the name and the tagline. **Leave it** -> GitHub keeps rendering its own generated
 card, a mostly-white box that says nothing about what this is. Today it renders GitHub's card (verified below).
 **Set the organisation picture** -> the mark appears on the org page, on the owner chip beside the repository
 name, and in search results. **Already done** and verified from outside the form.
-
-**Why this task cannot be done by an agent:** both settings sit behind an authenticated web form. There is no
-API, no `gh` endpoint, and no committed file that stands in for the upload. A session can prepare the exact PNG
-and verify the result afterwards; it cannot press the button.
 
 **Links**
 - Card PNG to pick, 1280x640 as GitHub asks: [docs/images/air-social-1280x640.png](https://github.com/ArborealML/Inference-Router/blob/main/docs/images/air-social-1280x640.png) (raw: [raw.githubusercontent.com/.../air-social-1280x640.png](https://raw.githubusercontent.com/ArborealML/Inference-Router/main/docs/images/air-social-1280x640.png)). 30,842 bytes, sha256 `b02b6d32...97e9`, well under the 1 MB ceiling.
@@ -42,24 +69,7 @@ and verify the result afterwards; it cannot press the button.
 - Upload form 2 (organisation picture): [organisation Settings -> Profile picture](https://github.com/organizations/ArborealML/settings/profile).
 - Check the result from outside the form: [the image link previews fetch](https://opengraph.githubassets.com/1/ArborealML/Inference-Router), and the repository page `og:image` meta tag.
 - Art provenance, renderer and resolved font: [docs/images/README.md](https://github.com/ArborealML/Inference-Router/blob/main/docs/images/README.md).
-
-**Do this (about 2 minutes)**
-1. Download `docs/images/air-social-1280x640.png` (link above) or `git pull` and take it from the working tree.
-2. Open [repo Settings -> Options -> Social preview](https://github.com/ArborealML/Inference-Router/settings/options), pick the PNG, then **press Save**. The form keeps showing the old state if Save is missed, which is the failure mode this task has now hit twice.
-3. Confirm from either surface, after about a minute for cache: `curl -s https://github.com/ArborealML/Inference-Router | grep og:image`. While no custom card is set it prints `repository-images.githubusercontent.com/1460450305/...` (GitHub's generated image). Once a custom card is set it prints `opengraph.githubassets.com/<hash>/ArborealML/Inference-Router`, the same shape a repository with a custom card shows.
-4. Answer in one line on this task: `TASK-29: card set` , `card declined: REASON`, or `cannot set it: REASON`.
-
-**Current state, re-checked 2026-11-17 07:33 UTC.** Avatar live, card not live. See the comments for the
-measurements and for what to look at in the form.
-<!-- SECTION:DESCRIPTION:END -->
-
-## Acceptance Criteria
-<!-- AC:BEGIN -->
-- [ ] #1 The social-preview image is set on the repository settings page, or declined with a one-line reason
-- [x] #2 The organisation profile picture is set from the avatar-ready mark (TASK-23), or declined with a one-line reason
-- [ ] #3 Both are confirmed from outside the settings form: the opengraph preview URL renders the new card, and the org page shows the new mark
-- [ ] #4 Looking at the card at the upload moment: the three text lines read at full size and the mark does not compete with the wordmark; if it reads badly, name the typeface and the card is re-rendered (this is the human half of TASK-23 AC #3, moved here because this is where a person actually sees the image)
-<!-- AC:END -->
+<!-- SECTION:NOTES:END -->
 
 ## Comments
 
