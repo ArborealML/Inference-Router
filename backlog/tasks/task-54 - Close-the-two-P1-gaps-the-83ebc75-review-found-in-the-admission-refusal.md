@@ -1,16 +1,19 @@
 ---
 id: TASK-54
 title: Close the two P1 gaps the 83ebc75 review found in the admission refusal
-status: To Do
+status: Waiting
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T19:47:00Z'
-updated_date: '2026-11-17T20:42:00Z'
+updated_date: '2026-11-17T21:33:00Z'
 labels:
   - scheduling
   - wire
   - concurrency
-dependencies: []
+dependencies:
+  - TASK-55
+  - TASK-56
+  - TASK-57
 priority: high
 ordinal: 54000
 ---
@@ -41,4 +44,6 @@ that adjacency is why this stays a separate task rather than growing a fifth cri
 
 <!-- SECTION:NOTES:BEGIN -->
 **Closed at 20a06fa** (AC #2, #3): CapabilityScanTests pins the coherence rule deterministically, and the capability read is one Volatile.Read(ref _cap) per engine per decision (Engines/EngineRuntime.cs:104-110). **Wire-visible posture, correct wherever it is restated:** an unservable model is refused 503 model_unavailable, not 429, and the feed carries one queue.rejected with reason model_unavailable and no request.enqueued. Queue overflow keeps 429 queue_overflow; the defect that overflow also emits request.enqueued is TASK-56, not this one.
+
+**Wake: TASK-55, TASK-56 and TASK-57 closing.** This half acts on the refusal predicate, so it only goes in once that predicate is accurate — a quiet-poll version, a gated switch transition, and a snapshot nothing can mutate underneath it. Until then the queued-ticket remedy would be written against a moving predicate.
 <!-- SECTION:NOTES:END -->

@@ -20,7 +20,7 @@ The versioned snapshot 20a06fa introduced is only atomic while it stays inside t
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 mutating what a public LoadedModels read returned cannot change what a later capability scan sees
-- [ ] #2 the scheduler's per-decision snapshot read stays allocation-free, pinned rather than asserted
-- [ ] #3 SPEC 5.5 names the snapshot as the only published capability shape
+- [ ] #1 no published capability array is reachable as a mutable array from any surface (an immutable collection inside the snapshot, nothing escaping it)
+- [ ] #2 the scheduler's per-decision snapshot read stays allocation-free, pinned by a test rather than asserted
+- [ ] #3 SPEC 5.5 names the snapshot as the only published capability shape, and calls it immutable only if it is one
 <!-- AC:END -->
