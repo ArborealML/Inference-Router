@@ -3,11 +3,11 @@ id: TASK-34
 title: >-
   Decision: what the caller sees when a generation stalls or a client stops
   reading
-status: To Do
+status: Waiting
 assignee:
-  - '@claire'
+  - '@chatswarm'
 created_date: '2026-11-17T08:10:00Z'
-updated_date: '2026-11-17T09:13:00Z'
+updated_date: '2026-11-17T11:02:00Z'
 labels:
   - stream
   - transport
@@ -39,7 +39,6 @@ implementation on the constants would have made a two-minute answer into a stall
 - The acceptance criterion this feeds: TASK-30 AC #3, now worded to name this task for the numbers and SPEC §6 for the shape.
 - Existing timeouts to line the new one up with: `response_timeout_ms` (per-engine turn ceiling) and `switch_wait_timeout_ms`, both described at [SPEC §5.5 / §14.1](https://github.com/ArborealML/Inference-Router/blob/main/SPEC.md#L1329).
 
-
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -52,7 +51,6 @@ implementation on the constants would have made a two-minute answer into a stall
 <!-- SECTION:NOTES:BEGIN -->
 
 Evidence and reasoning moved out of the description under the answer-first rule (decision-15), so the description stays answerable in one sitting:
-
 
 **Do this (4 minutes).** Three constants and one policy, in one line: `1 120000`, `2 cancel`, `3 frames`. 1 = how many milliseconds a stream may stay silent after its first frame before the router ends it (0 disables); 2 = whether the router cancels the upstream engine request when the caller stops reading, or lets it finish into a buffer nobody drains; 3 = whether the buffer bound counts frames or bytes. Nothing in this ask changes what a caller sees on the wire - that shape is already shipped and pinned by tests - so there is no new wire decision here.
 
@@ -90,3 +88,25 @@ Citations restated by section, not line, because the SPEC anchors in the origina
 
 Precedent confirmed independently by the coding session after my check, so it is no longer a single-agent claim: the pinning test is RequestPhaseTimeoutTests.AStreamThatNeverSendsAFrameEndsInsideTheStreamBecauseTheStatusIsAlreadySent at tests/Arboreal.InferenceRouter.Tests/RequestPhaseTimeoutTests.cs:196, and SPEC's quiet-engine wording (ends engine_timeout, one frame plus [DONE]) sits in the revision log near line 209 today. TASK-34 therefore stays numbers-and-policy for the owner and TASK-30 does not move behind a wire decision.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+created: 2026-11-17T10:58:00Z
+
+---
+
+Reassigned under decision-16. The three answers wanted: the idle bound after the first frame in ms (0 disables), what happens to a generation that stalls — cancel upstream and close, or let it run to its own ceiling — and what a client that stops reading gets. Constraint to hand the reviewer: the surface is `/v1`, OpenAI-compatible, so the shape is likely a truncation signal rather than a new error body, and SPEC §6 casing rules are frozen. The coding session is already building TASK-30's machinery — relay bound, stall detection, tests — with the numbers to be filled in when this lands.
+
+---
+
+created: 2026-11-17T11:02:00Z
+
+---
+
+Dispatched to @chatswarm 2026-11-17 11:02Z (tier high, reasoning-only, no repo access) with the facts it needs: response_timeout_ms default 600000 applies only before the first frame; the ceiling deliberately ends at the first frame; a committed stream fails in band with one error frame plus [DONE]; a caller abort reports cancelled, never a timeout; both the stalled-reader buffering and the post-first-frame silence are currently unbounded. Six questions: the default idle bound in ms and its unit; cancel upstream or detach; the slow-consumer bound and whether it counts frames or bytes; what mainstream OpenAI client libraries do with an in-band error frame versus a missing [DONE]; the ways a bound makes things worse; whether one knob beats two.
+
+Wake: that answer landing. The coding session implements TASK-30 meanwhile, with the numbers filled in after — the shape is already pinned by TASK-30 AC #3 (one error frame plus [DONE], no new truncation format).
+
+---
+<!-- COMMENTS:END -->

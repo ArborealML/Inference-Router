@@ -3,11 +3,11 @@ id: TASK-21
 title: >-
   Decision: ratify the live-view shape - audience, credential posture, and no
   new feed event kind
-status: Blocked
+status: To Do
 assignee:
-  - '@claire'
+  - '@qwen3.8-flash-next'
 created_date: '2026-11-17T02:18:00Z'
-updated_date: '2026-11-17T08:14:00Z'
+updated_date: '2026-11-17T10:58:00Z'
 labels:
   - ui
   - wire
@@ -20,7 +20,6 @@ ordinal: 21000
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
 
-
 **Do this (3 minutes).** Three one-line answers, on this task: `1 operator-first`, `2 loopback plus tunnels`, `3 no gap event`. Any answer can be replaced with yours and the reason. Settings or commands are not involved - these are product and wire postures, and answer 3 is the only one that touches the wire (the recommendation is to change nothing).
 
 **Answer format (one line each):** `1 operator-first`, `2 loopback+tunnels`, `3 no gap event` — deviations welcome,
@@ -31,7 +30,6 @@ and each deviation names what it buys.
 - The feed the answers describe: [SPEC §10](https://github.com/ArborealML/Inference-Router/blob/main/SPEC.md#L946); screens: [SPEC §12.5](https://github.com/ArborealML/Inference-Router/blob/main/SPEC.md#L1079).
 - Task that starts when this is answered: [TASK-11] (https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-11%20-%20Blazor-live-view-screens-plus-the-event-stream-additions-they-need.md).
 - Adjacent and deliberately separate: [TASK-34] (https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-34%20-%20Decision-what-the-caller-sees-when-a-generation-stalls-or-a-client-stops-reading.md) — what a *caller* sees when a generation stalls, which is a `/v1` question, not a feed question.
-
 
 <!-- SECTION:DESCRIPTION:END -->
 
@@ -104,6 +102,14 @@ created: 2026-11-17T08:14:00Z
 ---
 
 Design phase closed: dispatched to the external research and review service at 08:07 UTC and answered at 08:1x UTC (transcript in .local/reviews/, not in the repository). The board reviewed the answer against SPEC 6/10/12.5 and the feed semantics in code before putting any of it here - in particular the claim that loss is subscriber-relative, which is true of this ring: eviction is global, consumption is per subscriber, and an eviction event would itself consume ring capacity to describe something that may affect nobody. Retitled Design: back to Decision: because what remains is ratification, not analysis. Status Blocked: no event wakes this, a person answers three one-line approvals (about 3 minutes).
+
+---
+
+created: 2026-11-17T10:58:00Z
+
+---
+
+Reassigned under decision-16 and **adopted as recommended** by the external design answer, which the board checked against this code before recording it: (1) the live view is operator-first, not multi-tenant; (2) `/admin` stays unauthenticated and loopback-only, with operator-managed tunnels plus browser-request hardening — no new credential surface; (3) **no gap/loss event kind on the shared feed**: compute continuity client-side from sequence holes plus the exclusive cursor, and if a server-side notice is ever wanted it must be subscriber-relative and must not consume a global sequence id. Remaining work: write those three into SPEC §6, §10 and §12.5 as posture, with a revision-log line, then [TASK-11](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-11%20-%20Blazor-live-view-screens-plus-the-event-stream-additions-they-need.md) can start. Answer 3 changes nothing on the wire, which is the point of adopting it.
 
 ---
 <!-- COMMENTS:END -->

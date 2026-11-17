@@ -5,7 +5,7 @@ status: Blocked
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T05:58:00Z'
-updated_date: '2026-11-17T09:53:00Z'
+updated_date: '2026-11-17T10:58:00Z'
 labels:
   - release
   - ci
@@ -16,6 +16,8 @@ dependencies:
   - TASK-41
   - TASK-42
   - TASK-43
+  - TASK-44
+  - TASK-45
 priority: medium
 ordinal: 28000
 ---
@@ -101,6 +103,14 @@ created: 2026-11-17T09:13:00Z
 ---
 
 Dependency set widened deliberately: TASK-38 (who may move a release tag) and TASK-39 (whether to pay for download-and-hash or signing) are repository-settings and money calls in front of the owner, and TASK-40 is the gate round whose load-bearing claim is untested. Cutting the first release before those land would mean proving the gate in production with the settings still open. If you would rather cut v0.1.0 with the settings question open, say so on TASK-32 and I will record that as the accepted posture rather than argue it.
+
+---
+
+created: 2026-11-17T10:58:00Z
+
+---
+
+Board update after the round-8 review: this stays Blocked, and the blockers are all agent work now, not an owner's keystrokes (decision-16). Floor for the tag moves to the merge commit of [TASK-44](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-44%20-%20Close-what-the-eighth-release-gate-review-found-round-8-over-v0.12.15.md); TASK-42 (canary) proves the gate first, TASK-45 turns on immutable releases before any release is published, TASK-38 puts a `v*` ruleset on the tag. No tag has run the gate: configured, not proven.
 
 ---
 <!-- COMMENTS:END -->

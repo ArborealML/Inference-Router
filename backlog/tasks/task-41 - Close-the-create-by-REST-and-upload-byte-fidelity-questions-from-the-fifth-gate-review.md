@@ -7,12 +7,13 @@ status: Waiting
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T09:41:00Z'
-updated_date: '2026-11-17T10:25:00Z'
+updated_date: '2026-11-17T10:58:00Z'
 labels:
   - ci
   - release
   - security
-dependencies: []
+dependencies:
+  - TASK-42
 priority: high
 ordinal: 40000
 ---
@@ -106,6 +107,14 @@ created: 2026-11-17T10:11:00Z
 ---
 
 Board repair, disclosed: an earlier pass used --acceptance-criteria with only two values, and that flag REPLACES the whole list, so the four boxes verified against e4b4683 were wiped. All six are restored in order and boxes 1-4 re-checked against the current file (create plus id and upload_url at release.yml:355-359 with whole-response validation of tag_name, draft and prerelease added in bff39e8; one-snapshot verification with exactly-once at 399-409 plus the release object tag_name check; cleanup by captured id with id/tag/draft re-check at 465-482; the harness stub now refusing the published-only by-tag endpoint). Boxes 5 and 6 stay open for the reasons in their own wording.
+
+---
+
+created: 2026-11-17T10:58:00Z
+
+---
+
+Wake, restated: AC #5 and #6 are byte-fidelity and live-behaviour questions that no local run can close; the round-8 review names the same single falsifier — one disposable tag pushed through the unmodified Actions workflow with the job's own token. That run is [TASK-42](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-42%20-%20Decision-run-a-canary-release-to-prove-the-release-gate-exists.md), which now also has to attempt an asset replacement and a tag move afterwards and require both to be refused. AC #1-#4 stay checked on the file.
 
 ---
 <!-- COMMENTS:END -->

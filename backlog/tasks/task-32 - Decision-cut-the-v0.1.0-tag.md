@@ -1,15 +1,17 @@
 ---
 id: TASK-32
 title: 'Decision: cut the v0.1.0 tag'
-status: To Do
+status: Waiting
 assignee:
-  - '@claire'
+  - '@qwen3.8-flash-next'
 created_date: '2026-11-17T07:30:00Z'
-updated_date: '2026-11-17T09:53:00Z'
+updated_date: '2026-11-17T10:58:00Z'
 labels:
   - release
 dependencies:
   - TASK-42
+  - TASK-44
+  - TASK-45
 priority: medium
 ordinal: 31000
 ---
@@ -90,6 +92,14 @@ created: 2026-11-17T09:53:00Z
 ---
 
 Now waits on the canary decision: cutting v0.1.0 on a gate that has never run for real makes the first release the test, which is the wrong order. The canary is the cheap falsifier; this stays a separate yes afterwards.
+
+---
+
+created: 2026-11-17T10:58:00Z
+
+---
+
+Reassigned under decision-16: the cut is an agent act, not an owner's keystroke. Wake: the canary in [TASK-42](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-42%20-%20Decision-run-a-canary-release-to-prove-the-release-gate-exists.md) green, [TASK-44](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-44%20-%20Close-what-the-eighth-release-gate-review-found-round-8-over-v0.12.15.md) closed, [TASK-45](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-45%20-%20Enable-GitHub-immutable-releases-before-the-first-tag.md) done. The command stays as written in the description — check the floor first, never tag a hardcoded sha: `git log -1 --format=%H -- .github/workflows/release.yml`, `git merge-base --is-ancestor …`, then `git tag -a v0.1.0 -m v0.1.0 "$(git rev-parse origin/main)"` and `git push origin v0.1.0`. Then read the run, do not assume it.
 
 ---
 <!-- COMMENTS:END -->

@@ -3,9 +3,9 @@ id: TASK-38
 title: 'Decision: protect release tags and decide who may publish releases'
 status: To Do
 assignee:
-  - '@claire'
+  - '@qwen3.8-flash-next'
 created_date: '2026-11-17T09:11:00Z'
-updated_date: '2026-11-17T09:11:00Z'
+updated_date: '2026-11-17T10:58:00Z'
 labels:
   - release
   - security
@@ -17,7 +17,6 @@ ordinal: 37000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-
 
 **Do this (5 minutes).** Repository Settings -> Rules -> add a tag protection rule matching v* (or tell me your plan does not offer it). Answer one line here: `tag rule v* added`, or `no rule: accepting the window`, or `narrowing access instead`. No commands to run; this is a settings act only a signed-in owner can perform.
 
@@ -32,7 +31,6 @@ Cost: about 5 minutes, most of it in the settings UI.
 (tag protection rules live there); the workflow's self-defence: [release.yml](https://github.com/ArborealML/Inference-Router/blob/main/.github/workflows/release.yml);
 the review row that raised this: [SPEC §15](https://github.com/ArborealML/Inference-Router/blob/main/SPEC.md#L1445),
 "Deliberately not closed". The task that cuts the tag: [TASK-28] (https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-28%20-%20Cut-the-first-release-tag-and-watch-the-release-run.md).
-
 
 <!-- SECTION:DESCRIPTION:END -->
 
@@ -70,3 +68,14 @@ remaining hole in a path that has been hardened four times this morning, and it 
    gets write access.
 <!-- SECTION:NOTES:END -->
 
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+created: 2026-11-17T10:58:00Z
+
+---
+
+Reassigned under decision-16: this was parked as a browser settings act, and it is not one. Measured on this repository: `GET /repos/{owner}/{repo}/git/tag-protection/branches` answers 404, so the tag-protection endpoints are unavailable here; `GET /repos/{owner}/{repo}/rulesets` answers `[]`, so a **repository ruleset** matching `v*` is the scriptable way to get what the review asked for (block delete and non-fast-forward moves on release tags). The ruleset API is a real mutation of a public repository: state the ruleset created, and read it back after. 'Who may publish' stays a written sentence: admins plus the Actions token, least privilege, with the token's own permissions being settled in [TASK-44](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-44%20-%20Close-what-the-eighth-release-gate-review-found-round-8-over-v0.12.15.md) AC #4, not here.
+
+---
+<!-- COMMENTS:END -->

@@ -1,11 +1,11 @@
 ---
 id: TASK-24
 title: 'Decision: build the agent event inbox or defer it (design delivered)'
-status: Blocked
+status: Done
 assignee:
   - '@claire'
 created_date: '2026-11-17T02:30:00Z'
-updated_date: '2026-11-17T08:14:00Z'
+updated_date: '2026-11-17T10:58:00Z'
 labels:
   - tooling
   - notify
@@ -55,7 +55,7 @@ if you want the isolation to be real rather than nominal, and name the account.
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Answer in one line: defer until a named trigger, build the merged-PR slice, or build it under a named service account so the publisher isolation is real
+- [x] #1 Answer in one line: defer until a named trigger, build the merged-PR slice, or build it under a named service account so the publisher isolation is real
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -92,6 +92,14 @@ created: 2026-11-17T08:14:00Z
 ---
 
 Design phase closed: dispatched 08:07 UTC, answered 08:1x UTC (transcript in .local/reviews/). The board's recommendation is DEFER, and the reason is a fact about this machine rather than a preference: every agent session and every poller here runs as the same OS user, so per-publisher token files guard against accident and not against a peer that can read the token - the isolation the authority model assumes does not exist unless a separate account is created. The review itself names the same counter-argument: two working push paths plus a scheduled check cover a handful of facts. Status Blocked: a person decides build-or-defer; nothing on the board waits on it, so deferring costs no work.
+
+---
+
+created: 2026-11-17T10:58:00Z
+
+---
+
+Answer, under decision-16: **defer, until a named trigger.** Recorded as decision-17 with the four triggers written out (a second real topic; a fact missed because no push path covered it; wake-spam or duplicate waking; real per-service isolation on this host). The board's own reading stands as the reason: the two push paths this box already runs plus a scheduled 'what merged since I last looked' check cover the facts we actually have, and per-publisher tokens do not isolate agents while every session runs as the same OS user. If it is ever built, the merged-PR slice is the first source, with the event id built from repo, PR number and merge SHA.
 
 ---
 <!-- COMMENTS:END -->

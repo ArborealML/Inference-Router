@@ -1,15 +1,16 @@
 ---
 id: TASK-29
-title: Upload the social preview card and the organisation avatar
+title: Press Save on the social preview form (browser only)
 status: Blocked
 assignee:
   - '@claire'
 created_date: '2026-11-17T05:59:00Z'
-updated_date: '2026-11-17T08:16:00Z'
+updated_date: '2026-11-17T10:58:00Z'
 labels:
   - docs
 dependencies:
   - TASK-23
+  - TASK-46
 priority: low
 ordinal: 23000
 ---
@@ -17,28 +18,27 @@ ordinal: 23000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
+**Do this (2 minutes, browser only).** Open [repository Settings → Options → Social preview](https://github.com/ArborealML/Inference-Router/settings/options),
+pick [docs/images/air-social-1280x640.png](https://github.com/ArborealML/Inference-Router/blob/main/docs/images/air-social-1280x640.png)
+(raw: [raw.githubusercontent.com/.../air-social-1280x640.png](https://raw.githubusercontent.com/ArborealML/Inference-Router/main/docs/images/air-social-1280x640.png)),
+then **press Save** — the thumbnail looks the same whether you did or not. Then check from outside the form,
+after about a minute for cache:
 
+    curl -s https://github.com/ArborealML/Inference-Router | grep og:image
 
-**Do this (2 minutes).** Download docs/images/air-social-1280x640.png from the repository, open repository Settings -> Options -> Social preview, choose it, press **Save**, then run: curl -s https://github.com/ArborealML/Inference-Router | grep og:image - and the URL printed should change from repository-images to opengraph.githubassets.com. Answer one line here when it does: `card set`. The avatar is already live; nothing else to upload.
+While no custom card is set that prints `repository-images.githubusercontent.com/1460450305/...` (GitHub's own
+generated image); with one it prints `opengraph.githubassets.com/<hash>/ArborealML/Inference-Router`. As of
+10:40Z it prints the first, so the upload is not live.
 
-Two one-time uploads on GitHub that only a browser session can do. Everything up to the upload is done: the
-vector sources are committed, and the two PNGs the settings forms want are committed in the repository, so the
-upload is now download-and-pick, not export-and-hope.
+**Answer one line here:** `card set`, `card declined: REASON`, or `cannot set it: REASON`.
 
-**Why this task cannot be done by an agent:** both settings sit behind an authenticated web form. There is no
-API, no `gh` endpoint, and no committed file that stands in for the upload. A session can prepare the exact PNG
-and verify the result afterwards; it cannot press the button.
+**Why this one stays with a person:** GitHub has no API and no `gh` endpoint for the social-preview image. An
+agent can prepare the exact PNG and verify the public result, and has: the file is committed, 1280x640, and its
+size and sha256 are recorded by [TASK-46](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-46%20-%20Render-the-final-social-preview-card-and-verify-it-from-outside-the-form.md). The avatar is already live and verified from outside the form — nothing to do there; see [TASK-23](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-23%20-%20Review-the-README-identity-and-the-social-preview-upload.md).
 
-**Do this (about 2 minutes)**
-1. Download `docs/images/air-social-1280x640.png` (link above) or `git pull` and take it from the working tree.
-2. Open [repo Settings -> Options -> Social preview](https://github.com/ArborealML/Inference-Router/settings/options), pick the PNG, then **press Save**. The form keeps showing the old state if Save is missed, which is the failure mode this task has now hit twice.
-3. Confirm from either surface, after about a minute for cache: `curl -s https://github.com/ArborealML/Inference-Router | grep og:image`. While no custom card is set it prints `repository-images.githubusercontent.com/1460450305/...` (GitHub's generated image). Once a custom card is set it prints `opengraph.githubassets.com/<hash>/ArborealML/Inference-Router`, the same shape a repository with a custom card shows.
-4. Answer in one line on this task: `TASK-29: card set` , `card declined: REASON`, or `cannot set it: REASON`.
-
-**Current state, re-checked 2026-11-17 07:33 UTC.** Avatar live, card not live. See the comments for the
-measurements and for what to look at in the form.
-
-
+**If the card reads badly** at the moment you upload it — three text lines unreadable at full size, or the mark
+competing with the wordmark — name the typeface in your answer and it goes back to TASK-46 for a re-render
+instead of being uploaded twice.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -91,6 +91,14 @@ created: 2026-11-17T07:45:00Z
 ---
 
 Third check, 2026-11-17 07:33 UTC, and this one is decisive about what the settings page is holding. (a) The repository page still serves og:image = repository-images.githubusercontent.com/1460450305/..., and that object is 2269x1134 - GitHub's generated repository image. A repository that has a custom social preview serves og:image from opengraph.githubassets.com with a content hash in the path; checked against vitejs/vite as a positive control. (b) The object the link-preview endpoint serves is 1200x600 and 87.6 percent white with 3.9 percent purple (#7355DD, GitHub card furniture); our committed card is 93.6 percent #10241F field with 3.7 percent ink. Same answer from two surfaces, and re-fetching with different cache versions returns byte-identical bytes, so this is not a stale cache. Avatar by contrast is live: the org picture returns 460x460 at 82.4 percent #10241F and 16.5 percent #F3F7F2 against our export at 82.4/16.7 - that is the mark. What to look at: the card upload box in repo Settings -> Options, where an added image and an absent one both render as a thumbnail; the description answer has now said card set twice while the public surface says otherwise, which is the signature of pressing away from the form instead of Save. The PNG to pick is committed, so it is download-and-pick: docs/images/air-social-1280x640.png. AC #2 stays checked, AC #1 and #3 stay open, status stays Blocked: only a browser session can change that setting.
+
+---
+
+created: 2026-11-17T10:58:00Z
+
+---
+
+Retitled and re-trimmed under decision-16: this is the **only** task left on a person, because GitHub has no API, no `gh` endpoint and no committed file that stands in for the social-preview upload — an agent can prepare the PNG and verify the result afterwards, but cannot press Save. Everything that is not the button moved to [TASK-46](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-46%20-%20Render-the-final-social-preview-card-and-verify-it-from-outside-the-form.md) (final render, measurements, sha256 of the file to pick) and the after-the-fact public check. Status: avatar live and verified; card not live — re-checked 10:40Z, the page still serves `repository-images.githubusercontent.com/1460450305/...`, which is GitHub's generated image, and a custom card would make it serve `opengraph.githubassets.com/...`. The form shows a thumbnail whether an image is set or not, so the failure mode is pressing away from the form instead of Save; that has now happened twice against a 'card set' answer.
 
 ---
 <!-- COMMENTS:END -->

@@ -1,11 +1,11 @@
 ---
 id: TASK-39
 title: 'Decision: verify what a downloader receives, or keep accepting that we do not'
-status: To Do
+status: Waiting
 assignee:
-  - '@claire'
+  - '@chatswarm'
 created_date: '2026-11-17T09:11:00Z'
-updated_date: '2026-11-17T09:42:00Z'
+updated_date: '2026-11-17T11:02:00Z'
 labels:
   - release
   - ci
@@ -17,7 +17,6 @@ ordinal: 38000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-
 
 **Do this (2 minutes).** Answer one line here: `keep the gap, revisit when people install rather than build`, or `add the download-and-hash leg`, or `do signing`. One of the three costs runner minutes (the second) or key custody (the third); the first costs nothing and is already written down as an accepted gap in the spec.
 
@@ -32,7 +31,6 @@ Cost: about 2 minutes to answer; option 2 is roughly an hour of implementation p
 the published-surface acceptance criteria: [SPEC §14](https://github.com/ArborealML/Inference-Router/blob/main/SPEC.md#L1346);
 the gate itself: [release.yml](https://github.com/ArborealML/Inference-Router/blob/main/.github/workflows/release.yml);
 the task that runs the first release: [TASK-28] (https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-28%20-%20Cut-the-first-release-tag-and-watch-the-release-run.md).
-
 
 <!-- SECTION:DESCRIPTION:END -->
 
@@ -75,3 +73,25 @@ manual check the first tag run already includes.
 
 Round 5 puts a concrete sub-option on the table: byte fidelity of the upload leg is currently proved only by GitHub's own reported stored-bytes digest matching the staged file's sha256. That is enough to catch a mangled or truncated upload, and it is not an independent hash of the stored object. If you choose option 2 (a download-and-hash leg) or option 3 (signing), you are also closing that gap; if you choose option 1, the residual trust in the upload path is now named on TASK-41 as an accepted gap rather than left implicit.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+created: 2026-11-17T10:58:00Z
+
+---
+
+Reassigned under decision-16: this needs option analysis, not an owner's guess, and the recommendation is adopted unless it contradicts SPEC. Two facts have changed since it was written and belong in the brief: GitHub immutable releases are available and **off** on this repository (`GET .../immutable-releases` -> enabled:false), and will be turned on by TASK-45; and decision-10 already refuses paid macOS runner minutes, so the download-and-hash leg and any signing story have to argue their cost rather than assume it. Ask: given immutable releases plus the published SHA256SUMS sidecars, is a post-publish download-and-hash leg still worth runner minutes, or does the accepted gap stay with a named trigger?
+
+---
+
+created: 2026-11-17T11:02:00Z
+
+---
+
+Dispatched to @chatswarm 2026-11-17 11:02Z (tier high, reasoning-only) with the limits stated honestly rather than flattered: the stored-digest match proves GitHub-reported digest equals staged bytes at read time, not what a download serves; the gate never re-hashes the served bytes, and SPEC records that as an accepted gap. Two facts it is told: immutable releases are available on this repository and currently off, and will be enabled by TASK-45; and decision-10 refuses paid runner minutes, so anything added has to live inside the existing jobs — which is why a same-job download-and-hash step is judged on seconds, not on a new paid leg.
+
+Wake: that answer landing, after which TASK-39 becomes either a written disposition or an implementation task for the coding session. Neither answer changes SPEC by itself.
+
+---
+<!-- COMMENTS:END -->
