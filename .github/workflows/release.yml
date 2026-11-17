@@ -95,8 +95,20 @@ jobs:
           # these are: numbers that look like statuses appearing in the text, not verified statuses. A
           # response can write "mystatus=403" and forge one; that misleads triage and nothing else,
           # because the refusal is decided by the exit status above, not by this.
-          http_codes() { LC_ALL=C grep -oE '(HTTP/[0-9][0-9.]*[[:space:]]+|HTTP[[:space:]]+|status[^0-9]{0,4})[1-5][0-9]{2}([^0-9A-Za-z]|$)' "$1" 2>/dev/null \
-                           | LC_ALL=C grep -oE '[1-5][0-9]{2}' | head -n 3 | paste -sd, - || true; }
+          # Only two shapes count, and only the status digits come out of each: an HTTP status token
+          # (three digits after the version and a space) and a "status" field in a body. Rescanning the
+          # whole match for digit runs invented codes out of the HTTP version — "HTTP/1.500 200" read as
+          # 500,200 — and a four-digit run ("status:1400x") read as a code. grep exit 1 means "no such
+          # field"; any other non-zero exit means the read itself failed, which is a different claim, so
+          # the two answer differently instead of both answering "none".
+          http_codes() {
+            local out hits rc=0
+            out=$(LC_ALL=C grep -oE 'HTTP/[0-9][0-9.]*[[:space:]]+[0-9]{3}([^0-9A-Za-z]|$)|HTTP[[:space:]]+[0-9]{3}([^0-9A-Za-z]|$)|[Ss]tatus[^0-9]{0,3}[0-9]{3}([^0-9A-Za-z]|$)' "$1" 2>/dev/null) || rc=$?
+            if [ "$rc" -gt 1 ]; then printf 'unreadable'; return 0; fi
+            if [ -z "$out" ]; then printf 'none'; return 0; fi
+            hits=$(printf '%s\n' "$out" | LC_ALL=C sed -E 's/.*[^0-9]([0-9]{3})[^0-9]?$/\1/' | head -n 3)
+            printf '%s' "$hits" | paste -sd, -
+          }
           # Note: the "release by tag name" endpoint hides drafts, so list and filter instead —
           # a half-finished draft from an earlier run must block a new build just as a published
           # release does. --paginate means a second page of releases cannot hide an existing one,
@@ -217,7 +229,11 @@ jobs:
         run: |
           set -euo pipefail
           tar -czf "air-${{ matrix.rid }}.tar.gz" -C dist "${{ matrix.exe }}"
-          sha256sum "air-${{ matrix.rid }}.tar.gz" > "air-${{ matrix.rid }}.tar.gz.sha256"
+          # -b pins the record format across runners. Windows coreutils defaults to binary
+          # mode and writes "<digest> *<name>"; GNU coreutils on Linux defaults to text mode
+          # and writes "<digest>  <name>". The canary run refused a leg whose digest matched
+          # because a byte compare of the whole line saw the mode marker as a mismatch.
+          sha256sum -b "air-${{ matrix.rid }}.tar.gz" > "air-${{ matrix.rid }}.tar.gz.sha256"
           ls -l "air-${{ matrix.rid }}.tar.gz"
         shell: bash
 
@@ -349,19 +365,39 @@ jobs:
               exit 1
             fi
           done
-          # Bind each archive to the record its own leg wrote, by comparing the whole producer
-          # line — digest and filename together — against what sha256sum computes for that RID's
-          # archive. `sha256sum --check sidecar` follows the names *inside* the sidecar instead,
-          # so a sidecar naming a different archive would pass while that archive shipped blind.
+          # Bind each archive to the record its own leg wrote by comparing the digest field and
+          # the name field separately, both computed in binary mode. `sha256sum --check sidecar`
+          # follows the names *inside* the sidecar instead, so a sidecar naming a different
+          # archive would pass while that archive shipped blind — the name still has to match.
+          # Comparing the producer line as bytes is what made the first canary fail: the Windows
+          # leg wrote "<digest> *<name>" (its default binary mode) and the message claimed a
+          # checksum mismatch for an archive whose digest was equal. The message now names which
+          # half disagrees, because "checksum mismatch" was a lie about the failing condition.
+          san() { printf '%s' "$1" | LC_ALL=C tr -c '\40-\176' '?' | cut -c1-70; }
           for rid in $EXPECTED_RIDS; do
-            if ! (cd "$stage" && sha256sum "air-${rid}.tar.gz" | cmp -s - "air-${rid}.tar.gz.sha256"); then
-              echo "::error::air-${rid}.tar.gz does not match the checksum record its own leg wrote — refusing to publish"
+            rec="$(cat "$stage/air-${rid}.tar.gz.sha256")"
+            mine="$( (cd "$stage" && sha256sum -b "air-${rid}.tar.gz") )"
+            case $rec in
+              "") echo "::error::air-${rid}.tar.gz.sha256 is empty — refusing to publish"; exit 1 ;;
+              *[![:print:]]*) echo "::error::air-${rid}.tar.gz.sha256 is not one printable line — refusing to publish"; exit 1 ;;
+            esac
+            if [ "${rec%% *}" != "${mine%% *}" ]; then
+              printf '::error::air-%s.tar.gz is %s; its leg record says %s — refusing to publish\n' \
+                "$rid" "${mine%% *}" "$(san "${rec%% *}")"
+              exit 1
+            fi
+            # the name field, with the mode marker and any spacing taken out: text mode writes two
+            # spaces, binary mode one space and a star, and both spellings are this archive's record
+            rec_name="$(printf '%s' "$rec" | LC_ALL=C sed -E 's/^[^ ]+[[:space:]]+\*?//')"
+            if [ "$rec_name" != "air-${rid}.tar.gz" ]; then
+              printf '::error::air-%s.tar.gz.sha256 names %s, not the archive being published — refusing to publish\n' \
+                "$rid" "$(san "$rec_name")"
               exit 1
             fi
           done
           # A computed manifest, not a signature: it detects transfer and collection damage,
           # and proves nothing about who produced the bytes.
-          (cd "$stage" && sha256sum air-*.tar.gz > SHA256SUMS && cat SHA256SUMS)
+          (cd "$stage" && sha256sum -b air-*.tar.gz > SHA256SUMS && cat SHA256SUMS)
         shell: bash
       - name: Create the draft, inspect the remote, then publish
         id: publish
@@ -391,8 +427,9 @@ jobs:
           # value to printable ASCII first: a control character, an ANSI escape, a bidi override or a
           # mid-sequence UTF-8 byte from a response has no business in the log either. Then it cuts,
           # KEEPING THE END of the value, and only then escapes: cutting before escaping means no %25 or
-          # %3A is ever split in half, and the bound counts characters, so the emitted bytes are at most
-          # three times the bound (a value that is all colons is the worst case). A head-only cut was the
+          # %3A is ever split in half. The bound counts characters kept, so the emitted bytes are at
+          # most three times the kept characters plus the marker's own characters — 3*bound + about 16 for
+          # any value under ten billion characters. A head-only cut was the
           # defect: the fields this step prints end with upload_url, so a long tag or name erased exactly
           # the field that explains the refusal. Cutting with tr upstream (instead of head) also means no
           # producer dies of SIGPIPE under pipefail, so a diagnostic cannot come out silently empty.
@@ -405,11 +442,14 @@ jobs:
             fi
             printf '%s' "$v" | sed -e 's/%/%25/g' -e 's/:/%3A/g'
           }
-          # rsum_line is the longest rsum() can emit for these six fields: six caps (20+40+40+12+12+60),
-          # two quote characters and one "+(Nch)+" marker per string field, and the labels. 340 is above
-          # that, so brief() never cuts an rsum line; the harness case with maximally long tag AND url
-          # proves it by requiring the whole rendered line to survive.
-          rsum_line=340
+          # rsum_line is a bound on what rsum() can emit for these six fields, computed from the caps:
+          # every value is capped to its field cap AFTER sanitizing, so no field type escapes the cap, and
+          # a kept character costs at most three bytes once brief() escapes % and : (20+40+40+12+12+60 =
+          # 184 kept characters = 552 bytes), plus one "+(Nch)+" marker per capped field (6 x 12) and the
+          # labels (43). 720 is above that, so brief() never cuts an rsum line and no middle field can be
+          # hidden; the harness proves it with a maximally long tag AND url AND a 400-digit id, requiring
+          # all six keys to survive.
+          rsum_line=720
           # One bounded field at a time. A value is shown as what it is — a string up to its cap with its
           # true length after it, a number or boolean as JSON, a missing field as "absent" — so a long
           # field cannot push the flags out of the summary, and a wrong type is visible as a wrong type
@@ -418,17 +458,19 @@ jobs:
           # response chooses to put in its own name is still shown. Nothing here is compared against.
           rsum() { printf '%s' "$1" | jq -s -r '
               def q(x): x | tojson | .[1:-1];            # JSON-escape a piece, drop its own quotes
+              def clean: explode | map(if . < 32 or . > 126 then 63 else . end) | implode;
               def show(r; k; n):
                 if (r | has(k) | not) then "<missing>"
                 elif r[k] == null then "<null>"
                 elif (r[k] | type) == "object" then "<object>"
                 elif (r[k] | type) == "array" then "<array>"
-                elif (r[k] | type) == "string"
-                  then ((r[k] | length) as $L
-                        | if $L > n
-                          then "\"" + q(r[k][0:((n / 2) | floor)]) + "+(" + ($L | tostring) + "ch)+" + q(r[k][$L - ((n / 2) | floor):]) + "\""
-                          else r[k] | tojson end)
-                else (r[k] | tojson) end;
+                else ((if (r[k] | type) == "string" then r[k] else (r[k] | tostring) end) | clean) as $t
+                     | ($t | length) as $L
+                     | if $L > n
+                       then q($t[0:((n + 1) / 2 | floor)]) + "+(" + ($L | tostring) + "ch)+" + q($t[$L - (n / 2 | floor):])
+                       elif (r[k] | type) == "string" then ($t | tojson)
+                       else $t end
+                end;
               if length != 1 or ((.[0] | type) != "object") then "unreadable response"
               else .[0] as $r
                    | "id=" + show($r; "id"; 20) + " tag=" + show($r; "tag_name"; 40)
@@ -440,10 +482,17 @@ jobs:
           # that is about an address names where the two part instead of pretending a rendering is a
           # comparison. Message only — the decision is still made by jq against the JSON.
           fdiff() {
-            local a="$1" b="$2" i=0
+            local a="$1" b="$2" i=0 lim=4096
+            if [ "$a" = "$b" ]; then printf 'values are equal'; return 0; fi
+            if [ "${#a}" -gt "$lim" ]; then a="${a:0:$lim}"; fi
+            if [ "${#b}" -gt "$lim" ]; then b="${b:0:$lim}"; fi
             while [ "$i" -lt "${#a}" ] && [ "$i" -lt "${#b}" ] && [ "${a:i:1}" = "${b:i:1}" ]; do
               i=$((i + 1))
             done
+            if [ "$i" -ge "$lim" ]; then
+              printf 'first difference after char %d (both compared only that far)' "$lim"
+              return 0
+            fi
             printf 'first difference at char %d (got %s | want %s)' "$((i + 1))" \
               "$(brief "${a:i:12}" 24)" "$(brief "${b:i:12}" 24)"
           }
@@ -452,7 +501,10 @@ jobs:
           # actually built, or a tag moved after preflight would publish somebody else's commit.
           tag_sha="$(gh api "repos/{owner}/{repo}/commits/$TAG" --jq .sha 2>/dev/null || true)"
           if [ -z "$tag_sha" ] || [ "$tag_sha" != "$COMMIT" ]; then
-            echo "::error::tag $TAG resolves to ${tag_sha:-nothing}, but the legs built $COMMIT — not publishing"
+            # printf, not echo: $tag_sha came back from an API call, and a shell with xpg_echo would
+            # turn a literal backslash-n inside it into a second log line.
+            printf '::error::tag %s resolves to %s, but the legs built %s — not publishing\n' \
+              "$(brief "$TAG" 60)" "$(brief "${tag_sha:-nothing}" 64)" "$(brief "$COMMIT" 64)"
             exit 1
           fi
           # Two gh contracts, both checked against the tool and the API description rather than
@@ -700,20 +752,22 @@ jobs:
             fi
             printf '%s' "$v" | sed -e 's/%/%25/g' -e 's/:/%3A/g'
           }
-          rsum_line=340
+          rsum_line=720
           rsum() { printf '%s' "$1" | jq -s -r '
               def q(x): x | tojson | .[1:-1];            # JSON-escape a piece, drop its own quotes
+              def clean: explode | map(if . < 32 or . > 126 then 63 else . end) | implode;
               def show(r; k; n):
                 if (r | has(k) | not) then "<missing>"
                 elif r[k] == null then "<null>"
                 elif (r[k] | type) == "object" then "<object>"
                 elif (r[k] | type) == "array" then "<array>"
-                elif (r[k] | type) == "string"
-                  then ((r[k] | length) as $L
-                        | if $L > n
-                          then "\"" + q(r[k][0:((n / 2) | floor)]) + "+(" + ($L | tostring) + "ch)+" + q(r[k][$L - ((n / 2) | floor):]) + "\""
-                          else r[k] | tojson end)
-                else (r[k] | tojson) end;
+                else ((if (r[k] | type) == "string" then r[k] else (r[k] | tostring) end) | clean) as $t
+                     | ($t | length) as $L
+                     | if $L > n
+                       then q($t[0:((n + 1) / 2 | floor)]) + "+(" + ($L | tostring) + "ch)+" + q($t[$L - (n / 2 | floor):])
+                       elif (r[k] | type) == "string" then ($t | tojson)
+                       else $t end
+                end;
               if length != 1 or ((.[0] | type) != "object") then "unreadable response"
               else .[0] as $r
                    | "id=" + show($r; "id"; 20) + " tag=" + show($r; "tag_name"; 40)

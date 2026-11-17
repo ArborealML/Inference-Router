@@ -10,11 +10,11 @@ and a difference in behaviour between revisions is the step's reading of the sam
 """
 import atexit
 import os
-import shutil
 import re
 import shutil
 import subprocess
 import sys
+import time
 
 import yaml
 
@@ -353,7 +353,8 @@ def make_fixture(name, kind):
     os.makedirs(wd)
 
     def leg(rid, exe, tamper=None, skip=None, empty=None, extra=None, sidecar_of=None,
-            dirname=None, members=None, symlink_archive=False, link_member=None):
+            dirname=None, members=None, symlink_archive=False, link_member=None,
+            sidecar_mode="text", record_name=None, sidecar_extra=None):
         d = os.path.join(wd, "out", dirname or f"asset-{rid}")
         os.makedirs(d, exist_ok=True)
         arc = f"air-{rid}.tar.gz"
@@ -405,8 +406,16 @@ def make_fixture(name, kind):
                 elif tamper == "digest":
                     dig, name_in_record = orig_dig, arc
                 else:
-                    dig, name_in_record = sha256file(tar), arc
-                open(os.path.join(d, sc), "w").write(f"{dig}  {name_in_record}\n")
+                    dig, name_in_record = sha256file(tar), (record_name or arc)
+                # sidecar_mode reproduces what each runner's coreutils writes by default: Linux text
+                # mode ("digest  name"), Windows binary mode ("digest *name"). The fixture used to
+                # write only the Linux form, which is why the harness stayed green while the real
+                # Windows leg was refused.
+                marker = "*" if sidecar_mode == "binary" else " "
+                text = f"{dig} {marker}{name_in_record}\n"
+                if sidecar_extra:
+                    text += sidecar_extra + "\n"
+                open(os.path.join(d, sc), "w").write(text)
             if symlink_archive:
                 real = os.path.join(wd, ".build", f"{rid}-real.tar.gz")
                 shutil.copyfile(tar, real)
@@ -421,6 +430,21 @@ def make_fixture(name, kind):
     elif kind == "sidecar_names_other":
         leg("linux-x64", "air")
         leg("win-x64", "air.exe", sidecar_of="linux-x64")
+    elif kind == "record_names_other":
+        # digest is right, name is not: the record describes a different archive's bytes under a
+        # different name, which is exactly how an archive could ship without any record binding it
+        leg("linux-x64", "air")
+        leg("win-x64", "air.exe", record_name="air-linux-x64.tar.gz")
+    elif kind == "win_binary_records":
+        # the shape the first canary actually arrived with, from Windows coreutils
+        leg("linux-x64", "air", sidecar_mode="binary")
+        leg("win-x64", "air.exe", sidecar_mode="binary")
+    elif kind == "mixed_record_modes":
+        leg("linux-x64", "air", sidecar_mode="text")
+        leg("win-x64", "air.exe", sidecar_mode="binary")
+    elif kind == "record_multiline":
+        leg("linux-x64", "air")
+        leg("win-x64", "air.exe", sidecar_mode="binary", sidecar_extra="second line")
     elif kind == "extra_sidecar":
         leg("linux-x64", "air", extra=["air-rogue.tar.gz.sha256"])
         leg("win-x64", "air.exe")
@@ -543,6 +567,10 @@ def main():
         ("dir_archive", False, "R3: directory wearing the archive name", "stage", None),
         ("symlink_archive", False, "R3: symlink wearing the archive name", "stage", None),
         ("symlink_member", False, "R4: archive's single member is a symlink named air.exe", "stage", None),
+        ("record_names_other", False, "record's digest is right but it names another archive", "stage", None),
+        ("win_binary_records", True, "canary v0.0.9-canary: Windows binary-mode records must publish", "stage", None),
+        ("mixed_record_modes", True, "digest-strict and format-tolerant: one text record, one binary", "stage", None),
+        ("record_multiline", False, "record carries a second line", "stage", None),
     ]
     for name, expect_zero, note, step, env in cases:
         wd = make_fixture(name, name)
@@ -1141,7 +1169,9 @@ def main():
     # Which numbers the diagnostic may call a status: HTTP/2 500 is one, and HTTP/2 5000, 500ms and
     # 4040 are not. A wrong census sends a human hunting for a status that was never returned.
     for err, want_codes in (("curl: (22) The requested URL returned error: HTTP/2 500", "500"),
-                            ("note: HTTP/2 5000 and 500ms and 4040 in one line", "none")):
+                            ("note: HTTP/2 5000 and 500ms and 4040 in one line", "none"),
+                            ("curl: (22) The requested URL returned error: HTTP/1.500 200", "200"),
+                            ("note: status:1400x and HTTP/500.404.503 200", "200")):
         wd = make_fixture("pre_http2_status", "good")
         p = run_step(b["preflight_release_check"], wd, {"PREFLIGHT_STDERR": err}, "preflight")
         out = p.stdout + p.stderr
@@ -1193,6 +1223,65 @@ def main():
     if not ok:
         fails += 1
         print("      ", " | ".join(msgs(p)[-2:])[:300], "| jq:", out.replace("\n", " | ")[:200])
+
+    # A number is not outside the cap either. A 40-digit id used to print in full, and the summary is
+    # only worth reading while every label survives it; the bound the step declares must not bite.
+    raw_huge = ('{"id":1234567890123456789012345678901234567890,"tag_name":"v0.1.0","name":"v0.1.0",'
+                '"draft":true,"prerelease":false,'
+                '"upload_url":"https://uploads.github.com/repos/o/r/releases/9/assets{?name,label}"}')
+    wd = make_fixture("pub_numeric_bound", "good")
+    p = run_step(b["publish"], wd, {"CREATE_BODY_RAW": raw_huge}, "publish")
+    out = p.stdout + p.stderr
+    seg = out.split("(fields: ", 1)[1].split(") \u2014 not publishing", 1)[0] if "(fields: " in out else ""
+    labels = all(lbl in seg for lbl in ("id=", " tag=", " name=", " draft=", " pre=", " upload_url="))
+    ok = p.returncode != 0 and labels and "1" * 40 not in seg and 0 < len(seg) < 720
+    print(f"{'PASS' if ok else 'FAIL'}  publish: {'numeric_bound':<18} rc={p.returncode} labels={int(labels)} full_digits={int('1' * 40 in seg)} seglen={len(seg)}  a 40-digit id is capped too, so no field type pushes the flags out")
+    if not ok:
+        fails += 1
+        print("      ", " | ".join(msgs(p)[-2:])[:300])
+
+    # The refusal says which half of the checksum record disagreed. The canary said "does not match the
+    # checksum record its own leg wrote" for an archive whose digest was EQUAL, because the comparison
+    # was over raw bytes and only the mode marker differed.
+    wd = make_fixture("pub_digest_message", "tampered_archive")
+    p = run_step(b["stage"], wd, None, "stage")
+    out = p.stdout + p.stderr
+    dig = sha256file(os.path.join(wd, "out", "asset-win-x64", "air-win-x64.tar.gz"))
+    ok = p.returncode != 0 and ("is " + dig in out) and ("its leg record says" in out)
+    print(f"{'PASS' if ok else 'FAIL'}  stage:     {'digest_message':<18} rc={p.returncode} names_digest={int('is ' + dig in out)} names_record={int('its leg record says' in out)}  a digest mismatch names both digests instead of claiming a general checksum failure")
+    if not ok:
+        fails += 1
+        print("      ", " | ".join(msgs(p)[-2:])[:300])
+
+    # A record with the right digest and the wrong name is a different fault, and says so.
+    wd = make_fixture("pub_name_message", "record_names_other")
+    p = run_step(b["stage"], wd, None, "stage")
+    out = p.stdout + p.stderr
+    ok = p.returncode != 0 and "names air-linux-x64.tar.gz, not the archive being published" in out
+    print(f"{'PASS' if ok else 'FAIL'}  stage:     {'name_message':<18} rc={p.returncode} names_fault={int('names air-linux-x64.tar.gz' in out)}  a record naming a different archive is refused by name, not as a checksum failure")
+    if not ok:
+        fails += 1
+        print("      ", " | ".join(msgs(p)[-2:])[:300])
+
+    # fdiff exactly as the step defines it: equal inputs have no first difference (the old scan reported
+    # one at length+1), and a long pair does not cost minutes of single-character comparisons.
+    m = re.search(r"\n *brief\(\) \{.*?\n *fdiff\(\) \{\n.*?\n *\}\n", b["publish"], re.S)
+    if m:
+        script = ("set -euo pipefail\n" + m.group(0)
+                  + "\nfdiff abc abc; printf '\\n'\n"
+                  + "fdiff \"$(printf 'h%.0s' $(seq 1 5000))x\" \"$(printf 'h%.0s' $(seq 1 5000))y\"; printf '\\n'\n")
+        t0 = time.time()
+        q = subprocess.run(["bash", "-c", script], capture_output=True, text=True)
+        el = time.time() - t0
+        ok = (q.returncode == 0 and "values are equal" in q.stdout
+              and "after char 4096" in q.stdout and el < 5)
+        print(f"{'PASS' if ok else 'FAIL'}  publish: {'fdiff_helpers':<18} rc={q.returncode} equal={int('values are equal' in q.stdout)} capped={int('after char 4096' in q.stdout)} secs={el:.1f}  equal inputs invent no difference and a 5000-character prefix is answered in seconds")
+        if not ok:
+            fails += 1
+            print("      ", (q.stdout + q.stderr).strip()[:300])
+    else:
+        fails += 1
+        print("FAIL  publish: fdiff_helpers could not find brief()/fdiff() in the publish step body")
 
     print(f"\n{fails} harness failure(s)")
     return 1 if fails else 0
