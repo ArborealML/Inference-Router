@@ -391,7 +391,8 @@ jobs:
           # cutting after tr (instead of head) means no producer dies of SIGPIPE under pipefail, so a
           # diagnostic cannot come out silently empty.
           brief() { printf '%s' "$1" | LC_ALL=C tr -c '\40-\176' '?' | LC_ALL=C cut -c1-200 | sed -e 's/%/%25/g' -e 's/:/%3A/g'; }
-          rsum() { printf '%s' "$1" | jq -r '(.upload_url // "") as $u
+          rsum() { printf '%s' "$1" | jq -r '((.upload_url // "")
+                       | if type == "string" then . else tojson end) as $u
                        | [ "id=\(if .id == null then "absent" else (.id|tostring) end)",
                            "tag=\(.tag_name // "absent")",
                            "name=\(.name // "absent")",
