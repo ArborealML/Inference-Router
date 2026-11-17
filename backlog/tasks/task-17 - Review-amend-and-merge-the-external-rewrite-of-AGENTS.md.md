@@ -17,7 +17,7 @@ ordinal: 17000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-An external deep-tier request is producing a rewrite of AGENTS.md as a pull request against main: the file has accreted, repeats its review and backlog rules several times, and buries constraints under rationale. The rewrite is input, not instruction. This task is the review-and-merge decision, taken by whoever has actually run the loop the file describes.
+An external request is producing a rewrite of AGENTS.md as a pull request against main: the file has accreted, repeats its review and backlog rules several times, and buries constraints under rationale. The rewrite is input, not instruction. This task is the review-and-merge decision, taken by whoever has actually run the loop the file describes.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -33,7 +33,7 @@ An external deep-tier request is producing a rewrite of AGENTS.md as a pull requ
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-A deep-tier external rewrite is in flight; it is asked to open a pull request changing only AGENTS.md, to leave the tool-managed regions alone, and to list every rule it moved, merged or reworded. An in-flight external request does not change this task status. Review stance: the rewrite is evidence. Reject it if a constraint was quietly softened, if a command was changed without being run, or if rationale replaced the constraint instead of sitting under it.
+An external rewrite is in flight; it is asked to open a pull request changing only AGENTS.md, to leave the tool-managed regions alone, and to list every rule it moved, merged or reworded. An in-flight external request does not change this task status. Review stance: the rewrite is evidence. Reject it if a constraint was quietly softened, if a command was changed without being run, or if rationale replaced the constraint instead of sitting under it.
 
 The first attempt could not push: GitHub refused branch creation for the integration, so no branch, commit or pull request exists. Its deliverables were left as sandbox files with no artifact manifest, which means they never reached this side — an external "artifacts complete" claim is not evidence of delivery. A second attempt is in flight, asked to deliver the patch, the replacement file and the rule-by-rule trace inline in the response text instead of as files. Until the bytes are here, nothing is applied: the acceptance criteria are unchanged and the merge stays blocked on them.
 

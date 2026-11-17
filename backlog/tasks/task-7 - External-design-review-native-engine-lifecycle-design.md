@@ -15,7 +15,7 @@ ordinal: 7000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-An external flagship-tier reasoning pass has been dispatched to produce the design and a file-by-file implementation plan for TASK-1 (porting the operator's selector into AIR, driven by the Docker API rather than the command line). The result is held outside this repository; once reviewed it is written into TASK-1 as its plan before any code is written.
+An external reasoning pass has been dispatched to produce the design and a file-by-file implementation plan for TASK-1 (porting the operator's selector into AIR, driven by the Docker API rather than the command line). The result is held outside this repository; once reviewed it is written into TASK-1 as its plan before any code is written.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -25,7 +25,7 @@ An external flagship-tier reasoning pass has been dispatched to produce the desi
 - [x] #3 Approved plan recorded in TASK-1 before implementation
 <!-- AC:END -->
 
-## Result (external design review, flagship tier; full 452 KB artifact stays outside the repo)
+## Result (external design review; full 452 KB artifact stays outside the repo)
 
 Design deliverable: lifecycle as a **host transaction** — resolve an immutable target; take a
 non-blocking campaign lock then a blocking selection lock; prove ownership, admissibility, assets,

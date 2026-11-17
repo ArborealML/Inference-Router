@@ -15,7 +15,7 @@ ordinal: 9000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-An external flagship-tier pass has been dispatched to compare our backend with NVIDIA's Personal AI Router capability by capability, with the bar being that our backend is at least as robust. It also inventories their UI for our planned Blazor live view and lists what their router cannot do (which is why we are building ours).
+An external comparison pass has been dispatched to compare our backend with NVIDIA's Personal AI Router capability by capability, with the bar being that our backend is at least as robust. It also inventories their UI for our planned Blazor live view and lists what their router cannot do (which is why we are building ours).
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -26,7 +26,7 @@ An external flagship-tier pass has been dispatched to compare our backend with N
 - [x] #4 The event-stream and status additions needed to make the live view cheap later are listed
 <!-- AC:END -->
 
-## Result (external review, flagship tier; full digest stays in unpublished `.local/notes`)
+## Result (external review; the full digest stays outside the repository)
 
 Pinned review: this repo at `d3605fc136e` vs NVIDIA Personal-AI-Router at `1de8439a3811`,
 source only.

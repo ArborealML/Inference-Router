@@ -24,7 +24,7 @@ An external deep-review pass has been dispatched to settle which way the router 
 - [x] #2 The chosen seam is faked in tests without a live daemon
 <!-- AC:END -->
 
-## Result (external review, deep tier; full digest stays in unpublished `.local/notes`)
+## Result (external review; the full digest stays outside the repository)
 
 Verdict: **do not use a .NET Docker client library under Native AOT.** Talk to the Docker Engine
 HTTP API directly over the socket: `SocketsHttpHandler.ConnectCallback` +
