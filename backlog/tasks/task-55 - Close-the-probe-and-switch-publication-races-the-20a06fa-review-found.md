@@ -63,5 +63,13 @@ TASK-59 rather than a claim made here.
 
 **Accepted gaps in SPEC §5.5/§15, not code:** the fence orders publications, not the engine, so a restart outside the router's
 sight evades it; and the quiet-poll compare is content-wise, so order-only and duplicate-count churn bump the version. Both plan
-reviews and each finding's disposition are in §15. A commit review of fd5e0cd is dispatched; anything it lands becomes a new row.
+reviews and each finding's disposition are in §15.
+
+**Commit review of fd5e0cd: REVISE, five blocking findings, all five verified in the code, none accepted as a gap.** They are
+TASK-61 (stale Ready at resume, the readiness fast path evaluated outside the switch lock, and the dispatch hint settled before
+the readiness task), TASK-62 (a wait_health=false refresh published as proof whether or not it named the target, and a test at
+CapabilityPublicationTests.cs:387-413 that pins the wrong posture), TASK-63 (the unfenced failure publish and the epoch-less
+/props gauges), and TASK-64 (the scheduler pass that snapshots an engine a switch then claims — the admission/drain design, not
+a patch). The review also confirmed what was right: claim CAS order, proof published under the marker, current-list preservation
+at uncertain exits, the in-gate successor guard, the lock order with no inverse, and no ordinary deadlock.
 <!-- SECTION:NOTES:END -->
