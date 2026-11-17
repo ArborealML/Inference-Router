@@ -5,7 +5,7 @@ status: To Do
 assignee:
   - '@claire'
 created_date: '2026-11-17T07:30:00Z'
-updated_date: '2026-11-17T08:18:00Z'
+updated_date: '2026-11-17T08:48:00Z'
 labels:
   - release
 dependencies: []
@@ -57,6 +57,8 @@ archived so it cannot collect a second, possibly contradictory answer.
 
 <!-- SECTION:NOTES:BEGIN -->
 Floor for the ancestry check updated: the tag must point at a commit containing 6aa26cc (the gate that binds each archive to its producer record), not merely fbc48d6. The rule is a check and then a tag, never a hardcoded target: confirm the floor is an ancestor of origin/main, then tag the origin/main sha you just checked. The floor itself moves forward as the gate hardens, so re-read what the release work needs at the moment you answer, and TASK-36 names the current one.
+
+Floor restated as a rule, not a sha: cut the tag on origin/main HEAD only after the newest commit that touched the release workflow is an ancestor of that HEAD (find it with git log -1 --format=%H -- .github/workflows/release.yml; 6b91de4 today). The floor moves every time the gate hardens, which it has three times this morning.
 <!-- SECTION:NOTES:END -->
 
 ## Comments

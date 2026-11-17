@@ -7,7 +7,7 @@ status: To Do
 assignee:
   - '@claire'
 created_date: '2026-11-17T08:10:00Z'
-updated_date: '2026-11-17T08:14:00Z'
+updated_date: '2026-11-17T08:48:00Z'
 labels:
   - stream
   - transport
@@ -73,3 +73,9 @@ implementation on the constants would have made a two-minute answer into a stall
 <!-- AC:BEGIN -->
 - [ ] #1 Answer in one line: the idle bound after the first frame in ms (recommend 120000, 0 disables), cancel or let-finish for a caller that stops reading, and frames or bytes for the relay bound
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Citations restated by section, not line, because the SPEC anchors in the original text went stale within hours: SPEC 6 (in-band ending for a committed stream), SPEC 14.1 row 2 (what is still open, and the shipped ceilings), and the pinning test RequestPhaseTimeoutTests.AStreamThatNeverSendsAFrameEndsInsideTheStreamBecauseTheStatusIsAlreadySent.
+<!-- SECTION:NOTES:END -->
