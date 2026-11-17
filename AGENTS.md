@@ -57,7 +57,7 @@ disagree with specifics rather than generalize.
 - Request bookkeeping (ids, tiers, transcripts) stays in `.local/`, which is gitignored. The public
   board and commit messages carry only what the review changed.
 - Reviews are asynchronous: dispatch, keep working, ingest when it lands. A dispatched review is
-  recorded on the board (in progress, assigned to the reviewing tier) so nothing looks lost.
+  recorded in the task body; it does not change the task's status or its assignee.
 
 ## Safe testing on a real machine
 
@@ -74,6 +74,8 @@ infrastructure and say so in your report.
   files; do not put absolute home-directory paths, key-file locations, or internal
   service names in tracked files — use placeholders like `/etc/arboreal/keys/…`. The one sanctioned
   name is a task **assignee** (e.g. `@chatswarm`): it says who owns the work, not how to reach it.
+  The exemption covers that handle only — never an endpoint, key path, request id or service
+  configuration.
 - Commit spec + code + tests together when they form one feature, and add a line to the
   SPEC revision log.
 - New dependencies go in `Directory.Packages.props` (central package management).
@@ -90,7 +92,8 @@ someone is actually changing repo state for it — an external review being in f
 task `In Progress` (record the in-flight review inside the task body instead, and move the task when
 implementation starts). Reviews and plans under review are noted in the task, not implied by its status.
 
-Every task carries an assignee — whoever acts on it next (`backlog task edit <id> -a @name`):
+Every task carries an assignee — whoever acts on it next (`backlog task edit <id> -a @name`); on a
+`Done` task the assignee is the last responsible actor, so it reads as history rather than a to-do:
 `@qwen3.8-flash-next` for work done by the local coding agent (name the model that is doing it, so a
 hand-off is attributable), `@chatswarm` for work handed to the external research/review service, and
 `@claire` where the next move is a human decision (an approval, a scope call, runner minutes). Set the
