@@ -409,7 +409,14 @@ public sealed class EngineRuntime : IAsyncDisposable
                     try { await Task.Delay(2_000, ct).ConfigureAwait(false); } catch (OperationCanceledException) { }
                 }
                 state.Ready.TrySetResult(false);
-                Emit("engine.switch_failed", model: model, reason: "health_timeout");
+                // A readiness timeout is the one failure that has no exit code and no stderr, so the
+                // message has to carry the actionable part itself: what to look at, and the fact that
+                // the router will not quietly retry or route elsewhere.
+                Emit("engine.switch_failed", model: model, reason:
+                    $"health_timeout after {readiness.Timeout.TotalMilliseconds:F0}ms — engine {_def.Name} " +
+                    $"never reported {model} serving: inspect what the {_lifecycle.Kind} provider started " +
+                    "(for docker: containers labelled arboreal.engine=<name>) or raise the wait timeout; " +
+                    "the router does not retry or fall back to another engine");
                 Volatile.Write(ref _switchState, new SwitchState());
                 return;
             }

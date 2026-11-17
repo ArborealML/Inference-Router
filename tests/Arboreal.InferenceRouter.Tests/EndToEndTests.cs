@@ -447,6 +447,65 @@ public class EndToEndTests
         File.Delete(loadedFile);
     }
 
+    /// <summary>AC for §5.3.1: a switch that launches something which never becomes ready is a hard
+    /// error with one actionable message. There is no exit code and no stderr in this failure, so if the
+    /// message is not actionable the operator has nothing to act on — and a quiet fallback to another
+    /// engine would hide that a loader is broken.</summary>
+    [Fact(Timeout = 30_000)]
+    public async Task A_Switch_That_Never_Becomes_Ready_Fails_Once_With_An_Actionable_Message()
+    {
+        var loadedFile = Path.Combine(Path.GetTempPath(), $"air-never-ready-{Guid.NewGuid():N}.txt");
+        using var fake = new FakeEngineHandler { LoadedModels = [], LoadedModelsFile = loadedFile };
+        var events = new EventRing();
+        var cfg = new RouterConfig
+        {
+            DefaultModel = "ghost-model",
+            Scheduler = new SchedulerConfig { MaxInflightPerEngine = 8 },
+            HttpHandlerFactory = _ => fake,
+        };
+        cfg.Engines = new Dictionary<string, EngineDefinition>
+        {
+            ["fake"] = new EngineDefinition
+            {
+                Name = "fake",
+                Kind = EngineKind.OpenAiCompatible,
+                Endpoint = new Uri("http://127.0.0.1:9/v1"),
+                Catalog = new Dictionary<string, EngineModelDefinition>
+                {
+                    ["ghost-model"] = new EngineModelDefinition
+                    {
+                        Name = "ghost-model",
+                        // The command succeeds; the engine just never reports the model. This is the
+                        // docker case: a container starts and then fails its own load.
+                        Select = new LifecycleCommand { Exec = "/bin/true", WaitHealth = true, WaitTimeoutMs = 1_500 },
+                    },
+                },
+            },
+        };
+        await using var router = new RouterCore(cfg, events: events);
+        router.Start();
+        await WaitHealthyAsync(router);
+
+        var ticket = await router.EnqueueAsync("t1", Request("ping"));
+        try
+        {
+            await ticket.CompletionTask.WaitAsync(TimeSpan.FromSeconds(20));
+        }
+        catch (RouterRequestException)
+        {
+            // the failure under test: the ticket ends failed rather than being served elsewhere
+        }
+
+        Assert.Equal(TicketState.Failed, ticket.State);
+        var failure = router.Events.Replay(0).FirstOrDefault(e => e.Kind == "engine.switch_failed");
+        Assert.NotNull(failure);
+        Assert.Contains("health_timeout after 1500ms", failure!.Reason);
+        Assert.Contains("never reported ghost-model serving", failure.Reason);
+        Assert.Contains("does not retry or fall back", failure.Reason);
+        // One terminal failure, not a retry loop wearing the engine down.
+        Assert.Single(router.Events.Replay(0), e => e.Kind == "engine.switch_failed");
+    }
+
     /// <summary>Context-window escalation (§7.6): the model is loaded but serving a smaller window
     /// than the request needs, so the request queues behind a profile switch instead of compacting.</summary>
     [Fact]
