@@ -5,7 +5,7 @@ status: Blocked
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T09:11:00Z'
-updated_date: '2026-11-17T14:25:00Z'
+updated_date: '2026-11-17T14:50:00Z'
 labels:
   - release
   - security
@@ -23,7 +23,9 @@ ordinal: 37000
 
 **Three corrections the plan review landed in SPEC v0.12.20, and each one changes the payload.** `enforcement` is `disabled | active | evaluate`, and `evaluate` is Enterprise-only — *create it observe-only, flip it after the canary* is not available: a ruleset enforces or it does nothing. `creation`, `update` and `deletion` are real rule types, and `bypass_actors: []` means **nobody** — not an admin, not the Actions app — may create, move or delete a `v*` tag, which includes whoever pushes the next release tag, so the actor list is decided before the POST and [TASK-28](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-28%20-%20Cut-the-first-release-tag-and-watch-the-release-run.md) is sequenced against it. And a ruleset is not admin-proof: repository admins can always edit the ruleset itself.
 
-**A ruleset that silently matches nothing is worse than none**, so the GET after the POST is part of the act, quoted in the report. This mutates a public repository; say so in the report and the commit message. **Order:** before the canary in [TASK-42](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-42%20-%20Decision-prove-the-release-gate-on-a-canary-knowing-the-tag-name-is-burned.md), which proves nothing about protection that is not switched on. **Who may publish, stated:** admins plus the Actions token at its least-privilege grant; the token's real sufficiency is an AC on [TASK-44](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-44%20-%20Close-the-open-release-gate-review-findings-SPEC-v0-12-15-onward.md), not a claim here.
+**A ruleset that silently matches nothing is worse than none**, so the GET after the POST is part of the act, quoted in the report. This mutates a public repository; say so in the report and the commit message. **Order:** before the canary in [TASK-42](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-42%20-%20Decision-prove-the-release-gate-on-a-canary-knowing-the-tag-name-is-burned.md), which proves nothing about protection that is not switched on.
+
+**Blocked on TASK-49(b): it waits on** the owner's one line about a throwaway repository, because a ruleset must be exercised where destructive tests can run. The rest is agent work — POST, readback, report.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -66,33 +68,6 @@ remaining hole in a path that has been hardened four times this morning, and it 
 ## Comments
 
 <!-- COMMENTS:BEGIN -->
-created: 2026-11-17T10:58:00Z
-
----
-
-Reassigned under decision-16: this was parked as a browser settings act, and it is not one. Measured on this repository: `GET /repos/{owner}/{repo}/git/tag-protection/branches` answers 404, so the tag-protection endpoints are unavailable here; `GET /repos/{owner}/{repo}/rulesets` answers `[]`, so a **repository ruleset** matching `v*` is the scriptable way to get what the review asked for (block delete and non-fast-forward moves on release tags). The ruleset API is a real mutation of a public repository: state the ruleset created, and read it back after. 'Who may publish' stays a written sentence: admins plus the Actions token, least privilege, with the token's own permissions being settled in [TASK-44](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-44%20-%20Close-the-open-release-gate-review-findings-SPEC-v0-12-15-onward.md) AC #4, not here.
-
----
-
-created: 2026-11-17T11:31:00Z
-
----
-
-Ownership, settled: as with TASK-45, this is a setting rather than YAML, but it is reachable —
-`GET .../git/tag-protection/branches` answers 404 on this repository while `GET .../rulesets` answers `[]`, so a
-repository ruleset on `v*` is created over REST with the token this machine already holds (measured
-`admin: true`). Agent work under decision-16, created and read back in the same report, and reversible. Not a
-prerequisite the canary can fake: TASK-42 proves nothing about tag protection unless this lands first.
-
----
-
-created: 2026-11-17T13:56:00Z
-
----
-
-Blocked on TASK-49 (c): whether one ruleset or two, because a `creation` rule with no bypass list blocks the release path itself. Nothing else waits — the payload shape, the readback and the measurements are all in this task and agent-owned.
-
----
 
 created: 2026-11-17T14:10:00Z
 
@@ -101,4 +76,5 @@ created: 2026-11-17T14:10:00Z
 Ownership corrected: the ruleset-scope question was parked on the owner by mistake and is now this task's own criterion. The measurement that makes it non-trivial stands — a `creation` rule with `bypass_actors: []` blocks the publishing account as well as a person, so one ruleset either blocks the release path or protects nothing, and two layered rulesets are the shape that does both. The only part that stayed with the owner is the runner spend and the second repository (TASK-49).
 
 ---
+
 <!-- COMMENTS:END -->

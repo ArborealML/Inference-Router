@@ -55,48 +55,6 @@ refuses a tag that already carries a release, draft or published: `gh release de
 ## Comments
 
 <!-- COMMENTS:BEGIN -->
-created: 2026-11-17T10:58:00Z
-
----
-
-Reassigned under decision-16: an agent runs it. Wake: [TASK-44](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-44%20-%20Close-the-open-release-gate-review-findings-SPEC-v0-12-15-onward.md) merged and [TASK-45](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-45%20-%20Enable-GitHub-immutable-releases-before-the-first-tag.md) done, with CI green on the merge commit. Protocol, tightened by the round-8 review: tag current `main` as `v0.0.0-canary`, push, let the unmodified workflow run with its own token, capture the create and upload responses, the full asset inventory, the download SHA-256, the peeled tag SHA, the `PATCH` response, and `.immutable` on the published release; then try to replace an asset and to move the tag and **require both to be refused**; then delete the release with `--cleanup-tag`, because preflight refuses a tag that already carries a release, draft or published. Cost: public assets for a few minutes plus one runner leg. It is a mutation of a public repository and the report says so in those words.
-
----
-
-created: 2026-11-17T11:06:00Z
-
----
-
-Hardening from the TASK-39 answer: the canary is also the test bed for consumer verification. On the published canary, run the readback against the live URLs and try the documented user verification path; record the gh version used. Measured here: gh 2.46.0 has none of `gh release verify`, `gh release verify-asset`, `gh attestation` (each exits 1), so if the release README is to tell users those commands, the canary is where the version floor gets established — and if it tells them `sha256sum` plus a REST listing, the canary proves that works too.
-
----
-
-created: 2026-11-17T11:31:00Z
-
----
-
-Canary evidence items, from the seventh review's disposition
-(aa7ad23, fd76021). Record these from the live run rather than reasoning about them afterwards:
-(i) what `.target_commitish` says on the created release — this is the only way to see what the omitted parameter
-actually resolved to, and it is the item that replaces the rejected `target_commitish` hardening on TASK-44;
-(ii) whether the workflow-write guard fires at all for a tag cut at the head of main — by the endpoint note it
-should not, because the resolved target is the default-branch head and that diff is empty by construction, but
-our own tag commits touch `.github/workflows/release.yml`, so the answer matters and only a run gives it;
-(iii) whether `contents: write` from `GITHUB_TOKEN` suffices for asset upload and the un-draft `PATCH` in practice.
-
-Ownership caution: the canary cannot verify the two repository settings on TASK-45 (immutable releases) and
-TASK-38 (a `v*` ruleset) unless those are done **first**. A canary run against an unprotected repository proves
-nothing about protection that is not switched on, so the order is 45 and 38, then 42.
-
----
-
-created: 2026-11-17T13:56:00Z
-
----
-
-Blocked on TASK-49 (a) and (b): the canary decision and whether the destructive tests run in a throwaway repository. Not Waiting — no event will wake this; a person has to grant it.
-
----
 
 created: 2026-11-17T14:25:00Z
 
@@ -105,4 +63,5 @@ created: 2026-11-17T14:25:00Z
 Status corrected to match the body: agent-run, no owner keystroke. **Wake:** TASK-44 closed, TASK-38's ruleset read back, TASK-45 done, CI green on the merge commit. Recommendation, stated rather than asked: run the proving tag **after** the throwaway-repository rehearsal if TASK-49 answers yes, and treat the canary as a kept prerelease, because a published version name cannot be reused.
 
 ---
+
 <!-- COMMENTS:END -->

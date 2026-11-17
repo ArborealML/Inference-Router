@@ -5,7 +5,7 @@ status: To Do
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T07:53:00Z'
-updated_date: '2026-11-17T11:38:00Z'
+updated_date: '2026-11-17T14:48:00Z'
 labels:
   - engine
   - lifecycle
@@ -41,16 +41,15 @@ posture the README should state rather than leave implied.
 - [ ] #1 Answer in one line: allow one lifecycle transaction on this host, or no live daemon runs and verification stays on fakes
 <!-- AC:END -->
 
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+**Adopted posture (decision-20 accepted, decision-1's refuse-don't-escalate rule applies to authorization):** the answer is no — the router does not drive the live daemon on this host; the native provider talks to a socket the operator provisions, and anything that would start or stop containers stays an explicit human act under decision-14 §3. Nothing was dispatched to the external service for this one; it was decided against this repository's code and SPEC §5.3.1.
+<!-- SECTION:NOTES:END -->
+
 ## Comments
 
 <!-- COMMENTS:BEGIN -->
-created: 2026-11-17T10:58:00Z
-
----
-
-Reassigned under decision-16: the permission is no longer the owner's to type, so the task becomes a scoped act with a report. Answer recorded: **allow one lifecycle transaction on this host**, bounded to a named disposable engine that no other session is using, with the config committed as a sample-like file under `.local/`, and a report naming what was started, stopped and removed and how long each step took. That is a mutation of shared infrastructure on the owner's machine, so it stays reportable in the commit and in SPEC's verification wording, and it is reversible by `docker` inspection. If the run cannot be made bounded — no idle engine, or an unknown engine holding a slot — stop and put it back on the board rather than choosing which engine to disturb.
-
----
 
 created: 2026-11-17T11:04:00Z
 
@@ -59,4 +58,5 @@ created: 2026-11-17T11:04:00Z
 Wording fix on the previous comment: the config for that run is a working file kept **out of the repository** (a committed sample would print engine endpoints and lifecycle argv, which the hygiene rule in AGENTS.md forbids). The record is the report — what was started, stopped and removed, and how long each phase took — plus a SPEC sentence naming what is now verified against a live daemon rather than a fake.
 
 ---
+
 <!-- COMMENTS:END -->

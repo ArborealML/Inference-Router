@@ -84,45 +84,6 @@ Three confirmations only a live run can give, REPLACING the three by-tag ones wr
 ## Comments
 
 <!-- COMMENTS:BEGIN -->
-created: 2026-11-17T07:53:00Z
-
----
-
-Wake condition rewritten, and a new step added from an external review of the release work, checked against the file: Actions runs the workflow from the commit the tag points at, so a tag on anything older than fbc48d6 runs the old four-leg workflow and the macOS legs queue again. Verified on the checked-out HEAD: matrix legs parse to [linux-x64, win-x64]; the gate names the same two in expected_rids (line 216); the archive-count refusal is at 225; prerelease handling at 238-241. The same ancestry check is now on TASK-32 for the case where the owner cuts the tag personally. Two external deep reviews of this area (713ffdd, fbc48d6) are recorded as in flight; per the contract that changes neither status nor assignee, and their request bookkeeping stays out of the board.
-
----
-
-created: 2026-11-17T08:49:00Z
-
----
-
-Dependency added: the tag should not be cut while the gate is under review. TASK-28 now waits on the owner go-ahead (TASK-32) and on the release-gate round closing (TASK-37, wake = the review of 6b91de4 plus the SPEC 15 disposition row). The first-run checklist is in Implementation Notes.
-
----
-
-created: 2026-11-17T09:13:00Z
-
----
-
-Dependency set widened deliberately: TASK-38 (who may move a release tag) and TASK-39 (whether to pay for download-and-hash or signing) are repository-settings and money calls in front of the owner, and TASK-40 is the gate round whose load-bearing claim is untested. Cutting the first release before those land would mean proving the gate in production with the settings still open. If you would rather cut v0.1.0 with the settings question open, say so on TASK-32 and I will record that as the accepted posture rather than argue it.
-
----
-
-created: 2026-11-17T10:58:00Z
-
----
-
-Board update after the round-8 review: this stays Blocked, and the blockers are all agent work now, not an owner's keystrokes (decision-16). Floor for the tag moves to the merge commit of [TASK-44](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-44%20-%20Close-the-open-release-gate-review-findings-SPEC-v0-12-15-onward.md); TASK-42 (canary) proves the gate first, TASK-45 turns on immutable releases before any release is published, TASK-38 puts a `v*` ruleset on the tag. No tag has run the gate: configured, not proven.
-
----
-
-created: 2026-11-17T11:06:00Z
-
----
-
-Board update: [TASK-39](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-39%20-%20Decision-verify-what-a-downloader-receives-or-keep-accepting-that-we-do-not.md) is answered (adopt posture), and the work it produced is [TASK-48](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-48%20-%20Prove-what-a-downloader-receives-post-publish-readback-and-free-build-attestation.md), which now also gates this task. The first real tag should therefore be the canary in [TASK-42](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-42%20-%20Decision-prove-the-release-gate-on-a-canary-knowing-the-tag-name-is-burned.md), not v0.1.0: the canary is where the readback and the consumer-verification commands get tested on a release nobody will install.
-
----
 
 created: 2026-11-17T13:30:00Z
 
@@ -131,4 +92,5 @@ created: 2026-11-17T13:30:00Z
 Sequencing trap, from the plan review dispositioned in SPEC v0.12.20 and re-measured by the board at 8f78a73 (0 tags, 0 releases, `[]` rulesets): a `v*` repository ruleset with a `creation` rule and empty `bypass_actors` stops **anyone** — an admin included — from pushing a `v*` tag, so it cannot land before the tag this task cuts unless an actor is listed. Either the ruleset's `bypass_actors` names the tag pusher (TASK-38 AC #2) or this tag is cut first and the ruleset follows. Enforcement has no observe-only setting: `enforcement` is `disabled`, `active`, or Enterprise-only `evaluate`.
 
 ---
+
 <!-- COMMENTS:END -->

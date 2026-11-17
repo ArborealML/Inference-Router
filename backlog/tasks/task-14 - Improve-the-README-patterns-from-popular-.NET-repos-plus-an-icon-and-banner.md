@@ -100,29 +100,6 @@ maintainer edits and reuse terms — without claiming rights beyond what the too
 ## Comments
 
 <!-- COMMENTS:BEGIN -->
-created: 2026-11-17T03:44:00Z
-
----
-
-AC #5 now holds, and it is checkable rather than a vibe: the only measured claims in the README are the benchmark paragraph, and every figure in it traces to the published run — routing +58.0/+90.6/+91.4 µs p50 and ~15 KB (README: ~58–91 µs, ~15 KB), full HTTP path +217.1/+320.7/+995.8 µs and ~26–32 KB (README: ~217–996 µs, ~26–32 KB, with the top of the range labelled as HTTP framing rather than routing), SSE relay +58.1/+97.5/+102.3 µs and ~24–25 KB (README: ~58–102 µs, ~25 KB) — with docs/benchmarks.md and SPEC 9.1 linked for the caveats. The compatibility claim is scoped to the two proxy routes in the works-today/not-built-yet table, and no other sentence in the README asserts performance.
-
----
-
-created: 2026-11-17T05:26:00Z
-
----
-
-Assignee reduced to one name. Two were listed (the owner and the agent): the owner's move on the README itself lives on TASK-23, so the next actor on this task is the agent who restructures it when TASK-23 lands. A task with two assignees reads as nobody.
-
----
-
-created: 2026-11-17T07:55:00Z
-
----
-
-AC #4 is two badges and only one of them exists today: README lines 10-12 carry CI, license and .NET badges, and the CI badge resolves (checked the URL form against the workflow name). The release badge cannot resolve until a release exists, which is TASK-32 (owner go-ahead) then TASK-28 (the tag run). Dependency set to TASK-28 so the board shows the real wake instead of a prose promise. Assignee stays the main session: a README line during the tag run, not a separate change.
-
----
 
 created: 2026-11-17T13:56:00Z
 
@@ -131,6 +108,7 @@ created: 2026-11-17T13:56:00Z
 **Wake re-named, because its old wake is closed.** This task waited on TASK-23, which is now Done. Its only open criterion is the release badge, which cannot exist before the first release tag: wake is now the tag in TASK-28 landing and the workflow badge resolving on `main`. The README prose and identity half are unaffected.
 
 ---
+
 <!-- COMMENTS:END -->
 
 Status: step 1 landed (findings below); the task moves to In Progress when the README itself changes.

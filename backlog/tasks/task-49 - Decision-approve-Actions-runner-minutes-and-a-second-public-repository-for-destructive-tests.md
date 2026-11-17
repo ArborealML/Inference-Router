@@ -54,13 +54,6 @@ ordinal: 49000
 ## Comments
 
 <!-- COMMENTS:BEGIN -->
-created: 2026-11-17T14:10:00Z
-
----
-
-**Rescoped, because the first version asked the owner for an agent's decision.** It previously carried a third answer about the scope of the `v*` ruleset — who may create a `v*` tag. That is a repository setting reachable over REST, which decision-16 assigns to the agent, so it now lives as a criterion on TASK-38 with its reasoning, and TASK-38 chooses between one ruleset and two layered rulesets itself. A fourth item, about swapping the social-preview card, moved to TASK-46, where a re-render is a one-line instruction to an agent. What stays here is exactly the two things decision-16 and decision-14 leave with a person: runner spend beyond what decision-10 already allows, and creating a new public repository under the organisation.
-
----
 
 created: 2026-11-17T14:25:00Z
 
@@ -69,4 +62,5 @@ created: 2026-11-17T14:25:00Z
 Rolled up under the AGENTS.md duplicate rule: it restated analysis that lives on TASK-42 and TASK-38. One owner question survives here — a second public repository — because a new public repository under the organisation is the owner's call; the canary push and the ruleset POST are agent acts under decision-16, each stating its recommendation rather than asking permission.
 
 ---
+
 <!-- COMMENTS:END -->

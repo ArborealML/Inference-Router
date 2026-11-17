@@ -91,29 +91,6 @@ DISPATCHED to the external research and review service at 2026-11-17 08:07 UTC, 
 ## Comments
 
 <!-- COMMENTS:BEGIN -->
-created: 2026-11-17T07:54:00Z
-
----
-
-Assignee and title changed on purpose. This is not an owner decision being handed to a machine: it is a design question whose answer is a recommendation, so the external review service owns the analysis and the board session owns what happens to it - review against how this repo's admin surface and event feed actually work, then file one owner task with the approval lines written out. Wake condition: the recommendation lands. Until then no person is waiting on this and no person is being asked to write a design. Retitled from Decision: to Design: so the title matches who acts.
-
----
-
-created: 2026-11-17T08:14:00Z
-
----
-
-Design phase closed: dispatched to the external research and review service at 08:07 UTC and answered at 08:1x UTC (transcript in .local/reviews/, not in the repository). The board reviewed the answer against SPEC 6/10/12.5 and the feed semantics in code before putting any of it here - in particular the claim that loss is subscriber-relative, which is true of this ring: eviction is global, consumption is per subscriber, and an eviction event would itself consume ring capacity to describe something that may affect nobody. Retitled Design: back to Decision: because what remains is ratification, not analysis. Status Blocked: no event wakes this, a person answers three one-line approvals (about 3 minutes).
-
----
-
-created: 2026-11-17T10:58:00Z
-
----
-
-Reassigned under decision-16 and **adopted as recommended** by the external design answer, which the board checked against this code before recording it: (1) the live view is operator-first, not multi-tenant; (2) `/admin` stays unauthenticated and loopback-only, with operator-managed tunnels plus browser-request hardening — no new credential surface; (3) **no gap/loss event kind on the shared feed**: compute continuity client-side from sequence holes plus the exclusive cursor, and if a server-side notice is ever wanted it must be subscriber-relative and must not consume a global sequence id. Remaining work: write those three into SPEC §6, §10 and §12.5 as posture, with a revision-log line, then [TASK-11](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-11%20-%20Blazor-live-view-screens-plus-the-event-stream-additions-they-need.md) can start. Answer 3 changes nothing on the wire, which is the point of adopting it.
-
----
 
 created: 2026-11-17T14:02:00Z
 
@@ -122,4 +99,5 @@ created: 2026-11-17T14:02:00Z
 Wake named explicitly for the task that parks behind this one (TASK-11, Waiting): **the SPEC revision that writes the three adopted postures into SPEC §6, §10 and §12.5**, with its revision-log line in the same commit. Measured at b214ce6: `SPEC.md` has no operator-first or `/admin`-tunnel posture text, so the act is not done and TASK-11 must not start. The adoption itself is recorded in the comment above; AC #1 and #2 stay unchecked until the SPEC revision exists, because this task is graded on the record, not on the recommendation.
 
 ---
+
 <!-- COMMENTS:END -->

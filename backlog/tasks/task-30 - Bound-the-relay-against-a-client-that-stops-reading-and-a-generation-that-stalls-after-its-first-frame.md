@@ -42,21 +42,6 @@ Precedent confirmed independently by the coding session after my check, so it is
 ## Comments
 
 <!-- COMMENTS:BEGIN -->
-created: 2026-11-17T08:14:00Z
-
----
-
-Wire-shape question resolved rather than pre-decided, and the answer is smaller than it looked. Checked against the code and SPEC: the in-band ending for a stream whose 200 is already committed is shipped precedent, not a new surface - response_timeout_ms already ends a quiet engine mid-turn with one engine_timeout frame plus [DONE] (SPEC:696, SPEC:796, and the v0.12.7-era note at SPEC:222 that streaming ceilings are in-band by construction). So AC #3 now names SPEC 6 for the shape and TASK-34 for the numbers. TASK-34 asks you for three constants and one policy (idle bound default, cancel-or-let-finish, frames-or-bytes) and starts at @claire. Start the machinery now: relay bound, stall detection, tests against the fake - the constants are the only thing waiting on a person, and a two-minute answer should not stall a week of work.
-
----
-
-created: 2026-11-17T08:48:00Z
-
----
-
-Precedent claim verified independently, and the line anchors in my first wording had already drifted (SPEC moves constantly, so cite sections): SPEC 6 says a committed stream whose engine goes quiet fails in band with one engine_timeout frame plus [DONE] (row at line 735 today), SPEC 14.1 row 2 names the same ending and credits RequestPhaseTimeoutTests (line 1379), and the test AStreamThatNeverSendsAFrameEndsInsideTheStreamBecauseTheStatusIsAlreadySent pins it at RequestPhaseTimeoutTests.cs:196. So TASK-34 really is numbers-and-policy, not a wire change. If the coding session's independent check disagrees, this criterion moves back behind an owner wire decision and TASK-34 is retitled accordingly.
-
----
 
 created: 2026-11-17T11:08:00Z
 
@@ -69,4 +54,5 @@ Numbers and policy are decided (TASK-34 answered; the external answer was adopte
 **Measure the premise before writing it into SPEC.** This task's Description says the router buffers a stalled reader without limit. That was written from reasoning, not measurement, and Kestrel plus TCP may already apply backpressure; AC #2's number and SPEC's wording should say what the code actually does, with the test that shows it.
 
 ---
+
 <!-- COMMENTS:END -->

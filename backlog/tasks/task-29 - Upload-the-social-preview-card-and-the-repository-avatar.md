@@ -76,51 +76,6 @@ name, and in search results. **Already done** and verified from outside the form
 ## Comments
 
 <!-- COMMENTS:BEGIN -->
-created: 2026-11-17T06:56:00Z
-
----
-
-Answer received: `card set, avatar set`. Checked AC #2 (avatar) and NOT AC #1 (card), because only one of the two is true on the public side, and this task is graded on what a visitor sees, not on what was pressed.
-
-**Avatar — confirmed, from outside the form.** `https://github.com/ArborealML.png?size=512` returns 460×460 RGB whose colour histogram is 82.4% near-black field and 16.5% near-white mark. Our export `air-mark-512.png` is 82.4% #10241F and 16.7% #F3F7F2 — the same ratio to a tenth of a percent, with GitHub re-encoding the palette slightly (#101010 / #F3F3F3 instead of #10241F / #F3F7F2). That is the mark.
-
-**Card — not live.** Two independent checks: the repository page still serves `<meta property="og:image" content="https://repository-images.githubusercontent.com/1460450305/…">`, which is GitHub's **auto-generated repository image**, not an upload; and that image's histogram is 87.6% white with 4.4% near-black — the inverse of our card, which is 93.6% #10241F field with 3.7% #F3F7F2 ink. A custom social preview would make the page point at `opengraph.githubassets.com/…` and serve the dark field. Re-checked after a pause, still the default.\n\nWhat to do: repo Settings → Options → Social preview → confirm the image is still shown in the box **and that Save was pressed** — the form silently keeps the previous state if Save is missed, and the removal/add state is easy to miss because the page shows a thumbnail either way. Then the check above should flip to the dark field; if you want the card ready to re-pick, the export is at `.local/exports/air-social-1280x640.png` (30,842 bytes, sha256 b02b6d32…97e9) and the mark at `.local/exports/air-mark-512.png` (9,935 bytes, sha256 2e1b5e02…820a). Stays Blocked: only a person can press that button.
-
----
-
-created: 2026-11-17T07:45:00Z
-
----
-
-Third check, 2026-11-17 07:33 UTC, and this one is decisive about what the settings page is holding. (a) The repository page still serves og:image = repository-images.githubusercontent.com/1460450305/..., and that object is 2269x1134 - GitHub's generated repository image. A repository that has a custom social preview serves og:image from opengraph.githubassets.com with a content hash in the path; checked against vitejs/vite as a positive control. (b) The object the link-preview endpoint serves is 1200x600 and 87.6 percent white with 3.9 percent purple (#7355DD, GitHub card furniture); our committed card is 93.6 percent #10241F field with 3.7 percent ink. Same answer from two surfaces, and re-fetching with different cache versions returns byte-identical bytes, so this is not a stale cache. Avatar by contrast is live: the org picture returns 460x460 at 82.4 percent #10241F and 16.5 percent #F3F7F2 against our export at 82.4/16.7 - that is the mark. What to look at: the card upload box in repo Settings -> Options, where an added image and an absent one both render as a thumbnail; the description answer has now said card set twice while the public surface says otherwise, which is the signature of pressing away from the form instead of Save. The PNG to pick is committed, so it is download-and-pick: docs/images/air-social-1280x640.png. AC #2 stays checked, AC #1 and #3 stay open, status stays Blocked: only a browser session can change that setting.
-
----
-
-created: 2026-11-17T10:58:00Z
-
----
-
-Retitled and re-trimmed under decision-16: this is the **only** task left on a person, because GitHub has no API, no `gh` endpoint and no committed file that stands in for the social-preview upload — an agent can prepare the PNG and verify the result afterwards, but cannot press Save. Everything that is not the button moved to [TASK-46](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-46%20-%20Render-the-final-social-preview-card-and-verify-it-from-outside-the-form.md) (final render, measurements, sha256 of the file to pick) and the after-the-fact public check. Status: avatar live and verified; card not live — re-checked 10:40Z, the page still serves `repository-images.githubusercontent.com/1460450305/...`, which is GitHub's generated image, and a custom card would make it serve `opengraph.githubassets.com/...`. The form shows a thumbnail whether an image is set or not, so the failure mode is pressing away from the form instead of Save; that has now happened twice against a 'card set' answer.
-
----
-
-created: 2026-11-17T13:30:00Z
-
----
-
-**Fourth check, measured by the board at 8f78a73 (13:2xZ), and the card is still not live.** The repository page serves `og:image` = `repository-images.githubusercontent.com/1460450305/...`, GitHub's generated image. Fetched the link-preview object directly: 1200x600, 88.7% light pixels — our committed card is 96.1% dark field, 3.9% light, so the card GitHub shows is not ours. The avatar **is** live and re-confirmed independently: 460x460, 82.6% dark / 16.7% light against our export's 82.4/16.7.
-
-Moved to **Waiting** rather than Blocked because there is now an event that wakes it: [TASK-46](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-46%20-%20Render-the-final-social-preview-card-and-verify-it-from-outside-the-form.md) is re-rendering the card, because the committed one fails its own legibility bar — its smallest text line has ~19 px caps in the 1280x640 raster and a GitHub link preview shows the card at about 600 px wide, so that line lands near 9 px. Uploading today's PNG is still open to anyone who wants a card now: it is 30,842 bytes, under GitHub's 1 MB ceiling, and replacing it later is a second trip to the same form with nothing burned. What the board does not want is a third upload of an image that fails the measurement in TASK-46 AC #2.
-
----
-
-created: 2026-11-17T13:44:00Z
-
----
-
-**Heads-up on a number in this task's own text, so it is not trusted after it goes stale.** The byte size and sha256 quoted above (30,842 B, `b02b6d32...97e9`) belong to the card as committed today. [TASK-46] (https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-46%20-%20Render-the-final-social-preview-card-and-verify-it-from-outside-the-form.md) is replacing that image: the committed card's smallest text line measures 20 px cap height and a link preview shrinks it to about 9 px, which is unreadable. The replacement candidate is measured at 42 px on the same line and is already verified for determinism and geometry, but it is not committed yet. **Pick whatever `docs/images/air-social-1280x640.png` holds when the upload happens, and re-read its sha256 from the file rather than from this task.** Nothing here burns anything: replacing a social-preview image is a second trip to the same form.
-
----
 
 created: 2026-11-17T13:56:00Z
 
@@ -129,4 +84,5 @@ created: 2026-11-17T13:56:00Z
 **Nothing in the repository is outstanding for this task, so it is Blocked on a person again, not Waiting.** The card is committed and measured (b214ce6: 1280x640, 38,150 B, sha256 `cee3237b7f98…98f09`; smallest text line 42 px, four times the previous card's 20 px). What is missing is the upload: repo Settings -> Options -> Social preview, pick the committed `docs/images/air-social-1280x640.png`, then **press Save** — the form shows a thumbnail either way, which is how three 'card set' answers have produced no change. One optional answer can still change the image first: TASK-49 item (d).
 
 ---
+
 <!-- COMMENTS:END -->

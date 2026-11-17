@@ -79,29 +79,6 @@ Moved out of the Description under decision-18's word line — nothing deleted, 
 ## Comments
 
 <!-- COMMENTS:BEGIN -->
-created: 2026-11-17T10:14:00Z
-
----
-
-AC #2 rewritten: it used to list an explicit stream gap event as if settled, which pre-decided a wire question that TASK-21 - now a Blocked owner task - exists to answer. The task still depends on TASK-21 in front matter, so the gate is visible; the contradiction was in the criterion, not the dependency. TASK-6 re-checked for the stale macOS wording and none is present (no TASK-22 reference in the file).
-
----
-
-created: 2026-11-17T10:58:00Z
-
----
-
-Wake, named: the three posture answers on [TASK-21](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-21%20-%20Decision-what-the-live-view-shows-who-may-open-it-and-whether-the-wire-gains-loss-reporting.md) are adopted (operator-first; `/admin` unauthenticated and loopback-only with operator-managed tunnels; no new feed event kind — continuity computed client-side from sequence holes plus the exclusive cursor). This task starts when SPEC carries that wording, because AC #5 is the event-stream half of it.
-
----
-
-created: 2026-11-17T13:56:00Z
-
----
-
-**Stale park, found by the board audit at b214ce6.** This task sat Waiting on posture answers from a predecessor that is now closed; the wake already happened, so the Waiting column was hiding ready work. Moved to To Do with its assignee unchanged. Nothing about its scope or criteria changed.
-
----
 
 created: 2026-11-17T14:02:00Z
 
@@ -110,4 +87,5 @@ created: 2026-11-17T14:02:00Z
 **Correction, and the board was wrong.** A comment here a moment ago claimed this task's wake had already happened and moved it to To Do. It has not, and the claim came from reading the board listing instead of the predecessor task. The predecessor TASK-21 records its three postures as **adopted**, but its remaining act is still open: writing them into SPEC as a revision with the revision-log line in the same commit — checked here, `SPEC.md` carries no operator-first posture text at b214ce6. **Wake, named:** that SPEC revision landing, after which TASK-21 closes and this starts.
 
 ---
+
 <!-- COMMENTS:END -->
