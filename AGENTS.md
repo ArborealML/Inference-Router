@@ -138,6 +138,10 @@ dependent task **Blocked** and name the task it waits on. A question asked in ch
 inside another task's body, is not a blocker anybody can act on: if work stops on a person, that
 person's task list has to show it.
 
+That task carries the steps, not the topic: the link to the pull request or file, the command to run, the
+one line of answer you need back, and roughly how many minutes it costs. A human should be able to close
+it without asking a follow-up question.
+
 ## Kanban columns
 
 `To Do → In Progress → Waiting → Blocked → Done`, set in `backlog/config.yml`.
