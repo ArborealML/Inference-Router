@@ -35,7 +35,7 @@ them can be built, so the stream work comes first.
 
 **Do this (about 1 minute)**
 Nothing to decide here — the three questions this task waits on are written out on **TASK-21** with the
-answer format, in <https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/>. Answer those and this one starts on its own.
+answer format, in [TASK-21](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-21%20-%20Decision-what-the-live-view-shows-who-may-open-it-and-whether-the-wire-gains-loss-reporting.md). Answer those and this one starts on its own.
 
 **Blocked on one decision (owner)**
 The live view is a Blazor WASM app (SPEC §12.5). Two questions decide its shape, and both are product
