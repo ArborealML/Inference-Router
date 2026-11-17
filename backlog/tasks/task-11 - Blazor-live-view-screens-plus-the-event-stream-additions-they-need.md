@@ -5,7 +5,7 @@ status: Waiting
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-16T20:46:00Z'
-updated_date: '2026-11-17T09:42:00Z'
+updated_date: '2026-11-17T10:14:00Z'
 labels:
   - ui
 milestone: v0.10 - live view and robustness parity
@@ -60,8 +60,8 @@ Nothing in this task is technically blocked; it is these two calls.
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [ ] #1 Ticket records expose owner, state, priority, queue, attempt, active profile, required/active context, capacity, timing, result, prompt/completion bytes, tokens, prefix hash, config pin and commit boundary
-- [ ] #2 Events cover request lifecycle, rejection, capacity change, queue, health/crash/restart, switch/profile, prefix and an explicit stream gap; delivery is append + counters only
-- [ ] #3 `/admin/status` reports active/queued/readiness/rates; `/admin/events` supports filtering, heartbeat and bounded sequence-gap handling; a bounded `/admin/requests` exists
+- [ ] #2 Events cover request lifecycle, rejection, capacity change, queue, health/crash/restart, switch/profile and prefix. Whether the feed also gains an explicit stream-gap event is answered by TASK-21, whose incoming recommendation is NOT to add one and to derive continuity client-side; this criterion does not decide it
+- [ ] #3 /admin/status reports active/queued/readiness/rates; /admin/events supports filtering, heartbeat and bounded sequence-gap handling; a bounded /admin/requests exists
 - [ ] #4 Admin JSON schema and casing pinned once (SPEC 15.1) and covered by contract tests
 - [ ] #5 Screens render from the event stream alone: global inference, queues/admission, engines/profiles/switches, topology/trends, request timeline, health/config/security
 <!-- AC:END -->
@@ -75,3 +75,15 @@ Blocked-state check: the blocker is a person, and the human task that carries it
 
 Wake condition, stated for the Waiting column: this task wakes when the live-view decisions are recorded (TASK-21 — audience, credential posture, and whether the event feed gains an explicit loss event), because the screens cannot be specified until the feed they read from is specified. Per the working contract the feed-contract plan also gets an external review before the code exists, so the second wake is that review landing. What is true now: TASK-21 is a BLOCKED owner task again - the external design recommendation landed and the three answers (audience, credential posture, and whether the feed gains a loss event) are ratifications only the owner can make. So this task does wait on a person, and the Waiting column is correct only because that person's task exists. The earlier sentence claiming nothing here waits on a person was written when the questions were still with an agent, and is withdrawn.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+created: 2026-11-17T10:14:00Z
+
+---
+
+AC #2 rewritten: it used to list an explicit stream gap event as if settled, which pre-decided a wire question that TASK-21 - now a Blocked owner task - exists to answer. The task still depends on TASK-21 in front matter, so the gate is visible; the contradiction was in the criterion, not the dependency. TASK-6 re-checked for the stale macOS wording and none is present (no TASK-22 reference in the file).
+
+---
+<!-- COMMENTS:END -->
