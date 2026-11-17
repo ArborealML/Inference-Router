@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-16T20:39:00Z'
-updated_date: '2026-11-17T02:41:00Z'
+updated_date: '2026-11-17T02:54:00Z'
 labels: []
 milestone: v0.9 - native engine lifecycle
 dependencies:
@@ -35,11 +35,11 @@ per model with native lifecycle.
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Docker access goes through a swappable seam with a test fake (no daemon required)
-- [ ] #2 All admissibility checks run before any container is stopped or started
-- [ ] #3 Containers without our launcher labels are never stopped
-- [ ] #4 Readiness failure is a hard error with one actionable message; no silent fallback
-- [ ] #5 NativeAOT publish stays trim-clean (no reflection, no runtime provider discovery)
+- [x] #1 Docker access goes through a swappable seam with a test fake (no daemon required)
+- [x] #2 All admissibility checks run before any container is stopped or started
+- [x] #3 Containers without our launcher labels are never stopped
+- [x] #4 Readiness failure is a hard error with one actionable message; no silent fallback
+- [x] #5 NativeAOT publish stays trim-clean (no reflection, no runtime provider discovery)
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -58,6 +58,8 @@ Blocked on TASK-20 — the next move is the lifecycle mechanism and authorisatio
 Unblocked by checking rather than by a new decision: the provider shape is settled (raw Engine HTTP over a swappable seam), and the two decisions that used to gate it — refuse rather than escalate on ownership, and launch tuning — are recorded. Every acceptance criterion on this task can be met against a test fake with no daemon present, so implementation does not wait on anything. Only end-to-end verification against a real Docker host needs the daemon-route question answered.
 
 First slice in: the provider seam (ownership proof, preflight, stop-what-we-own, launch), the coordinator that owns that ordering, and the existing selector path wrapped as the delegated provider with its behaviour unchanged. Seven fake-backed tests pin the order, the refusal-before-mutation, the never-stop-what-we-do-not-own rule and single-flight per engine. Admission-close and cohort-drain are not in this slice and are a task of their own: draining to zero today would wait on the very request that asked for the switch.
+
+Seam, coordinator, delegated-exec provider and the native Docker provider are in main (two commits). AC #1 tested against a fake daemon; #2 holds for the checks that exist today — reachability, pinned API version, image presence — before anything is stopped or started; #3 tested both directions (a listed-but-unlabelled container is never handed to stop, and a failed ownership query refuses the whole transaction); #4 tested end to end, including that the ticket fails rather than being served elsewhere; #5 verified by zero trim or warning lines on both AOT publishes. Still open in this task, and listed in SPEC 5.3.1 rather than hidden: image identity pinning, mounts and GPU requests, exec frame demux, logs and daemon events, the Windows pipe transport, latched failures with no automatic retry, and the admission-close/cohort-drain step which is TASK-25. An extra-tier external review of these two commits is in flight; it targets container-ownership safety, injection in the label filter, and calls that could hang forever. Nothing from it is adopted until verified against this code.
 <!-- SECTION:NOTES:END -->
 
 ## Dependencies still open (decisions, not work)
