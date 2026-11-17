@@ -1,11 +1,11 @@
 ---
 id: TASK-29
 title: Press Save on the social preview form (browser only)
-status: Blocked
+status: Waiting
 assignee:
   - '@claire'
 created_date: '2026-11-17T05:59:00Z'
-updated_date: '2026-11-17T10:58:00Z'
+updated_date: '2026-11-17T13:30:00Z'
 labels:
   - docs
 dependencies:
@@ -99,6 +99,16 @@ created: 2026-11-17T10:58:00Z
 ---
 
 Retitled and re-trimmed under decision-16: this is the **only** task left on a person, because GitHub has no API, no `gh` endpoint and no committed file that stands in for the social-preview upload — an agent can prepare the PNG and verify the result afterwards, but cannot press Save. Everything that is not the button moved to [TASK-46](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-46%20-%20Render-the-final-social-preview-card-and-verify-it-from-outside-the-form.md) (final render, measurements, sha256 of the file to pick) and the after-the-fact public check. Status: avatar live and verified; card not live — re-checked 10:40Z, the page still serves `repository-images.githubusercontent.com/1460450305/...`, which is GitHub's generated image, and a custom card would make it serve `opengraph.githubassets.com/...`. The form shows a thumbnail whether an image is set or not, so the failure mode is pressing away from the form instead of Save; that has now happened twice against a 'card set' answer.
+
+---
+
+created: 2026-11-17T13:30:00Z
+
+---
+
+**Fourth check, measured by the board at 8f78a73 (13:2xZ), and the card is still not live.** The repository page serves `og:image` = `repository-images.githubusercontent.com/1460450305/...`, GitHub's generated image. Fetched the link-preview object directly: 1200x600, 88.7% light pixels — our committed card is 96.1% dark field, 3.9% light, so the card GitHub shows is not ours. The avatar **is** live and re-confirmed independently: 460x460, 82.6% dark / 16.7% light against our export's 82.4/16.7.
+
+Moved to **Waiting** rather than Blocked because there is now an event that wakes it: [TASK-46](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-46%20-%20Render-the-final-social-preview-card-and-verify-it-from-outside-the-form.md) is re-rendering the card, because the committed one fails its own legibility bar — its smallest text line has ~19 px caps in the 1280x640 raster and a GitHub link preview shows the card at about 600 px wide, so that line lands near 9 px. Uploading today's PNG is still open to anyone who wants a card now: it is 30,842 bytes, under GitHub's 1 MB ceiling, and replacing it later is a second trip to the same form with nothing burned. What the board does not want is a third upload of an image that fails the measurement in TASK-46 AC #2.
 
 ---
 <!-- COMMENTS:END -->

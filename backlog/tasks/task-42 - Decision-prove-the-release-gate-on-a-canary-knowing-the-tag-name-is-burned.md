@@ -1,11 +1,11 @@
 ---
 id: TASK-42
-title: 'Decision: prove the release gate on a disposable tag before v0.1.0?'
+title: 'Decision: prove the release gate on a canary, knowing the tag name is burned?'
 status: Waiting
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T09:53:00Z'
-updated_date: '2026-11-17T12:05:00Z'
+updated_date: '2026-11-17T13:30:00Z'
 labels:
   - release
   - ci
@@ -43,8 +43,14 @@ refuses a tag that already carries a release, draft or published: `gh release de
 - [ ] #2 the run answers, as evidence rather than argument, what TASK-41 AC #6 promised: whether `contents: write` from GITHUB_TOKEN is sufficient in practice for asset upload plus the un-draft PATCH, and whether the workflow-write guard fires for a tag cut at the head of main
 - [ ] #3 the run records what `.target_commitish` says on a real create, and what the tag object SHA and the peeled commit SHA were
 - [ ] #4 the published canary is probed after publication: an asset replacement attempt and a tag move attempt, both required to be refused, plus `.immutable` read back
-- [ ] #5 cleanup leaves nothing behind: the release is deleted with its tag, and the preflight check is shown to pass afterwards
+- [ ] #5 the disposition of the canary is decided before the tag is cut and recorded here: kept as a permanent prerelease, or deleted — in which case the version name stays reserved either way and the report names it. No automatic delete of an uncertain release, and if the rehearsal-in-a-throwaway-repository route is skipped, the reason is written down (it costs no extra runner minutes to rehearse; it saves the burned name)
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+**Cost and reversibility, corrected by the plan review (SPEC v0.12.20), and it changes the decision.** With immutable releases on there is no clean undo: deleting the canary's release lets the tag go, but the version **name stays reserved permanently**, and turning immutability off afterwards does not unlock it — so "disposable tag" in this task's title is the premise the review falsified, and the canary is either kept as a permanent prerelease (the review's recommendation) or deleted with the name burned either way. Never auto-delete an uncertain release: cleanup's `GET`-then-`DELETE` window plus a burned name makes a hasty delete worse than a stray draft. **First choice if an extra runner leg is allowed: rehearse in a throwaway repository** — same workflow, same runner minutes, no burned name and no public surface; the rehearsal saves the name and the audience, not the minutes. If the extra leg is refused, record the refusal and run it here. **Also unproven and now stated as unproven in SPEC**: whether `POST /releases` refuses a second release on an existing tag (a `422`) — never tested; and a `v*` ruleset with a `creation` rule and empty `bypass_actors` would block whoever pushes the canary tag itself, so TASK-38's actor list is a precondition of this run.
+<!-- SECTION:NOTES:END -->
 
 ## Comments
 

@@ -5,7 +5,7 @@ status: Waiting
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T10:52:00Z'
-updated_date: '2026-11-17T12:55:00Z'
+updated_date: '2026-11-17T13:30:00Z'
 labels:
   - ci
   - release
@@ -19,28 +19,13 @@ ordinal: 43000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-**Wake: the eleventh deep review, dispatched over d8202bd..8f834f6** (tier high, asynchronous); its completion
-wakes this task. Fixes carried here: a3d3087 (v0.12.18) and d8202bd / a8d9a93 / 8f834f6 (v0.12.19). **No tag has
-ever run this gate — that is the open question, a decision on TASK-42 rather than more code. Do not cut a tag while
-this task is open.**
+**Wake: the twelfth deep review, dispatched over `8f834f6..8f78a73` at 13:12:54Z by the coding session**; its completion wakes this task. Fixes carried here: a3d3087 (v0.12.18), d8202bd / a8d9a93 / 8f834f6 (v0.12.19), 95410ba / 8f78a73 (v0.12.20). **No tag has ever run this gate — that is the open question, a decision on TASK-42 rather than more code. Do not cut a tag while this task is open.**
 
-**What the tenth round changed, plainly:** the upload address is no longer cut out of the server's `upload_url`.
-The run builds it from its own repository context and the validated digits-only id, and the response must still
-equal exactly that address — a contract check, not an input. Cases: `built_upload_target` (5 uploads at the
-run's own address, 0 at the answer's spelling), `pre_errtoken`, `diag_fields_survive`, `url_wrong_type`.
+**What the eleventh round changed, plainly:** the stderr *sanitizer* was replaced by removing the channel. The preflight release-list read echoes nothing from stderr and reports only gh's exit code plus any three-digit status-like number extracted from it, because pattern redaction was shown to walk past a short token, a Basic auth header, a token-bearing clone URL, base64 interrupted by `+` or `/`, and a credential cut in half by a byte cap. The create-refusal summary is bounded one field at a time with its true length, so a long release title cannot push the flags past the 200-character cut, and a wrong-typed field prints as JSON instead of collapsing the line. Cases: `pre_errtoken`, `name_crowding`, `url_wrong_type`. **Task or SPEC text that still says "sanitized stderr" describes the rule that was replaced.**
 
-**Rejected finding, with evidence:** the tenth review claimed case-folding the owner/repo prefix admits spellings
-the previous revision refused. The replaced code folded the same prefix (`${got_prefix,,} != ${want_prefix,,}`);
-the fold scope has been deliberate since SPEC v0.12.15.
+**Rejected finding:** the tenth review's claim that case-folding the owner/repo prefix admits spellings the previous revision refused — the replaced code folded the same prefix (`${got_prefix,,} != ${want_prefix,,}`), deliberately, since SPEC v0.12.15.
 
-**Three limits stay limits, not tasks** unless we act: a shorter-than-real array in a successful response is
-undetectable by exit status or shape; a repeated key defeats the tag match because jq keeps the last value and
-duplicate keys are not reported; the integer guard checks jq's printed form, not the wire spelling, and the
-`< 2^53` ceiling rejects a future larger id on purpose.
-
-**Harness counts are as-of their commit**, measured by the board session, never inherited: **109 cases, 0 failures,
-exit 0 at 8f834f6** (108 at d8202bd, 104 at a3d3087, 90 at 05f224b, 73 at fd76021, 59 at c6c73f7). No criterion
-inside the release-job steps is a line number — name the step or the exact command.
+**Harness counts are as-of their commit**, measured by this board session, never inherited: **110 cases, 0 failures, exit 0 at 8f78a73** (109 at 8f834f6, 108 at d8202bd, 104 at a3d3087, 90 at 05f224b, 73 at fd76021, 59 at c6c73f7). No criterion inside the release-job steps is a line number — name the step or the exact command.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -57,7 +42,7 @@ inside the release-job steps is a line number — name the step or the exact com
 - [x] #10 the preflight release-existence check fails closed: a release-list read that exits non-zero, answers a non-array body, or carries an unparseable item stops the run rather than reading as no existing release for $TAG (a3d3087; cases pre_partial_page, pre_errdoc_body, pre_junk_item, and the harness runs 05f224b itself answering 'no release' where it should have refused). History kept on purpose: this criterion was checked at 05f224b, the ninth review proved it false for a partial page followed by a failed page, and it is re-checked only now that the repair and the differential case exist
 - [x] #11 SPEC's own overstatements are corrected in place rather than kept (05f224b): the stdout claim, the asset state story, and the target_commitish claim as worded in AC #2
 - [x] #12 the ninth review's fail-open preflight is repaired and pinned: any failure of the release-list read — a failed page, a non-array body, or a page set that cannot be trusted — stops the run with an explicit error rather than reading as no release, and a harness case runs the previous revision failing open so the hole stays demonstrated rather than remembered
-- [ ] #13 every gh and jq invocation whose stderr a step captures passes its text through the same control-character sanitizer before it reaches stdout. Done so far, at d8202bd: the preflight release-list read captures stderr to a file removed by an EXIT trap, caps it at the first line of 2 KiB, replaces credential-shaped runs, then sanitizes (case pre_errtoken: a 40-character token on gh stderr does not reach the log). Still open by design: nobody has swept the remaining steps of the two release jobs for other captured stderr paths, and this criterion stays open until that sweep is recorded here — the board's wording, not the coder's guess, decides the scope
+- [x] #13 no bytes from gh or jq stderr reach a release-job log. Enumerated by the coding session and re-counted by this board session at 8f78a73: one API read captures stderr to a temp file removed by an EXIT trap — `gh api --paginate "repos/{owner}/{repo}/releases?per_page=100" 2>"$list_err"` — and reports only gh's exit code plus status-like numbers extracted from the text; nine other call sites discard stderr with `2>/dev/null`; one jq shape check discards its own streams with `>/dev/null 2>&1`; the only merge is `dotnet publish … -v minimal 2>&1 | tee aot-<rid>.log`, compiler output by design. Cases `pre_errtoken` (a 40-character token on gh stderr reaches no log) and `diag_fields_survive`
 - [x] #14 SPEC's dispositions keep naming the release-write race as open rather than closed by gate changes: a release-write principal can publish first, replace assets, or create a second release on the tag between the last read and the un-draft PATCH, and can publish between cleanup's GET and its DELETE; the controls are the `v*` ruleset (TASK-38), a restricted set of release writers, and immutable releases (TASK-45, off today, locking only after publication). a3d3087 neither widens nor closes it
 <!-- AC:END -->
 
@@ -96,4 +81,10 @@ Ninth round, recorded before the fix lands so the board's position is on the rec
 Ninth-round disposition, naming the fix sha. **Repaired in a3d3087**: the release list is judged by gh's exit status rather than by whether a variable came back non-empty, an error body or an unparseable list item is refused with the rule that fired named, and the upload address is compared inside jq — which is what closes the trailing-newline equality above, because shell comparison cannot see the byte that mattered. **Harness counts the uploads** for the non-canonical-id case (5 then, 0 now), which is how the hardening-not-bypass claim is evidenced rather than asserted. **Deliberately not closed**: the sanitizer gap (AC #13) and the release-write race (AC #14). No .NET code changed in this commit, so no dotnet build or test was run.
 
 Tenth-round disposition, by sha. **d8202bd**: the run builds the upload target itself (repository context + validated digits-only id) and the response must equal exactly that address — a contract check, not routing; captured stderr is capped at one line of 2 KiB, credential-shaped runs replaced, then sanitized, and the temp file is removed by an EXIT trap; the create-refusal diagnostic prints one field at a time with the address bounded to 60 characters plus its length. **a8d9a93**: comment and dead variable only — the previous commit had left both describing the rule it had just replaced, which is the kind of stale comment that becomes the next reader's evidence. **8f834f6**: a wrong-typed `upload_url` collapsed the per-field diagnostic to 'unreadable response'; found while writing the next review's payload, not by the reviewer. **Rejected, with evidence:** the case-fold finding above. **Still open:** AC #4 (canary), AC #5 (.immutable, behind TASK-45), AC #13 (the stderr sweep), AC #14 (the release-write race: never claimable as fixed by YAML). No .NET code changed in these three commits, so no dotnet build or test was run.
+
+**Three limits, moved out of the description, unchanged in meaning** (not tasks unless we act): a shorter-than-real array in a successful response is undetectable by exit status or shape; a repeated key defeats the tag match because jq keeps the last value and duplicate keys are not reported; the integer guard checks jq's printed form, not the wire spelling, and the `< 2^53` ceiling rejects a future larger id on purpose.
+
+**Eleventh-round disposition, by sha.** **95410ba**: the preflight release-list read stops echoing stderr at all — the annotation carries gh's exit code and any three-digit status-like number extracted from the text — because redaction by pattern was shown unreliable, and digits cannot be talked around; the now-unused copy of the sanitizer in that step is deleted; the create-refusal summary is bounded one field at a time with true lengths and prints a wrong-typed field as JSON, where the version it replaces printed the whole response into every field because `tojson` was applied to the input rather than to the value. **Verified rather than assumed**: the upload address literal in the workflow is a plain string (the reviewer's Markdown-link suspicion was a rendering artifact of the review payload, checked with `cat -A`), and `?name=` can only ever carry ids from an allowlist of literal leg names. **8f78a73**: the cleanup step describes a bad release in the same bounded shape as the publish step. Harness 109 to 110 cases; no .NET code changed in either commit, so no dotnet build or test was run.
+
+**AC #13 closed on an enumeration, and that is a board decision, recorded here.** The criterion as worded asks about captured stderr reaching stdout, and the sweep at 8f78a73 says the remaining captures do not reach stdout at all, so it is met and reworded to say exactly what was counted. The alternative reading — that a *discarded* stderr is a triage gap — was considered and is **not** promoted to a task: re-triage it as a diagnostics task if a release leg ever fails and the log cannot explain why. Naming this matters because the gate now removes channels instead of filtering them, so any reader who expects to see upstream text in a log will find nothing there by design.
 <!-- SECTION:NOTES:END -->

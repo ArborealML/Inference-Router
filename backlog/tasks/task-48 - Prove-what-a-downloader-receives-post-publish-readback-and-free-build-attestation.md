@@ -40,7 +40,7 @@ immutability then freezes the malicious set.** That is why the checksums stay do
 and not as publisher authentication.
 
 [TASK-44](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-44%20-%20Close-the-open-release-gate-review-findings-SPEC-v0-12-15-onward.md) lands first — same file, and its AC #5 (read `.immutable` after publication) is shared with this
-task, so do not write it twice. Test the consumer commands on the canary in [TASK-42](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-42%20-%20Decision-run-a-canary-release-to-prove-the-release-gate-exists.md).
+task, so do not write it twice. Test the consumer commands on the canary in [TASK-42](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-42%20-%20Decision-prove-the-release-gate-on-a-canary-knowing-the-tag-name-is-burned.md).
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

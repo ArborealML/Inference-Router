@@ -5,7 +5,7 @@ status: To Do
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T09:11:00Z'
-updated_date: '2026-11-17T11:38:00Z'
+updated_date: '2026-11-17T13:30:00Z'
 labels:
   - release
   - security
@@ -17,29 +17,19 @@ ordinal: 37000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-**An act, not a decision: put a repository ruleset on `v*` that blocks deleting and force-moving release tags,
-then read it back and report.** Measured on this repository: `GET .../git/tag-protection/branches` answers 404 —
-those endpoints are not available here — while `GET .../rulesets` answers `[]`, so a ruleset is the scriptable route
-and it works today. About 20 minutes with `gh api`, reversible with a DELETE.
+**An act, not a decision: create an active repository ruleset on `v*` that governs creating, moving and deleting release tags, then read it back.** Measured by this session at 8f78a73: `GET .../rulesets` answers `[]`, `GET .../tags/protection` answers 404 for this token, and the repository answers `admin: true`, so a ruleset is the scriptable route. About 20 minutes with `gh api`, reversible with a DELETE.
 
-    gh api repos/ArborealML/Inference-Router/rulesets            # measured [] today
+    gh api repos/ArborealML/Inference-Router/rulesets      # measured [] at 8f78a73
 
-Read the payload shape from GitHub's own ruleset docs before posting rather than guessing it: target `tag`, a
-ref_name include of `v*`, and the deletion and non-fast-forward rules. A ruleset that silently matches nothing is
-worse than none, so the GET after the POST is part of the act, not a courtesy. It is a mutation of a public
-repository: name it in the report and in the commit message.
+**Three corrections the plan review landed in SPEC v0.12.20, and each one changes the payload.** `enforcement` is `disabled | active | evaluate`, and `evaluate` is Enterprise-only — *create it observe-only, flip it after the canary* is not available: a ruleset enforces or it does nothing. `creation`, `update` and `deletion` are real rule types, and `bypass_actors: []` means **nobody** — not an admin, not the Actions app — may create, move or delete a `v*` tag, which includes whoever pushes the next release tag, so the actor list is decided before the POST and [TASK-28](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-28%20-%20Cut-the-first-release-tag-and-watch-the-release-run.md) is sequenced against it. And a ruleset is not admin-proof: repository admins can always edit the ruleset itself.
 
-**Why the board kept pushing:** every review round of the release gate has listed "release-tag protection and who
-may publish" as deliberately not closed by YAML — see [.github/workflows/release.yml](https://github.com/ArborealML/Inference-Router/blob/main/.github/workflows/release.yml) and the disposition rows in [SPEC.md](https://github.com/ArborealML/Inference-Router/blob/main/SPEC.md) §15.
-
-**Order:** this lands before the canary in [TASK-42](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-42%20-%20Decision-run-a-canary-release-to-prove-the-release-gate-exists.md), because a canary proves nothing about protection that is not switched on.
-**Who may publish, stated:** admins plus the Actions token at its least-privilege grant; the token's real sufficiency
-is an AC on [TASK-44](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-44%20-%20Close-the-open-release-gate-review-findings-SPEC-v0-12-15-onward.md), not a claim here.
+**A ruleset that silently matches nothing is worse than none**, so the GET after the POST is part of the act, quoted in the report. This mutates a public repository; say so in the report and the commit message. **Order:** before the canary in [TASK-42](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-42%20-%20Decision-prove-the-release-gate-on-a-canary-knowing-the-tag-name-is-burned.md), which proves nothing about protection that is not switched on. **Who may publish, stated:** admins plus the Actions token at its least-privilege grant; the token's real sufficiency is an AC on [TASK-44](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-44%20-%20Close-the-open-release-gate-review-findings-SPEC-v0-12-15-onward.md), not a claim here.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 One line: a tag protection rule is added for the release pattern, or the window is accepted with the reason written into SPEC 15, or access is narrowed instead
+- [ ] #1 a repository ruleset exists that targets `v*` with `enforcement: active` and the tag creation/update/deletion rules, and the report quotes `GET repos/ArborealML/Inference-Router/rulesets` after the POST as the readback — not 'tag protection enabled', which this token cannot read (`.../tags/protection` answers 404 at 8f78a73); or the window is accepted with the reason written into SPEC 15, or access is narrowed instead
+- [ ] #2 the bypass question is decided and written before the POST: who is in `bypass_actors` for tag creation, given that an empty list stops the release path itself, and what that means for the order of TASK-28
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -69,6 +59,8 @@ remaining hole in a path that has been hardened four times this morning, and it 
 3. **Accept the window** and record it as an accepted risk, on the grounds that the workflow already re-resolves the
    tag and nobody but you has write access today. Costs: nothing now; it reopens the moment a second person or a bot
    gets write access.
+
+**Measured by this board session at 8f78a73**, with `gh api --jq` and exit codes: `GET repos/ArborealML/Inference-Router` answers `admin: true`; `GET .../rulesets` answers `[]` (length 0); `GET .../tags/protection` answers 404 for this token; the repository has 0 tags and 0 releases; `GET orgs/ArborealML/rulesets` and the org-level immutable-releases setting answer "this API operation needs the `admin:org` scope" — an organisation-wide ruleset or org-level immutability is therefore a person's act, not an agent's, and is not planned here.
 <!-- SECTION:NOTES:END -->
 
 ## Comments

@@ -5,7 +5,7 @@ status: Blocked
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T05:58:00Z'
-updated_date: '2026-11-17T12:03:00Z'
+updated_date: '2026-11-17T13:30:00Z'
 labels:
   - release
   - ci
@@ -120,7 +120,15 @@ created: 2026-11-17T11:06:00Z
 
 ---
 
-Board update: [TASK-39](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-39%20-%20Decision-verify-what-a-downloader-receives-or-keep-accepting-that-we-do-not.md) is answered (adopt posture), and the work it produced is [TASK-48](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-48%20-%20Prove-what-a-downloader-receives-post-publish-readback-and-free-build-attestation.md), which now also gates this task. The first real tag should therefore be the canary in [TASK-42](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-42%20-%20Decision-run-a-canary-release-to-prove-the-release-gate-exists.md), not v0.1.0: the canary is where the readback and the consumer-verification commands get tested on a release nobody will install.
+Board update: [TASK-39](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-39%20-%20Decision-verify-what-a-downloader-receives-or-keep-accepting-that-we-do-not.md) is answered (adopt posture), and the work it produced is [TASK-48](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-48%20-%20Prove-what-a-downloader-receives-post-publish-readback-and-free-build-attestation.md), which now also gates this task. The first real tag should therefore be the canary in [TASK-42](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-42%20-%20Decision-prove-the-release-gate-on-a-canary-knowing-the-tag-name-is-burned.md), not v0.1.0: the canary is where the readback and the consumer-verification commands get tested on a release nobody will install.
+
+---
+
+created: 2026-11-17T13:30:00Z
+
+---
+
+Sequencing trap, from the plan review dispositioned in SPEC v0.12.20 and re-measured by the board at 8f78a73 (0 tags, 0 releases, `[]` rulesets): a `v*` repository ruleset with a `creation` rule and empty `bypass_actors` stops **anyone** — an admin included — from pushing a `v*` tag, so it cannot land before the tag this task cuts unless an actor is listed. Either the ruleset's `bypass_actors` names the tag pusher (TASK-38 AC #2) or this tag is cut first and the ruleset follows. Enforcement has no observe-only setting: `enforcement` is `disabled`, `active`, or Enterprise-only `evaluate`.
 
 ---
 <!-- COMMENTS:END -->
