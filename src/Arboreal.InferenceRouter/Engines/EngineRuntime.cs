@@ -69,7 +69,14 @@ public sealed class EngineRuntime : IAsyncDisposable
         }
         _http.BaseAddress = def.Endpoint;
         _http.Timeout = TimeSpan.FromMilliseconds(Timeout.Infinite); // long streams; per-request CTS applies
+        ResponseTimeout = def.ResponseTimeoutMs <= 0
+            ? null
+            : TimeSpan.FromMilliseconds(def.ResponseTimeoutMs);
     }
+
+    /// <summary>Ceiling on the wait for this engine's first response byte (null = no ceiling). Worked
+    /// out once at startup: the request path must not re-derive config.</summary>
+    internal TimeSpan? ResponseTimeout { get; }
 
     /// <summary>Config picks the provider: native Docker lifecycle when the engine declares it, the
     /// delegated selector program otherwise. The router's own HTTP handler is deliberately not reused:

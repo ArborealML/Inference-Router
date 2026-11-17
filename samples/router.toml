@@ -25,6 +25,10 @@ max_queue_per_model = 64
 max_inflight_per_engine = 8        # router-side ceiling; never admits more than this
 prefix_trie_max_nodes = 8192
 chars_per_token_estimate = 4.0    # used when a client doesn't declare required context
+# How long a queued request waits for a model switch to finish before it fails with
+# switch_failed. 0 (the default) means no ceiling: a switch whose select command never
+# completes parks queued traffic for that model until the command itself times out.
+switch_wait_timeout_ms = 0
 
 [threads.interactive-ui]
 priority = { class = "interactive", sub = 128 }
@@ -43,6 +47,11 @@ loaded_requires_status_loaded = true
 # server root); OpenAI-only engines must point it at "/v1/models" and drop the status requirement.
 models_endpoint = "/models"
 capabilities = { suffix_cache = true, max_context = 131072, max_slots = 4 }
+# Wall-clock ceiling on one turn at this engine: how long it may sit on a request it has already
+# accepted before starting to answer. A non-streaming completion is covered whole (an engine sends its
+# headers with the body); a stream is covered up to its first frame and never cut off after that.
+# 0 disables the cap. Raise it for reasoning models that think for minutes before the first token.
+response_timeout_ms = 600000
 
 [engine.strata.health_probe]
 path = "/props"

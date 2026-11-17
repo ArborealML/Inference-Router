@@ -1,6 +1,6 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.3)
+Status: draft, continuously revised (v0.12.4)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
@@ -183,6 +183,25 @@ daemon transaction per engine. 137 tests green.
   accepted gap with a named carrier (request-side phase timeouts; lifecycle reservations and the §5.3.1
   non-claims via TASK-25/TASK-26; loss reporting behind the live-view decision in TASK-21), and what is
   deliberately not started.
+- v0.12.4 — request-side phase timeouts, which closes the accepted gap in §14.1 row 2. Two new settings,
+  one per wait that the queue deadline never covered. Per-engine `response_timeout_ms` (default 600000 ms,
+  `0` disables) bounds how long an engine may sit on a request it accepted before it starts answering — the
+  clock stops at the response's first bytes. A non-streaming completion is covered whole, because an engine
+  sends its headers with the body; a stream is covered up to its first frame and never cut off after that,
+  so a generation in progress is never truncated. An engine that accepts a request and then goes quiet fails
+  the new `engine_timeout` (504) and hands its inference slot back, so one wedged backend costs one
+  request rather than a slot. Scheduler `switch_wait_timeout_ms` (default `0` = no ceiling) bounds the
+  wait a queued request pays for a model switch it triggered: over the ceiling the request fails
+  `switch_failed` and its slot is released, while the switch runs on under the select command's own
+  `wait_timeout_ms` — the ceiling protects the caller, and the engine's switch state machine stays
+  authoritative about what is loaded. The response timer deliberately rides the request's own
+  cancellation token, so a caller that hangs up still ends `cancelled` and only a silent engine ends
+  `engine_timeout`; `RequestPhaseTimeoutTests` pins that distinction along with the 504, the slot being
+  the only thing freed, and a switch ceiling that ends the request in well under the select command's own
+  timeout. `EngineRuntime.ResponseTimeout` is resolved once from config rather than re-derived per
+  request, and `RouterCore.ExecuteAsync` now shares one `FinishWithResponseAsync` path between the capped
+  and uncapped cases so the two cannot drift apart. 141 tests green; AOT publish stays warning-free on
+  linux-x64.
 
 ## 1. Overview
 
@@ -589,6 +608,22 @@ engine forks land; the scheduler interface will not change shape.
 - **Queue deadline is a timer**: `max_queue_time` arms a timer when the request is enqueued. It bounds
   the *wait* only — after dispatch the deadline no longer applies. A dispatch-time check is not
   sufficient: a busy engine gives the dispatcher no reason to re-examine the queue.
+- **The other two waits are bounded separately**: a model switch and an engine's turn each get their own
+  ceiling, because an expired queue deadline says nothing about them. `switch_wait_timeout_ms`
+  (scheduler, default `0` = no ceiling) caps how long a queued request waits for a switch it triggered:
+  past the ceiling that request fails `switch_failed` and its reserved slot is handed back, while the
+  switch itself runs on under its command's own `wait_timeout_ms` — the ceiling is about the caller, not
+  about the engine's state machine. Per-engine `response_timeout_ms` (default `600000`, `0` disables)
+  caps how long an engine may sit on a request it already accepted: the clock runs until the response's
+  first bytes (headers) come back. A non-streaming engine sends those only when the completion is ready,
+  so in practice the cap covers a whole turn; a stream is covered up to its first frame and never cut off
+  afterwards — the router does not kill a generation in progress. An engine that goes quiet past the cap
+  fails `engine_timeout`
+  (504) and releases its slot. A queue deadline that expires while a request is *waiting for a switch*
+  is not a failure either: the wait continues and the request is dispatched when capacity and health
+  arrive (regression: `WaitForSwitchAndDispatchAsync` used to drop the ticket). The response timer rides
+  the request's own cancellation token, so a caller that hangs up still reports `cancelled` and only a
+  silent engine reports `engine_timeout`.
 - **Dispatch is level-triggered on engine state**: the dispatcher wakes on arrival, on capacity
   release, and on `engine.health` / `engine.profile` / `engine.switch_*`. A request that arrived before
   the first health probe is dispatched when health arrives, not when the next request arrives.
@@ -670,7 +705,9 @@ The shipped error contract is one lowercase body on every surface —
 `{"error":{"type":"air_error","code":…,"message":…}}` — and the code picks the status:
 `invalid_request` 400, `not_found` 404, `deadline_exceeded` 408, `cancelled` 499, `queue_overflow`
 429, `request_body_too_large` 413 (over `max_request_body_bytes`), `engine_error` / `engine_unreachable` 502,
-`switch_failed` / `model_unavailable` 503,
+`switch_failed` / `model_unavailable` 503 (the first also covers a model switch that outlived
+`switch_wait_timeout_ms`), `engine_timeout` 504 (an engine that accepted the request and then went quiet
+past `response_timeout_ms`),
 `no_available_engine` 500 (`switch_in_progress` 409 and `unknown_profile` 400 on the admin side).
 An upstream engine's own 4xx/5xx arrives as `engine_error` with the engine's message embedded, so a
 caller can tell "my request was wrong" from "the engine is down". `docs/ai-integration.md` carries
@@ -694,6 +731,7 @@ affinity_weight = 1.5
 prefill_cost_alpha = 1.0
 max_queue_per_model = 64
 max_inflight_per_engine = 8
+switch_wait_timeout_ms = 0        # ceiling on a queued request's wait for a model switch; 0 = none
 
 [threads."agent-42"]
 priority = { class = "interactive", sub = 10 }
@@ -708,6 +746,7 @@ api_key_file = "/etc/arboreal/keys/strata-api-key"
 health_probe = { path = "/props", expect = "total_slots>0", interval_ms = 2000, timeout_ms = 5000 }
 models_endpoint = "/v1/models"     # loaded models + status
 capabilities = { vision = true, suffix_cache = false, max_context = 65536 }
+response_timeout_ms = 600000      # ceiling on one turn at this engine; 0 = no ceiling
 
 [engine.strata.catalog."qwen-3.8-flash-next"]
 aliases = ["flash-next", "default"]
@@ -1191,9 +1230,9 @@ rather than assumed; dispatch progress that cannot spin or starve.
 | Bar item | State | Where / what is still open |
 |---|---|---|
 | 1 URI + proven readiness + dispatch progress | **closed** | `EngineRuntime.Combine` one join rule (§7.5, `UriCompositionTests`); a switch is proven by health + loaded-model + window-fit probes and fails loudly with one actionable message (§5.3.1); dispatch and the feed relay are signal-driven (`_dispatchSignal`, `WaitToReadAsync`) — no polling loop, and the 200 ms TTFT poll is gone (v0.8.4) |
-| 2 transport discipline | **partly open** | bounded bodies ✔ (`max_request_body_bytes`, 413 `request_body_too_large`, §6); cancellation reaches the engine ✔ (§5.5 wire tests); lifecycle phases are timed ✔ (`stop/wait/call_timeout_ms`, health `timeout_ms`). **Accepted gap for now:** request-side phase timeouts — the dispatcher waits for a model switch with `Timeout.Infinite`, the deadline bounds only the queue wait (§8), and `_http.Timeout` is infinite so an in-flight engine call is cut off only when the caller hangs up. A wedged engine can therefore hold a ticket until its caller gives up. Carried as the phase-timeout item on the parity task |
+| 2 transport discipline | **closed on the request side** | bounded bodies ✔ (`max_request_body_bytes`, 413 `request_body_too_large`, §6); cancellation reaches the engine ✔ (§5.5 wire tests); lifecycle phases are timed ✔ (`stop/wait/call_timeout_ms`, health `timeout_ms`); and every request-side wait now has its own ceiling ✔ (`switch_wait_timeout_ms` for a switch the request triggered — over the ceiling the request fails `switch_failed` with its slot handed back; per-engine `response_timeout_ms` for a turn at the engine — over the ceiling it fails `engine_timeout` 504 and the slot is released). `RequestPhaseTimeoutTests` pins all three outcomes, including that a caller's abort still reports `cancelled` and not a timeout. **Still open:** a wedged *engine process* is noticed through health probes rather than through the request path (§5.3.2), and a switch reserves an inference slot rather than its own lifecycle reservation (TASK-25) |
 | 3 switch serialization + error contract | **closed** | single-flight per engine with `_switchState` reset on every failure path (§5.3.1); error codes and casing pinned by `ErrorContractTests` against the §6.1 table |
-| 4 owned lifecycle | **partly open** | provider seam + coordinator + Docker provider shipped (§5.3.1, §15); **open:** a switch still occupies an inference slot instead of its own lifecycle reservation (TASK-25), and the §5.3.1 non-claims — image identity pinning, mounts/GPU, in-place model mutation, latched failures (TASK-26) |
+| 4 owned lifecycle | **partly open** | provider seam + coordinator + Docker provider shipped (§5.3.1, §15); request-side phase bounds now exist (§5.5), so a select command that hangs no longer parks traffic indefinitely — the waiting request fails at `switch_wait_timeout_ms` while the switch runs on; **open:** a switch still occupies an inference slot instead of its own lifecycle reservation (TASK-25), and the §5.3.1 non-claims — image identity pinning, mounts/GPU, in-place model mutation, latched failures (TASK-26) |
 | 5 security | **open by deployment posture** | no ingress auth/TLS/rate caps yet: admin is unauthenticated and binds loopback (§6.1), engine keys are per-engine config; this is the v0.1 ingress work, not a silent hole |
 | 6 P1 set | **open in order** | bounded telemetry with gap detection is half-done: ring bounds, exclusive replay, ended-on-slow feeds, causal ordering (§10) exist, but loss reporting (`stream.gap`) and the epoch are wire additions awaiting the live-view decision (TASK-21 → TASK-11); request-journal durability and the fairness/starvation bound are not started |
 | 7 multi-host | **not started, deliberately** | §12.1–§12.3 stay speculative until rows 1–5 hold; no task is cut for it yet |

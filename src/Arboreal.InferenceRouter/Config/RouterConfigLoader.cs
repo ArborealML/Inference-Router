@@ -81,6 +81,13 @@ public static class RouterConfigLoader
             if (sched.MaxInflightPerEngine is { } v5) sc.MaxInflightPerEngine = v5;
             if (sched.PrefixTrieMaxNodes is { } v6) sc.PrefixTrieMaxNodes = v6;
             if (sched.CharsPerTokenEstimate is { } v7) sc.CharsPerTokenEstimate = v7;
+            if (sched.SwitchWaitTimeoutMs is { } v8)
+            {
+                if (v8 < 0)
+                    throw new RouterConfigException(
+                        "scheduler.switch_wait_timeout_ms must be >= 0 (0 lets a request wait through the whole model load)");
+                sc.SwitchWaitTimeoutMs = v8;
+            }
             cfg.Scheduler = sc;
         }
 
@@ -259,6 +266,11 @@ public static class RouterConfigLoader
             }
         }
 
+        var responseTimeoutMs = e.ResponseTimeoutMs ?? 600_000;
+        if (responseTimeoutMs < 0)
+            throw new RouterConfigException(
+                $"engine.{name}.response_timeout_ms must be >= 0 (0 disables the cap on waiting for the engine's first byte)");
+
         return new EngineDefinition
         {
             Name = name,
@@ -272,6 +284,7 @@ public static class RouterConfigLoader
             Capabilities = capabilities,
             Catalog = catalog,
             Remote = e.Remote ?? false,
+            ResponseTimeoutMs = responseTimeoutMs,
             Lifecycle = lifecycle,
             Docker = docker,
         };

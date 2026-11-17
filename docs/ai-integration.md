@@ -112,9 +112,19 @@ and injects it on the upstream call.
 
 Error bodies are `{"error":{"type":…,"code":…,"message":…}}`, and `code` decides the status:
 `invalid_request` 400, `not_found` 404, `deadline_exceeded` 408, `queue_overflow` 429, `cancelled`
-499, `engine_error` / `engine_unreachable` 502, `switch_failed` / `model_unavailable` 503,
-`no_available_engine` 500. Retrying is only safe when no token has been emitted yet: once the first
-token is out the response is committed, and a retry would duplicate output.
+499, `engine_error` / `engine_unreachable` 502, `engine_timeout` 504, `switch_failed` /
+`model_unavailable` 503, `no_available_engine` 500. Retrying is only safe when no token has been
+emitted yet: once the first token is out the response is committed, and a retry would duplicate
+output.
+
+Two of those codes mean the router gave up on your behalf instead of waiting forever. If an engine
+takes the request and then says nothing past its `response_timeout_ms`, the request ends
+`engine_timeout` and the engine's slot is handed back — retrying is reasonable there, and aiming at a
+different model usually beats retrying the same one. If a request is parked in `WaitingForModel` while
+the router loads a bigger model, `switch_wait_timeout_ms` decides how long the queue will wait for that
+load before the request fails `switch_failed`; the load continues either way, so retrying the same
+request shortly after usually lands. Both are deployment config, so ask the operator what the ceilings
+are rather than assuming the defaults.
 
 ## Worked example: a session that needs a bigger context
 

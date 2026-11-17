@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using System.Threading.Channels;
 
@@ -498,15 +499,23 @@ public sealed class RouterCore : IInferenceRouter
             if ((switchRequired || targetProfile is not null) && _config.AutoSwitch)
             {
                 ticket.State = TicketState.WaitingForModel;
+                // A ticket's own deadline bounds only its time in the queue, so the wait for a model
+                // switch needs its own ceiling: without one a request is parked through a model load as
+                // long as the engine's lifecycle wait allows (two hours for a strata select). 0 = no
+                // ceiling, which is the old behaviour.
+                var ceilingMs = _config.Scheduler.SwitchWaitTimeoutMs;
+                var switchWait = ceilingMs <= 0 ? Timeout.InfiniteTimeSpan : TimeSpan.FromMilliseconds(ceilingMs);
                 var ready = targetProfile is null
-                    ? await engine.WaitForModelAsync(ticket.Model,
-                        Timeout.InfiniteTimeSpan, execCts.Token).ConfigureAwait(false)
-                    : await engine.WaitForProfileAsync(ticket.Model, targetProfile,
-                        Timeout.InfiniteTimeSpan, execCts.Token).ConfigureAwait(false);
+                    ? await engine.WaitForModelAsync(ticket.Model, switchWait, execCts.Token).ConfigureAwait(false)
+                    : await engine.WaitForProfileAsync(ticket.Model, targetProfile, switchWait, execCts.Token).ConfigureAwait(false);
                 if (!ready)
                 {
                     var what = targetProfile is null ? ticket.Model : $"{ticket.Model} @ {targetProfile.Name}";
-                    Fail(ticket, "switch_failed", $"engine {engine.Name} could not serve {what}");
+                    // A ceiling that expires and a switch that failed both end the request here; the
+                    // wording says which one the caller was waiting on, so a retry decision is possible.
+                    Fail(ticket, "switch_failed", ceilingMs > 0
+                        ? $"engine {engine.Name} did not become ready to serve {what} within {ceilingMs} ms"
+                        : $"engine {engine.Name} could not serve {what}");
                     return;
                 }
                 ticket.State = TicketState.Executing;
@@ -524,25 +533,52 @@ public sealed class RouterCore : IInferenceRouter
                 var body = ModelRewriter.Rewrite(candidate.Request.Body, engine.CanonicalModel(ticket.Model) ?? ticket.Model);
                 var suffix = LooksLikeCompletion(candidate.Request.Body) ? "completions" : "chat/completions";
 
-                using var res = await SendAsync(engine, body, suffix, cts.Token).ConfigureAwait(false);
-                if (!res.IsSuccessStatusCode)
+                // Bound only the wait for the engine's first response byte: response headers for a
+                // non-stream call, first byte for a stream. A wedged engine otherwise holds a slot, a
+                // ticket and a caller until the caller gives up. Once the engine has answered, the timer
+                // is disarmed and a long generation runs to its end. One timer per request, not per token.
+                var responseTimeout = engine.ResponseTimeout;
+                if (responseTimeout is null)
                 {
-                    var errBody = await res.Content.ReadAsByteArrayAsync(cts.Token).ConfigureAwait(false);
-                    Fail(ticket, "engine_error",
-                        $"{(int)res.StatusCode}: {System.Text.Encoding.UTF8.GetString(errBody.AsSpan(0, Math.Min(errBody.Length, 256)))}");
-                    return;
-                }
-
-                if (candidate.Request.Stream)
-                {
-                    var channel = ticket.StreamChannel!;
-                    await PumpStreamAsync(engine, ticket, res.Content, channel, cts.Token).ConfigureAwait(false);
-                    Complete(ticket);
+                    using var res = await SendAsync(engine, body, suffix, cts.Token).ConfigureAwait(false);
+                    await FinishWithResponseAsync(engine, ticket, res, candidate, cts.Token).ConfigureAwait(false);
                 }
                 else
                 {
-                    var bytes = await res.Content.ReadAsByteArrayAsync(cts.Token).ConfigureAwait(false);
-                    Complete(ticket, bytes);
+                    // The timer must NOT share the caller's token: cancelling that token would complete
+                    // the delay, Task.WhenAny would report the delay as the winner, and a caller who hung
+                    // up would be answered `engine_timeout` instead of `cancelled`. So the timer runs on
+                    // its own source, which is disarmed as soon as the send settles.
+                    using var timerCts = new CancellationTokenSource(responseTimeout.Value);
+                    var delay = Task.Delay(Timeout.Infinite, timerCts.Token);
+                    var send = SendAsync(engine, body, suffix, cts.Token);
+                    Task winner;
+                    try
+                    {
+                        winner = await Task.WhenAny(send, delay).ConfigureAwait(false);
+                    }
+                    finally
+                    {
+                        // Always disarm the timer: a request that ends by caller abort, upstream failure or
+                        // timeout must not leave a pending timer holding the request alive.
+                        timerCts.Cancel();
+                        _ = delay.ContinueWith(static t => _ = t.Exception, TaskScheduler.Default);
+                    }
+                    // Only the timer firing counts as a timeout: with an unlinked source the delay cannot
+                    // complete any other way.
+                    if (winner != send)
+                    {
+                        // Nobody else will await the abandoned send: observe its outcome so a late
+                        // socket fault cannot surface as an unobserved task exception.
+                        _ = send.ContinueWith(static t => _ = t.Exception, TaskScheduler.Default);
+                        cts.Cancel();          // release the connection to the engine that never answered
+                        Fail(ticket, "engine_timeout",
+                            $"engine {engine.Name} sent no response to {ticket.Model} within " +
+                            $"{responseTimeout.Value.TotalMilliseconds.ToString(CultureInfo.InvariantCulture)} ms");
+                        return;
+                    }
+                    using var res = await send.ConfigureAwait(false);
+                    await FinishWithResponseAsync(engine, ticket, res, candidate, cts.Token).ConfigureAwait(false);
                 }
             }
             finally
@@ -578,6 +614,33 @@ public sealed class RouterCore : IInferenceRouter
         req.Content = new ByteArrayContent(body);
         req.Content.Headers.TryAddWithoutValidation("Content-Type", "application/json");
         return await engine.Http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>What happens once the engine has answered: an error status becomes the router's own
+    /// error contract, a stream is relayed frame by frame, a normal completion is returned as bytes.
+    /// Split out so the capped and uncapped send paths cannot drift apart.</summary>
+    private async Task FinishWithResponseAsync(EngineRuntime engine, RouterTicket ticket,
+        HttpResponseMessage res, QueuedRequest candidate, CancellationToken ct)
+    {
+        if (!res.IsSuccessStatusCode)
+        {
+            var errBody = await res.Content.ReadAsByteArrayAsync(ct).ConfigureAwait(false);
+            Fail(ticket, "engine_error",
+                $"{(int)res.StatusCode}: {System.Text.Encoding.UTF8.GetString(errBody.AsSpan(0, Math.Min(errBody.Length, 256)))}");
+            return;
+        }
+
+        if (candidate.Request.Stream)
+        {
+            var channel = ticket.StreamChannel!;
+            await PumpStreamAsync(engine, ticket, res.Content, channel, ct).ConfigureAwait(false);
+            Complete(ticket);
+        }
+        else
+        {
+            var bytes = await res.Content.ReadAsByteArrayAsync(ct).ConfigureAwait(false);
+            Complete(ticket, bytes);
+        }
     }
 
     private async Task PumpStreamAsync(EngineRuntime engine, RouterTicket ticket, HttpContent content,

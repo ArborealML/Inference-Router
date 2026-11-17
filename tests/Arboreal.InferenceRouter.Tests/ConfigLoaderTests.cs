@@ -16,6 +16,7 @@ public class ConfigLoaderTests
         [scheduler]
         max_queue_per_model = 7
         prefix_affinity_threshold_chars = 256
+        switch_wait_timeout_ms = 60000
 
         [threads.chat-ui]
         priority = { class = "interactive", sub = 10 }
@@ -26,6 +27,7 @@ public class ConfigLoaderTests
         endpoint = "http://127.0.0.1:9/v1"
         api_key = "secret"
         loaded_requires_status_loaded = true
+        response_timeout_ms = 90000
 
         [engine.fake.health_probe]
         path = "/props"
@@ -67,7 +69,7 @@ public class ConfigLoaderTests
           "default_model": "m1",
           "auto_switch": true,
           "default_priority": { "class": "high", "sub": 100 },
-          "scheduler": { "max_queue_per_model": 7, "prefix_affinity_threshold_chars": 256 },
+          "scheduler": { "max_queue_per_model": 7, "prefix_affinity_threshold_chars": 256, "switch_wait_timeout_ms": 60000 },
           "threads": {
             "chat-ui": { "priority": { "class": "interactive", "sub": 10 }, "model_affinity": "m1" }
           },
@@ -77,6 +79,7 @@ public class ConfigLoaderTests
               "endpoint": "http://127.0.0.1:9/v1",
               "api_key": "secret",
               "loaded_requires_status_loaded": true,
+              "response_timeout_ms": 90000,
               "health_probe": { "path": "/props", "expect": "total_slots>0", "interval_ms": 500, "context_path": "n_ctx", "slots_path": "slots.active" },
               "catalog": {
                 "m1": {
@@ -106,6 +109,7 @@ public class ConfigLoaderTests
         Assert.Equal(ThreadPriorityClass.High, cfg.DefaultPriority.Class);
         Assert.Equal(100, cfg.DefaultPriority.Sub);
         Assert.Equal(7, cfg.Scheduler.MaxQueuePerModel);
+        Assert.Equal(60_000, cfg.Scheduler.SwitchWaitTimeoutMs);
         Assert.Equal(256, cfg.Scheduler.PrefixAffinityThresholdChars);
 
         var e = cfg.Engines["fake"];
@@ -113,6 +117,7 @@ public class ConfigLoaderTests
         Assert.Equal("http://127.0.0.1:9/v1", e.Endpoint.ToString());
         Assert.Equal("secret", e.ApiKey);
         Assert.True(e.LoadedRequiresStatusLoaded);
+        Assert.Equal(90_000, e.ResponseTimeoutMs);
         Assert.Equal("/props", e.Health!.Path);
         Assert.Equal("total_slots>0", e.Health.Expect);
         Assert.Equal(500, e.Health.IntervalMs);
@@ -157,12 +162,14 @@ public class ConfigLoaderTests
         Assert.Equal(toml.DefaultModel, json.DefaultModel);
         Assert.Equal(toml.DefaultPriority, json.DefaultPriority);
         Assert.Equal(toml.Scheduler.MaxQueuePerModel, json.Scheduler.MaxQueuePerModel);
+        Assert.Equal(toml.Scheduler.SwitchWaitTimeoutMs, json.Scheduler.SwitchWaitTimeoutMs);
         Assert.Equal(toml.Threads["chat-ui"].Priority, json.Threads["chat-ui"].Priority);
         var te = toml.Engines["fake"];
         var je = json.Engines["fake"];
         Assert.Equal(te.Endpoint, je.Endpoint);
         Assert.Equal(te.ApiKey, je.ApiKey);
         Assert.Equal(te.LoadedRequiresStatusLoaded, je.LoadedRequiresStatusLoaded);
+        Assert.Equal(te.ResponseTimeoutMs, je.ResponseTimeoutMs);
         Assert.Equal(te.Health!.Path, je.Health!.Path);
         Assert.Equal(te.Health.ContextPath, je.Health.ContextPath);
         Assert.Equal(te.Health.SlotsPath, je.Health.SlotsPath);
@@ -435,5 +442,27 @@ public class ConfigLoaderTests
     {
         Assert.Throws<RouterConfigException>(() => RouterConfigLoader.Load(
             "listen = \"http://127.0.0.1:9901\"", "bad.toml"));
+    }
+
+    [Fact]
+    public void Rejects_NegativeRequestPhaseTimeouts()
+    {
+        // Both knobs are allowed to be 0 (no ceiling, the historical behaviour); a negative one would
+        // turn into an instant cancellation, so it is a typo and not a setting.
+        const string Base = """
+            listen = "http://127.0.0.1:9901"
+            default_model = "m1"
+            [engine.e]
+            kind = "openai-compatible"
+            endpoint = "http://127.0.0.1:9/v1"
+            """;
+
+        var engineCase = Assert.Throws<RouterConfigException>(() => RouterConfigLoader.Load(
+            Base + "\nresponse_timeout_ms = -1\n", "bad.toml"));
+        Assert.Contains("response_timeout_ms", engineCase.Message);
+
+        var schedulerCase = Assert.Throws<RouterConfigException>(() => RouterConfigLoader.Load(
+            Base + "\n[scheduler]\nswitch_wait_timeout_ms = -5\n", "bad.toml"));
+        Assert.Contains("switch_wait_timeout_ms", schedulerCase.Message);
     }
 }

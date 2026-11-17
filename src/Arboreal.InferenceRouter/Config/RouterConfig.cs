@@ -115,6 +115,11 @@ public sealed class EngineDefinition
     public EngineCapabilities Capabilities { get; init; } = new();
     public IReadOnlyDictionary<string, EngineModelDefinition> Catalog { get; init; } =
         new Dictionary<string, EngineModelDefinition>(StringComparer.Ordinal);
+    /// <summary>Ceiling on the wait for the engine's *first response byte* after the request is sent
+    /// (response headers for a non-stream call, first byte for a stream). 0 disables it. Once the
+    /// engine has started answering, a long generation is never cut off — this bounds a wedged
+    /// engine, not a slow completion. Over the limit the ticket fails `engine_timeout` (504).</summary>
+    public int ResponseTimeoutMs { get; init; } = 600_000;
     public bool Remote { get; init; }                 // remote peer: no lifecycle commands
     public EngineLifecycleKind Lifecycle { get; init; } = EngineLifecycleKind.Delegated;
     public DockerLifecycleConfig? Docker { get; init; }
@@ -136,6 +141,11 @@ public sealed class SchedulerConfig
     public int MaxQueuePerModel { get; set; } = 64;
     public int MaxInflightPerEngine { get; set; } = 8;
     public int PrefixTrieMaxNodes { get; set; } = 8192;
+    /// <summary>Ceiling on how long an admitted request waits for a model switch it triggered
+    /// (0 = wait as long as the switch itself takes, which is bounded by the engine's own
+    /// `wait_timeout_ms`). The deadline only bounds queue wait, so without this a request can be
+    /// parked in `WaitingForModel` for the whole model load.</summary>
+    public int SwitchWaitTimeoutMs { get; set; }
     /// <summary>Chars-per-token estimate used to convert prompt chars into context demand.
     /// Conservative default; engines reporting n_ctx are compared in tokens.</summary>
     public double CharsPerTokenEstimate { get; set; } = 4.0;

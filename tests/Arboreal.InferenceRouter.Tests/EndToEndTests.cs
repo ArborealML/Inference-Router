@@ -15,6 +15,9 @@ public class FakeEngineHandler : HttpMessageHandler
     public string[] LoadedModels { get; set; } = ["test-model", "other-model"];
     /// <summary>Block every completion until <see cref="ReleaseGate"/> (for ordering tests).</summary>
     public bool HoldCompletions { get; set; }
+    /// <summary>A wedged backend: the connection is accepted and then nothing is ever written. The only
+    /// way out for either side is cancellation, which is what the per-engine response cap provides.</summary>
+    public bool NeverAnswersCompletions { get; set; }
     /// <summary>When set, /models re-reads the loaded set from this file (one id per line), so a
     /// lifecycle command can "load" a model mid-test the way a real switch does.</summary>
     public string? LoadedModelsFile { get; set; }
@@ -102,6 +105,11 @@ public class FakeEngineHandler : HttpMessageHandler
             }
             var body = ReadBody(request);
             var tag = ExtractFirstContent(body);
+            if (NeverAnswersCompletions)
+            {
+                await Task.Delay(Timeout.Infinite, cancellationToken).ConfigureAwait(false);
+                return Ok("{}");
+            }
             if (HoldCompletions)
             {
                 try { await _gate.Task.WaitAsync(cancellationToken); }

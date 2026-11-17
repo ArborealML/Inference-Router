@@ -305,6 +305,7 @@ public static class ServerApp
         "cancelled" => 499,
         "switch_failed" or "model_unavailable" => 503,
         "engine_error" or "engine_unreachable" => 502,
+        "engine_timeout" => 504,
         _ => 500,
     };
 

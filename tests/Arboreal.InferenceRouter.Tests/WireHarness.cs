@@ -12,7 +12,8 @@ namespace Arboreal.InferenceRouter.Tests;
 internal static class WireHarness
 {
     public static async Task<(WebApplication App, FakeEngineHandler Fake, int Port)> StartAsync(
-        bool holdCompletions = true, int maxInflight = 8, int maxEventSubscribers = 256, int maxRequestBodyBytes = 16 * 1024 * 1024)
+        bool holdCompletions = true, int maxInflight = 8, int maxEventSubscribers = 256, int maxRequestBodyBytes = 16 * 1024 * 1024,
+        int responseTimeoutMs = 600_000, int switchWaitTimeoutMs = 0)
     {
         var fake = new FakeEngineHandler { HoldCompletions = holdCompletions };
         int port;
@@ -27,7 +28,7 @@ internal static class WireHarness
         {
             Listen = $"http://127.0.0.1:{port}",
             DefaultModel = "test-model",
-            Scheduler = new SchedulerConfig { MaxInflightPerEngine = maxInflight, MaxQueuePerModel = 8 },
+            Scheduler = new SchedulerConfig { MaxInflightPerEngine = maxInflight, MaxQueuePerModel = 8, SwitchWaitTimeoutMs = switchWaitTimeoutMs },
             MaxEventSubscribers = maxEventSubscribers,
             MaxRequestBodyBytes = maxRequestBodyBytes,
             HttpHandlerFactory = _ => fake,
@@ -39,6 +40,7 @@ internal static class WireHarness
                 Name = "fake",
                 Kind = EngineKind.OpenAiCompatible,
                 Endpoint = new Uri("http://127.0.0.1:9/v1"),
+                ResponseTimeoutMs = responseTimeoutMs,
                 Catalog = new Dictionary<string, EngineModelDefinition>
                 {
                     ["test-model"] = new EngineModelDefinition { Name = "test-model" },

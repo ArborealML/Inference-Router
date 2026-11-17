@@ -35,6 +35,7 @@ public sealed class SchedulerDto
     [JsonPropertyName("max_inflight_per_engine")][TomlPropertyName("max_inflight_per_engine")] public int? MaxInflightPerEngine { get; set; }
     [JsonPropertyName("prefix_trie_max_nodes")][TomlPropertyName("prefix_trie_max_nodes")] public int? PrefixTrieMaxNodes { get; set; }
     [JsonPropertyName("chars_per_token_estimate")][TomlPropertyName("chars_per_token_estimate")] public double? CharsPerTokenEstimate { get; set; }
+    [JsonPropertyName("switch_wait_timeout_ms")][TomlPropertyName("switch_wait_timeout_ms")] public int? SwitchWaitTimeoutMs { get; set; }
 }
 
 public sealed class ThreadDto
@@ -52,6 +53,7 @@ public sealed class EngineDto
     [JsonPropertyName("api_key_file")][TomlPropertyName("api_key_file")] public string? ApiKeyFile { get; set; }
     [JsonPropertyName("models_endpoint")][TomlPropertyName("models_endpoint")] public string? ModelsEndpoint { get; set; }
     [JsonPropertyName("loaded_requires_status_loaded")][TomlPropertyName("loaded_requires_status_loaded")] public bool? LoadedRequiresStatusLoaded { get; set; }
+    [JsonPropertyName("response_timeout_ms")][TomlPropertyName("response_timeout_ms")] public int? ResponseTimeoutMs { get; set; }
     [JsonPropertyName("remote")][TomlPropertyName("remote")] public bool? Remote { get; set; }
     [JsonPropertyName("health_probe")][TomlPropertyName("health_probe")] public HealthProbeDto? HealthProbe { get; set; }
     [JsonPropertyName("capabilities")][TomlPropertyName("capabilities")] public CapabilitiesDto? Capabilities { get; set; }
