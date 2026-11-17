@@ -7,7 +7,7 @@ status: To Do
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T07:01:00Z'
-updated_date: '2026-11-17T09:42:00Z'
+updated_date: '2026-11-17T11:08:00Z'
 labels:
   - stream
   - transport
@@ -55,6 +55,18 @@ created: 2026-11-17T08:48:00Z
 ---
 
 Precedent claim verified independently, and the line anchors in my first wording had already drifted (SPEC moves constantly, so cite sections): SPEC 6 says a committed stream whose engine goes quiet fails in band with one engine_timeout frame plus [DONE] (row at line 735 today), SPEC 14.1 row 2 names the same ending and credits RequestPhaseTimeoutTests (line 1379), and the test AStreamThatNeverSendsAFrameEndsInsideTheStreamBecauseTheStatusIsAlreadySent pins it at RequestPhaseTimeoutTests.cs:196. So TASK-34 really is numbers-and-policy, not a wire change. If the coding session's independent check disagrees, this criterion moves back behind an owner wire decision and TASK-34 is retitled accordingly.
+
+---
+
+created: 2026-11-17T11:08:00Z
+
+---
+
+Numbers and policy are decided (TASK-34 answered; the external answer was adopted because it contradicts nothing measured here). Ship defaults: `stream_idle_timeout_ms = 300000` **per engine**, `0` disables, measured on **upstream byte arrival** — reset by upstream bytes, never by keepalives or downstream writes, and bytes in hand beat an expiry race. `stream_buffer_limit_bytes = 262144` **global**, counted in bytes rather than frames, because frames vary in size. On idle expiry: cancel upstream, release the lease exactly once in a `finally`, and record `upstream_cancel_requested` always and `upstream_stop_confirmed` only when established — otherwise the feed says `backend_execution_unknown`, because cancelling an HTTP request does not guarantee GPU compute stopped. At high water with no drain: cancel upstream, close or reset downstream, release the lease, emit `slow_consumer`. Caller-visible shape stays exactly as SPEC §6 has it: one in-band error frame plus `[DONE]` on a stream that is still writable, close without ceremony when it is not, no new truncation format. A caller abort stays `cancelled`, never a timeout. The 30 s pending-write no-progress watchdog lives inside the relay as a safety rule, not a config key.
+
+**Do not land the defaults as a bare config PR.** Two gates come first, and this task is not Done without them: per-engine gap replay (measured gap histograms; ~10,000 representative successful reasoning/tool/batched streams with zero false expiries; injections at 299999 and 300001 ms; timeout-versus-byte races; an upstream that ignores cancellation) and a slow-reader soak (stopped reader, one-byte blocked flush, frames larger than the cap, HTTP/1.1 and HTTP/2, abort and slot saturation) showing bounded backlog, bounded RSS, expiry at high water, and no leaks.
+
+**Measure the premise before writing it into SPEC.** This task's Description says the router buffers a stalled reader without limit. That was written from reasoning, not measurement, and Kestrel plus TCP may already apply backpressure; AC #2's number and SPEC's wording should say what the code actually does, with the test that shows it.
 
 ---
 <!-- COMMENTS:END -->

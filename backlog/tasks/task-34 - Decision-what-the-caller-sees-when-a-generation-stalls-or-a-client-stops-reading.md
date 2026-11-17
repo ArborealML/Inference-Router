@@ -3,11 +3,11 @@ id: TASK-34
 title: >-
   Decision: what the caller sees when a generation stalls or a client stops
   reading
-status: Waiting
+status: Done
 assignee:
   - '@chatswarm'
 created_date: '2026-11-17T08:10:00Z'
-updated_date: '2026-11-17T11:02:00Z'
+updated_date: '2026-11-17T11:08:00Z'
 labels:
   - stream
   - transport
@@ -43,7 +43,7 @@ implementation on the constants would have made a two-minute answer into a stall
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Answer in one line: the idle bound after the first frame in ms (recommend 120000, 0 disables), cancel or let-finish for a caller that stops reading, and frames or bytes for the relay bound
+- [x] #1 Answer in one line: the idle bound after the first frame in ms (recommend 120000, 0 disables), cancel or let-finish for a caller that stops reading, and frames or bytes for the relay bound
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -107,6 +107,18 @@ created: 2026-11-17T11:02:00Z
 Dispatched to @chatswarm 2026-11-17 11:02Z (tier high, reasoning-only, no repo access) with the facts it needs: response_timeout_ms default 600000 applies only before the first frame; the ceiling deliberately ends at the first frame; a committed stream fails in band with one error frame plus [DONE]; a caller abort reports cancelled, never a timeout; both the stalled-reader buffering and the post-first-frame silence are currently unbounded. Six questions: the default idle bound in ms and its unit; cancel upstream or detach; the slow-consumer bound and whether it counts frames or bytes; what mainstream OpenAI client libraries do with an in-band error frame versus a missing [DONE]; the ways a bound makes things worse; whether one knob beats two.
 
 Wake: that answer landing. The coding session implements TASK-30 meanwhile, with the numbers filled in after — the shape is already pinned by TASK-30 AC #3 (one error frame plus [DONE], no new truncation format).
+
+---
+
+created: 2026-11-17T11:08:00Z
+
+---
+
+Answer, under decision-16, adopted with its caveats kept attached: **1 `stream_idle_timeout_ms = 300000`, per engine, 0 disables; 2 on expiry cancel upstream and tear down, release the lease exactly once, and never claim the backend stopped unless that is established; 3 `stream_buffer_limit_bytes = 262144`, global, counted in bytes not frames, with abort plus a `slow_consumer` feed event at high water.** A fixed 30 s pending-write no-progress watchdog is a safety rule inside the relay, not a third config key. Two independent knobs, deliberately not derived from `response_timeout_ms`, because a wall-clock deadline kills productive long streams and one shared activity timer lets a busy upstream hide a blocked downstream.
+
+Wake condition the answer sets for shipping the defaults: two gates, not a config PR — per-engine gap replay (measured gap histograms, 10,000 representative successful reasoning/tool/batched streams with zero false expiries, plus 299999/300001 ms injections and timeout-versus-byte races) and a slow-reader soak (stopped reader, one-byte blocked flush, >256 KiB frames, HTTP/1.1 and HTTP/2, slot saturation) showing bounded backlog and no leaks.
+
+One premise this task asserted, flagged by the reviewer and NOT settled here: "the router buffers that caller's tokens without limit" may be wrong in the direction of better — Kestrel and TCP may already backpressure. TASK-30 measures that before it writes the number into SPEC. The caller-visible shape stays as SPEC §6 already defines it: one in-band error frame plus `[DONE]`, status already 200, and no new truncation format.
 
 ---
 <!-- COMMENTS:END -->
