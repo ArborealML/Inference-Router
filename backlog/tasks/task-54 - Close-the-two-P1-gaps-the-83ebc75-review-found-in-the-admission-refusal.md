@@ -5,6 +5,7 @@ status: To Do
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T19:47:00Z'
+updated_date: '2026-11-17T20:42:00Z'
 labels:
   - scheduling
   - wire
@@ -17,13 +18,27 @@ ordinal: 54000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-The commit review of 83ebc75 (the fast-refuse work) returned REVISE. Both P1s are being re-verified in the code before anything changes. (1) Tickets admitted while an engine's capability was **unknown** stay queued once absence becomes **known**: nothing revisits them, so they hold queue positions indefinitely and a later request for that model can be answered queue_overflow instead of model_unavailable. (2) The multi-engine capability scan is not a coherent snapshot — a probe publication landing between two engine reads can produce a 503 for a model some engine was reporting throughout. P2: the scheduler view captures the loaded list and then re-reads it for the eligibility bit, so the two can disagree after a probe update. P3: SPEC 7 overstates what the feed carries (nothing emits those wait reasons) and claims nothing accumulates in the queue during the unknown window, which is false. Plan review first: this crosses concurrency and the wire. The uncapped-wait task is adjacent to the remedy for P1-1, not independent of it.
+The commit review of 83ebc75 (the fast-refuse work) returned REVISE with two P1s. **20a06fa closed the second one and the P2
+with it, and left the first open.** Closed: the multi-engine capability scan is now one immutable versioned snapshot per
+engine, CAS-published at every write site, with the version sum required unchanged across the pass and an answer of "not
+hopeless" when it will not settle; the scheduler's view takes its loaded list, switch marker and eligibility bit from one
+read; and the refusal moved ahead of the queue cap. Still open, and now written in SPEC 5.5 as a limit rather than a gap:
+tickets admitted while an engine's capability was **unknown** stay queued once absence becomes **known** — nothing revisits
+them, so they hold queue positions and a later request for that model can be answered queue_overflow instead of
+model_unavailable. The remedy touches how a queued ticket is re-evaluated, which is the same machinery TASK-51 would change;
+that adjacency is why this stays a separate task rather than growing a fifth criterion. Plan review is in flight before code.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [ ] #1 queued tickets are refused model_unavailable once every engine is known and none can serve, pinned end to end with two queued tickets and no max_queue_time
-- [ ] #2 the refusal is evaluated against one coherent capability snapshot, pinned by a deterministic two-engine interleaving
-- [ ] #3 the scheduler view derives the loaded list and the eligibility bit from that one snapshot
+- [x] #2 the refusal is evaluated against one coherent capability snapshot, pinned by a deterministic two-engine interleaving
+- [x] #3 the scheduler view derives the loaded list and the eligibility bit from that one snapshot
 - [ ] #4 SPEC 7 and 6.1 say what the code does, including what the feed does not carry
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+**Closed at 20a06fa** (AC #2, #3): CapabilityScanTests pins the coherence rule deterministically, and the capability read is one Volatile.Read(ref _cap) per engine per decision (Engines/EngineRuntime.cs:104-110). **Wire-visible posture, correct wherever it is restated:** an unservable model is refused 503 model_unavailable, not 429, and the feed carries one queue.rejected with reason model_unavailable and no request.enqueued. Queue overflow keeps 429 queue_overflow; the defect that overflow also emits request.enqueued is TASK-56, not this one.
+<!-- SECTION:NOTES:END -->
