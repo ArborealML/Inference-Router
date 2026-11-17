@@ -45,11 +45,14 @@ public sealed class EventRing
     private long _head;      // total events appended
     private readonly List<Action<RouterEvent>> _subscribers = [];
     private readonly TimeSpan _retention = TimeSpan.FromMinutes(30);
+    private readonly int _maxSubscribers;
 
-    public EventRing(int capacity = 4096)
+    public EventRing(int capacity = 4096, int maxLiveSubscribers = 256)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(capacity, 16);
+        ArgumentOutOfRangeException.ThrowIfLessThan(maxLiveSubscribers, 1);
         _ring = new RouterEvent[capacity];
+        _maxSubscribers = maxLiveSubscribers;
     }
 
     public long Append(RouterEvent @event)
@@ -95,22 +98,33 @@ public sealed class EventRing
         return list;
     }
 
-    /// <summary>Snapshot and subscribe under one lock. Doing the two separately leaves a window in
-    /// which an appended event is in neither the snapshot nor the live tail — the handover hole.
-    /// The handler therefore sees exactly the events appended after the snapshot.</summary>
-    public IReadOnlyList<RouterEvent> SubscribeReplay(long sinceSeq, Action<RouterEvent> handler, int? max = null)
+    /// <summary>Snapshot and subscribe under one lock, refusing the subscription if the feed is full.
+    /// Doing the two separately leaves a window in which an appended event is in neither the snapshot
+    /// nor the live tail — the handover hole. The handler therefore sees exactly the events appended
+    /// after the snapshot. Refusal is a return value rather than an exception because the HTTP layer
+    /// has already decided how to answer a full feed (503 before any SSE headers), and an exception
+    /// thrown after the headers are out looks to the client like a truncated success.</summary>
+    public bool TrySubscribeReplay(long sinceSeq, Action<RouterEvent> handler, out IReadOnlyList<RouterEvent> replayed, int? max = null)
     {
         lock (_lock)
         {
-            if (_subscribers.Count >= MaxSubscribers)
-                throw new InvalidOperationException($"Event ring already has {MaxSubscribers} live subscribers.");
-            var replayed = ReplayLocked(sinceSeq, max ?? _ring.Length);
+            if (_subscribers.Count >= _maxSubscribers)
+            {
+                replayed = Array.Empty<RouterEvent>();
+                return false;
+            }
+            replayed = ReplayLocked(sinceSeq, max ?? _ring.Length);
             _subscribers.Add(handler);
-            return replayed;
+            return true;
         }
     }
 
-    public const int MaxSubscribers = 256;
+    /// <summary>How many live subscriptions the ring is willing to hold.</summary>
+    public int MaxLiveSubscribers => _maxSubscribers;
+
+    /// <summary>Live subscriptions currently attached. The admin feed checks this before it commits to
+    /// a 200 + SSE headers.</summary>
+    public int LiveSubscribers { get { lock (_lock) return _subscribers.Count; } }
 
     public void Subscribe(Action<RouterEvent> handler)
     {

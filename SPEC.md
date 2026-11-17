@@ -98,7 +98,10 @@ Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
   (`DropWrite` was uncounted, and a filtered reader has no `Seq` gap to notice); §10's "any drop is
   visible" claim was true only of an unfiltered feed and is corrected here, as is the same claim in
   `docs/ai-integration.md`. Caller cancellation now stops delivery instead of draining the buffer to a
-  hung-up reader, the router's own shutdown ends every feed, and live subscribers are capped. Drop
+  hung-up reader, the router's own shutdown ends every feed, and live subscribers are bounded by the new
+  `max_event_subscribers` key (256 by default, counting the router's own internal subscription), with a
+  feed that arrives past the limit refused `503 too_many_subscribers` before any SSE headers are sent —
+  a 200 that ends at once would read as a filter that matches nothing. Drop
   *accounting* and `stream.gap` remain open: they add an event kind, so they need a wire decision and
   belong with the parity work, not with this fix. 102 tests green.
 
@@ -777,8 +780,11 @@ two is neither lost nor delivered twice. Subscribers get a bounded buffer (256 e
 a consumer that falls behind is **ended** rather than silently pruned: on a filtered feed a dropped
 event leaves no `Seq` gap, so an ended stream is the signal a consumer can act on — it reconnects from
 the last `Seq` it saw. Reporting the size of a loss on the wire (`stream.gap`, below) is still open.
-Live subscribers are bounded, a subscription ends when the router shuts down, and a caller that hangs
-up stops being delivered to immediately. Field names on the wire are PascalCase (§6).
+Live subscriptions are bounded by `max_event_subscribers` (256 by default; the count includes the
+router's own internal subscription, so the key must be at least 2 to let one client feed through), and
+a feed that arrives when the ring is full is refused with `503 too_many_subscribers` **before** any SSE
+headers go out. A subscription ends when the router shuts down, and a caller that hangs up stops being
+delivered to. Field names on the wire are PascalCase (§6).
 
 - `thread.registered`, `thread.priority_changed`
 - `request.enqueued {thread, ticket, model, priority, promptChars}`

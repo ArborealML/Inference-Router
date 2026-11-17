@@ -12,7 +12,7 @@ namespace Arboreal.InferenceRouter.Tests;
 internal static class WireHarness
 {
     public static async Task<(WebApplication App, FakeEngineHandler Fake, int Port)> StartAsync(
-        bool holdCompletions = true, int maxInflight = 8)
+        bool holdCompletions = true, int maxInflight = 8, int maxEventSubscribers = 256)
     {
         var fake = new FakeEngineHandler { HoldCompletions = holdCompletions };
         int port;
@@ -28,6 +28,7 @@ internal static class WireHarness
             Listen = $"http://127.0.0.1:{port}",
             DefaultModel = "test-model",
             Scheduler = new SchedulerConfig { MaxInflightPerEngine = maxInflight, MaxQueuePerModel = 8 },
+            MaxEventSubscribers = maxEventSubscribers,
             HttpHandlerFactory = _ => fake,
         };
         cfg.Engines = new Dictionary<string, EngineDefinition>

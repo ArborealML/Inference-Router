@@ -57,6 +57,11 @@ public static class RouterConfigLoader
         if (dto.Listen is { } listen) cfg.Listen = listen;
         if (dto.DefaultModel is { } dm) cfg.DefaultModel = dm;
         if (dto.AutoSwitch is { } autoSwitch) cfg.AutoSwitch = autoSwitch;
+        if (dto.MaxEventSubscribers is { } maxSubs)
+        {
+            if (maxSubs < 1) throw new RouterConfigException("max_event_subscribers must be at least 1");
+            cfg.MaxEventSubscribers = maxSubs;
+        }
         if (dto.SwitchCooldownMs is { } cooldown) cfg.SwitchCooldownMs = checked((int)cooldown);
         if (dto.DefaultPriority is { } dp)
             cfg.DefaultPriority = ParsePriority(dp, "default_priority");

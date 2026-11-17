@@ -255,6 +255,20 @@ public class ConfigLoaderTests
     }
 
     [Fact]
+    public void EventFeedCap_IsConfigurableAndMustBePositive()
+    {
+        var cfg = RouterConfigLoader.Load(
+            TomlConfig.Replace("auto_switch = true", "auto_switch = true\nmax_event_subscribers = 7"), "test.toml");
+        Assert.Equal(7, cfg.MaxEventSubscribers);
+
+        // Zero or negative would refuse every feed, including the router's own dispatcher wake, so it
+        // is a config error rather than a way to turn observability off.
+        Assert.Throws<RouterConfigException>(() => RouterConfigLoader.Load(
+            TomlConfig.Replace("auto_switch = true", "auto_switch = true\nmax_event_subscribers = 0"), "test.toml"));
+        Assert.Equal(256, RouterConfigLoader.Load(TomlConfig, "test.toml").MaxEventSubscribers);
+    }
+
+    [Fact]
     public void Rejects_Missing_Engine_Kind()
     {
         Assert.Throws<RouterConfigException>(() => RouterConfigLoader.Load(

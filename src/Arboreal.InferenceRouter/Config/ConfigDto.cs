@@ -12,6 +12,7 @@ public sealed class ConfigDto
     [JsonPropertyName("default_model")][TomlPropertyName("default_model")] public string? DefaultModel { get; set; }
     [JsonPropertyName("auto_switch")][TomlPropertyName("auto_switch")] public bool? AutoSwitch { get; set; }
     [JsonPropertyName("switch_cooldown_ms")][TomlPropertyName("switch_cooldown_ms")] public int? SwitchCooldownMs { get; set; }
+    [JsonPropertyName("max_event_subscribers")][TomlPropertyName("max_event_subscribers")] public int? MaxEventSubscribers { get; set; }
     [JsonPropertyName("default_priority")][TomlPropertyName("default_priority")] public PriorityDto? DefaultPriority { get; set; }
     [JsonPropertyName("scheduler")][TomlPropertyName("scheduler")] public SchedulerDto? Scheduler { get; set; }
     [JsonPropertyName("threads")][TomlPropertyName("threads")] public Dictionary<string, ThreadDto>? Threads { get; set; }

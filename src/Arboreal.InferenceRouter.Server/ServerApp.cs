@@ -330,6 +330,18 @@ public static class ServerApp
 
     private static async Task WriteEventStreamAsync(HttpContext ctx, RouterCore router, RouterEventFilter filter)
     {
+        // A feed is a subscription the client keeps open, so a full ring is refused with a plain 503
+        // before any SSE headers go out. A 200 that ends at once is indistinguishable from a filter
+        // that matches nothing, and an exception after the headers are flushed looks to the client
+        // like a truncated success. The ring's own refusal is the backstop for a race past this check.
+        if (router.Events.LiveSubscribers >= router.Events.MaxLiveSubscribers)
+        {
+            await WriteErrorAsync(ctx, 503, "too_many_subscribers",
+                "the event feed is at its subscriber limit; close a feed and reconnect with the last Seq you saw")
+                .ConfigureAwait(false);
+            return;
+        }
+
         ctx.Response.StatusCode = 200;
         ctx.Response.Headers.ContentType = "text/event-stream";
         ctx.Response.Headers.CacheControl = "no-cache";

@@ -59,7 +59,7 @@ public class EventRingTests
         ring.Append(Evt("request.enqueued"));              // seq 1, before the reader arrives
 
         var live = new List<RouterEvent>();
-        var snapshot = ring.SubscribeReplay(0, live.Add);
+        Assert.True(ring.TrySubscribeReplay(0, live.Add, out var snapshot));
         ring.Append(Evt("request.completed"));             // seq 2, after the snapshot is taken
 
         Assert.Equal([1], snapshot.Select(e => e.Seq));
@@ -72,22 +72,22 @@ public class EventRingTests
     }
 
     [Fact]
-    public void SubscribeReplay_CapsLiveSubscribers()
+    public void AFullFeedRefusesAnotherSubscriptionInsteadOfThrowing()
     {
-        var ring = new EventRing(capacity: 16);
-        var handlers = new List<Action<RouterEvent>>();
-        for (var i = 0; i < EventRing.MaxSubscribers; i++)
-        {
-            Action<RouterEvent> h = _ => { };
-            handlers.Add(h);
-            ring.SubscribeReplay(0, h);
-        }
+        var ring = new EventRing(capacity: 16, maxLiveSubscribers: 2);
+        Action<RouterEvent> a = _ => { };
+        Action<RouterEvent> b = _ => { };
+        Assert.True(ring.TrySubscribeReplay(0, a, out _));
+        Assert.True(ring.TrySubscribeReplay(0, b, out _));
+        Assert.Equal(2, ring.LiveSubscribers);
 
-        var ex = Assert.Throws<InvalidOperationException>(() => ring.SubscribeReplay(0, _ => { }));
-        Assert.Contains("subscribers", ex.Message, StringComparison.Ordinal);
+        // Refusal, not an exception: the HTTP layer has already answered 503 before any SSE headers
+        // went out, and a throw after the headers would look to the client like a truncated success.
+        Assert.False(ring.TrySubscribeReplay(0, _ => { }, out var refused));
+        Assert.Empty(refused);
 
-        foreach (var h in handlers) ring.Unsubscribe(h);
-        ring.SubscribeReplay(0, _ => { });                 // room again once they leave
+        ring.Unsubscribe(a);
+        Assert.True(ring.TrySubscribeReplay(0, _ => { }, out _));   // room again once one leaves
     }
 
     [Fact(Timeout = 20_000)]

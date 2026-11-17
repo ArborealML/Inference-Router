@@ -33,7 +33,7 @@ public sealed class RouterCore : IInferenceRouter
         _config = config;
         _wakeOnEngineState = WakeOnEngineState;
         _scheduler = scheduler ?? new PrefixAwareScheduler();
-        _events = events ?? new EventRing();
+        _events = events ?? new EventRing(maxLiveSubscribers: config.MaxEventSubscribers);
         foreach (var (name, def) in config.Engines)
             _engines[name] = new EngineRuntime(def, config, _events, config.HttpHandlerFactory?.Invoke(def));
         foreach (var (id, td) in config.Threads)
@@ -277,8 +277,14 @@ public sealed class RouterCore : IInferenceRouter
             }
 
             // Snapshot and subscribe are one atomic step: subscribing first would double-count the
-            // events appended in between, replaying first would lose them.
-            var replayed = ring.SubscribeReplay(filter.SinceSeq, Handler);
+            // events appended in between, replaying first would lose them. A full ring refuses, and the
+            // refusal is a return value so the HTTP layer can answer 503 before it commits to SSE
+            // headers; a reader that gets here anyway sees an empty feed rather than an exception.
+            if (!ring.TrySubscribeReplay(filter.SinceSeq, Handler, out var replayed))
+            {
+                queue.Writer.TryComplete();
+                yield break;
+            }
             try
             {
                 foreach (var e in replayed)

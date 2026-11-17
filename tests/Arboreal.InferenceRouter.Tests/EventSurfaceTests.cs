@@ -69,6 +69,41 @@ public class EventSurfaceTests
         Assert.Empty(frames);
     }
 
+
+    [Fact(Timeout = 30_000)]
+    public async Task FeedAtTheSubscriberLimitRefusesBeforeAnySseHeaders()
+    {
+        // The cap includes the router's own internal subscription, so two means "one client feed".
+        var (app, _, port) = await WireHarness.StartAsync(holdCompletions: false, maxEventSubscribers: 2);
+        using var _ = app;
+        using var http = new HttpClient { BaseAddress = new Uri($"http://127.0.0.1:{port}") };
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        using var hold = new HttpRequestMessage(HttpMethod.Get, "/admin/events?since=0");
+        var first = await http.SendAsync(hold, HttpCompletionOption.ResponseHeadersRead, cts.Token);
+        Assert.Equal(HttpStatusCode.OK, first.StatusCode);
+        Assert.Equal("text/event-stream", first.Content.Headers.ContentType?.MediaType);
+
+        HttpResponseMessage? refused = null;
+        var deadline = Environment.TickCount64 + 5000;
+        while (Environment.TickCount64 < deadline)
+        {
+            using var probe = new HttpRequestMessage(HttpMethod.Get, "/admin/events?since=0");
+            var res = await http.SendAsync(probe, HttpCompletionOption.ResponseHeadersRead, cts.Token);
+            if (res.StatusCode == HttpStatusCode.ServiceUnavailable) { refused = res; break; }
+            res.Dispose();
+            await Task.Delay(25, cts.Token);
+        }
+
+        // The refusal has to be a real error: a 200 that ends at once is indistinguishable from a
+        // filter that matches nothing, so a full feed would look like a quiet router.
+        Assert.NotNull(refused);
+        var body = await refused!.Content.ReadAsStringAsync();
+        Assert.Contains("too_many_subscribers", body, StringComparison.Ordinal);
+        Assert.NotEqual("text/event-stream", refused.Content.Headers.ContentType?.MediaType);
+        first.Dispose();
+    }
+
     [Fact]
     public void Filter_WithTicketId_DropsEventsThatCarryNoTicket()
     {
