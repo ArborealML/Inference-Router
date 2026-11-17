@@ -671,6 +671,9 @@ public sealed class RouterCore : IInferenceRouter
         if (!res.IsSuccessStatusCode)
         {
             var errBody = await res.Content.ReadAsByteArrayAsync(bodyCt).ConfigureAwait(false);
+            // The body is in hand, so the ceiling is spent: pass it *before* the terminal call, otherwise a
+            // failure inside Fail/event work could be caught by the ceiling filter and blamed on the engine.
+            gate?.Pass();
             Fail(ticket, "engine_error",
                 $"{(int)res.StatusCode}: {System.Text.Encoding.UTF8.GetString(errBody.AsSpan(0, Math.Min(errBody.Length, 256)))}");
             return;
@@ -685,6 +688,7 @@ public sealed class RouterCore : IInferenceRouter
         else
         {
             var bytes = await res.Content.ReadAsByteArrayAsync(bodyCt).ConfigureAwait(false);
+            gate?.Pass();      // owed bytes delivered: the ceiling is spent before any terminal work
             Complete(ticket, bytes);
         }
     }
@@ -718,7 +722,10 @@ public sealed class RouterCore : IInferenceRouter
             : CancellationTokenSource.CreateLinkedTokenSource(ct, gate.Token);
         var firstReadCt = firstReadLink?.Token ?? ct;
         var buffer = new byte[16384];
-        using var stream = await content.ReadAsStreamAsync(ct).ConfigureAwait(false);
+        // Stream acquisition is inside the ceiling too: with ResponseHeadersRead the content object exists
+        // before any byte does, and a handler that builds the stream lazily must not be able to stall the
+        // request before the first gated read happens.
+        using var stream = await content.ReadAsStreamAsync(firstReadCt).ConfigureAwait(false);
         while (true)
         {
             int read;
