@@ -5,7 +5,7 @@ status: Blocked
 assignee:
   - '@claire'
 created_date: '2026-11-16T20:46:00Z'
-updated_date: '2026-11-16T23:22:00Z'
+updated_date: '2026-11-17T02:19:00Z'
 labels:
   - ui
 milestone: v0.10 - live view and robustness parity
@@ -33,6 +33,12 @@ them can be built, so the stream work comes first.
 - [ ] #4 Admin JSON schema and casing pinned once (SPEC 15.1) and covered by contract tests
 - [ ] #5 Screens render from the event stream alone: global inference, queues/admission, engines/profiles/switches, topology/trends, request timeline, health/config/security
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Blocked on TASK-21 — the next move is the live-view audience, credential and wire-extension decisions, which belongs to a human. Work here resumes when that task is closed.
+<!-- SECTION:NOTES:END -->
 
 ## Blocked on one decision (owner)
 

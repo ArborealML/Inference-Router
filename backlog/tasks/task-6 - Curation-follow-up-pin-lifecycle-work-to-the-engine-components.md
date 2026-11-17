@@ -5,7 +5,7 @@ status: Blocked
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-16T20:40:00Z'
-updated_date: '2026-11-17T02:14:00Z'
+updated_date: '2026-11-17T02:19:00Z'
 labels: []
 dependencies:
   - TASK-1
@@ -41,3 +41,9 @@ which argues for keeping the shared components unfiled until we choose a simplif
 them under the process that actually hosts them — noting that `air serve` runs the HTTP host inside the
 CLI process and `air config` loads configuration locally, so the CLI is not merely a remote client of the
 library and the map cannot show one source file owned by both executables.
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Blocked on TASK-19 — the next move is the map-model decision, which belongs to a human. Work here resumes when that task is closed.
+<!-- SECTION:NOTES:END -->

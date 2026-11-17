@@ -5,7 +5,7 @@ status: Blocked
 assignee:
   - '@claire'
 created_date: '2026-11-16T22:30:00Z'
-updated_date: '2026-11-16T23:22:00Z'
+updated_date: '2026-11-17T02:19:00Z'
 labels:
   - ci
 milestone: v0.9 - native engine lifecycle
@@ -32,3 +32,9 @@ binaries it has never produced.
 - [ ] #3 If dropped, the workflow and README stop claiming osx artifacts
 - [ ] #4 The runner image names used are current for the account (macos-13 availability is the risk)
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Blocked on TASK-22 — the next move is macOS runner minutes and the release tag, which belongs to a human. Work here resumes when that task is closed.
+<!-- SECTION:NOTES:END -->

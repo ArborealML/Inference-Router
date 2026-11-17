@@ -1,11 +1,11 @@
 ---
 id: TASK-17
 title: Review, amend and merge the external rewrite of AGENTS.md
-status: Waiting
+status: Blocked
 assignee:
   - '@chatswarm'
 created_date: '2026-11-17T01:27:00Z'
-updated_date: '2026-11-17T02:14:00Z'
+updated_date: '2026-11-17T02:19:00Z'
 labels:
   - docs
   - process
@@ -36,4 +36,6 @@ An external deep-tier request is producing a rewrite of AGENTS.md as a pull requ
 A deep-tier external rewrite is in flight; it is asked to open a pull request changing only AGENTS.md, to leave the tool-managed regions alone, and to list every rule it moved, merged or reworded. An in-flight external request does not change this task status. Review stance: the rewrite is evidence. Reject it if a constraint was quietly softened, if a command was changed without being run, or if rationale replaced the constraint instead of sitting under it.
 
 The first attempt could not push: GitHub refused branch creation for the integration, so no branch, commit or pull request exists. Its deliverables were left as sandbox files with no artifact manifest, which means they never reached this side — an external "artifacts complete" claim is not evidence of delivery. A second attempt is in flight, asked to deliver the patch, the replacement file and the rule-by-rule trace inline in the response text instead of as files. Until the bytes are here, nothing is applied: the acceptance criteria are unchanged and the merge stays blocked on them.
+
+Blocked on TASK-18 — the next move is pull request review and merge, which belongs to a human. Work here resumes when that task is closed.
 <!-- SECTION:NOTES:END -->

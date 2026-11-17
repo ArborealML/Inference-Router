@@ -7,7 +7,7 @@ status: Blocked
 assignee:
   - '@claire'
 created_date: '2026-11-16T20:39:00Z'
-updated_date: '2026-11-16T23:22:00Z'
+updated_date: '2026-11-17T02:19:00Z'
 labels: []
 milestone: v0.9 - native engine lifecycle
 dependencies:
@@ -46,6 +46,8 @@ per model with native lifecycle.
 
 <!-- SECTION:NOTES:BEGIN -->
 Blocked on two decisions (decision-1 authorization model, decision-2 launch-tuning boundary) and one external design review whose result is held outside this repository; the plan will be written into this task before implementation starts.
+
+Blocked on TASK-20 — the next move is the lifecycle mechanism and authorisation decision, which belongs to a human. Work here resumes when that task is closed.
 <!-- SECTION:NOTES:END -->
 
 ## Dependencies still open (decisions, not work)
