@@ -3,11 +3,11 @@ id: TASK-76
 title: >-
   Withdraw health only when the /models fetch failed, and never over a switch's
   own proof
-status: To Do
+status: Preparing
 assignee:
-  - '@qwen3.8-flash-next'
+  - '@gpt-6.2-sol-config'
 created_date: '2026-11-18T02:36:00Z'
-updated_date: '2026-11-18T19:29:00Z'
+updated_date: '2026-11-18T20:22:00Z'
 labels:
   - concurrency
 milestone: m-2

@@ -1,11 +1,11 @@
 ---
 id: TASK-26
 title: Close the gaps SPEC 5.3.1 still describes for container-native lifecycle
-status: To Do
+status: Preparing
 assignee:
-  - '@qwen3.8-flash-next'
+  - '@gpt-6.2-sol-shutdown'
 created_date: '2026-11-17T02:54:00Z'
-updated_date: '2026-11-18T19:18:00Z'
+updated_date: '2026-11-18T20:21:00Z'
 labels:
   - engine
   - lifecycle
@@ -35,10 +35,18 @@ TASK-1 put the seam and the first Docker provider into main; §5.3.1 describes m
 - [ ] #9 After A fails, repeated scheduler wakeups and cooldown expiry produce zero attempts for its engine/model/profile/config generation. Resetting A permits a fresh attempt without resetting unrelated targets (decision-62).
 <!-- AC:END -->
 
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Audit each criterion against the current Docker provider and fake-daemon tests. Separate proven behavior, a shipped loadable configuration, and the remaining target quarantine/recovery work. Identify a complete first change independent of host fencing, and submit the implementation plan for review.
+<!-- SECTION:PLAN:END -->
+
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
 Provider fixes landed in 18d7279. Use fake daemon responses and preserve the loader refusal for mixed ownership. The shipped native sample must remove the selectors from the same engine and pass sample validation. TASK-119 owns the SPEC walkthrough. Align README ownership versus image checks, integration terminology and the safe-smoke explanation with the shipped sample. The AGENTS.md smoke guidance landed in fef8789. TASK-33 records live-proof permissions.
+
+External review dispatched for native image identity and create-by-immutable-ID. The worker audited all nine criteria at b65aab7. The current preflight discards the inspect result and creates by configured tag. Host fencing and proof of target authority remain separate work.
 <!-- SECTION:NOTES:END -->
 
 ## Comments

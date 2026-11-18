@@ -1,11 +1,11 @@
 ---
 id: TASK-88
 title: Let a client see the context window each model would actually be served in
-status: Testing
+status: Waiting
 assignee:
-  - '@gpt-6.2-sol-config'
+  - '@gpt-6.2-astra'
 created_date: '2026-11-18T07:15:00Z'
-updated_date: '2026-11-18T19:48:00Z'
+updated_date: '2026-11-18T20:23:00Z'
 labels:
   - wire
   - serve
@@ -18,12 +18,12 @@ ordinal: 87000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Implement model-specific context discovery on ordinary GET /v1/models for pi. Preserve each loaded row and its owning engine.
+Wake on the pinned client compatibility result and TASK-68 admission proof. Model-specific discovery is deployed.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 A caller can learn, for each model the router will serve, the context window it would be served in, from a named surface stated in SPEC.
+- [x] #1 A caller can learn, for each model the router will serve, the context window it would be served in, from a named surface stated in SPEC.
 - [ ] #2 The /v1 surface stays OpenAI-compatible: any added member is written into SPEC 6, and a pinned client tolerates its absence.
 - [ ] #3 A stale or unknown window never authorises a profile the engine cannot serve (pairs with TASK-68 AC #1).
 - [x] #4 The plan for any change to a /v1 body goes to a top-tier review before code exists.
@@ -38,9 +38,9 @@ Extend ordinary GET /v1/models with a positive context_window in tokens for each
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Wire plan reviewed against 5c5e18a. Use one immutable observation for the model ID and effective window. Identical IDs on different engines keep independent values. Suppress ambiguous evidence, withdraw stale proof, and keep discovery separate from admission.
+At [31179e3](https://github.com/ArborealML/Inference-Router/commit/31179e3) discovery publishes a positive window from the same upstream observation as its loaded model. Unknown and ambiguous evidence omits the field. Filtered duplicates and alias collisions withhold proof. The public capability API preserves its original array signatures. The coordinator ran 314 integrated Release cases, followed by 38 focused cases after strengthening the held-poll checkpoint. Runtime, fixture and reader documentation reviews were dispatched.
 
-The coordinator queried ordinary GET /v1/models through a disposable front running the integrated worker build. HTTP 200 returned the exact resident model ID, owned_by strata, context_window 256000, and Cache-Control no-store. The independent authenticated backend health read named the same model, context 256000, four slots and Strata 0.1.60. The deployed router still requires qualification.
+Ordinary GET /v1/models on the deployed router returned Qwen with owned_by strata and context_window 256000. The backend independently returned the same value under default_generation_settings.n_ctx and four total slots. The shared pi provider declares 256000 and a real turn succeeded. TASK-68 owns admission with stale gauges.
 
-Runtime and fixture reviews dispatched for 27ab65c. Fixture review identified missing contradictory declared/observed windows, a valid neighbor alongside malformed evidence, an alternate metadata path, per-model switch windows, and distinct stale success/failure controls. The implementer is validating these on the integrated tree. TASK-68 carries admission behavior under stale evidence.
+Review of 2edf7e7 raised case-only roster changes. Integrated WithModelsObservation compares exact spelling whenever either observation carries a window. Case-insensitive comparison remains the previous behavior when neither has window evidence. The public array signature matches the preceding main release; the intermediate list signature existed only on a worker branch.
 <!-- SECTION:NOTES:END -->

@@ -7,7 +7,7 @@ status: Preparing
 assignee:
   - '@gpt-6.2-sol-scheduling'
 created_date: '2026-11-18T01:22:00Z'
-updated_date: '2026-11-18T20:13:00Z'
+updated_date: '2026-11-18T20:21:00Z'
 labels: []
 milestone: m-5
 dependencies:
@@ -45,4 +45,6 @@ A goal-level audit of the switching rows found the old criterion #2 passable wit
 The external evaluation of an open-source gateway (2026-11-18) argues this row must not wait for the adaptive design: stage timings need no database and no change to `/v1`. It also names the shape to copy — record each stage separately (queue, stop, load, confirmed readiness, first forwarding, terminal outcome), separate a missing or failed observation from a zero, and classify attempts as successful, failed, cancelled or overtaken. Estimates stay advisory: they never license admission and never relax confirmation.
 
 Compare drain plus verified shutdown of A and activation of B against actual handoff time, keyed by host, engine version, model digest and effective config. Distinguish cold from warm samples. Track timeouts and failures separately from successful durations. Evaluate the proposed 64-success, 30-day recency-weighted percentile window against recorded workloads before fixing its parameters.
+
+External plan review dispatched. The candidate measures monotonic stages under one claim identity, preserves missing and failed observations, and compares eligible switches using a bounded cost history. The acceptance fixture keeps arrivals fixed and changes only the measured cost.
 <!-- SECTION:NOTES:END -->

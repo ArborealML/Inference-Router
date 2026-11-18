@@ -5,7 +5,7 @@ status: Done
 assignee:
   - '@gpt-6.2-sol-shutdown'
 created_date: '2026-11-18T17:43:00Z'
-updated_date: '2026-11-18T20:12:00Z'
+updated_date: '2026-11-18T20:23:00Z'
 labels:
   - wire
   - stream
@@ -50,4 +50,6 @@ Detect a missing completion sentinel in streaming chat and complete. Preserve pa
 At [4a5e214](https://github.com/ArborealML/Inference-Router/commit/4a5e214) the strict client rejected the old data payload and accepted the new comment writer. The standalone pi smoke observed seq 2 before admission, a completed turn and 379 preserved upstream bytes. The filtered stream set passed 36 checks. A separate CLI process printed partial and returned exit 0 on orderly EOF after one delta. The independent plan review confirmed the sentinel contract and existing chat/complete alias. Use focused C# subprocess fixtures for stdout, stderr, exit status, comments, error-plus-sentinel and EOF. Keep prior upstream error reporting singular, preserve JSON bytes and human trailing newline, and bound child cleanup. TASK-82 owns mid-frame failures, TASK-81 terminal arbitration and TASK-91 historical sequence reproduction.
 
 At [2764b6a](https://github.com/ArborealML/Inference-Router/commit/2764b6a), the coordinator ran 40 process cases in the worker checkout and 48 CLI and router stream checks on integrated main. All passed. The independently requested commit review covers the process fixtures and terminal detection.
+
+Commit review of de5ac24 accepted orderly EOF detection. The integrated main version is 2764b6a.
 <!-- SECTION:NOTES:END -->

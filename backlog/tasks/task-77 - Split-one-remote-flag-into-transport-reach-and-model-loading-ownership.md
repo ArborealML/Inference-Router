@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@gpt-6.2-sol-release'
 created_date: '2026-11-18T02:37:00Z'
-updated_date: '2026-11-18T19:42:00Z'
+updated_date: '2026-11-18T20:23:00Z'
 labels:
   - lifecycle
   - scheduling
@@ -43,4 +43,6 @@ Use the configured endpoint for inference transport. Normalize target-bound life
 
 <!-- SECTION:NOTES:BEGIN -->
 Plan review against 49219b3 confirmed nullable raw Remote, public boolean Remote and the early runtime refusal. The first implementation stage keeps admission unchanged: a healthy unloaded candidate can return no_lifecycle_owner. Filtering it prematurely could leave the ticket queued. The DTO must detect conflicting keys even when remote is explicitly false. A provider instance alone grants no permission. The peer proof and decision-62 failure policy remain acceptance work.
+
+Astra ran 112 focused checks on owner bindings and 61 on incumbent restoration; both groups passed. Separate commit reviews cover production, tests and pre-mutation refusal. Confirm the operator diagnosis for mismatched injected providers and document the selectorless legacy refusal before integration.
 <!-- SECTION:NOTES:END -->
