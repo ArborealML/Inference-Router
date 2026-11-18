@@ -609,6 +609,49 @@ public sealed class CapabilityPublicationTests
         Assert.Contains("aliasy-short", refusal.Reason);    // the near-miss is what the operator has to see
     }
 
+    /// <summary>The claim decides against the snapshot it publishes from, so a switch that is already proved —
+    /// by the switch in front of this caller, or by a poll landing while this caller queued — is taken rather
+    /// than launched again. Both orderings give the same answer, which is what makes the pin independent of
+    /// thread scheduling; the old shape re-decided nothing and launched a second time.</summary>
+    [Fact(Timeout = 60_000)]
+    public async Task ASecondCallerTakesTheProofInsteadOfClaimingASecondSwitch()
+    {
+        using var handler = new ProbeHandler("m");
+        var provider = new ScriptedProvider { GateLaunches = true };
+        var feed = new EventRing();
+        var def = Def(new HealthProbeDefinition { Path = "/props", IntervalMs = 3_600_000 });
+        var engine = NewEngine(def, provider, handler, feed: feed);
+        await using var _ = engine;
+
+        var first = engine.WaitForModelAsync("extra", TimeSpan.FromSeconds(30), CancellationToken.None);
+        await WaitUntil(() => provider.LaunchCount == 1);         // claimed, and held inside the launch
+
+        // Stop the newcomer at the last point before it would take the switch lock.
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var go = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        engine.BeforeSwitchWaitForTests = () =>
+        {
+            entered.TrySetResult();
+            go.Task.GetAwaiter().GetResult();
+        };
+        var newcomer = Task.Run(() => engine.WaitForModelAsync("extra", TimeSpan.FromSeconds(30), CancellationToken.None));
+        await entered.Task;
+
+        handler.SetModels("m", "extra");                          // the engine now really does serve it
+        provider.ReleaseOne();                                    // the switch in front settles …
+        Assert.True((await first).IsReady);
+
+        // …and only now does the newcomer reach the claim, so its decision is taken against an idle switch
+        // state and a capability snapshot that already proves the model. That is the race the claim's
+        // expected-version CAS exists for: the old shape decided nothing at this point and launched again.
+        go.TrySetResult();
+
+        Assert.True((await newcomer).IsReady);
+        Assert.Equal(1, provider.LaunchCount);                    // the newcomer never claimed a switch
+        Assert.True(engine.IsReadyFor("extra", null));            // and it was right not to: the model is served
+        Assert.Single(feed.Replay(0), e => e.Kind == "engine.switch_started" && e.Model == "extra");
+    }
+
     [Fact(Timeout = 60_000)]
     public async Task ClaimingASwitchStopsTheEngineClaimingWhatItKnewBeforeIt()
     {

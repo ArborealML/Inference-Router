@@ -1,6 +1,6 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.30)
+Status: draft, continuously revised (v0.12.31)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
@@ -352,6 +352,33 @@ daemon transaction per engine. 137 tests green.
   that answers no `upload_url`, an upload that dies or answers no asset id, an asset name listed twice on
   the release, and a tag that moves after the first resolve. No tag has run the gate: still configured,
   not proven.
+- v0.12.31 — the switch claim made **atomic**, and its end ordering and failure edges pinned (§5.5), from the
+  plan review that split the set-1 fix. What changed: the readiness decision and the switch marker now come from one
+  capability snapshot — `PublishSwitchStarted` became `TryPublishSwitchStarted(model, expectedVersion)`, a
+  compare-exchange on the version the decision read, and a lost exchange re-decides on the newer snapshot instead of
+  launching over a proof a poll had just published (the claim loop reads `ReadyIn(cap, …)` against that same
+  snapshot, so a poll that proves the caller's model retires the claim outright). `EndSwitch` settles the readiness
+  task **before** the dispatcher nudge, and the nudge runs with the transition gate released and its own throw
+  swallowed: previously the hint ran first and unguarded, so a throwing callback escaped into the switch's catch and
+  rewrote a switch that had already succeeded — failed event, health withdrawn, waiter told Failed — and parked the
+  waiter until that catch ran. A synchronous failure at the scheduling boundary and a claim hook that throws both
+  undo their claim, the hook's undo taken after leaving the reentrant gate rather than inside it. `_switchLock` is no
+  longer disposed on shutdown, and both waits carry a token linked to the engine's switch token, so a shutdown
+  during a claim arrives as cancellation (`cancelled` on the wire) rather than `ObjectDisposedException`, which the
+  request path could only report as `engine_unreachable`. Test seams: `BeforeSwitchWaitForTests`,
+  `BeforeScheduleSwitchForTests`, and `AfterEndCommitForTests(bool insideGate)` — the flag is what pins the rollback
+  and nudge ordering rather than asserting about it; `AfterClaimForTests` is now wrapped so a hook's throw is rolled
+  back. Five new tests: four in `SwitchClaimTests` (throwing nudge, scheduling failure, shutdown-during-a-claim,
+  hook rollback, plus the unchanged-path control that an unsuperseded switch still returns Ready and nudges once
+  outside the gate) and one in `CapabilityPublicationTests` (`ASecondCallerTakesTheProofInsteadOfClaimingASecondSwitch`,
+  which parks the newcomer and releases it only after the switch in front has settled, so the claim is decided
+  against an idle state and a proven snapshot with no dependence on thread scheduling). Mutation evidence, each hunk
+  reverted: nudge restored before the settle → the nudge test fails, the control stays green; claim skips the
+  re-decision → the newcomer test fails (second switch); `_switchLock.Dispose()` restored → shutdown reports
+  `ObjectDisposedException` where cancellation is expected; rollback moved inside the gate → the recorded gate flag
+  flips to true. **Not closed here:** the window and profile gauges still carry no epoch (TASK-63 AC #2), and the
+  resume-authorisation half of the same review — a waiting caller whose snapshot no longer authorises its target —
+  is its own row (TASK-61).
 - v0.12.30 — a switch that trusts its exec still has to be told the engine serves the model (§5.5), from the
   same plan review of the publication-honesty fix set. What changed: on the `wait_health = false` path a post-launch
   `/models` refresh that **answers** was published as a proof and the switch ended ready whether or not the reported
@@ -1237,6 +1264,23 @@ engine forks land; the scheduler interface will not change shape.
   commit of a transition signals the dispatcher directly (no new event kind, no wire surface changes): the switch
   outcome events are emitted *before* the commit, so a dispatcher woken by them sees the marker still up and would
   otherwise not look at the queue again until the next health poll.
+- **The claim is decided and published from one snapshot, and a switch's end settles before it nudges.** The
+  readiness answer and the marker come from the **same** capability snapshot: the claim is an expected-version
+  compare-exchange on the version that decision read, and a lost exchange means something published while this
+  caller was deciding — so it re-decides on the newer snapshot, and a poll that proved the requested model
+  retires the claim instead of buying a second launch of a model already served. Inside the transition gate the
+  state write still follows the marker. **Settle, then nudge:** the readiness task is completed first, then the
+  dispatcher nudge runs with the gate released and its own failure swallowed. A callback that throws must not
+  rewrite a switch that already committed — before, the throw escaped into the switch's own catch, turned a proven
+  switch into a failed one, and left the waiter parked until that catch ran — and a lost nudge costs at most one
+  poll interval, not the switch. Two failure edges settle the same way: a synchronous failure at the scheduling
+  boundary undoes its claim (settle, clear the marker, engine claimable again), and so does a claim hook that
+  throws, with the undo taken **after** leaving the gate because the gate is reentrant and undoing inside it would
+  run the settle and the nudge while every later claim queues behind it. Shutdown releases the two waits by
+  **cancellation**: the switch lock is deliberately never disposed, since a waiter released by `ObjectDisposedException`
+  can only be reported as `engine_unreachable` — a router shutting down described as a broken engine — so the waits
+  carry a token linked to the engine's switch token, and the shutdown outcome on the wire is `cancelled`. The claim
+  edges are pinned in `SwitchClaimTests`; the retired claim, in `CapabilityPublicationTests`.
 - **The other two waits are bounded separately**: a model switch and an engine's turn each get their own
   ceiling, because an expired queue deadline says nothing about them. `switch_wait_timeout_ms`
   (scheduler, default `0` = no ceiling) caps how long a queued request waits for a switch it triggered:

@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Runtime.ExceptionServices;
 using System.Text;
 using System.Text.Json;
 using Arboreal.InferenceRouter.Lifecycle;
@@ -30,6 +31,18 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
     // state is installed, so a test can read what the shared snapshot said at the exact moment the engine was
     // claimed. Null everywhere else; one null check on a path that runs once per switch.
     internal Action? AfterClaimForTests;
+
+    /// <summary>More ordering seams, null everywhere outside tests (one null check each, on a once-per-switch
+    /// path). <see cref="BeforeSwitchWaitForTests"/> runs on the way to waiting for the claim, which is where a
+    /// second caller has to be parked for single-flight claiming to be testable without a sleep. The argument to
+    /// <see cref="AfterEndCommitForTests"/> says whether the call happens while the transition gate is held: it
+    /// is false for a normal switch end *and* for the rollback of a failed claim, which is the ordering those two
+    /// paths must keep — the readiness settle and the dispatch nudge do not belong inside a lock that every later
+    /// claim queues behind. <see cref="BeforeScheduleSwitchForTests"/> runs at the scheduling boundary, so a
+    /// synchronous failure there is testable; a real thread-pool rejection is not, and is not claimed.</summary>
+    internal Action? BeforeSwitchWaitForTests;
+    internal Action<bool>? AfterEndCommitForTests;
+    internal Action? BeforeScheduleSwitchForTests;
 
     /// <summary>Pairs a switch-state change with its marker change and nothing else. The two are read by
     /// different consumers — the scheduler's view takes "switching" from the capability marker
@@ -259,17 +272,19 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
         }
     }
 
-    /// <summary>Open a switch in the snapshot: the marker goes up and health becomes unknown in one
-    /// publication. What follows is a mutation of the engine, so its previous answer has to stop being
-    /// claimed at the moment the mutation is decided, not after it turns out to have failed.</summary>
-    private void PublishSwitchStarted(string model)
+    /// <summary>Open a switch in the snapshot — marker up and health unknown in one publication — but only while
+    /// nothing has published since <paramref name="expectedVersion"/>, the version of the snapshot the readiness
+    /// question was just answered on. What follows is a mutation of the engine, so its previous answer has to stop
+    /// being claimed at the moment the mutation is <i>decided</i>, not after it turns out to have failed. Returns
+    /// false when it did not claim, and the caller re-decides against the newer snapshot: the health loop and every
+    /// switch exit publish <i>outside</i> the transition gate, so a poll that proves the requested model a moment
+    /// before the claim has to retire the switch rather than buy a second launch of a model already served (§5.5).</summary>
+    private bool TryPublishSwitchStarted(string model, long expectedVersion)
     {
-        while (true)
-        {
-            var cur = Volatile.Read(ref _cap);
-            var next = cur with { Version = cur.Version + 1, SwitchingToward = model, Healthy = false };
-            if (Interlocked.CompareExchange(ref _cap, next, cur) == cur) return;
-        }
+        var cur = Volatile.Read(ref _cap);
+        if (cur.Version != expectedVersion) return false;   // someone published: their answer is the one to decide on
+        var next = cur with { Version = cur.Version + 1, SwitchingToward = model, Healthy = false };
+        return Interlocked.CompareExchange(ref _cap, next, cur) == cur;
     }
 
     /// <summary>Move the switch marker only — used to clear it once a proof has been published. Opening a
@@ -551,9 +566,13 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
     /// The answer comes from one current, verified snapshot, not from the reported list alone: a list is
     /// history once a switch has started, and health unknown means the router does not know what is running
     /// now, so neither can license a dispatch (§5.5).</summary>
-    public bool IsReadyFor(string canonical, ServingProfile? profile)
+    public bool IsReadyFor(string canonical, ServingProfile? profile) => ReadyIn(Capability, canonical, profile);
+
+    /// <summary>The same predicate against a snapshot the caller already holds. The claim path needs that form:
+    /// the readiness decision and the switch marker have to come from one snapshot, or a poll that proves the
+    /// model in between buys a second launch (§5.5).</summary>
+    private bool ReadyIn(EngineCapability cap, string canonical, ServingProfile? profile)
     {
-        var cap = Capability;
         if (!cap.Healthy || cap.SwitchingToward is not null) return false;
         foreach (var name in cap.LoadedModels)
         {
@@ -583,12 +602,25 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
         // being failed by someone else's switch.
         var deadline = timeout == Timeout.InfiniteTimeSpan ? DateTimeOffset.MaxValue : DateTimeOffset.UtcNow + timeout;
         var last = new SwitchResult(SwitchOutcome.Failed, null);
+        // Shutdown has to reach the two waits below as cancellation, not as an ObjectDisposedException: the switch
+        // lock is deliberately never disposed (see DisposeAsync), so a waiter is released by a token linked to the
+        // engine's switch token instead. This source is disposed with the call; the engine's own is not.
+        using var waiterCts = CancellationTokenSource.CreateLinkedTokenSource(ct, _switchCts.Token);
+        var waiter = waiterCts.Token;
         while (true)
         {
             SwitchState state;
-            await _switchLock.WaitAsync(ct).ConfigureAwait(false);
+            BeforeSwitchWaitForTests?.Invoke();
+            // IDISP013 is a false positive at both waits on `waiter`: this source is disposed when the method
+            // returns, and every wait on its token is awaited inline before that — nothing here is detached.
+#pragma warning disable IDISP013 // await-in-using not applicable: the wait is awaited, not detached
+            await _switchLock.WaitAsync(waiter).ConfigureAwait(false);
+#pragma warning restore IDISP013
             try
             {
+                SwitchState? mine = null;
+                Exception? claimFault = null;
+                CancellationToken switchToken = default;
                 // The read and the claim move together. A switch's end runs outside the switch lock, so this is
                 // the point where a second waiter can meet a switch that is committing its last step: reading
                 // outside the gate lets this caller coalesce onto a readiness task that resolves a moment later
@@ -596,46 +628,78 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
                 lock (_transitionGate)
                 {
                     state = Volatile.Read(ref _switchState);
+                    if (state.Model is null)
+                    {
+                        // Decide and claim from **one** snapshot: readiness is read off `cap`, and the marker goes up
+                        // by CAS on `cap.Version`. The health loop and every switch exit publish outside this gate,
+                        // so the exchange can lose — and losing means something published while this caller was
+                        // deciding, which is re-decided on rather than launched over. A poll that proved *this*
+                        // caller's model retires the switch outright: that is the race that used to buy a second
+                        // launch of a model that was already served (§5.5).
+                        while (true)
+                        {
+                            var cap = Capability;
+                            if (ReadyIn(cap, canonical, profileOverride))
+                                return new SwitchResult(SwitchOutcome.Ready, null);
+
+                            var candidate = new SwitchState { Model = canonical, Profile = profileOverride?.Name, StartedAt = DateTimeOffset.UtcNow };
+                            candidate.Ready = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+                            if (!TryPublishSwitchStarted(canonical, cap.Version)) continue;
+
+                            // Marker before state, both inside the gate: the scheduler reads "switching" from the
+                            // capability snapshot, so installing the switch state before the marker goes up leaves a
+                            // window in which a dispatch pass sees an engine whose switch has already been claimed as
+                            // idle and sends a request into the engine this switch is about to stop (§5.5). The switch
+                            // token is read *before* scheduling: reading it inside the task body races DisposeAsync,
+                            // and an ObjectDisposedException thrown before RunSwitchAsync is entered would strand
+                            // `Ready` with no finally to settle it, leaving waiters out their ceiling on a switch
+                            // that never ran.
+                            switchToken = _switchCts.Token;
+                            Volatile.Write(ref _switchState, candidate);
+                            try { AfterClaimForTests?.Invoke(); }
+                            catch (Exception ex) { claimFault = ex; }   // the claim is undone below, outside the gate
+                            mine = candidate;
+                            break;
+                        }
+                        state = mine!;
+                    }
                 }
 
-                if (state.Model is null)
+                if (mine is { } claim)
                 {
-                    var newState = new SwitchState { Model = canonical, Profile = profileOverride?.Name, StartedAt = DateTimeOffset.UtcNow };
-                    newState.Ready = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-                    // Read the switch token *before* scheduling. Reading it inside the task body races
-                    // DisposeAsync: an ObjectDisposedException thrown before RunSwitchAsync is entered
-                    // would strand `Ready` with no finally to settle it, and the waiters would sit out
-                    // their ceiling on a switch that never ran.
-                    var switchToken = _switchCts.Token;
-                    // Marker and unknown first, both inside the gate: the scheduler reads "switching" from
-                    // the capability snapshot, so installing the switch state before the marker goes up
-                    // leaves a window in which a dispatch pass sees an engine whose switch has already been
-                    // claimed as idle, and sends a request into the engine this switch is about to stop
-                    // (§5.5).
-                    lock (_transitionGate)
+                    if (claimFault is { } fault)
                     {
-                        PublishSwitchStarted(canonical);
-                        Volatile.Write(ref _switchState, newState);
-                        AfterClaimForTests?.Invoke();
+                        // Undo the claim **after** leaving the gate: EndSwitch settles the waiters and nudges dispatch,
+                        // and Monitor is reentrant, so undoing it inside the lock would run both of those while every
+                        // later claim queues behind the gate. Then let the hook's failure reach the caller.
+                        EndSwitch(claim, false);
+                        ExceptionDispatchInfo.Capture(fault).Throw();
                     }
                     try
                     {
+                        BeforeScheduleSwitchForTests?.Invoke();
+                        // IDISP013 again: the switch task is deliberately detached, and it never touches the linked
+                        // waiter source above — it runs on the engine's own switch token — so the using scope cannot
+                        // dispose anything this task is still using.
+#pragma warning disable IDISP013 // await-in-using not applicable: intentionally detached Task, no shared source
                         _ = Task.Run(
-                            () => RunSwitchAsync(newState, canonical, profileOverride, switchToken),
-                            // Deliberately not the caller's token: the switch's own token above decides whether
-                            // the transaction runs, and a request that hangs up must not be able to abort it
-                            // halfway through a model load.
+                            () => RunSwitchAsync(claim, canonical, profileOverride, switchToken),
+                            // Deliberately not the caller's token: the switch's own token above decides whether the
+                            // transaction runs, and a request that hangs up must not be able to abort it halfway
+                            // through a model load.
                             CancellationToken.None);
+#pragma warning restore IDISP013
                     }
                     catch (Exception)
                     {
-                        // The task never started (thread-pool rejection is the realistic case). Settle the
-                        // waiters and put the engine back rather than leaving it "switching" forever.
-                        EndSwitch(newState, false);
+                        // The task never started: a synchronous failure at the scheduling boundary (the case the seam
+                        // pins) and a thread-pool rejection look the same from here. Settle the waiters and put the
+                        // engine back rather than leaving it "switching" forever.
+                        EndSwitch(claim, false);
                         return new SwitchResult(SwitchOutcome.Failed,
                             $"could not start the switch to {DescribeTarget(canonical, profileOverride?.Name)}");
                     }
-                    state = newState;
+                    state = claim;
                 }
             }
             finally
@@ -658,7 +722,9 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
             bool ready;
             try
             {
-                ready = await state.Ready.Task.WaitAsync(remaining, ct).ConfigureAwait(false);
+#pragma warning disable IDISP013 // await-in-using not applicable: the wait is awaited, not detached
+                ready = await state.Ready.Task.WaitAsync(remaining, waiter).ConfigureAwait(false);
+#pragma warning restore IDISP013
             }
             catch (TimeoutException)
             {
@@ -728,8 +794,18 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
             // idle state and this line, which would hide a running model load from the scheduler. A second
             // EndSwitch for the same attempt (the finally block) sees a successor's state and does nothing.
         }
-        if (committed) _dispatchHint?.Invoke();
+        // Settle the waiters first, then nudge: an injected callback, or the dispatcher the nudge wakes, must not
+        // be able to rewrite a switch that has already committed, and a waiter must not stay parked behind a
+        // callback that throws. Every Emit has already happened before EndSwitch, so the feed still precedes the
+        // wake (decision 7); the hint's own failure costs at most one poll interval, because the next dispatch
+        // pass is woken by the next event instead.
         state.Ready.TrySetResult(ready);
+        if (committed)
+        {
+            try { _dispatchHint?.Invoke(); }
+            catch (Exception) { /* a lost nudge is a late dispatch, not a lost switch */ }
+            AfterEndCommitForTests?.Invoke(Monitor.IsEntered(_transitionGate));
+        }
     }
 
     private async Task RunSwitchAsync(SwitchState state, string model, ServingProfile? profileOverride, CancellationToken ct)
@@ -950,7 +1026,10 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
         // Cancel is the whole contract — the switch stops; the source is collected with the runtime.
         _http.Dispose();
         _ownedHandler?.Dispose();
-        _switchLock.Dispose();
+        // The switch lock is deliberately not disposed: a waiter parked on it during shutdown would answer with
+        // ObjectDisposedException, which the request path can only report as engine_unreachable — a shutting-down
+        // router described as a broken engine. Waiters are released by the token linked to _switchCts instead, and
+        // that source *is* disposed with the call, so nothing here leaks a live linked token.
         _lifecycle.Dispose();
         await Task.CompletedTask;
     }
