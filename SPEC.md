@@ -1,6 +1,6 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.52)
+Status: draft, continuously revised (v0.12.53)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
@@ -352,6 +352,10 @@ daemon transaction per engine. 137 tests green.
   that answers no `upload_url`, an upload that dies or answers no asset id, an asset name listed twice on
   the release, and a tag that moves after the first resolve. No tag has run the gate: still configured,
   not proven.
+- v0.12.53 — an expired switch wait checks the shutdown latch after reading a prior outcome
+  (§5.5, TASK-98). A foreign attempt that already finished does not hide a stop. A caller retains
+  its own committed failure or a readiness proof that still stands. The public switching flag
+  reads the scheduler's capability marker.
 - v0.12.52 — release preflight validates the entire manual tag input as data and always forces
   dry run for manual dispatch (TASK-90). The preflight lookup and both publication rechecks resolve
   the full `refs/tags/<tag>` reference. The offline harness rejects the short `tags/<tag>` form with
@@ -1810,8 +1814,11 @@ engine forks land; the scheduler interface will not change shape.
   release callers waiting for the switch lock as well as for readiness. Either wake-up yields the same recorded
   switch outcome. The transaction keeps its marker until it unwinds and clears the marker itself. A proof that has
   not committed when shutdown wins is withdrawn before the marker clears. If readiness or failure committed first,
-  that outcome remains available to its waiter under the ordinary resume rules. The runtime keeps one switch token
-  for its lifetime. `ShutdownStopCauseTests` parks a caller past its initial stop check to test the gate, holds a
+  that outcome remains available to its waiter under the ordinary resume rules. At expiry the same gate answers from
+  those rules first. A caller that would still need another claim then receives `RouterStopped` if shutdown has
+  latched, even if the foreign attempt it waited on has already finished. The public switching flag is derived
+  from the same capability marker used by the scheduler. The runtime keeps one switch token for its lifetime.
+  `ShutdownStopCauseTests` parks a caller past its initial stop check to test the gate, holds a
   waiter across a late provider failure to test the frozen cause, and exercises both orderings of readiness and
   shutdown. The claim edges are pinned in `SwitchClaimTests`; the retired claim, in
   `CapabilityPublicationTests`. The sequence the withdrawn rule broke is pinned there as well: two callers wanting

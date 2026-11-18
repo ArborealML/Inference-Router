@@ -121,9 +121,11 @@ public sealed class ShutdownStopCauseTests
             if (e.Kind is "engine.switch_completed") readyBeforeEnd.Enter();
         });
         await using var engine = Engine(provider, handler, feed, () => ended.TrySetResult());
+        (bool Switching, string? Target) atClaim = default;
+        engine.AfterClaimForTests = () => atClaim = (engine.Switching, engine.SwitchingToward);
         var waiter = engine.WaitForModelAsync(Model, Limit, CancellationToken.None);
         EngineRuntime.SwitchResult stopped;
-        string? markerWhileHeld;
+        (bool Switching, string? Target) whileStopped;
 
         try
         {
@@ -132,7 +134,7 @@ public sealed class ShutdownStopCauseTests
             await readyBeforeEnd.Entered.WaitAsync(Limit);
             await engine.DisposeAsync();
             stopped = await waiter.WaitAsync(Limit);
-            markerWhileHeld = engine.SwitchingToward;
+            whileStopped = (engine.Switching, engine.SwitchingToward);
         }
         finally
         {
@@ -142,9 +144,91 @@ public sealed class ShutdownStopCauseTests
 
         await ended.Task.WaitAsync(Limit);
         Assert.Equal(EngineRuntime.SwitchOutcome.RouterStopped, stopped.Outcome);
-        Assert.Equal(Model, markerWhileHeld);
+        Assert.Equal((true, (string?)Model), atClaim);
+        Assert.Equal((true, (string?)Model), whileStopped);
+        Assert.False(engine.Switching);
         Assert.Null(engine.SwitchingToward);
         Assert.False(engine.IsReadyFor(Model, null));
+    }
+
+    [Fact(Timeout = 60_000)]
+    public async Task AForeignWaitExpiringAfterStopReportsRouterStopped()
+    {
+        var provider = new HeldProvider();
+        using var handler = new FakeEngineHandler { LoadedModels = [Model] };
+        await using var engine = Engine(provider, handler);
+        var beforeExpiry = new Pause();
+        engine.SwitchWaitTimeForTests = deadline =>
+        {
+            beforeExpiry.Enter();
+            return deadline;
+        };
+        var owner = engine.WaitForModelAsync(Model, Timeout.InfiniteTimeSpan, CancellationToken.None);
+        Task<EngineRuntime.SwitchResult> foreign;
+        EngineRuntime.SwitchResult ownResult;
+        string? markerBeforeStop;
+
+        try
+        {
+            await provider.Launched.WaitAsync(Limit);
+            foreign = Task.Run(() => engine.WaitForModelAsync("another-model", Limit, CancellationToken.None));
+            await beforeExpiry.Entered.WaitAsync(Limit);
+            provider.Release(LifecycleResult.Ok());
+            ownResult = await owner.WaitAsync(Limit);
+            markerBeforeStop = engine.SwitchingToward;
+            // Stop the idle runtime before advancing the foreign wait's clock to its deadline.
+            await engine.DisposeAsync();
+        }
+        finally
+        {
+            provider.Release(LifecycleResult.Fail("cleanup", "the test released the fake launch"));
+            beforeExpiry.Release();
+        }
+
+        var answer = await foreign.WaitAsync(Limit);
+        Assert.Equal(EngineRuntime.SwitchOutcome.Ready, ownResult.Outcome);
+        Assert.Null(markerBeforeStop);
+        Assert.Equal(EngineRuntime.SwitchOutcome.RouterStopped, answer.Outcome);
+        Assert.Null(answer.Detail);
+    }
+
+    [Theory(Timeout = 60_000)]
+    [InlineData(true, EngineRuntime.SwitchOutcome.Ready, null)]
+    [InlineData(false, EngineRuntime.SwitchOutcome.Failed, "launch_failed")]
+    public async Task AnExpiredOwnWaitKeepsItsCommittedOutcome(
+        bool launchSucceeds, EngineRuntime.SwitchOutcome expected, string? detail)
+    {
+        var provider = new HeldProvider();
+        using var handler = new FakeEngineHandler { LoadedModels = [Model] };
+        var ended = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await using var engine = Engine(provider, handler, dispatchHint: () => ended.TrySetResult());
+        var beforeExpiry = new Pause();
+        engine.SwitchWaitTimeForTests = deadline =>
+        {
+            beforeExpiry.Enter();
+            return deadline;
+        };
+        var owner = Task.Run(() => engine.WaitForModelAsync(Model, Limit, CancellationToken.None));
+
+        try
+        {
+            await provider.Launched.WaitAsync(Limit);
+            await beforeExpiry.Entered.WaitAsync(Limit);
+            provider.Release(launchSucceeds
+                ? LifecycleResult.Ok()
+                : LifecycleResult.Fail("fake_failure", "the fake launch failed before shutdown"));
+            await ended.Task.WaitAsync(Limit);
+            await engine.DisposeAsync();
+        }
+        finally
+        {
+            provider.Release(LifecycleResult.Fail("cleanup", "the test released the fake launch"));
+            beforeExpiry.Release();
+        }
+
+        var answer = await owner.WaitAsync(Limit);
+        Assert.Equal(expected, answer.Outcome);
+        Assert.Equal(detail, answer.Detail);
     }
 
     private static EngineRuntime Engine(

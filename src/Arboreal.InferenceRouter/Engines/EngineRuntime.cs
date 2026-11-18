@@ -50,6 +50,8 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
     /// make the ordering the answer depends on — switch settled, then the waiter decides — a fact it observes
     /// rather than a fact it hopes the scheduler produces. Null outside tests.</summary>
     internal Action<bool>? AfterReadyWaitForTests;
+    // Overrides the time used to check a finite wait budget after capturing the attempt.
+    internal Func<DateTimeOffset, DateTimeOffset>? SwitchWaitTimeForTests;
 
     /// <summary>Orders claims, switch outcomes and shutdown. It also pairs each switch-state change with its
     /// marker change. The two are read by different consumers — the scheduler's view takes "switching" from the capability marker
@@ -370,7 +372,7 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
     private int _inflight;
     public long InflightTokenProxy => Interlocked.Read(ref _tokenProxy);
     private long _tokenProxy;
-    public bool Switching => Volatile.Read(ref _switchState).Model is not null;
+    public bool Switching => SwitchingToward is not null;
     public string? SwitchingToward => Volatile.Read(ref _cap).SwitchingToward;
 
     private static string? ResolveApiKey(EngineDefinition def)
@@ -898,7 +900,7 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
 
             var remaining = deadline == DateTimeOffset.MaxValue
                 ? Timeout.InfiniteTimeSpan
-                : deadline - DateTimeOffset.UtcNow;
+                : deadline - (SwitchWaitTimeForTests?.Invoke(deadline) ?? DateTimeOffset.UtcNow);
             if (deadline != DateTimeOffset.MaxValue && remaining <= TimeSpan.Zero)
                 return AnswerExpiredSwitchWait(state, canonical, profileOverride, null);
 
@@ -922,53 +924,37 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
 
             AfterReadyWaitForTests?.Invoke(wokeByCancellation);
 
-            var end = state.End;
-            if (end == SwitchEnd.RouterStopped) return SwitchResult.RouterStopped;
-            var ready = end == SwitchEnd.Ready;
-
-            if (IsReadyFor(canonical, profileOverride)) return new SwitchResult(SwitchOutcome.Ready, null);
-            // Four answers at resume, in this order (§5.5). The snapshot still authorises the target: Ready. A caller
-            // whose **own** attempt *proved* its target keeps that proof unless something contradicts it: a
-            // successor's claim raises the marker and withdraws health in one publication, and that is somebody
-            // else's transaction starting, not evidence that the engine stopped serving — parking the caller behind
-            // it, or failing it for a switch that worked, both lose a proof the router itself published. This
-            // caller's own attempt ended false: Failed, once, because nothing retries inside the engine and a caller
-            // with no ceiling would otherwise relaunch the same broken switch forever. Anything else — a proof a
-            // later observation contradicted, or a switch that belonged to someone else's target or profile — takes
-            // its own turn through the claim path, exactly as decision-9 prescribes, bounded by its own ceiling and
-            // never by a refusal.
-            if (ready && state.Model == canonical && state.Profile == profileOverride?.Name &&
-                OwnProofStillStands(Capability, canonical, profileOverride))
-            {
-                return new SwitchResult(SwitchOutcome.Ready, null);
-            }
-            if (!ready && state.Model == canonical && state.Profile == profileOverride?.Name)
-            {
-                // This attempt ended false, and it was this caller's own: the answer is Failed once, with the
-                // reason *category* the attempt recorded and nothing else — not the operator's sentence, which
-                // carries provider text and stays on the feed, and not a sentence of the router's own either.
-                // Wrapping the token in `switch to <target> failed` described the same target the caller had just
-                // named and left the caller's half shaped like prose at the exit that matters most; the door takes
-                // the recorded name, so a tenth exit that records something outside the set fails here, at the
-                // answer, rather than only in the source audit. An attempt that ended false before recording
-                // anything, such as the `finally` path, takes the
-                // catch-all name, the same answer the never-started attempt gives (§5.5).
-                // No retry happens here: the caller who gave no ceiling would otherwise relaunch a switch that is
-                // not going to get better.
-                return SwitchResult.FailedFromRecord(state.FailureReason);
-            }
-            // A switch that belonged to another request's target ended: this caller takes its own turn.
+            if (ReadSwitchAnswer(state, canonical, profileOverride, woke: true) is { } answer) return answer;
+            // A contradicted proof or an unrelated outcome sends the caller back through the claim gate.
         }
+    }
+
+    private SwitchResult? ReadSwitchAnswer(SwitchState state, string canonical, ServingProfile? profile, bool woke)
+    {
+        var end = state.End;
+        if (end == SwitchEnd.RouterStopped) return SwitchResult.RouterStopped;
+
+        var cap = Capability;
+        if (ReadyIn(cap, canonical, profile)) return new SwitchResult(SwitchOutcome.Ready, null);
+        if (state.Model != canonical || state.Profile != profile?.Name) return null;
+
+        // An own proof still authorises the caller while a successor's claim alone has withdrawn health.
+        if (end == SwitchEnd.Ready)
+            return OwnProofStillStands(cap, canonical, profile) ? new SwitchResult(SwitchOutcome.Ready, null) : null;
+
+        // A real wake requires a terminal state. If that invariant is broken, fail with the same
+        // bounded category used by a failed switch with no recorded reason.
+        return end == SwitchEnd.Failed || woke ? SwitchResult.FailedFromRecord(state.FailureReason) : null;
     }
 
     private SwitchResult AnswerExpiredSwitchWait(SwitchState state, string canonical, ServingProfile? profile, TimeSpan? wait)
     {
-        // A stop or proof can commit as the caller's ceiling expires. Read the outcome and capability after
-        // that transition, including its marker change.
         lock (_transitionGate)
         {
-            if (state.End == SwitchEnd.RouterStopped) return SwitchResult.RouterStopped;
-            if (IsReadyFor(canonical, profile)) return new SwitchResult(SwitchOutcome.Ready, null);
+            // A foreign terminal outcome leaves this caller owing another claim. The stop latch can
+            // refuse that claim even after the foreign attempt has left the runtime idle.
+            if (ReadSwitchAnswer(state, canonical, profile, woke: false) is { } answer) return answer;
+            if (_stopped) return SwitchResult.RouterStopped;
         }
         return new SwitchResult(SwitchOutcome.TimedOut, wait is { } elapsed ?
             $"still switching after {FormatWait(elapsed)}; a switch for another request is in flight" : null);
