@@ -588,6 +588,30 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
     public sealed record SwitchResult(SwitchOutcome Outcome, string? Detail)
     {
         public bool IsReady => Outcome == SwitchOutcome.Ready;
+
+        /// <summary>The only door a failed switch answer leaves the engine by: the caller is told one name from
+        /// <see cref="SwitchReason.All"/> and nothing else from the attempt. A category outside that set is a
+        /// programming error rather than a wire value, and it fails here instead of reaching a caller as a sentence
+        /// they cannot act on — the request path's outer catch turns it into the 500 that §6.1 already calls a bug
+        /// to fix at the producer. A wait that merely ran out is not a failed attempt: it is
+        /// <see cref="SwitchOutcome.TimedOut"/>, and it carries the caller's own ceiling and no name from this set
+        /// (§5.5).</summary>
+        internal static SwitchResult Failed(string category)
+        {
+            if (!SwitchReason.All.Contains(category, StringComparer.Ordinal))
+                throw new ArgumentException(
+                    $"refusal category \"{WireText.Head(category, 64)}\" is not one of the named categories (§5.5)",
+                    nameof(category));
+            return new SwitchResult(SwitchOutcome.Failed, category);
+        }
+
+        /// <summary>The one place an attempt's <i>recorded</i> reason becomes a caller-facing answer: the recorded
+        /// name goes through the door above exactly as written, and an attempt that ended false before it recorded
+        /// anything — the <c>finally</c> path, a shutdown cancellation folded into a false end — takes the catch-all
+        /// name rather than a bare sentence. Exactly one arm of one expression applies that fallback, and the
+        /// source audit says so (§5.5).</summary>
+        internal static SwitchResult FailedFromRecord(string? recorded) =>
+            Failed(recorded is { Length: > 0 } why ? why : SwitchReason.SwitchError);
     }
 
     /// <summary>Ensure the model is loaded on this engine: no-op when loaded; otherwise performs
@@ -647,7 +671,28 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
     {
         var canonical = CanonicalModel(model) ?? model;
         if (IsReadyFor(canonical, profileOverride)) return new SwitchResult(SwitchOutcome.Ready, null);
-        if (_def.Remote) return new SwitchResult(SwitchOutcome.Failed, "remote engine loads its own models");
+        // No lifecycle owner. Today the single `remote` flag is the whole predicate; the *name* states the
+        // relation, so the wire token does not have to change again when reach and ownership split into two
+        // config keys. Nothing was attempted and nothing was mutated, so the engine keeps its last proof, and no
+        // switch marker went up, so there is no switch to end (§5.5).
+        if (_def.Remote) return SwitchResult.Failed(SwitchReason.NoLifecycleOwner);
+
+        // A catalog entry that names no selector is a fixed configuration gap the catalog can predict, and the
+        // delegated provider would refuse it in preflight: the caller would be told `launch_failed` (a config
+        // mismatch read as a failed launch) and the engine's last proof would be thrown away for a transaction
+        // that never began. Answered here — before any switch marker goes up — with the same name the catalog miss
+        // uses, off the provider's own predicate so the two answers cannot drift. Nothing is mutated, so there is
+        // no switch to end (§5.5, AC #2).
+        if (_lifecycle.Kind == DelegatedExecProvider.ProviderKind &&
+            _def.Catalog.TryGetValue(canonical, out var entry) &&
+            !DelegatedExecProvider.HasUsableSelector(entry))
+        {
+            Emit("engine.switch_failed", model: canonical,
+                reason: "no_select_command: the catalog entry has no usable select exec — name one with " +
+                    "select = { exec = … }, move the model to an engine whose lifecycle the router owns, or " +
+                    "mark this engine remote");
+            return SwitchResult.Failed(SwitchReason.NoSelectCommand);
+        }
 
         // `timeout` bounds the *waiting*, never the switch: the transaction belongs to the engine and
         // runs on _switchCts, so a caller that gives up leaves the engine switching rather than
@@ -655,7 +700,6 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
         // at another request's model, this caller waits for it and then takes its own turn rather than
         // being failed by someone else's switch.
         var deadline = timeout == Timeout.InfiniteTimeSpan ? DateTimeOffset.MaxValue : DateTimeOffset.UtcNow + timeout;
-        var last = new SwitchResult(SwitchOutcome.Failed, null);
         // Shutdown has to reach the two waits below as cancellation, not as an ObjectDisposedException: the switch
         // lock is deliberately never disposed (see DisposeAsync), so a waiter is released by a token linked to the
         // engine's switch token instead. This source is disposed with the call; the engine's own is not.
@@ -748,10 +792,17 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
                     {
                         // The task never started: a synchronous failure at the scheduling boundary (the case the seam
                         // pins) and a thread-pool rejection look the same from here. Settle the waiters and put the
-                        // engine back rather than leaving it "switching" forever.
-                        EndSwitch(claim, false);
-                        return new SwitchResult(SwitchOutcome.Failed,
-                            $"could not start the switch to {DescribeTarget(canonical, profileOverride?.Name)}");
+                        // engine back rather than leaving it "switching" forever. The caller gets the catch-all
+                        // category, because their action — retry — is the same as for an attempt that threw, and never
+                        // the target of the switch it could not start. The *phase* is what tells the two apart and it
+                        // goes to the feed, where an operator reads it (§5.5).
+                        // Recorded before the switch is ended, like every other exit, so a waiter never wakes onto a
+                        // failure with no explanation on the feed yet. EndSwitch stays in the finally because a feed
+                        // subscriber runs inside the ring's append with no isolation: an observer that throws must not
+                        // be able to leave the engine latched mid-switch (that isolation is a change of its own).
+                        try { Emit("engine.switch_failed", model: model, reason: FeedReason.SwitchNotStarted); }
+                        finally { EndSwitch(claim, false); }
+                        return SwitchResult.Failed(SwitchReason.SwitchError);
                     }
                     state = claim;
                 }
@@ -768,9 +819,12 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
             // request with no ceiling would otherwise be "timed out" before it ever waited.
             if (deadline != DateTimeOffset.MaxValue && remaining <= TimeSpan.Zero)
             {
+                // Nothing of this caller's own attempt ended, so nothing is quoted back: what was in front of them
+                // belongs to another request, and the caller's ceiling is already in the sentence the request path
+                // writes around this outcome (§5.5).
                 return IsReadyFor(canonical, profileOverride)
                     ? new SwitchResult(SwitchOutcome.Ready, null)
-                    : new SwitchResult(SwitchOutcome.TimedOut, last.Detail);
+                    : new SwitchResult(SwitchOutcome.TimedOut, null);
             }
 
             bool ready;
@@ -785,7 +839,8 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
             catch (TimeoutException)
             {
                 // The switch may have finished and loaded the model in the instant before the wait gave
-                // up, so re-check rather than trusting the timeout alone.
+                // up, so re-check rather than trusting the timeout alone. The sentence is the caller's own ceiling
+                // and the engine's own state — never the target of the switch they were parked behind (§5.5).
                 return IsReadyFor(canonical, profileOverride)
                     ? new SwitchResult(SwitchOutcome.Ready, null)
                     : new SwitchResult(SwitchOutcome.TimedOut,
@@ -835,16 +890,21 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
             if (!ready && state.Model == canonical && state.Profile == profileOverride?.Name)
             {
                 // This attempt ended false, and it was this caller's own: the answer is Failed once, with the
-                // reason *category* the attempt recorded — not the operator's sentence, which carries provider text
-                // and stays on the feed. No retry happens here: the caller who gave no ceiling would otherwise
-                // relaunch a switch that is not going to get better (§5.5).
-                return new SwitchResult(SwitchOutcome.Failed,
-                    state.FailureReason is { Length: > 0 } why
-                        ? $"switch to {DescribeTarget(canonical, profileOverride?.Name)} failed: {why}"
-                        : $"switch to {DescribeTarget(canonical, profileOverride?.Name)} failed");
+                // reason *category* the attempt recorded and nothing else — not the operator's sentence, which
+                // carries provider text and stays on the feed, and not a sentence of the router's own either.
+                // Wrapping the token in `switch to <target> failed` described the same target the caller had just
+                // named and left the caller's half shaped like prose at the exit that matters most; the door takes
+                // the recorded name, so a tenth exit that records something outside the set fails here, at the
+                // answer, rather than only in the source audit. An attempt that ended false before recording
+                // anything — the `finally` path, a shutdown cancellation folded into a false end — takes the
+                // catch-all name, the same answer the never-started attempt gives (§5.5).
+                // No retry happens here: the caller who gave no ceiling would otherwise relaunch a switch that is
+                // not going to get better.
+                return SwitchResult.FailedFromRecord(state.FailureReason);
             }
-            last = new SwitchResult(SwitchOutcome.Failed,
-                "a switch for another request ended; waiting for this request's own turn");
+            // A switch that belonged to another request's target ended: this caller takes its own turn through
+            // the claim path. Nothing is remembered for the caller — an expired wait is answered by the ceiling
+            // sentence alone, which names this caller's own target and their own ceiling (§5.5).
         }
     }
 
@@ -938,6 +998,11 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
         }
     }
 
+    /// <summary>Why the prove-health loop ended without readiness, as its last poll saw it: the category the
+    /// caller is told follows from this, so an engine that is up and wrong is not reported as an engine that is
+    /// still starting (§5.5).</summary>
+    private enum ReadinessMiss { NeverHealthy, ModelNotReported, WindowTooSmall }
+
     private async Task RunSwitchAsync(SwitchState state, string model, ServingProfile? profileOverride, CancellationToken ct)
     {
         try
@@ -953,6 +1018,18 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
                 // Reset, like every other exit: a request for a model this engine cannot select must not
                 // leave the engine permanently "switching", because every later waiter would join a
                 // readiness task that is already resolved false and never start a switch of its own.
+                return;
+            }
+            // The entry exists but names no selector the delegated provider can run. Left to the provider, that
+            // comes back from preflight as a refusal and the coordinator hands it back as a failed launch — a fixed
+            // configuration gap read as a launch failure. EnsureLoadedAsync answers the same predicate before the
+            // switch is claimed; this is the backstop for a claim that started while the catalog said otherwise,
+            // and it costs the marker up and down rather than a wrong name (§5.5).
+            if (_lifecycle.Kind == DelegatedExecProvider.ProviderKind && !DelegatedExecProvider.HasUsableSelector(md))
+            {
+                state.FailureReason = SwitchReason.NoSelectCommand;
+                Emit("engine.switch_failed", model: model, reason: SwitchReason.NoSelectCommand);
+                EndSwitch(state, false);
                 return;
             }
             var profileName = profileOverride?.Name ?? md.Profile;
@@ -987,6 +1064,14 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
             if (readiness.ProveHealth)
             {
                 var deadline = DateTimeOffset.UtcNow + readiness.Timeout;
+                // What the last poll actually saw, so the refusal names why readiness never arrived rather than
+                // naming the clock. Three ways this loop ends unsatisfied, and the caller's action differs for
+                // each: an engine that never said it was healthy is worth retrying later, an engine that stayed up
+                // and never named the model has a catalog key that does not match what it reports, and an engine
+                // serving the model in too small a window needs a ladder tier. Under the clock alone all three
+                // were `health_timeout` — a fixed mismatch reading as a transient one (§5.5).
+                var miss = ReadinessMiss.NeverHealthy;
+                string[] lastReported = [];
                 while (DateTimeOffset.UtcNow < deadline && !ct.IsCancellationRequested)
                 {
                     // Probe first: it refreshes the window gauge that the profile check below reads.
@@ -1006,17 +1091,52 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
                         EndSwitch(state, true);
                         return;
                     }
+                    if (!healthy) miss = ReadinessMiss.NeverHealthy;
+                    else if (!modelsNow.Contains(model, StringComparer.OrdinalIgnoreCase))
+                    {
+                        miss = ReadinessMiss.ModelNotReported;
+                        lastReported = modelsNow;
+                    }
+                    else miss = ReadinessMiss.WindowTooSmall;
                     try { await Task.Delay(2_000, ct).ConfigureAwait(false); } catch (OperationCanceledException) { }
                 }
                 // A readiness timeout is the one failure that has no exit code and no stderr, so the
                 // message has to carry the actionable part itself: what to look at, and the fact that
-                // the router will not quietly retry or route elsewhere.
-                state.FailureReason = SwitchReason.HealthTimeout;
-                Emit("engine.switch_failed", model: model, reason:
-                    $"health_timeout after {readiness.Timeout.TotalMilliseconds:F0}ms — engine {WireText.Ident(_def.Name)} " +
-                    $"never reported {WireText.Ident(model)} serving: inspect what the {_lifecycle.Kind} provider started " +
-                    "(for docker: containers labelled arboreal.engine=<name>) or raise the wait timeout; " +
-                    "the router does not retry or fall back to another engine");
+                // the router will not quietly retry or route elsewhere. The clock stays in the operator's
+                // sentence whatever the caller is told, so the grep key for an expired readiness window
+                // survives the category change (§5.5).
+                var window = $"health_timeout after {readiness.Timeout.TotalMilliseconds:F0}ms";
+                var askedFor = WireText.Ident(model);
+                switch (miss)
+                {
+                    case ReadinessMiss.ModelNotReported:
+                        state.FailureReason = SwitchReason.RefreshOmits;
+                        Emit("engine.switch_failed", model: model, reason:
+                            $"{window} — refresh_omits_{askedFor}: engine {WireText.Ident(_def.Name)} kept answering but never " +
+                            $"reported {askedFor} serving inside the readiness window: it said " +
+                            $"[{DescribeReportedNames(lastReported)}] and none of those names is {askedFor}: the catalog name " +
+                            "has to match what the engine reports (an alias is the router's spelling, not the engine's); " +
+                            "the router does not retry or fall back to another engine");
+                        break;
+                    case ReadinessMiss.WindowTooSmall:
+                        state.FailureReason = SwitchReason.WindowTooSmall;
+                        Emit("engine.switch_failed", model: model, reason:
+                            $"{window} — window_{ActiveContextWindow}_lt_{profileOverride!.MaxContext}: engine " +
+                            $"{WireText.Ident(_def.Name)} serves {askedFor} in a context window too small for the profile the " +
+                            "caller asked for: give the engine a ladder tier that fits or ask a smaller profile; " +
+                            "the router does not retry or fall back to another engine");
+                        break;
+                    default:
+                        state.FailureReason = SwitchReason.HealthTimeout;
+                        Emit("engine.switch_failed", model: model, reason:
+                            $"{window} — engine {WireText.Ident(_def.Name)} never reported {askedFor} serving: " +
+                            $"inspect what the {_lifecycle.Kind} provider started " +
+                            "(for docker: containers labelled arboreal.engine=<name>) or raise the wait timeout; " +
+                            "the router does not retry or fall back to another engine");
+                        break;
+                }
+                // The engine was relaunched by now, whatever the last poll made of it, so the list from before the
+                // switch is not evidence of what it holds: unknown is the honest answer at all three exits (§5.5).
                 PublishUnknown();
                 EndSwitch(state, false);
                 return;

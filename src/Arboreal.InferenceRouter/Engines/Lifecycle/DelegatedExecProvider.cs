@@ -19,8 +19,18 @@ public sealed class DelegatedExecProvider : IEngineLifecycleProvider
 
     public string Kind => ProviderKind;
 
+    /// <summary>Does this catalog entry name a selector the router can actually run? One owner for the
+    /// predicate: the runtime asks it before the transaction starts, so a missing selector is answered with
+    /// <c>no_select_command</c> and costs the engine nothing, and preflight asks it as the backstop for a
+    /// provider a caller handed in rather than one the config picked. The two answers cannot drift because
+    /// they are the same method (§5.5).</summary>
+    internal static bool HasUsableSelector(EngineModelDefinition definition) =>
+        definition.Select is { } select && !string.IsNullOrWhiteSpace(select.Exec);
+
     public ValueTask<LifecycleResult> PreflightAsync(LifecycleTarget target, CancellationToken ct)
     {
+        if (HasUsableSelector(target.Definition))
+            return ValueTask.FromResult(LifecycleResult.Ok(ProviderKind));
         var cmd = target.Definition.Select;
         if (cmd is null)
             return ValueTask.FromResult(LifecycleResult.Fail(

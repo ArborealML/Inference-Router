@@ -869,7 +869,11 @@ public sealed class CapabilityPublicationTests
         Assert.Equal(["m", "m"], provider.Launches);
     }
 
-    /// <summary>The caller-facing half of a refusal is one token from a named, closed set, at every exit. Each block
+    /// <summary>The caller-facing half of a refusal is one token from a named, closed set, at every exit. (The walk of
+    /// the whole set as it now stands — eight names, including the exit that used to answer with a sentence about a
+    /// remote engine — lives in <c>RefusalCategoryTests</c>; this one is the seven switch exits v0.12.37 shipped,
+    /// amended only where a later revision changed what an exit answers, and it carries no new assertion while
+    /// TASK-87's standing rule keeps new ones out of this class.) Each block
     /// reaches a different exit and reads back both halves: what the caller sees (<see cref="SwitchResult.Detail"/>)
     /// and what the operator sees (the <c>engine.switch_failed</c> reason). The split is the point — a provider's
     /// socket path, a readiness window, the names an engine actually reported, a window comparison — those are what
@@ -912,6 +916,9 @@ public sealed class CapabilityPublicationTests
         }
 
         // 3. Readiness never arrived. The length of the wait is configuration, and the caller was never told it.
+        //    The engine stayed up and never named the target, so the caller is told the mismatch, not the clock:
+        //    a fixed catalog-name problem and an engine that never came up are not the same refusal (v0.12.42). The
+        //    feed half of that change is pinned in RefusalCategoryTests, not here.
         {
             using var handler = new ProbeHandler("m");                // never names "extra"
             var provider = new ScriptedProvider { ReadinessMs = 300 };
@@ -922,7 +929,7 @@ public sealed class CapabilityPublicationTests
             var timedOut = await engine.WaitForModelAsync("extra", TimeSpan.FromSeconds(10), CancellationToken.None);
             Assert.False(timedOut.IsReady);
             categories.Add(CategoryOf(timedOut));
-            Assert.Equal(SwitchReason.HealthTimeout, CategoryOf(timedOut));
+            Assert.Equal(SwitchReason.RefreshOmits, CategoryOf(timedOut));
             Assert.DoesNotContain("300", timedOut.Detail);
             var shown = feed.Replay(0).Last(e => e.Kind == "engine.switch_failed");
             Assert.Contains("health_timeout after 300ms", shown.Reason);   // parameters stay here
@@ -999,8 +1006,12 @@ public sealed class CapabilityPublicationTests
             Assert.Contains("engine.sock", feed.Replay(0).Last(e => e.Kind == "engine.switch_failed").Reason);
         }
 
-        // Seven exits, seven distinct tokens, and every one of them a member of the set named in the source.
-        Assert.Equal(7, categories.Distinct(StringComparer.Ordinal).Count());
+        // Seven exits, and every one of them a member of the set named in the source. Blocks 3 and 4 answer the
+        // same category from two different paths — a readiness window that expired on an engine that never named
+        // the target, and a launch that ended with the same engine answering something else — which is the point
+        // of the category: the caller's fix is the catalog key either way. The walk that covers the whole set as
+        // it stands, one constructed exit per name, is in RefusalCategoryTests.
+        Assert.Equal(6, categories.Distinct(StringComparer.Ordinal).Count());
         string[] named =
         [
             SwitchReason.NoSelectCommand, SwitchReason.LaunchFailed, SwitchReason.HealthTimeout,

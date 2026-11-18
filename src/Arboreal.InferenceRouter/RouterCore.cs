@@ -549,7 +549,9 @@ public sealed class RouterCore : IInferenceRouter
                         ? WireText.Ident(ticket.Model)
                         : $"{WireText.Ident(ticket.Model)} @ {WireText.Ident(targetProfile.Name)}";
                     // Failed and TimedOut answer the only question the caller has — retry now and hit the
-                    // same wall, or retry later and probably get through — so the message keeps them apart.
+                    // same wall, or retry later and probably get through — so the message keeps them apart. A
+                    // completed attempt names one token from the closed set in parentheses; an expired wait names
+                    // its own ceiling and no category, because nothing of the attempt ended (§5.5).
                     var detail = switchResult.Detail is { Length: > 0 } d ? $" ({d})" : "";
                     Fail(ticket, "switch_failed", switchResult.Outcome == EngineRuntime.SwitchOutcome.TimedOut
                         ? $"engine {WireText.Ident(engine.Name)} did not become ready to serve {what} within {ceilingMs} ms — " +

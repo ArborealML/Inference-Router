@@ -165,7 +165,7 @@ public sealed class SwitchClaimTests
 
         var refused = await engine.WaitForModelAsync("extra", TimeSpan.FromSeconds(10), CancellationToken.None);
         Assert.False(refused.IsReady);
-        Assert.Contains("could not start the switch", refused.Detail);
+        Assert.Equal(SwitchReason.SwitchError, refused.Detail);   // the catch-all name, never the switch's target
         Assert.Null(engine.SwitchingToward);
         Assert.Empty(provider.Launches);                      // never launched, so nothing to stop
 
@@ -296,7 +296,7 @@ public sealed class SwitchClaimTests
 
         Assert.False(refused.IsReady);
         Assert.Equal(EngineRuntime.SwitchOutcome.Failed, refused.Outcome);   // not cancelled, not timed out
-        Assert.Contains("switch to extra failed", refused.Detail);
+        Assert.Equal(SwitchReason.LaunchFailed, refused.Detail);   // the category, and nothing wrapped around it
         Assert.Null(engine.SwitchingToward);
         var reasons = feed.Replay(0).Where(e => e.Kind == "engine.switch_failed").Select(e => e.Reason).ToArray();
         Assert.Contains("exec_exit_1 — the exec said no", reasons);          // the operator still reads why

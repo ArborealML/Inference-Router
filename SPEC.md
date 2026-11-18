@@ -1,6 +1,6 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.41)
+Status: draft, continuously revised (v0.12.42)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
@@ -352,6 +352,55 @@ daemon transaction per engine. 137 tests green.
   that answers no `upload_url`, an upload that dies or answers no asset id, an asset name listed twice on
   the release, and a tag that moves after the first resolve. No tag has run the gate: still configured,
   not proven.
+- v0.12.42 — every switch refusal answers with one name, and the set is enforced where the answer is built (§5.5, §6.1, TASK-94).
+  The closed set has **one owner** — `SwitchReason.All`, in `WireText.cs` — and eight members: `no_select_command`,
+  `launch_failed`, `health_timeout`, `refresh_omits`, `refresh_unanswered`, `window_too_small`, `switch_error`,
+  `no_lifecycle_owner`. Two exits that answered in prose answer with a name now. A router that owns no loading authority
+  over an engine says `no_lifecycle_owner`: the token names the **relation**, not the `remote` flag that answers it
+  today, so the reach/ownership split (TASK-77) will not cost a second wire break. A switch task that never started
+  says `switch_error`, the catch-all, and no longer names the model of the switch it could not start — another
+  request's identifier sitting inside this caller's error body. **The set is a door, not a list:**
+  `EngineRuntime.SwitchResult.Failed` refuses any name outside the array, `FailedFromRecord` is the single place an
+  attempt's recorded reason becomes a caller-facing answer and the single place the catch-all is applied, and the
+  resume exit stopped wrapping the token in `switch to <target> failed:` — prose that restated the target the caller
+  had just named. **A phase is not a cause, and a wait is not an attempt:** `switch_not_started` is feed-only and
+  deliberately outside the caller's set, and that record is written **before** the switch is ended, with the end in a
+  `finally`, because `EventRing.Append` runs every subscriber inside its lock with no isolation (TASK-103 owns the
+  general rule) — an observer that throws must not be able to latch the engine mid-switch, and no waiter may wake onto
+  a refusal whose explanation is not on the feed yet. An **expired wait** carries no name at all: the attempt it was
+  parked behind is still running, so the set (which says why an attempt *stopped*) is scoped to completed attempts and
+  the caller keeps their own ceiling in milliseconds. **The readiness window names what its last poll saw:** the three
+  ways a `wait_health = true` switch ends unsatisfied are three refusals — `health_timeout` (retry later),
+  `refresh_omits` (the engine stayed up and never named the target, so the catalog key is wrong) and `window_too_small`
+  (a ladder tier, not a retry) — where v0.12.41 named all three `health_timeout`, a permanent mismatch wearing a
+  transient name; the window and its milliseconds stay on the feed at all three. A catalog entry that names no selector
+  is answered `no_select_command` **before** the transaction by the same predicate preflight asks, instead of coming
+  back as `launch_failed` after the engine's last proof had been thrown away for a transaction that never began.
+  §6.1's caller contract is the **bare eight names in parentheses, no parameters**: the parameterised feed phrases it
+  listed before (`refresh_omits_<model>`, `health_timeout after <ms>ms`, `window_<n>_lt_<max>`) were operator text
+  presented as caller tokens, which made a caller parse prose it did not own; `code` stays `switch_failed` at 503,
+  and `docs/ai-integration.md` carries the same table for integrators. **Evidence, run in this seat's checkout:**
+  build 0 warnings; the new `RefusalCategoryTests` walks eleven constructed exits against literals written in the test
+  itself, asserts set equality in both directions, audits the engine's source for every failed `return`, for the single
+  line allowed to construct a `Failed` outcome, and for the one arm that applies the catch-all, and pins the
+  feed-before-end ordering from inside the subscriber; it is a new class rather than new test methods in the two
+  classes TASK-87 keeps closed to new assertions — there, `SwitchClaimTests` has two existing assertions amended to the
+  bare name the exit now answers, and `CapabilityPublicationTests` has the category of one block amended and the walk's
+  closed-set count amended (7 → 6, because two of its blocks now answer the same name from two paths). Focused filter
+  (SwitchClaim, CapabilityPublication, RefusalCategory, ErrorContract, EventRing, StreamFrameIdentity,
+  RequestPhaseTimeout, EndToEnd) **93/93**; whole suite **222/222 in Debug and 222/222 in Release**, against the 215
+  the v0.12.41 row recorded; AOT publish with `TrimmerSingleWarn=false` silent. **Six mutations**, each reverted and
+  the working diff's sha re-checked byte-identically afterwards: dropping `NoLifecycleOwner` from the array reddens the
+  set walk and the audit; answering the refresh-omits exit with prose reddens nine cases across the two classes — the
+  source audit, the exit walk, the expired-wait pin, and five `CapabilityPublicationTests` that read the caller's half;
+  swapping the readiness classification in either arm reddens the per-exit pins and
+  the same-name-two-paths pin while the set equality stays green; leaving `health_timeout` with no producer reddens the
+  audit; moving the never-started record after `EndSwitch` reddens the ordering pin alone; and building a `Failed`
+  outcome directly at the resume exit reddens the audit's single-construction rule and
+  `ALaunchThatFailsOnItsOwnIsStillToldAsAFailedSwitch`. **Deliberately left open, recorded as gaps in §15:**
+  `launch_failed` still absorbs a failed stop or a failed ownership check inside one transaction (the reach/ownership
+  split is TASK-77), and `POST /admin/switch` still answers `202` plus a feed account rather than a category, because
+  it starts a switch it never waits for.
 - v0.12.41 — the relay's byte promise is pinned at the byte level, not asserted around (§6). `StreamFrameIdentityTests` replays one
   SSE fixture through a live `ServerApp` at **every** byte offset of a short fixture and at all 64 alignments of a 27.6 KB one,
   and compares the client's bytes with the upstream's after stripping only the **contiguous** keepalive prefix — so a torn frame,
@@ -1483,10 +1532,19 @@ engine forks land; the scheduler interface will not change shape.
   **quotes is bounded in length as well as in name count** — at most eight reported names, each keeping its first 24
   characters with its true length and a fingerprint marked, and always the count of what was left out — because the event ring caps entries rather than characters
   and the names are chosen by the engine, not by the router.
-  **What the caller is told is a category, not an account.** Every switch exit records its failure as one token from a
-  closed set named in the source — `no_select_command`, `launch_failed`, `health_timeout`, `refresh_omits`,
-  `refresh_unanswered`, `window_too_small`, `switch_error` — and that token, and nothing the attempt measured, is what
-  the caller's failure carries. The measurements stay on the feed because they are what an operator acts on: a
+  **What the caller is told is a category, not an account.** A switch attempt that **ended** without readiness records
+  its failure as one token from a closed set with one owner in the source — `SwitchReason.All`, in `WireText.cs`:
+  `no_select_command`, `launch_failed`, `health_timeout`, `refresh_omits`, `refresh_unanswered`, `window_too_small`,
+  `switch_error`, `no_lifecycle_owner` — and that token, and nothing the attempt measured, is what the caller's
+  failure carries: no sentence wrapped around it, because a caller branches on a name and not on prose it has to
+  parse. **The set is a door, not a comment.** A failed answer is built either by naming a member at the call site or
+  by handing over what the attempt recorded, and both doors reject a name outside the array, so an exit that invents a
+  phrase fails at the answer instead of reaching a caller as a sentence; the fallback to the catch-all name lives in
+  one arm of one expression, and the engine's own source is audited for a future `return` nobody walked. Each name is
+  exactly one caller action — **fix the configuration** (`no_select_command`, `refresh_omits`, `window_too_small`),
+  **retry later** (`launch_failed`, `health_timeout`, `refresh_unanswered`), **retry** (`switch_error`), **retry
+  elsewhere** (`no_lifecycle_owner`) — and §6.1 carries the table an integrator reads. The measurements stay on the
+  feed because they are what an operator acts on: a
   provider's exit status and action line, the readiness window in milliseconds, the names the engine reported, both
   sides of a window comparison. A caller's **own** identifiers may come back to them — the model they asked for, the
   profile they named, the engine that refused, their own ceiling in milliseconds — because those are already theirs.
@@ -1495,6 +1553,37 @@ engine forks land; the scheduler interface will not change shape.
   sentence arrives there through the request path's outer catch, as `engine_unreachable`). Reporting a router that is
   stopping as an unreachable engine is a separate wrong, recorded as one in §5.5 and not settled by closing the leak.
   Exception text — a failed attempt's, and a health probe's own on `engine.health` — is bounded where it is written (§10).
+  **A phase is not a cause, and a wait is not an attempt.** Two exits used to answer in prose, and both answer with a
+  name now. The router holds no loading authority over an engine whose models it does not start: such a request
+  attempts nothing, mutates nothing, leaves that engine's last proof published, and is answered `no_lifecycle_owner`.
+  The name states the **relation**, not the config flag that answers it today — `remote` is the whole predicate until
+  reach and ownership split (TASK-77) — because a wire token renamed when a flag splits is a second breaking change;
+  a remote engine stays a switch *candidate* in every other respect, since its probes still publish proofs and
+  `IsReadyFor` still answers from them. A switch task that never started — a synchronous failure at the scheduling
+  boundary, a thread-pool rejection — answers `switch_error`, the catch-all, because the caller's action is the same
+  as for an attempt that threw; what separates the two is the **phase**, `switch_not_started`, which is feed-only and
+  deliberately outside the caller's set: a caller shown a phase is a mapping bug, and the closed-set walk is what says
+  so. That record is written **before** the switch is ended, and the end sits in a `finally`, because the ring calls
+  every subscriber inside the append with no isolation (§10, TASK-103) — an observer that throws must not be able to
+  leave the engine latched mid-switch, and no waiter may wake onto a refusal whose explanation is not on the feed yet.
+  An **expired wait** is the third case and carries **no** name from the set: the attempt it was parked behind is
+  still running, so a set that says why an attempt *stopped* does not reach it, and the caller is quoted their own
+  ceiling and the engine's state and never the other request's target. The request-side wait ceiling of §5.4 sits
+  inside that scoping; it is not a ninth name.
+  **The readiness window names what its last poll saw.** A `wait_health = true` switch ends unsatisfied three ways,
+  and they are three refusals rather than one timeout: an engine that never answered the probe is `health_timeout`
+  (**retry later** — it may answer next time); an engine that stayed up and never reported the target is
+  `refresh_omits` (**fix the configuration** — the catalog key has to match what the engine reports, and an alias is
+  the router's spelling, not the engine's); an engine serving the target in a window too small for the profile asked
+  for is `window_too_small` (**fix the configuration** — a ladder tier that fits, or a smaller profile). Under v0.12.41
+  all three were `health_timeout`: a permanent mismatch and a transient wait wearing one name, which is the exact
+  distinction a retry decision exists to make. The expired window and its milliseconds stay on the feed at all three
+  exits beside the names the engine reported and both sides of the comparison, so the grep key for an expired
+  readiness window survives the name change. `wait_health = false` reaches the same names from its own evidence, and
+  the check that a catalog entry names a selector the router can run is **one predicate asked twice**: before the
+  transaction, where a missing selector is `no_select_command` and costs the engine nothing it had — no marker, no
+  publication, its last proof intact — and again inside the switch as the backstop for a provider a caller handed in,
+  so the two answers cannot drift.
   Every switch exit
   publishes **unfenced**, deliberately: the switch has just stopped or relaunched this engine, so its account cannot be
   stale against a poll that happened to start earlier, and fencing it would let a quiet poll drop the one publication
@@ -1715,12 +1804,26 @@ committed its `200`, so the same failure reaches the caller inside the stream as
 error frame followed by `[DONE]` — a 504 therefore always means nothing was emitted yet, and a caller may
 retry one),
 `switch_in_progress` 409 and `unknown_profile` 400 on the admin side.
-A `switch_failed` message names the target and the reason **category** the caller's own switch ended with —
-`refresh_omits_<model>`, `refresh_unanswered_<model>`, `health_timeout after <ms>ms`, `launch_failed`,
-`window_<n>_lt_<max>`, `no_select_command`, `switch_error` — so "the engine never named the model" and "the launch
-failed" are distinguishable without a retry. Each category is bounded where it is written, and the operator's full
-sentence, including anything a lifecycle provider said, stays on the feed: a caller learns which failure it got and
-never receives a socket path, an address, or a selector's stderr.
+A `switch_failed` message names the target and, when the caller's own attempt **ended**, ends with that attempt's
+reason **category**: one of `no_select_command`, `launch_failed`, `health_timeout`, `refresh_omits`,
+`refresh_unanswered`, `window_too_small`, `switch_error`, `no_lifecycle_owner` — **bare, parameter-free, in
+parentheses**. Branch on the whole name. It is a member of a closed set with one owner in the source (§5.5), so a name
+never arrives as `refresh_omits_<model>` or `health_timeout after 300ms`; a caller that matches those forms is parsing
+text it does not own, and the model, the window and the milliseconds are in the sentence around the name or on the
+feed. What each name asks of the caller: **fix the configuration** for `no_select_command` (the configuration names no
+selector for that model on that engine), `refresh_omits` (the engine answers and never names the model, so the catalog
+key does not match what it reports) and `window_too_small` (the model is served in a context window smaller than the
+profile asked for — a ladder tier, not a retry); **retry later** for `launch_failed`, `health_timeout` and
+`refresh_unanswered`, where the engine did not answer in time; **retry** for `switch_error`, the catch-all for an
+attempt that threw or never started; **retry elsewhere** for `no_lifecycle_owner`, where the router cannot load models
+into this engine and an immediate retry here repeats the refusal. A wait that **ran out** rather than ending names no
+category, because nothing ended: its message carries the caller's own ceiling in milliseconds, the engine's state, and
+the fact that the switch is still running. The `code` stays `switch_failed` at 503 whatever the category — the
+category changes the caller's action, not the status. Each category is bounded where it is written, and the operator's
+full sentence, including anything a lifecycle provider said, stays on the feed: a caller learns which failure it got
+and never receives a socket path, an address, or a selector's stderr. A refusal the set does not name is rejected where
+the answer is built; if such a refusal ever reaches this surface it arrives as `engine_unreachable` from the request
+path's outer catch, and that is a bug to fix at the producer rather than a shape to code against.
 The scheduler's wait reasons (`no_engines`, `no_available_engine`) are diagnostics for the feed and for
 tests, never wire codes: the only code an expired wait produces is `deadline_exceeded`, and `MapStatus`
 deliberately carries no arm for a reason string — an unrecognised code landing on its `500` default is a
@@ -2467,6 +2570,7 @@ router robust until rows 2, 4 and 6 close.
 
 | Plan review of the publication-honesty fix set (TASK-61/62/63), before the code existed | **completed; the forced-CAS-retry pin is an accepted gap.** The claim's readiness answer and its switch marker come from one snapshot, and the marker goes up by a version compare-exchange on the version that answer read, so the raced second launch — a poll proving the model between the decision and the claim — is closed: the exchange loses, the caller re-decides on the newer snapshot, and the already-proved model is taken rather than launched again. **It is not pinned by a test.** Forcing the loser between its read and its exchange needs a seam in the middle of the claim's await-free gate region, which is more production surface than a race the code already excludes structurally is worth; the orderings that the same mechanism protects *are* pinned (marker-before-claim, a stale end cannot clear a successor's marker, a newcomer that arrives after the commit decides against an idle snapshot). Stated here rather than tested, so a reader knows which guarantee has a case and which has only the shape of the code. |
 | v0.12.34's resume rule, red on `main`, and the half v0.12.35 deliberately does not close | **the rule was wrong, not the test; fixed forward in v0.12.35, not reverted.** v0.12.34 sent a caller whose own switch *succeeded* back through the claim path whenever `IsReadyFor` read false, and `IsReadyFor` reads false while `SwitchingToward` is set — so the marker of a **later** claim withdrew a proof this router had itself published. Measured: CI on that commit 191/192, the one failure `SwitchFairnessTests.AWaiterBehindAnotherProfilesSwitchTakesItsOwnTurn` at that caller's own ceiling; the commit's own new pin reproduced failing with launches `extra, m, extra, m`, two callers wanting different models on one engine alternating lifecycle transactions. v0.12.35 keeps the Failed-once rule and the caller-facing category wording, and narrows the re-decide to an observation that actually contradicts the target (§5.5). **Accepted gap, and it is not closeable at the resume read:** a waiter answered `Ready` off its own proof holds an answer that can outlive the model — after the wait returns, the request is enqueued with no revalidation, so a re-read at resume could be stale before the engine ever sees the request. Closing it means the switch's own reservation ticket and admission closure (**TASK-25 AC #5**: a request authorised at admission cannot lose that authority between the wait returning `Ready` and the engine receiving it) together with **TASK-64 AC #3** (a ticket approved by an earlier scheduler pass is not dispatched to an engine claimed after that pass), and the policy that decides whose switch runs when callers want different models is the age-weighted drain (**TASK-72**). None of the three exists; closing the gap here with a fall-through trades a red build for a ping-pong. TASK-61 carries TASK-25 and TASK-72 as dependencies. |
+| Plan review of the switch-refusal taxonomy (TASK-94), before the code existed | **completed, verdict REVISE, adopted in v0.12.42.** Three provisions the review added, each checked against this code first: the pin states its expected **literals** rather than reading them out of the production constants (a set read from the source proves only that the source agrees with itself, so a token swap between two exits stayed green); the set has **one owner** (`SwitchReason.All`) and the audit accounts for every failed `return` in the engine, so a tenth exit cannot pass silently; and the added `engine.switch_failed` record goes out **once, before waiters settle, with the end in a `finally`**. That last one is not theoretical — `EventRing.Append` calls every subscriber inside the lock, in the emitter's own thread, with no isolation, so an observer that throws reaches the code that emitted the event, next to a switch marker and a claim. The guard at this emit site ships here; the rule for every producer is **TASK-103**. **Two names decided here rather than copied from the review.** `remote_engine` is refused: the token names the relation (`no_lifecycle_owner`), not the config flag that answers it, so the reach/ownership split (**TASK-77**) will not cost a second wire break — and a remote engine stays a switch candidate, because its probes still publish proofs and `IsReadyFor` still answers from them. The request-side wait ceiling does **not** join the set: the set says why an attempt *stopped*, an expired wait's whole message is that nothing stopped, so §5.5 scopes the set to completed attempts and the ceiling keeps its milliseconds (AC #5's second arm). **Accepted gaps, each a name deferred rather than a name invented:** `launch_failed` still absorbs a failed stop or a failed ownership check inside one transaction — a `stop_failed` name is deferred, because today the caller's action (retry later) is the same for all three and a fourth token is only worth its wire cost alongside the reach/ownership split (**TASK-77**); `POST /admin/switch` still answers `202` plus a feed account and no category, since it starts a switch it never waits for, so the category belongs to whoever makes that surface report an outcome; and the rejection the door throws for an unlisted category reaches the caller through the request path's outer catch as `engine_unreachable`, which the door and the audit exist to make unreachable rather than to specify. |
 
 Findings feed §7 (TOML binding choice), §9 (AOT strategy), §5.4 (scheduler
 heuristics). Spec revisions cite them.

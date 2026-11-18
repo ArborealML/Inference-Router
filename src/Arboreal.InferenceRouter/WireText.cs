@@ -113,4 +113,33 @@ internal static class SwitchReason
 
     /// <summary>The attempt threw. The exception text is provider-visible and stays on the feed.</summary>
     internal const string SwitchError = "switch_error";
+
+    /// <summary>No lifecycle owner: the router cannot load models into this engine, so it attempted nothing.
+    /// Named for the relation rather than for the config flag that answers it today — <c>remote</c> is the
+    /// predicate until the reach/ownership split lands, and a wire token that has to be renamed when the flag
+    /// is split is a second breaking change (§5.5). The caller's action is to retry elsewhere, or after that
+    /// engine's loaded state or the router's lifecycle configuration changes; an immediate retry here repeats
+    /// the refusal.</summary>
+    internal const string NoLifecycleOwner = "no_lifecycle_owner";
+
+    /// <summary>The set, in one place, with nothing outside it. A caller can be told one of these tokens and no
+    /// other text from the attempt; every failed switch answer is built through the door that checks this array,
+    /// and the test walk of the exits asserts equality against it in both directions (§5.5). Internal, and never
+    /// handed out to anything that could edit it.</summary>
+    internal static readonly string[] All =
+    [
+        NoSelectCommand, LaunchFailed, HealthTimeout, RefreshOmits, RefreshUnanswered,
+        WindowTooSmall, SwitchError, NoLifecycleOwner,
+    ];
+}
+
+/// <summary>Feed-only reason names: a phase an operator greps for that the caller's decision does not branch
+/// on. These are deliberately <b>not</b> members of <see cref="SwitchReason"/> — a caller shown one of these is
+/// a bug in the caller-facing mapping, and the closed-set test is what says so (§5.5).</summary>
+internal static class FeedReason
+{
+    /// <summary>The switch task never started — a synchronous failure at the scheduling boundary, or a
+    /// thread-pool rejection. Nothing was attempted, so the engine is as it was and the caller's action is the
+    /// same as for an attempt that threw (retry); the phase is what tells an operator which of the two it was.</summary>
+    internal const string SwitchNotStarted = "switch_not_started";
 }

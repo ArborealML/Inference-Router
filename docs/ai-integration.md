@@ -120,14 +120,21 @@ output.
 The `message` in that body is a bounded excerpt — at most 1600 characters, cut with a marker that names how much is missing —
 however long the upstream sentence or the value it quotes happens to be. Branch on `code`, not on the wording.
 
-A `switch_failed` message names the model it could not serve and, when the switch ended rather than
-ran out of patience, the reason it ended with: `refresh_omits_<model>` or `refresh_unanswered_<model>`
-(the engine never confirmed the model), `health_timeout after <ms>ms`, `launch_failed`,
-`window_<n>_lt_<max>`, `no_select_command`, `switch_error`. That matters for the retry decision:
-a name the engine will never report is a configuration mistake that retrying cannot fix, while a
-switch that was still running when you gave up is usually worth a second attempt. The operator's full
-explanation — what the engine actually reported, what the selector said — is on the event feed, not in
-your response.
+A `switch_failed` message names the model it could not serve and, when the caller's own switch attempt
+**ended**, ends with one reason name in parentheses: `no_select_command`, `launch_failed`, `health_timeout`,
+`refresh_omits`, `refresh_unanswered`, `window_too_small`, `switch_error`, `no_lifecycle_owner`. The name is
+the whole reason — it never arrives with a model name or a millisecond count attached to it — so match the
+name instead of reading the sentence around it. Three of them are configuration mistakes that retrying cannot
+fix: `no_select_command` (nothing in the configuration can load that model on that engine), `refresh_omits`
+(the engine answers, and never names the model — the catalog key does not match what the engine reports) and
+`window_too_small` (the model is served, but in a context window smaller than the profile you asked for: a
+different profile, or a bigger tier on that engine). Three mean the engine did not answer in time and are
+usually worth a second attempt later: `launch_failed`, `health_timeout`, `refresh_unanswered`. `switch_error`
+is the catch-all: retry. `no_lifecycle_owner` means the router cannot load models into that engine at all, so
+aim at one it does own — retrying the same engine repeats the refusal. A message with **no** name at all means
+your wait ran out while a switch was still running, and the model may well be loaded by the time you ask
+again. The operator's full explanation — what the engine actually reported, what the selector said, how long
+the readiness window was — is on the event feed, not in your response.
 
 Two of those codes mean the router gave up on your behalf instead of waiting forever. If an engine
 takes the request and then says nothing past its `response_timeout_ms`, the request ends
