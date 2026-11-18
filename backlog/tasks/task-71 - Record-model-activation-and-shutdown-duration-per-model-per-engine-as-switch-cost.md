@@ -7,7 +7,7 @@ status: To Do
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-18T01:22:00Z'
-updated_date: '2026-11-18T01:24:00Z'
+updated_date: '2026-11-18T02:55:00Z'
 labels: []
 dependencies:
   - TASK-69
@@ -23,8 +23,14 @@ Switch cost stops being an assumption. Per model per engine, the router already 
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 activation and shutdown durations are measured per model per engine from a switch's own timings, not read from config
-- [ ] #2 the measured cost reaches the decision about which model to switch to next
-- [ ] #3 a single sample or a stale cost cannot starve a model of its turn forever
+- [ ] #1 Activation and shutdown durations are measured per model per engine from a switch's own timings, not read from config
+- [ ] #2 The same arrivals pick a different model once the measured cost changes, pinned, so the number is an input to the choice and not a report
+- [ ] #3 A single sample or a stale cost cannot starve a model of its turn forever
 - [ ] #4 SPEC 5.5 or 7 says what the numbers mean and what they never decide alone
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+A goal-level audit of the switching rows found the old criterion #2 passable with the measured cost having no influence at all: a number that reaches the decision and changes nothing satisfies it. #2 now requires the choice to move when the cost moves.
+<!-- SECTION:NOTES:END -->

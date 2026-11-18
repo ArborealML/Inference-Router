@@ -7,6 +7,7 @@ status: To Do
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T23:07:00Z'
+updated_date: '2026-11-18T02:54:00Z'
 labels:
   - scheduling
   - architecture
@@ -27,3 +28,9 @@ Recorded as an accepted gap in SPEC 15 by the fix set for fd5e0cd; this row is t
 - [ ] #2 the admission/drain shape is written as a decision with the in-flight-pass rule stated
 - [ ] #3 a test shows a ticket approved by an earlier pass is not dispatched to an engine claimed after that pass
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+A top-tier plan review of the resume-authorisation row found the same shape from the other side: a capability snapshot re-read when a waiter resumes can already be stale before the engine receives the request, because RouterCore enqueues on the strength of that answer with no revalidation. The entitlement therefore has to be revalidated and held across admission, which is this row's handoff and not the waiter's. TASK-25 carries the criterion; this row decides what an in-flight pass is told when an engine is claimed under it.
+<!-- SECTION:NOTES:END -->
