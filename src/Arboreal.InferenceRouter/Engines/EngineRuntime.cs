@@ -44,6 +44,13 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
     internal Action<bool>? AfterEndCommitForTests;
     internal Action? BeforeScheduleSwitchForTests;
 
+    /// <summary>Runs on a waiter immediately after it is woken from the readiness wait and **before** it reads
+    /// the snapshot that decides what to answer, with the argument saying which wake-up it got: <c>true</c> when
+    /// the engine's switch token cancelled the wait, <c>false</c> when the switch settled it. A test parks here to
+    /// make the ordering the answer depends on — switch settled, then the waiter decides — a fact it observes
+    /// rather than a fact it hopes the scheduler produces. Null outside tests.</summary>
+    internal Action<bool>? AfterReadyWaitForTests;
+
     /// <summary>Pairs a switch-state change with its marker change and nothing else. The two are read by
     /// different consumers — the scheduler's view takes "switching" from the capability marker
     /// (RouterCore.BuildEngineInfos), the switch machinery from <c>_switchState</c> — so they have to move
@@ -88,6 +95,10 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
         public string? Profile;
         public TaskCompletionSource<bool> Ready = new(TaskCreationOptions.None);
         public DateTimeOffset StartedAt;
+        /// <summary>True when the switch settled while the engine's own switch token was already cancelled,
+        /// i.e. the router stopped under it. Written by <see cref="EndSwitch"/> **before** the readiness task
+        /// is settled, so a waiter woken by that task always sees the value it was settled with.</summary>
+        public bool CancelledByShutdown;
         public override string ToString() => Model is null ? "none" : Model;
     }
 
@@ -720,11 +731,13 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
             }
 
             bool ready;
+            bool wokeByCancellation;
             try
             {
 #pragma warning disable IDISP013 // await-in-using not applicable: the wait is awaited, not detached
                 ready = await state.Ready.Task.WaitAsync(remaining, waiter).ConfigureAwait(false);
 #pragma warning restore IDISP013
+                wokeByCancellation = false;
             }
             catch (TimeoutException)
             {
@@ -734,6 +747,28 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
                     ? new SwitchResult(SwitchOutcome.Ready, null)
                     : new SwitchResult(SwitchOutcome.TimedOut,
                         $"still switching after {FormatWait(timeout)}; a switch to {DescribeTarget(state.Model, state.Profile)} is in flight");
+            }
+            catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+            {
+                // Not the caller hanging up: the engine's switch token. Fold it into the same decision as a
+                // switch that settled false, so the answer does not depend on which of the two reaches the
+                // waiter first (the caller's own cancellation still propagates, filter above).
+                wokeByCancellation = true;
+                ready = false;
+            }
+
+            AfterReadyWaitForTests?.Invoke(wokeByCancellation);
+
+            // A switch the router itself stopped is not a model load that failed. The provider sees the
+            // engine's switch token, so a shutdown mid-load comes back as a lifecycle failure
+            // ("cancelled_during_launch") and the switch settles false: told to this caller as a failed
+            // switch, a shutting-down router is described as a broken engine — the same wrong answer a
+            // disposed switch lock used to give. Both wake-ups say the same thing: the flag is written before
+            // the readiness task settles, and a token-cancelled wake-up is folded into the same branch above.
+            if (!ready && (wokeByCancellation || state.CancelledByShutdown))
+            {
+                throw new OperationCanceledException(
+                    $"the router stopped while {DescribeTarget(state.Model, state.Profile)} was being loaded");
             }
 
             if (IsReadyFor(canonical, profileOverride)) return new SwitchResult(SwitchOutcome.Ready, null);
@@ -799,6 +834,9 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
         // callback that throws. Every Emit has already happened before EndSwitch, so the feed still precedes the
         // wake (decision 7); the hint's own failure costs at most one poll interval, because the next dispatch
         // pass is woken by the next event instead.
+        // Recorded before the waiters are woken: a waiter has to be able to tell "the switch failed" from
+        // "the router stopped in the middle of it" without racing the shutdown against its own wake-up.
+        state.CancelledByShutdown = _switchCts.IsCancellationRequested;
         state.Ready.TrySetResult(ready);
         if (committed)
         {
@@ -1018,6 +1056,19 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
 
     public async ValueTask DisposeAsync()
     {
+        // Settle the waiters of an in-flight switch *before* cancelling anything. A waiter parked on the
+        // readiness task can be released two ways — the switch settling, or the switch token cancelling its
+        // wait — and while both now answer the same thing, letting a shutdown choose between them is what made
+        // the outcome depend on thread scheduling. Settling the readiness task first fixes the order: the wait
+        // is already resolved when the cancellation fan-out runs. Only the waiters are settled here; the switch
+        // marker and the switch state stay exactly as they are, because a lifecycle transaction is still
+        // running and the scheduler must keep seeing this engine as mid-switch until that transaction ends.
+        var stopping = Volatile.Read(ref _switchState);
+        if (stopping.Model is not null)
+        {
+            stopping.CancelledByShutdown = true;
+            stopping.Ready.TrySetResult(false);
+        }
         // Stop the switch before its engine goes away: cancelling the switch token is the only way an
         // in-flight model load learns the router is shutting down.
         _switchCts.Cancel();

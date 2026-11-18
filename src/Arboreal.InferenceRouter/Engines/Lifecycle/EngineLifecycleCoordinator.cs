@@ -114,7 +114,11 @@ public sealed class EngineLifecycleCoordinator : IDisposable
         Justification = "The provider is disposed only when the coordinator constructed it (_ownsProvider).")]
     public void Dispose()
     {
-        _gate.Dispose();
+        // The gate is deliberately **not** disposed. A lifecycle transaction still running holds it, and the
+        // release in its finally then answers ObjectDisposedException — which the switch can only report as a
+        // failure it does not understand ("cannot access a disposed object"), a shutting-down router described
+        // as a broken engine. Cancellation on the transaction's own token is what stops a waiting switch; the
+        // semaphore is collected with the runtime. Same reasoning as the engine's switch lock.
         if (_ownsProvider) (_provider as IDisposable)?.Dispose();   // only what we created
     }
 

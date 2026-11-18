@@ -17,6 +17,9 @@ public sealed class SwitchClaimTests
         private readonly Queue<TaskCompletionSource> _gates = new();
         public List<string> Launches { get; } = [];
         public bool GateLaunches { get; set; }
+        /// <summary>When set, the launch fails on its own with this reason — no shutdown involved — so the
+        /// control can tell a broken engine from a stopping one.</summary>
+        public string? FailLaunchWith { get; set; }
         public string Kind => "gated";
 
         public ValueTask<LifecycleResult> PreflightAsync(LifecycleTarget target, CancellationToken ct)
@@ -32,6 +35,10 @@ public sealed class SwitchClaimTests
         public async ValueTask<LifecycleResult> LaunchAsync(LifecycleTarget target, CancellationToken ct)
         {
             Launches.Add(target.Model);
+            if (FailLaunchWith is { } why)
+            {
+                return LifecycleResult.Fail(why, "the exec said no");
+            }
             if (GateLaunches)
             {
                 TaskCompletionSource gate;
@@ -154,7 +161,8 @@ public sealed class SwitchClaimTests
     public async Task ShutdownDuringAClaimEndsCancelledNotEngineUnreachable()
     {
         var provider = new GatedProvider { GateLaunches = true };
-        var engine = Engine(provider);
+        var feed = new EventRing();
+        var engine = Engine(provider, feed);
 
         var inFlight = engine.WaitForModelAsync("extra", TimeSpan.FromSeconds(30), CancellationToken.None);
         await WaitUntil(() => provider.Launches.Count == 1);
@@ -177,12 +185,97 @@ public sealed class SwitchClaimTests
         // which a disposed switch lock produced and the request path could only call engine_unreachable.
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => newcomer);
 
-        // The caller whose switch was already in flight is released the same way, and the switch transaction
-        // settles and clears its marker: a marker left up tells the scheduler this engine is busy forever, and
-        // an unsettled readiness task parks every other waiter out its ceiling.
+        // The caller whose switch was already in flight is released the same way. Its switch settled *false* —
+        // the provider saw the engine's token cancelled and reported a lifecycle failure — and reporting that to
+        // the caller as a failed model load would describe a router that stopped as an engine that broke. So the
+        // switch records, before it settles the waiters, that the stop came from shutdown, and the waiter answers
+        // cancellation. The transaction also settles and clears its marker: a marker left up tells the scheduler
+        // this engine is busy forever, and an unsettled readiness task parks every other waiter out its ceiling.
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => inFlight);
         await WaitUntil(() => engine.SwitchingToward is null);
         Assert.Null(engine.SwitchingToward);
+
+        // The load itself has to have felt the stop: the provider reports the cancellation it observed, so the
+        // two answers above are responses to a real shutdown and not to a switch that never reached the exec.
+        Assert.Contains("engine.switch_failed", await WaitUntilFeed(feed, "cancelled_during_launch"));
+    }
+
+    /// <summary>The waiter that is inside the readiness wait when the router stops. Shutdown settles that
+    /// switch's waiters **before** it cancels anything, so this waiter wakes on a switch that has ended and the
+    /// seam records that it woke on the ending, not on a token: the ordering the answer depends on is a fact the
+    /// test observes, not one it hopes the scheduler produces. The answer is cancellation — a router that stopped
+    /// in the middle of a load, described as cancellation — and the transaction still ends and clears its marker.</summary>
+    [Fact(Timeout = 30_000)]
+    public async Task AWaiterInsideTheReadinessWaitIsToldTheRouterStopped()
+    {
+        var provider = new GatedProvider { GateLaunches = true };
+        var feed = new EventRing();
+        var engine = Engine(provider, feed);
+
+        var parked = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var go = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        string? wake = null;
+        engine.AfterReadyWaitForTests = byCancellation =>
+        {
+            wake = byCancellation ? "cancelled" : "settled";
+            parked.TrySetResult();
+            go.Task.GetAwaiter().GetResult();
+        };
+
+        var waiting = engine.WaitForModelAsync("extra", TimeSpan.FromSeconds(30), CancellationToken.None);
+        await WaitUntil(() => provider.Launches.Count == 1);      // the load is in flight, the caller is parked
+
+        await engine.DisposeAsync();
+        await parked.Task;                                       // parked at the decision point
+
+        // Woken by a switch that had ended, not by a token: settling a waiter is not ending a transaction, so
+        // the provider's own end is what clears the marker, and that happens after this point.
+        Assert.Equal("settled", wake);
+        go.TrySetResult();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => waiting);
+        Assert.Contains("engine.switch_failed", await WaitUntilFeed(feed, "cancelled_during_launch"));
+        await WaitUntil(() => engine.SwitchingToward is null);
+        Assert.Null(engine.SwitchingToward);
+    }
+
+    /// <summary>Waits for a feed event whose reason carries <c>marker</c>, and returns every kind on the feed when
+    /// it appears. A switch's own event is written on the switch's thread, so it lands after the waiters release.</summary>
+    private static async Task<string[]> WaitUntilFeed(EventRing feed, string marker)
+    {
+        for (var i = 0; i < 400; i++)
+        {
+            var kinds = feed.Replay(0).Select(e => e.Kind).ToArray();
+            if (feed.Replay(0).Any(e => e.Kind == "engine.switch_failed" &&
+                                        e.Reason is { } r && r.Contains(marker, StringComparison.Ordinal)))
+                return kinds;
+            await Task.Delay(5);
+        }
+        throw new TimeoutException(
+            $"no engine.switch_failed carrying {marker} reached the feed; feed="
+            + string.Join("; ", feed.Replay(0).Select(e => $"{e.Kind}:{e.Reason}")));
+    }
+
+    /// <summary>The shutdown rule must not swallow a real failure. A launch that fails on its own, with the
+    /// engine's switch token untouched, is still told to its caller as a failed switch: the point of reporting
+    /// cancellation on shutdown is to stop calling a stopping router a broken engine, not to stop calling a
+    /// broken engine broken.</summary>
+    [Fact(Timeout = 30_000)]
+    public async Task ALaunchThatFailsOnItsOwnIsStillToldAsAFailedSwitch()
+    {
+        var provider = new GatedProvider { FailLaunchWith = "exec_exit_1" };
+        var feed = new EventRing();
+        var engine = Engine(provider, feed);
+        await using var _ = engine;
+
+        var refused = await engine.WaitForModelAsync("extra", TimeSpan.FromSeconds(10), CancellationToken.None);
+
+        Assert.False(refused.IsReady);
+        Assert.Equal(EngineRuntime.SwitchOutcome.Failed, refused.Outcome);   // not cancelled, not timed out
+        Assert.Contains("switch to extra failed", refused.Detail);
+        Assert.Null(engine.SwitchingToward);
+        var reasons = feed.Replay(0).Where(e => e.Kind == "engine.switch_failed").Select(e => e.Reason).ToArray();
+        Assert.Contains("exec_exit_1 — the exec said no", reasons);          // the operator still reads why
     }
 
     /// <summary>A claim hook that throws has its claim undone — but undone after leaving the transition gate,
