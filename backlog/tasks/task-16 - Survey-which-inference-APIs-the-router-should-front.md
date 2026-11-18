@@ -5,7 +5,7 @@ status: Waiting
 assignee:
   - '@qwen3.8-flash-next-board'
 created_date: '2026-11-16T23:02:00Z'
-updated_date: '2026-11-18T18:39:00Z'
+updated_date: '2026-11-18T18:55:00Z'
 labels: []
 dependencies:
   - TASK-14
@@ -16,7 +16,7 @@ ordinal: 16000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Wake when the two remaining research passes arrive. The owner requested a comparison of upstream engine adapters and a v0.2 decision after TASK-14. The first pass covers client ingress. Assess Strata, Maya and other candidate engine APIs against the existing provider seam before selecting adapters.
+Wake when TASK-14 lands. Then dispatch the upstream adapter comparison for Strata, Maya and other candidate engine APIs against the existing provider seam. The client ingress review is complete. The two other reviews in that batch covered host exclusivity and switch failure policy.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
