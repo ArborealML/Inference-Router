@@ -242,7 +242,7 @@ integrates accepted work using the appropriate seat identity, checks CI and reco
 
 Run each implementer as a long-lived GPT-6.2 Sol agent with high reasoning in its own named tmux session.
 The coordinator gives it one task and an isolated Git worktree with a single writer. The implementer owns
-preparation, implementation, testing, fixes and the evidence handoff described above. It reports each
+preparation, implementation, test design, fixes and the evidence handoff described above. It reports each
 transition so the coordinator can update the shared board. After a handoff, send revisions or the next
 assignment to the same implementer.
 

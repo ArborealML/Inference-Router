@@ -1,13 +1,11 @@
 ---
 id: TASK-21
-title: >-
-  Decision: ratify the live-view shape - audience, credential posture, and no
-  new feed event kind
+title: Document the adopted operator dashboard and feed contract
 status: To Do
 assignee:
-  - '@claire'
+  - '@gpt-6.2-sol'
 created_date: '2026-11-17T02:18:00Z'
-updated_date: '2026-11-18T19:29:00Z'
+updated_date: '2026-11-18T20:30:00Z'
 labels:
   - ui
   - wire

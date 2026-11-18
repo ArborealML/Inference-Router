@@ -5,7 +5,7 @@ status: To Do
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-16T20:40:00Z'
-updated_date: '2026-11-18T19:29:00Z'
+updated_date: '2026-11-18T20:30:00Z'
 labels: []
 milestone: m-7
 dependencies: []
@@ -16,9 +16,7 @@ ordinal: 2000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Closes the AIR side of [SPEC §13.3](https://github.com/ArborealML/Inference-Router/blob/main/SPEC.md): replay filtered by ticket, validation of a `ready` ticket when the completion arrives, AIR model metadata on `/v1/models`, and a `POST` cancel alias. Ticket-filtered replay and the event-feed fix slice have landed (SPEC §10, revision rows v0.11.1–v0.11.2); what is left is the ticket half.
-
-**Unowned prerequisite:** AC #2 validates a ready ticket against switch identity `(target, epoch, completion)` — TASK-10 plan step 3. TASK-10 is Done and that identity is not in the tree: `EngineRuntime` holds one mutable `SwitchState` per engine (model, profile, readiness TCS) and `epoch` appears nowhere in `src/` or `tests/`. SPEC §14.1 row 3 closes switch serialization and the error contract; row 6's epoch is the event-feed epoch, a different thing. So AC #2 is un-buildable, not merely unstarted; whose step it becomes is the code owner's call.
+Implement the remaining ticket-aware pi contract from SPEC section 13.3. TASK-110 supplies a fenced host epoch and TASK-118 binds delivery to a verified serving instance. This task owns the client lease identity, expiry and atomic single consume at dispatch. Ticket-filtered replay is already shipped.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -26,6 +24,8 @@ Closes the AIR side of [SPEC §13.3](https://github.com/ArborealML/Inference-Rou
 - [x] #1 Pi can replay only the events for its own ticket
 - [ ] #2 A ready ticket is validated against the switch that produced it
 - [ ] #3 Wire tests cover each addition and the OpenAI-compatible surface stays unchanged
+- [ ] #4 Expired, cancelled, replayed or superseded ready tickets cause zero upstream writes. A valid ticket can be consumed once against its verified instance, even with concurrent duplicate submissions.
+- [ ] #5 Cold-target discovery distinguishes configured capacity from observed residency and serving context. A catalog-only model cannot be presented as currently loaded or as having a verified serving window.
 <!-- AC:END -->
 
 ## Implementation Plan

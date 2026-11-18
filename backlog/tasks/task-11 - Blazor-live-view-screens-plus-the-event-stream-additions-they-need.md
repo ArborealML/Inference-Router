@@ -49,7 +49,7 @@ Nothing in this task is technically blocked; it is these two calls.
 - [ ] #2 Events cover request lifecycle, rejection, capacity change, queue, health/crash/restart, switch/profile and prefix. Whether the feed gains an explicit stream-gap event is TASK-21's answer, not this task's
 - [ ] #3 /admin/status reports active/queued/readiness/rates; /admin/events supports filtering, heartbeat and bounded sequence-gap handling; a bounded /admin/requests exists
 - [ ] #4 Admin JSON schema and casing pinned once (SPEC 15.1) and covered by contract tests
-- [ ] #5 Screens render from the event stream alone: global inference, queues/admission, engines/profiles/switches, topology/trends, request timeline, health/config/security
+- [ ] #5 The dashboard bootstraps current state from admin reads and applies later SSE events. A retention gap triggers a fresh snapshot, and counts reflect only retained observations.
 <!-- AC:END -->
 
 ## Implementation Notes

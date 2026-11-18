@@ -7,7 +7,7 @@ status: Preparing
 assignee:
   - '@gpt-6.2-sol-config'
 created_date: '2026-11-18T02:36:00Z'
-updated_date: '2026-11-18T20:22:00Z'
+updated_date: '2026-11-18T20:31:00Z'
 labels:
   - concurrency
 milestone: m-2
@@ -35,9 +35,5 @@ The commit review of 0e016e5 found the health loop's catch is wider than the obs
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Shape of the fix: narrow the try to the fetch, and publish the negative from that catch alone, so nothing else in the round can reach PublishProbeFailure. Give PublishProbeFailure a marker guard — while SwitchingToward is set the snapshot is already unknown except in the proof window, so suppressing there withdraws nothing but the switch proof. Pin with latches, not sleeps: the same review marked the existing health tests (IntervalMs=50 with 300 ms and 250 ms waits) as scheduling-dependent, and TASK-67 showed what a pin that tracks no event costs. This row goes first in the serving-gauge sequence: AC #2 is the marker guard on a probe negative, re-verified at EngineRuntime.cs:235-247, and the gauge row must not duplicate that half.
-
-Two criteria came from the commit review of the provenance bit, both re-measured by this seat at d6cfb38 by reading, not running. AC #4: the exit pin asserts provenance only after the marker clear and its version test is at-or-above claimVersion+2, so a mutation that bumps the version but leaves the bit set at PublishUnknown passes — while a waiter reading between those two publications sees a claim-authored unknown and is answered Ready. AC #5: PublishProbeFailure early-returns on already-unknown health (line 247), so a refusal that mutated nothing leaves the engine unknown for a poll interval. The deeper attribution hole is not this row to close.
-
-AC #4 target moved at 64b9f94: the last sub-case of the publication-class pin now waits on the gated launch (launchesBefore / Launches.Count greater than launchesBefore / SwitchingToward == "second") rather than reading the claim marker, which was a window that could close. Work from that shape.
+Pre-code review dispatched against 31179e3. The publisher already checks marker and version. The held-switch fixture starts an ordinary poll at the already-proven version and observes its failure before marker clear. Remaining work isolates actual models-fetch failure from faults elsewhere in the round and proves the exact provenance version at failed exit. Use bounded latches. TASK-77 stage B covers pre-mutation refusal preserving the incumbent for subsequent inference.
 <!-- SECTION:NOTES:END -->

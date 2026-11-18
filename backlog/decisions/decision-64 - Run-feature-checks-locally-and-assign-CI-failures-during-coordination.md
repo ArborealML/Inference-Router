@@ -10,7 +10,7 @@ CI builds Release and runs the full suite on main and pull requests. Local itera
 
 ## Decision
 
-Implementers run focused local tests. The coordinator checks CI regularly, assigns each distinct unresolved failure to a named implementer at high priority, and keeps the failing run and verification condition on the task. A local full suite needs a stated measurement or a failure specific to the whole suite.
+Decision-66 supersedes the original test executor: implementers identify focused local tests and the coordinator executes them. The coordinator checks CI regularly, assigns each distinct unresolved failure to a named implementer at high priority, and keeps the failing run and verification condition on the task. A local full suite needs a stated measurement or a failure specific to the whole suite.
 
 ## Consequences
 

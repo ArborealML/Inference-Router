@@ -3,11 +3,11 @@ id: TASK-71
 title: >-
   Record model activation and shutdown duration per model per engine as switch
   cost
-status: Preparing
+status: In Progress
 assignee:
   - '@gpt-6.2-sol-scheduling'
 created_date: '2026-11-18T01:22:00Z'
-updated_date: '2026-11-18T20:21:00Z'
+updated_date: '2026-11-18T20:32:00Z'
 labels: []
 milestone: m-5
 dependencies:
@@ -35,6 +35,8 @@ Switch cost stops being an assumption. Per model per engine, the router already 
 
 <!-- SECTION:PLAN:BEGIN -->
 Trace timing evidence from incumbent shutdown to verified target readiness. Identify where the scheduler compares eligible work and propose a deterministic cost-sensitive selection fixture with a starvation bound. Agree interfaces with host lifecycle and capability publication before coding. The coordinator runs the qualification tests.
+
+Implement attempt-scoped monotonic stage observations with missing and failed outcomes distinct from zero. Commit the exact queue candidate selected or repeat selection. Built-in scheduling may compare complete eligible cost estimates. Custom scheduler calls retain their contract. A deterministic end-to-end test must change the chosen ticket and ensuing launch by changing only measured durations.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes

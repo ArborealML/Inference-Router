@@ -5,7 +5,7 @@ status: Done
 assignee:
   - '@gpt-6.2-sol-shutdown'
 created_date: '2026-11-18T17:43:00Z'
-updated_date: '2026-11-18T20:23:00Z'
+updated_date: '2026-11-18T20:32:00Z'
 labels:
   - wire
   - stream
@@ -15,9 +15,17 @@ dependencies: []
 references:
   - src/Arboreal.InferenceRouter.Server/ServerApp.cs
 modified_files:
-  - tests/Arboreal.InferenceRouter.Tests/StreamFrameIdentityTests.cs
+  - README.md
+  - SPEC.md
+  - docs/ai-integration.md
+  - samples/pi/inference-router-tools.json
+  - src/Arboreal.InferenceRouter.Cli/Program.cs
   - src/Arboreal.InferenceRouter.Server/AirServerJson.cs
   - src/Arboreal.InferenceRouter.Server/ServerApp.cs
+  - tests/Arboreal.InferenceRouter.Tests/StreamFrameIdentityTests.cs
+  - tests/Arboreal.InferenceRouter.Tests/StreamingFailureTests.cs
+  - tests/Arboreal.InferenceRouter.Tests/CliCompletionProcessTests.cs
+  - tests/Arboreal.InferenceRouter.Tests/Arboreal.InferenceRouter.Tests.csproj
 priority: high
 ordinal: 106000
 ---

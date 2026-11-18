@@ -3,11 +3,11 @@ id: TASK-49
 title: >-
   Answer the throwaway-repository question for the destructive gate tests; spend
   nothing new
-status: To Do
+status: Done
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T13:56:00Z'
-updated_date: '2026-11-18T19:18:00Z'
+updated_date: '2026-11-18T20:30:00Z'
 labels:
   - release
   - security
@@ -45,23 +45,12 @@ flag does hold is the version name: deleting the release leaves it burned.
 - [x] #2 the answer names where each destructive test runs and the shape of the disposable repository: pinned workflow, both legs, destinations audited
 - [x] #3 the spend line is settled: two legs, Linux and Windows, no paid macOS minutes, and no new paid minutes requested
 - [x] #4 the laboratory exists with its workflow pinned and settings read back before any destructive case ran, under the user account because org creation needs `admin:org` and this token lacks it
-- [ ] #5 it is deleted after the battery — evidence exported and it is archived, but `DELETE` answers 403 for this token, so the delete is a person's act on the task named for it
 <!-- AC:END -->
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-**Wake: the laboratory deleted** (AC #5, and the human task cut for it).
-
-**Consequences for the other tasks.** Asset integrity rests on the gate's digest records and the post-publish readback, not
-on the immutable flag, which makes the download readback load-bearing. The tag ref's only measured protection is the
-ruleset. Two harness lessons: the same-name asset `422` is an ordinary collision and not an immutability guarantee, and
-`GET /releases` read read-after-write inconsistent three times — read objects by the id the create response returned.
-Raw captures (statuses, bodies, ids, run ids, served-byte comparisons) sit in an untracked working directory.
-
-**Links**: the gate copied into the laboratory ([.github/workflows/release.yml](https://github.com/ArborealML/Inference-Router/blob/main/.github/workflows/release.yml)); spend rule decision-10; the acts that follow on TASK-38, TASK-42 and TASK-48.
-
-Superseded log entries for this task: [board trim, 2026-11-17](https://github.com/ArborealML/Inference-Router/blob/main/backlog/archive/board-trim-2026-11-17.md).
+The disposable repository remained archived after the evidence export. TASK-53 alone owns deletion after the first real release. The laboratory measured replacement asset bytes and tag movement: asset integrity relies on digest readback and the tag ref relies on the ruleset. Same-name upload collision alone cannot establish immutability. The [release workflow](https://github.com/ArborealML/Inference-Router/blob/main/.github/workflows/release.yml) and the [archived measurements](https://github.com/ArborealML/Inference-Router/blob/main/backlog/archive/board-trim-2026-11-17.md) record the context.
 <!-- SECTION:NOTES:END -->
 
 ## Comments
