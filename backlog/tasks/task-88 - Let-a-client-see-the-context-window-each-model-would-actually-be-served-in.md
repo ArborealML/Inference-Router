@@ -5,7 +5,7 @@ status: Waiting
 assignee:
   - '@gpt-6.2-astra'
 created_date: '2026-11-18T07:15:00Z'
-updated_date: '2026-11-18T20:36:00Z'
+updated_date: '2026-11-18T20:48:00Z'
 labels:
   - wire
   - serve
@@ -45,4 +45,6 @@ Ordinary GET /v1/models on the deployed router returned Qwen with owned_by strat
 Review of the discovery implementation integrated in 31179e3 raised case-only roster changes. Integrated WithModelsObservation compares exact spelling whenever either observation carries a window. Case-insensitive comparison remains the previous behavior when neither has window evidence. The public array signature matches the preceding main release; the intermediate list signature existed only on a worker branch.
 
 The OpenAI JavaScript SDK 7.19.0 installed with pi 1.3.0 read the live deployed response with context_window 256000. Against a loopback legacy response omitting just that member, the same SDK returned identical standard row fields. The [reader guide](https://github.com/ArborealML/Inference-Router/blob/main/docs/ai-integration.md) documents filtering, alias handling and roster lifetime.
+
+A forwarding-only deployment advertised 256000 for one loaded model. The backend independently reported 256000 and four slots, pi declared 256000, and the static engine capability declared 131072. No serving profile was configured. This proves divergent metadata. For AC #3 keep those discovery and static values fixed, withdraw current serving proof and observe the admission result for a profile requiring 256000.
 <!-- SECTION:NOTES:END -->
