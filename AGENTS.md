@@ -30,6 +30,9 @@ contract), or a diagnosis, where a failure has to be seen to be intermittent rat
 CI supersedes an in-flight run when a newer push lands, so read the newest run on the branch, not the
 one named after your commit; a `cancelled` run there is not a failure.
 
+Ordinary builds and focused tests can run concurrently in isolated worktrees. Coordinate an exclusive
+window when a measurement specifies the host condition it needs.
+
 **A measurement series that names a host condition holds the machine.** While it runs, no other seat runs
 `dotnet` — build, test or publish — because that load is what the criterion is measuring and a poisoned run is
 invisible in the count; git, `gh` and the board checker stay fine. Counts taken inside another seat's activity
@@ -62,6 +65,7 @@ warning rather than suppressing it, and add a suppression only with a comment sa
 - **Quote TOML keys that contain dots**: `[engine.strata.catalog."model.id"]`. Unquoted, the key
   silently nests into junk. After editing any sample, run the sample test or the `config` dry-run on the
   file you changed.
+- Prefer C# for new implementation and test tooling. When extending tooling in another language, consider whether a C# change can reuse the existing fixtures and exercise the same production entry point.
 - New dependencies go in `Directory.Packages.props` (central package management).
 
 ## Workflow
@@ -195,7 +199,7 @@ it without asking a follow-up question.
 - **Waiting** — started, and parked on an event that will wake it: a review, a CI run, a pull request
   gate, a predecessor task. The task body names the wake condition.
 - **Preparing** — the assignee is investigating, gathering evidence, or writing the implementation plan. Name the work underway in the task. Several tasks can be prepared concurrently.
-- **In Progress** — the assignee is implementing the change. One at a time.
+- **In Progress** — the assignee is implementing the change in its worktree. The concurrency limits below apply.
 - **Testing** — the assignee is running or diagnosing the checks for its change. Move back to In Progress when a fix begins.
 - **Ready for Review** — the agent has delivered its evidence and the coordinator owns the next review action.
 
@@ -216,8 +220,9 @@ preparation, implementation, testing, fixes and the evidence handoff described a
 transition so the coordinator can update the shared board. A test-slot delay moves the task to Waiting
 with its wake condition. After a handoff, send revisions or the next assignment to the same implementer.
 
-When migrating from subagents, let each finish its current assignment and deliver its handoff. Start its
-tmux successor after that worker has drained. The coordinator keeps the successor session across tasks.
+Target three persistent tmux implementers. During migration the three current subagents may finish alongside
+them, for up to six implementation lanes. Give a tmux worker independent work until its predecessor has
+delivered its handoff. Transfer ownership after the previous writer has drained. The coordinator keeps the successor session across tasks.
 When a task is Done, confirm its changes have landed, retain any required private evidence, inspect tracked
 and untracked files, and release its worktree with Git. Preserve outstanding changes or evidence before
 removal, and move the implementer out of the retired directory before assigning its next worktree.
