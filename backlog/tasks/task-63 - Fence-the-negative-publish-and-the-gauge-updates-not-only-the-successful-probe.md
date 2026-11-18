@@ -3,11 +3,11 @@ id: TASK-63
 title: >-
   Fence the negative publish and the gauge updates, not only the successful
   probe
-status: Waiting
+status: To Do
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T23:07:00Z'
-updated_date: '2026-11-18T00:45:00Z'
+updated_date: '2026-11-18T00:54:00Z'
 labels:
   - concurrency
 dependencies: []
@@ -31,7 +31,7 @@ fd5e0cd fenced the successful probe and left the other two publication paths ope
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-First of the three set-1 commits, because TASK-61's resume-time authorization depends on health not being stamped false by a stale poll. Extract the `!healthy` branch of `PublishProbeResult` (:177-186) as `PublishProbeFailure(long expectedVersion)` and call it from the health-loop catch (:328-334) with the version already read at :317. `PublishUnknown()` (:231-241) **stays unfenced** and stays at every switch exit (:746, :783, :795, :803, :817) — the switch is the fresher publisher by construction, and a fence there would let a quiet poll drop the publication that matters; say so in its doc comment. AC #3's one §5.5 sentence lands here, not in set 2. Pinning needs a `ProbeHandler` seam that can fail a *held* probe: today `ModelsStatus` is applied before the hold, so a held probe can only answer 200, which is why this path is unpinned today. Wake condition: the sol-pro plan review of this set, recorded in TASK-61's row; code starts only after it.
+First of the set-1 commits. Hoist the version read out of the `try` at :317 or the catch cannot use it. Extract the `!healthy` branch of `PublishProbeResult` (:177-186) as `PublishProbeFailure(long expectedVersion)` and call it from the health-loop catch (:328-334). One version across the round trip is not enough: the loop makes two awaited observations (model fetch, then the serving-state probe), and if the first one publishes a recovery the second's failure is fenced away by the loop's own newer version, silently keeping a working flag the old code would have cleared. Either fence each observation against its own version, or decide out loud that a serving-state probe failure no longer touches health, and say which in SPEC. `PublishUnknown()` (:231-241) **stays unfenced** at every switch exit (:746, :783, :795, :803, :817) — the switch is the fresher publisher by construction — and that reasoning goes in its doc comment. AC #3's one §5.5 sentence lands here. Pinning needs a `ProbeHandler` seam that can fail a *held* probe (today `ModelsStatus` is applied before the hold, so a held probe can only answer 200), plus a case where the fetch recovers health and the state probe then fails.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes

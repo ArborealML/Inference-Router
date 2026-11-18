@@ -7,12 +7,12 @@ status: To Do
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T22:49:00Z'
-updated_date: '2026-11-18T00:43:00Z'
+updated_date: '2026-11-18T00:54:00Z'
 labels:
   - concurrency
   - testing
 dependencies:
-  - TASK-61
+  - TASK-67
 priority: medium
 ordinal: 59000
 ---
@@ -34,5 +34,5 @@ fd5e0cd made the claim/coalesce decision read switch state inside the transition
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-**The seam is owned by TASK-61, so nobody builds it twice.** TASK-61's commit adds the deterministic claim/end hooks (`AfterEndCommit` after the end commit and before the readiness settle, `BeforeLaunch` before the launch is scheduled) and pins the claim-or-coalesce decision inside the transition gate. #1 and #2 close on that commit, with its mutation evidence cited here; this row then keeps only #3 (the withdrawn test) and #4 (the marker clause at its own seam). It depends on TASK-61 for exactly that reason, not for the readiness rule itself.
+**The seam is owned by TASK-67, so nobody builds it twice.** TASK-67 adds the deterministic hooks — `AfterEndCommit` past the end commit and before the readiness settle, a pre-wait hook between the fast-path miss and the lock, and an injected launcher at the scheduling boundary — and makes the claim decision and the marker come from one snapshot. #1 and #2 close on that commit with its mutation evidence; this row keeps #3 (the withdrawn test) and #4 (the marker clause at its own seam).
 <!-- SECTION:NOTES:END -->

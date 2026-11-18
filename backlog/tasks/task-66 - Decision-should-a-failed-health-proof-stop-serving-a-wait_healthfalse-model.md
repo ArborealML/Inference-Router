@@ -5,6 +5,7 @@ status: Blocked
 assignee:
   - '@claire'
 created_date: '2026-11-17T23:26:00Z'
+updated_date: '2026-11-18T00:54:00Z'
 labels:
   - release
   - governance
@@ -24,3 +25,9 @@ For an engine configured wait_health=false — one the operator has told the rou
 - [ ] #1 one line: keep the operator promise, or make a failed proof refuse the request
 - [ ] #2 the choice is recorded as a decision, naming the wire wording that moves if the posture changes
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+**This answer now gates a scheduled commit, as measured at d3258d0.** A `wait_health=false` switch whose refresh failed publishes unknown, emits `engine.switch_completed` and ends ready (:794-812). Authorising a waiting caller against the snapshot at resume (TASK-61) cannot coexist with that: the request would be refused on the wire while the feed says completed. Two coherent shapes: no-refresh means no proof (refusal, unknown, switch ends failed — the pinned test and the wire wording move together), or the switch vouches for a target it launched but could not query, as its own state in the capability, with the vouch valid only while that snapshot version is unchanged. `Ready` with health unknown is not a third shape; it is the hole TASK-61 exists to close.
+<!-- SECTION:NOTES:END -->

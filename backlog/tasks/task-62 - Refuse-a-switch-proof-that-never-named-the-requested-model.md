@@ -5,7 +5,7 @@ status: Waiting
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T23:07:00Z'
-updated_date: '2026-11-18T00:45:00Z'
+updated_date: '2026-11-18T00:54:00Z'
 labels:
   - concurrency
   - wire
@@ -33,12 +33,13 @@ CapabilityPublicationTests.cs:399-403. A test also pins the wrong posture today 
 - [ ] #1 a refresh whose reported list omits the target ends switch_failed with an actionable reason, Healthy=false, and no Ready
 - [ ] #2 if TASK-66 changes the posture, the switch_failed wording on the wire (RouterCore.cs:542-551) and the feed event change in the same commit
 - [ ] #3 a positive control pins the wait_health=false success path, and the failed-refresh test at CapabilityPublicationTests.cs:387-413 moves only with TASK-66's answer
+- [ ] #4 SPEC 5.5 says which name space a /models answer lives in, because the omission rule refuses a name that only differs by alias or provider id
 <!-- AC:END -->
 
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Second of the three set-1 commits, after TASK-63 AC #1 and before TASK-61. At :794, before the window check: if the refresh answered and the list does not contain the canonical model (OrdinalIgnoreCase) → `Emit engine.switch_failed` with reason `refresh_omits_<model>`, `PublishUnknown()`, `EndSwitch(state,false)`, return — the membership check the prove-health path already makes at :757-759. A **failed** refresh (`refreshed is null`) is untouched: that is TASK-66's promise, pinned at CapabilityPublicationTests.cs:405-410. No new wire surface — the request now fails on the existing switch_failed kind (RouterCore.cs:541-551) instead of being dispatched into an engine that never reported its model. `LaunchCount` stays as measured: the engine really was relaunched. Wake condition: the sol-pro plan review of this set, recorded in TASK-61's row; code starts only after it.
+Second of the set-1 commits. At :794, **before** any proof is published: if the refresh answered and the reported list does not contain the canonical model (OrdinalIgnoreCase) → `Emit engine.switch_failed` with reason `refresh_omits_<model>`, `PublishUnknown()`, `EndSwitch(state,false)`, return. Checking after `PublishProof` would publish a positive snapshot and burn a version on a switch that is about to be refused. The membership check is the one the prove-health path already makes at :757-759. A **failed** refresh (`refreshed is null`) is untouched: that is the owner's posture question, pinned at CapabilityPublicationTests.cs:405-410. Assumption to state rather than inherit: the omission rule treats the engine's reported names and the catalog's canonical names as one namespace, which `IsReadyFor` already assumes; say so in SPEC. No new wire surface — the refusal reuses the existing switch_failed kind (RouterCore.cs:541-551). Wake condition: the landing of TASK-63 AC #1, whose fenced negative publish this commit follows.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
