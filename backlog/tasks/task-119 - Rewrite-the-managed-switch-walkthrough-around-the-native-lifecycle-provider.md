@@ -1,11 +1,11 @@
 ---
 id: TASK-119
 title: Rewrite the managed switch walkthrough around the native lifecycle provider
-status: In Progress
+status: Ready for Review
 assignee:
-  - '@gpt-6.2-sol-lifecycle'
+  - '@gpt-6.2-astra'
 created_date: '2026-11-18T19:04:00Z'
-updated_date: '2026-11-18T19:40:00Z'
+updated_date: '2026-11-18T19:51:00Z'
 labels: []
 milestone: m-4
 dependencies: []
@@ -38,4 +38,6 @@ Trace the managed switch examples to the config loader and provider. Distinguish
 
 <!-- SECTION:NOTES:BEGIN -->
 Plan review returned. The loader selects Docker whenever its table exists. Runtime checks the configured endpoint, accepts an unknown window, and does not match the profile slot count. The walkthrough will distinguish these shipped behaviors from exact instance proof, host exclusivity and target quarantine. The implementer is editing the walkthrough and will validate its verbatim example offline.
+
+Worker commit f8b060a is under coordinator review. External commit review dispatched. Integrate the versioned revision log alongside the model-discovery entry.
 <!-- SECTION:NOTES:END -->

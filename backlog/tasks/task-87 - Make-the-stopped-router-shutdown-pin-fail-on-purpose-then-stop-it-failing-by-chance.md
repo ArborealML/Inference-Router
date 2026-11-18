@@ -7,7 +7,7 @@ status: Testing
 assignee:
   - '@gpt-6.2-sol-shutdown'
 created_date: '2026-11-18T06:27:00Z'
-updated_date: '2026-11-18T19:46:00Z'
+updated_date: '2026-11-18T19:50:00Z'
 labels:
   - flake
   - tests
@@ -47,4 +47,6 @@ Dropping Assert.Equal("settled", wake) is right: the seam reports the winner of 
 Historical worker measurement on 64b9f94: 24-core host, 40 concurrent CPU-only busy loops. Two blocks of 20 serial runs of dotnet test -c Release --no-build --filter FullyQualifiedName~SwitchClaimTests yielded 9/20 and 11/20 failures of the shutdown pin. The pin alone failed 0/20 quiet runs. On 51922fe, 42/50 focused runs passed; seven hit the 30000 ms ceiling and one expected settled but saw cancelled. Seven CI runs also saw that wake assertion. AC #2 still needs direct evidence for both mechanisms. CI run 44380388711 timed out in Pause.Enter in the later late-provider fixture. The amended fixture runs shutdown separately and releases the barrier before joining it.
 
 In [07408e2](https://github.com/ArborealML/Inference-Router/commit/07408e2) the held-provider pin captures the stopped answer before release. Coordinator inspected worker logs: waking before terminal publication failed AStoppedAnswerArrivesWhileTheProviderIsStillHeld; allowing a late overwrite failed AProviderFailureCannotOverwriteThePublishedStop. Both expected RouterStopped and observed Failed. Reading the private state from Switching failed SwitchingReportsThePublishedMarkerBeforePrivateStateIsInstalled at True versus False. The restored worker Release report records 69/69 in the focused set. Independent commit review accepted the fixture; TASK-59 carries the pre-install hook exception control. Fixed-tree host measurements remain open. Separate focused and join cohorts, record per-run load, and reserve the host under decision-55. Keep new pins outside the switch-claim and capability-publication classes until measurement finishes.
+
+CI triage: [Ubuntu Release run 44380388711](https://github.com/ArborealML/Inference-Router/actions/runs/44380388711) at 8a7a937 timed out in AProviderFailureCannotOverwriteThePublishedStop at Pause.Enter. [Run 44382999975](https://github.com/ArborealML/Inference-Router/actions/runs/44382999975) passed with the repaired fixture. Keep this high-priority assignment open for the recorded stability criteria.
 <!-- SECTION:NOTES:END -->

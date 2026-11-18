@@ -12,22 +12,29 @@ selector commands can start or stop real inference backends. Before architecture
 
 ```bash
 dotnet build                       # solution: inference-router.slnx  (SDK pinned in global.json)
-dotnet test                        # xUnit; must stay green
 dotnet test --filter FullyQualifiedName~EventRingTests   # the focused form, for iterating
 dotnet publish src/Arboreal.InferenceRouter.Server -c Release -r linux-x64 /p:PublishAot=true
 dotnet run --project src/Arboreal.InferenceRouter.Cli -- config -c samples/router.toml
 python3 tools/board-check.py       # backlog/ against the task-content rules below; CI runs it too
 ```
 
-**Test loop.** Run the tests for the feature you are changing while you change it
-(`--filter FullyQualifiedName~<Area>`), not the whole suite on every edit. CI runs the complete suite
-on every `main` push and on every pull request, and is the regression gate: check it periodically
-(`gh run list --branch <branch> --limit 5`, `gh pr checks <n>`, `gh run watch <id>`) rather than
-reproducing it locally. A full local run
-belongs at a real boundary — a change that crosses subsystems (concurrency, engine lifecycle, the wire
-contract), or a diagnosis, where a failure has to be seen to be intermittent rather than assumed.
-CI supersedes an in-flight run when a newer push lands, so read the newest run on the branch, not the
-one named after your commit; a `cancelled` run there is not a failure.
+**Local verification.** Implementers run the smallest filtered tests that exercise the changed behavior
+and its failure paths. At integration, rerun the affected tests when resolving conflicts changes the
+tested code. CI runs the full Release suite on pushes and pull requests. Run a full suite locally only
+when a named acceptance measurement explicitly requires it or a documented failure occurs only in
+the complete suite. Record that reason in the task.
+
+**CI triage.** The coordinator checks main and open PRs after integration, at worker handoffs, and at
+least every ten minutes during active implementation. Use `gh run list --workflow ci --branch main`,
+`gh pr checks` and `gh run view <run> --log-failed`. Inspect completed failures since the previous
+check, including failures followed by green runs. For each distinct unresolved failure, create or
+update one high-priority task. Assign a named implementer and record the run link, failing SHA, job,
+test or step, observed error and the check that will verify the fix. Track superseded cancellations
+through their replacement runs. Verify the fix in CI before closing the task.
+
+Check worker prompts and returned reviews before routine board maintenance. Prepare the next
+independent task while a plan is under review. Batch routine evidence updates into a landing so
+successive bookkeeping pushes give the running regression suite time to finish.
 
 Ordinary builds and focused tests can run concurrently in isolated worktrees. Coordinate an exclusive
 window when a measurement specifies the host condition it needs.
