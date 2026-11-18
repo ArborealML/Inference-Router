@@ -32,19 +32,19 @@ Two review rounds reopened this taxonomy row: the follow-up commit overclaimed t
 - [x] #9 SPEC states the mutation policy: an edit after that read changes no claimed transaction. A test pins it.
 - [ ] #10 A test with `AfterClaimForTests` shows a stable blank entry never claims: no claim, `no_select_command`, proof kept, provider not asked.
 - [x] #11 The divergent pin runs both directions and asserts the provider kind, so a case that never reaches the switch cannot pass.
-- [x] #12 SPEC and the `RunSwitchAsync` comment state the invariant as implemented; the mutability claim narrows to the advertised API.
+- [x] #12 SPEC and the `RunSwitchAsync` comment state the invariant as implemented; the mutability claim narrows to the API.
 - [x] #13 Per decision-49 the transaction resolves its catalog entry before the claim and reads no configuration of its own; the post-claim missing-entry branch goes.
-- [ ] #14 The absent-entry refusal answers before the claim with `no_select_command` and says absent, not unusable; a caller joining a claimed switch is not refused.
+- [ ] #14 The absent-entry refusal answers before a **new** claim with `no_select_command` and says absent, not unusable; a caller finding a matching claimed switch joins it first (decision-51), and §5.5 says so.
 <!-- AC:END -->
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Round one closed at **2f7e3e6** (SPEC v0.12.43 carries the detail); routed findings sit on TASK-103 #4, TASK-68 #6, TASK-104 #4. Counts are the coding seat's report.
+Round one closed at **2f7e3e6**; routed findings sit on TASK-103 #4, TASK-68 #6, TASK-104 #4. Counts on these commits are the coding seat's report.
 
-Read at `32cd72e`: the check read `_def.Catalog` (`:688`) while `RunSwitchAsync` re-read `_config.Engines[_def.Name]` (`:1011`), with `BeforeSwitchWaitForTests` between them (`:712`); reaching it launched, failed and published the proof unknown. The old pin aliased one definition into both sources and asserted only `SwitchingToward == null`.
+The diagnosis sits in the v0.12.44/45 SPEC rows: the check read `_def.Catalog` while the switch re-read `_config.Engines[_def.Name]`, and v0.12.44 then left the entry lookup done twice inside one definition. **764a195** resolves the entry before the claim, carries it into the switch, deletes the post-claim missing-entry branch and writes the policy into §5.5 — #9, #11, #13 ticked on reading that commit.
 
-Rounds two and three: **0dafcd2** (v0.12.44) unified the definition but left the **entry** lookup split — both sides queried `def.Catalog` at different times (`:695`, `:1021`). **764a195** (v0.12.45) resolves the entry before the claim, carries it into the switch, deletes the post-claim missing-entry branch and writes the mutation policy into §5.5 — #9, #11, #13 ticked on reading that commit; its CI run was superseded by a later push, so the gate is read on the head. Still open: #10, because the stable blank pin asserts `LaunchCalls == 0` but never instruments `AfterClaimForTests`; and #14, where the wording landed and the joined-caller case is unpinned. decision-50 declines a private copy of the config fields (the graph is read-only after boot); the record review's ask to split #12 is declined as one SPEC change.
+Its review found the moved guard refuses a caller that should have **joined** an in-flight switch, so decision-51 puts the join ahead of prospective validation, and asked for the two assertions #10 and #14 now name. Its ask to drop "or mark this engine remote" falls away: the remote route returns at `:686`, ahead of the guard. Reads for the record: one `RunSwitchAsync` call site (`:803`), and no in-place write of a catalog entry anywhere in `src/`. decision-50 declines a private copy of the config fields, the graph being read-only after boot.
 <!-- SECTION:NOTES:END -->
 
 ## Implementation Plan
