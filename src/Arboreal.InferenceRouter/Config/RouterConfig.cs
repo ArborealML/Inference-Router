@@ -91,7 +91,7 @@ public sealed record DockerImageIdentity
 
     internal static bool IsNamedDigest(string? value)
     {
-        var separator = value?.IndexOf('@') ?? -1;
+        var separator = value?.IndexOf('@', StringComparison.Ordinal) ?? -1;
         if (value is null || separator < 1 || !IsFullSha256(value.AsSpan(separator + 1))) return false;
         var repository = value.AsSpan(0, separator);
         if (repository[0] == '/' || repository[^1] == '/' || repository.Contains("//", StringComparison.Ordinal))
