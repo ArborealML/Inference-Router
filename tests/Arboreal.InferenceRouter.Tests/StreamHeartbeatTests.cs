@@ -10,6 +10,7 @@ public class StreamHeartbeatTests
 {
     private const string Request = """{"model":"test-model","stream":true,"messages":[{"role":"user","content":"ping"}]}""";
     private const string EarlyFailure = "failure before first byte";
+    private static readonly double[] ExpectedReceiveSeconds = [0d, 4d, 8d, 12d, 16d];
 
     [Fact]
     public async Task OneCadenceSpansAdmissionAndTheFirstByteWithoutSplittingAnUpstreamFrame()
@@ -53,7 +54,7 @@ public class StreamHeartbeatTests
             Assert.Equal(TimeSpan.FromSeconds(16), nextTick.Due);
             clock.Reach(nextTick.Due, nextTick);
             received.Add(await ReadCommentAsync(body, 4, clock, ct));
-            Assert.Equal(new[] { 0d, 4d, 8d, 12d, 16d }, received.Select(t => t.TotalSeconds));
+            Assert.Equal(ExpectedReceiveSeconds, received.Select(t => t.TotalSeconds));
 
             var pending = await clock.NextTimerAsync(ct);
             clock.Reach(TimeSpan.FromSeconds(18));
@@ -130,7 +131,12 @@ public class StreamHeartbeatTests
         var (app, _, port) = await WireHarness.StartAsync(fake: fake, streamClock: clock, maxInflight: 1,
             responseTimeoutMs: abort ? 600_000 : 4_000);
         await using var server = app;
-        using var http = Client(port);
+        using var handler = new SocketsHttpHandler { MaxResponseDrainSize = 0 };
+        using var http = new HttpClient(handler, disposeHandler: false)
+        {
+            BaseAddress = new Uri($"http://127.0.0.1:{port}"),
+            Timeout = TimeSpan.FromSeconds(15),
+        };
         using var bound = new CancellationTokenSource(TimeSpan.FromSeconds(15));
         var ct = bound.Token;
         var (_, response) = await WireHarness.StartStreamAsync(http, "stopped", Request, ct);
@@ -227,7 +233,7 @@ public class StreamHeartbeatTests
     private static string ErrorFrame(string code, string message) =>
         "data: {\"error\":{\"message\":\"" + message + "\",\"code\":\"" + code + "\",\"type\":\"air_error\"}}\n\ndata: [DONE]\n\n";
 
-    private static HttpClient Client(int port) => new(new SocketsHttpHandler { MaxResponseDrainSize = 0 })
+    private static HttpClient Client(int port) => new()
     {
         BaseAddress = new Uri($"http://127.0.0.1:{port}"),
         Timeout = TimeSpan.FromSeconds(15),
