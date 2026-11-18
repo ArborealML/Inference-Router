@@ -1,6 +1,6 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.46)
+Status: draft, continuously revised (v0.12.47)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
@@ -352,6 +352,17 @@ daemon transaction per engine. 137 tests green.
   that answers no `upload_url`, an upload that dies or answers no asset id, an asset name listed twice on
   the release, and a tag that moves after the first resolve. No tag has run the gate: still configured,
   not proven.
+- v0.12.47 — a refusal that costs the engine nothing is pinned as one published value, not as a health flag (§5.5, TASK-94 #10).
+  `ABlankSelectorExecIsRefusedBeforeTheClaimToo` asserted `Healthy` after the refusal, and `Healthy` is true of a
+  *replaced* snapshot: a refusal that claimed a switch and rolled it back, or published a fresh list for the entry it
+  had just refused, left that pin green while burning the engine's version. The pin now captures the snapshot before
+  the call and compares the one value the promise is about — same `Version`, same health, same reported list, the list
+  compared as its contents rather than its instance — with the version doing the work, because every publication
+  increments it and a quiet poll that learns nothing leaves it alone. **Control, run against this tree and reverted
+  byte-identical afterwards:** bumping the published version at the refusal while holding health and the list identical
+  reddens that pin alone (`Expected: 1 / Actual: 2` at the version assertion), which is the assertion the previous pin
+  did not have. Test-only: no production line changed; `RefusalCategoryTests` 12/12 in Debug at this tree, and the full
+  suite is CI's gate.
 - v0.12.46 — two refusal pins now prove the thing they claim, and one claim of mine is withdrawn (§5.5, TASK-94 #9/#10).
   `ABlankSelectorExecIsRefusedBeforeTheClaimToo` arms the seam at the claim itself and requires **zero** fires, which is
   what separates a refusal in front of the transaction from one a step behind the marker: before this it proved only

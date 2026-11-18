@@ -450,6 +450,12 @@ public class RefusalCategoryTests
     /// the claim, by name, with the engine's proof left alone. A check narrowed to "the entry has a select block"
     /// would hand this to the provider and answer <c>launch_failed</c> (or <c>refresh_omits</c>) for whitespace in a
     /// catalog, which is the drift the single predicate exists to prevent (§5.5).</summary>
+    /// <remarks>The refusal's promise is that the engine <b>loses nothing</b>, and the pin holds the runtime to that
+    /// promise with a captured snapshot rather than a health flag: <c>Healthy</c> is true of a <i>replaced</i>
+    /// snapshot too, so a refusal that burned the version, or published a fresh list, answered this pin the same as
+    /// one that published nothing. What "costs the engine nothing it had" means is the one published value — same
+    /// version, same health, same reported list — and the version is what makes it one claim rather than three
+    /// readings (§5.5, TASK-94 #10).</remarks>
     [Fact(Timeout = 120_000)]
     public async Task ABlankSelectorExecIsRefusedBeforeTheClaimToo()
     {
@@ -477,6 +483,9 @@ public class RefusalCategoryTests
         using var loopCts = new CancellationTokenSource();
         engine.StartHealthLoop(loopCts.Token);
         await WaitUntil(() => engine.Capability.Healthy);
+        // The whole published value before the refusal, not a field of it. A quiet poll that learns nothing leaves
+        // the version alone, so this version is stable across the wait below unless this call publishes something.
+        var before = engine.Capability;
 
         var failed = await engine.WaitForModelAsync("extra", TimeSpan.FromSeconds(10), CancellationToken.None);
         Assert.Equal("no_select_command", Expect("no_select_command", failed));
@@ -489,7 +498,15 @@ public class RefusalCategoryTests
         Assert.Contains("no usable select exec",
             feed.Replay(0).Last(e => e.Kind == "engine.switch_failed").Reason);
         Assert.DoesNotContain("exec", failed.Detail);                 // no config detail crosses to the caller
-        Assert.True(engine.Capability.Healthy);
+
+        // The proof is the *snapshot*, and the version is what says it is the same one. A refusal that claimed and
+        // undid its claim, or published a fresh list for an entry it refused, leaves a healthy engine and a null
+        // marker — and a higher version. Comparing the list as one string pins the contents rather than the
+        // instance: the snapshot this engine published owns its array (§5.5).
+        var after = engine.Capability;
+        Assert.True(after.Healthy);                                   // there was a proof, and it is still there
+        Assert.Equal(before.Version, after.Version);                  // nothing was published during the refusal
+        Assert.Equal(string.Join('\u0000', before.LoadedModels), string.Join('\u0000', after.LoadedModels));
     }
 
     /// <summary>The single check in front of the claim and the catalog the switch acts on have to be <b>one</b>
