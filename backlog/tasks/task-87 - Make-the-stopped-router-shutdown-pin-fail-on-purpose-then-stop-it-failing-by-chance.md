@@ -30,24 +30,25 @@ The pin `AWaiterInsideTheReadinessWaitIsToldTheRouterStopped` fails in two shape
 - [ ] #4 Two named mutation controls fail pins: removing shutdown's settlement of the readiness task, and letting a stop read as a broken engine so a later write overwrites the cause.
 - [ ] #5 The route assertion is gone, and a provider that records cancellation but stays held pins liveness: the stopped answer arrives while held, and the marker clears after release.
 - [ ] #6 Latches fail safe: the observation is captured, released before the assertions and released in a finally, and every wait is bounded, so a red run fails rather than parks.
+- [ ] #7 A second quiet-host cohort runs `SwitchJoinTests` on the same tree with load recorded: it parks launches and exercises the changed join timing.
 <!-- AC:END -->
 
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Plan review disposition: dropping Assert.Equal("settled", wake) is right — the seam reports the winner of Task.WaitAsync arbitration, not a call order — and that branch is no contract. Reverting the readiness-wait block in EngineRuntime.cs is the wrong mutation: it changes the custom answer only when token cancellation wins, and may be unreachable once a stop is one decision. One change with TASK-81, whose frozen stop cause removes the race from production; this row proves the pin deterministic and liveness surviving.
+Dropping Assert.Equal("settled", wake) is right: the seam reports the winner of Task.WaitAsync arbitration, not a call order, and that branch is no contract. Reverting the readiness-wait block in EngineRuntime.cs is the wrong mutation: it changes the custom answer only when token cancellation wins, and may be unreachable once a stop is one decision. One change with TASK-81, whose frozen stop cause removes the race from production; this row proves the pin deterministic and liveness surviving.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Seven CI occurrences, all Expected settled / Actual cancelled: 44264855629 b7ab43d, 44275637518 e0dcd0e, 44277482601 64b9f94, 44280833645, 44308059362 14a01e2, 44325281339, 44330807651 dd22653 — board-only pushes among them.
+Seven CI occurrences, all Expected settled / Actual cancelled: 44264855629 b7ab43d, 44275637518 e0dcd0e, 44277482601 64b9f94, 44280833645, 44308059362 14a01e2, 44325281339, 44330807651 dd22653 (board-only pushes among them)
 
-Criterion #1 is met on the coding seat's report (sha, command, per-run logs): detached worktree at `64b9f94`, `dotnet test --no-build -c Release`. Pin alone on a quiet machine: **0 of 20 red**; the whole class with 40 busy loops on a 24-core host: **9 of 20**, repeated **11 of 20**, 20/40 overall, every red run naming that test.
+AC #1 is met on their report: at `64b9f94`, 0/20 red for the pin alone on a quiet machine; 20/40 with 40 busy loops on a 24-core host, every red naming this pin.
 
-The earlier sighting (`Failed 1 / Passed 221`, name lost to a pipe) is the failure mode #6 ends. Their load hogs poisoned two local suite runs; any count from that window, mine included, is unusable (decision-55). Standing rule while open: no new pins in the switch-claim or capability-publication classes (amendments allowed; the taxonomy class is not covered).
+**AC #3 is not ticked.** The `51922fe` series (16:12-16:22Z, Release, `--no-build`): 42/50 focused clean, 8 red and every red this pin — 7 `timed out after 30000 ms`, 1 `Expected: "settled"` — both CI shapes, no load generator running; full suites 231/231, then 2 failures, then 231/231. Host 1.86 at the start, then 6.4-15.0 from the harness's own `testhost`/MSBuild, per-run load in the seat's log. These are AC #1-class evidence on the post-#14 tree and the both-shapes data AC #2 asks for — not an after-the-fix pass, which is what AC #3 requires. One full-run failure was TASK-80's nudge pin, sighted red once here.
 
-A quiet-host series is running on the post-#14 tree (`51922fe`, Release, `--no-build`): 50 focused runs of this class, then 3 full suites, load recorded per run, host 1.86 at the start with no load generator running (their report; raw counts land here). Runs taken before `51922fe` qualify for nothing at AC #3, while AC #1's `64b9f94` counts stand as history. The ordering that chose that tree sits in TASK-94: #14 first, because it changes what a caller inside the readiness wait does — and its parked-launch pins went into a new class, `SwitchJoinTests`, which kept the standing rule above.
+AC #7, from the join-change review: `SwitchJoinTests` parks launches and runs two callers per engine under the new timing, and three full suites have too little power — take it as its own quiet-host cohort, and never mix cohorts.
 
-AC #4-#6 unmet; the parked shutdown / stop-cause pins that would carry them are **unmeasured, not red** — their last numbers came from under their own 40 busy loops.
+Standing rule while open: no new pins in the switch-claim or capability-publication classes (amendments allowed); counts from a window with foreign load are void (decision-55). AC #4-#6 unmet; the parked stop-cause pins are **unmeasured, not red**. Next act: the implementer's stop-cause plan, which goes to a top-tier plan review first.
 <!-- SECTION:NOTES:END -->
