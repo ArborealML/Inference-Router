@@ -1,4 +1,11 @@
 ---
+id: decision-36
+title: >-
+  A waiter that holds its own switch proof keeps it; re-deciding against
+  another caller's proven target waits for the reservation and the drain
+date: '2026-11-18T05:41:14Z'
+status: accepted
+---
 ## Context
 
 TASK-61 re-authorises a waiting caller when it resumes, so that the wire answer and the feed cannot

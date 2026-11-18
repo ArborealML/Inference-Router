@@ -1,4 +1,11 @@
 ---
+id: decision-33
+title: >-
+  Publication authority: a probe publishes only its own observation, and
+  only a switch proves
+date: '2026-11-18T05:41:14Z'
+status: accepted
+---
 ## Context
 
 The TASK-68 plan review reported, and this seat re-checked in the code, that the ordinary health

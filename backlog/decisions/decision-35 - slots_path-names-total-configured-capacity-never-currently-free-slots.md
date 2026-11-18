@@ -1,4 +1,10 @@
 ---
+id: decision-35
+title: >-
+  `slots_path` names total configured capacity, never currently free slots
+date: '2026-11-18T05:41:14Z'
+status: accepted
+---
 ## Context
 
 The serving gauge read from `health_probe.slots_path` (default `total_slots`) feeds three things:

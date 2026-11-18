@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T23:07:00Z'
-updated_date: '2026-11-18T05:55:00Z'
+updated_date: '2026-11-18T06:07:00Z'
 labels:
   - concurrency
   - scheduling
@@ -28,9 +28,9 @@ The owner decided the posture this row waited on: a switch the engine cannot con
 <!-- AC:BEGIN -->
 - [x] #1 The cannot-confirm refusal landed first in its own commit; this row changes only how a resuming waiter is classified
 - [x] #2 A switch whose own attempt ended false ends Failed once, so a caller with no ceiling cannot relaunch forever
-- [ ] #3 A waiter whose own attempt succeeded takes its own turn rather than a refusal when something other than a later claim contradicts the target, pinned where a second claim wins the engine
-- [ ] #4 The resume check is pinned by a gate between the readiness await and the snapshot read, so the pin cannot pass on thread scheduling
-- [ ] #5 A switch marker raised by a LATER claim never withdraws the proof a waiter's own switch published: a caller that holds its own proof is not sent behind another caller's transaction
+- [x] #3 A waiter whose own attempt succeeded takes its own turn rather than a refusal when something other than a later claim contradicts the target, pinned where a second claim wins the engine
+- [x] #4 The resume check is pinned by a gate between the readiness await and the snapshot read, so the pin cannot pass on thread scheduling
+- [x] #5 A switch marker raised by a LATER claim never withdraws the proof a waiter's own switch published: a caller that holds its own proof is not sent behind another caller's transaction
 - [ ] #6 Two callers wanting different models on a one-model engine produce no alternating launch sequence — pinned as a launch sequence, not as the absence of a timeout
 <!-- AC:END -->
 
@@ -45,7 +45,7 @@ Do not read the resume check as the entitlement: authority held across the hando
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-**Half-green at [042e212](https://github.com/ArborealML/Inference-Router/commit/042e212) and main has stayed red since.** CI run 44241484309 failed `SwitchFairnessTests.AWaiterBehindAnotherProfilesSwitchTakesItsOwnTurn` (assert at `SwitchFairnessTests.cs:113`, ~20 s = that caller's ceiling); the board reproduced it 2 of 4 runs of the two-test filter, and separately failed **this row's own pin** `AWaiterOvertakenAtTheResumeRead` 1 of 2 runs of the `SwitchClaimTests` filter at `SwitchClaimTests.cs:377`, whose diagnostic reads `launches=[extra,m,extra,m]` with a switch still in flight at 25 s. The mechanism and the rule are decision-36. The sleep at `SwitchFairnessTests.cs:109` is the sensitivity, not the defect; the seam AC #4 used is sound (`AfterReadyWaitForTests` at `EngineRuntime.cs:765`, before the resume read at `:782`) — what fails is the pin's premise, since its two callers are a ping-pong by construction.
+**Green again at [f89fead](https://github.com/ArborealML/Inference-Router/commit/f89fead) (v0.12.35), commit 1 of the fix-forward.** Re-measured 06:05Z: `origin/main = f89fead`; CI run 44248248881 success on all three jobs after four red pushes. The pins resolve at HEAD: `OwnProofStillStands` in `EngineRuntime.cs`, `SwitchClaimTests.cs:397` for AC #5, and both resume pins take the seam at `EngineRuntime.cs:765` before the snapshot read at `:782` — the seam AC #4 needs, so neither pin passes on thread scheduling. The implementer reports the combined switch filter 11/11 over five consecutive runs plus a differential failing the new pin under v0.12.34's fall-through: their measurement, not the board's.
 
-**No fix on the remote** — re-measured 05:53Z: main is `2d2d9f4`; every push since the red commit is board-only and red on the same two tests (runs 44245983576, 44246239378: Failed 2, Passed 190, board-contract job green, so that red is carried, not a board regression). The fix-forward exists here only as uncommitted edits to `EngineRuntime.cs`, the two test files and `SPEC.md`. **Ordering:** TASK-62's category work comes after this row is green; TASK-25 AC #5 and TASK-64 AC #3 own the parked half.
+**Open: AC #6**, the two-caller launch-sequence pin, and the fairness pin re-armed on an arrival event instead of the `Task.Delay(150)` pair. Standing rules for that commit: the parked half stays parked — SPEC §15 names TASK-25 AC #5, TASK-64 AC #3 and this row as owners and says v0.12.34 is deliberately narrowed, so do not revert 042e212 and do not read the resume check as the entitlement (authority across the handoff is TASK-25's criterion, decision-36). TASK-62's AC #7-#10 come after this row is Done.
 <!-- SECTION:NOTES:END -->

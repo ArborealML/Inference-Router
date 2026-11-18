@@ -1,4 +1,11 @@
 ---
+id: decision-34
+title: >-
+  A claimed switch is completed not rolled back; a waiter answers from the
+  current snapshot
+date: '2026-11-18T05:41:14Z'
+status: accepted
+---
 ## Context
 
 Putting the serving gauges into the capability version (decision-31) makes the switch claim's
