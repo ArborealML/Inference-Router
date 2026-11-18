@@ -7,10 +7,11 @@ status: To Do
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T22:49:00Z'
-updated_date: '2026-11-18T00:54:00Z'
+updated_date: '2026-11-18T19:18:00Z'
 labels:
   - concurrency
   - testing
+milestone: m-3
 dependencies:
   - TASK-67
 priority: medium

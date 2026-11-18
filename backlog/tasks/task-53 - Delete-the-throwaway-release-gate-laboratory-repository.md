@@ -5,9 +5,10 @@ status: Waiting
 assignee:
   - '@claire'
 created_date: '2026-11-17T19:47:00Z'
-updated_date: '2026-11-18T03:25:00Z'
+updated_date: '2026-11-18T19:18:00Z'
 labels:
   - release
+milestone: m-9
 dependencies: []
 priority: low
 ordinal: 53000

@@ -5,11 +5,12 @@ status: Waiting
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T19:47:00Z'
-updated_date: '2026-11-17T21:33:00Z'
+updated_date: '2026-11-18T19:18:00Z'
 labels:
   - scheduling
   - wire
   - concurrency
+milestone: m-1
 dependencies:
   - TASK-55
   - TASK-56

@@ -5,7 +5,9 @@ status: To Do
 assignee:
   - '@gpt-6.2-sol'
 created_date: '2026-11-18T19:04:00Z'
+updated_date: '2026-11-18T19:18:00Z'
 labels: []
+milestone: m-4
 dependencies: []
 references:
   - SPEC.md

@@ -5,10 +5,11 @@ status: In Progress
 assignee:
   - '@gpt-6.2-sol'
 created_date: '2026-11-18T07:15:00Z'
-updated_date: '2026-11-18T18:57:00Z'
+updated_date: '2026-11-18T19:18:00Z'
 labels:
   - wire
   - serve
+milestone: m-0
 dependencies: []
 priority: high
 ordinal: 87000

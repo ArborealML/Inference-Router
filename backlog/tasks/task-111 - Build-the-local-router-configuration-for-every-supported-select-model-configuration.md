@@ -7,8 +7,9 @@ status: Waiting
 assignee:
   - '@qwen3.8-flash-next-board'
 created_date: '2026-11-18T18:15:00Z'
-updated_date: '2026-11-18T18:56:00Z'
+updated_date: '2026-11-18T19:18:00Z'
 labels: []
+milestone: m-4
 dependencies:
   - TASK-26
   - TASK-118

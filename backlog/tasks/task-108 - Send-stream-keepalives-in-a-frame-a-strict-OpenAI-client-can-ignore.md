@@ -5,11 +5,12 @@ status: To Do
 assignee:
   - '@gpt-6.2-sol'
 created_date: '2026-11-18T17:43:00Z'
-updated_date: '2026-11-18T18:52:00Z'
+updated_date: '2026-11-18T19:18:00Z'
 labels:
   - wire
   - stream
   - serve
+milestone: m-0
 dependencies: []
 references:
   - src/Arboreal.InferenceRouter.Server/ServerApp.cs

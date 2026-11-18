@@ -5,10 +5,10 @@ status: Waiting
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-16T20:46:00Z'
-updated_date: '2026-11-18T10:11:00Z'
+updated_date: '2026-11-18T19:18:00Z'
 labels:
   - ui
-milestone: v0.10 - live view and robustness parity
+milestone: m-10
 dependencies:
   - TASK-9
   - TASK-21

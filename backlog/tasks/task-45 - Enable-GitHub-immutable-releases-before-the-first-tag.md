@@ -5,11 +5,12 @@ status: Waiting
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T10:52:00Z'
-updated_date: '2026-11-17T16:01:00Z'
+updated_date: '2026-11-18T19:18:00Z'
 labels:
   - ci
   - release
   - security
+milestone: m-9
 dependencies: []
 priority: medium
 type: task

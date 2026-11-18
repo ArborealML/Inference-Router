@@ -7,10 +7,11 @@ status: In Progress
 assignee:
   - '@gpt-6.2-sol'
 created_date: '2026-11-18T07:44:00Z'
-updated_date: '2026-11-18T19:11:00Z'
+updated_date: '2026-11-18T19:18:00Z'
 labels:
   - ci
   - release
+milestone: m-9
 dependencies: []
 priority: medium
 ordinal: 89000

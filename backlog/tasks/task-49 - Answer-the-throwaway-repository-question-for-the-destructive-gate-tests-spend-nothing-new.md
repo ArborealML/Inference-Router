@@ -7,10 +7,11 @@ status: To Do
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T13:56:00Z'
-updated_date: '2026-11-17T17:45:00Z'
+updated_date: '2026-11-18T19:18:00Z'
 labels:
   - release
   - security
+milestone: m-9
 dependencies:
   - TASK-44
 priority: high

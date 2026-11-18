@@ -7,10 +7,11 @@ status: To Do
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T23:07:00Z'
-updated_date: '2026-11-18T02:54:00Z'
+updated_date: '2026-11-18T19:18:00Z'
 labels:
   - scheduling
   - architecture
+milestone: m-4
 dependencies: []
 priority: medium
 ordinal: 64000

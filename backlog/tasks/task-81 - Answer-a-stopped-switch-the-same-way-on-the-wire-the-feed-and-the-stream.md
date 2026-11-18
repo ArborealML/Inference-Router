@@ -5,12 +5,12 @@ status: To Do
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-18T04:09:00Z'
-updated_date: '2026-11-18T18:26:00Z'
+updated_date: '2026-11-18T19:18:00Z'
 labels:
   - lifecycle
   - shutdown
   - wire
-milestone: v0.2 — the switching backend
+milestone: m-3
 dependencies: []
 ordinal: 81000
 ---

@@ -5,8 +5,9 @@ status: To Do
 assignee:
   - '@gpt-6.2-sol'
 created_date: '2026-11-18T18:29:00Z'
-updated_date: '2026-11-18T18:59:00Z'
+updated_date: '2026-11-18T19:18:00Z'
 labels: []
+milestone: m-12
 dependencies: []
 modified_files:
   - tools/board-check.py
