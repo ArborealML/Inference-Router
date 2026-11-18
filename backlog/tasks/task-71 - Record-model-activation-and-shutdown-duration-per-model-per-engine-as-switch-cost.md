@@ -3,11 +3,11 @@ id: TASK-71
 title: >-
   Record model activation and shutdown duration per model per engine as switch
   cost
-status: In Progress
+status: Ready for Review
 assignee:
   - '@gpt-6.2-sol-scheduling'
 created_date: '2026-11-18T01:22:00Z'
-updated_date: '2026-11-18T22:58:00Z'
+updated_date: '2026-11-18T23:06:00Z'
 labels: []
 milestone: m-5
 dependencies:
@@ -43,13 +43,5 @@ Implement attempt-scoped monotonic stage observations with missing and failed ou
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Record queue, shutdown, load, confirmed readiness, first forwarding and terminal outcome separately. Distinguish unobserved duration from zero and classify failed, cancelled or overtaken attempts. Estimates influence selection only among eligible targets.
-
-Compare drain plus verified shutdown of A and activation of B against actual handoff time, keyed by host, engine version, model digest and effective config. Distinguish cold from warm samples. Track timeouts and failures separately from successful durations. Evaluate the proposed 64-success, 30-day recency-weighted percentile window against recorded workloads before fixing its parameters.
-
-External plan review dispatched. The candidate measures monotonic stages under one claim identity, preserves missing and failed observations, and compares eligible switches using a bounded cost history. The acceptance fixture keeps arrivals fixed and changes only the measured cost.
-
-The [integrated scheduler](https://github.com/ArborealML/Inference-Router/commit/a77d50a) now commits the exact thread-admissible ticket it evaluated. A blocked-head case and cancellation during selection both failed on the preceding dispatch implementation and passed after the change. A custom scheduler retained its call ordering. The combined filter passed 45 cases and the full Release suite passed 442. The cost history and ranking functions still require production stop/launch observations and a test changing the actual launch.
-
-Combined scheduling and capacity candidate passed 237 of 238 focused Release cases. The eligible loaded-route test selected a different ticket. The scheduling implementer owns diagnosis and correction before integration.
+The [integrated scheduler](https://github.com/ArborealML/Inference-Router/commit/a77d50a) commits the exact thread-admissible ticket selected. The measured-cost candidate records monotonic stages on the same claim, separates failed or missing observations, and compares only eligible switches. The combined Release filter passed 241 cases with zero skips. With the same arrivals and switch costs, a loaded model with a proven window ends comparison and A launches; with its window unknown, comparison reaches B and B launches. This corrects the earlier mixed-queue fixture. Independent composition and fixture reviews precede integration. Compare measured drain, shutdown and activation against real handoffs by host, engine version, digest and effective config. Evaluate sample retention against workloads. Physical admission, exact instance routing, deadline enforcement and live swaps retain separate gates.
 <!-- SECTION:NOTES:END -->
