@@ -3,7 +3,7 @@ id: TASK-97
 title: >-
   Stop the admin ticket snapshot echoing caller identifiers at a length nothing
   bounds
-status: To Do
+status: Waiting
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-18T10:57:00Z'
@@ -34,4 +34,5 @@ SPEC §10 credits `max_request_body_bytes` with bounding the admin ticket snapsh
 <!-- SECTION:NOTES:BEGIN -->
 Deliverable, decided after the coding seat measured the default and this seat re-measured it (`RouterConfig.cs:167`, `grep request_body samples/` → no override): bound what may be **stored**, do not cut what is read. A cut `Model` looks valid and matches nothing, which is why v0.12.40 rejected the `Ident`-on-`Model` shape and pinned whole values; decision-45 does not decide this surface either. A general admin response-size rule is **not** this row — SPEC calls it a separate question, and if that is the preferred lever it belongs with the admin/live-view surface (TASK-21). Verified by read: `ServerApp.cs:109` header path; no `MaxRequestHeaders*` in the server assembly; `GET /admin/tickets/{id}` carries no body.
 The deep commit review of 8e6867d reached the same place from the other side, and this seat confirmed the path in this tree: `CopyToAsync` at `ServerApp.cs:420` and `:463` with no limit, and ticket retention of 4,096 (`RouterCore.cs:28`), so one stored oversized identity is re-fetchable thousands of times. Kestrel's own defaults (32 KiB of headers, 30 MB bodies) are neither the router's cap nor the one SPEC names.
+Wake: the top-tier plan review of this design, requested 11:28Z. Premises re-verified by the coding seat independently: 16 MiB default, `CopyToAsync` at `ServerApp.cs:420`/`:463`, retention 4,096. One constraint the plan has to survive: `EventRingTests.cs:261-262`, `:351-352`, `:463` pin whole identifiers of 405 and 300 characters as legitimate exact values, so any admission limit above those numbers or a different mechanism has to be argued, not asserted.
 <!-- SECTION:NOTES:END -->

@@ -1,7 +1,7 @@
 ---
 id: TASK-91
 title: Make one stream keepalive sequence monotonic, and prove the repeat is gone
-status: Waiting
+status: To Do
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-18T07:51:00Z'
@@ -30,9 +30,7 @@ Measured live at 7d01520, twice, through the router fronting one OpenAI-shaped l
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Provenance: first defect this seat measured off a live router rather than a test. At 07:52Z the already-built Debug server was run with an untracked front-only probe config (remote engine, no lifecycle block, auto_switch off) against an already-running OpenAI-shaped fake backend on a loopback port; no engine was started or stopped, and the router bound loopback only and was stopped again. Reproduction, identical in two runs: curl -N -X POST http://127.0.0.1:18099/v1/chat/completions -H "content-type: application/json" -d "{\"model\":\"bench-model\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}],\"stream\":true}" | grep -n keepalive -> frames seq=0 status, seq=1, seq=0 status. One candidate mechanism, NOT verified: a rented frame buffer reaching the pipe twice, since the repeated frame is byte-identical to the first. Sequencing: [TASK-82](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-82%20-%20Prove-the-stream-relay-preserves-every-frame-when-the-upstream-splits-it-at-any-byte.md) asserts frame identity over the same relay, so these two land one at a time.
+Provenance: the first defect this seat measured off a live router rather than a test. At 07:52Z the built Debug server, a front-only probe config (remote engine, no lifecycle block, `auto_switch` off) and a scripted streaming upstream gave `seq=0,1,0` on one stream. At 08:05Z the same build against an upstream stalling nine seconds before its first byte gave only `seq=0` and `seq=1`, with no keepalive during the stall. The trigger therefore looks like a **fast** upstream rather than the stall tick, and that is the axis a reproduction has to vary. A 253-line `KeepaliveSequenceTests` arrived from a delegated worker; the coding seat reviewed it and the review is recorded below rather than reproducing the diff.
 
-Second measurement at 08:05Z, same build, same request: an upstream that stalls nine seconds before its first byte produced only seq=0 and seq=1, then the chunks and the sentinel — no repeat, and no keepalive at all during the stall. So the repeat is timing-dependent, and the periodic tick is not the writer: every keepalive write precedes the channel drain. Delegated at 08:09Z to a delegated worker (gpt-6.2-sol, medium reasoning) in its own worktree on its own branch, tests only and no commits, because its sandbox cannot write the shared gitdir. Wake condition: its report, with raw command output, ten consecutive runs, and a mutation control.
-
-Deliverable arrived 08:45Z, uncommitted in its worktree: a KeepaliveSequenceTests file in the test project. Wake condition met for reading, not for closing — the implementer seat reviews and commits it, and its branch was cut at 13fb79d, two code commits behind, so it rebases on d6cfb38 like the other worker. Report with raw output and mutation evidence is what the review reads against.
+The coding seat rejected the worker's 253-line `KeepaliveSequenceTests` against AC #1: it passes against unmodified code, and its own log records that the live loopback repeat was never reproduced (the sandbox denied sockets); the only red comes from a mutation that replays frame 0 before the relay drains. Committing it would pin monotonicity without proving the defect is gone. **Go** given for a live reproduction on loopback: front-only config in the safe-smoke shape (remote engines, no lifecycle commands), a scripted streaming upstream, ten consecutive runs with a fast and a stalled upstream alike. A run that fails to reproduce is a measurement to record, not a pass. Until AC #1 holds, the file stays out of `main`.
 <!-- SECTION:NOTES:END -->

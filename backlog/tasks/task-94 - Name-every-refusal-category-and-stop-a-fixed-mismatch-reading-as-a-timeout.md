@@ -1,7 +1,7 @@
 ---
 id: TASK-94
 title: Name every refusal category, and stop a fixed mismatch reading as a timeout
-status: To Do
+status: Waiting
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-18T08:30:00Z'
@@ -30,4 +30,5 @@ Re-measured at 610f0d8 after the commit review. Two refusal exits still hand the
 
 <!-- SECTION:NOTES:BEGIN -->
 The rule about new pins lives on TASK-87 and covers the switch-claim and capability-publication classes. It is not a checker rule, and this seat's earlier wording on another row named a checker rule that does not exist. The amendment in `SwitchClaimTests` replaces one assertion in an existing test — no new pin, wait, latch or method — so it is an amendment inside the rule and is allowed. Conditions: minimum edit, no new waits, and every red run names its failing test while TASK-87 is open.
+Held: code and tests uncommitted, SPEC draft parked and renumbered v0.12.42 so the shipped v0.12.41 does not collide. Wake: the top-tier plan review of this design landing (requested 11:22Z); on landing the seat re-applies the SPEC draft, re-runs focused and full Release, then commits.
 <!-- SECTION:NOTES:END -->

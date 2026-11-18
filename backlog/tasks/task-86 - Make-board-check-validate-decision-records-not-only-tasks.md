@@ -31,4 +31,5 @@ Four decision records were committed with a stray opening fence and no front mat
 
 <!-- SECTION:NOTES:BEGIN -->
 Same gate, second hole, read at 2569519: TASK-82's criteria block held three prose lines with no checkbox and the same three again verbatim — four rendered criteria where the row meant seven-ish checks, and board-check passed it with 0 defects. Fixed on the row at the same landing; the checker gap is AC #4 here.
+Evidence the standard is enforced, not just written: the commit carrying a GITREF defect went red on CI (44293686450) and the repair turned it green — the board seat had piped the checker into `tail` and committed on `tail`'s exit status. The checker row itself is Done; this is its behaviour measured.
 <!-- SECTION:NOTES:END -->
