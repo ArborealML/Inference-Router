@@ -3,11 +3,11 @@ id: TASK-71
 title: >-
   Record model activation and shutdown duration per model per engine as switch
   cost
-status: Ready for Review
+status: In Progress
 assignee:
   - '@gpt-6.2-sol-scheduling'
 created_date: '2026-11-18T01:22:00Z'
-updated_date: '2026-11-18T23:06:00Z'
+updated_date: '2026-11-18T23:13:00Z'
 labels: []
 milestone: m-5
 dependencies:
@@ -44,4 +44,6 @@ Implement attempt-scoped monotonic stage observations with missing and failed ou
 
 <!-- SECTION:NOTES:BEGIN -->
 The [integrated scheduler](https://github.com/ArborealML/Inference-Router/commit/a77d50a) commits the exact thread-admissible ticket selected. The measured-cost candidate records monotonic stages on the same claim, separates failed or missing observations, and compares only eligible switches. The combined Release filter passed 241 cases with zero skips. With the same arrivals and switch costs, a loaded model with a proven window ends comparison and A launches; with its window unknown, comparison reaches B and B launches. This corrects the earlier mixed-queue fixture. Independent composition and fixture reviews precede integration. Compare measured drain, shutdown and activation against real handoffs by host, engine version, digest and effective config. Evaluate sample retention against workloads. Physical admission, exact instance routing, deadline enforcement and live swaps retain separate gates.
+
+Review found token pressure is captured for ranking but omitted from final revalidation. Test whether pressure changes at equal inflight count alter the winner. Verify shutdown sample identity and single attribution across provisional and terminal observations before integration.
 <!-- SECTION:NOTES:END -->

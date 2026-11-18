@@ -5,7 +5,7 @@ status: Waiting
 assignee:
   - '@gpt-6.2-sol-shutdown'
 created_date: '2026-11-17T02:54:00Z'
-updated_date: '2026-11-18T22:58:00Z'
+updated_date: '2026-11-18T23:13:00Z'
 labels:
   - engine
   - lifecycle
@@ -33,6 +33,7 @@ Waiting for host authority and exact-instance recovery before production resourc
 - [ ] #7 After an uncertain start, reconcile the exact recorded operation and immutable container ID. Prove cleanup of the owned unit, or retain the host fence until reconciliation establishes the outcome.
 - [x] #8 A shipped native Docker example passes the config loader with every model selector removed from that engine. The shipped-sample load test passes and remaining delegated examples identify exec as legacy.
 - [ ] #9 After A fails, repeated scheduler wakeups and cooldown expiry produce zero attempts for its engine/model/profile/config generation. Resetting A permits a fresh attempt without resetting unrelated targets (decision-62).
+- [ ] #10 A conflicting native stop response cannot authorize forced removal or replacement unless an independent observation proves the exact owned instance stopped. Pin the refusal and verified-state cases and reconcile the documented 409 behavior.
 <!-- AC:END -->
 
 ## Implementation Plan
