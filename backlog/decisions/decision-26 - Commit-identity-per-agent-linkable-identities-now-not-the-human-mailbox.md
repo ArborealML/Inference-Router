@@ -16,7 +16,11 @@ own, and that is the property the earlier incident made visible rather than caus
 
 Commits carry **per-agent linkable identities**: each agent session commits as its own identity with a real, resolvable
 address, configured once in the agent's tooling rather than per commit, and the working contract names which identity a
-session must use. The published history is still not rewritten: the two agent-named and three role-named outliers stay
+session must use. The owner has fixed the naming convention, verbatim form: **Arboreal Agent (model-id)** — for
+example "Arboreal Agent (q38fn)" for this model. Two parts of it are still open: the address that makes it resolvable,
+which does not exist anywhere on this machine yet, and whether a seat tag is added when two sessions run the same
+model, since without one a manager commit and an implementer commit are indistinguishable again. The published history
+is still not rewritten: the two agent-named and three role-named outliers stay
 exactly where they are, below a recorded floor. The push-range identity check survives, reworded: every commit in a push
 range must carry either the owner's identity or a sanctioned agent identity, and anything else fails the build.
 
