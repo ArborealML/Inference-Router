@@ -36,6 +36,11 @@ rejected.
 
 ## Consequences
 
+The owner clarified the model IDs on 2026-11-18. The original Qwen examples use
+`q38fn` for Qwen 3.8 Flash Next. GPT-6.2 Astra uses `gpt62a` and GPT-6.2 Sol uses
+`gpt62s`. The model-to-seat mapping and per-commit examples are in AGENTS.md.
+Earlier Astra and Sol work through a7e4aa4 was committed using the Qwen examples.
+
 A pushed commit says which seat, on which model, made it, without borrowing a person's mailbox or
 inventing a fake one. Adding a seat is one entry in the sanctioned set. The cost is honest and small:
 author lines will not resolve to a GitHub profile until a bot account exists, and that act is the

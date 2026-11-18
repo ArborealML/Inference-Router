@@ -129,14 +129,20 @@ the full range being pushed: deleting a file later does not un-publish it. One o
 `air config` prints engine endpoints, key-file locations and lifecycle argv, so never paste its raw
 output into a task, review or commit message.
 
-Commits carry a **sanctioned identity**: the owner's, or a per-agent identity in the fixed form
-`Arboreal Agent (<model-id> · <seat>)` — today `Arboreal Agent (q38fn · board)` and
-`Arboreal Agent (q38fn · impl)` — addressed by a stable handle under a reserved, never-resolving domain.
-Both seats share one checkout, so the identity is supplied **per commit** (`git -c user.name=… -c user.email=…`,
-or the equivalent in the tooling that starts a session), never through `git config` in the shared worktree,
-where it would collapse the two seats into one author; never an ad-hoc per-commit author, and never a model
-name in an assignee handle used as one. GitHub linking an author is an accepted gap until the owner mints a
-bot account, and swapping the address is configuration, not a history rewrite.
+**Git identity follows the model and seat.** Use the model that authored the change and its role to
+form `Arboreal Agent (<model-id> · <seat>)` and `agent-<model-id>-<seat>@arboreal.invalid`.
+
+| Model | Model ID | Seat |
+| --- | --- | --- |
+| GPT-6.2 Astra | `gpt62a` | `board` for the coordinator |
+| GPT-6.2 Sol | `gpt62s` | `impl` for an implementer |
+| Qwen 3.8 Flash Next | `q38fn` | `board` or `impl`, according to its assignment |
+
+Set the identity per commit because linked worktrees share Git configuration. For example, the
+coordinator uses `git -c 'user.name=Arboreal Agent (gpt62a · board)' -c user.email=agent-gpt62a-board@arboreal.invalid commit …`.
+A Sol worker uses `Arboreal Agent (gpt62s · impl)` and `agent-gpt62s-impl@arboreal.invalid`.
+When integrating a worker's commit, preserve its author and use the coordinator's identity for the
+committer. Check both with `git show -s --format='%an <%ae> | %cn <%ce>' HEAD` before pushing.
 Never rewrite or force-push published history without the owner's explicit word: the published outliers stay as they
 are, below a recorded floor, and prevention is the CI check over the whole push range rather than a remembered rule
 (decision-24, decision-26 and decision-29).
