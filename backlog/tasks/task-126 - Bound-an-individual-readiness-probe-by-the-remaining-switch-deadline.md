@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@gpt-6.2-sol-shutdown'
 created_date: '2026-11-18T20:43:00Z'
-updated_date: '2026-11-18T22:58:00Z'
+updated_date: '2026-11-18T23:09:00Z'
 labels: []
 milestone: m-4
 dependencies: []
@@ -23,6 +23,8 @@ The readiness loop checks its deadline before calling the state and model endpoi
 <!-- AC:BEGIN -->
 - [ ] #1 Hold a state probe and then a models probe separately past the remaining switch budget. Each attempt settles within the named bound and produces one terminal result.
 - [ ] #2 A delayed successful reply after timeout cannot publish readiness or revive a retired attempt. A healthy alternate can still make progress.
+- [ ] #3 Return an enrolled refusal through RunSwitchAsync after expiry or shutdown has won. The caller retains the original terminal cause and the feed records one terminal event, with no second capability change, completion, or dispatch wake.
+- [ ] #4 Exercise successful guarded publication with hooks that verify both short locks are released. A joined waiter woken by shutdown or expiry receives its committed result only after the outcome event is delivered.
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -34,9 +36,5 @@ Use one monotonic readiness budget across state headers and body, model discover
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Pre-implementation review dispatched. The coordinator will verify the failure on the current path and run the integrated regression fixture.
-
-Review found that state probes write gauges internally and a deadline checked only before a fetch can lose at publication. The existing clock hook covers waiter deadlines only. Check one monotonic readiness deadline under the publication guard; late observations may dispose resources but cannot change gauges, events or the winner.
-
-The standalone deadline helper and expanded fixtures stopped at two disposal analyzers before any tests ran. The implementer owns the correction. Legacy and enrolled call sites follow the observation-only readers.
+The state reader must return observations without publishing. Check the monotonic deadline at the guarded commit. The same claim owns proof and the terminal result. Deliver hooks outside the admission and transition locks. A late reader may clean up its resources. The standalone ownership correction builds the runtime; the focused test assembly stopped at CA2016 in its cancellation-ignoring fixture. No tests ran on that revision. Enrolled named tiers require a sufficient measured model window and positive measured total slots. The legacy slot fallback is separate.
 <!-- SECTION:NOTES:END -->
