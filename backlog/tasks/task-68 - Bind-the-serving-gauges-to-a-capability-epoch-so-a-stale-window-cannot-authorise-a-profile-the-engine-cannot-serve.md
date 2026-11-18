@@ -7,7 +7,7 @@ status: Waiting
 assignee:
   - '@qwen3.8-flash-next-board'
 created_date: '2026-11-18T01:11:00Z'
-updated_date: '2026-11-18T04:17:00Z'
+updated_date: '2026-11-18T04:27:00Z'
 labels:
   - concurrency
   - scheduling
@@ -45,5 +45,5 @@ The context-window, slot and profile-name gauges are three independent volatiles
 <!-- SECTION:NOTES:BEGIN -->
 **Two independent sources, one defect.** The commit review of `ab54d27..a228c6e` (external, 2026-11-18) named this as its top finding while this seat was reading the same code. Verified here: `UpdateServingGauges` writes `_activeContextWindow` from a probe result and never touches the capability version (`EngineRuntime.cs:489-500`), and `ReadyIn` answers from a snapshot except through `WindowFits`, which reads the live gauge (:590-610).
 
-**Wake.** It wakes when TASK-84 settles where the external review pass runs: the route is parked, not the design.
+**Wake.** It wakes when the top-tier plan review of the plan below returns; that pass was dispatched 2026-11-18 and its verdict will be recorded here before any code.
 <!-- SECTION:NOTES:END -->
