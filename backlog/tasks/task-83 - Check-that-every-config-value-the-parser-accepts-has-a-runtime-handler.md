@@ -23,6 +23,6 @@ Config is parsed once into immutable domain types through source-generated DTOs,
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [ ] #1 One test per enum-valued config surface asserts the accepted set equals the set the runtime switches on, so a value that parses but matches no runtime branch fails the build.
-A field present in the config DTO but absent from the domain mapping is reported by a test or a build-time check, not discovered at request time.
-The shipped samples are the fixture: every engine block in `samples/` is asserted against the same rules, and the `config` dry-run still loads all of them unchanged.
+- [ ] #2 A field present in the config DTO but absent from the domain mapping is reported by a test or a build-time check, not discovered at request time.
+- [ ] #3 The shipped samples are the fixture: every engine block in `samples/` is asserted against the same rules, and the `config` dry-run still loads all of them unchanged.
 <!-- AC:END -->

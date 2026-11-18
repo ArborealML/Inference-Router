@@ -5,7 +5,7 @@ status: To Do
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T23:07:00Z'
-updated_date: '2026-11-18T08:31:00Z'
+updated_date: '2026-11-18T10:10:00Z'
 labels:
   - concurrency
   - wire
@@ -45,5 +45,5 @@ Two commits; sites re-measured at `6ea83ca`. **A — src, tests, SPEC.** `state.
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Landed [610f0d8](https://github.com/ArborealML/Inference-Router/commit/610f0d86d9990e933e676a49e7215dd39f08049e) (v0.12.37): one token from a closed set of seven at the switch exits, the caller's sentence built from what the asking caller holds, and `WireText` budgets (identifier 128, reason 1600) with `Model` stored at reporting length at the ring's append funnel. **AC #7, #8 and #11 are unchecked again**: an external commit review at the high tier made claims this seat re-measured at `610f0d8`, and two hold. `RouterCore.Fail` (`RouterCore.cs:644-647`, `:828-850`) interpolates the raw `ticket.Model` into a `request.failed` reason, and the funnel caps `Model` but not `Reason` (`Events/RouterEvent.cs:67-72`) — so SPEC §10's promise that identifiers are cut before a reason sentence is built is false for that producer. And two exits still hand a caller free-form text outside the seven: `EngineRuntime.cs:620` (a remote engine loads its own models) and `:728-729` (a switch that never started), the second naming the target. Caps are [TASK-93](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-93%20-%20Bound-every-feed-field-at-the-funnel-and-make-SPEC-true-of-it.md), taxonomy [TASK-94](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-94%20-%20Name-every-refusal-category-and-stop-a-fixed-mismatch-reading-as-a-timeout.md). AC #9 and #10 were already open.
+Landed [610f0d8](https://github.com/ArborealML/Inference-Router/commit/610f0d86d9990e933e676a49e7215dd39f08049e) (v0.12.37): one token from a closed set of seven at the switch exits, the caller sentence built from what the asking caller holds, and WireText budgets with Model stored at reporting length. **AC #7, #8 and #11 went back** after a high-tier commit review, re-measured at that commit: RouterCore.Fail (:644-647, :828-850) interpolated the raw ticket.Model into a request.failed reason and the funnel capped Model but not Reason; and two exits still hand a caller free-form text outside the seven — EngineRuntime.cs:620 (a remote engine loads its own models) and :728-729 (a switch that never started), the second naming the target. Caps are [TASK-93](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-93%20-%20Bound-every-feed-field-at-the-funnel-and-make-SPEC-true-of-it.md), taxonomy [TASK-94](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-94%20-%20Name-every-refusal-category-and-stop-a-fixed-mismatch-reading-as-a-timeout.md). AC #9 shares its HTTP error-shape harness with the terminal-error bound open on TASK-93: whoever lands first builds it, the other reuses it, and the ceiling is asserted in serialized bytes.
 <!-- SECTION:NOTES:END -->

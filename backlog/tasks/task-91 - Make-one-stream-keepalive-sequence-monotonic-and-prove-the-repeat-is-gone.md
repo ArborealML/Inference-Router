@@ -3,9 +3,9 @@ id: TASK-91
 title: Make one stream keepalive sequence monotonic, and prove the repeat is gone
 status: Waiting
 assignee:
-  - '@codex-6.2-sol'
+  - '@qwen3.8-flash-next'
 created_date: '2026-11-18T07:51:00Z'
-updated_date: '2026-11-18T09:06:00Z'
+updated_date: '2026-11-18T10:20:00Z'
 labels:
   - wire
   - stream

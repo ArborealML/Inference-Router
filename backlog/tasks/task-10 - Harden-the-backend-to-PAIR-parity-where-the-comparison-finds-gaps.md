@@ -173,7 +173,7 @@ Two further findings for later steps:
 - [x] #6 The error contract is table-pinned: codes, statuses and lowercase bodies pinned by contract tests
 - [x] #7 Event-feed replay is correct: exclusive cursor, full retained window, atomic replay/subscribe handover, a slow subscriber's feed ended rather than pruned, subscribers bounded and over-limit feeds refused before SSE headers
 - [x] #8 The feed records a terminal outcome before waking the waiter that outcome ends, so a failed request never outruns its own reason
-- Every remaining parity gap has a named carrier (SPEC 14.1 rows 2/4/5/6, TASK-25, TASK-26, TASK-21) rather than being implied by silence
+- [x] #9 Every remaining parity gap has a named carrier (SPEC 14.1 rows 2/4/5/6, TASK-25, TASK-26, TASK-21) rather than being implied by silence
 - [x] #10 Request-side phase timeouts exist and are pinned: a bounded wait for a model switch, and a cap on an in-flight engine call so a wedged engine cannot hold a ticket until the caller gives up
 <!-- AC:END -->
 

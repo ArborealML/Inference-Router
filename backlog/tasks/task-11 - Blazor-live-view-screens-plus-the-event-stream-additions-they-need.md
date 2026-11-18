@@ -5,7 +5,7 @@ status: Waiting
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-16T20:46:00Z'
-updated_date: '2026-11-17T16:13:00Z'
+updated_date: '2026-11-18T10:11:00Z'
 labels:
   - ui
 milestone: v0.10 - live view and robustness parity
@@ -65,6 +65,8 @@ static site the operator hosts anywhere (cleaner separation, another thing to de
 criterion, so it is decided in this task's plan, not in code.
 
 Superseded log entries, including the older wake claims: [board trim, 2026-11-17](https://github.com/ArborealML/Inference-Router/blob/main/backlog/archive/board-trim-2026-11-17.md).
+
+Cost read at 64b9f94, not run: EventRing.Append hashes an over-budget value while holding the ring lock, and RouterEventFilter re-hashes an over-budget query on every replayed or live event. Bounded by the ingress cap today, so no row of its own yet — but a live view subscribes and filters constantly: normalize inside Append outside the lock, and prepare normalized filter fields once per subscription.
 <!-- SECTION:NOTES:END -->
 
 ## Comments
