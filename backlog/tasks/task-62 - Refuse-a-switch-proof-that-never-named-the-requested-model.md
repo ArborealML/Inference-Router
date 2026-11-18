@@ -1,11 +1,11 @@
 ---
 id: TASK-62
 title: Refuse a switch proof that never named the requested model
-status: To Do
+status: Waiting
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T23:07:00Z'
-updated_date: '2026-11-17T23:29:00Z'
+updated_date: '2026-11-18T00:45:00Z'
 labels:
   - concurrency
   - wire
@@ -28,6 +28,19 @@ operator promise made in config rather than a fallback the router may choose (IE
 CapabilityPublicationTests.cs:399-403. A test also pins the wrong posture today (:387-413) and moves with the fix.
 <!-- SECTION:DESCRIPTION:END -->
 
+## Acceptance Criteria
+<!-- AC:BEGIN -->
+- [ ] #1 a refresh whose reported list omits the target ends switch_failed with an actionable reason, Healthy=false, and no Ready
+- [ ] #2 if TASK-66 changes the posture, the switch_failed wording on the wire (RouterCore.cs:542-551) and the feed event change in the same commit
+- [ ] #3 a positive control pins the wait_health=false success path, and the failed-refresh test at CapabilityPublicationTests.cs:387-413 moves only with TASK-66's answer
+<!-- AC:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Second of the three set-1 commits, after TASK-63 AC #1 and before TASK-61. At :794, before the window check: if the refresh answered and the list does not contain the canonical model (OrdinalIgnoreCase) → `Emit engine.switch_failed` with reason `refresh_omits_<model>`, `PublishUnknown()`, `EndSwitch(state,false)`, return — the membership check the prove-health path already makes at :757-759. A **failed** refresh (`refreshed is null`) is untouched: that is TASK-66's promise, pinned at CapabilityPublicationTests.cs:405-410. No new wire surface — the request now fails on the existing switch_failed kind (RouterCore.cs:541-551) instead of being dispatched into an engine that never reported its model. `LaunchCount` stays as measured: the engine really was relaunched. Wake condition: the sol-pro plan review of this set, recorded in TASK-61's row; code starts only after it.
+<!-- SECTION:PLAN:END -->
+
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
@@ -38,10 +51,3 @@ PrefixAwareScheduler.cs:71 skips unhealthy engines outright, so nothing relaunch
 **Landing order.** Set 1 (no operator-visible change): this task's bug half, TASK-61, and TASK-63's fenced negative publish. Set 2
 (policy): TASK-62's remaining half behind TASK-66, and TASK-63's gauge work, which needs a plan decision first.
 <!-- SECTION:NOTES:END -->
-
-## Acceptance Criteria
-<!-- AC:BEGIN -->
-- [ ] #1 a refresh whose reported list omits the target ends switch_failed with an actionable reason, Healthy=false, and no Ready
-- [ ] #2 if TASK-66 changes the posture, the switch_failed wording on the wire (RouterCore.cs:542-551) and the feed event change in the same commit
-- [ ] #3 the test at CapabilityPublicationTests.cs:387-413 is rewritten to the corrected posture, and the exec's own success still appears on the feed
-<!-- AC:END -->

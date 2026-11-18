@@ -7,10 +7,12 @@ status: To Do
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T22:49:00Z'
+updated_date: '2026-11-18T00:43:00Z'
 labels:
   - concurrency
   - testing
-dependencies: []
+dependencies:
+  - TASK-61
 priority: medium
 ordinal: 59000
 ---
@@ -28,3 +30,9 @@ fd5e0cd made the claim/coalesce decision read switch state inside the transition
 - [ ] #3 the dropped test is either restored or withdrawn out loud in SPEC 15 with this task cited
 - [ ] #4 the marker clause of the readiness rule is pinned at its own seam, or recorded as unreachable with the reason
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+**The seam is owned by TASK-61, so nobody builds it twice.** TASK-61's commit adds the deterministic claim/end hooks (`AfterEndCommit` after the end commit and before the readiness settle, `BeforeLaunch` before the launch is scheduled) and pins the claim-or-coalesce decision inside the transition gate. #1 and #2 close on that commit, with its mutation evidence cited here; this row then keeps only #3 (the withdrawn test) and #4 (the marker clause at its own seam). It depends on TASK-61 for exactly that reason, not for the readiness rule itself.
+<!-- SECTION:NOTES:END -->
