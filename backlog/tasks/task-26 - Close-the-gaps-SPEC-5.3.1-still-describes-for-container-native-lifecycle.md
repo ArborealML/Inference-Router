@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@gpt-6.2-sol-shutdown'
 created_date: '2026-11-17T02:54:00Z'
-updated_date: '2026-11-18T21:45:00Z'
+updated_date: '2026-11-18T22:39:00Z'
 labels:
   - engine
   - lifecycle
@@ -25,7 +25,7 @@ Complete the container-native lifecycle requirements in SPEC section 5.3.1. Veri
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [x] #1 An image is verified by identity (Id, RepoDigests, platform), not by the tag resolving at all, and a mismatch refuses the switch with one actionable message
-- [ ] #2 GPU device requests, mounts and resource limits are expressible in config and reach the create request
+- [x] #2 GPU device requests, mounts and resource limits are expressible in config and reach the create request
 - [ ] #3 Exec frame demux and log reading exist behind the provider seam with a fake, and a non-zero exec exit is a failure
 - [ ] #4 A failed switch is latched: a dispatcher wake-up cannot retry it, and only an explicit target reset or a relevant configuration change can clear that target’s latch
 - [ ] #5 Daemon event subscription (or a documented polling substitute) replaces the assumption that nothing else changed the engine
@@ -44,13 +44,9 @@ Implement the reviewed image-identity slice first. Validate complete configured 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Provider fixes landed in 18d7279. Use fake daemon responses and preserve the loader refusal for mixed ownership. The shipped native sample must remove the selectors from the same engine and pass sample validation. TASK-119 owns the SPEC walkthrough. Align README ownership versus image checks, integration terminology and the safe-smoke explanation with the shipped sample. TASK-33 records live-proof permissions.
+The [native image verification and selector-free sample](https://github.com/ArborealML/Inference-Router/commit/c30ca3e) passed 128 focused tests, 419 full Release tests and server Native AOT. Four deliberate regressions failed their intended assertions. Coordinator preflight verifies manifest and platform. Direct launch checks the configured ID alone; production activation must use the coordinated path.
 
-[Native image verification](https://github.com/ArborealML/Inference-Router/commit/c30ca3e) checks the full local image ID, named repository digest and platform before mutation. Create names the immutable image ID. The shipped selector-free native example passed CLI validation. The coordinator ran 128 focused and 419 full Release tests, then published the server with Native AOT. Four isolated regressions weakened ID, repository, platform variant and create-reference checks. Each failed its intended fixture; restoring source passed all 25 targeted cases. Production and fixture reviews are in flight.
-
-Review of 0e2fd2a confirmed that coordinator preflight verifies manifest and platform. Direct launch checks the configured ID alone; SPEC 5.3.1 documents that lower-level contract. Production activation must use the coordinated path.
-
-Resource-plan disposition: implement typed configuration and exact create-payload fixtures, including combined network and resource settings. Distinguish the observed Qwen container from the proposed Bonsai launch. Keep resource-bearing live activation closed until host authority, effective settings and serving-instance identity are verified. An ambiguous creation must retain its fence for reconciliation.
+The [resource payload and refusal fixtures](https://github.com/ArborealML/Inference-Router/commit/bc63d48) passed 184 focused Release tests and server Native AOT. The fixtures exercise exact Docker create bodies for measured Qwen and script-derived Bonsai, native devices, NVIDIA requests, mounts, limits and network settings. Resource-bearing production activation remains closed pending verified host authority, effective settings, serving-instance binding and recovery of uncertain creation. External diff reviews dispatched. TASK-33 records the live-proof permissions.
 <!-- SECTION:NOTES:END -->
 
 ## Comments
