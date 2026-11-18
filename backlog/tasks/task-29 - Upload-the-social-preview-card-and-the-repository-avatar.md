@@ -5,7 +5,7 @@ status: Done
 assignee:
   - '@claire'
 created_date: '2026-11-17T05:59:00Z'
-updated_date: '2026-11-18T01:30:00Z'
+updated_date: '2026-11-18T05:50:00Z'
 labels:
   - docs
 dependencies:
@@ -18,30 +18,19 @@ ordinal: 23500
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-**Two minutes in a browser, and the file is already on this machine.** Answer one line here: `card set`,
-`card declined: REASON`, or `cannot set it: REASON`.
+**Closed: the card is live, and the "not working" reading was our test, not the upload.** GitHub applies a
+social-preview image the moment the file is accepted — that pane has no Save control — and it serves a custom
+upload from the same host as its own generated card, so a URL host proves nothing. The check that decides is
+the bytes: re-measured 2026-11-18T05:50Z, the repository page's `og:image` resolves to a
+`repository-images.githubusercontent.com/1460450305/…` address that fetches as 38,150 bytes, 1280x640, sha256
+`cee3237b7f98…98f09` — byte-identical to
+[docs/images/air-social-1280x640.png](https://github.com/ArborealML/Inference-Router/blob/main/docs/images/air-social-1280x640.png)
+as committed at b214ce6. The organisation picture is live too, verified from outside the form (TASK-23). No
+further act is needed here.
 
-1. Go to the repository's **Settings**, **General** tab, scroll to **Social preview images**:
-   [github.com/ArborealML/Inference-Router/settings](https://github.com/ArborealML/Inference-Router/settings).
-2. Choose an image and pick **`$HOME/Downloads/air-social-1280x640.png`** — an agent put that exact copy there at
-   17:2xZ and byte-checked it against the committed blob: 1280x640 PNG, 38,150 bytes, sha256
-   `cee3237b7f98…98f09`. If it is gone, download
-   [docs/images/air-social-1280x640.png](https://github.com/ArborealML/Inference-Router/blob/main/docs/images/air-social-1280x640.png)
-   ([raw bytes](https://github.com/ArborealML/Inference-Router/raw/main/docs/images/air-social-1280x640.png))
-   and `sha256sum` it before picking it: the hash must match.
-3. Press **Save**. The box shows a thumbnail whether Save worked or not — that is how three earlier `card set`
-   answers produced no change.
-4. Paste this into the task so the check is on the record:
-
-       curl -s https://github.com/ArborealML/Inference-Router | grep -o '<meta property="og:image"[^>]*>'
-
-   Ours prints `opengraph.githubassets.com/...` once the card is live; GitHub's generated card prints
-   `repository-images.githubusercontent.com/1460450305/...`. Re-checked at 19:0xZ: it prints the second, so the
-   upload still has not taken.
-
-**Nothing to do for the avatar:** the organisation picture is live and verified from outside the form (TASK-23).
-GitHub exposes no API and no `gh` endpoint for the social-preview image, which is the only reason this task is a
-person's; the file, its measurements and the after-the-fact public check are agent work.
+For the next browser-only setting: hand the owner the file, its size and sha256, and the one command that
+fetches what the public page serves and hashes it. Do not ask for a Save press, and do not read a host name as
+the verdict — that is what turned three correct uploads into three reported failures.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -56,9 +45,12 @@ person's; the file, its measurements and the after-the-fact public check are age
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-The owner's ruling, verbatim: **"social preview is already done."** Both criteria were already ticked; the row's status line had gone stale, which is exactly the drift the board re-check looks for.
-
-**Re-measured at the close.** The public repository page's og:image now prints `repository-images.githubusercontent.com/…` — GitHub's own host for an uploaded social preview, which is what the criterion was reaching for (it named the other host, the one used when no preview is set). The tracked card `docs/images/air-social-1280x640.png` re-hashes to `cee3237b7f980d12…`, matching the hash this row has always carried; byte-equality against the hosted copy cannot be measured from outside, and the read of the three text lines is the owner's eye, which is the only instrument for it.
+**The wrong test, named.** This row carried a host-name discriminator (`opengraph.githubassets.com` = ours,
+`repository-images.githubusercontent.com` = GitHub's generated card) and a "Press Save" step. Both are false:
+GitHub applies the upload on accept, and serves a custom image from `repository-images.githubusercontent.com`
+under a random path. That premise, not the owner's uploads, produced three "still not taken" readings. TASK-46
+AC #5 was reworded on that finding at 03:23Z; this row's steps are corrected at 05:5xZ. The standing rule is
+decision-38, and the contract now carries it.
 <!-- SECTION:NOTES:END -->
 
 ## Comments

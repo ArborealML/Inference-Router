@@ -227,6 +227,10 @@ Two sessions work this repository and they share one checkout, so every commit n
   closing paragraph claims.
 - Finished work names its evidence: the commit, pull request or file, as a link that resolves on `main`.
   A task that says work happened and points at nothing is not closed, it is abandoned.
+- **A readback names a measurement, not a proxy.** An external, browser-only setting is verified by what a fetch
+  from outside its form returns — bytes, byte size, sha256, an exact value — never by a host name inside a URL,
+  a thumbnail in a settings pane, or a Save button the product does not have (decision-38). A criterion nobody
+  can run is a guess with a checkbox on it.
 - `@chatswarm` on a task means a request has actually been dispatched to the external service, and the task
   body says when. Otherwise the next move is a person's and the task is assigned to that person.
 - Duplicate tasks get one survivor: keep the one carrying the criteria and dependencies the board reads,
