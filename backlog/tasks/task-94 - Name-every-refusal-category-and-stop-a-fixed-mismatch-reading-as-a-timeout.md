@@ -16,7 +16,7 @@ ordinal: 93000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-The taxonomy landed: every visible refusal carries one named category, the three readiness causes are separated, and §5.5 says what each means to the caller. The deep review of the follow-up commit reopened the row on three overclaims, each re-measured here. None changes an answer on the shipped boot path; one deletes a real backstop, one is a false SPEC claim.
+The taxonomy landed: every visible refusal carries one named category, the three readiness causes are separated, and §5.5 says what each means to the caller. The deep review of the follow-up commit reopened the row on three overclaims, each re-measured here. None changes an answer on the shipped boot path; one deletes a backstop, one is a false SPEC claim.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -38,7 +38,7 @@ The taxonomy landed: every visible refusal carries one named category, the three
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Delivered at **14a01e2** (SPEC v0.12.42), corrected at **2f7e3e6** (v0.12.43); CI green at both, and the counts there are the coding seat's report. That round's seven findings are closed on the SPEC arm, the span, the whole-answer pins and the pre-claim refusal; routed findings sit on TASK-103 #4, TASK-68 #6, TASK-104 #4.
+Delivered at **14a01e2** (SPEC v0.12.42), corrected at **2f7e3e6** (v0.12.43); CI green at both; counts are the coding seat's report. That round's seven findings are closed on the SPEC arm, the span, the whole-answer pins and the pre-claim refusal; routed findings sit on TASK-103 #4, TASK-68 #6, TASK-104 #4.
 
 Anchors are read at `32cd72e`; line numbers move with in-flight edits, so they are named as well as numbered: the pre-claim check reads `_def.Catalog` (`EngineRuntime.cs:688`), `RunSwitchAsync` re-reads `_config.Engines[_def.Name]` (`:1011`), and the seam `BeforeSwitchWaitForTests` runs between them (`:712`), while the comment at `:1026` asserts the deleted branch unreachable. Reach it and the router launches, fails, and publishes the engine's proof unknown — the loss the precheck exists to prevent. The blank-selector pin aliases one definition into both sources and asserts only `SwitchingToward == null`, which a post-claim failure also leaves null.
 
