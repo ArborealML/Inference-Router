@@ -26,8 +26,10 @@ from one snapshot only. The fix removes live reads; it does not add a lock.
 ## Consequences
 
 Gauge publications become version-bearing, so they must publish only on an actual change or
-every health interval makes every claim race itself, and writes of an unknown value (0) stay
-out of the version. A lost CAS now means re-decide, so the claim loop needs a bound on
+every health interval makes every claim race itself. The quiet rule is per **state**, not per value:
+repeats of unknown are quiet, but a known window becoming unknown publishes once — decision-33
+supersedes this row's first wording, which would have left a state response that stopped reporting a
+window holding the old wide window authoritative. A lost CAS now means re-decide, so the claim loop needs a bound on
 re-decides per request and a named refusal when it runs out. Scheduler and escalation-ladder
 reads of the gauges become snapshot reads, or stay live and go into SPEC §15 as accepted
 gaps. Design and pins are TASK-68; the sequence that has to fail first is named there.

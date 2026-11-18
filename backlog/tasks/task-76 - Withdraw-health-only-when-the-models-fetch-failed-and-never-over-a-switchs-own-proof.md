@@ -3,7 +3,7 @@ id: TASK-76
 title: >-
   Withdraw health only when the /models fetch failed, and never over a switch's
   own proof
-status: Waiting
+status: To Do
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-18T02:36:00Z'
@@ -34,5 +34,7 @@ The commit review of 0e016e5 found the health loop's catch is wider than the obs
 <!-- SECTION:NOTES:BEGIN -->
 Shape of the fix: narrow the try to the fetch, and publish the negative from that catch alone, so nothing else in the round can reach PublishProbeFailure. Give PublishProbeFailure a marker guard — while SwitchingToward is set the snapshot is already unknown except in the proof window, so suppressing there withdraws nothing but the switch's own proof. Pin both with latches rather than sleeps: the same review marked the existing health tests (IntervalMs=50 with 300 ms and 250 ms waits) as scheduling-dependent, and TASK-67 has just shown what a pin that tracks no event costs. Queued behind TASK-67: nothing lands while main is red.
 
-Wake condition: the suite green at HEAD with TASK-67's shutdown pin passing. Until then this row stays parked.
+Wake condition met at 3dce284: the suite is green there and TASK-67's shutdown pin is Done.
+
+This row goes **first** in the serving-gauge sequence: AC #2 is the marker guard on a probe's negative publication, re-verified at `EngineRuntime.cs:235-247`, and the gauge row's plan says not to duplicate that half.
 <!-- SECTION:NOTES:END -->
