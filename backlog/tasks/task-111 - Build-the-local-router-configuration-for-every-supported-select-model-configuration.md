@@ -7,17 +7,18 @@ status: Waiting
 assignee:
   - '@qwen3.8-flash-next-board'
 created_date: '2026-11-18T18:15:00Z'
-updated_date: '2026-11-18T18:43:00Z'
+updated_date: '2026-11-18T18:56:00Z'
 labels: []
 dependencies:
   - TASK-26
+  - TASK-118
 ordinal: 109000
 ---
 
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Wake on the external plan review of native target selection and exact readiness. Deliver a machine-local configuration for the installed selector’s supported combinations using native lifecycle under decision-56.
+Wake when TASK-26 supplies native launch settings and TASK-118 verifies the exact serving target. Deliver a machine-local configuration for all supported selector combinations and demonstrate parity by dry-run and provider fixtures.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
