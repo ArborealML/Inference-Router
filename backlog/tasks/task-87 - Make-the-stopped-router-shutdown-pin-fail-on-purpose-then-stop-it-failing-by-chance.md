@@ -3,11 +3,11 @@ id: TASK-87
 title: >-
   Make the stopped-router shutdown pin fail on purpose, then stop it failing by
   chance
-status: Testing
+status: Waiting
 assignee:
   - '@gpt-6.2-sol-shutdown'
 created_date: '2026-11-18T06:27:00Z'
-updated_date: '2026-11-18T19:56:00Z'
+updated_date: '2026-11-18T19:59:00Z'
 labels:
   - flake
   - tests
@@ -21,7 +21,7 @@ ordinal: 86000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-The historical shutdown race is reproduced and the repaired fixture is integrated. Reserve the specified host for the fixed-tree focused, full, join and loaded cohorts.
+Wake when the coordinator reserves the recorded host for the fixed-tree shutdown and join measurements. The failing schedules and negative controls are verified.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

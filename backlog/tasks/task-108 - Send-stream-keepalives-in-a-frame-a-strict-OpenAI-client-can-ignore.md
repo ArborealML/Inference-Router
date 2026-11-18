@@ -1,11 +1,11 @@
 ---
 id: TASK-108
 title: Send stream keepalives in a frame a strict OpenAI client can ignore
-status: To Do
+status: In Progress
 assignee:
-  - '@gpt-6.2-sol'
+  - '@gpt-6.2-sol-shutdown'
 created_date: '2026-11-18T17:43:00Z'
-updated_date: '2026-11-18T19:54:00Z'
+updated_date: '2026-11-18T19:59:00Z'
 labels:
   - wire
   - stream

@@ -3,11 +3,11 @@ id: TASK-98
 title: >-
   Make one stop decision visible to an in-flight claim, so a switch cannot
   authorize after the router decided to stop
-status: Testing
+status: Done
 assignee:
   - '@gpt-6.2-sol-shutdown'
 created_date: '2026-11-18T11:02:00Z'
-updated_date: '2026-11-18T19:40:00Z'
+updated_date: '2026-11-18T19:59:00Z'
 labels: []
 milestone: m-2
 dependencies: []
@@ -17,14 +17,14 @@ ordinal: 97000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Verify the post-stop claim mutation against the integrated shutdown code. The production changes and marker readback are on main.
+Shutdown publishes one terminal outcome before waking a waiter. Both a late provider completion and a claim that ignores the stop are covered by discriminating mutations.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [x] #1 The stop cause is written once and never rewritten, and the cancellation token source is not re-armed after a stop
 - [x] #2 A claim that passed the switch gate before the stop sees the stop: it is released with a cause, and the cause it reports cannot change afterwards
-- [ ] #3 A named test fails when the stop cause is re-armed or overwritten, and a second named test fails when the claim path ignores it
+- [x] #3 A named test fails when the stop cause is re-armed or overwritten, and a second named test fails when the claim path ignores it
 - [x] #4 SPEC says which cause wins when a stop and a switch race, in §5.5, in the same commit as the code
 <!-- AC:END -->
 
@@ -47,5 +47,5 @@ Three deliverables, in sequence, not one commit: lifecycle semantics here; the d
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Stop publication and the SPEC §5.5 first-outcome rule landed together in [380a2a4](https://github.com/ArborealML/Inference-Router/commit/380a2a4). The timeout-precedence fix landed in [86f7bd6](https://github.com/ArborealML/Inference-Router/commit/86f7bd6). Review confirmed own-outcome precedence and stop-before-timeout for a foreign wait. The split-window fixture landed in [07408e2](https://github.com/ArborealML/Inference-Router/commit/07408e2). Its marker-only regression turned red against the old getter. The focused Release set passed 69/69. The late-overwrite mutation failed at RouterStopped versus Failed. Verify the distinct mutation removing the post-stop claim check before closing AC #3. TASK-81 owns the wire mapping.
+Stop publication and the SPEC rule landed in [380a2a4](https://github.com/ArborealML/Inference-Router/commit/380a2a4), timeout precedence in [86f7bd6](https://github.com/ArborealML/Inference-Router/commit/86f7bd6), and focused marker and liveness coverage in [07408e2](https://github.com/ArborealML/Inference-Router/commit/07408e2). Allowing a late overwrite made AProviderFailureCannotOverwriteThePublishedStop return Failed. Removing only the stop check immediately before the claim-state read made AClaimThatAcquiresTheSwitchLockAfterStopIsRefused return Failed instead of RouterStopped. Restoring the identical source made the same filtered Release test pass 1/1. The integrated fixture passed CI. TASK-81 carries the wire mapping and TASK-87 owns repeated host-conditioned measurements.
 <!-- SECTION:NOTES:END -->
