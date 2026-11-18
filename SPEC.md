@@ -1,6 +1,6 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.47)
+Status: draft, continuously revised (v0.12.48)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
@@ -352,6 +352,28 @@ daemon transaction per engine. 137 tests green.
   that answers no `upload_url`, an upload that dies or answers no asset id, an asset name listed twice on
   the release, and a tag that moves after the first resolve. No tag has run the gate: still configured,
   not proven.
+- v0.12.48 — a caller that arrives at a switching engine joins it before any catalog question is asked of it (§5.5, decision-51, TASK-94 #14).
+  Both catalog guards sat ahead of the claim loop, so they answered a caller that had come to **join** a switch already
+  running. That is not cosmetic: a refusal is terminal, so the joiner never learned what that switch decided. Measured
+  on the pre-fix tree (`d9b61f1`, detached worktree, the new test file copied in), a caller joining a switch claimed on
+  a usable entry — the entry replaced mid-switch — answered `no_select_command` where the switch it was parked behind
+  answered `launch_failed` (`Expected: "launch_failed" / Actual: "no_select_command"`): it told the caller to fix a
+  configuration that had governed nothing, instead of telling it that the transaction it was waiting behind had failed
+  and could be retried. The order is
+  now fixed under the transition gate: read the switch state; a running switch is joined with no catalog read at all;
+  the catalog is asked once per acquisition attempt, and only of a caller the idle engine hands to the claim path — a
+  lost capability exchange re-reads capability **and** entry. A refused attempt publishes nothing and writes no state,
+  and that is read at the seam (`AfterClaimForTests` fires zero times for it), not inferred from an absent
+  `switch_started`; the refusal is emitted after the switch lock is released, so no feed subscriber runs holding an
+  engine lock (TASK-103 #4). A caller that joins another request's switch, is overtaken by its failure and re-loops is
+  refused **there**, as the acquirer it has become — asserted as correct rather than special-cased away. A budget that
+  expires while a caller is joined stays a timeout. Four pins, in `SwitchJoinTests` (its own class, because the
+  standing rule keeps new parked-launch pins out of the two classes TASK-87 is measuring):
+  `AJoinerWhoseEntryVanishedMidSwitchIsAnsweredByTheSwitchItJoined`, `AJoinerIsToldWhatTheFailedSwitchDidNotTheCatalogItCannotRead`,
+  `AJoinerThatBecomesTheAcquirerIsRefusedByItsOwnAbsentEntry`, `AJoinerOutOfItsOwnCeilingIsTimedOutNotRefused`. All four
+  red at `d9b61f1` — three at "the joiner was still parked", one at the ceiling sentence — and green here; that pre-fix
+  tree is the control, and it reddens the four named pins. Measured at this tree: Debug 231/231, Release 231/231,
+  `dotnet build` 0 warnings, AOT publish with `TrimmerSingleWarn=false` 0 warnings.
 - v0.12.47 — a refusal that costs the engine nothing is pinned as one published value, not as a health flag (§5.5, TASK-94 #10).
   `ABlankSelectorExecIsRefusedBeforeTheClaimToo` asserted `Healthy` after the refusal, and `Healthy` is true of a
   *replaced* snapshot: a refusal that claimed a switch and rolled it back, or published a fresh list for the entry it
@@ -1652,9 +1674,10 @@ engine forks land; the scheduler interface will not change shape.
   distinction a retry decision exists to make. The expired window and its milliseconds stay on the feed at all three
   exits beside the names the engine reported and both sides of the comparison, so the grep key for an expired
   readiness window survives the name change. `wait_health = false` reaches the same names from its own evidence, and
-  the check that a catalog entry names a selector the router can run is **one predicate, asked once, in front of the
-  transaction**: `DelegatedExecProvider.HasUsableSelector` decides it, and a missing entry, a missing `select` or a
-  blank `exec` is `no_select_command`, and the refusal costs the engine nothing it had — no marker, no publication, its
+  the check that a catalog entry names a selector the router can run is **one predicate, asked once per acquisition
+  attempt, of the caller that is about to claim**: `DelegatedExecProvider.HasUsableSelector` decides it, and a missing
+  entry, a missing `select` or a blank `exec` is `no_select_command`, and the refusal costs the engine nothing it had —
+  no marker, no publication, its
   last proof intact. The switch path used to ask the same question a second time, and v0.12.43 removed that ask on a
   claim that was wrong: the two sides did not read the same thing. The check in front of the claim read the definition
   the runtime was **built with**, while the switch task re-read the config collection **by name**, so a same-name
@@ -1669,7 +1692,22 @@ engine forks land; the scheduler interface will not change shape.
   the entry it was authorised on, and the edit is seen by the next claim. A swapped definition is pinned in both
   directions: a config entry the switch can run is not refused because a stale constructed definition was blank, and a
   definition replaced mid-transaction does not re-decide a claim already made. Both shapes are pinned, under
-  the config-picked provider and a supplied exec provider, and both were red before the fix. **What the set names is what a completed attempt observed**, not a diagnosis of
+  the config-picked provider and a supplied exec provider, and both were red before the fix.
+  **Neither catalog question is asked of a caller that has come to join** (decision-51). Under the transition gate the
+  order is fixed: read the switch state, and a switch already running on this engine is **joined** — its completion
+  awaited with no catalog read at all. Only a caller the idle engine hands to the claim path is asked what its catalog
+  says, and an invalid answer is a **terminal refusal for that attempt**: no marker, no state write, one feed record,
+  selected under the gate and emitted after the switch lock is released, so no feed subscriber runs holding an engine
+  lock. The guard used to sit ahead of the whole loop, and that was not a detail: configuration state that never
+  governed the running switch answered a caller that had arrived to wait behind it, and because a refusal is terminal
+  that caller never learned what the switch decided. Measured on the pre-fix tree, a caller joining a switch that had
+  been claimed on a usable entry, whose entry was then replaced, was answered `no_select_command` — **fix the
+  configuration** — for a transaction that was running, and when that switch failed it was never told `launch_failed`
+  — **retry later**, the action it should have been given. A caller that joins another request's switch and is
+  overtaken by its failure takes its own turn through the claim path, and <b>there</b> its own absent entry refuses it:
+  that refusal is correct and is asserted as correct, not special-cased away. And a budget that expires while a caller
+  is joined is a **timeout**, never a refusal — one absolute deadline, set before the first lock wait, never reset
+  across a wait, a join or a re-loop. Four pins, all four red before the change and green after it. **What the set names is what a completed attempt observed**, not a diagnosis of
   the engine: a last poll that saw a healthy engine omit the target may precede a model still loading, a window gauge
   can be old, and a refresh that cannot be read at all during a `wait_health = true` wait ends `switch_error` rather
   than one of the three readiness names, because the attempt itself threw. A timed-out wait says nothing about the

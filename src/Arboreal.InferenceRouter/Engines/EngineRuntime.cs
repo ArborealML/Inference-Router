@@ -668,6 +668,29 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
         && cap.LoadedModels.Contains(canonical, StringComparer.OrdinalIgnoreCase)
         && WindowFits(profile);
 
+    /// <summary>What the catalog says about a model a **new claim** would run on. Three answers, because the two
+    /// catalog questions have different fixes and one name: no entry at all says the model is absent here, and an
+    /// entry whose selector cannot be run says the configuration is incomplete. Both are <c>no_select_command</c>
+    /// — the caller's action is the same, fix the configuration — and the operator's sentence is what tells them
+    /// apart (§5.5).</summary>
+    private enum EntryGuard { Ok, Absent, NoUsableSelector }
+
+    /// <summary>Resolve and validate, once for this acquisition attempt, the catalog entry a new claim would run
+    /// on. Nothing is published or mutated here, and the predicate for "can this selector be run" is the provider's
+    /// own — <see cref="DelegatedExecProvider.HasUsableSelector"/> — so the answer the router gives in front of the
+    /// claim and the answer preflight would give inside it cannot drift. Called only where the caller has already
+    /// declined to join an in-flight switch: asked anywhere earlier it would refuse a caller that was about to wait
+    /// behind a switch this configuration never governed (§5.5, decisions 49 and 51).</summary>
+    private EntryGuard ResolveClaimEntry(EngineDefinition def, string canonical, out EngineModelDefinition? entry)
+    {
+        entry = def.Catalog.TryGetValue(canonical, out var found) ? found : null;
+        if (entry is null) return EntryGuard.Absent;
+        return _lifecycle.Kind == DelegatedExecProvider.ProviderKind &&
+               !DelegatedExecProvider.HasUsableSelector(entry)
+            ? EntryGuard.NoUsableSelector
+            : EntryGuard.Ok;
+    }
+
     private async Task<SwitchResult> EnsureLoadedAsync(string model, ServingProfile? profileOverride, TimeSpan timeout, CancellationToken ct)
     {
         var canonical = CanonicalModel(model) ?? model;
@@ -685,39 +708,26 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
         var def = _config.Engines.TryGetValue(_def.Name, out var cfgDef) ? cfgDef : _def;
         if (def.Remote) return SwitchResult.Failed(SwitchReason.NoLifecycleOwner);
 
-        // A catalog entry that names no selector is a fixed configuration gap the catalog can predict, and the
-        // delegated provider would refuse it in preflight: the caller would be told `launch_failed` (a config
-        // mismatch read as a failed launch) and the engine's last proof would be thrown away for a transaction
-        // that never began. Answered here — before any switch marker goes up — with the same name the catalog miss
-        // uses, off the provider's own predicate so the two answers cannot drift. Nothing is mutated, so there is
-        // no switch to end (§5.5, AC #2).
-        // One entry, resolved here and carried into the transaction: the switch task no longer looks the model up
-        // again, so the answer given in front of the claim *is* the answer the claim acts on, and "one predicate,
-        // asked once in front of the transaction" is literally true rather than true of the definition only. This
-        // read is also the mutation policy: a configuration edit landing after it changes no switch already claimed
-        // from it — that transaction runs on the entry it was authorised on, and the edit takes effect on the next
-        // claim (§5.5, decision-49).
-        def.Catalog.TryGetValue(canonical, out var modelDef);
-        if (modelDef is null ||
-            (_lifecycle.Kind == DelegatedExecProvider.ProviderKind &&
-             !DelegatedExecProvider.HasUsableSelector(modelDef)))
-        {
-            Emit("engine.switch_failed", model: canonical,
-                reason: modelDef is null
-                    ? "no_select_command: no catalog entry names this model on this engine — add it under " +
-                      "[engine.strata.catalog], move the request to an engine that declares it, or mark this " +
-                      "engine remote"
-                    : "no_select_command: the catalog entry has no usable select exec — name one with " +
-                      "select = { exec = … }, move the model to an engine whose lifecycle the router owns, or " +
-                      "mark this engine remote");
-            return SwitchResult.Failed(SwitchReason.NoSelectCommand);
-        }
+        // Neither catalog question is asked here any more, and the reason is a caller that has nothing to do with
+        // the catalog. Both used to sit ahead of the loop, so they answered a caller that had arrived to **join** a
+        // switch already running: A claims on a usable entry, the entry is replaced, B asks for the same model and is
+        // told `no_select_command` for configuration state that never governed the switch it was about to wait
+        // behind — and a refusal is terminal, so B never learns what that switch decided. The two questions (does an
+        // entry name this model, and does it name a selector the router can run) move into the acquisition path below,
+        // where they are asked only of a caller about to claim. What does not move: one predicate, asked once per
+        // acquisition attempt, off the provider's own `HasUsableSelector` so the two answers cannot drift; nothing
+        // published or mutated on the way to a refusal, so the refusal costs the engine nothing it had; and the entry
+        // read stays the **mutation policy** — a configuration edit landing after it changes no switch already
+        // claimed from it, that transaction runs on the entry it was authorised on, and the edit is seen by the next
+        // claim (§5.5, decisions 48, 49, 51).
 
         // `timeout` bounds the *waiting*, never the switch: the transaction belongs to the engine and
         // runs on _switchCts, so a caller that gives up leaves the engine switching rather than
         // half-switched. The loop is what makes single-flight fair: if the switch in progress is aimed
         // at another request's model, this caller waits for it and then takes its own turn rather than
-        // being failed by someone else's switch.
+        // being failed by someone else's switch. The deadline is set once, before the first lock wait, and is
+        // never reset across a wait, a join or a re-loop: a budget that expires while joined is a **timeout**, and
+        // no catalog state can turn it into a refusal (§5.5).
         var deadline = timeout == Timeout.InfiniteTimeSpan ? DateTimeOffset.MaxValue : DateTimeOffset.UtcNow + timeout;
         // Shutdown has to reach the two waits below as cancellation, not as an ObjectDisposedException: the switch
         // lock is deliberately never disposed (see DisposeAsync), so a waiter is released by a token linked to the
@@ -727,6 +737,12 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
         while (true)
         {
             SwitchState state;
+            // The outcome of *this* acquisition attempt, selected under the gate and acted on after release: the
+            // entry the claim runs on when there is a claim, and the catalog miss when there is not. Emitting inside
+            // the switch lock is what TASK-103 #4 forbids — the ring runs every subscriber inside its append with no
+            // isolation — so the refusal is chosen inside the gate and spoken outside it.
+            EngineModelDefinition? claimEntry = null;
+            var entryMiss = EntryGuard.Ok;
             BeforeSwitchWaitForTests?.Invoke();
             // IDISP013 is a false positive at both waits on `waiter`: this source is disposed when the method
             // returns, and every wait on its token is awaited inline before that — nothing here is detached.
@@ -759,6 +775,15 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
                             if (ReadyIn(cap, canonical, profileOverride))
                                 return new SwitchResult(SwitchOutcome.Ready, null);
 
+                            // **Prospective validation never precedes a join.** Everything above this line has already
+                            // declined to join: the engine is idle, and this caller is an acquirer. Only now is the
+                            // catalog asked, and only for this acquisition attempt — a lost exchange below re-reads
+                            // capability *and* entry, because something published while this caller was deciding
+                            // changes both (§5.5, decision-51).
+                            entryMiss = ResolveClaimEntry(def, canonical, out var entry);
+                            if (entryMiss != EntryGuard.Ok) break;
+                            claimEntry = entry;
+
                             var candidate = new SwitchState { Model = canonical, Profile = profileOverride?.Name, StartedAt = DateTimeOffset.UtcNow };
                             candidate.Ready = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
                             if (!TryPublishSwitchStarted(canonical, cap.Version)) continue;
@@ -778,7 +803,9 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
                             mine = candidate;
                             break;
                         }
-                        state = mine!;
+                        // A refused attempt claims nothing, so there is no state to adopt: `state` stays the idle
+                        // value read above and the refusal is spoken below, after the lock is released.
+                        if (mine is not null) state = mine;
                     }
                 }
 
@@ -800,7 +827,7 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
                         // dispose anything this task is still using.
 #pragma warning disable IDISP013 // await-in-using not applicable: intentionally detached Task, no shared source
                         _ = Task.Run(
-                            () => RunSwitchAsync(claim, canonical, profileOverride, modelDef, switchToken),
+                            () => RunSwitchAsync(claim, canonical, profileOverride, claimEntry!, switchToken),
                             // Deliberately not the caller's token: the switch's own token above decides whether the
                             // transaction runs, and a request that hangs up must not be able to abort it halfway
                             // through a model load.
@@ -829,6 +856,23 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
             finally
             {
                 _switchLock.Release();
+            }
+
+            // Spoken outside both the switch lock and the transition gate: the refusal was selected under the gate
+            // and is emitted after release, so a feed subscriber runs with no engine lock held (TASK-103 #4). One
+            // `engine.switch_failed` per refused attempt, and nothing else: no marker went up, so there is no
+            // switch to end and the engine keeps the proof it had (§5.5).
+            if (entryMiss != EntryGuard.Ok)
+            {
+                Emit("engine.switch_failed", model: canonical,
+                    reason: entryMiss == EntryGuard.Absent
+                        ? "no_select_command: no catalog entry names this model on this engine — add it under " +
+                          "[engine.strata.catalog], move the request to an engine that declares it, or mark this " +
+                          "engine remote"
+                        : "no_select_command: the catalog entry has no usable select exec — name one with " +
+                          "select = { exec = … }, move the model to an engine whose lifecycle the router owns, or " +
+                          "mark this engine remote");
+                return SwitchResult.Failed(SwitchReason.NoSelectCommand);
             }
 
             var remaining = deadline == DateTimeOffset.MaxValue
@@ -1026,16 +1070,16 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
         SwitchState state, string model, ServingProfile? profileOverride,
         EngineModelDefinition md, CancellationToken ct)
     {
-        // `md` is the entry the claim was authorised on — resolved once, in front of the claim — not a re-read.
-        // There is no missing-entry branch left to guard against: the claim could not have been made without one,
-        // and a second ask of the catalog would be a second snapshot of a mutable dictionary, which is the mistake
-        // v0.12.44 removed the definition re-read for (§5.5).
+        // `md` is the entry the claim was authorised on — resolved once, in front of the claim and inside the
+        // acquisition gate — not a re-read. There is no missing-entry branch left to guard against: the claim could
+        // not have been made without one, and a second ask of the catalog would be a second snapshot of a mutable
+        // dictionary, which is the mistake v0.12.44 removed the definition re-read for (§5.5).
         try
         {
             // The entry exists but names no usable selector: that is refused **before** the claim, off this same
             // predicate, so the caller is told `no_select_command` and the engine keeps its last proof. There is
-            // deliberately no second ask here. With the refusal in front of the transaction and one predicate on
-            // both sides of it, a branch at this point could only be reached by a catalog changing under a running
+            // deliberately no second ask here. With the refusal in front of the claim and one predicate on both
+            // sides of it, a branch at this point could only be reached by a catalog changing under a running
             // switch — and a guard no configuration can reach is a claim about the code the code does not support (§5.5).
             var profileName = profileOverride?.Name ?? md.Profile;
             Emit("engine.switch_started", model: model,
