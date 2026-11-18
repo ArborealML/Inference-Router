@@ -245,12 +245,12 @@ public static class ServerApp
             TicketState.WaitingForModel => $"switching model={ticket.Model} engine={ticket.Engine}",
             _ => $"engine={ticket.Engine}",
         };
-        var changed = !string.Equals(status, lastStatus, StringComparison.Ordinal);
-        lastStatus = status;
-        var frame = changed
-            ? AirJson.Frame($"[router keepalive seq={seq} status=\"{status}\"]")
-            : AirJson.Frame($"[router keepalive seq={seq}]");
-        await AirJson.WriteFrameAsync(writer, frame, ct).ConfigureAwait(false);
+        // Encode as a JSON string so a model name cannot introduce another SSE line.
+        var statusField = string.Equals(status, lastStatus, StringComparison.Ordinal)
+            ? ""
+            : $" status={JsonSerializer.Serialize(status, AirServerJson.AirServerContext.Default.String)}";
+        var frame = string.Create(CultureInfo.InvariantCulture, $": [router keepalive seq={seq}{statusField}]\n\n");
+        await AirJson.WriteFrameAsync(writer, Encoding.UTF8.GetBytes(frame), ct).ConfigureAwait(false);
         return status;
     }
 

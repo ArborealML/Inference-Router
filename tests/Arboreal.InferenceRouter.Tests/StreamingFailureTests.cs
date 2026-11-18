@@ -1,5 +1,4 @@
 using System.Net;
-using System.Text;
 
 namespace Arboreal.InferenceRouter.Tests;
 
@@ -17,23 +16,26 @@ public class StreamingFailureTests
         var (app, fake, port) = await WireHarness.StartAsync(holdCompletions: false);
         using var _ = app;
         fake.CompletionStatus = 502;
-        fake.CompletionErrorBody = """{"error":{"message":"engine exploded","type":"server_error"}}""";
+        fake.CompletionErrorBody = "engine exploded";
 
         using var http = new HttpClient
         {
             BaseAddress = new Uri($"http://127.0.0.1:{port}"),
             Timeout = TimeSpan.FromSeconds(15),
         };
-        var (ticket, res) = await WireHarness.StartStreamAsync(http, "stream-fail", Body("hello"));
+        var (ticket, response) = await WireHarness.StartStreamAsync(http, "stream-fail", Body("hello"));
+        using var res = response;
         Assert.NotEmpty(ticket);
 
         // The response is already a committed 200 event stream by the time the engine answers, so the
         // only way the caller learns anything is the stream ending with an error frame. Until the
         // failure path completed the stream channel, this read simply waited.
-        var lines = await ReadUntilQuietAsync(res, TimeSpan.FromSeconds(10));
-        Assert.Contains(lines, l => l.Contains("\"error\"", StringComparison.Ordinal));
-        Assert.Contains(lines, l => l.Contains("[DONE]", StringComparison.Ordinal));
-        res.Dispose();
+        using var bound = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        var body = await res.Content.ReadAsByteArrayAsync(bound.Token);
+        var terminalStart = body.AsSpan().IndexOf("data: "u8);
+        Assert.True(terminalStart > 0, "The stream omitted its keepalive or terminal event.");
+        var expected = "data: {\"error\":{\"message\":\"502: engine exploded\",\"code\":\"engine_error\",\"type\":\"air_error\"}}\n\ndata: [DONE]\n\n"u8.ToArray();
+        Assert.Equal(expected, body[terminalStart..]);
     }
 
     [Fact(Timeout = 30_000)]
@@ -57,9 +59,14 @@ public class StreamingFailureTests
         {
             await using var stream = await res.Content.ReadAsStreamAsync(readCts.Token);
             using var reader = new StreamReader(stream);
-            var first = await reader.ReadLineAsync(readCts.Token);
+            string? first;
+            do
+            {
+                first = await reader.ReadLineAsync(readCts.Token);
+            }
+            while (first is not null && (first.Length == 0 || first.StartsWith(':')));
             Assert.NotNull(first);
-            Assert.StartsWith("data:", first, StringComparison.Ordinal);
+            Assert.StartsWith("data: {\"choices\":[{\"delta\":", first, StringComparison.Ordinal);
         }
         res.Dispose();      // the caller is gone; the router should stop serving it
 
@@ -83,22 +90,4 @@ public class StreamingFailureTests
         Assert.DoesNotContain("request.completed", terminal);
     }
 
-    private static async Task<List<string>> ReadUntilQuietAsync(HttpResponseMessage res, TimeSpan bound)
-    {
-        using var cts = new CancellationTokenSource(bound);
-        await using var stream = await res.Content.ReadAsStreamAsync(cts.Token);
-        using var reader = new StreamReader(stream, Encoding.UTF8);
-
-        var lines = new List<string>();
-        while (true)
-        {
-            string? line;
-            try { line = await reader.ReadLineAsync(cts.Token); }
-            catch (OperationCanceledException) { break; }
-            if (line is null) break;            // the stream closed: the caller can stop waiting
-            lines.Add(line);
-        }
-
-        return lines;
-    }
 }

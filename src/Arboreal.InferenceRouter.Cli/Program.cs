@@ -186,33 +186,72 @@ public static class Program
             return 0;
         }
 
-        // SSE: print deltas as they arrive; keepalive comment frames are ignored.
+        // The router's reserved comments report status to humans. JSON mode writes data payloads.
         using var reader = new StreamReader(await res.Content.ReadAsStreamAsync().ConfigureAwait(false));
-        var buf = new StringBuilder();
+        string? lastStatus = null;
+        var exitCode = 0;
         while (await reader.ReadLineAsync().ConfigureAwait(false) is { } line)
         {
+            if (line.StartsWith(':'))
+            {
+                if (!json && ReadKeepaliveStatus(line) is { } status &&
+                    !string.Equals(status, lastStatus, StringComparison.Ordinal))
+                {
+                    Console.Error.WriteLine(line[2..]);
+                    lastStatus = status;
+                }
+                continue;
+            }
             if (!line.StartsWith("data: ", StringComparison.Ordinal)) continue;
             var payload = line["data: ".Length..];
             if (payload == "[DONE]") break;
-            if (!json && payload.StartsWith('['))
-            {
-                // router keepalive comment (e.g. "switching model=…") → stderr, once per status
-                Console.Error.WriteLine(payload);
-                continue;
-            }
+            if (json) Console.Write(payload);
             try
             {
                 using var doc = JsonDocument.Parse(payload);
-                var delta = doc.RootElement.GetProperty("choices").EnumerateArray().FirstOrDefault()
-                    .TryGetProperty("delta", out var d) && d.TryGetProperty("content", out var c)
-                        ? c.GetString() : null;
-                if (json) Console.Write(payload);
-                else if (delta is { Length: > 0 }) { buf.Append(delta); Console.Write(delta); }
+                var root = doc.RootElement;
+                if (root.ValueKind != JsonValueKind.Object) continue;
+                if (root.TryGetProperty("error", out var error) && error.ValueKind == JsonValueKind.Object)
+                {
+                    if (!json) Console.Error.WriteLine(payload);
+                    exitCode = 1;
+                    continue;
+                }
+                if (json || !root.TryGetProperty("choices", out var choices) ||
+                    choices.ValueKind != JsonValueKind.Array) continue;
+
+                var choice = choices.EnumerateArray().FirstOrDefault();
+                if (choice.ValueKind == JsonValueKind.Object &&
+                    choice.TryGetProperty("delta", out var delta) && delta.ValueKind == JsonValueKind.Object &&
+                    delta.TryGetProperty("content", out var content) && content.ValueKind == JsonValueKind.String)
+                    Console.Write(content.GetString());
             }
-            catch (JsonException) { if (json) Console.Write(payload); }
+            catch (JsonException) { } // Human mode only renders completion chunks and errors.
         }
         if (!json) Console.WriteLine();
-        return 0;
+        return exitCode;
+    }
+
+    private static string? ReadKeepaliveStatus(string line)
+    {
+        const string prefix = ": [router keepalive seq=";
+        const string statusField = " status=";
+        if (!line.StartsWith(prefix, StringComparison.Ordinal) || !line.EndsWith(']')) return null;
+        var fields = line.AsSpan(prefix.Length, line.Length - prefix.Length - 1);
+        var separator = fields.IndexOf(' ');
+        if (separator <= 0 || fields[..separator].IndexOfAnyExceptInRange('0', '9') >= 0 ||
+            !fields[separator..].StartsWith(statusField, StringComparison.Ordinal)) return null;
+
+        var encodedStatus = fields[(separator + statusField.Length)..];
+        if (encodedStatus.Length < 2 || encodedStatus[0] != '"' || encodedStatus[^1] != '"') return null;
+        // Retain JSON escaping in the diagnostic so a model name stays on one stderr line.
+        var status = encodedStatus.ToString();
+        try
+        {
+            using var doc = JsonDocument.Parse(status);
+            return doc.RootElement.ValueKind == JsonValueKind.String ? status : null;
+        }
+        catch (JsonException) { return null; }
     }
 
     private static string? ExtractMessage(byte[] response)

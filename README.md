@@ -204,8 +204,8 @@ curl -N http://127.0.0.1:8321/v1/chat/completions \
 router does not authenticate callers yet, so priority claims are honoured as given: keep the router
 on loopback or behind your own proxy. `X-Inference-Required-Context` tells the scheduler the window
 you need, so it switches profile instead of failing. While a request waits or a model loads, the
-stream carries `data: [router keepalive …]` frames rather than going silent, and a failed stream
-ends with an error frame plus `[DONE]`.
+stream carries `: [router keepalive …]` comments. SSE parsers skip them when dispatching data.
+A failed stream ends with an error frame plus `[DONE]`.
 
 [To follow one request you own — including why it is waiting — read only its events:
 `GET /admin/tickets/<id>/events?since=0`, where `<id>` came back in the `X-Inference-Ticket` header.

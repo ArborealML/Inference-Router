@@ -2,18 +2,72 @@ using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
+using System.Text.Json;
 
 namespace Arboreal.InferenceRouter.Tests;
 
 public class StreamFrameIdentityTests
 {
     private const string Request = """{"model":"test-model","stream":true,"messages":[{"role":"user","content":"ping"}]}""";
+    private const string CompletionChunk = """
+        {"id":"chatcmpl-wire","object":"chat.completion.chunk","created":1,"model":"test-model","choices":[{"index":0,"delta":{"content":"hello"},"finish_reason":null}]}
+        """;
+    private static readonly byte[] CompletionFixture = Encoding.UTF8.GetBytes(
+        $"data: {CompletionChunk}\r\n\r\ndata: [DONE]\r\n\r\n");
     private static readonly byte[] ShortFixture =
         "data: {\"delta\":\"é🌲\"}\r\n\r\n: upstream comment\nid: 02\ndata: second\ndata: line two\n\ndata: [DONE]\r\n\r\n"u8.ToArray();
 
     [Fact]
     public Task Every_Byte_Split_Preserves_The_Short_Stream()
         => CheckSplitsAsync(ShortFixture, Enumerable.Range(0, ShortFixture.Length + 1), ShortFixture.Length);
+
+    [Fact]
+    public async Task Strict_OpenAI_Sse_Parser_Only_Receives_Upstream_Completion_Chunks()
+    {
+        using var fake = new FragmentedEngine();
+        var (app, _, port) = await WireHarness.StartAsync(fake: fake);
+        await using var server = app;
+        using var http = Client(port);
+        using var bound = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        using var upstream = new FragmentedBody(CompletionFixture, 0, CompletionFixture.Length);
+        fake.Responses.Enqueue(upstream);
+        var (_, response) = await WireHarness.StartStreamAsync(http, "strict-parser", Request);
+        using var res = response;
+        await using var body = await res.Content.ReadAsStreamAsync(bound.Token);
+
+        Assert.Equal(CompletionChunk, Assert.Single(await ReadCompletionChunksAsync(body, bound.Token)));
+    }
+
+    [Fact]
+    public async Task Strict_OpenAI_Sse_Parser_Rejects_The_Legacy_Keepalive_Data_Payload()
+    {
+        var legacy = "data: [router keepalive seq=0 status=\"queued model=test-model\"]\n\n";
+        using var body = new MemoryStream([.. Encoding.UTF8.GetBytes(legacy), .. CompletionFixture]);
+        await Assert.ThrowsAnyAsync<JsonException>(() => ReadCompletionChunksAsync(body, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Keepalive_Status_Cannot_Introduce_Sse_Data_Lines()
+    {
+        // An unhealthy upstream leaves this model queued, so the first comment carries its name.
+        using var fake = new FakeEngineHandler { ModelsStatus = 503 };
+        var (app, _, port) = await WireHarness.StartAsync(fake: fake);
+        await using var server = app;
+        using var http = Client(port);
+        using var bound = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        var (_, response) = await WireHarness.StartStreamAsync(http, "escaped-status",
+            """{"model":"m\u0022]\r\ndata: [DONE]\n\n\\suffix","stream":true}""");
+        using var res = response;
+        using var reader = new StreamReader(await res.Content.ReadAsStreamAsync(bound.Token));
+        const string prefix = ": [router keepalive seq=0 status=";
+        var comment = await reader.ReadLineAsync(bound.Token);
+        Assert.NotNull(comment);
+        Assert.StartsWith(prefix, comment, StringComparison.Ordinal);
+        Assert.EndsWith("]", comment, StringComparison.Ordinal);
+        using var status = JsonDocument.Parse(comment[prefix.Length..^1]);
+        Assert.Equal("queued model=m\"]\r\ndata: [DONE]\n\n\\suffix", status.RootElement.GetString());
+        Assert.Equal("", await reader.ReadLineAsync(bound.Token));
+    }
 
     [Fact]
     public Task Every_64_Byte_Alignment_Preserves_The_Long_Stream()
@@ -53,9 +107,9 @@ public class StreamFrameIdentityTests
 
         // Sequence 2 requires an actual periodic tick. Keep the slot occupied until the client
         // sees it, so admission cannot win a race against the timer.
-        var queuedFrames = ("data: [router keepalive seq=0 status=\"queued model=test-model\"]\n\n" +
-                            "data: [router keepalive seq=1]\n\n" +
-                            "data: [router keepalive seq=2]\n\n");
+        var queuedFrames = (": [router keepalive seq=0 status=\"queued model=test-model\"]\n\n" +
+                            ": [router keepalive seq=1]\n\n" +
+                            ": [router keepalive seq=2]\n\n");
         await ReadExpectedAsync(clientBody, Encoding.UTF8.GetBytes(queuedFrames), ct);
 
         releaseSlot.SetResult();
@@ -69,7 +123,7 @@ public class StreamFrameIdentityTests
 
             // Admission can race another tick after the slot is released. Accept only complete,
             // consecutive keepalives before the first upstream byte, including a status change.
-            var keepalive = Encoding.UTF8.GetBytes(FormattableString.Invariant($"data: [router keepalive seq={nextSequence++}"));
+            var keepalive = Encoding.UTF8.GetBytes(FormattableString.Invariant($": [router keepalive seq={nextSequence++}"));
             Assert.Equal(keepalive[..start.Length], start);
             await ReadExpectedAsync(clientBody, keepalive.AsMemory(start.Length), ct);
             var end = await ReadKeepaliveEndAsync(clientBody, ct);
@@ -116,7 +170,7 @@ public class StreamFrameIdentityTests
         var start = 0;
         // Strip only the contiguous router prefix. Any extra bytes after the first upstream
         // byte, including an injected keepalive at an SSE boundary, fail full byte equality.
-        while (bytes[start..].StartsWith("data: [router keepalive seq="u8))
+        while (bytes[start..].StartsWith(": [router keepalive seq="u8))
         {
             var end = bytes[start..].IndexOf("\n\n"u8);
             Assert.True(end >= 0, "The relay emitted an unterminated keepalive.");
@@ -124,6 +178,37 @@ public class StreamFrameIdentityTests
         }
         Assert.True(start > 0, "The relay omitted the initial keepalive.");
         return start;
+    }
+
+    private static async Task<List<string>> ReadCompletionChunksAsync(Stream body, CancellationToken ct)
+    {
+        using var reader = new StreamReader(body, Encoding.UTF8, leaveOpen: true);
+        var chunks = new List<string>();
+        var data = new List<string>();
+        var done = false;
+        while (await reader.ReadLineAsync(ct) is { } line)
+        {
+            if (line is "data" || line.StartsWith("data:", StringComparison.Ordinal))
+            {
+                var value = line.Length > 4 ? line[5..] : "";
+                data.Add(value.StartsWith(' ') ? value[1..] : value);
+            }
+            if (line.Length != 0 || data.Count == 0) continue;
+
+            Assert.False(done, "Data event followed the upstream [DONE].");
+            var payload = string.Join('\n', data);
+            data.Clear();
+            done = payload == "[DONE]";
+            if (done) continue;
+
+            using var chunk = JsonDocument.Parse(payload);
+            Assert.Equal("chat.completion.chunk", chunk.RootElement.GetProperty("object").GetString());
+            Assert.Equal(JsonValueKind.Array, chunk.RootElement.GetProperty("choices").ValueKind);
+            chunks.Add(payload);
+        }
+        Assert.Empty(data);
+        Assert.True(done, "The completion stream omitted [DONE].");
+        return chunks;
     }
 
     private static HttpClient Client(int port) => new()

@@ -1,6 +1,6 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.50)
+Status: draft, continuously revised (v0.12.51)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
@@ -352,6 +352,12 @@ daemon transaction per engine. 137 tests green.
   that answers no `upload_url`, an upload that dies or answers no asset id, an asset name listed twice on
   the release, and a tag that moves after the first resolve. No tag has run the gate: still configured,
   not proven.
+- v0.12.51 — completion streams carry router keepalives as SSE comments (§6, TASK-108). The
+  strict-parser pin rejected the original writer at the first keepalive and accepts the same upstream
+  completion with comment framing. Status is a JSON string on one comment line. The CLI shows status
+  changes on stderr in text mode, retains data payloads in JSON mode, and exits unsuccessfully on a
+  streamed error. Byte-level pins cover upstream frames, the queued sequence, and one error followed by
+  the existing sentinel on pre-sentinel failure.
 - v0.12.50 — shutdown and switch completion share one transition gate (§5.5, TASK-98). The first published
   outcome is permanent. Shutdown records `RouterStopped` before waking waiters or cancelling the switch token,
   and a caller that reaches the claim gate after that decision is refused. `ShutdownStopCauseTests` pins both
@@ -1900,10 +1906,12 @@ client start parsing it (§15 open question).
 
 **Streaming handoff**: the SSE relay does not poll for the ticket's stream channel. The
 channel is created at admission, before the `Executing` event is published, and
-`RouterTicket.StreamReady` resolves with it (or with `null` at a terminal state); the relay
-waits on that and emits a keepalive `data:` frame every 4 s while a request is still queued or
-switching — `data: [router keepalive seq=7 status="switching model=qwen-long engine=hyperqwen"]`,
-status-bearing only when the state changed. A stream that fails after it started ends with
+`RouterTicket.StreamReady` resolves with it (or with `null` at a terminal state). The relay sends an
+initial keepalive and emits keepalives immediately and every 4 s while the channel remains pending.
+Each keepalive is an SSE comment such as `: [router keepalive seq=7 status="switching model=qwen-long engine=hyperqwen"]` followed by a blank line.
+The sequence starts at zero and increases by one on that stream. The optional JSON-quoted `status`
+appears on the first comment and when the status changes. SSE parsers ignore comments when
+dispatching data events. A stream that fails after it started ends with
 `data: {"error":{…}}` then `data: [DONE]`, so a client that stops at the sentinel cannot hang and
 can tell a truncated completion from a finished one. Poll-based handoffs stall time-to-first-token
 by the whole poll interval — the benchmark harness measured exactly that before this fix (§14,

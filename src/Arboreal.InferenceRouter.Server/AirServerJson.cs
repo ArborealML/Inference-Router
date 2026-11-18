@@ -16,6 +16,7 @@ internal static partial class AirServerJson
     [JsonSerializable(typeof(TicketSnapshot))]
     [JsonSerializable(typeof(SwitchAck))]
     [JsonSerializable(typeof(ErrorBody))]
+    [JsonSerializable(typeof(string))]
     internal sealed partial class AirServerContext : JsonSerializerContext;
 }
 

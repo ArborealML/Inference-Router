@@ -5,7 +5,7 @@
   "tools": [
     {
       "name": "chat_completion",
-      "description": "Send a chat message to whichever engine the router decides should serve it. Returns streamed tokens (SSE) or one JSON body. Queue waits and model switches are invisible to the caller except for keepalive frames.",
+      "description": "Send a chat message to whichever engine the router decides should serve it. Returns streamed tokens (SSE) or one JSON body. While a request waits, SSE comments report queue and switch status.",
       "method": "POST",
       "path": "/v1/chat/completions",
       "parameters": {
@@ -44,7 +44,7 @@
       },
       "returns": {
         "header_x_inference_ticket": "id of the admitted request",
-        "stream": "engine frames verbatim; 'data: [router keepalive \u2026]' while queued or switching; error frame then [DONE] on failure"
+        "stream": "Engine frames pass through verbatim. SSE comments (': [router keepalive \u2026]') report queue and switch progress. A failed stream ends with an error frame and [DONE]."
       }
     },
     {

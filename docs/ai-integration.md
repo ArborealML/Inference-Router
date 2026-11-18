@@ -72,10 +72,11 @@ curl -N http://127.0.0.1:8321/v1/chat/completions \
 Streaming is the default, and frames from the engine are passed through verbatim. Two things the
 router adds:
 
-- **Keepalives while it is not your turn.** While a request is queued or a model is loading, the
-  router emits `data: [router keepalive seq=7 status="switching model=qwen-long engine=hyperqwen"]`
-  every four seconds. Parse-and-ignore those frames; they exist so client idle timeouts do not fire
-  during a queue wait or a switch.
+- **Keepalives while a request waits.** While a request is queued or a model is loading, the
+  router emits SSE comments such as `: [router keepalive seq=7 status="switching model=qwen-long engine=hyperqwen"]`
+  every four seconds. SSE parsers skip comments when dispatching data events. The status appears as
+  a JSON string on the first comment and when it changes. In text mode, `air chat` shows these
+  status changes on stderr.
 - **A clean end on failure.** If the stream fails after it started, the last frames are
   `data: {"error":{"code":…, "message":…}}` then `data: [DONE]`. A client that stops at `[DONE]`
   will not hang, and can tell a truncated completion from a finished one.
