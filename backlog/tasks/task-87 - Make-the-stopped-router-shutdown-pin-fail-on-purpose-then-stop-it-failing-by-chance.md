@@ -7,7 +7,7 @@ status: To Do
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-18T06:27:00Z'
-updated_date: '2026-11-18T09:56:00Z'
+updated_date: '2026-11-18T10:02:00Z'
 labels:
   - flake
   - tests
@@ -44,4 +44,6 @@ Live on main, three CI occurrences, all Expected settled / Actual cancelled: run
 Standing rule while this row is open: no new pins land in the switch-claim or capability-publication classes until this pin is deterministic. And an assertion failure inside this test's hook leaves the hook parked, so a red run here can hang rather than fail — the 30 s shape.
 
 Mechanism, read by the coding seat and consistent with this seat's read of the same lines: the hook argument at SwitchClaimTests.cs:241-246 records the winner of two releases of one wait — EngineRuntime.cs:781, where shutdown settled the readiness task, versus :794, where the engine switch token cancelled the wait while the caller token was not. Shutdown does both inside one window and the waiter does not resume synchronously with the settle, so the recorded branch is scheduler-dependent while v0.12.35 folds both into one caller answer. Their Release counts at 64b9f94: 2 of 8 switch-filter runs failed, one of each shape; the pin alone 6 of 6 — their report, not this seat's.
+
+Fourth occurrence, 09:59Z: run 44280833645 on a board-only push (backlog text alone), 1 of 206, same assertion shape; rerun is the gate. Four of the last five pushes to main, which is the tie-breaker now recorded in the queue: whichever plan review lands first goes first, and if both land together TASK-87 precedes the feed-bounds remainder. Until this row closes, every commit report names the failing test so a real failure is not read as this one.
 <!-- SECTION:NOTES:END -->
