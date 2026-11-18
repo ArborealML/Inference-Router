@@ -7,7 +7,7 @@ status: To Do
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-18T07:44:00Z'
-updated_date: '2026-11-18T07:44:00Z'
+updated_date: '2026-11-18T08:37:00Z'
 labels:
   - ci
   - release
@@ -34,4 +34,6 @@ CI already runs the release-gate harness: ci.yml has a job named "release gate h
 
 <!-- SECTION:NOTES:BEGIN -->
 Re-measured by this seat at 7d01520 (2026-11-18T07:44Z): ci.yml:105 declares the release-gate-harness job and runs python3 tools/relgate.py; release.yml:60 is the workflow_dispatch arm; grep -c "inputs.tag" tools/relgate.py returns 0 and grep for github.event_name or GITHUB_REF_NAME in the harness returns nothing. The report that pointed here also cited a SPEC revision and task numbers that do not resolve on this board — SPEC highest row at HEAD is v0.12.36 and the repository carries two tags, both canaries — so the claim is recorded only as re-measured here, per decision-37, and the reporting seat was asked for raw command output. Sequencing: this edits tools/relgate.py, which [TASK-44](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-44%20-%20Close-the-open-release-gate-review-findings-SPEC-v0-12-15-onward.md) also edits for its thirteenth-round fixture; land one harness change at a time.
+
+Measured again at 08:34Z, second seat, same answer: in tools/relgate.py the counts for workflow_dispatch, inputs.tag, event_name and GITHUB_REF_NAME are each 0. Use those four greps as the criterion — the string event.inputs.version describes nothing in this repository, and a row that hunts it would pass by irrelevance. AC #1 is harness-only and claimed.
 <!-- SECTION:NOTES:END -->
