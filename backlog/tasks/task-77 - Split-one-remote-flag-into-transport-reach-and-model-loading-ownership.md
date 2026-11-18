@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@gpt-6.2-sol-release'
 created_date: '2026-11-18T02:37:00Z'
-updated_date: '2026-11-18T20:50:00Z'
+updated_date: '2026-11-18T20:53:00Z'
 labels:
   - lifecycle
   - scheduling
@@ -24,11 +24,11 @@ A router must be able to forward inference to a resident model and independently
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Config declares the inference endpoint and lifecycle owner independently. TOML and JSON tests pin legacy remote mapping for omitted, false and true.
+- [x] #1 Config declares the inference endpoint and lifecycle owner independently. TOML and JSON tests pin legacy remote mapping for omitted, false and true.
 - [ ] #2 An engine the router can reach but cannot start is switchable by a lifecycle provider that speaks to that host
 - [ ] #3 The router never stops or launches an engine whose lifecycle it does not own, pinned
-- [ ] #4 SPEC documents which requests the inference endpoint can serve and which lifecycle actions each owner can authorize.
-- [ ] #5 An omitted remote never grants load authority: ownership comes from a target-bound lifecycle provider, never from a hostname or from a missing key
+- [x] #4 SPEC documents which requests the inference endpoint can serve and which lifecycle actions each owner can authorize.
+- [x] #5 An omitted remote never grants load authority: ownership comes from a target-bound lifecycle provider, never from a hostname or from a missing key
 - [ ] #6 A shipped sample engine with no lifecycle block still refuses to switch after the migration, pinned by the sample test
 - [ ] #7 A legacy remote endpoint is routable without actuation or adoption. A foreign endpoint sharing a managed host blocks activation until the host authority proves vacancy.
 <!-- AC:END -->
@@ -47,4 +47,6 @@ Plan review against 49219b3 confirmed nullable raw Remote, public boolean Remote
 Astra ran 112 focused checks on owner bindings and 61 on incumbent restoration; both groups passed. Separate commit reviews cover production, tests and pre-mutation refusal. Confirm the operator diagnosis for mismatched injected providers and document the selectorless legacy refusal before integration.
 
 The combined candidate reached local Release qualification. CLI owner diagnostics failed nullable analysis before test execution; correction assigned. Integration reviews of the runtime and fixtures are in flight.
+
+Integrated [lifecycle authority and incumbent recovery](https://github.com/ArborealML/Inference-Router/commit/2f04f2b). The corrected candidate passed 365/365 Release tests and Native AOT publish. Code, tests and SPEC match the integrated tree. Managed peer activation and refusal for foreign host occupancy still depend on the host arbiter.
 <!-- SECTION:NOTES:END -->
