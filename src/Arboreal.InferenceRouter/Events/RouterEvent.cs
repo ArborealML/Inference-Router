@@ -29,11 +29,15 @@ public sealed record RouterEventFilter
     /// to follow its own ticket without reading other sessions' traffic.</summary>
     public string? TicketId { get; init; }
 
+    // Stored values are capped at reporting length by the ring's funnel, so the filter compares at the same
+    // length: a caller whose thread id is longer than the reporting budget still finds their own records. The
+    // trade is stated rather than hidden — two filter values that share a head match the same records, which is
+    // an operator looking at the wrong thread, never a lookup that misses the right one (§6.1).
     public bool Matches(RouterEvent e) =>
         e.Seq > SinceSeq
         && (Kinds is null || Kinds.Contains(e.Kind, StringComparer.Ordinal))
-        && (ThreadId is null || e.ThreadId == ThreadId)
-        && (Engine is null || e.Engine == Engine)
+        && (ThreadId is null || e.ThreadId == WireText.Ident(ThreadId))
+        && (Engine is null || e.Engine == WireText.Ident(Engine))
         && (TicketId is null || e.TicketId == TicketId);
 }
 
@@ -59,15 +63,21 @@ public sealed class EventRing
     {
         lock (_lock)
         {
-            // Identifiers are stored at reporting length. A model id arrives here from several producers and one
-            // of them is a request body, so the cap belongs at the single funnel rather than in each writer: an
-            // over-long id is cut with the same marker the reasons use, and the ring stops being a way for a
-            // caller to choose how much of their own text the feed carries (§6.1).
+            // Identifiers and reason text are stored at reporting length. A model id, an engine name, a thread id
+            // and a reason arrive here from several producers, and more than one of them starts in a request body,
+            // so the caps belong at the single funnel rather than in each writer: the ring stops being a way for a
+            // caller to choose how much of their own text the feed carries, and the ceiling SPEC §10 states for one
+            // feed reason holds for the request path's failure producer as well as for the engine's emitter. An
+            // identifier keeps its head plus a marker that names the true length and fingerprints the whole value,
+            // so two ids that cut to the same head remain distinguishable in the record (§6.1, §10).
             @event = @event with
             {
                 Seq = _head + 1,
                 Timestamp = DateTimeOffset.UtcNow,
                 Model = @event.Model is { } m ? WireText.Ident(m) : null,
+                Engine = @event.Engine is { } e ? WireText.Ident(e) : null,
+                ThreadId = @event.ThreadId is { } t ? WireText.Ident(t) : null,
+                Reason = @event.Reason is { } r ? WireText.Bound(r, WireText.ReasonChars) : null,
             };
             _ring[(int)(_head % _ring.Length)] = @event;
             _head++;

@@ -1,6 +1,6 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.38)
+Status: draft, continuously revised (v0.12.39)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
@@ -352,6 +352,30 @@ daemon transaction per engine. 137 tests green.
   that answers no `upload_url`, an upload that dies or answers no asset id, an asset name listed twice on
   the release, and a tag that moves after the first resolve. No tag has run the gate: still configured,
   not proven.
+- v0.12.39 — every feed field is bounded where the feed is written, not where each producer happens to remember (§10, §5.5).
+  The cap that v0.12.37 installed sat on the event's `Model` field and inside the engine's own emitter, so the ceiling §10
+  states for one feed reason was untrue of the request path's failure producer: `RouterCore.Fail` builds its sentence by
+  interpolating the model id out of a request body and the engine's configured name, and a caller could choose how much text a
+  feed record — and their own error body — carried. The ring's single append funnel now caps `Model`, `Engine`, `ThreadId` and
+  `Reason`; the request path cuts the identifiers before it builds the sentence; the admission refusal for an unroutable model
+  cuts the id it names; and the emitter's second whole-reason cut is gone, because one ceiling with one owner is a bound and two
+  owners is a coincidence waiting to drift. `WireText.Bound` gained the three properties its pins had not covered: the cut marker
+  carries an eight-hex-character FNV-1a fingerprint of the whole value, so two identifiers that cut to the same head stay
+  distinguishable **in the record** (a caller chooses the head of their own id); a cut backs off rather than landing between the
+  two halves of a surrogate pair; and the marker's worst case is named — `MarkerReserve = 32` — so the reserve and the marker
+  cannot drift apart, and a budget with no room for a head is refused rather than answered with a head of nothing. The marker
+  grew, so the head that survives an identifier cut is 96 characters, and what an operator reads in a refusal is now stated as a
+  head — 24 characters of each reported name inside a 500-character quoted list — instead of a total that quietly set the head.
+  The feed filter cuts its own values, so a caller with a long thread id still finds their records. Pins: `EventRingTests.TheFunnelCapsIdentifiersAndReasonForEveryProducer`;
+  `EventRingTests.ARequestPathFailureStoresItsFieldsAtReportingLength` (a 405-character id posted through the request path and read
+  back as a stored reason at reporting length, plus two ids sharing a head that stay distinct); and `WireTextBudgetTests` for the
+  arithmetic — budget, unpaired surrogates, the marker's worst case, the two-id pair. Mutation probes, each restored and the working
+  tree proved byte-identical after: caps removed at the funnel fails the funnel pin alone; the request path's sentences built from the
+  raw id and engine name fail the request-path pin; the fingerprint taken out of the marker fails three pins; the surrogate back-off
+  removed fails the surrogate pin alone. One fix rode along in the pin rather than in the shipped code: the last
+  sub-case of `CapabilityPublicationTests.TheClaimThatWithdrewHealthIsTheOnlyAuthorOfUnknownHealth` (v0.12.38) waited to
+  see the claim's marker, which is a window that can close, and it went intermittent under a full-suite load; it waits on the
+  gated launch instead, which is the claim itself.
 - v0.12.38 — the snapshot says **who made the engine unknown**, and only an observation withdraws a waiter's proof
   (TASK-61 AC #7–#8, §5.5). One `Healthy` flag was carrying two different facts: a claim in flight takes health down
   as the **price of starting a transaction**, and a probe that cannot ask what the engine serves takes it down because
@@ -1422,8 +1446,8 @@ engine forks land; the scheduler interface will not change shape.
   assumes, and nothing here translates engine names into config names. A refresh that cannot answer at all refuses the
   switch the same way, with `engine.switch_failed reason=refresh_unanswered_<model>`: an exit code is not a loaded model,
   and the rule that a proof has to name what it proves does not bend for an engine that will not say. What either refusal
-  **quotes is bounded in length as well as in name count** — at most eight reported names, each itself cut with its true
-  length marked, and always the count of what was left out — because the event ring caps entries rather than characters
+  **quotes is bounded in length as well as in name count** — at most eight reported names, each keeping its first 24
+  characters with its true length and a fingerprint marked, and always the count of what was left out — because the event ring caps entries rather than characters
   and the names are chosen by the engine, not by the router.
   **What the caller is told is a category, not an account.** Every switch exit records its failure as one token from a
   closed set named in the source — `no_select_command`, `launch_failed`, `health_timeout`, `refresh_omits`,
@@ -1922,15 +1946,29 @@ a feed that arrives when the ring is full is refused with `503 too_many_subscrib
 headers go out. A subscription ends when the router shuts down, and a caller that hangs up stops being
 delivered to. Field names on the wire are PascalCase (§6).
 
-The feed's text is a **bounded excerpt**, not a transcript. Identifiers — a model id, an engine name, a profile name —
-are carried at reporting length: 128 characters, cut head-only with a marker naming how much was dropped. A provider's
-reason is capped at 160 and its action line at 200, a quoted `/models` answer at eight names of 48 characters inside a
-420-character summary, and one reason sentence at 1600. The ring's cap on **entries** has never been a cap on size, and
-every one of these values is chosen upstream — by an engine, a provider, or the request body. Identifiers are cut
-before a reason sentence is built, so an over-long sentence never exists on its way to being stored, and the event's
-own `Model` field is stored at reporting length at the ring's single append funnel: a caller who posts a
-four-hundred-character model id cannot choose the size of a feed record. Lookup is unaffected — the id is matched
-whole, and only what is *reported* is cut.
+The feed's text is a **bounded excerpt**, not a transcript. Identifiers — a model id, an engine name, a profile
+name, a thread id — are carried at reporting length: **128** characters in total, which is a head of 96 characters
+plus the cut marker. The marker names how much was dropped and carries an eight-hex-character fingerprint of the
+whole value, so two identifiers that share a head — the caller chooses the head of their own id — stay
+distinguishable in the record that holds them, without the feed holding the caller's text. A cut never lands between
+the two halves of a surrogate pair: a head ending in a lone high surrogate is text that cannot be encoded, printed or
+compared back to what it came from. The marker fits inside the 32 characters the cap reserves, which is what makes
+the total a stated bound rather than an approximation, and a budget too small to leave a head is refused. Where the
+**head** is what an operator acts on rather than a total — an engine's reported model names in a refusal — the number
+is a head of **24** characters with the same marker, enough of a provider's spelling to tell one quantisation tag
+from another. A provider's reason is capped at 160 and its action line at 200, a quoted `/models` answer at eight
+names inside a 500-character summary, and one reason sentence at **1600**. The ring's cap on **entries** has never
+been a cap on size, and every one of these values is chosen upstream — by an engine, a provider, or the request body.
+
+Two rules make those numbers true of every producer rather than only of the careful ones. Pieces are cut **before**
+the sentence is built, so an over-long sentence never exists on its way to being stored; and the identifier length
+and the ceiling for one whole reason are applied at the ring's **single append funnel**, so the request path's failure
+producer — which writes its own sentences, and interpolates a model id that came out of a request body — is held to
+the same numbers as the engine's emitter. The feed filter cuts its own values the same way, so a caller whose thread
+id is longer than the reporting length still finds their records: reporting is bounded, lookup is not, and a filter
+that matches a capped value by head can show an operator the wrong thread but never hides the right one. A caller's
+own error body is bounded the same way, because the sentence is the router's even when the identifier inside it is
+the caller's.
 
 - `thread.registered`, `thread.priority_changed`
 - `request.enqueued {thread, ticket, model, priority, promptChars}`

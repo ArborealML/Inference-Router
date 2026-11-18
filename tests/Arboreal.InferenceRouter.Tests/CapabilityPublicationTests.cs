@@ -495,9 +495,13 @@ public sealed class CapabilityPublicationTests
         // A claim that starts from an engine already unknown authors nothing. The marker goes up over an absence
         // of knowledge rather than over knowledge withdrawn, and a waiter must not read it as a transaction that
         // took the proof away. The launch answers and the refresh cannot, so this switch is refused (v0.12.31) and
-        // the engine stays unknown either way.
+        // the engine stays unknown either way. The gate is the observation: the claim publishes the marker before
+        // the switch launches, and a gated launch cannot end, so reading the snapshot once the launch has begun
+        // reads the claim itself rather than a window that may already have closed.
+        var launchesBefore = provider.Launches.Count;
         var again = engine.WaitForModelAsync("second", TimeSpan.FromSeconds(30), CancellationToken.None);
-        await WaitUntil(() => engine.SwitchingToward == "second");
+        await WaitUntil(() => provider.Launches.Count > launchesBefore);
+        Assert.Equal("second", engine.SwitchingToward);
         Assert.False(engine.Healthy);
         Assert.False(engine.Capability.HealthFromClaim,
             $"a claim over an already-unknown engine authored a withdrawal: {engine.Capability}");
@@ -705,7 +709,7 @@ public sealed class CapabilityPublicationTests
         Assert.Contains("(+22 more)", refusal.Reason);       // thirty reported, eight quoted, the rest counted
         Assert.DoesNotContain(longName, refusal.Reason);     // the long name is not quoted whole
         Assert.Contains(longName[..24], refusal.Reason);     // its head is, with the true length beside it
-        Assert.Contains($"(+{longName.Length - 24}ch)", refusal.Reason);
+        Assert.Contains($"(+{longName.Length - 24}ch #", refusal.Reason);
         Assert.True(refusal.Reason!.Length < 900,
             $"a refusal reason of {refusal.Reason!.Length} characters is not a bounded one");
     }
@@ -1042,17 +1046,18 @@ public sealed class CapabilityPublicationTests
         Assert.False(failed.IsReady);
 
         var refusal = feed.Replay(0).Last(e => e.Kind == "engine.switch_failed");
+        var head = WireText.IdentifierChars - WireText.MarkerReserve;   // what survives a cut at reporting length
         Assert.NotNull(refusal.Reason);
-        Assert.Contains(longId[..100], refusal.Reason);       // the head is quoted…
+        Assert.Contains(longId[..head], refusal.Reason);       // the head is quoted…
         Assert.DoesNotContain(longId, refusal.Reason);        // …never whole…
-        Assert.Contains("ch)", refusal.Reason);               // …and the reader sees that it was cut
+        Assert.Contains("ch #", refusal.Reason);               // …and the reader sees that it was cut
         Assert.True(refusal.Reason!.Length <= WireText.ReasonChars,
             $"a feed reason of {refusal.Reason!.Length} characters exceeds the documented {WireText.ReasonChars}");
 
         Assert.NotNull(refusal.Model);
         Assert.DoesNotContain(longId, refusal.Model!);
         Assert.Contains(longId[..50], refusal.Model!);
-        Assert.True(refusal.Model!.Length <= WireText.IdentifierChars + 24,
+        Assert.True(refusal.Model!.Length <= WireText.IdentifierChars + WireText.MarkerReserve,
             $"the event payload carries {refusal.Model!.Length} characters of model id");
     }
 }

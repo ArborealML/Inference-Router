@@ -155,7 +155,7 @@ public sealed class RouterCore : IInferenceRouter
         if (CapabilityScan.DefinitelyHopeless(_capabilitySources, canonical))
         {
             RejectAtAdmission(queued, "model_unavailable",
-                $"no engine in this configuration declares or currently reports model '{canonical}'");
+                $"no engine in this configuration declares or currently reports model '{WireText.Ident(canonical)}'");
             return ValueTask.FromResult(ticket);
         }
         var accepted = GetOrCreateQueue(canonical).TryEnqueue(queued);
@@ -547,9 +547,9 @@ public sealed class RouterCore : IInferenceRouter
                     // same wall, or retry later and probably get through — so the message keeps them apart.
                     var detail = switchResult.Detail is { Length: > 0 } d ? $" ({d})" : "";
                     Fail(ticket, "switch_failed", switchResult.Outcome == EngineRuntime.SwitchOutcome.TimedOut
-                        ? $"engine {engine.Name} did not become ready to serve {what} within {ceilingMs} ms — " +
+                        ? $"engine {WireText.Ident(engine.Name)} did not become ready to serve {what} within {ceilingMs} ms — " +
                           $"the switch is still running, retry once it completes{detail}"
-                        : $"engine {engine.Name} could not serve {what}{detail}");
+                        : $"engine {WireText.Ident(engine.Name)} could not serve {what}{detail}");
                     return;
                 }
                 ticket.State = TicketState.Executing;
@@ -642,7 +642,7 @@ public sealed class RouterCore : IInferenceRouter
                         }
 
                         Fail(ticket, "engine_timeout",
-                            $"engine {engine.Name} sent no response to {ticket.Model} within " +
+                            $"engine {WireText.Ident(engine.Name)} sent no response to {WireText.Ident(ticket.Model)} within " +
                             $"{responseTimeout.Value.TotalMilliseconds.ToString(CultureInfo.InvariantCulture)} ms");
                         return;
                     }

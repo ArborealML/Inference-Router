@@ -248,6 +248,139 @@ public class EventRingTests
         }
     }
 
+    /// <summary>§10, TASK-93 AC #1 and AC #5: the request path writes its own failure sentences, and more than one
+    /// of them interpolates text that came from a request body. The ring, not the writer, owns the budget, so a
+    /// caller who posts a four-hundred-and-five-character model id cannot choose how much text a feed record
+    /// carries — whichever producer wrote it. And because a caller chooses the head of their own id, two ids that
+    /// cut to the same head have to stay distinguishable <b>in the record</b>: the marker fingerprints the whole
+    /// value. The id is still matched whole against the catalog; the cap is on reporting, never on lookup (§6.1).</summary>
+    [Fact(Timeout = 60_000)]
+    public async Task ARequestPathFailureStoresItsFieldsAtReportingLength()
+    {
+        var one = "qwen/" + new string('x', 400);                       // 405 characters, all caller-chosen
+        var two = "qwen/" + new string('x', 400) + "-tail";             // same head, different whole value
+        var events = new EventRing();
+        var cfg = new RouterConfig
+        {
+            DefaultModel = one,
+            HttpHandlerFactory = _ => new FakeEngineHandler(),
+            Engines = new Dictionary<string, EngineDefinition>
+            {
+                ["fake"] = new EngineDefinition
+                {
+                    Name = "fake",
+                    Kind = EngineKind.OpenAiCompatible,
+                    Endpoint = new Uri("http://127.0.0.1:9/v1"),
+                    Catalog = new Dictionary<string, EngineModelDefinition>
+                    {
+                        // Both ids are declared, so admission passes and the failure happens in the request path.
+                        // The command starts and the engine never reports the model, which is the case that makes
+                        // the request path write a reason sentence quoting the caller's own id.
+                        [one] = new EngineModelDefinition
+                        {
+                            Name = one,
+                            Select = new LifecycleCommand { Exec = "/bin/true", WaitHealth = true, WaitTimeoutMs = 1_500 },
+                        },
+                        [two] = new EngineModelDefinition
+                        {
+                            Name = two,
+                            Select = new LifecycleCommand { Exec = "/bin/true", WaitHealth = true, WaitTimeoutMs = 1_500 },
+                        },
+                    },
+                },
+            },
+        };
+        var router = new RouterCore(cfg, events: events);
+        await using var _ = router;
+        router.Start();
+
+        var first = await router.EnqueueAsync("t-one", LongIdRequest(one));
+        var exOne = await Assert.ThrowsAsync<RouterRequestException>(
+            () => first.CompletionTask.WaitAsync(TimeSpan.FromSeconds(20)));
+        var second = await router.EnqueueAsync("t-two", LongIdRequest(two));
+        await Assert.ThrowsAsync<RouterRequestException>(
+            () => second.CompletionTask.WaitAsync(TimeSpan.FromSeconds(20)));
+
+        var records = events.Replay(0).Where(e => e.Kind == "request.failed").ToList();
+        Assert.Equal(2, records.Count);
+        foreach (var record in records)
+        {
+            Assert.NotNull(record.Reason);
+            Assert.NotNull(record.Model);
+            Assert.True(record.Reason!.Length <= WireText.ReasonChars,
+                $"a request-path reason of {record.Reason!.Length} characters exceeds the documented {WireText.ReasonChars}");
+            Assert.True(record.Model!.Length <= WireText.IdentifierChars + WireText.MarkerReserve,
+                $"the event payload carries {record.Model!.Length} characters of model id");
+            Assert.DoesNotContain(one, record.Reason!);
+            Assert.DoesNotContain(two, record.Reason!);
+            Assert.DoesNotContain(one, record.Model!);
+            Assert.DoesNotContain(two, record.Model!);
+            Assert.Contains("… (+", record.Reason!);            // the reader sees that something was cut
+            Assert.Contains("ch #", record.Reason!);            // …and how much, and which value it was
+        }
+
+        // The head is what the caller chose, so the two records agree there; the whole record does not, which is
+        // what makes either request findable by an operator reading the feed.
+        Assert.StartsWith(one[..96], records[0].Model!);
+        Assert.Equal(records[0].Model![..96], records[1].Model![..96]);
+        Assert.NotEqual(records[0].Model, records[1].Model);
+        Assert.NotEqual(records[0].Reason, records[1].Reason);
+
+        // The caller's own answer is bounded the same way: the sentence is the router's, even when the identifier
+        // inside it is the caller's.
+        Assert.DoesNotContain(one, exOne.Message!);
+        Assert.Contains("… (+", exOne.Message!);
+    }
+
+    private static InferenceRequest LongIdRequest(string model) => new()
+    {
+        Model = model,
+        Body = Encoding.UTF8.GetBytes(
+            $$"""{"model":"{{model}}","messages":[{"role":"user","content":"ping"}]}"""),
+        Options = new RouterRequestOptions(),
+    };
+
+    /// <summary>§10, TASK-93 AC #1/#3: the funnel is where the budget lives, so it holds for a producer that writes
+    /// an event directly — engine name and thread id included — and not only for the engine's own emitter. A filter
+    /// value of the same length still matches, because the cap is applied to the filter side too: reporting is
+    /// bounded, lookup is not (§6.1).</summary>
+    [Fact]
+    public void TheFunnelCapsIdentifiersAndReasonForEveryProducer()
+    {
+        var events = new EventRing();
+        var longEngine = new string('e', 400);
+        var longThread = new string('t', 400);
+        var longModel = new string('m', 400);
+        var longReason = new string('r', 4_000);
+        var seq = events.Append(new RouterEvent
+        {
+            Kind = "engine.health",
+            Engine = longEngine,
+            ThreadId = longThread,
+            Model = longModel,
+            Reason = longReason,
+        });
+
+        var stored = events.Replay(0).Single();
+        Assert.Equal(seq, stored.Seq);
+        Assert.True(stored.Engine!.Length <= WireText.IdentifierChars + WireText.MarkerReserve,
+            $"the feed carries {stored.Engine!.Length} characters of engine name");
+        Assert.True(stored.ThreadId!.Length <= WireText.IdentifierChars + WireText.MarkerReserve,
+            $"the feed carries {stored.ThreadId!.Length} characters of thread id");
+        Assert.True(stored.Model!.Length <= WireText.IdentifierChars + WireText.MarkerReserve,
+            $"the feed carries {stored.Model!.Length} characters of model id");
+        Assert.True(stored.Reason!.Length <= WireText.ReasonChars,
+            $"a feed reason of {stored.Reason!.Length} characters exceeds the documented {WireText.ReasonChars}");
+        Assert.Contains("… (+", stored.Reason!);
+        Assert.DoesNotContain(longReason, stored.Reason!);
+        Assert.DoesNotContain(longEngine, stored.Engine!);
+
+        Assert.Single(events.Replay(0), e =>
+            new RouterEventFilter { SinceSeq = 0, ThreadId = longThread, Engine = longEngine }.Matches(e));
+        Assert.DoesNotContain(events.Replay(0), e =>
+            new RouterEventFilter { SinceSeq = 0, ThreadId = new string('t', 401) }.Matches(e));
+    }
+
     private static (RouterCore Router, EventRing Events) FeedHarness()
     {
         var events = new EventRing();

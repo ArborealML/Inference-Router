@@ -853,15 +853,17 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
     // for one whole reason live in WireText; these are the provider-side caps the feed sentences use. The
     // caller-facing half carries no value from here at all — it carries a SwitchReason token (§5.5).
     private const int ReportedNameCount = 8;
-    private const int ReportedNameChars = 48;
-    private const int ReportedNamesChars = 420;
+    private const int ReportedNameHeadChars = 24;
+    private const int ReportedNamesChars = 500;
     private const int ProviderReasonChars = 160;
     private const int ProviderActionChars = 200;
 
-    /// <summary>What an engine reported, for a refusal reason: at most <see cref="ReportedNameCount"/> names,
-    /// each cut to a bounded length, and always the count of what was left out. A cap on the count alone is not
-    /// a cap — an engine can answer <c>/models</c> with a hundred-character id per model and eight names is
-    /// then eight unbounded strings (§5.5).</summary>
+    /// <summary>What an engine reported, for a refusal reason: at most <see cref="ReportedNameCount"/> names, each
+    /// keeping its first <see cref="ReportedNameHeadChars"/> characters with its true length and a fingerprint
+    /// marked, and always the count of what was left out. A cap on the count alone is not a cap — an engine can
+    /// answer <c>/models</c> with a hundred-character id per model and eight names is then eight unbounded strings.
+    /// The head is the number stated here because it is the number an operator acts on: enough of the provider's
+    /// spelling to tell one quantisation tag from another (§5.5).</summary>
     private static string DescribeReportedNames(IReadOnlyList<string> reported)
     {
         var shown = Math.Min(reported.Count, ReportedNameCount);
@@ -869,7 +871,7 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
         for (var i = 0; i < shown; i++)
         {
             if (i > 0) sb.Append(", ");
-            sb.Append(WireText.Bound(reported[i], ReportedNameChars));
+            sb.Append(WireText.Head(reported[i], ReportedNameHeadChars));
         }
         if (reported.Count > shown)
             sb.Append(CultureInfo.InvariantCulture, $" … (+{reported.Count - shown} more)");
@@ -1172,14 +1174,15 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
     public string? ApiKey => _apiKey;
 
     internal void Emit(string kind, string? model = null, string? reason = null, double? value = null)
-        // The reason is capped here as well as piece by piece at the sentence sites, so the ceiling SPEC names
-        // for one feed reason stays true if a sentence grows. Identifiers are capped where the ring stores them.
+        // The pieces of a reason are capped piece by piece at the sentence sites, so the part that distinguishes it
+        // survives a cut. The ceiling for one whole reason is applied at the ring's single append funnel, which is
+        // what makes that ceiling a property of every producer rather than of this emitter alone.
         => _events.Append(new RouterEvent
         {
             Kind = kind,
             Engine = Name,
             Model = model,
-            Reason = reason is null ? null : WireText.Bound(reason, WireText.ReasonChars),
+            Reason = reason,
             Value = value,
         });
 
