@@ -5,7 +5,7 @@ status: To Do
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-18T01:22:00Z'
-updated_date: '2026-11-18T01:52:00Z'
+updated_date: '2026-11-18T03:34:00Z'
 labels: []
 dependencies: []
 priority: medium
@@ -20,10 +20,7 @@ Decision-26 replaced the identity ruling: commits carry per-agent linkable ident
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 a push whose range carries a commit authored or committed under any other identity fails the build and names the commits
-- [ ] #2 the check reads the configured identity rather than a hard-coded name, so it holds for the owner and for an agent session alike
-- [ ] #3 the already-published outliers sit below a recorded floor, and the floor says why in one sentence
-- [ ] #4 a push whose range carries a commit authored or committed outside the sanctioned identity set fails the build and names the commits
-- [ ] #5 the sanctioned set is read from configuration, so adding an agent identity is a config change rather than a code change
-- [ ] #6 the already-published outliers sit below a recorded floor, and the floor says why in one sentence
+- [ ] #1 A push whose range carries a commit authored or committed outside the sanctioned identity set fails the build and names the commits
+- [ ] #2 The sanctioned set is read from configuration, so adding an agent identity is a config change rather than a code change
+- [ ] #3 The already-published outliers sit below a recorded floor, and the floor says why in one sentence
 <!-- AC:END -->

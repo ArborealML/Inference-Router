@@ -1,11 +1,11 @@
 ---
 id: TASK-75
 title: Configure per-agent git identities and name the one each session commits as
-status: Blocked
+status: To Do
 assignee:
-  - '@claire'
+  - '@qwen3.8-flash-next'
 created_date: '2026-11-18T01:52:00Z'
-updated_date: '2026-11-18T02:09:00Z'
+updated_date: '2026-11-18T03:34:00Z'
 labels: []
 dependencies: []
 ordinal: 75000
@@ -14,13 +14,13 @@ ordinal: 75000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-**@claire owes two short facts, no more.** The naming convention is given and recorded in decision-26 — the form is "Arboreal Agent (model-id)", e.g. "Arboreal Agent (q38fn)". Still missing: (1) the **address** that makes the identity resolvable — nothing like it exists on this machine, so inventing one would produce exactly the unlinked authors the identity ruling exists to remove; recommended: a bot account's noreply address you control. (2) Whether the name carries a **seat tag** when two sessions run the same model — recommended: "Arboreal Agent (q38fn · board)" and "Arboreal Agent (q38fn · impl)", because otherwise the manager seat and the implementer seat are once again indistinguishable, which is the property decision-26 exists to fix. Everything after those two facts is configuration and a contract line, which the repo seats do.
+**Answered and recorded: decision-29 settles the naming, so this row is configuration.** The identities are `Arboreal Agent (q38fn · board)` and `Arboreal Agent (q38fn · impl)`, with stable handles under a reserved domain that cannot deliver mail and cannot belong to anyone else, applied **per commit** with `-c user.name` / `-c user.email` because both seats commit in one shared worktree and a single config would collapse them into one author. The rule lives in the working contract; the enforcement lives in the push-range guard. One act stays with the owner and blocks nothing: minting a bot account, which would make GitHub link an author instead of showing an unlinked handle.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 one line naming the identity an agent session commits as, with its address
-- [ ] #2 the identity exists and is resolvable, so an agent commit is attributable rather than anonymous
-- [ ] #3 no session sets an author ad hoc: the identity is configured once, in the tooling that starts the session
-- [ ] #4 the contract names the rule, and the push-range guard (TASK-70) reads the sanctioned set
+- [ ] #1 Each seat commits as its named identity, seat tag included, from the tooling that starts the session rather than by hand
+- [ ] #2 The identity is supplied per commit, so the two seats sharing a worktree cannot overwrite one another's configuration
+- [ ] #3 No session sets an author ad hoc: the contract names the rule and the guard fails a build that breaks it
+- [ ] #4 The sanctioned set lives in configuration that the push-range guard reads, so adding a seat changes one place
 <!-- AC:END -->
