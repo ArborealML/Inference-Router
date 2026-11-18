@@ -28,7 +28,9 @@ RENDERED = {
     "Implementation Notes",
     "Comments",
 }
-STATUSES = {"To Do", "Preparing", "In Progress", "Waiting", "Blocked", "Done"}
+STATUSES = {
+    "To Do", "Blocked", "Waiting", "Preparing", "In Progress", "Testing", "Ready for Review", "Done",
+}
 BODY_LIMIT = 600
 SECTION_LIMIT = 300
 DESC_LIMIT = 300
@@ -216,6 +218,27 @@ def self_test() -> int:
     if code != 0 or "corpus: 1 open task(s)" not in out or "(TASK-1)" not in out:
         failures.append(f"Preparing should count as open and Done should be excluded: exit {code}: {out.strip()[:400]}")
 
+    stages = {"task-1 - A.md": preparing, "task-2 - B.md": done}
+    waiting = FIXTURE.format(n=3, title="Waiting task", body="Wake: CI completes.").replace(
+        "status: To Do", "status: Waiting")
+    stages["task-3 - C.md"] = waiting
+    for n, status in enumerate(("Testing", "Ready for Review"), start=4):
+        filename = f"task-{n} - {status}.md"
+        stage = FIXTURE.format(n=n, title=f"{status} task", body="Check the change.").replace(
+            "status: To Do", f"status: {status}")
+        stages[filename] = stage
+        code, out = run({filename: stage})
+        if code != 0 or "corpus: 1 open task(s)" not in out:
+            failures.append(f"{status} should count as open: exit {code}: {out.strip()[:400]}")
+
+    code, out = run(stages)
+    if code != 0 or "corpus: 4 open task(s)" not in out:
+        failures.append(f"mixed statuses should count exactly four open tasks: exit {code}: {out.strip()[:400]}")
+
+    code, out = run({"task-3 - C.md": waiting.replace("Wake: CI completes.", "CI is running.")})
+    if code != 1 or "TASK-3: STATUS: Waiting with no named wake event" not in out:
+        failures.append(f"Waiting without a wake event should be reported: exit {code}: {out.strip()[:400]}")
+
     code, out = run({"task-1 - A.md": preparing.replace("status: Preparing", "status: Prepairing")})
     if code != 1 or "TASK-1: STATUS: unknown status 'Prepairing'" not in out:
         failures.append(f"misspelled Preparing status should be reported: exit {code}: {out.strip()[:400]}")
@@ -265,7 +288,7 @@ def self_test() -> int:
         print(f"self-test FAILED: {f}")
     print(f"board-check self-test: {'FAILED' if failures else 'ok'} "
           f"(folded titles, duplicate titles, unpublished paths, link paths, doubled labels, "
-          f"wake-sentence cycles, clean fixture, preparing and closed statuses)")
+          f"wake-sentence cycles, clean fixture, open, closed and unknown statuses)")
     return 1 if failures else 0
 
 
