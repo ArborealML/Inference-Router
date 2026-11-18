@@ -1,6 +1,6 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.32)
+Status: draft, continuously revised (v0.12.33)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
@@ -352,6 +352,36 @@ daemon transaction per engine. 137 tests green.
   that answers no `upload_url`, an upload that dies or answers no asset id, an asset name listed twice on
   the release, and a tag that moves after the first resolve. No tag has run the gate: still configured,
   not proven.
+- v0.12.33 — a switch the engine cannot confirm is **refused**, not served (§5.5, §6.1): the owner's answer to the
+  posture question (decision-27), which is the half of TASK-62 that was policy rather than a bug. What changed: on the
+  `wait_health = false` path a `/models` refresh that **could not answer** ended the switch ready — the exec's exit
+  status was served as if it were an observation — while v0.12.30 had already refused a refresh that answered without
+  naming the model. Both now refuse the same way: `engine.switch_failed` with a reason naming what could not be
+  confirmed (`refresh_unanswered_<model>` is the new half), then unknown, then not-ready, so the router vouches for no
+  model on evidence nobody made. The caller-facing half moves in the same commit: a `switch_failed` body now names the
+  reason **category** its own switch ended with (`refresh_omits_…`, `refresh_unanswered_…`, `health_timeout …`,
+  `launch_failed`, `window_…_lt_…`, `no_select_command`, `switch_error`), recorded on the switch state before its
+  readiness task settles so a waiter cannot read another attempt's reason, while the operator's sentence — including
+  anything a lifecycle provider said, now bounded where it is written — stays on the feed where a non-admin caller
+  cannot pick up a socket path or a selector's stderr. No new wire surface: the refusal travels the 503 `switch_failed`
+  path a caller already sees. The refusal reason's variable half is bounded in **length** as well as in name count —
+  eight names at most, each cut with its true length marked, and the count of what was left out always stated — because
+  the event ring caps entries rather than characters and an engine chooses its own model names. Tests: the pin that
+  pinned the lenient answer is rewritten (`ASwitchTheEngineCannotConfirmAfterTheLaunchIsRefusedAndClaimsNothing`, was
+  `ASwitchTrustingTheExecThatCannotAskWhatIsLoadedClaimsNothing`); one new bounded-reason case
+  (`ARefusalReasonStaysBoundedWhenTheEngineReportsManyLongNames`: thirty names of ninety characters, where the counts
+  survive and the strings do not); and the first request-side walk of a refusal
+  (`A_Reported_Near_Miss_Refuses_The_Request_And_Dispatches_Nothing`): an aliased request is refused with the canonical
+  target named, the fake engine's new completion counter reads zero so nothing was dispatched, the feed names the near
+  miss the engine did report, and the capability reads unknown. Three earlier trust-path pins needed an engine that
+  answers once refusal is the rule — `AClaimedSwitchIsInvisibleToDispatchAndOutlivesAStaleEndOfTheLastOne` and both
+  `SwitchFairnessTests` now report the model, and the profile pair reports a real window — because a switch that cannot
+  be confirmed no longer ends ready, and those pins are about the marker and the profile, not about the refusal. §15
+  also records the accepted gap TASK-67 AC #5 leaves: the raced second launch is closed by the claim's version
+  compare-exchange on the snapshot its readiness answer came from, and is not pinned because a seam inside the claim's
+  await-free region costs more production surface than the race is worth. **Not closed here:** whether a *stale* window
+  answer may authorise a profile is TASK-68; the known flake in the nudge pin is TASK-80; and a caller whose own switch
+  succeeded but whose snapshot no longer authorises its target is TASK-61.
 - v0.12.32 — a switch the router stopped is answered as **cancellation**, not as a failed model load (§5.5), from the
   shutdown pin in the v0.12.31 set failing in Release. What changed: shutdown **settles the in-flight switch's waiters
   before it cancels** the switch token, so a waiter parked on a readiness task is not released two ways with two
@@ -1260,11 +1290,13 @@ engine forks land; the scheduler interface will not change shape.
   orders *publications*, not the engine: an engine restarted outside the router's sight, with no visible
   discontinuity, evades it.
   **Uncertainty is published:** a switch that ends without having verified the engine — failed stop, failed launch,
-  readiness timeout, an exec with `wait_health = false` — publishes `Healthy = false` as a health-only change that
-  preserves the currently reported list, so the refusal says "not hopeless" and no stale list can refuse a model that
-  has begun to be served or vouch for one that was just stopped; `engine.switch_completed` is still emitted where the
-  exec itself succeeded, because that part is known. A switch that *does* verify publishes the reported list and
-  `Healthy = true` in one publication, which is what makes the engine eligible without another poll.
+  readiness timeout, an exec with `wait_health = false` whose refresh cannot answer — publishes `Healthy = false` as a
+  health-only change that preserves the currently reported list, so the refusal says "not hopeless" and no stale list can
+  refuse a model that has begun to be served or vouch for one that was just stopped. Nothing is served on an unverified
+  proof: such a switch ends **not-ready** and emits `engine.switch_failed`, never a completion, because an exit code is
+  what the router was told and not an observation it made — the owner's posture (decision-27), which replaces the earlier
+  promise that a `wait_health = false` exec was served on its own word. A switch that *does* verify publishes the reported
+  list and `Healthy = true` in one publication, which is what makes the engine eligible without another poll.
   **A proof has to name what it proves:** on the `wait_health = false` path the post-launch `/models` refresh is the
   only evidence the router has, and a list that does not contain the requested model **refuses the switch** —
   `engine.switch_failed` with reason `refresh_omits_<model>` carrying what the engine actually reported, `Healthy = false`,
@@ -1273,8 +1305,12 @@ engine forks land; the scheduler interface will not change shape.
   engine says it holds the model. The names an engine reports and the catalog's model keys are **one namespace**, matched
   `OrdinalIgnoreCase`; a catalog **alias** is the router's request-side spelling and never satisfies that check, so an
   engine that reports only an alias is refused and the fix is the catalog key — the same namespace `IsReadyFor` already
-  assumes, and nothing here translates engine names into config names. A refresh that cannot answer at all is unchanged
-  here: the exec's success is still emitted and the engine becomes unknown, which is an open posture question (TASK-66).
+  assumes, and nothing here translates engine names into config names. A refresh that cannot answer at all refuses the
+  switch the same way, with `engine.switch_failed reason=refresh_unanswered_<model>`: an exit code is not a loaded model,
+  and the rule that a proof has to name what it proves does not bend for an engine that will not say. What either refusal
+  **quotes is bounded in length as well as in name count** — at most eight reported names, each itself cut with its true
+  length marked, and always the count of what was left out — because the event ring caps entries rather than characters
+  and the names are chosen by the engine, not by the router.
   Every switch exit
   publishes **unfenced**, deliberately: the switch has just stopped or relaunched this engine, so its account cannot be
   stale against a poll that happened to start earlier, and fencing it would let a quiet poll drop the one publication
@@ -1456,6 +1492,12 @@ committed its `200`, so the same failure reaches the caller inside the stream as
 error frame followed by `[DONE]` — a 504 therefore always means nothing was emitted yet, and a caller may
 retry one),
 `switch_in_progress` 409 and `unknown_profile` 400 on the admin side.
+A `switch_failed` message names the target and the reason **category** the caller's own switch ended with —
+`refresh_omits_<model>`, `refresh_unanswered_<model>`, `health_timeout after <ms>ms`, `launch_failed`,
+`window_<n>_lt_<max>`, `no_select_command`, `switch_error` — so "the engine never named the model" and "the launch
+failed" are distinguishable without a retry. Each category is bounded where it is written, and the operator's full
+sentence, including anything a lifecycle provider said, stays on the feed: a caller learns which failure it got and
+never receives a socket path, an address, or a selector's stderr.
 The scheduler's wait reasons (`no_engines`, `no_available_engine`) are diagnostics for the feed and for
 tests, never wire codes: the only code an expired wait produces is `deadline_exceeded`, and `MapStatus`
 deliberately carries no arm for a reason string — an unrecognised code landing on its `500` default is a
@@ -2129,7 +2171,7 @@ router robust until rows 2, 4 and 6 close.
 | Robustness and UI comparison against NVIDIA Personal-AI-Router | **completed**: verdict + ordering in §14.1, feed prerequisites in §10, UI borrow/change/skip in §12.5. Where that router leads on robustness we have tasks; where we lead (priority, admission, profiles, prefix, generic endpoints, engine keys, per-engine instances) is not a gap to close |
 | Native engine-lifecycle design (transaction shape + container seam) | **completed**, adopted in §5.3.1: provider seam (`IEngineLifecycleProvider` over a coordinator), transaction order, single-flight per target with latched failures, ownership gate with no adoption of unowned resources, advisory journal, preflight as a validate-only verb, `select.exec` kept as a mutually-exclusive delegated provider. It preferred the docker CLI as the first Docker provider (smaller safety-critical surface); we keep **raw Engine HTTP** instead, because "no client library" from the review above is about reflection-rooted SDKs rather than `HttpClient` — the CLI stays as an operator fallback |
 
-| Deep review of v0.12.4 (request-side phase timeouts) | **completed, dispositioned in v0.12.5**: the timer-stops-at-headers gap, the late-response leak, the switch running on the initiating request's token, and the switch-state wedge on `no_select_command` are fixed with tests; the stream channel is now closed by the ticket's terminal transition (which also fixes the silent stream end). Two findings are **accepted gaps**, not fixes: (a) the selector's own failure reason is recorded on the feed as `engine.switch_failed` and deliberately kept out of the caller-facing `switch_failed` message, so the caller sees the outcome and the operator sees the cause — change this when §13 needs to distinguish them programmatically; (b) a phase-timeout value above `Int32.MaxValue` ms is rejected at DTO binding (a Tomlyn/STJ range error) rather than by the router's own `RouterConfigException` message — either way startup fails with a non-zero exit, so the operator is stopped, only with a less specific line |
+| Deep review of v0.12.4 (request-side phase timeouts) | **completed, dispositioned in v0.12.5**: the timer-stops-at-headers gap, the late-response leak, the switch running on the initiating request's token, and the switch-state wedge on `no_select_command` are fixed with tests; the stream channel is now closed by the ticket's terminal transition (which also fixes the silent stream end). Two findings are **accepted gaps**, not fixes: (a) the selector's own failure reason is recorded on the feed as `engine.switch_failed` and deliberately kept out of the caller-facing `switch_failed` message, so the caller sees the outcome and the operator sees the cause — change this when §13 needs to distinguish them programmatically (**moved in v0.12.33**: the caller now also gets a bounded reason *category*, which is what §13-style retry decisions need; the selector's own text is still kept out of the caller's body, so the half of this finding about provider text still stands); (b) a phase-timeout value above `Int32.MaxValue` ms is rejected at DTO binding (a Tomlyn/STJ range error) rather than by the router's own `RouterConfigException` message — either way startup fails with a non-zero exit, so the operator is stopped, only with a less specific line |
 
 | Deep review of v0.12.5 (response gate, engine-owned switch token, stream-channel ownership) | **completed, dispositioned in v0.12.6**: fixed a false `Ready` — a waiter for one serving profile was answered by another profile's switch on the same model, so a request could be dispatched against a window it cannot serve (`SwitchFairnessTests` pins both directions: not ready on a stranger's success, not failed on a stranger's failure); fixed a shutdown race where disposing the switch token's source could throw before the switch task's own cleanup and strand every waiter on that engine (the token is read before the task is scheduled, the source is deliberately *not* disposed, and a switch that fails to start settles its waiters); the ceiling can no longer reassign blame for a failure inside the router's own terminal work, because the gate is passed the moment the owed bytes are in hand; stream acquisition sits inside the ceiling; a switch-failure message names the target that failed rather than whichever switch happened to be in flight. **Accepted deliberately**: a ceiling that loses the race with the engine's bytes does not fire (bytes in hand beat a timeout — the alternative is destroying an answer the caller can use), and there is **no idle bound after the first frame** — a stalled generation and a stalled reader are TASK-30, because each needs a wire decision (a truncation surface, a slow-consumer policy) rather than a constant |
 
@@ -2154,6 +2196,8 @@ router robust until rows 2, 4 and 6 close.
 | Deep review of v0.12.9–v0.12.12 (release gate: draft visibility, snapshot coherence, the publish race) | **completed, dispositioned in v0.12.13**. The load-bearing finding was against this SPEC's own reasoning: `GET /releases/tags/{tag}` is documented as "Get a published release with the specified tag", so the id that v0.12.11 said proved ownership could not be read for a draft at all. **Fixed**: create is `POST /releases` and the id and `upload_url` come from its response, uploads are addressed by that id, the draft is verified from one asset-list snapshot instead of five per-name lookups, and both the snapshot and the tag resolution are repeated immediately before the un-draft `PATCH`. The stub `gh` refuses the tag lookup, so v0.12.12's step is demonstrated failing rather than remembered as wrong. **Recorded rather than fixed**: the byte-size comparison is redundant once the stored digest is trusted and is kept for diagnostics; the byte fidelity of `gh api --input` (that the uploaded bytes are the staged bytes) is proven only by the stored digest matching, which is a first-tag confirmation and not a local one; a create whose response is lost leaves a draft this run cannot name — the `create_attempted` annotation and the preflight refusal are the whole story there, and re-running needs a human to remove the orphan; `if: failure()` does not run for a killed or cancelled runner, so a run that dies mid-publish has to be reconciled by hand against the releases page; a `GITHUB_TOKEN` write does not trigger downstream `on: release` workflows, so any notification keyed on publication is unverified until the first tag, as is whether creating a release for a tag whose commit touches `.github/workflows/` needs the job's token authorized to modify workflows (the endpoint's own note says it does in that case, and the least-privilege permission set is kept until a tag says otherwise). The published bytes are still never downloaded and re-hashed by the gate (the row above stands), and release-tag protection plus who may publish stays a repository-settings decision. |
 
 | Deep review of v0.12.9–v0.12.11 (release gate: artifact forgeries, cleanup ownership, the gh CLI contract) | **completed, dispositioned in v0.12.10–v0.12.12**: four artifact forgeries (an artifact named for two legs, a regex dot standing in for `air.exe`, an extra archive member, a symlink or directory wearing an expected name) are each reproduced as a forgery that passed the shipped gate and then fixed, and are standing cases in the local gate harness; cleanup ownership moved off `github.run_started_at` (not a documented Actions context property, so read as empty it protects nothing) to the release id this run captured; and the publish path moved to REST because `gh release create` has no `--json`/`--jq` (gh 2.46.0 fails at argument parsing) and `gh release view`/`edit` resolve their operand as a tag name, not a release id. The harness's stub `gh` was what let the contract error survive two reviews: it now enforces the documented flag set. **Accepted gap, and this is the row §14's published-surface bullet points at**: the gate compares each remote asset's name, `uploaded` state, byte size and GitHub's reported stored-bytes `digest` against the staged file, but never downloads the served bytes and hashes them itself — it proves what GitHub says it stored, not what a downloader receives. Closing that fully means a post-publish download-and-hash leg or a signing/attestation story, which is runner minutes plus a trust-anchor decision rather than a constant; the published per-archive sidecars and `SHA256SUMS` remain what a downloader verifies. **Deliberately not closed**: workspace-internal link tricks above the leg folder, PAX extension handling and decompression bounds in the archive inspection, and the window between re-resolving the tag and creating the release — `concurrency: release-${{ github.ref }}` serializes this repo's own runs, but no workflow line excludes an external actor with write access, so release-tag protection and who may publish are repository-settings decisions for the operator. |
+
+| Plan review of the publication-honesty fix set (TASK-61/62/63), before the code existed | **completed; the forced-CAS-retry pin is an accepted gap.** The claim's readiness answer and its switch marker come from one snapshot, and the marker goes up by a version compare-exchange on the version that answer read, so the raced second launch — a poll proving the model between the decision and the claim — is closed: the exchange loses, the caller re-decides on the newer snapshot, and the already-proved model is taken rather than launched again. **It is not pinned by a test.** Forcing the loser between its read and its exchange needs a seam in the middle of the claim's await-free gate region, which is more production surface than a race the code already excludes structurally is worth; the orderings that the same mechanism protects *are* pinned (marker-before-claim, a stale end cannot clear a successor's marker, a newcomer that arrives after the commit decides against an idle snapshot). Stated here rather than tested, so a reader knows which guarantee has a case and which has only the shape of the code. |
 
 Findings feed §7 (TOML binding choice), §9 (AOT strategy), §5.4 (scheduler
 heuristics). Spec revisions cite them.

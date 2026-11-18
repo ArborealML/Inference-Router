@@ -117,6 +117,15 @@ Error bodies are `{"error":{"type":…,"code":…,"message":…}}`, and `code` d
 emitted yet: once the first token is out the response is committed, and a retry would duplicate
 output.
 
+A `switch_failed` message names the model it could not serve and, when the switch ended rather than
+ran out of patience, the reason it ended with: `refresh_omits_<model>` or `refresh_unanswered_<model>`
+(the engine never confirmed the model), `health_timeout after <ms>ms`, `launch_failed`,
+`window_<n>_lt_<max>`, `no_select_command`, `switch_error`. That matters for the retry decision:
+a name the engine will never report is a configuration mistake that retrying cannot fix, while a
+switch that was still running when you gave up is usually worth a second attempt. The operator's full
+explanation — what the engine actually reported, what the selector said — is on the event feed, not in
+your response.
+
 Two of those codes mean the router gave up on your behalf instead of waiting forever. If an engine
 takes the request and then says nothing past its `response_timeout_ms`, the request ends
 `engine_timeout` and the engine's slot is handed back — retrying is reasonable there, and aiming at a

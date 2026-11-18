@@ -49,18 +49,21 @@ public sealed class SwitchFairnessTests
             gate?.TrySetResult();
         }
 
-        // wait_health=false: the switch's own success is the proof, so no HTTP probes are needed and the
-        // window gauge stays unknown (0), which never blocks a profile.
-        public ReadinessPolicy Readiness(LifecycleTarget target) => new(false, TimeSpan.FromSeconds(1));
+        // The prove-health path: the switch's readiness loop asks the engine what it holds and what window it
+        // serves, which is what lets these pins hold a *known* window. The trust path never refreshes the window
+        // gauge, and since decision-27 an unconfirmable trust-path switch is refused, so a switch that is meant
+        // to succeed here has to be one that can be proved.
+        public ReadinessPolicy Readiness(LifecycleTarget target) => new(true, TimeSpan.FromSeconds(20));
     }
 
-    private static (EngineRuntime engine, GatedProvider provider) Engine()
+    private static (EngineRuntime engine, GatedProvider provider) Engine(FakeEngineHandler? models = null)
     {
         var def = new EngineDefinition
         {
             Name = "fake",
             Kind = EngineKind.OpenAiCompatible,
             Endpoint = new Uri("http://127.0.0.1:9/v1"),
+            Health = new HealthProbeDefinition { Path = "/props", ContextPath = "n_ctx" },
             Catalog = new Dictionary<string, EngineModelDefinition>
             {
                 ["m"] = new() { Name = "m" },
@@ -71,7 +74,7 @@ public sealed class SwitchFairnessTests
             Engines = new Dictionary<string, EngineDefinition> { ["fake"] = def },
         };
         var provider = new GatedProvider();
-        return (new EngineRuntime(def, config, new EventRing(), lifecycle: provider), provider);
+        return (new EngineRuntime(def, config, new EventRing(), models, lifecycle: provider), provider);
     }
 
     private static ServingProfile Profile(string name, long window) =>
@@ -80,7 +83,10 @@ public sealed class SwitchFairnessTests
     [Fact(Timeout = 30_000)]
     public async Task AWaiterBehindAnotherProfilesSwitchTakesItsOwnTurn()
     {
-        var (engine, provider) = Engine();
+        // A window the engine really reports, so the switch in front proves the model *and* a window too small
+        // for the newcomer: the profile answer is what this pins, not whether the engine answers.
+        using var reported = new FakeEngineHandler { LoadedModels = ["m"], NCtx = 4_096 };
+        var (engine, provider) = Engine(reported);
         await using var _ = engine;
 
         var small = Profile("small", 4_096);
@@ -105,6 +111,7 @@ public sealed class SwitchFairnessTests
 
         await WaitUntil(() => provider.Launches.Count == 2);   // its own switch, to its own profile
         Assert.Equal("m@large", provider.Launches[1]);
+        reported.NCtx = 32_768;                                // the load the newcomer asked for
         provider.ReleaseOne();
 
         var secondResult = await second;
@@ -115,7 +122,8 @@ public sealed class SwitchFairnessTests
     [Fact(Timeout = 30_000)]
     public async Task ASwitchThatFailedForAnotherTargetDoesNotFailThisRequest()
     {
-        var (engine, provider) = Engine();
+        using var reported = new FakeEngineHandler { LoadedModels = ["m"], NCtx = 4_096 };
+        var (engine, provider) = Engine(reported);
         await using var _ = engine;
 
         var first = engine.WaitForProfileAsync("m", Profile("small", 4_096),
@@ -136,6 +144,7 @@ public sealed class SwitchFairnessTests
         // This time the selector works: the newcomer's own attempt is what decides its answer.
         provider.LaunchOutcome = LifecycleResult.Ok();
         await WaitUntil(() => provider.Launches.Count == 2);
+        reported.NCtx = 32_768;                                // and it serves the window this caller needs
         provider.ReleaseOne();
         var secondResult = await second;
         Assert.True(secondResult.IsReady);

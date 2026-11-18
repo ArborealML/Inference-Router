@@ -52,6 +52,12 @@ public class FakeEngineHandler : HttpMessageHandler
     private int _cancelledCompletions;
     public int CancelledCompletions => Volatile.Read(ref _cancelledCompletions);
 
+    /// <summary>Every completion the router sent, including one answered with a non-200. A refusal that must
+    /// not reach the engine is only proved by counting: an absent body or an absent ExecutionOrder entry can
+    /// also mean the request never got that far for a different reason.</summary>
+    private int _completionCalls;
+    public int CompletionCalls => Volatile.Read(ref _completionCalls);
+
     private string[] ActiveLoadedModels()
     {
         if (LoadedModelsFile is { Length: > 0 } path && File.Exists(path))
@@ -106,6 +112,7 @@ public class FakeEngineHandler : HttpMessageHandler
         }
         if (Matches(path, "chat/completions") || Matches(path, "completions"))
         {
+            Interlocked.Increment(ref _completionCalls);
             if (CompletionStatus is not 200)
             {
                 var err = new HttpResponseMessage((HttpStatusCode)CompletionStatus)
@@ -596,6 +603,78 @@ public class EndToEndTests
         Assert.NotNull(requestFailure);
         Assert.True(switchFailure.Seq < requestFailure!.Seq,
             "engine.switch_failed must reach the feed before the request.failed it causes");
+    }
+
+    /// <summary>§5.5, TASK-62 AC #6: the refusal reaches a caller, not only the feed. A request spelled as a
+    /// catalog alias selects the canonical target; the select command succeeds; the engine answers the
+    /// post-launch refresh with a name that is *almost* the target and is not it. The caller gets
+    /// <c>switch_failed</c>, nothing is ever dispatched, and the capability reads unknown — while the feed
+    /// carries the near miss, because "the engine reports <c>aliasy-short</c> for the catalog key <c>aliasy</c>"
+    /// is a config mistake an operator can only fix if the near miss is visible.</summary>
+    [Fact(Timeout = 30_000)]
+    public async Task A_Reported_Near_Miss_Refuses_The_Request_And_Dispatches_Nothing()
+    {
+        using var fake = new FakeEngineHandler { LoadedModels = ["other-model", "aliasy-short"] };
+        var events = new EventRing();
+        var cfg = new RouterConfig
+        {
+            DefaultModel = "aliasy",
+            Scheduler = new SchedulerConfig { MaxInflightPerEngine = 4 },
+            HttpHandlerFactory = _ => fake,
+        };
+        cfg.Engines = new Dictionary<string, EngineDefinition>
+        {
+            ["fake"] = new EngineDefinition
+            {
+                Name = "fake",
+                Kind = EngineKind.OpenAiCompatible,
+                Endpoint = new Uri("http://127.0.0.1:9/v1"),
+                // One probe only (the immediate one at startup): a second poll answering 200 two seconds later
+                // would re-verify the engine and the unknown answer below would depend on test timing.
+                Health = new HealthProbeDefinition { Path = "/props", IntervalMs = 3_600_000 },
+                Catalog = new Dictionary<string, EngineModelDefinition>
+                {
+                    ["aliasy"] = new EngineModelDefinition
+                    {
+                        Name = "aliasy",
+                        Aliases = ["aliasy-short"],
+                        // The command succeeds and loads nothing the engine will name: the inert exec is the point,
+                        // and a real select command must never be run from a test.
+                        Select = new LifecycleCommand { Exec = "/bin/true", WaitHealth = false },
+                    },
+                },
+            },
+        };
+        await using var router = new RouterCore(cfg, events: events);
+        router.Start();
+        await WaitHealthyAsync(router);
+
+        var ticket = await router.EnqueueAsync("t-near-miss", Request("near-miss", model: "aliasy-short"));
+        var failure = Assert.IsType<RouterRequestException>(
+            await Record.ExceptionAsync(() => ticket.CompletionTask));
+
+        // The caller-facing half: the canonical target, and the reason category — not the operator's sentence.
+        Assert.Equal("switch_failed", failure.Code);
+        Assert.Contains("could not serve aliasy", failure.Message);
+        Assert.Contains("refresh_omits_aliasy", failure.Message);
+        Assert.DoesNotContain("aliasy-short", failure.Message);   // the alias is the caller's spelling, not a name
+        Assert.Equal(TicketState.Failed, ticket.State);
+
+        // Nothing was dispatched: a switch that refused must not spend an engine slot afterwards, and the
+        // count is what proves it — an empty ExecutionOrder would also follow from a request that never arrived.
+        Assert.Equal(0, fake.CompletionCalls);
+        Assert.Empty(fake.ExecutionOrder);
+
+        // And the engine reads unknown, not "loaded everything except this".
+        var engine = router.Engines["fake"];
+        Assert.False(engine.Healthy);
+        Assert.Null(engine.SwitchingToward);
+        Assert.False(engine.IsReadyFor("aliasy", null));
+
+        var refusal = events.Replay(0).Last(e => e.Kind == "engine.switch_failed");
+        Assert.Contains("refresh_omits_aliasy", refusal.Reason);
+        Assert.Contains("aliasy-short", refusal.Reason);          // the near miss, for the operator
+        Assert.Single(events.Replay(0), e => e.Kind == "engine.switch_failed");
     }
 
     /// <summary>Context-window escalation (§7.6): the model is loaded but serving a smaller window

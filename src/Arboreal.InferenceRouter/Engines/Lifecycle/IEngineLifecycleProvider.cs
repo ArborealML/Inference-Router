@@ -61,6 +61,8 @@ public interface IEngineLifecycleProvider
 }
 
 /// <summary>Whether the router must see the model serving before it calls a switch good, and how long
-/// it will wait. A false <see cref="ProveHealth"/> is a promise the operator made in config, not a
-/// fallback the router may choose for itself.</summary>
+/// it will wait. A false <see cref="ProveHealth"/> skips the readiness *rule*; it never removes the
+/// requirement that the engine's own <c>/models</c> answer name the model, because a switch the engine
+/// cannot confirm is refused rather than served (§5.5). The setting is a promise the operator made in
+/// config about how long the router waits, not a fallback the router may choose for itself.</summary>
 public sealed record ReadinessPolicy(bool ProveHealth, TimeSpan Timeout);

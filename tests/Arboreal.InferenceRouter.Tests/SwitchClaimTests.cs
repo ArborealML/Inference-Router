@@ -60,13 +60,20 @@ public sealed class SwitchClaimTests
             gate?.TrySetResult();
         }
 
-        // The trust path: the exec's own success is the switch's claim, so no HTTP probes are needed here.
+        // The trust path: the exec's own success starts the switch, but since decision-27 the engine still has
+        // to say what it holds, so a pin that needs a switch to succeed supplies the answer below.
         public ReadinessPolicy Readiness(LifecycleTarget target) => new(false, TimeSpan.FromSeconds(1));
 
     }
 
+    /// <summary>An engine that answers <c>/models</c> with the names it is given. A switch the engine cannot
+    /// confirm is now refused rather than served, so the claim-path edges pinned here — the launch boundary,
+    /// the marker, the nudge — need an engine that answers; the refusal is not what they are about.</summary>
+    private static FakeEngineHandler Reports(params string[] models) => new() { LoadedModels = models };
+
     private static EngineRuntime Engine(
-        GatedProvider provider, EventRing? feed = null, Action? dispatchHint = null)
+        GatedProvider provider, EventRing? feed = null, Action? dispatchHint = null,
+        FakeEngineHandler? models = null)
     {
         var def = new EngineDefinition
         {
@@ -80,7 +87,7 @@ public sealed class SwitchClaimTests
             },
         };
         var config = new RouterConfig { Engines = new Dictionary<string, EngineDefinition> { ["fake"] = def } };
-        return new EngineRuntime(def, config, feed ?? new EventRing(), lifecycle: provider, dispatchHint: dispatchHint);
+        return new EngineRuntime(def, config, feed ?? new EventRing(), models, lifecycle: provider, dispatchHint: dispatchHint);
     }
 
     private static async Task WaitUntil(Func<bool> condition)
@@ -98,7 +105,9 @@ public sealed class SwitchClaimTests
     {
         var provider = new GatedProvider();
         var feed = new EventRing();
-        var engine = Engine(provider, feed, dispatchHint: () => throw new InvalidOperationException("dispatcher blew up"));
+        using var reported = Reports("m", "extra");
+        var engine = Engine(provider, feed,
+            dispatchHint: () => throw new InvalidOperationException("dispatcher blew up"), models: reported);
         await using var _ = engine;
 
         var switched = await engine.WaitForModelAsync("extra", TimeSpan.FromSeconds(10), CancellationToken.None);
@@ -119,7 +128,8 @@ public sealed class SwitchClaimTests
         var provider = new GatedProvider();
         var nudges = 0;
         var insideGate = new List<bool>();
-        var engine = Engine(provider, dispatchHint: () => nudges++);
+        using var reported = Reports("m", "extra");
+        var engine = Engine(provider, dispatchHint: () => nudges++, models: reported);
         await using var _ = engine;
         engine.AfterEndCommitForTests = gate => insideGate.Add(gate);
 
@@ -137,7 +147,8 @@ public sealed class SwitchClaimTests
     public async Task ASchedulingFailureAtTheLaunchBoundaryUndoesItsClaim()
     {
         var provider = new GatedProvider();
-        var engine = Engine(provider);
+        using var reported = Reports("m", "extra");
+        var engine = Engine(provider, models: reported);
         await using var _ = engine;
         engine.BeforeScheduleSwitchForTests = () => throw new InvalidOperationException("the pool said no");
 
@@ -286,7 +297,8 @@ public sealed class SwitchClaimTests
     public async Task AClaimHookThatThrowsRollsBackOutsideTheTransitionGate()
     {
         var provider = new GatedProvider();
-        var engine = Engine(provider);
+        using var reported = Reports("m", "extra");
+        var engine = Engine(provider, models: reported);
         await using var _ = engine;
 
         var insideGate = new List<bool>();

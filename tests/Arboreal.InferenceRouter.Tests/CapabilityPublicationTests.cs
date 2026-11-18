@@ -484,13 +484,18 @@ public sealed class CapabilityPublicationTests
         Assert.False(last.Healthy);
     }
 
+    /// <summary>The other half of the trusting path: an engine that will not answer after the launch has not been
+    /// verified, so the switch is refused rather than served on the exec's exit status. This is the test that used
+    /// to pin the lenient answer — the switch completed, the request was served, and only the capability went
+    /// unknown — and it moved with the owner's answer on the posture question (decision-27), not before it.</summary>
     [Fact(Timeout = 60_000)]
-    public async Task ASwitchTrustingTheExecThatCannotAskWhatIsLoadedClaimsNothing()
+    public async Task ASwitchTheEngineCannotConfirmAfterTheLaunchIsRefusedAndClaimsNothing()
     {
         using var handler = new ProbeHandler("m");
         var provider = new ScriptedProvider { ProveHealth = false };
+        var feed = new EventRing();
         var def = Def(new HealthProbeDefinition { Path = "/props", IntervalMs = 3_600_000 });
-        var engine = NewEngine(def, provider, handler);
+        var engine = NewEngine(def, provider, handler, feed: feed);
         await using var _ = engine;
 
         handler.SetModels("m", "extra");
@@ -500,16 +505,26 @@ public sealed class CapabilityPublicationTests
         Assert.Contains("extra", engine.LoadedModels);
 
         // wait_health=false: the provider's exec says it launched, and the router asks what is loaded.
-        // This time the engine will not answer. The switch still completes — the exec did what it was
-        // told — but the old list must stop being presented as current, because a model loaded by hand or
-        // dropped by a restart would otherwise be claimed or refused on evidence from before the switch.
+        // This time the engine will not answer. Nothing confirms the model, and an exit code is not a loaded
+        // model: the switch is refused, and the old list stops being presented as current, because a model
+        // loaded by hand or dropped by a restart would otherwise be claimed on evidence from before the switch.
         handler.ModelsStatus = 503;
         var second = await engine.WaitForModelAsync("second", TimeSpan.FromSeconds(30), CancellationToken.None);
-        Assert.True(second.IsReady);
+        Assert.False(second.IsReady);
+        Assert.Contains("refresh_unanswered_second", second.Detail);   // the caller gets the reason category
         Assert.False(engine.Healthy);
         Assert.Null(engine.SwitchingToward);
+        Assert.False(engine.IsReadyFor("second", null));
         Assert.Contains("extra", engine.LoadedModels);      // kept as history, not as a claim
+        Assert.DoesNotContain("second", engine.LoadedModels);
+        Assert.Equal(2, provider.LaunchCount);              // refused after the launch, never before it
 
+        var refusal = feed.Replay(0).Last(e => e.Kind == "engine.switch_failed");
+        Assert.Contains("refresh_unanswered_second", refusal.Reason);
+        Assert.Contains("did not answer /models", refusal.Reason);
+
+        // Unknown is not an absence: refusing this switch must not turn into a claim that no engine can serve
+        // a model, which is the mistake an accepted-gap refusal would make.
         ICapabilitySource[] sources = [engine];
         Assert.False(CapabilityScan.DefinitelyHopeless(sources, "ghost"));
     }
@@ -578,6 +593,38 @@ public sealed class CapabilityPublicationTests
         Assert.Contains("refresh_omits_second", refusal.Reason);
         Assert.Contains("stranger", refusal.Reason);
         Assert.Single(events, e => e.Kind == "engine.switch_completed");   // only the first switch completed
+    }
+
+    /// <summary>The refusal reason is bounded in **length** as well as in name count. A cap on how many names are
+    /// quoted is not a cap when each name is a hundred-character provider spelling: the engine then decides how
+    /// long the router's feed record is, and the event ring caps entries rather than characters. What survives the
+    /// cut is the part an operator acts on — the head of each name, and the count of what was left out (§5.5).</summary>
+    [Fact(Timeout = 60_000)]
+    public async Task ARefusalReasonStaysBoundedWhenTheEngineReportsManyLongNames()
+    {
+        var longName = "qwen2.5-coder-32b-instruct-q5_k_m-ud-Q4_K_M-unsloth-bnb-4bit-GGUF-provider-side-spelling";
+        var reported = new List<string> { longName };
+        for (var i = 1; i <= 29; i++) reported.Add($"bulk-model-{i}");
+
+        using var handler = new ProbeHandler(reported.ToArray());
+        var provider = new ScriptedProvider { ProveHealth = false };
+        var feed = new EventRing();
+        var def = Def(new HealthProbeDefinition { Path = "/props", IntervalMs = 3_600_000 });
+        var engine = NewEngine(def, provider, handler, feed: feed);
+        await using var _ = engine;
+
+        var failed = await engine.WaitForModelAsync("second", TimeSpan.FromSeconds(30), CancellationToken.None);
+        Assert.False(failed.IsReady);
+
+        var refusal = feed.Replay(0).Last(e => e.Kind == "engine.switch_failed");
+        Assert.NotNull(refusal.Reason);
+        Assert.Contains("refresh_omits_second", refusal.Reason);
+        Assert.Contains("(+22 more)", refusal.Reason);       // thirty reported, eight quoted, the rest counted
+        Assert.DoesNotContain(longName, refusal.Reason);     // the long name is not quoted whole
+        Assert.Contains(longName[..24], refusal.Reason);     // its head is, with the true length beside it
+        Assert.Contains($"(+{longName.Length - 24}ch)", refusal.Reason);
+        Assert.True(refusal.Reason!.Length < 900,
+            $"a refusal reason of {refusal.Reason!.Length} characters is not a bounded one");
     }
 
     /// <summary>What namespace the omission rule reads: the engine's reported names and the catalog's model
@@ -694,8 +741,13 @@ public sealed class CapabilityPublicationTests
     public async Task AClaimedSwitchIsInvisibleToDispatchAndOutlivesAStaleEndOfTheLastOne()
     {
         var provider = new ScriptedProvider { ProveHealth = false, GateLaunches = true };
-        // No handler: the engine's own HTTP probes are refused, the way a stopped engine answers.
-        var engine = NewEngine(Def(), provider);
+        // The engine answers, but not with the model that was asked for — which, since decision-27, is a
+        // refused switch. That is the shape this pin needs: an attempt that ends false without the router
+        // stopping, so the waiting caller takes its own turn. (It used to get that from an engine that would
+        // not answer at all, which now refuses too; what is under test here is the marker and the stale end,
+        // not the refusal, so the answer is set only after the first attempt is out of the way.)
+        using var handler = new ProbeHandler("extra");
+        var engine = NewEngine(Def(), provider, handler);
         await using var _ = engine;
 
         var small = Profile("small", 1_024);
@@ -722,6 +774,7 @@ public sealed class CapabilityPublicationTests
         Assert.Equal("m", engine.SwitchingToward);
         Assert.False(engine.IsReadyFor("m", null));
 
+        handler.SetModels("m");                                // this attempt can be confirmed
         provider.ReleaseOne();
         var secondResult = await second;
         Assert.True(secondResult.IsReady);
