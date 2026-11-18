@@ -3,7 +3,7 @@ id: TASK-97
 title: >-
   Stop the admin ticket snapshot echoing caller identifiers at a length nothing
   bounds
-status: Waiting
+status: To Do
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-18T10:57:00Z'
@@ -26,13 +26,12 @@ SPEC §10 credits `max_request_body_bytes` with bounding the admin ticket snapsh
 - [ ] #3 A real HTTP pin sends an over-long model id, asserts the refusal, then asserts a snapshot response body stays under a stated byte ceiling
 - [ ] #4 The admin POST verbs read their bodies under the same cap as `/v1`: `ServerApp.cs:420` and `:463` call `CopyToAsync` with no limit, while `RouterConfig.cs:164` promises the cap "on any surface"
 - [ ] #5 A named pin sets a small body cap, sends a long `X-Inference-Thread` header and a near-cap model, and asserts the serialized snapshot stays under a stated budget
-- [ ] #6 The plan is reviewed at the top reasoning tier before code, because refusing what `/v1` used to accept is a wire-contract change
+- [ ] #6 The refusal is OpenAI-shaped on `/v1` (`invalid_request`, `param: model`, no reflected value), and the audit of every body consumer decides whether SPEC's "on any surface" survives or becomes "on body-consuming endpoints"
 <!-- AC:END -->
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Deliverable, decided after the coding seat measured the default and this seat re-measured it (`RouterConfig.cs:167`, `grep request_body samples/` → no override): bound what may be **stored**, do not cut what is read. A cut `Model` looks valid and matches nothing, which is why v0.12.40 rejected the `Ident`-on-`Model` shape and pinned whole values; decision-45 does not decide this surface either. A general admin response-size rule is **not** this row — SPEC calls it a separate question, and if that is the preferred lever it belongs with the admin/live-view surface (TASK-21). Verified by read: `ServerApp.cs:109` header path; no `MaxRequestHeaders*` in the server assembly; `GET /admin/tickets/{id}` carries no body.
-The deep commit review of 8e6867d reached the same place from the other side, and this seat confirmed the path in this tree: `CopyToAsync` at `ServerApp.cs:420` and `:463` with no limit, and ticket retention of 4,096 (`RouterCore.cs:28`), so one stored oversized identity is re-fetchable thousands of times. Kestrel's own defaults (32 KiB of headers, 30 MB bodies) are neither the router's cap nor the one SPEC names.
-Wake: the top-tier plan review of this design, requested 11:28Z. Premises re-verified by the coding seat independently: 16 MiB default, `CopyToAsync` at `ServerApp.cs:420`/`:463`, retention 4,096. One constraint the plan has to survive: `EventRingTests.cs:261-262`, `:351-352`, `:463` pin whole identifiers of 405 and 300 characters as legitimate exact values, so any admission limit above those numbers or a different mechanism has to be argued, not asserted.
-<!-- SECTION:NOTES:END -->
+The top-tier plan review landed REVISE with numbers, adopted here as **provisional**: a named `MaxStoredIdentifierUtf8Bytes = 2048` enforced on the decoded `model` and `X-Inference-Thread` before any ticket or thread state is mutated, and a `MaxAdminTicketSnapshotJsonBytes = 65536` checked before emission with a lossless round trip of every field — never a truncated or routinely-failing snapshot. Admin POSTs reuse `/v1`'s bounded reader on actual streamed bytes, rejecting cap+1 before side effects. Both a domain check on the header and explicit transport header limits. Retention stays 4096; two 2048-byte identities across it is 16 MiB of raw identifier bytes, so no new eviction rule. One SPEC+code+tests commit.
+This seat's own compatibility check, which the reviewer could not run: the long-identifier fixtures are 405 (`CapabilityPublicationTests.cs:1033`, `EventRingTests.cs:261-262,351-352`) and 300 characters, all far under 2048, so no existing pin breaks; SPEC §6 carries no bar on a new admission refusal. The reviewer read no local tree — it could not see SPEC §§6/11.2, all routes, or the full DTO — so those audits are criteria here, not settled facts. Wake satisfied; implementation waits behind TASK-94 and TASK-87.
+SECTION:NOTES:END -->
