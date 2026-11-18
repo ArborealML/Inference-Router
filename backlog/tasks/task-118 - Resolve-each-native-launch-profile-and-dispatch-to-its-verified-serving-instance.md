@@ -7,13 +7,13 @@ status: To Do
 assignee:
   - '@gpt-6.2-sol'
 created_date: '2026-11-18T18:56:00Z'
-updated_date: '2026-11-18T21:09:00Z'
+updated_date: '2026-11-18T22:19:00Z'
 labels: []
 milestone: m-4
 dependencies:
   - TASK-26
   - TASK-68
-  - TASK-110
+  - TASK-130
 references:
   - src/Arboreal.InferenceRouter/Engines/EngineRuntime.cs
   - src/Arboreal.InferenceRouter/RouterCore.cs
@@ -40,4 +40,6 @@ The selector includes launch profiles with identical model, context and slot cou
 
 <!-- SECTION:NOTES:BEGIN -->
 Verify catalog names and aliases resolve to one immutable target, including an alias that shadows a different canonical spelling. Ambiguous routing must yield zero writes and zero lifecycle mutations.
+
+TASK-130 supplies verified-instance transport using the integrated host fixture. This task verifies that profile resolution and inference dispatch use it end to end. Production host closure consumes that evidence.
 <!-- SECTION:NOTES:END -->
