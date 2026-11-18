@@ -13,9 +13,9 @@ internal static class WireHarness
 {
     public static async Task<(WebApplication App, FakeEngineHandler Fake, int Port)> StartAsync(
         bool holdCompletions = true, int maxInflight = 8, int maxEventSubscribers = 256, int maxRequestBodyBytes = 16 * 1024 * 1024,
-        int responseTimeoutMs = 600_000, int switchWaitTimeoutMs = 0)
+        int responseTimeoutMs = 600_000, int switchWaitTimeoutMs = 0, FakeEngineHandler? fake = null)
     {
-        var fake = new FakeEngineHandler { HoldCompletions = holdCompletions };
+        fake ??= new FakeEngineHandler { HoldCompletions = holdCompletions };
         int port;
         using (var latch = new TcpListener(IPAddress.Loopback, 0))
         {

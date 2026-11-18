@@ -1,6 +1,6 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.40)
+Status: draft, continuously revised (v0.12.41)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
@@ -352,6 +352,19 @@ daemon transaction per engine. 137 tests green.
   that answers no `upload_url`, an upload that dies or answers no asset id, an asset name listed twice on
   the release, and a tag that moves after the first resolve. No tag has run the gate: still configured,
   not proven.
+- v0.12.41 — the relay's byte promise is pinned at the byte level, not asserted around (§6). `StreamFrameIdentityTests` replays one
+  SSE fixture through a live `ServerApp` at **every** byte offset of a short fixture and at all 64 alignments of a 27.6 KB one,
+  and compares the client's bytes with the upstream's after stripping only the **contiguous** keepalive prefix — so a torn frame,
+  a repeated chunk, or a keepalive inserted after the first upstream byte fails byte equality instead of reading as a slow
+  stream. The fixture carries `é` and `🌲` (multi-byte characters astride the split), an upstream comment line, an unknown `id:`
+  field and `[DONE]`; the third case holds the only engine slot with a first request so a queued stream really does emit
+  `seq=0/1/2` before an upstream frame arrives in two reads, and it accepts only complete, consecutive keepalives — no sleeps
+  anywhere. Reviewed and re-run by this seat rather than trusted: build 0 warnings, the filter 3/3 on three consecutive runs,
+  the whole suite 215/215, and two relay mutations of this seat's own each reddening all three pins — dropping the last byte of
+  every chunk the relay copies, and inserting a keepalive after every chunk (`ServerApp.cs:221-227`). `WireHarness.StartAsync`
+  gained an optional `fake:` argument so a test can script upstream reads without a second harness. Still open on that row: an
+  empty `data:` frame in the fixture, and the truncation / mid-frame-disconnect case whose terminal error body §6.1 specifies
+  (existing `StreamRelayTests` only asserts an absent `truncated` frame).
 - v0.12.40 — a caller's error body is bounded where the router ends a request, not where a writer happens to remember (§10, §6).
   The v0.12.39 funnel capped the **feed**, and §10 went on claiming the same was true of a caller's error body; reading the
   exits found that it was not. `Fail` and `RejectAtAdmission` stored the sentence and threw it unbounded, the queue-cap refusal
@@ -1622,7 +1635,10 @@ engine forks land; the scheduler interface will not change shape.
 OpenAI-compatible (path-for-verbatim):
 
 - `POST /v1/chat/completions` — body `chat/completions` DTO; `stream: true`
-  streams SSE deltas verbatim as the engine produces them (no re-buffering).
+  streams SSE deltas verbatim as the engine produces them (no re-buffering). The copy is byte-identical whatever chunk boundary
+  the upstream chooses: `StreamFrameIdentityTests` replays one fixture at every byte offset and at 64-byte alignments and
+  compares the client's bytes with the upstream's, so a torn, duplicated or keepalive-interleaved frame fails a test rather
+  than reading as a slow stream.
 - `POST /v1/completions` — same for legacy completions.
 - `GET /v1/models` — union of loaded + catalog-visible models
   (`OpenAiModelList` DTO with `owned_by: "<engine>"`).
