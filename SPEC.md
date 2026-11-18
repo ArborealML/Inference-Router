@@ -1,6 +1,6 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.59)
+Status: draft, continuously revised (v0.12.60)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
@@ -352,6 +352,8 @@ daemon transaction per engine. 137 tests green.
   that answers no `upload_url`, an upload that dies or answers no asset id, an asset name listed twice on
   the release, and a tag that moves after the first resolve. No tag has run the gate: still configured,
   not proven.
+- v0.12.60 — dispatch evaluates and takes the same thread-admissible ticket, restarting the
+  queue scan if that ticket loses its place before selection commits (§5.5).
 - v0.12.59 — Only an exception from the ordinary `/models` fetch can withdraw probe health.
   An ordinary poll preserves a switch's proof while its marker is raised. A failed mutation clears
   claim authorship in the unknown snapshot, one publication before marker clear (§5.5, TASK-76).
@@ -1617,8 +1619,11 @@ engine forks land; the scheduler interface will not change shape.
 
 ### 5.5 Queue semantics
 
-- One global priority queue per (model-alias) — no head-of-line blocking
-  across models; scheduler scans models in priority order.
+- One global priority queue per (model-alias). Dispatch scans model queues by increasing
+  observed depth, retaining queue order at equal depths. Each scheduler call evaluates the
+  first ticket in that queue whose thread has capacity. Commit takes that exact ticket only
+  while it is still first admissible. If the candidate is removed or displaced before commit,
+  dispatch restarts the queue scan.
 - **Fairness**: within a class, `SubPriority` then FIFO; a `Weight` limits
   how many in-flight requests a thread may hold concurrently
   (`maxInflight = ceil(Weight)`), so heavy threads can't monopolize slots.

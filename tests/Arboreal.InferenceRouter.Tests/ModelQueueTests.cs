@@ -55,6 +55,29 @@ public class ModelQueueTests
     }
 
     [Fact]
+    public void AThreadBecomingAdmissibleInvalidatesTheSnapshotWithoutTakingEitherTicket()
+    {
+        var queue = new ModelQueue("m", 16, (_, _) => { });
+        var head = Make("first", ThreadPriority.High(), 1);
+        var second = Make("second", ThreadPriority.Normal(), 2);
+        queue.TryEnqueue(head);
+        queue.TryEnqueue(second);
+        head.Thread.IncrementInflight();
+
+        var snapshot = queue.SnapshotCandidate(7, HasCapacity);
+
+        Assert.Equal(2, snapshot.Depth);
+        Assert.Equal(7, snapshot.BaselineOrdinal);
+        Assert.Same(second, snapshot.Request);
+        head.Thread.DecrementInflight();
+        Assert.False(queue.TryTakeExact(snapshot, HasCapacity));
+        Assert.Equal(2, queue.Depth);
+        Assert.Same(head, queue.SnapshotCandidate(7, HasCapacity).Request);
+
+        static bool HasCapacity(RouterThread thread) => thread.Inflight < thread.MaxInflight;
+    }
+
+    [Fact]
     public void Overflow_Rejects_And_Calls_Callback()
     {
         string? rejectReason = null;

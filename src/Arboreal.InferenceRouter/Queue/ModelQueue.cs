@@ -8,11 +8,14 @@ public sealed class QueuedRequest
     public required PrioritizedRequest PriorityNode { get; init; }
     public required RouterThread Thread { get; init; }
     public required long EnqueuedSeq { get; init; }
+    internal long EnqueuedAtTimestamp { get; init; }
     public required long PromptChars { get; init; }
     /// <summary>Context tokens the request must be served under (client hint or char estimate).
     /// Drives serving-profile escalation in the scheduler (§7.6).</summary>
     public long RequiredContextTokens { get; init; }
 }
+
+internal readonly record struct QueueDispatchCandidate(int Depth, int BaselineOrdinal, QueuedRequest? Request);
 
 /// <summary>Per-model FIFO priority queue. Ordering: thread class, then sub, then seq.
 /// Reorders in place when a thread's priority changes while queued.</summary>
@@ -53,15 +56,40 @@ public sealed class ModelQueue
     {
         lock (_lock)
         {
-            for (var i = 0; i < _heap.Count; i++)
-            {
-                if (!admission(_heap[i].Thread)) continue;
-                var item = _heap[i];
-                _heap.RemoveAt(i);
-                return item;
-            }
-            return null;
+            var index = FirstAdmissibleIndex(admission);
+            if (index < 0) return null;
+            var item = _heap[index];
+            _heap.RemoveAt(index);
+            return item;
         }
+    }
+
+    internal QueueDispatchCandidate SnapshotCandidate(int baselineOrdinal, Func<RouterThread, bool> admission)
+    {
+        lock (_lock)
+        {
+            var index = FirstAdmissibleIndex(admission);
+            return new QueueDispatchCandidate(_heap.Count, baselineOrdinal, index < 0 ? null : _heap[index]);
+        }
+    }
+
+    /// <summary>Take only the request the scheduler evaluated, while it is still first admissible.</summary>
+    internal bool TryTakeExact(QueueDispatchCandidate candidate, Func<RouterThread, bool> admission)
+    {
+        lock (_lock)
+        {
+            var index = FirstAdmissibleIndex(admission);
+            if (index < 0 || !ReferenceEquals(_heap[index], candidate.Request)) return false;
+            _heap.RemoveAt(index);
+            return true;
+        }
+    }
+
+    private int FirstAdmissibleIndex(Func<RouterThread, bool> admission)
+    {
+        for (var i = 0; i < _heap.Count; i++)
+            if (admission(_heap[i].Thread)) return i;
+        return -1;
     }
 
     public bool TryRemove(RouterTicket ticket)
