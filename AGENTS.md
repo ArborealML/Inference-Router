@@ -20,7 +20,7 @@ python3 tools/board-check.py       # backlog/ against the task-content rules bel
 
 **Local verification.** Implementers run the smallest filtered tests that exercise the changed behavior
 and its failure paths. At integration, rerun the affected tests when resolving conflicts changes the
-tested code. CI runs the full Release suite on pushes and pull requests. Run a full suite locally only
+tested code. CI runs the full Release suite on main pushes and pull requests. Run a full suite locally only
 when a named acceptance measurement explicitly requires it or a documented failure occurs only in
 the complete suite. Record that reason in the task.
 
@@ -73,6 +73,17 @@ warning rather than suppressing it, and add a suppression only with a comment sa
   file you changed.
 - Prefer C# for new implementation and test tooling. When extending tooling in another language, consider whether a C# change can reuse the existing fixtures and exercise the same production entry point.
 - New dependencies go in `Directory.Packages.props` (central package management).
+
+## README feature status
+
+Keep the [README feature list](README.md#features) current for readers deciding what AIR can do.
+Add significant user-facing plans under Planned features. When implementation starts, move the entry
+to In progress. When the user-visible
+behavior lands with its acceptance evidence, describe the supported scope under Features in the
+same change. Keep any unfinished portion under In progress or Planned. The implementer includes
+the README update with the feature, and the coordinator checks it against main and the
+[delivery milestones](backlog/milestones/README.md) at integration. Update or remove entries when
+a capability is withdrawn or the plan changes.
 
 ## Workflow
 
@@ -181,8 +192,8 @@ implementer takes ownership again and repeats the affected checks.
 
 Every task carries an assignee — whoever acts on it next (`backlog task edit <id> -a @name`); on a
 `Done` task the assignee is the last responsible actor, so it reads as history rather than a to-do:
-`@qwen3.8-flash-next` for work done by the local coding agent (name the model that is doing it, so a
-hand-off is attributable), `@chatswarm` for work handed to the external research/review service, and
+use the acting session’s handle from the coordinator and implementer assignments below. Use
+`@chatswarm` for work handed to the external research/review service, and
 `@claire` where the next move is a human decision (an approval, a scope call, runner minutes). Set the
 assignee when you pick a task up and when you hand it over; do not leave it empty.
 <!-- backlog:end -->
@@ -257,12 +268,12 @@ command (`git -c user.name=… -c user.email=… commit …`), never in shared c
 machine identity is reported and tracked, never repaired by rewriting pushed history
 ([decision-47](backlog/decisions/)).
 
-- **Manager seat** (assignee `@qwen3.8-flash-next-board`) is the only writer of `backlog/` and of `AGENTS.md`. It
+- **Coordinator** (currently `@gpt-6.2-astra`) is the only writer of `backlog/` and of `AGENTS.md`. It
   owns task content, criteria, the implementation plans, plan-review dispatch, review ingestion and dispositions,
   and owner-facing decisions. It commits `board:` for `backlog/`-only changes, and `contract:` when a commit
   changes `AGENTS.md` together with its decision entry. It writes no `src/`, no `tests/`, no `SPEC.md`, nothing
   under `tools/` or `.github/`.
-- **Implementer seat** (assignee `@qwen3.8-flash-next`) is the only writer of `src/`, `tests/`, `SPEC.md`, `tools/`,
+- **The assigned implementer** is the single writer in its worktree for `src/`, `tests/`, `SPEC.md`, `tools/`,
   `.github/` and `.gitignore`. Its commits carry `feat:`/`fix:`/`docs:`/`tools:`/`ci:`/`release:`, with the SPEC
   version in the subject for a behaviour change, and land SPEC section + code + tests + revision-log line together.
   It works the plan the manager wrote and never edits `backlog/`: it reports the findings it can prove — the file,
