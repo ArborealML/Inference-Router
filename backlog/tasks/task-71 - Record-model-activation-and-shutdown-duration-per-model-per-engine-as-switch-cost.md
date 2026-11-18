@@ -3,11 +3,11 @@ id: TASK-71
 title: >-
   Record model activation and shutdown duration per model per engine as switch
   cost
-status: In Progress
+status: Ready for Review
 assignee:
   - '@gpt-6.2-sol-scheduling'
 created_date: '2026-11-18T01:22:00Z'
-updated_date: '2026-11-18T23:13:00Z'
+updated_date: '2026-11-18T23:23:00Z'
 labels: []
 milestone: m-5
 dependencies:
@@ -43,7 +43,5 @@ Implement attempt-scoped monotonic stage observations with missing and failed ou
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-The [integrated scheduler](https://github.com/ArborealML/Inference-Router/commit/a77d50a) commits the exact thread-admissible ticket selected. The measured-cost candidate records monotonic stages on the same claim, separates failed or missing observations, and compares only eligible switches. The combined Release filter passed 241 cases with zero skips. With the same arrivals and switch costs, a loaded model with a proven window ends comparison and A launches; with its window unknown, comparison reaches B and B launches. This corrects the earlier mixed-queue fixture. Independent composition and fixture reviews precede integration. Compare measured drain, shutdown and activation against real handoffs by host, engine version, digest and effective config. Evaluate sample retention against workloads. Physical admission, exact instance routing, deadline enforcement and live swaps retain separate gates.
-
-Review found token pressure is captured for ranking but omitted from final revalidation. Test whether pressure changes at equal inflight count alter the winner. Verify shutdown sample identity and single attribution across provisional and terminal observations before integration.
+The [integrated scheduler](https://github.com/ArborealML/Inference-Router/commit/a77d50a) commits the exact thread-admissible ticket selected. The combined scheduling and capacity candidate passed 241 Release cases. Its review follow-up passed 250 with zero skips. In the single-eligible-engine fixture, reducing token load from 8192 to zero at equal inflight count preserved the winning ticket and native launch. A shutdown sample now requires the prior launch to match both the stopped peer and the incumbent sample key. A mismatched model and stop statuses 304, 404 and 409 produced no comparable duration. First forwarding records a send attempt. Independent review precedes integration. TASK-26 owns native conflict policy. Compare observed durations against real handoffs by host, engine version, digest and effective config. Evaluate retention against workloads. Physical admission, verified routing, deadline enforcement and live swaps retain separate gates.
 <!-- SECTION:NOTES:END -->
