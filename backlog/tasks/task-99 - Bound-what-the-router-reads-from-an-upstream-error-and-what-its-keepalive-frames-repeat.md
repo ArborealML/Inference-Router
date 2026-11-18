@@ -1,12 +1,13 @@
 ---
 id: TASK-99
 title: >-
-  Bound what the router reads from an upstream error and what its keepalive
-  frames repeat
+  Cap the caller-facing text in keepalive frames and in an error frame on a
+  committed stream
 status: To Do
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-18T11:14:00Z'
+updated_date: '2026-11-18T17:47:00Z'
 labels: []
 dependencies: []
 ordinal: 98000
@@ -15,18 +16,20 @@ ordinal: 98000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Commit `58644bb` landed with the machine's git identity instead of the per-commit agent identity decision-29 requires: the commit command omitted the `-c user.name` / `-c user.email` flags. It is pushed. Correcting it means rewriting pushed history, which decision-24 reserves for you. Everything after it sits on that sha.
+Three seams on caller-facing text and memory, each verified in this tree: an upstream error body is read **whole** before any excerpt is taken (`RouterCore.cs:708`, `:725`, `ReadAsByteArrayAsync`), so a large upstream error makes the process hold the entire response before a cap applies — and `ErrorContractTests.cs:224` states the opposite ("reads at most 256 bytes"); the queued and switching keepalive frames interpolate `ticket.Model` whole (`ServerApp.cs:244-245`), which is a caller-facing frame with no cap; and the byte ceilings in the new HTTP pins are `WireText.ReasonChars * 6 + 256` — an escaping allowance, not a stated wire ceiling — with no pin at all for a long error frame on a stream whose 200 is already committed.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
 
 <!-- AC:BEGIN -->
-- [ ] #1 One line of answer: rewrite the one commit, or accept it and record the gap
-- [ ] #2 Whichever way, decision-29 records the outcome, so a later seat can tell a defect from history
+- [ ] #1 Keepalive control frames carry the identifier at its reporting length, and a named pin asserts the frame length
+- [ ] #2 Each HTTP ceiling is asserted against a byte ceiling named in SPEC, and a long error frame on a committed stream has its own pin
+- [ ] #3 A mutation that removes the admission ceiling turns exactly one pin red
 <!-- AC:END -->
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Options and what changes: **rewrite** — one force-push over a commit two later commits sit on, their shas change with it, and the machine identity leaves the history; **accept** — the identity (a GitHub noreply address, no key path, no home path) stays published, and the guard becomes mechanical: a CI check that refuses a commit whose author is not a configured agent identity, which the board will open as its own row. Blocked on @claire because decision-24 forbids rewriting pushed history without your word. Cost to answer: two minutes. This row does not sit in the same cluster as the other three: it is the only one where a pushed artifact is involved. The commit message that recorded this breach mistyped its own sha and two corpus counts; the numbers above and in the next commit message are the re-measured ones.
+Found by the deep commit review of 8e6867d; every claim re-measured here before recording: `ReadAsByteArrayAsync` at `RouterCore.cs:708` and `:725`, keepalive interpolation at `ServerApp.cs:244-245`, the ceiling constant at `ErrorContractTests.cs:256,291,322`. The review ran nothing: its five mutation controls are its reading of the pins, not a run, and it reports no CI evidence.
+Disposition by the coding seat, recorded here: the keepalive text and the committed-stream error frame land as one follow-up commit right after TASK-94, because both are the mechanism v0.12.40 already owns. The **read side** is refused here and moved to TASK-101 — buffering an upstream error body whole is about what the router *reads*, and wants its own ceiling, pin and commit.
 <!-- SECTION:NOTES:END -->
