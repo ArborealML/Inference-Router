@@ -5,7 +5,7 @@ status: To Do
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-18T02:37:00Z'
-updated_date: '2026-11-18T18:40:00Z'
+updated_date: '2026-11-18T19:15:00Z'
 labels:
   - scheduling
 dependencies:
@@ -35,4 +35,6 @@ decision-25 parked a fleet-wide queue and cross-host model residence as later wo
 
 <!-- SECTION:NOTES:BEGIN -->
 Deliberately coarse until TASK-69's design lands and TASK-77 has split reach from ownership: residence is meaningless while one flag decides whether a host can be switched at all. Expected to split into implementation rows once reviewed — a fleet queue that admits against fleet capacity, a residence policy that consumes switch cost, and the ceiling rule for a request that declared no max_queue_time (TASK-51 decides that number). Milestone-level means nobody should start coding it from this text.
+
+Cross-host forwarding verified on 2026-11-18 with an isolated router and an existing remote Ternary Bonsai server over an SSH tunnel. Ordinary discovery returned the exact model ID and engine, and streamed Chat returned HTTP 200, answer 5, finish reason stop and [DONE] in 1.61 seconds. A 24-token attempt completed without visible text. This exercised one ingress and an already-resident model. Shared admission, either-ingress routing, peer activation and recovery remain unproved.
 <!-- SECTION:NOTES:END -->
