@@ -5,7 +5,7 @@ status: To Do
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T02:54:00Z'
-updated_date: '2026-11-18T18:51:00Z'
+updated_date: '2026-11-18T19:04:00Z'
 labels:
   - engine
   - lifecycle
@@ -37,7 +37,7 @@ TASK-1 put the seam and the first Docker provider into main; §5.3.1 describes m
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Provider fixes landed in 18d7279. The eight criteria cover the remaining gaps. Use fake daemon responses for provider tests. TASK-33 records the parked live proof. At 2d50430 RouterConfigLoader.cs lines 258–266 reject mixed ownership per engine. Preserve this check and replace selectors on the native example engine. Correct the primary switch description and examples in SPEC §§5.3, 5.3.1 and 7, including the obsolete seam-extraction proposal. Align README ownership versus image checks, integration terminology and the safe-smoke explanation. The manager owns the corresponding AGENTS.md safety correction.
+Provider fixes landed in 18d7279. Use fake daemon responses and preserve the loader refusal for mixed ownership. The shipped native sample must remove the selectors from the same engine and pass sample validation. TASK-119 owns the SPEC walkthrough. Align README ownership versus image checks, integration terminology and the safe-smoke explanation with the shipped sample. The AGENTS.md smoke guidance landed in fef8789. TASK-33 records live-proof permissions.
 <!-- SECTION:NOTES:END -->
 
 ## Comments

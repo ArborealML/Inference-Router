@@ -18,4 +18,6 @@ A failed preflight preserves an incumbent with valid proof. After a stop, servin
 
 ## Consequences
 
+On a one-resident-engine host, local inference is unavailable between stopping the incumbent and proving a serving target. The per-engine semaphore serializes one coordinator. Docker peer discovery filters by engine label. Both leave other engines on the same physical host outside that gate. TASK-110 supplies the shared host reservation and restart reconciliation. TASK-114 verifies independent recovery on that host after a failed activation. TASK-119 carries these distinctions into the operator walkthrough.
+
 Transient A failures may require intervention. Four lanes remain available to proven workloads within the host capacity limit. Numerical deadlines need measurement. This decision grants neither stream preemption nor permission to change a live engine on this host.
