@@ -5,7 +5,7 @@ status: Waiting
 assignee:
   - '@gpt-6.2-sol-shutdown'
 created_date: '2026-11-17T02:54:00Z'
-updated_date: '2026-11-18T23:13:00Z'
+updated_date: '2026-11-18T23:24:00Z'
 labels:
   - engine
   - lifecycle
@@ -34,6 +34,7 @@ Waiting for host authority and exact-instance recovery before production resourc
 - [x] #8 A shipped native Docker example passes the config loader with every model selector removed from that engine. The shipped-sample load test passes and remaining delegated examples identify exec as legacy.
 - [ ] #9 After A fails, repeated scheduler wakeups and cooldown expiry produce zero attempts for its engine/model/profile/config generation. Resetting A permits a fresh attempt without resetting unrelated targets (decision-62).
 - [ ] #10 A conflicting native stop response cannot authorize forced removal or replacement unless an independent observation proves the exact owned instance stopped. Pin the refusal and verified-state cases and reconcile the documented 409 behavior.
+- [ ] #11 After ambiguous stop/removal, retain exact operation and immutable ID. Block force-removal, replacement and retry until independently proven terminal.
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -45,9 +46,11 @@ Implement the reviewed image-identity slice first. Validate complete configured 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-The [native image verification and selector-free sample](https://github.com/ArborealML/Inference-Router/commit/c30ca3e) passed 128 focused tests, 419 full Release tests and server Native AOT. Four deliberate regressions failed their intended assertions. Coordinator preflight verifies manifest and platform. Direct launch checks the configured ID alone; production activation must use the coordinated path.
+The [image and selector-free sample](https://github.com/ArborealML/Inference-Router/commit/c30ca3e) passed 128 focused tests, 419 full Release tests and server Native AOT. Four deliberate regressions failed as expected. Coordinator preflight verifies manifest and platform; direct launch checks the configured ID alone. Production activation requires the coordinated path.
 
-The [resource payload and refusal fixtures](https://github.com/ArborealML/Inference-Router/commit/bc63d48) passed 184 focused Release tests and server Native AOT. The fixtures exercise exact Docker create bodies for measured Qwen and script-derived Bonsai, native devices, NVIDIA requests, mounts, limits and network settings. Resource-bearing production activation remains closed pending verified host authority, effective settings, serving-instance binding and recovery of uncertain creation. External diff reviews dispatched. TASK-33 records the live-proof permissions.
+The [resource fixtures](https://github.com/ArborealML/Inference-Router/commit/bc63d48) passed 184 focused Release tests and server Native AOT. They verify Docker payloads for measured Qwen and script-derived Bonsai, native devices, NVIDIA requests, mounts, limits and network. Production activation awaits verified host authority, effective settings, serving-instance binding and uncertain-create recovery. External diff reviews dispatched. TASK-33 records live-proof permissions.
+
+For both RemoveStopped settings, inject timeout, disconnect and ambiguous daemon reply after possible issue. Verify exact-ID stopped or absent evidence as appropriate to the operation. Running, wrong-ID or unavailable evidence keeps the fence. Count attempts across re-entry. Transport failure alone proves neither absence nor pre-issue refusal.
 <!-- SECTION:NOTES:END -->
 
 ## Comments
