@@ -35,17 +35,19 @@ The pin `AWaiterInsideTheReadinessWaitIsToldTheRouterStopped` fails in two shape
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Dispositioned by the top-tier plan review and corrected: dropping Assert.Equal("settled", wake) is right, because the seam reports the winner of Task.WaitAsync arbitration, not a call order, and that branch is no contract. Reverting the readiness-wait block in EngineRuntime.cs is the wrong mutation: it changes the custom answer only when token cancellation wins, and may be unreachable once a stop is one decision. One change with TASK-81, whose frozen stop cause removes the race from production; this row proves the pin deterministic and liveness surviving.
+Plan review disposition: dropping Assert.Equal("settled", wake) is right — the seam reports the winner of Task.WaitAsync arbitration, not a call order — and that branch is no contract. Reverting the readiness-wait block in EngineRuntime.cs is the wrong mutation: it changes the custom answer only when token cancellation wins, and may be unreachable once a stop is one decision. One change with TASK-81, whose frozen stop cause removes the race from production; this row proves the pin deterministic and liveness surviving.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Seven CI occurrences, all Expected settled / Actual cancelled: 44264855629 b7ab43d, 44275637518 e0dcd0e, 44277482601 64b9f94, 44280833645, 44308059362 14a01e2, 44325281339, 44330807651 dd22653 — board-only pushes among them. Seven of the last thirteen pushes: the gate is not a gate.
+Seven CI occurrences, all Expected settled / Actual cancelled: 44264855629 b7ab43d, 44275637518 e0dcd0e, 44277482601 64b9f94, 44280833645, 44308059362 14a01e2, 44325281339, 44330807651 dd22653 — board-only pushes among them.
 
-Criterion #1 is met on the coding seat's report (sha, command, per-run logs): detached worktree at `64b9f94`, `dotnet test --no-build -c Release`. The pin alone on a quiet machine: **0 of 20 red**. The whole `SwitchClaimTests` class with 40 busy loops on a 24-core host: **9 of 20**, repeated at **11 of 20**, 20 of 40 overall, every red run named that test. Their caveat: under load it is the **30 s Fact ceiling**, not the settled/cancelled assertion CI shows — which is why #2 names both.
+Criterion #1 is met on the coding seat's report (sha, command, per-run logs): detached worktree at `64b9f94`, `dotnet test --no-build -c Release`. Pin alone on a quiet machine: **0 of 20 red**; the whole class with 40 busy loops on a 24-core host: **9 of 20**, repeated **11 of 20**, 20/40 overall, every red run naming that test.
 
-The earlier sighting (`Failed 1 / Passed 221`, name lost to a pipe) is the failure mode #6 ends. Their load hogs poisoned two local suite runs until killed; any count from that window, mine included, is unusable. Standing rule while open: no new pins in the switch-claim or capability-publication classes (amendments allowed; the taxonomy class is not covered).
+The earlier sighting (`Failed 1 / Passed 221`, name lost to a pipe) is the failure mode #6 ends. Their load hogs poisoned two local suite runs; any count from that window, mine included, is unusable (decision-55). Standing rule while open: no new pins in the switch-claim or capability-publication classes (amendments allowed; the taxonomy class is not covered).
 
-No quiet-host count exists yet: at `0ddd8f3` the seat reports host load 11.0 on 24 cores and offers none, so AC #3 stays unmet. Board order: TASK-94 #14 lands first — it changes what a caller inside the readiness wait does, the shape this pin fails on — so AC #3's runs are taken on the post-#14 tree. Earlier runs do not qualify for AC #3; AC #1's `64b9f94` counts stand as history, and the final tree must still excite that wait/join scenario.
+A quiet-host series is running on the post-#14 tree (`51922fe`, Release, `--no-build`): 50 focused runs of this class, then 3 full suites, load recorded per run, host 1.86 at the start with no load generator running (their report; raw counts land here). Runs taken before `51922fe` qualify for nothing at AC #3, while AC #1's `64b9f94` counts stand as history. The ordering that chose that tree sits in TASK-94: #14 first, because it changes what a caller inside the readiness wait does — and its parked-launch pins went into a new class, `SwitchJoinTests`, which kept the standing rule above.
+
+AC #4-#6 unmet; the parked shutdown / stop-cause pins that would carry them are **unmeasured, not red** — their last numbers came from under their own 40 busy loops.
 <!-- SECTION:NOTES:END -->

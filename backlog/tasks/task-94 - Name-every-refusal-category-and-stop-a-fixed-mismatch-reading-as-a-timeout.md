@@ -1,7 +1,7 @@
 ---
 id: TASK-94
 title: Name every refusal category, and stop a fixed mismatch reading as a timeout
-status: To Do
+status: Done
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-18T08:30:00Z'
@@ -30,25 +30,25 @@ Review rounds reopened this row: a follow-up commit overclaimed, and its fix mov
 - [x] #7 Each 14a01e2 finding carries a disposition: fixed later, or an accepted SPEC gap
 - [x] #8 The check and the switch consume the same resolved catalog entry (decision-48), not two lookups.
 - [x] #9 SPEC says a post-boot edit changes no already-claimed transaction; the pin names the selector handed to the provider, old and new distinguishable.
-- [ ] #10 A test arms `AfterClaimForTests` on a stable blank entry: no claim, `no_select_command`, the published capability snapshot unchanged, provider not asked.
+- [x] #10 A test arms `AfterClaimForTests` on a stable blank entry: no claim, `no_select_command`, the published capability snapshot unchanged, provider not asked.
 - [x] #11 The divergent pin runs both directions and asserts the provider kind, so a case that never reaches the switch cannot pass.
 - [x] #12 SPEC and the `RunSwitchAsync` comment state the invariant as implemented; the mutability claim narrows to the API.
 - [x] #13 Per decision-49 the claim resolves the entry once and the switch consumes it without a second lookup; the post-claim missing-entry branch is gone.
-- [ ] #14 The absent-entry refusal answers a **new** claim with `no_select_command`, saying absent not unusable; a caller finding a matching claimed switch joins it first (decision-51), and §5.5 says so.
+- [x] #14 The absent-entry refusal answers a **new** claim with `no_select_command`, saying absent not unusable; a caller finding a matching claimed switch joins it first (decision-51), and §5.5 says so.
 <!-- AC:END -->
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Round one closed at **2f7e3e6**; its routed findings sit on TASK-103 #4, TASK-68 #6, TASK-104 #4. Counts are the coding seat's report unless read here.
+Round one closed at **2f7e3e6**; routed findings sit on TASK-103 #4, TASK-68 #6, TASK-104 #4. Counts below are the coding seat's report unless read here.
 
-**0ddd8f3** (v0.12.46, tests) re-closes #9: it asserts the selector handed to the provider (`LaunchedExec`, `:572`) against an entry swapped to blank, and the reported control — re-read the live config — reddens that pin alone. The earlier `false ||` control reddened nothing; decision-52 is what it taught.
+**#10** — `ABlankSelectorExecIsRefusedBeforeTheClaimToo` captures `before = engine.Capability` and asserts the same `Version` and the same loaded list afterwards (`RefusalCategoryTests` at `d9b61f1`); the reported control — bump the published version at the refusal arm — reddens that pin alone at the version assertion, which is the half the earlier pin lacked.
 
-Its review met two asks my excerpt omitted: `Expect` (`:608`) asserts the whole caller-facing `Detail`, so the `DoesNotContain("exec", …)` belt is redundant, not a boundary; and `Healthy` alone does not pin proof kept — a replaced snapshot passes it. #10 is open on that half, naming the assertion. #14 remains; plan reviewed and accepted.
+**#14** — both catalog guards left the head of `EnsureLoadedAsync` and are now asked under `_transitionGate` only of a caller the idle engine hands to the claim path; the refusal's `engine.switch_failed` is emitted after the switch lock is released, and the deadline is set once before the first lock wait. Four pins in a new class, `SwitchJoinTests`, all four reported red at `d9b61f1` and green at `51922fe`, so no new pin joined the two classes TASK-87 is measuring. §5.5 states the order; decision-51 is the rule it rests on.
 <!-- SECTION:NOTES:END -->
 
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Round four, one commit. Under the transition gate: read the switch state; a matching active switch is **joined** and its `Ready` awaited with no catalog read; otherwise the capability check, then resolve and validate the entry once for that attempt; invalid is a terminal refusal — zero publishes, zero state writes, counted through seams rather than inferred from a missing `switch_started` — and valid claims and carries that entry down. One outcome is selected under the gate and acted on after release; one absolute deadline spans wait, join and retry. No sequencer: feed ordering is promised within a transaction, not across callers. Red-first pins: a joiner whose entry is removed mid-switch; a joiner whose switch then fails (refusal after, one `switch_started`, one witness). #10's hook and the absence wording are regression-only.
+Closed at `51922fe` (SPEC v0.12.48) with the #10 half at `d9b61f1` (v0.12.47), both read at those shas. Join a matching in-flight switch before any catalog read; capability check, then resolve and validate the entry once per acquisition attempt (`ResolveClaimEntry`, `EntryGuard`); invalid is terminal and counted through seams as zero claims, zero publishes, zero state writes; valid claims and carries that entry. One outcome selected under the gate, spoken after the switch lock is released; one absolute deadline across wait, join and retry. No feed sequencer — ordering is promised inside one transaction, not across callers.
 <!-- SECTION:PLAN:END -->

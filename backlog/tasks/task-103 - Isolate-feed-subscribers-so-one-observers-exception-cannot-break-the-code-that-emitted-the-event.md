@@ -31,4 +31,6 @@ ordinal: 102000
 
 <!-- SECTION:NOTES:BEGIN -->
 Found while dispositioning the TASK-94 plan review, then verified in the tree at `RouterEvent.cs:85`. Kept out of TASK-94 because TASK-94 only needs the guard at its own emit site; this row is the general rule for every producer, including the admin SSE layer that already drops stale subscribers silently nearby.
+
+Half of #4 landed at `51922fe`, read there: the switch-refusal `engine.switch_failed` is now emitted after the switch lock is released, so no subscriber runs holding an engine lock. The other half is untouched — the ring still invokes every subscriber inside the append, and no pin shows a throwing observer leaving the caller's answer alone.
 <!-- SECTION:NOTES:END -->
