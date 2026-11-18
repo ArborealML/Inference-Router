@@ -5,6 +5,7 @@ status: Blocked
 assignee:
   - '@claire'
 created_date: '2026-11-17T23:14:00Z'
+updated_date: '2026-11-18T00:49:00Z'
 labels:
   - chore
   - governance
@@ -52,4 +53,6 @@ author. Carried from the archived duplicate row that first asked the general for
 TASK-58, and the external review records — plus this task's own text. No tag points at either commit (only `v0.0.9-canary` and
 `v0.0.10-canary` exist) and main is unprotected: the sole ruleset is `release-tag-protection` on tags, so a force-push is
 mechanically possible.
+
+**Re-measured at d3258d0.** Two commits carry a model name (`4dd1e0e`, `20a06fa`: `qwen3.8-flash-next <…@local>`, rendered as unlinked authors); three more (`4e7b87a`, `2470c93`, `2195fe6`) carry the role name `board` on the repository's own noreply mailbox, so they link to the account but are the same class of per-commit override. The count of published overrides is five, not two, and option A's rule and gate check are meant to cover both kinds.
 <!-- SECTION:NOTES:END -->
