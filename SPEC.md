@@ -1,6 +1,6 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.48)
+Status: draft, continuously revised (v0.12.49)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
@@ -352,6 +352,20 @@ daemon transaction per engine. 137 tests green.
   that answers no `upload_url`, an upload that dies or answers no asset id, an asset name listed twice on
   the release, and a tag that moves after the first resolve. No tag has run the gate: still configured,
   not proven.
+- v0.12.49 — a feed subscriber's exception cannot reach the code that emitted the event (§6.1, TASK-103 #4).
+  `EventRing.Append` invoked every subscriber inside the append with no isolation, so an SSE handler whose client had
+  hung up threw inside a capability publication, a switch ending, or a terminal settle — a stranger's bug answering a
+  caller. Dispatch is now per-subscriber and isolated: the append completes and keeps its sequence number, the
+  subscribers that did not throw still receive the event, the emitter finishes its transition, and the fault is
+  counted (`EventRing.SubscriberFaults`, surfaced on `/admin/status` as `FeedSubscriberFaults`). Four pins in
+  `SubscriberFaultTests`: the ring half, the producer half (a subscriber that throws on **every** event leaves the
+  caller's answer `ready` and the capability a proof), the stranding half (a throw at the `engine.switch_started` emit
+  leaves no waiter parked: both callers answer, the marker clears), and the visibility half (the count read back over
+  real HTTP). **Control:** reducing the catch to counting-and-rethrowing reddens all four named pins
+  (`Failed: 4, Passed: 0`), and the tree was restored byte-identical (`git diff | sha256sum`
+  `a8d0d50c…c3c6e218` before and after); the pre-fix tree is not usable as the control here, because the pins name the
+  counter and that tree does not compile them. Measured at this tree: `SubscriberFaultTests` + `EventRingTests`
+  19/19, full suite 235/235, `dotnet build` 0 warnings.
 - v0.12.48 — a caller that arrives at a switching engine joins it before any catalog question is asked of it (§5.5, decision-51, TASK-94 #14).
   Both catalog guards sat ahead of the claim loop, so they answered a caller that had come to **join** a switch already
   running. That is not cosmetic: a refusal is terminal, so the joiner never learned what that switch decided. Measured
@@ -1873,7 +1887,8 @@ Admin/control (not OpenAI-compatible, our own contract):
   serving tier; the ack echoes it and the wait-for-ready loop requires the
   reported window to fit.
 - `GET /admin/status` — engines, loaded models, queue depths, in-flight,
-  stats per thread/model/engine.
+  stats per thread/model/engine, and `FeedSubscriberFaults`: how many feed observer invocations have thrown since
+  startup (§6.1).
 - `GET /admin/events?since=<seq>` — SSE feed of `RouterEvent`s (see §10),
   `text/event-stream`, replayable from ring buffer by sequence. Optional filters:
   `kinds=a,b` (exact kinds), `thread=<id>`, `engine=<name>`, `ticket=<id>`.
@@ -1918,6 +1933,13 @@ Priority is **not** clamped to the configured default and the surface has no aut
 caller can currently promote itself. Pinning that at the edge is v0.1 ingress work (§15.1); until
 then the deployment posture is loopback-or-behind-your-proxy. `docs/ai-integration.md` states this
 to integrators.
+
+A feed subscriber is invoked **inside the append**, on the thread that produced the event. A subscriber that throws
+**loses its own event and nothing else**: the append completes and keeps its sequence number, the subscribers that did
+not throw still receive it, the emitter finishes the transition it was mid-way through, and the fault is counted for
+the operator (`/admin/status` → `FeedSubscriberFaults`) rather than rethrown into a stranger's call stack. A subscriber
+that *blocks* blocks every producer that appends, because the append holds the ring lock: the feed is a diagnostic
+surface, not a hook, and an observer that must not slow a request replays it by sequence instead of subscribing live.
 
 The shipped error contract is one lowercase body on every surface —
 `{"error":{"type":"air_error","code":…,"message":…}}` — and the code picks the status:

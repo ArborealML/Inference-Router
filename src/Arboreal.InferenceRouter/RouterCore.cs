@@ -239,7 +239,10 @@ public sealed class RouterCore : IInferenceRouter
                 Enqueued = Volatile.Read(ref t.Enqueued),
                 Completed = Volatile.Read(ref t.Completed),
             }).ToArray();
-            return new RouterStats(Engines: engines, QueueDepths: queues, Threads: threads);
+            return new RouterStats(Engines: engines, QueueDepths: queues, Threads: threads)
+            {
+                FeedSubscriberFaults = _events.SubscriberFaults,
+            };
         }
     }
 
@@ -1087,7 +1090,13 @@ public sealed record ThreadStats
 public sealed record RouterStats(
     EngineStats[] Engines,
     IReadOnlyDictionary<string, int> QueueDepths,
-    ThreadStats[] Threads);
+    ThreadStats[] Threads)
+{
+    /// <summary>Feed observer invocations that have thrown since startup (§6.1). A subscriber's exception is
+    /// isolated by design — it must not reach the engine that emitted the event — so a broken observer is otherwise
+    /// invisible: this count is what tells an operator that a live tail has stopped being delivered.</summary>
+    public long FeedSubscriberFaults { get; init; }
+}
 
 /// <summary>Immutable projection of one ticket for the admin API (AOT-safe DTO).</summary>
 public sealed record TicketSnapshot

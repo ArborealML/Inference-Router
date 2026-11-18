@@ -51,6 +51,12 @@ public sealed class EventRing
     private readonly TimeSpan _retention = TimeSpan.FromMinutes(30);
     private readonly int _maxSubscribers;
 
+    // Faults counted, never rethrown: one observer's exception is not allowed to reach the code that produced the
+    // event (decision-34: a claimed switch is completed, not rolled back, and a readiness task stranded by a
+    // stranger's bug is a stranded request). Read by /admin/status as `FeedSubscriberFaults` so the failure is
+    // visible to an operator instead of silent (§6.1).
+    private long _subscriberFaults;
+
     public EventRing(int capacity = 4096, int maxLiveSubscribers = 256)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(capacity, 16);
@@ -82,12 +88,34 @@ public sealed class EventRing
             _ring[(int)(_head % _ring.Length)] = @event;
             _head++;
             // drop stale subscribers silently; SSE layer reconnects by seq
-            foreach (var s in _subscribers.ToArray()) s(@event);
+            // **Isolated, not dropped.** Every subscriber is invoked inside the append, on the emitter's thread, so
+            // an exception here lands in the producer: the engine that was publishing a capability, the switch that
+            // was ending an attempt, the request path that was recording a terminal outcome. One observer's failure
+            // must cost that observer its own event and nothing else — the append has already happened, the rest of
+            // the subscribers still get it, and the emitter finishes the work it came to do. The fault is counted,
+            // not logged here: a feed callback runs under the ring lock, so this path may not do I/O (§6.1).
+            foreach (var s in _subscribers.ToArray())
+            {
+                try
+                {
+                    s(@event);
+                }
+                catch (Exception)
+                {
+                    Interlocked.Increment(ref _subscriberFaults);
+                }
+            }
             return @event.Seq;
         }
     }
 
     public long CurrentSeq => Volatile.Read(ref _head);
+
+    /// <summary>How many subscriber invocations have thrown since startup. This is the only sign a feed observer
+    /// is broken: the exception is swallowed by design, so without a counter a permanently failing observer — a
+    /// socket handler that throws on every write, say — would be invisible and would silently stop delivering
+    /// (§6.1).</summary>
+    public long SubscriberFaults => Volatile.Read(ref _subscriberFaults);
 
     /// <summary>Oldest Seq still replayable (1 once anything has been appended).</summary>
     public long OldestSeq
