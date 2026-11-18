@@ -1,6 +1,6 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.63)
+Status: draft, continuously revised (v0.12.64)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
@@ -352,6 +352,10 @@ daemon transaction per engine. 137 tests green.
   that answers no `upload_url`, an upload that dies or answers no asset id, an asset name listed twice on
   the release, and a tag that moves after the first resolve. No tag has run the gate: still configured,
   not proven.
+- v0.12.64 — `EngineRuntime` rejects a supplied Docker provider whose engine name, router ID,
+  or configured daemon differs from the engine definition. The provider uses the same captured
+  scope for its client and container labels. External engines leave supplied providers unused
+  (§5.3, §5.3.1, TASK-128).
 - v0.12.63 — the SSE relay keeps one heartbeat cadence across admission and the wait for the
   first upstream byte. Buffered data and terminal results take precedence over a due heartbeat
   (§6, TASK-127).
@@ -1411,9 +1415,11 @@ still serve requests for loaded models. `delegated` runs a configured selector f
 target. `router` binds the native Docker provider to the engine and its catalog targets. The
 runtime copies the startup catalog entries, aliases, profile collections and selector arguments
 and resolves the canonical target before claiming a switch. The native provider copies its
-launch command and environment at startup. A provider supplied to the public runtime constructor for a managed engine must report
-the configured kind. A mismatch fails construction with the engine name and both provider kinds.
-An external engine binds no provider (§5.5, §7).
+launch command and environment at startup. A provider supplied to the public runtime constructor
+for a managed engine must report the configured kind. A concrete Docker provider must also match
+the engine name, Docker router ID and configured daemon (§5.3.1). A mismatch fails construction
+before provider I/O. The caller retains ownership of its supplied provider. An external engine
+leaves the supplied provider unused (§5.5, §7).
 
 ```csharp
 public sealed class EngineDefinition {         // from TOML §7
@@ -1478,6 +1484,16 @@ reach the stop step, which uses container IDs. An ownership-query failure aborts
 coordinator's semaphore is per engine. The label query neither detects nor reserves a host port held
 by a sibling engine, another router or an unrelated container. A conflict on `host_ip:host_port`
 can therefore make Docker create or start fail after the owned incumbent has stopped.
+
+The concrete provider captures the engine name, router ID and daemon before creating its HTTP client.
+Startup binding compares the label values and Unix socket paths with ordinal equality. A bare Unix
+path and the `unix://` form of the same path compare equal. HTTP(S) transport compares the complete
+canonical absolute client base URI. An HTTP endpoint cannot match a Unix socket even if it uses the
+same synthetic HTTP base. Invalid daemon declarations fail locally. This verifies configured
+transport and label scope. Physical host or serving-instance identity, remote daemon authenticity,
+router-ID uniqueness, filesystem or DNS alias equivalence, launch settings and exclusive host
+occupancy require separate evidence. Custom providers and supplied HTTP handlers are trusted
+in-process components.
 
 Docker preflight checks daemon access, the configured API version and local image identity before
 any stop, removal, create or start. It looks up `docker.image` on the daemon and checks three pins
@@ -2845,6 +2861,7 @@ router robust until rows 2, 4 and 6 close.
 | Tomlyn DOM vs source-generated binding API on .NET 11 | **completed**: keep Tomlyn 2.11.1 source-gen; untyped `TomlSerializer.Deserialize<TomlTable>` is reflection-free/AOT-safe if a DOM path is ever needed (not needed today) |
 | AOT-safe Docker access from .NET 11 (client library vs raw engine API) | **completed**: no client library — Docker.DotNet needs reflection roots (`DynamicDependency`, IL2026/IL3050 risk). Go raw: `SocketsHttpHandler.ConnectCallback` over `UnixDomainSocketEndPoint` (npipe on Windows), `HttpClient` based at `http://docker/`, STJ **source-generated** DTOs, API version pinned with `/_ping` + `/version` negotiation, exec demux of the 8-byte frame header, and error fidelity where **inspect 404 means absent and nothing else** while transport failure means *daemon unavailable*. Seam: `IEngineLifecycle` over a fakeable `IContainerRuntime` (§5.3) |
 | Robustness and UI comparison against NVIDIA Personal-AI-Router | **completed**: verdict + ordering in §14.1, feed prerequisites in §10, UI borrow/change/skip in §12.5. Where that router leads on robustness we have tasks; where we lead (priority, admission, profiles, prefix, generic endpoints, engine keys, per-engine instances) is not a gap to close |
+| Concrete Docker injection scope (TASK-128) | The startup check now compares engine, router ID and daemon against the same scope the injected provider uses for labels and transport. The focused fixtures cover independent mismatches, Unix and HTTP scope, caller ownership, matching switch readiness and external forwarding. The check covers configured identity. Host authority and physical isolation remain separate requirements. |
 | Native engine-lifecycle design (transaction shape + container seam) | **completed**, adopted in §5.3.1: provider seam (`IEngineLifecycleProvider` over a coordinator), transaction order, single-flight per target with latched failures, ownership gate with no adoption of unowned resources, advisory journal, preflight as a validate-only verb, `select.exec` kept as a mutually-exclusive delegated provider. It preferred the docker CLI as the first Docker provider (smaller safety-critical surface); we keep **raw Engine HTTP** instead, because "no client library" from the review above is about reflection-rooted SDKs rather than `HttpClient` — the CLI stays as an operator fallback |
 
 | Deep review of v0.12.4 (request-side phase timeouts) | **completed, dispositioned in v0.12.5**: the timer-stops-at-headers gap, the late-response leak, the switch running on the initiating request's token, and the switch-state wedge on `no_select_command` are fixed with tests; the stream channel is now closed by the ticket's terminal transition (which also fixes the silent stream end). Two findings are **accepted gaps**, not fixes: (a) the selector's own failure reason is recorded on the feed as `engine.switch_failed` and deliberately kept out of the caller-facing `switch_failed` message, so the caller sees the outcome and the operator sees the cause — change this when §13 needs to distinguish them programmatically (**moved in v0.12.33**: the caller now also gets a bounded reason *category*, which is what §13-style retry decisions need; the selector's own text is still kept out of the caller's body, so the half of this finding about provider text still stands); (b) a phase-timeout value above `Int32.MaxValue` ms is rejected at DTO binding (a Tomlyn/STJ range error) rather than by the router's own `RouterConfigException` message — either way startup fails with a non-zero exit, so the operator is stopped, only with a less specific line |
