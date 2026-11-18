@@ -3,11 +3,11 @@ id: TASK-128
 title: >-
   Validate the engine and router identity of an injected native lifecycle
   provider
-status: Preparing
+status: Done
 assignee:
   - '@gpt-6.2-sol-release'
 created_date: '2026-11-18T21:07:00Z'
-updated_date: '2026-11-18T21:15:00Z'
+updated_date: '2026-11-18T22:27:00Z'
 labels: []
 milestone: m-4
 dependencies: []
@@ -23,8 +23,8 @@ The runtime checks the injected provider kind. The concrete Docker provider inde
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Inject an actual Docker provider configured for a different engine, router identity or daemon scope. Construction or binding refuses it before any provider HTTP, ownership query, stop or create.
-- [ ] #2 With matching binding, preserve the supported positive path. A forwarding-only engine issues zero lifecycle calls even when a provider is supplied.
+- [x] #1 Inject an actual Docker provider configured for a different engine, router identity or daemon scope. Construction or binding refuses it before any provider HTTP, ownership query, stop or create.
+- [x] #2 With matching binding, preserve the supported positive path. A forwarding-only engine issues zero lifecycle calls even when a provider is supplied.
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -37,4 +37,6 @@ Review the concrete injection and default factory call sites. Bind the native op
 
 <!-- SECTION:NOTES:BEGIN -->
 Concrete-provider design review dispatched. The planned fixture uses the actual native provider with an in-memory daemon handler and asserts zero I/O on binding rejection.
+
+The [integrated startup check](https://github.com/ArborealML/Inference-Router/commit/2ff6701) passed 178 focused Release cases and server Native AOT. On the unfixed parent all 11 mismatch and invalid-scope controls failed because construction accepted the configuration. The corrected fixtures require field-specific rejection and zero daemon calls. Matching and forwarding-only controls passed. External implementation and test reviews were dispatched.
 <!-- SECTION:NOTES:END -->
