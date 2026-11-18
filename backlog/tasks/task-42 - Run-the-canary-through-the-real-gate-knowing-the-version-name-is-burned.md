@@ -1,11 +1,11 @@
 ---
 id: TASK-42
 title: Run the canary through the real gate, knowing the version name is burned
-status: Waiting
+status: Done
 assignee:
-  - '@qwen3.8-flash-next'
+  - '@gpt-6.2-astra'
 created_date: '2026-11-17T09:53:00Z'
-updated_date: '2026-11-18T20:57:00Z'
+updated_date: '2026-11-18T21:14:00Z'
 labels:
   - release
   - ci
@@ -22,28 +22,18 @@ ordinal: 41000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-**The gate has now run against a real tag, and the canary is published.** `v0.0.10-canary` (gate v0.12.23, tag peeled to
-9910c0f) answers `immutable: true`, prerelease, five assets. What this task still owns is what only a *published* release
-gives: the post-publication probes, and the disposition — kept as a permanent prerelease or deleted, name reserved either
-way.
-
-**Cost per retry, measured.** `v0.0.9-canary` got no release, so its name is unburned — but the `v*` ruleset refuses to
-move or delete that tag, so **every retry needs a new version name** and refused tags stay as immovable furniture. That is
-the price of proving the gate in public, and why the negative cases belong in the disposable repository (TASK-49).
-
-**Not proven here, and unproven in SPEC:** whether `POST /releases` refuses a second release on one tag with a `422` —
-never observed, and rehearsing it here would spend another name.
+The canary v0.0.10-canary at 9910c0f is a published, retained prerelease. Its original run, subsequent refusal, laboratory disposition and independent served-byte measurements qualify this canary. TASK-48 owns automated readback and attestation for future releases.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [x] #1 the run is recorded and reported with the unmodified workflow and the job's own token, against the canary name used
-- [ ] #2 evidence for whether `contents: write` from `GITHUB_TOKEN` suffices for upload plus the un-draft `PATCH`, and whether the workflow-write guard fires for a tag at the head of `main`
+- [x] #2 evidence for whether `contents: write` from `GITHUB_TOKEN` suffices for upload plus the un-draft `PATCH`, and whether the workflow-write guard fires for a tag at the head of `main`
 - [x] #3 the run records what `.target_commitish` says on a real create, and what the tag object SHA and the peeled commit SHA were
 - [x] #4 Record the measured asset-replacement and tag-update outcomes and the controls that protect delivered bytes and tag refs. The disposable laboratory is an accepted venue.
 - [x] #5 the canary's disposition is decided and recorded here: **kept** as a permanent prerelease, the owner's word at 18:5xZ (`keep`) — the name stays reserved either way
-- [ ] #6 nothing auto-deletes a release whose disposition is uncertain; if a probe is skipped, the skip and its reason are recorded here
-- [ ] #7 TASK-48 has what it needs to prove a download: a published release, its asset inventory, and digests of the bytes served
+- [x] #6 nothing auto-deletes a release whose disposition is uncertain; if a probe is skipped, the skip and its reason are recorded here
+- [x] #7 TASK-48 has what it needs to prove a download: a published release, its asset inventory, and digests of the bytes served
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -66,6 +56,10 @@ the post-publish readback — TASK-48, now load-bearing.
 Superseded log entries: [board trim, 2026-11-17](https://github.com/ArborealML/Inference-Router/blob/main/backlog/archive/board-trim-2026-11-17.md).
 
 At the tagged 9910c0f, the diagnostic fixes in 806d10d were already ancestors. [Original attempt](https://github.com/ArborealML/Inference-Router/actions/runs/44145829591/attempts/1) passed preflight, Linux and Windows smoke, and publish. The second attempt failed preflight and skipped build and publish. TASK-44 now tracks a fixture weakness, independent of the observed publication.
+
+The [main push](https://github.com/ArborealML/Inference-Router/actions/runs/44144570771) preceded the tag by seven minutes. The original publish job logged Contents: write with the workflow token and successfully uploaded, un-drafted and read back release 449023212. Cleanup skipped on success. Uncertain-ID and already-published fixtures performed zero deletes under the exact tag workflow; attempted create without an ID warned. Destructive replacements were tested in the lab. The retained public canary was never used for those probes.
+
+An independent download of all five assets matched both sidecars and SHA256SUMS byte-for-byte. Linux: 6917589 bytes, SHA256 15975a3dd759395d4041caf08d3e0de573adf071ab7514b1054ba3f49964f948. Windows: 6183142 bytes, SHA256 2b169f184f6a96d1aa35735bf4501dfd50518ce6e53018f19d22af9d6a82964d. [Published assets](https://github.com/ArborealML/Inference-Router/releases/tag/v0.0.10-canary).
 <!-- SECTION:NOTES:END -->
 
 ## Comments

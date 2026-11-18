@@ -3,17 +3,16 @@ id: TASK-68
 title: >-
   Bind the serving gauges to a capability epoch, so a stale window cannot
   authorise a profile the engine cannot serve
-status: To Do
+status: Preparing
 assignee:
-  - '@qwen3.8-flash-next'
+  - '@gpt-6.2-sol-config'
 created_date: '2026-11-18T01:11:00Z'
-updated_date: '2026-11-18T19:29:00Z'
+updated_date: '2026-11-18T21:16:00Z'
 labels:
   - concurrency
   - scheduling
 milestone: m-2
-dependencies:
-  - TASK-76
+dependencies: []
 priority: high
 ordinal: 68000
 ---
@@ -55,5 +54,7 @@ Ordered after TASK-76 (criterion #2).
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-The extra-high review at `0c69c28` found three mechanisms: the key is absent in the success arm (`ChatCompletionsProbe.cs:136`, siblings :123/:130/:141); the gauge is shared across epochs (`EngineRuntime.cs:1797` against `LivenessState.Epoch` at :1920) — an `Interlocked` swap on a shared field made a real bug out of it; nothing re-checks the binding (`EngineRuntime.cs:2109`). Criterion #6 was re-worded after the review of 14a01e2, re-measured here at `eba81d4`: `WindowFits` (`EngineRuntime.cs:651-656`) passes any profile on a gauge of 0, and a stale positive outlives a probe that omits the key. Epoch keying decides whose measurement a gauge is; criterion #6 decides what no measurement may authorise,
+At eba81d4, WindowFits accepted a zero gauge and an omitted key preserved a stale positive. Bind each measurement to its serving epoch and withhold capacity-dependent admission when current evidence is missing.
+
+The TASK-76 prerequisite was its marker-held proof, now verified in [the integration](https://github.com/ArborealML/Inference-Router/commit/fcff3ea). The remaining refusal-path review can proceed independently.
 <!-- SECTION:NOTES:END -->

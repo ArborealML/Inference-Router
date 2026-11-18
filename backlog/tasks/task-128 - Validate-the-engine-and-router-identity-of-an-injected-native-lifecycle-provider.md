@@ -7,6 +7,7 @@ status: Preparing
 assignee:
   - '@gpt-6.2-sol-release'
 created_date: '2026-11-18T21:07:00Z'
+updated_date: '2026-11-18T21:15:00Z'
 labels: []
 milestone: m-4
 dependencies: []
@@ -31,3 +32,9 @@ The runtime checks the injected provider kind. The concrete Docker provider inde
 <!-- SECTION:PLAN:BEGIN -->
 Review the concrete injection and default factory call sites. Bind the native operation scope once and validate it before runtime use. Preserve existing supported fake and external behavior; exercise real provider binding with an in-memory handler.
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Concrete-provider design review dispatched. The planned fixture uses the actual native provider with an in-memory daemon handler and asserts zero I/O on binding rejection.
+<!-- SECTION:NOTES:END -->
