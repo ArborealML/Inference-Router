@@ -5,7 +5,7 @@ status: To Do
 assignee:
   - '@qwen3.8-flash-next-board'
 created_date: '2026-11-16T20:40:00Z'
-updated_date: '2026-11-18T00:47:00Z'
+updated_date: '2026-11-18T08:26:00Z'
 labels: []
 dependencies:
   - TASK-1
@@ -32,4 +32,6 @@ The container-modelling question this row used to be blocked on is closed: the s
 
 <!-- SECTION:NOTES:BEGIN -->
 Curated through the CLI in this push: the `CapabilityScan` element (the admission refusal's one-way rule) had been left as an empty scanned file and now carries a description and overview.
+
+Measured 08:16Z: an untracked Groma component note for a new shared-library type sits in the working tree and is tracked nowhere — git ls-files groma lists 34 files and names none for it. Architecture changes go through the Groma CLI alone: rerun the scan or add route, or delete the file. Keeping it out of the code commit was right; leaving it untracked forever is not.
 <!-- SECTION:NOTES:END -->

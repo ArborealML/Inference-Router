@@ -7,7 +7,7 @@ status: To Do
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T07:01:00Z'
-updated_date: '2026-11-17T16:01:00Z'
+updated_date: '2026-11-18T08:26:00Z'
 labels:
   - stream
   - transport
@@ -40,6 +40,8 @@ Cut from the second external review of 76374d6, dispositioned in v0.12.6: both h
 Precedent confirmed independently by the coding session after my check, so it is no longer a single-agent claim: the pinning test is RequestPhaseTimeoutTests.AStreamThatNeverSendsAFrameEndsInsideTheStreamBecauseTheStatusIsAlreadySent at tests/Arboreal.InferenceRouter.Tests/RequestPhaseTimeoutTests.cs:196, and SPEC's quiet-engine wording (ends engine_timeout, one frame plus [DONE]) sits in the revision log near line 209 today. TASK-34 therefore stays numbers-and-policy for the owner and TASK-30 does not move behind a wire decision.
 
 Superseded log entries for this task: [board trim, 2026-11-17](https://github.com/ArborealML/Inference-Router/blob/main/backlog/archive/board-trim-2026-11-17.md).
+
+Measured 08:05Z against a live router with a loopback upstream that holds its response nine seconds before its first byte: the client got two keepalive frames at the start and then silence until the stream completed. So silence BEFORE the first byte is bounded today only by the configured response timeout, while AC #3 speaks about silence after it. Whether a keepalive should cover upstream silence is a wire question for the row that adopts the bound, not a new criterion here.
 <!-- SECTION:NOTES:END -->
 
 ## Comments

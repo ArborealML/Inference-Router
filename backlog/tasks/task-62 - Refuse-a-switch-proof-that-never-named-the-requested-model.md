@@ -5,7 +5,7 @@ status: To Do
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T23:07:00Z'
-updated_date: '2026-11-18T06:54:00Z'
+updated_date: '2026-11-18T08:31:00Z'
 labels:
   - concurrency
   - wire
@@ -45,9 +45,5 @@ Two commits; sites re-measured at `6ea83ca`. **A — src, tests, SPEC.** `state.
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-**AC #1-#6 landed at [3dce284](https://github.com/ArborealML/Inference-Router/commit/3dce284) (v0.12.33), CI green**; #1/#3/#4 at ab54d27. The commit review (deep tier, REVISE) became AC #7-#11, each finding checked in code. Accepted gap: the new pin runs `/bin/true`, so it is Unix-only; no CI leg builds Windows.
-
-**Ruling (board's).** Caller-facing text keeps the caller's own identifiers (their requested model and profile, the configured engine name, their own ceiling in ms) and carries the bare token as the reason. Banned: engine-reported names, window numbers, provider text, ports, and `state.Model`/`state.Profile` at `EngineRuntime.cs:766` — another caller's in-flight target, a cross-caller leak rather than a parameter. AC #9's "identifies the failed model" is met by the echoed request, so no §6.1 shape change is needed or approved. AC #11: no length check exists on a caller-supplied model id, so an unbounded id reaches feed reasons and the event `model:` field verbatim. JSON escaping stays on TASK-83.
-
-Pins that move: `SwitchClaimTests.cs:165`, `:294`, `CapabilityPublicationTests.cs:514`, `EndToEndTests.cs:659`; feed assertions keep parameters (`CapabilityPublicationTests.cs:523/593/621/655`, `EndToEndTests.cs:592/675`).
+Landed [610f0d8](https://github.com/ArborealML/Inference-Router/commit/610f0d86d9990e933e676a49e7215dd39f08049e) (v0.12.37): one token from a closed set of seven at the switch exits, the caller's sentence built from what the asking caller holds, and `WireText` budgets (identifier 128, reason 1600) with `Model` stored at reporting length at the ring's append funnel. **AC #7, #8 and #11 are unchecked again**: an external commit review at the high tier made claims this seat re-measured at `610f0d8`, and two hold. `RouterCore.Fail` (`RouterCore.cs:644-647`, `:828-850`) interpolates the raw `ticket.Model` into a `request.failed` reason, and the funnel caps `Model` but not `Reason` (`Events/RouterEvent.cs:67-72`) — so SPEC §10's promise that identifiers are cut before a reason sentence is built is false for that producer. And two exits still hand a caller free-form text outside the seven: `EngineRuntime.cs:620` (a remote engine loads its own models) and `:728-729` (a switch that never started), the second naming the target. Caps are [TASK-93](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-93%20-%20Bound-every-feed-field-at-the-funnel-and-make-SPEC-true-of-it.md), taxonomy [TASK-94](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-94%20-%20Name-every-refusal-category-and-stop-a-fixed-mismatch-reading-as-a-timeout.md). AC #9 and #10 were already open.
 <!-- SECTION:NOTES:END -->
