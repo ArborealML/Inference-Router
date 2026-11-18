@@ -7,7 +7,7 @@ status: Done
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-18T11:42:00Z'
-updated_date: '2026-11-18T17:41:00Z'
+updated_date: '2026-11-18T18:00:00Z'
 labels: []
 dependencies: []
 ordinal: 102000
@@ -30,11 +30,9 @@ ordinal: 102000
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Found while dispositioning the TASK-94 plan review, then verified in the tree at `RouterEvent.cs:85`. Kept out of TASK-94 because TASK-94 only needs the guard at its own emit site; this row is the general rule for every producer, including the admin SSE layer that already drops stale subscribers silently nearby.
+Found while dispositioning the TASK-94 plan review, verified in the tree at `RouterEvent.cs:85`. Kept out of TASK-94, which needs the guard only at its own emit site; this row is the general rule for every producer.
 
-Half of #4 landed at `51922fe`, read there: the switch-refusal `engine.switch_failed` is emitted after the switch lock is released, so no subscriber runs holding an engine lock.
+#4's first half landed at `51922fe`: the switch-refusal `engine.switch_failed` is emitted after the switch lock is released, so no subscriber runs holding an engine lock. The second half — a throwing observer leaves the caller's answer exactly as it was — is pinned at `2b751ec`.
 
-Closed at `2b751ec`, read on the pushed tree: `EventRing.Append` invokes each subscriber in its own `try` and counts the fault (`RouterEvent.cs:97-107`, `SubscriberFaults` at `:118`), `/admin/status` publishes it as `FeedSubscriberFaults` (`RouterCore.cs:244`, DTO `:1098`), and SPEC §6.1 states both costs (`:1938-1941`): a faulting subscriber loses its own event and nothing else; a subscriber that *blocks* blocks every producer, because the append holds the ring lock — an observer that must not slow requests replays by seq. Four pins by name in `SubscriberFaultTests`, including the two that pin the producer's answer and the un-stranded waiter.
-
-The implementer's control (their report): catch reduced to count-and-rethrow gives 4 failed / 0 passed across those pins, tree restored byte-identical. SPEC records the two controls unusable here — the pre-fix tree does not compile the pins, and dropping the catch is a CS0649 build failure, not a red pin. Their counts: 19/19 focused, 235/235 full (Debug), 0 warnings, load 14.4 self-induced. This seat's read: CI run 44360122393 success at `2b751ec`.
+Review of `2b751ec` (top tier, ingested 17:58Z): the charges that a subscriber may have written a partial SSE frame, that one global count is too coarse to diagnose, and that a failing subscriber should be ejected all assume the ring subscriber is the network writer. It is not; the two production subscribers and their reads are in TASK-109 Notes. The residue — pin separation, the ordering pin, and two further controls — is on TASK-109, not here.
 <!-- SECTION:NOTES:END -->
