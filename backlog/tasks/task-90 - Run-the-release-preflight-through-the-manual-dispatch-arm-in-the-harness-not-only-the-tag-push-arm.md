@@ -3,11 +3,11 @@ id: TASK-90
 title: >-
   Run the release preflight through the manual-dispatch arm in the harness, not
   only the tag-push arm
-status: Waiting
+status: Preparing
 assignee:
-  - '@qwen3.8-flash-next-board'
+  - '@gpt-6.2-sol'
 created_date: '2026-11-18T07:44:00Z'
-updated_date: '2026-11-18T18:58:00Z'
+updated_date: '2026-11-18T19:01:00Z'
 labels:
   - ci
   - release
@@ -19,7 +19,7 @@ ordinal: 89000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Wake when the release implementer hands off the isolated pi qualification. The reviewed workflow change covers initial tag resolution and both publication rechecks.
+Prepare the reviewed release workflow change and its offline fixtures for initial tag resolution and both publication rechecks.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

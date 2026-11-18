@@ -7,7 +7,7 @@ status: To Do
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-18T01:22:00Z'
-updated_date: '2026-11-18T18:40:00Z'
+updated_date: '2026-11-18T19:01:00Z'
 labels: []
 dependencies:
   - TASK-69
@@ -21,15 +21,16 @@ ordinal: 72000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-The owner's example, taken literally: one request waiting on the loaded model and eight waiting on another model means the router serves all eight, then switches — with age weighting so an old request counts for more than a new one — and does not flip back after the first new arrival. This is the no-ping-pong rule from decision-25, and it is a queue and scheduler behaviour, not a lifecycle one.
+For a cohort of eight comparable-age requests for model B and one for A, serve all eight B requests, then A. The owner specified the service order, leaving initial residence unstated. Test the switch count with an explicit starting residence. Age must eventually protect a waiting A under continuing B arrivals.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The owner's example is pinned from a stated start: one model resident, one waiter on it and eight on another, served eight-then-switch
-- [ ] #2 Under steady competing load the router does not alternate switches between two models, pinned by a test that counts switches
-- [ ] #3 Under arrivals that never stop, every waiting request keeps an age under a bound named in SPEC and switches per unit time stay bounded, with the refusal that enforces the bound on the feed
-- [ ] #4 For eligible hosts, batching uses measured transition cost and hysteresis while the maximum-wait bound still protects aged requests. Demand and age cannot override a host refusal.
+- [ ] #1 Under steady competing load the router does not alternate switches between two models, pinned by a test that counts switches
+- [ ] #2 Under arrivals that never stop, every waiting request keeps an age under a bound named in SPEC and switches per unit time stay bounded, with the refusal that enforces the bound on the feed
+- [ ] #3 For eligible hosts, batching uses measured transition cost and hysteresis while the maximum-wait bound still protects aged requests. Demand and age cannot override a host refusal.
+- [ ] #4 With B resident and eight B tickets plus one equally aged A ticket queued before dispatch, all eight B tickets finish before the switch to A. Record one B-to-A transition and successful A completion.
+- [ ] #5 Repeat the fixed cohort with A initially resident. With the batch selected before dispatch, verify A-to-B then B-to-A, eight successful B completions before A, and no intervening switch.
 <!-- AC:END -->
 
 ## Implementation Notes

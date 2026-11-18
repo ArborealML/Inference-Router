@@ -1,11 +1,11 @@
 ---
 id: TASK-89
 title: Configure pi to use the router, so /model offers its models
-status: Preparing
+status: Waiting
 assignee:
-  - '@gpt-6.2-sol'
+  - '@qwen3.8-flash-next-board'
 created_date: '2026-11-18T07:15:00Z'
-updated_date: '2026-11-18T18:46:00Z'
+updated_date: '2026-11-18T19:01:00Z'
 labels:
   - serve
   - pi
@@ -17,14 +17,14 @@ ordinal: 88000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-The second half of the owner's morning goal: pi must be able to pick router-served models with /model. This is configuration on the pi side, not router code, and it must not move the lane this session runs on.
+Wake when a second loadable model and its operating window are established. Qualify both model selections in pi and verify the serving windows supplied by the router.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 pi names the router's loopback endpoint and the models it offers, in a config file a reader can find.
+- [x] #1 pi names the router's loopback endpoint and the models it offers, in a config file a reader can find.
 - [ ] #2 Each offered model declares its context window, so a /model choice is honest about what it buys.
-- [ ] #3 No change moves the pi lane an agent session is running on; that move waits for a named window and the owner's nod.
+- [x] #3 No change moves the pi lane an agent session is running on; that move waits for a named window and the owner's nod.
 - [ ] #4 Two verified models appear in /model and a real pi turn completes on each through the router.
 <!-- AC:END -->
 
@@ -37,5 +37,5 @@ Read back the current pi provider without printing secrets. Exercise /model and 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-The existing pi router provider already declares one model and its context window. Extend its verified model entries as residency is proven. Exercise /model in a test session and select the newly available model. Confirm the response through the router and keep active agent lanes on their existing settings.
+On 2026-11-18 pi 1.3.0 selected the resident model through /model and completed one real Chat turn on the isolated Release router at 5c5e18a. The selected provider and model matched the session record, stopReason was stop, and exactly one completion returned HTTP 200. The private test profile used a separate listener and the shared provider file was byte-identical afterwards. The configured 131072-token value still lacks a live window observation. The deployed router and second model remain unqualified.
 <!-- SECTION:NOTES:END -->
