@@ -152,6 +152,13 @@ someone is actually changing repo state for it — an external review being in f
 task `In Progress` (record the in-flight review inside the task body instead, and move the task when
 implementation starts). Reviews and plans under review are noted in the task, not implied by its status.
 
+An assigned agent owns its task from preparation through testing and delivery to its coordinator. At each
+transition the agent reports the new status and supporting evidence to the manager, who updates the shared
+board. The agent follows up on failures and outstanding checks. At handoff it sends the coordinator the
+diff or commit, the acceptance criteria covered, check results, and any remaining limitations. The manager
+moves the task to Ready for Review and assigns the coordinator. If the coordinator requests changes, the
+implementer takes ownership again and repeats the affected checks.
+
 Every task carries an assignee — whoever acts on it next (`backlog task edit <id> -a @name`); on a
 `Done` task the assignee is the last responsible actor, so it reads as history rather than a to-do:
 `@qwen3.8-flash-next` for work done by the local coding agent (name the model that is doing it, so a
@@ -180,23 +187,42 @@ it without asking a follow-up question.
 
 ## Kanban columns
 
-`To Do → Preparing → In Progress → Waiting → Blocked → Done`, set in `backlog/config.yml`.
+`To Do → Blocked → Waiting → Preparing → In Progress → Testing → Ready for Review → Done`, set in `backlog/config.yml`.
 
 - **To Do** — not started. An assignee means claimed, not moving.
-- **Preparing** — the assignee is investigating, gathering evidence, or writing the implementation plan. Name the work underway in the task. Several tasks can be prepared concurrently.
-- **In Progress** — the assignee is implementing the change. One at a time.
-- **Waiting** — started, and parked on an event that will wake it: a review, a CI run, a pull request
-  gate, a predecessor task. The task body names the wake condition.
 - **Blocked** — no event will wake it; a person has to decide or grant something (an approval, a scope
   call, runner minutes). This is what keeps the column meaning *a human must move*.
+- **Waiting** — started, and parked on an event that will wake it: a review, a CI run, a pull request
+  gate, a predecessor task. The task body names the wake condition.
+- **Preparing** — the assignee is investigating, gathering evidence, or writing the implementation plan. Name the work underway in the task. Several tasks can be prepared concurrently.
+- **In Progress** — the assignee is implementing the change. One at a time.
+- **Testing** — the assignee is running or diagnosing the checks for its change. Move back to In Progress when a fix begins.
+- **Ready for Review** — the agent has delivered its evidence and the coordinator owns the next review action.
 
 Move the board at each work boundary — any commit or push that changes what the next move is — not at end
 of day. Anything sitting `Waiting` for a week without being woken gets re-triaged: dispatched, descoped,
 or parked out loud. A column that never changes is a bug in the board, not a fact about the work.
 
-## Two seats: who writes what ([decision-23](backlog/decisions/))
+## Coordinator and implementers
 
-Two sessions work this repository and they share one checkout, so every commit names its pathspecs
+The coordinator owns the shared board, writes plans with acceptance criteria and arranges independent plan
+and commit reviews. Use ChatSwarm when available. If that service is unavailable, record the pending review
+and continue independent work. The coordinator verifies reviewer findings against the diff and tests,
+integrates accepted work using the appropriate seat identity, checks CI and records the disposition.
+
+Run each implementer as a long-lived GPT-6.2 Sol agent with high reasoning in its own named tmux session.
+The coordinator gives it one task and an isolated Git worktree with a single writer. The implementer owns
+preparation, implementation, testing, fixes and the evidence handoff described above. It reports each
+transition so the coordinator can update the shared board. A test-slot delay moves the task to Waiting
+with its wake condition. After a handoff, send revisions or the next assignment to the same implementer.
+
+When migrating from subagents, let each finish its current assignment and deliver its handoff. Start its
+tmux successor after that worker has drained. The coordinator keeps the successor session across tasks.
+When a task is Done, confirm its changes have landed, retain any required private evidence, inspect tracked
+and untracked files, and release its worktree with Git. Preserve outstanding changes or evidence before
+removal, and move the implementer out of the retired directory before assigning its next worktree.
+
+The coordinator integrates work into the shared checkout. Every commit names its pathspecs
 (`git commit … -- backlog/`); **never `git add -A`** — the other seat's files are staged there. **No `git stash`**
 in this checkout either: a `stash -u` sweeps the other seat's uncommitted files out from under it, so work in
 progress parks under `.local/wip` and a clean tree is measured in another worktree. Identity flags go in the

@@ -1,6 +1,6 @@
 project_name: "Inference Router"
 default_status: "To Do"
-statuses: ["To Do", "Preparing", "In Progress", "Waiting", "Blocked", "Done"]
+statuses: ["To Do", "Blocked", "Waiting", "Preparing", "In Progress", "Testing", "Ready for Review", "Done"]
 labels: []
 date_format: yyyy-mm-dd
 max_column_width: 20
