@@ -31,7 +31,7 @@ ordinal: 84000
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-**Grant, provisional, relayed by the clerk at 07:06Z from the owner:** the router may run on this box and may start, stop or reconfigure engines **except** the engine carrying live pi lanes; `auto_switch` stays off until the switching safety rows pass; on any anomaly, stop and leave it as found. Standing constraint from the same relay: pi's own lanes run on this box's engine config with one resident model, so swapping that resident model cuts the lanes this board, the implementer seat and the clerk run on — proof goes on a separate engine or port. A veto overrides it; none has arrived.
+**Grant, provisional, relayed 07:06Z, and SUPERSEDED for engine lifecycle at 17:55Z:** the router may run on this box; starting, stopping or reconfiguring an engine is **parked on this host** (no transaction, no window), and the engine carrying live pi lanes is untouched either way; `auto_switch` stays off until the switching safety rows pass; on any anomaly, stop and leave it as found. Standing constraint from the same relay: pi's own lanes run on this box's engine config with one resident model, so swapping that resident model cuts the lanes this board, the implementer seat and the clerk run on — proof goes on a separate engine or port. A veto overrides it; none has arrived.
 
 **Measured 07:52Z on a front-only probe** (auto_switch off, no lifecycle block, loopback only, an already-running OpenAI-shaped fake upstream): the router listed the model, passed one completion, relayed a stream to the sentinel, and answered an unknown model in the single lowercase error shape. Neither shipped sample is front-only as written — both set `auto_switch = true`, which is what #4 asks to see named.
 

@@ -1,11 +1,13 @@
 ---
 id: TASK-33
-title: 'Decision: may the router drive the live Docker daemon on this host'
+title: >-
+  Document that the native Docker lifecycle provider is verified only against
+  fakes
 status: To Do
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T07:53:00Z'
-updated_date: '2026-11-17T16:01:00Z'
+updated_date: '2026-11-18T18:07:00Z'
 labels:
   - engine
   - lifecycle
@@ -18,22 +20,9 @@ ordinal: 32000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-**Answer recorded: allow ONE bounded lifecycle transaction on this host.** The remaining act is performing it and
-reporting — the coding session, about 20 minutes — and it is a mutation of shared infrastructure, so the report
-names what was started, stopped and removed and how long each phase took.
+**Parked by the owner at 17:55Z, superseding the 07:06Z provisional grant:** no lifecycle transaction on this host, no window, and the engine carrying these pi lanes is untouched. So the proof this row existed to run is deferred, and the answer that has to be written is the negative posture: the native provider is verified against fakes only. That is the remaining act — one SPEC 5.3.1 sentence naming the fakes-only posture and the refuse-don't-escalate rule (decision-1) — and it is the implementer's, not anyone's docker command.
 
-**The bound, or it does not run:** one named engine that no other session is using; one model switch that actually
-drains it and starts another; nothing else touched. If no engine can be shown idle, stop and re-block this task
-rather than choosing which engine to disturb.
-
-**Config stays out of the repository:** `air config` prints engine endpoints, key-file locations and lifecycle
-argv, so a committed sample would publish them. The record is the report, plus one SPEC sentence saying what is now
-verified against a live daemon rather than a fake.
-
-**Links:** the route already settled: [TASK-20](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-20%20-%20Decision-how-the-router-starts-and-stops-engines.md); provider behaviour and its fakes: [SPEC.md](https://github.com/ArborealML/Inference-Router/blob/main/SPEC.md) §5.3.1 and [tests/Arboreal.InferenceRouter.Tests/DockerLifecycleProviderTests.cs](https://github.com/ArborealML/Inference-Router/blob/main/tests/Arboreal.InferenceRouter.Tests/DockerLifecycleProviderTests.cs); the criteria this verifies live: [TASK-26](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-26%20-%20Close-the-gaps-SPEC-5.3.1-still-describes-for-container-native-lifecycle.md).
-
-**If it is declined instead:** say so in SPEC, because "the native provider is verified only against fakes" is a
-posture the README should state rather than leave implied.
+**If a window is ever granted:** the bound stands unchanged — one named engine no other session uses, one model switch that actually drains it and starts another, nothing else touched, and a report naming what was started, stopped and removed with each phase's duration. If no engine can be shown idle, re-block rather than choosing which engine to disturb. `air config` prints endpoints, key-file locations and lifecycle argv, so the record is prose in a task, never a committed sample.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
