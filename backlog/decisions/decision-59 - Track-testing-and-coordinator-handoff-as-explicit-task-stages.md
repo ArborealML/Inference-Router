@@ -14,6 +14,8 @@ Display the columns in this order: To Do → Blocked → Waiting → Preparing �
 
 ## Consequences
 
+A coordinator-owned task may enter Ready for Review with every implementation criterion checked. It remains open until the coordinator accepts the evidence and integrates the change. The board checker verifies the handoff owner and counts this stage as open. A Waiting task must name the event that wakes it. An empty wake label or a placeholder does not identify an event.
+
 A failed test needing a fix returns the task to In Progress. An agent waiting for a test slot records the wake condition in Waiting. Coordinator-requested revisions return to the implementing agent. Both new statuses count as open.
 
 The coordinator plans and reviews with ChatSwarm when available. Current subagents finish their assignments individually before a dedicated, long-lived tmux implementer succeeds each one. Implementers work in isolated task worktrees; the coordinator integrates their handoffs and retires completed worktrees after preserving evidence. The tmux session stays available for subsequent assignments.

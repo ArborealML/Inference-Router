@@ -1,11 +1,11 @@
 ---
 id: TASK-116
 title: Support Testing and Ready for Review in the board checker
-status: Done
+status: To Do
 assignee:
   - '@gpt-6.2-sol'
 created_date: '2026-11-18T18:29:00Z'
-updated_date: '2026-11-18T18:44:00Z'
+updated_date: '2026-11-18T18:59:00Z'
 labels: []
 dependencies: []
 modified_files:
@@ -16,13 +16,15 @@ ordinal: 114000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Testing and Ready for Review are supported in the board and checker. Sol delivered the tested diff to the coordinator.
+Complete the coordinator handoff checks. A tested change may satisfy every implementation criterion before the coordinator accepts and integrates it.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [x] #1 Both statuses count as open; misspelled statuses still fail, and Done remains excluded.
 - [x] #2 The task list and working contract show both stages, their owners and the handoff requirements.
+- [ ] #3 Ready for Review with all criteria checked counts as open under the coordinator. The same fixture under an implementer reports a handoff-owner defect. Preserve the existing Done evidence requirement.
+- [ ] #4 The Waiting fixture rejects a missing event and an empty or placeholder wake label, and accepts a named CI completion. The self-test summary describes the cases it actually exercises.
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -36,7 +38,5 @@ Verify each new status and a mixed Preparing, Waiting, Testing, Ready for Review
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Contract and configured order landed in 6a02535. Checker and regression fixtures landed in 8faba3b. CLI and checker readbacks verified delivery, open counts and the named wake requirement.
-
-The manager dispatched the bounded checker review of 8faba3b on 2026-11-18.
+Contract and configured order landed in 6a02535. Checker and stage count fixtures landed in 8faba3b. Review verified the all-checked rule rejects valid review handoffs and the positive fixture retains its implementer. The Waiting rule currently recognizes a keyword alone. Add positive and negative CLI fixtures and precise output under decision-59.
 <!-- SECTION:NOTES:END -->
