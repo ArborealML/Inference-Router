@@ -5,10 +5,10 @@ status: Done
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-16T20:50:00Z'
-updated_date: '2026-11-17T08:06:00Z'
+updated_date: '2026-11-18T19:29:00Z'
 labels:
   - ci
-milestone: v0.10 - live view and robustness parity
+milestone: m-9
 dependencies: []
 priority: high
 ordinal: 12000

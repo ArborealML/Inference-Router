@@ -5,9 +5,10 @@ status: Done
 assignee:
   - '@claire'
 created_date: '2026-11-17T15:01:00Z'
-updated_date: '2026-11-17T16:38:00Z'
+updated_date: '2026-11-18T19:29:00Z'
 labels:
   - release
+milestone: m-9
 dependencies: []
 priority: high
 type: task

@@ -5,10 +5,11 @@ status: Done
 assignee:
   - '@claire'
 created_date: '2026-11-17T23:26:00Z'
-updated_date: '2026-11-18T01:52:00Z'
+updated_date: '2026-11-18T19:29:00Z'
 labels:
   - release
   - governance
+milestone: m-2
 dependencies: []
 priority: medium
 ordinal: 66000

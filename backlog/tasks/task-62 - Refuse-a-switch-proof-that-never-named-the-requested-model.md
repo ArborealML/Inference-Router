@@ -5,11 +5,11 @@ status: To Do
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T23:07:00Z'
-updated_date: '2026-11-18T19:18:00Z'
+updated_date: '2026-11-18T19:29:00Z'
 labels:
   - concurrency
   - wire
-milestone: m-3
+milestone: m-2
 dependencies:
   - TASK-66
 priority: high

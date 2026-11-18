@@ -5,10 +5,11 @@ status: Done
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T20:41:00Z'
-updated_date: '2026-11-17T21:58:00Z'
+updated_date: '2026-11-18T19:29:00Z'
 labels:
   - concurrency
   - scheduling
+milestone: m-2
 dependencies: []
 priority: high
 ordinal: 55000

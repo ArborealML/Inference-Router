@@ -5,9 +5,10 @@ status: Done
 assignee:
   - '@claire'
 created_date: '2026-11-17T10:52:00Z'
-updated_date: '2026-11-18T03:23:00Z'
+updated_date: '2026-11-18T19:29:00Z'
 labels:
   - docs
+milestone: m-9
 dependencies: []
 priority: low
 type: docs

@@ -7,12 +7,12 @@ status: To Do
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-18T04:09:00Z'
-updated_date: '2026-11-18T19:18:00Z'
+updated_date: '2026-11-18T19:29:00Z'
 labels:
   - stream
   - wire
   - tests
-milestone: m-2
+milestone: m-1
 dependencies: []
 ordinal: 82000
 ---

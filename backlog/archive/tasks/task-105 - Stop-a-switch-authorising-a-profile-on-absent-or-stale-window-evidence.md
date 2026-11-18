@@ -8,6 +8,7 @@ created_date: '2026-11-18T13:17:00Z'
 labels: []
 dependencies: []
 ordinal: 104000
+milestone: m-2
 ---
 
 **Archived by the board as a duplicate.** Its finding — an unknown or stale serving window authorising a profile — is carried by TASK-68 criterion #6, the row whose admission check it describes; the survivor keeps the criteria the board reads.

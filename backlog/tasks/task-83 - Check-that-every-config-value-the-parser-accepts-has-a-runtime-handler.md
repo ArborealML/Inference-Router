@@ -5,11 +5,11 @@ status: To Do
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-18T04:10:00Z'
-updated_date: '2026-11-18T19:18:00Z'
+updated_date: '2026-11-18T19:29:00Z'
 labels:
   - config
   - tests
-milestone: m-8
+milestone: m-6
 dependencies:
   - TASK-77
 ordinal: 83000

@@ -5,9 +5,9 @@ status: To Do
 assignee:
   - '@qwen3.8-flash-next-board'
 created_date: '2026-11-16T20:40:00Z'
-updated_date: '2026-11-18T19:18:00Z'
+updated_date: '2026-11-18T19:29:00Z'
 labels: []
-milestone: m-12
+milestone: m-10
 dependencies:
   - TASK-1
 priority: low

@@ -5,9 +5,10 @@ status: Done
 assignee:
   - '@claire'
 created_date: '2026-11-17T05:59:00Z'
-updated_date: '2026-11-18T05:50:00Z'
+updated_date: '2026-11-18T19:29:00Z'
 labels:
   - docs
+milestone: m-9
 dependencies:
   - TASK-23
   - TASK-46

@@ -5,10 +5,11 @@ status: Done
 assignee:
   - '@claire'
 created_date: '2026-11-17T23:14:00Z'
-updated_date: '2026-11-18T01:30:00Z'
+updated_date: '2026-11-18T19:29:00Z'
 labels:
   - chore
   - governance
+milestone: m-10
 dependencies: []
 priority: medium
 ordinal: 65000

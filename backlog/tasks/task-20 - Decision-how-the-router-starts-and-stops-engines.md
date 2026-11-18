@@ -5,10 +5,11 @@ status: Done
 assignee:
   - '@qwen3.8-flash-next-board'
 created_date: '2026-11-17T02:18:00Z'
-updated_date: '2026-11-17T07:54:00Z'
+updated_date: '2026-11-18T19:29:00Z'
 labels:
   - engine
   - lifecycle
+milestone: m-4
 dependencies: []
 priority: high
 ordinal: 20000

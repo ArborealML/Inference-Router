@@ -7,11 +7,11 @@ status: To Do
 assignee:
   - '@claire'
 created_date: '2026-11-17T02:18:00Z'
-updated_date: '2026-11-18T19:18:00Z'
+updated_date: '2026-11-18T19:29:00Z'
 labels:
   - ui
   - wire
-milestone: m-10
+milestone: m-11
 dependencies: []
 priority: medium
 ordinal: 21000

@@ -5,10 +5,11 @@ status: Done
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T09:11:00Z'
-updated_date: '2026-11-17T19:14:00Z'
+updated_date: '2026-11-18T19:29:00Z'
 labels:
   - release
   - security
+milestone: m-9
 dependencies:
   - TASK-49
 priority: medium

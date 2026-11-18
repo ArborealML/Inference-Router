@@ -5,10 +5,11 @@ status: Done
 assignee:
   - '@claire'
 created_date: '2026-11-17T02:18:00Z'
-updated_date: '2026-11-17T12:18:00Z'
+updated_date: '2026-11-18T19:29:00Z'
 labels:
   - docs
   - process
+milestone: m-10
 dependencies: []
 priority: high
 ordinal: 18000

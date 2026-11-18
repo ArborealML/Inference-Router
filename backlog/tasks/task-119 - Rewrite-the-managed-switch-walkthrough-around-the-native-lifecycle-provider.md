@@ -1,11 +1,11 @@
 ---
 id: TASK-119
 title: Rewrite the managed switch walkthrough around the native lifecycle provider
-status: To Do
+status: Preparing
 assignee:
   - '@gpt-6.2-sol'
 created_date: '2026-11-18T19:04:00Z'
-updated_date: '2026-11-18T19:18:00Z'
+updated_date: '2026-11-18T19:30:00Z'
 labels: []
 milestone: m-4
 dependencies: []
@@ -27,3 +27,9 @@ Make the primary operator walkthrough consistent with decisions 56 and 62. At a8
 - [ ] #3 The transaction discussion at SPEC.md:1499–1510 distinguishes target quarantine from independent recovery. Explain the outage between incumbent stop and verified alternate readiness on a single host, plus behavior under uncertain occupancy.
 - [ ] #4 Validate the primary example with the offline config loader. Cross-check ownership, host-exclusivity and recovery claims against the implementation and distinguish documented requirements from shipped behavior.
 <!-- AC:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Trace the managed switch examples to the config loader and provider. Distinguish proven behavior from the host fencing and independent recovery requirements. Submit the proposed walkthrough for review, validate the example offline, and cross-check each cited section before review handoff.
+<!-- SECTION:PLAN:END -->

@@ -5,11 +5,11 @@ status: Preparing
 assignee:
   - '@gpt-6.2-sol'
 created_date: '2026-11-18T02:37:00Z'
-updated_date: '2026-11-18T19:20:00Z'
+updated_date: '2026-11-18T19:29:00Z'
 labels:
   - lifecycle
   - scheduling
-milestone: m-8
+milestone: m-6
 dependencies:
   - TASK-69
 priority: high

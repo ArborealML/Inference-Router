@@ -5,11 +5,11 @@ status: Done
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-16T22:30:00Z'
-updated_date: '2026-11-17T08:22:00Z'
+updated_date: '2026-11-18T19:29:00Z'
 labels:
   - ci
   - release
-milestone: v0.9 - native engine lifecycle
+milestone: m-9
 dependencies: []
 priority: medium
 ordinal: 15000

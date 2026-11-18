@@ -5,11 +5,12 @@ status: Done
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T09:53:00Z'
-updated_date: '2026-11-17T10:58:00Z'
+updated_date: '2026-11-18T19:29:00Z'
 labels:
   - ci
   - release
   - security
+milestone: m-9
 dependencies: []
 priority: high
 ordinal: 42000

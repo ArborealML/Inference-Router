@@ -7,11 +7,12 @@ status: Done
 assignee:
   - '@chatswarm'
 created_date: '2026-11-17T08:10:00Z'
-updated_date: '2026-11-17T11:08:00Z'
+updated_date: '2026-11-18T19:29:00Z'
 labels:
   - stream
   - transport
   - wire
+milestone: m-1
 dependencies: []
 priority: medium
 ordinal: 33000

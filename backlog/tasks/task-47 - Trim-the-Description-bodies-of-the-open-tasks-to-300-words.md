@@ -5,8 +5,9 @@ status: Done
 assignee:
   - '@qwen3.8-flash-next-board'
 created_date: '2026-11-17T11:03:00Z'
-updated_date: '2026-11-17T12:20:00Z'
+updated_date: '2026-11-18T19:29:00Z'
 labels: []
+milestone: m-10
 dependencies: []
 priority: medium
 type: chore

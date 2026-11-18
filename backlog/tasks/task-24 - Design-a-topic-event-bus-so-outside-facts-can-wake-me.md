@@ -5,10 +5,11 @@ status: Done
 assignee:
   - '@claire'
 created_date: '2026-11-17T02:30:00Z'
-updated_date: '2026-11-17T10:58:00Z'
+updated_date: '2026-11-18T19:29:00Z'
 labels:
   - tooling
   - notify
+milestone: m-10
 dependencies: []
 priority: medium
 ordinal: 24000

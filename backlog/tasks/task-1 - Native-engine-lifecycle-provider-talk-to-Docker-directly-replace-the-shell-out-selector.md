@@ -7,9 +7,9 @@ status: Done
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-16T20:39:00Z'
-updated_date: '2026-11-17T08:06:00Z'
+updated_date: '2026-11-18T19:29:00Z'
 labels: []
-milestone: v0.9 - native engine lifecycle
+milestone: m-4
 dependencies:
   - TASK-7
   - TASK-8

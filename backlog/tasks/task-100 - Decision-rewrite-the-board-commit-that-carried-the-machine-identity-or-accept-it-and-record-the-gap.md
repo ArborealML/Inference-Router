@@ -7,8 +7,9 @@ status: Done
 assignee:
   - '@claire'
 created_date: '2026-11-18T11:14:00Z'
-updated_date: '2026-11-18T18:27:00Z'
+updated_date: '2026-11-18T19:29:00Z'
 labels: []
+milestone: m-10
 dependencies: []
 ordinal: 99000
 ---

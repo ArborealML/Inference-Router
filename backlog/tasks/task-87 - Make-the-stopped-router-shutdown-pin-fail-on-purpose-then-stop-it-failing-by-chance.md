@@ -7,11 +7,11 @@ status: In Progress
 assignee:
   - '@gpt-6.2-sol'
 created_date: '2026-11-18T06:27:00Z'
-updated_date: '2026-11-18T19:18:00Z'
+updated_date: '2026-11-18T19:29:00Z'
 labels:
   - flake
   - tests
-milestone: m-3
+milestone: m-2
 dependencies:
   - TASK-98
 priority: high

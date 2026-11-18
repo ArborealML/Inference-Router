@@ -5,10 +5,11 @@ status: Done
 assignee:
   - '@chatswarm'
 created_date: '2026-11-17T09:11:00Z'
-updated_date: '2026-11-17T11:06:00Z'
+updated_date: '2026-11-18T19:29:00Z'
 labels:
   - release
   - ci
+milestone: m-9
 dependencies: []
 priority: medium
 ordinal: 38000

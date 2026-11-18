@@ -1,22 +1,42 @@
 # Router delivery milestones
 
-Start with a real pi turn on the deployed router. The next end-to-end proof is a native model swap on one host. Fleet routing adds a second host and a shared admission decision. The milestone numbers are board identifiers. Several tracks can advance at once.
+The first milestone qualifies a deployed router with pi. An isolated pi session has already completed turns on two resident models. The native swap milestone requires observing a host change its resident model between turns. The cluster milestone adds shared admission and activation from either ingress.
+
+## Delivery path
+
+Stream integrity, switch safety and bounded admission can advance in parallel. Each later milestone depends on the specific tasks listed below.
 
 | Outcome | What must work |
 | --- | --- |
 | [Pi on a running router](m-0%20-%20pi-on-a-running-router.md) | Select a verified model in pi, discover its effective context, and finish a streamed turn through the deployed router. Qualify the second model in the picker. |
-| [Bounded queue admission](m-1%20-%20bounded-queue-admission.md) | Refuse impossible work promptly and give queued work bounded memory, time and refusal events. |
-| [Completion stream integrity](m-2%20-%20completion-stream-integrity.md) | Preserve upstream frames across arbitrary splits. A stalled stream releases capacity and reports a bounded error. |
-| [Reliable switch and shutdown state](m-3%20-%20reliable-switch-and-shutdown-state.md) | Superseded probes cannot authorize work. Shutdown settles waiters with one cause, including under deliberately reproduced races. |
+| [Completion stream integrity](m-1%20-%20completion-stream-integrity.md) | Preserve upstream frames across arbitrary splits. A stalled stream releases capacity and reports a bounded error. |
+| [Reliable switch and shutdown state](m-2%20-%20reliable-switch-and-shutdown-state.md) | Superseded probes cannot authorize work. Shutdown settles waiters with one cause, including under deliberately reproduced races. |
+| [Bounded queue admission](m-3%20-%20bounded-queue-admission.md) | Refuse impossible work promptly and give queued work bounded memory, time and refusal events. |
 | [Native model swap through pi-clm](m-4%20-%20native-model-swap-through-pi-clm.md) | Match the local selector configurations, drain the incumbent and prove exact target readiness. Observe the resident change between real pi turns on A and B. |
 | [Measured model scheduling](m-5%20-%20measured-model-scheduling.md) | Measured costs change placement decisions. Serve the eight B requests, then A, while bounding wait under continuing arrivals. Measure lock changes after the pi swap proof. |
-| [Pi ticket tracking and outage recovery](m-6%20-%20pi-ticket-tracking-and-outage-recovery.md) | Follow and cancel a queued ticket, consume a valid readiness reservation, and wait through a bounded outage in the local proxy. |
-| [Configuration reload during inference](m-7%20-%20configuration-reload-during-inference.md) | Apply a validated configuration generation while active work keeps its claimed configuration. An invalid change leaves the current generation serving. |
-| [Cluster routing and model placement](m-8%20-%20cluster-routing-and-model-placement.md) | Either ingress admits against one fleet queue. A managed peer activates the selected model and completes inference. The host can refuse unsafe placement. |
+| [Cluster routing and model placement](m-6%20-%20cluster-routing-and-model-placement.md) | Either ingress admits against one fleet queue. A managed peer activates the selected model and completes inference. The host can refuse unsafe placement. |
+
+## Parallel work
+
+| Outcome | What must work |
+| --- | --- |
+| [Pi ticket tracking and outage recovery](m-7%20-%20pi-ticket-tracking-and-outage-recovery.md) | Follow and cancel a queued ticket, consume a valid readiness reservation, and wait through a bounded outage in the local proxy. |
+| [Configuration reload during inference](m-8%20-%20configuration-reload-during-inference.md) | Apply a validated configuration generation while active work keeps its claimed configuration. An invalid change leaves the current generation serving. |
 | [Verifiable public release](m-9%20-%20verifiable-public-release.md) | Verify the canary, then publish and identify the stable Linux and Windows binaries with downloadable evidence. |
-| [Operator live view](m-10%20-%20operator-live-view.md) | Bootstrap a bounded status view and follow ticket progress with the replayable event feed. |
-| [Inference API qualification](m-11%20-%20inference-api-qualification.md) | Qualify adapter choices against actual client behavior, including a real tool round before introducing a Responses surface. |
-| [Repository and architecture checks](m-12%20-%20repository-and-architecture-checks.md) | Pin the lifecycle map, Git identities, board validation and coordinator handoffs with reproducible checks. |
+| [Repository and architecture checks](m-10%20-%20repository-and-architecture-checks.md) | Pin the lifecycle map, Git identities, board validation and coordinator handoffs with reproducible checks. |
+
+## Follow-on work
+
+| Outcome | What must work |
+| --- | --- |
+| [Operator live view](m-11%20-%20operator-live-view.md) | Bootstrap a bounded status view and follow ticket progress with the replayable event feed. |
+| [Inference API qualification](m-12%20-%20inference-api-qualification.md) | Qualify adapter choices against actual client behavior, including a real tool round before introducing a Responses surface. |
+
+## Completed foundations
+
+The [single-host robustness baseline](m-13%20-%20single-host-robustness-baseline.md) records the comparison with NVIDIA Personal AI Router and the resulting single-host changes. The earlier v0.9 cohort contained tasks 1 and 15. The v0.10 cohort contained tasks 10, 12 and 13. Their primary milestones now reflect what shipped, so each completed task contributes once.
+
+Five archived records retain their outcome assignments for reference. The board excludes archived records from its completion counts.
 
 ## Dependencies that determine the order
 

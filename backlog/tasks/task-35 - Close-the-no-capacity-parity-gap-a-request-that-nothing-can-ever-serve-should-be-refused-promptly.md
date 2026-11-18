@@ -7,10 +7,11 @@ status: Done
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T08:16:00Z'
-updated_date: '2026-11-17T08:17:00Z'
+updated_date: '2026-11-18T19:29:00Z'
 labels:
   - wire
   - scheduling
+milestone: m-3
 dependencies: []
 priority: medium
 ordinal: 34000

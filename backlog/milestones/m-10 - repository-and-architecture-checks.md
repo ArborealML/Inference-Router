@@ -1,5 +1,5 @@
 ---
-id: m-12
+id: m-10
 title: "Repository and architecture checks"
 ---
 

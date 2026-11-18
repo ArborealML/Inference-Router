@@ -5,9 +5,11 @@ status: Done
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-18T08:30:00Z'
+updated_date: '2026-11-18T19:29:00Z'
 labels:
   - wire
   - switch
+milestone: m-2
 dependencies: []
 priority: medium
 ordinal: 93000

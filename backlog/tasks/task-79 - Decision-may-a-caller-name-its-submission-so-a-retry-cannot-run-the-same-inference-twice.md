@@ -7,9 +7,10 @@ status: Done
 assignee:
   - '@claire'
 created_date: '2026-11-18T02:59:00Z'
-updated_date: '2026-11-18T03:32:00Z'
+updated_date: '2026-11-18T19:29:00Z'
 labels:
   - wire
+milestone: m-7
 dependencies:
   - TASK-73
 priority: medium

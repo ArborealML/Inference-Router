@@ -1,5 +1,5 @@
 ---
-id: m-11
+id: m-12
 title: "Inference API qualification"
 ---
 
