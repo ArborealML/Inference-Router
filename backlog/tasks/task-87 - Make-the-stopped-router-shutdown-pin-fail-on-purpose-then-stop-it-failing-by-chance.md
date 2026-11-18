@@ -3,7 +3,7 @@ id: TASK-87
 title: >-
   Make the stopped-router shutdown pin fail on purpose, then stop it failing by
   chance
-status: To Do
+status: In Progress
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-18T06:27:00Z'
@@ -40,6 +40,8 @@ Dispositioned by the top-tier plan review and corrected: dropping Assert.Equal("
 
 ## Implementation Notes
 
-<!-- SECTION:NOTES:BEGIN -->
+
+
 Five CI occurrences, all Expected settled / Actual cancelled: 44264855629 at b7ab43d, 44275637518 at e0dcd0e, 44277482601 at 64b9f94 (rerun green), 44280833645 on a board-only push, 44308059362 at 14a01e2 (rerun requested by this seat). Five of the last seven pushes: the gate cannot be trusted until this is fixed, so this row goes first. Coding seat, two sightings — at `8e6867d` plus the taxonomy patch, 2 red / 1 green, this pin in its 30 s timeout shape and `RequestPhaseTimeoutTests.ACallerThatHangsUpIsCancelledEvenIfTheEngineIgnoresTheCancellation`; at `14a01e2`, Failed 1 / Passed 221 with the **test name lost to a pipe**, unreproduced in four Debug, three Release and six switch-class runs. Their report; that untitled sighting is the failure mode criterion #6 ends. Mechanism and mutation controls live in the implementation plan, from the top-tier review; nothing here is measured by this seat beyond the CI logs it pulled. Standing rule while open: no new pins in the switch-claim or capability-publication classes — amendments are allowed, and the taxonomy commit's census is on TASK-94.
-SECTION:NOTES:END -->
+**Started by the coding seat.** Reproduction for criterion #1: 20 focused Release runs of the pin at `64b9f94` — a sha before the taxonomy commit, which separates this flake from that change — in a detached worktree off the main tree, one log per run, counts reported with sha and command. Two follow-ups for whoever lands this row: tightening `CapabilityPublicationTests.CategoryOf` to assert the caller's text whole is a new assertion in a closed class, so it waits for this row to close; and the selector backstop's pin must land in a class this rule does not close.
+<!-- SECTION:NOTES:END -->
