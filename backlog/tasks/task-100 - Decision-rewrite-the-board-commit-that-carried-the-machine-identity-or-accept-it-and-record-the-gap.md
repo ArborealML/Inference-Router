@@ -3,10 +3,11 @@ id: TASK-100
 title: >-
   Decision: rewrite the board commit that carried the machine identity, or
   accept it and record the gap
-status: Blocked
+status: Done
 assignee:
   - '@claire'
 created_date: '2026-11-18T11:14:00Z'
+updated_date: '2026-11-18T18:27:00Z'
 labels: []
 dependencies: []
 ordinal: 99000
@@ -15,18 +16,17 @@ ordinal: 99000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Commit `58644bb` landed with the machine's git identity instead of the per-commit agent identity decision-29 requires: the commit command omitted the `-c user.name` / `-c user.email` flags. It is pushed. Correcting it means rewriting pushed history, which decision-24 reserves for you. Everything after it sits on that sha.
+The owner accepted the fallback identity on the [published board commit](https://github.com/ArborealML/Inference-Router/commit/58644bb6a7d737bf3250c29271498609b49c0cac). Decision-29 records the exception.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
-
 <!-- AC:BEGIN -->
-- [ ] #1 One line of answer: rewrite the one commit, or accept it and record the gap
-- [ ] #2 Whichever way, decision-29 records the outcome, so a later seat can tell a defect from history
+- [x] #1 One line of answer: rewrite the one commit, or accept it and record the gap
+- [x] #2 Whichever way, decision-29 records the outcome, so a later seat can tell a defect from history
 <!-- AC:END -->
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Options and what changes: **rewrite** — one force-push over a commit two later commits sit on, their shas change with it, and the machine identity leaves the history; **accept** — the identity (a GitHub noreply address, no key path, no home path) stays published, and the guard becomes mechanical: a CI check that refuses a commit whose author is not a configured agent identity, which the board will open as its own row. Blocked on @claire because decision-24 forbids rewriting pushed history without your word. Cost to answer: two minutes. This row does not sit in the same cluster as the other three: it is the only one where a pushed artifact is involved. The commit message that recorded this breach mistyped its own sha and two corpus counts; the numbers above and in the next commit message are the re-measured ones.
+The owner ruling is recorded in [decision-29](https://github.com/ArborealML/Inference-Router/blob/main/backlog/decisions/decision-29%20-%20Each-seat-commits-as-a-named-agent-identity-supplied-per-commit-not-from-shared-config.md). TASK-70 owns the push-range identity guard.
 <!-- SECTION:NOTES:END -->

@@ -41,4 +41,4 @@ inventing a fake one. Adding a seat is one entry in the sanctioned set. The cost
 author lines will not resolve to a GitHub profile until a bot account exists, and that act is the
 owner's whenever they want it.
 
-One breach is on the record: a board commit carried the machine identity because the commit command omitted these flags. It is pushed, so correcting it is the owner's call (decision-24) and is tracked as its own row. Until that answer lands, a mismatched identity in pushed history is a known gap rather than a mystery, and the seat's guard is mechanical: the flags go in the command, not in shared config.
+On 2026-11-18 the owner confirmed `shadowndacorner`, the account used by the default SSH credentials, as the repository fallback. Agent seats continue to supply their identity per commit. The owner accepted [the published board commit](https://github.com/ArborealML/Inference-Router/commit/58644bb6a7d737bf3250c29271498609b49c0cac) that omitted those flags and carried the fallback as both author and committer. Its SHA stays in published history. TASK-70 tracks prevention for future pushes.
