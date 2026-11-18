@@ -1,11 +1,11 @@
 ---
 id: TASK-85
 title: Bring the router up on this box, reachable from pi, and prove that it serves
-status: Blocked
+status: In Progress
 assignee:
-  - '@claire'
+  - '@qwen3.8-flash-next'
 created_date: '2026-11-18T06:06:00Z'
-updated_date: '2026-11-18T06:09:00Z'
+updated_date: '2026-11-18T07:16:00Z'
 labels:
   - serve
 dependencies: []
@@ -31,7 +31,11 @@ Blocked on @claire for one grant: may a seat start or stop an inference engine o
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Pairing: AC #2 is the live half of TASK-82 (frame preservation at any split byte) and TASK-30 (a relay against a client that stops reading); a green unit suite is not evidence for this row. AC #3 needs only what is already true in code — the router forwards exactly Authorization and Content-Type upstream (`RouterCore.cs:670-681`), so no router-side header reaches a backend.
+**Provisional grant, relayed by the clerk at 07:06Z from the owner verbatim: "I'd really like to wake up to the inference router running successfully and Pi able to swap between models with /model." Grant text: "The owner wants the router running by morning. The router may run on this box and may start, stop or reconfigure engines **except the engine currently carrying live pi lanes**; `auto_switch` stays off until the switching safety rows pass; on any anomaly, stop and leave it as found." The owner may veto; if nothing arrives by 08:00Z this stands as provisional, not final.
 
-Config trap, re-measured: `Remote = e.Remote ?? false` at `RouterConfigLoader.cs:286`, and `samples/router.toml`'s hyperqwen entry carries neither `remote = true` nor a lifecycle block — it lands on the router-owns-it side with nothing to run. A bring-up config either names `remote = true` for every endpoint it does not own or states the lifecycle command it expects; `samples/router.safe-smoke.toml` is the only sample safe to smoke-test.
+**Hard constraint from the same relay, standing:** pi's own lanes are served by this box's strata config on one resident model. Swapping that resident model overnight cuts the lanes this board, the implementer seat and the clerk run on. Proof goes on a separate engine or port; nobody touches the live one without a named window and the owner's nod.
+
+**The box, re-measured at 07:08Z** (the clerk was right that no router listens): nothing on 8321 or 18080; 18021 answers 401 `authentication_error` — a live engine wanting a key; 18020 refuses connection, though both shipped samples name that endpoint; 18044 is the session-manager bridge; 18081 the backlog server; 18082 a tailnet forwarder for the docs page, not the API. One extra finding: a **benchmark fake backend is still listening** — `bench/.../Benchmarks 2000 200`, pid 716436, answering `/v1/models` with `bench-model` on 127.0.0.1:37541. It is not the router and stays running until the owner says otherwise.
+
+**Config note:** both shipped samples set `auto_switch = true`, so neither is front-only as written; the grant requires it off, which is what AC #4 asks to see named.
 <!-- SECTION:NOTES:END -->
