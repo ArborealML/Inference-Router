@@ -3,17 +3,19 @@ id: TASK-33
 title: >-
   Document that the native Docker lifecycle provider is verified only against
   fakes
-status: To Do
+status: Done
 assignee:
-  - '@qwen3.8-flash-next'
+  - '@gpt-6.2-sol-lifecycle'
 created_date: '2026-11-17T07:53:00Z'
-updated_date: '2026-11-18T19:18:00Z'
+updated_date: '2026-11-18T20:03:00Z'
 labels:
   - engine
   - lifecycle
   - security
 milestone: m-4
 dependencies: []
+modified_files:
+  - SPEC.md
 priority: medium
 ordinal: 32000
 ---
@@ -21,20 +23,16 @@ ordinal: 32000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-**Parked by the owner at 17:55Z, superseding the 07:06Z provisional grant:** no lifecycle transaction on this host, no window, and the engine carrying these pi lanes is untouched. So the proof this row existed to run is deferred, and the answer that has to be written is the negative posture: the native provider is verified against fakes only. That is the remaining act — one SPEC 5.3.1 sentence naming the fakes-only posture and the refuse-don't-escalate rule (decision-1) — and it is the implementer's, not anyone's docker command.
-
-**If a window is ever granted:** the bound stands unchanged — one named engine no other session uses, one model switch that actually drains it and starts another, nothing else touched, and a report naming what was started, stopped and removed with each phase's duration. If no engine can be shown idle, re-block rather than choosing which engine to disturb. `air config` prints endpoints, key-file locations and lifecycle argv, so the record is prose in a task, never a committed sample.
+The native provider is qualified against fake providers and Docker HTTP responses. Live mutation on the shared host remains parked by the owner.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 the router does not drive the live Docker daemon on this host: the answer is written into SPEC 5.3.1 as a posture, with the refuse-don't-escalate rule (decision-1) named
+- [x] #1 the router does not drive the live Docker daemon on this host: the answer is written into SPEC 5.3.1 as a posture, with the refuse-don't-escalate rule (decision-1) named
 <!-- AC:END -->
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-The owner parked live engine mutation at 17:55Z. Document fake-provider verification in SPEC §5.3.1. The earlier provisional grant and report instructions are historical. Any future live proof requires separate authorization.
-
-The adopted refusal, the later provisional 07:06Z permission and the superseding 17:55Z parking are preserved in [the parking change](https://github.com/ArborealML/Inference-Router/commit/2d50430). TASK-112 owns any subsequently authorized live proof.
+SPEC §5.3.1 in [05fe144](https://github.com/ArborealML/Inference-Router/commit/05fe144) names the fake-only verification posture and implements the decision-1 documentation requirement: unavailable or unauthorized daemon access is refused without escalation. The [owner parking record](https://github.com/ArborealML/Inference-Router/commit/2d50430) superseded the provisional window. TASK-112 carries any future explicitly authorized live swap: identify an idle engine, verify drain and replacement, record affected resources and measure each phase.
 <!-- SECTION:NOTES:END -->
