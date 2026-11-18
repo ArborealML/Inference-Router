@@ -5,7 +5,7 @@ status: To Do
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-18T02:37:00Z'
-updated_date: '2026-11-18T17:45:00Z'
+updated_date: '2026-11-18T18:40:00Z'
 labels:
   - lifecycle
   - scheduling
@@ -29,6 +29,7 @@ One flag answers two questions. remote says both that the router can reach the e
 - [ ] #4 SPEC documents both flags and says what each one licenses
 - [ ] #5 An omitted remote never grants load authority: ownership comes from a target-bound lifecycle provider, never from a hostname or from a missing key
 - [ ] #6 A shipped sample engine with no lifecycle block still refuses to switch after the migration, pinned by the sample test
+- [ ] #7 A legacy remote endpoint is routable without actuation or adoption. A foreign endpoint sharing a managed host blocks activation until the host authority proves vacancy.
 <!-- AC:END -->
 
 ## Implementation Notes

@@ -7,12 +7,13 @@ status: To Do
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-18T01:22:00Z'
-updated_date: '2026-11-18T02:55:00Z'
+updated_date: '2026-11-18T18:40:00Z'
 labels: []
 dependencies:
   - TASK-69
   - TASK-25
   - TASK-51
+  - TASK-71
 priority: high
 ordinal: 72000
 ---
@@ -28,6 +29,7 @@ The owner's example, taken literally: one request waiting on the loaded model an
 - [ ] #1 The owner's example is pinned from a stated start: one model resident, one waiter on it and eight on another, served eight-then-switch
 - [ ] #2 Under steady competing load the router does not alternate switches between two models, pinned by a test that counts switches
 - [ ] #3 Under arrivals that never stop, every waiting request keeps an age under a bound named in SPEC and switches per unit time stay bounded, with the refusal that enforces the bound on the feed
+- [ ] #4 For eligible hosts, batching uses measured transition cost and hysteresis while the maximum-wait bound still protects aged requests. Demand and age cannot override a host refusal.
 <!-- AC:END -->
 
 ## Implementation Notes

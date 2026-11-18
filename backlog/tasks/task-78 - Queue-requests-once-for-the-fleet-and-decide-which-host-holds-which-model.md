@@ -5,7 +5,7 @@ status: To Do
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-18T02:37:00Z'
-updated_date: '2026-11-18T18:18:00Z'
+updated_date: '2026-11-18T18:40:00Z'
 labels:
   - scheduling
 dependencies:
@@ -28,6 +28,7 @@ decision-25 parked a fleet-wide queue and cross-host model residence as later wo
 - [ ] #3 The age-weighted drain applies fleet-wide, and a stated ceiling covers a request that declared none
 - [ ] #4 SPEC carries acceptance criteria a fleet scheduler has to meet before any implementation row starts
 - [ ] #5 A request arriving at any cluster ingress can reach an eligible host selected from the global request queue. A managed peer can automatically switch models under its proven lifecycle authority.
+- [ ] #6 Fleet placement selects host, model and batch. The host authority controls stop, ownership and admission. A missed heartbeat cannot prove vacancy or override a local refusal.
 <!-- AC:END -->
 
 ## Implementation Notes
