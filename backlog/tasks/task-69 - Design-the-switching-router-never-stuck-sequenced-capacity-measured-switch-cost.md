@@ -7,7 +7,7 @@ status: Blocked
 assignee:
   - '@claire'
 created_date: '2026-11-18T01:22:00Z'
-updated_date: '2026-11-18T18:41:00Z'
+updated_date: '2026-11-18T18:47:00Z'
 labels: []
 dependencies:
   - TASK-117
@@ -46,4 +46,6 @@ Drift review checked at 2d50430. Settle failure policy first, then coordinate ex
 A bounded review of the three board commits ending at 60849d9 was submitted on 2026-11-18 for lifecycle permission, task dependencies and evidence retention.
 
 Failure-policy review at e0d3f02: fail A after the incumbent stops with B waiting. Verify B inference under a fresh ownership-checked transaction, one terminal per affected A ticket, and no unproven launch. Test wakeups and explicit reset against the selected retry limit. TASK-51 covers bounded waits; TASK-25/64 protect four lanes and drain; TASK-71/72 cover cost and age. Suggested timeouts await measurement. Ending a committed stream to enforce finite drain requires a separate wire decision.
+
+With eight B waiters, one A waiter and four lanes, test two B waves followed by the aged A turn (TASK-72). An unbounded stream invalidates a universal service-time guarantee; distinguish deadline/refusal from guaranteed service.
 <!-- SECTION:NOTES:END -->

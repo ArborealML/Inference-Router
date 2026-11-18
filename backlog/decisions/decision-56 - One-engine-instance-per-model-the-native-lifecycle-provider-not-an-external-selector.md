@@ -32,8 +32,6 @@ that needs a restart costs the queue and cannot be exercised.
 TASK-77's reach/ownership split stops being a design nicety: an engine the router can talk to but does not own
 has no switch path at all, and that is the posture every remote sample and the bring-up config sit in. TASK-25
 (reserve the switch's own ticket before a drain) and TASK-26 (§5.3.1 provider gaps, now including the sample's
-lifecycle posture) are the capability work; TASK-33's one bounded live-daemon transaction is the proof, and the owner **parked it at 17:55Z** — no
-lifecycle transaction on this host, no window — so the proof is deferred and SPEC carries a fakes-only posture
-until a window exists. `select = "exec"` stays supported as the default route, but is legacy: SPEC and the samples
+lifecycle posture) are the capability work; TASK-33 documents the fakes-only verification posture. The owner parked live engine lifecycle on this host at 17:55Z. TASK-112 owns the later authorized swap proof. `select = "exec"` stays supported as the default route, but is legacy: SPEC and the samples
 must say so rather than leave a sample pointing at an external script. decision-50's read-only-after-boot
 premise is bounded by TASK-107.

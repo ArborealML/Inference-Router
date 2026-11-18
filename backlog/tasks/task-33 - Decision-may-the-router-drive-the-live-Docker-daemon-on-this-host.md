@@ -7,7 +7,7 @@ status: To Do
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T07:53:00Z'
-updated_date: '2026-11-18T18:15:00Z'
+updated_date: '2026-11-18T18:47:00Z'
 labels:
   - engine
   - lifecycle
@@ -34,4 +34,6 @@ ordinal: 32000
 
 <!-- SECTION:NOTES:BEGIN -->
 The owner parked live engine mutation at 17:55Z. Document fake-provider verification in SPEC §5.3.1. The earlier provisional grant and report instructions are historical. Any future live proof requires separate authorization.
+
+The adopted refusal, the later provisional 07:06Z permission and the superseding 17:55Z parking are preserved in [the parking change](https://github.com/ArborealML/Inference-Router/commit/2d50430). TASK-112 owns any subsequently authorized live proof.
 <!-- SECTION:NOTES:END -->
