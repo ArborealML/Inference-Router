@@ -5,11 +5,13 @@ status: In Progress
 assignee:
   - '@gpt-6.2-sol-lifecycle'
 created_date: '2026-11-18T18:13:00Z'
-updated_date: '2026-11-18T20:21:00Z'
+updated_date: '2026-11-18T20:39:00Z'
 labels: []
 milestone: m-4
 dependencies:
   - TASK-69
+  - TASK-25
+  - TASK-64
 ordinal: 108000
 ---
 
@@ -41,4 +43,6 @@ Configure an explicit physical host group and share one host-local arbiter acros
 Plan review verified the per-coordinator semaphore and engine-filtered discovery. Before a mutation, durably record its operation identity and immutable target. Prevent a successor epoch while the outcome is unknown. A fake daemon must accept an action, lose its response, and complete it after the router restarts. Verify the delayed action cannot affect a successor. Host-wide observation must detect foreign or unknown occupancy; independent hosts can progress. Direct writers outside the managed group require separate OS or daemon enforcement. Storage format is an implementation choice. Live engine operations remain parked.
 
 Coordinator ran the host reservation, Docker and lifecycle filters against the first boundary candidate: 37 passed. Commit review dispatched. Cross-process restart, production occupancy reconciliation and runtime admission still require proof.
+
+The cross-process and fake inventory follow-up passed 49 focused cases. Production controller design and corrections for blank durable state and withdrawal ordering are under review.
 <!-- SECTION:NOTES:END -->

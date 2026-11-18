@@ -7,7 +7,7 @@ status: Waiting
 assignee:
   - '@qwen3.8-flash-next-board'
 created_date: '2026-11-18T18:15:00Z'
-updated_date: '2026-11-18T19:18:00Z'
+updated_date: '2026-11-18T20:36:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -45,4 +45,6 @@ Static inventory is underway. The reference exposes nine canonical models, thirt
 Independent static enumeration at selector source fingerprint 8af827d3c375efda08cad8a5b9b7fd862b44a2f5a7482042c5255623a891a030 covered 506 explicit spellings: 169 pass structural validation and 337 fail. The 75 distinct targets include 12 accepted spelling combinations requiring an explicit GPU. All 22 omitted-profile cases matched their defaults. Parking exposes 1,248 RAM and parallelism combinations. No runtime trial was part of this inventory.
 
 Target-proof plan dispatched on 2026-11-18. Static controls: single-device profiles require one explicit index; paired profiles require two distinct indices. GPU utilization accepts 0.50–0.95 inclusive, default 0.90. Parking RAM accepts 1–48 GiB, default 32; variable lanes accept 1–8. This revision has no supported suffix-cache launch mechanism. Controls cover malformed, out-of-range and unsupported options.
+
+TASK-125 qualifies one pair for the first live proof. This row retains full selector parity and every unsupported combination remains visible.
 <!-- SECTION:NOTES:END -->

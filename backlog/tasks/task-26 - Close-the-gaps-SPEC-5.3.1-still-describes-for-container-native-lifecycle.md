@@ -1,11 +1,11 @@
 ---
 id: TASK-26
 title: Close the gaps SPEC 5.3.1 still describes for container-native lifecycle
-status: Preparing
+status: In Progress
 assignee:
   - '@gpt-6.2-sol-shutdown'
 created_date: '2026-11-17T02:54:00Z'
-updated_date: '2026-11-18T20:33:00Z'
+updated_date: '2026-11-18T20:39:00Z'
 labels:
   - engine
   - lifecycle
@@ -38,9 +38,7 @@ Complete the container-native lifecycle requirements in SPEC section 5.3.1. Veri
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Audit each criterion against the current Docker provider and fake-daemon tests. Separate proven behavior, a shipped loadable configuration, and the remaining target quarantine/recovery work. Identify a complete first change independent of host fencing, and submit the implementation plan for review.
-
-Reconcile SPEC section 15 with decisions 1, 2 and 56. Document daemon permission refusal and the boundary between router-owned launch settings and image entrypoint flags. Keep outstanding GPU, mount, image and readiness requirements on their implementation rows.
+Implement the reviewed image-identity slice first. Validate complete configured pins in TOML and JSON, compare full image ID, named manifest digest and platform against daemon inspect, and create by immutable ID. Preserve config loading and resident forwarding. Unpinned managed launch fails before mutation. Fake mismatches must leave an owned incumbent untouched. Document the migration, with daemon permission refusal and the boundary between native settings and entrypoint flags as settled by decisions 1, 2 and 56.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
