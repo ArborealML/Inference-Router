@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T23:07:00Z'
-updated_date: '2026-11-18T02:56:00Z'
+updated_date: '2026-11-18T05:55:00Z'
 labels:
   - concurrency
   - scheduling
@@ -45,7 +45,7 @@ Do not read the resume check as the entitlement: authority held across the hando
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-**Half-green at [042e212](https://github.com/ArborealML/Inference-Router/commit/042e212) — main is RED there.** CI run 44241484309 failed `SwitchFairnessTests.AWaiterBehindAnotherProfilesSwitchTakesItsOwnTurn` (assert at `SwitchFairnessTests.cs:113`, ~20 s = that caller's ceiling); the board reproduced it 2 of 4 runs of the two-test filter, and separately failed **this row's own pin** `AWaiterOvertakenAtTheResumeRead` 1 of 2 runs of the `SwitchClaimTests` filter at `SwitchClaimTests.cs:377`, whose diagnostic reads `launches=[extra,m,extra,m]` with a switch still in flight at 25 s. The mechanism and the rule are decision-36. The sleep at `SwitchFairnessTests.cs:109` is the sensitivity, not the defect; the seam AC #4 used is sound (`AfterReadyWaitForTests` at `EngineRuntime.cs:765`, before the resume read at `:782`) — what fails is the pin's premise, since its two callers are a ping-pong by construction.
+**Half-green at [042e212](https://github.com/ArborealML/Inference-Router/commit/042e212) and main has stayed red since.** CI run 44241484309 failed `SwitchFairnessTests.AWaiterBehindAnotherProfilesSwitchTakesItsOwnTurn` (assert at `SwitchFairnessTests.cs:113`, ~20 s = that caller's ceiling); the board reproduced it 2 of 4 runs of the two-test filter, and separately failed **this row's own pin** `AWaiterOvertakenAtTheResumeRead` 1 of 2 runs of the `SwitchClaimTests` filter at `SwitchClaimTests.cs:377`, whose diagnostic reads `launches=[extra,m,extra,m]` with a switch still in flight at 25 s. The mechanism and the rule are decision-36. The sleep at `SwitchFairnessTests.cs:109` is the sensitivity, not the defect; the seam AC #4 used is sound (`AfterReadyWaitForTests` at `EngineRuntime.cs:765`, before the resume read at `:782`) — what fails is the pin's premise, since its two callers are a ping-pong by construction.
 
-**No fix has landed.** Two later shas, `074a188` and `916214e`, were reported pushed with green runs and mutation counts; `git cat-file` resolves neither and `git ls-remote origin` puts main at `042e212`. The fix-forward exists here only as uncommitted edits to `EngineRuntime.cs` and the two test files. **Ordering:** TASK-62's category work comes after this row is green; TASK-25 AC #5 and TASK-64 AC #3 own the parked half.
+**No fix on the remote** — re-measured 05:53Z: main is `2d2d9f4`; every push since the red commit is board-only and red on the same two tests (runs 44245983576, 44246239378: Failed 2, Passed 190, board-contract job green, so that red is carried, not a board regression). The fix-forward exists here only as uncommitted edits to `EngineRuntime.cs`, the two test files and `SPEC.md`. **Ordering:** TASK-62's category work comes after this row is green; TASK-25 AC #5 and TASK-64 AC #3 own the parked half.
 <!-- SECTION:NOTES:END -->
