@@ -22,7 +22,7 @@ On Windows, use Git Bash and pass the executable path ending in `air.exe`. A suc
 ## Features
 
 - **OpenAI-compatible inference.** Send chat or legacy text completions with optional SSE streaming. [Client integration guide](docs/ai-integration.md)
-- **Model discovery.** `GET /v1/models` includes an observed context window in tokens when AIR has usable evidence for that loaded model on its engine. [Model discovery contract](docs/ai-integration.md#discover-loaded-models)
+- **Model discovery.** `GET /v1/models` lists each engine’s last accepted roster and can include observed context windows in tokens. [Model discovery contract](docs/ai-integration.md#discover-loaded-models)
 - **Routing and serving profiles.** Queue requests by model, apply thread priorities, and route to configured local and remote engines using health and available slots. A request can specify the context window it needs in tokens. [Serving profiles specification](SPEC.md)
 - **Per-engine lifecycle authority.** Set `lifecycle_owner` independently of the inference endpoint. Externally managed engines forward loaded models. A dedicated local engine can use the native Docker provider, and a delegated engine can use a configured selector. A verified refusal before any mutation can leave the incumbent available to serve requests. [Lifecycle configuration](SPEC.md#7-configuration-toml)
 - **Operator controls.** Inspect engine and queue status, replay events for a ticket, or cancel it through the admin API. The `air` CLI can host the router and act as a client. [HTTP reference](SPEC.md#6-http-surface-server-project)

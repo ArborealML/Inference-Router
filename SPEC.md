@@ -2385,10 +2385,11 @@ once to stderr if the stream supplied no in-band error. A non-success HTTP statu
 `error STATUS: BODY` on stderr. With `--no-stream`, a successful reply is printed as extracted text
 or the original JSON body and exits 0.
 
-`config` is the dry run: parse + validate + print the resolved engine / model /
-serving-ladder plan, with no sockets and no lifecycle commands (safe on a machine
-whose engines are down). `status` reports each engine's active profile, context
-window and slot count alongside health, loaded models and in-flight count.
+`config` parses and validates the configuration offline. It prints each engine's resolved
+`lifecycle_owner` and provider (`docker`, `exec` or `none`) alongside its model catalog and
+serving profiles. It opens no sockets and runs no lifecycle commands. `status` reports each
+engine's active profile, context window and slot count alongside health, loaded models and
+in-flight count.
 
 Library-first: every CLI verb is a thin wrapper over `IInferenceRouter` or
 `RouterHttpClient`; no logic lives in the CLI layer.
