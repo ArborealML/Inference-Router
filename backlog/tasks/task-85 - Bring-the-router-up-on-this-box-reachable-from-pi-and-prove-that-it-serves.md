@@ -1,11 +1,11 @@
 ---
 id: TASK-85
 title: Bring the router up on this box, reachable from pi, and prove that it serves
-status: In Progress
+status: Blocked
 assignee:
-  - '@qwen3.8-flash-next'
+  - '@claire'
 created_date: '2026-11-18T06:06:00Z'
-updated_date: '2026-11-18T07:16:00Z'
+updated_date: '2026-11-18T07:24:00Z'
 labels:
   - serve
 dependencies: []
@@ -31,11 +31,11 @@ Blocked on @claire for one grant: may a seat start or stop an inference engine o
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-**Provisional grant, relayed by the clerk at 07:06Z from the owner verbatim: "I'd really like to wake up to the inference router running successfully and Pi able to swap between models with /model." Grant text: "The owner wants the router running by morning. The router may run on this box and may start, stop or reconfigure engines **except the engine currently carrying live pi lanes**; `auto_switch` stays off until the switching safety rows pass; on any anomaly, stop and leave it as found." The owner may veto; if nothing arrives by 08:00Z this stands as provisional, not final.
+**Provisional grant, relayed by the clerk at 07:06Z from the owner verbatim: "I'd really like to wake up to the inference router running successfully and Pi able to swap between models with /model." Grant text: "The owner wants the router running by morning. The router may run on this box and may start, stop or reconfigure engines **except the engine currently carrying live pi lanes**; `auto_switch` stays off until the switching safety rows pass; on any anomaly, stop and leave it as found." The owner may veto; absent that by 08:00Z it stands as provisional, not final.
 
-**Hard constraint from the same relay, standing:** pi's own lanes are served by this box's strata config on one resident model. Swapping that resident model overnight cuts the lanes this board, the implementer seat and the clerk run on. Proof goes on a separate engine or port; nobody touches the live one without a named window and the owner's nod.
+**Blocked on @claire for one answer.** The only engine listening here is strata on 18021 — the engine carrying live pi lanes — and it demands a key whose path both shipped samples name but which does not exist on this box. So: name the key file the router may read, or point it at an unauthenticated engine. Same question, second half: is **fronting** strata read-only (`auto_switch = false`, no lifecycle, no swap) acceptable, given the resident model is what these seats run on? AC #3's swap cannot be proven there without cutting those lanes.
 
-**The box, re-measured at 07:08Z** (the clerk was right that no router listens): nothing on 8321 or 18080; 18021 answers 401 `authentication_error` — a live engine wanting a key; 18020 refuses connection, though both shipped samples name that endpoint; 18044 is the session-manager bridge; 18081 the backlog server; 18082 a tailnet forwarder for the docs page, not the API. One extra finding: a **benchmark fake backend is still listening** — `bench/.../Benchmarks 2000 200`, pid 716436, answering `/v1/models` with `bench-model` on 127.0.0.1:37541. It is not the router and stays running until the owner says otherwise.
+**Measured at 07:08Z:** nothing on 8321/18080; 18021 gives 401 `authentication_error`; 18020 refuses connection though both samples name it; 18044 is the session-manager bridge, 18081 the backlog server, 18082 a docs forwarder, not the API. A benchmark fake backend still listens — pid 716436, `/v1/models` → `bench-model` on 127.0.0.1:37541 — and is not the router.
 
-**Config note:** both shipped samples set `auto_switch = true`, so neither is front-only as written; the grant requires it off, which is what AC #4 asks to see named.
+**Windows from `samples/router.toml`:** strata `max_context` 131072 (profiles 98304/131072/524288/1048576); hyperqwen 32768, and that engine is not running. The clerk's 32768-for-both draft is wrong for strata. Both samples set `auto_switch = true`, so neither is front-only as written (AC #4).
 <!-- SECTION:NOTES:END -->

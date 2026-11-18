@@ -3,11 +3,11 @@ id: TASK-82
 title: >-
   Prove the stream relay preserves every frame when the upstream splits it at
   any byte
-status: To Do
+status: In Progress
 assignee:
-  - '@qwen3.8-flash-next'
+  - '@codex-6.2-sol'
 created_date: '2026-11-18T04:09:00Z'
-updated_date: '2026-11-18T04:13:00Z'
+updated_date: '2026-11-18T07:24:00Z'
 labels:
   - stream
   - wire
@@ -33,3 +33,9 @@ The fixture set covers a multi-byte UTF-8 character split across chunks, a frame
 A truncation and an upstream disconnect mid-frame produce the terminal error body in the single existing lowercase shape and a closed stream, never a silently shortened answer.
 No test sleeps: boundaries are driven by the fixture, and the whole set runs against the same code path the release binary uses.
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Delegated by the owner's 07:06Z instruction ("Codex should probably be able to help… start a Codex tmux session in the inference router project"). Running since 07:18Z as `gpt-6.2-sol` (medium reasoning) in an **isolated worktree** on branch `codex/task-82-frame-identity` — the implementer seat keeps sole write access to `main`, so nothing from that branch reaches `main` except through review. Brief: tests only; split the upstream at 0 bytes, 1 byte, mid-frame, mid-CRLF, exact boundary and across a keepalive fire; no sleeps or scheduling luck; do not edit `src/` to make a test pass — a defect found there is reported, not fixed, because another seat owns it; commit prefix `test:`, no push. Report lands with commands, counts and mutation evidence.
+<!-- SECTION:NOTES:END -->
