@@ -3,11 +3,11 @@ id: TASK-63
 title: >-
   Fence the negative publish and the gauge updates, not only the successful
   probe
-status: To Do
+status: Done
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T23:07:00Z'
-updated_date: '2026-11-18T00:54:00Z'
+updated_date: '2026-11-18T01:11:00Z'
 labels:
   - concurrency
 dependencies: []
@@ -23,9 +23,8 @@ fd5e0cd fenced the successful probe and left the other two publication paths ope
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 the health loop's failure path calls the fenced negative publish that already exists (:172-185) instead of the unfenced one (:328-333), pinned by a test
-- [ ] #2 the three gauges stop being separate volatiles, so no reader mixes epochs, and a stale /props update is not applied; the shape is a plan decision, not a version check on writes
-- [ ] #3 SPEC 5.5's quiet-poll wording says what the comparison actually does rather than describing the published reference
+- [x] #1 the health loop's failure path calls the fenced negative publish that already exists (:172-185) instead of the unfenced one (:328-333), pinned by a test
+- [x] #2 SPEC 5.5's quiet-poll wording says what the comparison actually does rather than describing the published reference
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -37,9 +36,7 @@ First of the set-1 commits. Hoist the version read out of the `try` at :317 or t
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-**AC #2 is a plan decision, not a version check.** The three gauges are separate volatiles (EngineRuntime.cs:435-439), so a
-generation check on writes still lets a reader mix epochs across the three reads — a TOCTOU the review is right about. The choice
-is an immutable gauge tuple or folding the gauges into the capability snapshot, and it touches the escalation guard at
-PrefixAwareScheduler.cs:86 and the fact that WindowFits treats a zero window as fitting any profile (:541-544). Plan review before
-code; that is why this criterion is not a one-line fence.
+**Landed at [0e016e5](https://github.com/ArborealML/Inference-Router/commit/0e016e5) (v0.12.29): the fenced negative publish and the §5.5 quiet-poll wording.** The two-observation question the plan review raised was settled in the "say it out loud" direction, and the row's own reading of the code backs it: `ProbeStateAsync` swallows its own failures (:408-430), so the serving-state probe cannot reach the health loop's catch at all; the `/models` fetch is the only health-moving observation, in either direction, and SPEC §5.5 now says so with a test pinning it. The same-tick case — the fetch answers, publishes a recovery, and a later line throws — is fenced away by this tick's own publication, and the catch says that in words.
+
+**AC #2 left this row and became TASK-68.** The plan review showed the serving gauges can authorise a wrong dispatch, not merely a late refusal, which is a larger deliverable than fencing a publication path.
 <!-- SECTION:NOTES:END -->
