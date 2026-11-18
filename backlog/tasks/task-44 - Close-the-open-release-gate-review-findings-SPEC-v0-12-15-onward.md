@@ -5,7 +5,7 @@ status: Preparing
 assignee:
   - '@gpt-6.2-sol-release'
 created_date: '2026-11-17T10:52:00Z'
-updated_date: '2026-11-18T20:57:00Z'
+updated_date: '2026-11-18T21:02:00Z'
 labels:
   - ci
   - release
@@ -28,6 +28,12 @@ Qualify the release diagnostic fixtures. Commit 806d10d fixed the summary trunca
 - [x] #1 the fourteen closed criteria are accounted for: twelve as [SPEC §15](https://github.com/ArborealML/Inference-Router/blob/main/SPEC.md) rows 'Deep review of v0.12.15' through 'Twelfth deep review' in 95410ba, 8f78a73 and 79a21e0, and two retired to the task that runs the gate
 - [ ] #2 the thirteenth round's two P2s are fixed with a fixture that fails without the fix, and the SPEC §15 row and revision-log line land in the same commit as the code
 <!-- AC:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Drive the real publish refusal with a long valid tag, a matching long name and a mismatched upload URL. Parse the summary separately from the adjacent diagnostic. The same new fixture must lose the URL tail at the old 200-byte cap and retain it on the fixed workflow. External fixture review dispatched.
+<!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
 

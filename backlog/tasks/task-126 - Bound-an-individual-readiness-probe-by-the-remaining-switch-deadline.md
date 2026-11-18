@@ -5,7 +5,7 @@ status: To Do
 assignee:
   - '@gpt-6.2-sol'
 created_date: '2026-11-18T20:43:00Z'
-updated_date: '2026-11-18T20:53:00Z'
+updated_date: '2026-11-18T21:02:00Z'
 labels: []
 milestone: m-4
 dependencies: []
@@ -35,4 +35,6 @@ Use one monotonic readiness budget across state headers and body, model discover
 
 <!-- SECTION:NOTES:BEGIN -->
 Pre-implementation review dispatched. The coordinator will verify the failure on the current path and run the integrated regression fixture.
+
+Review found that state probes write gauges internally and a deadline checked only before a fetch can lose at publication. The existing clock hook covers waiter deadlines only. Check one monotonic readiness deadline under the publication guard; late observations may dispose resources but cannot change gauges, events or the winner.
 <!-- SECTION:NOTES:END -->

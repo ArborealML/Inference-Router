@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@gpt-6.2-sol-shutdown'
 created_date: '2026-11-17T02:54:00Z'
-updated_date: '2026-11-18T20:59:00Z'
+updated_date: '2026-11-18T21:02:00Z'
 labels:
   - engine
   - lifecycle
@@ -24,14 +24,14 @@ Complete the container-native lifecycle requirements in SPEC section 5.3.1. Veri
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 An image is verified by identity (Id, RepoDigests, platform), not by the tag resolving at all, and a mismatch refuses the switch with one actionable message
+- [x] #1 An image is verified by identity (Id, RepoDigests, platform), not by the tag resolving at all, and a mismatch refuses the switch with one actionable message
 - [ ] #2 GPU device requests, mounts and resource limits are expressible in config and reach the create request
 - [ ] #3 Exec frame demux and log reading exist behind the provider seam with a fake, and a non-zero exec exit is a failure
 - [ ] #4 A failed switch is latched: a dispatcher wake-up cannot retry it, and only an explicit target reset or a relevant configuration change can clear that target’s latch
 - [ ] #5 Daemon event subscription (or a documented polling substitute) replaces the assumption that nothing else changed the engine
 - [ ] #6 The Windows named-pipe transport is implemented or explicitly declined in SPEC with the reason
 - [ ] #7 After an uncertain start, reconcile the exact recorded operation and immutable container ID. Prove cleanup of the owned unit, or retain the host fence until reconciliation establishes the outcome.
-- [ ] #8 A shipped native Docker example passes the config loader with every model selector removed from that engine. The shipped-sample load test passes and remaining delegated examples identify exec as legacy.
+- [x] #8 A shipped native Docker example passes the config loader with every model selector removed from that engine. The shipped-sample load test passes and remaining delegated examples identify exec as legacy.
 - [ ] #9 After A fails, repeated scheduler wakeups and cooldown expiry produce zero attempts for its engine/model/profile/config generation. Resetting A permits a fresh attempt without resetting unrelated targets (decision-62).
 <!-- AC:END -->
 
@@ -46,9 +46,7 @@ Implement the reviewed image-identity slice first. Validate complete configured 
 <!-- SECTION:NOTES:BEGIN -->
 Provider fixes landed in 18d7279. Use fake daemon responses and preserve the loader refusal for mixed ownership. The shipped native sample must remove the selectors from the same engine and pass sample validation. TASK-119 owns the SPEC walkthrough. Align README ownership versus image checks, integration terminology and the safe-smoke explanation with the shipped sample. The AGENTS.md smoke guidance landed in fef8789. TASK-33 records live-proof permissions.
 
-External review dispatched for native image identity and create-by-immutable-ID. The worker audited all nine criteria at b65aab7. The current preflight discards the inspect result and creates by configured tag. Host fencing and proof of target authority remain separate work.
-
-Functional and fixture reviews dispatched for the image-pin candidate. The first integrated build stopped on analyzer MA0001 before tests. The coordinator will verify the corrected build with fake-daemon coverage.
+[Native image verification](https://github.com/ArborealML/Inference-Router/commit/c30ca3e) checks the full local image ID, named repository digest and platform before mutation. Create names the immutable image ID. The shipped selector-free native example passed CLI validation. The coordinator ran 128 focused and 419 full Release tests, then published the server with Native AOT. Four isolated regressions weakened ID, repository, platform variant and create-reference checks. Each failed its intended fixture; restoring source passed all 25 targeted cases. Production and fixture reviews are in flight. Device requests, mounts and resource limits are the next implementation slice.
 <!-- SECTION:NOTES:END -->
 
 ## Comments
