@@ -5,7 +5,7 @@ status: To Do
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-18T02:37:00Z'
-updated_date: '2026-11-18T02:37:00Z'
+updated_date: '2026-11-18T03:36:00Z'
 labels:
   - lifecycle
   - scheduling
@@ -27,10 +27,14 @@ One flag answers two questions. remote says both that the router can reach the e
 - [ ] #2 An engine the router can reach but cannot start is switchable by a lifecycle provider that speaks to that host
 - [ ] #3 The router never stops or launches an engine whose lifecycle it does not own, pinned
 - [ ] #4 SPEC documents both flags and says what each one licenses
+- [ ] #5 An omitted remote never grants load authority: ownership comes from a target-bound lifecycle provider, never from a hostname or from a missing key
+- [ ] #6 A shipped sample engine with no lifecycle block still refuses to switch after the migration, pinned by the sample test
 <!-- AC:END -->
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
 Design direction to test in review, not to assume: two config keys, reach (can the router probe this engine) and lifecycle ownership (may the router start or stop it), with remote mapping to reach-without-ownership for existing configs and a stated migration. A switch would then be licensed by the lifecycle provider rather than by the absence of remoteness, so a provider that talks to a remote host over a transport can drive a switch there, while an engine nobody owns is never touched. Probing, admission and the wait_health posture all read reach, not ownership.
+
+A migration landmine, verified here rather than taken on report: the config loader reads Remote as false when the key is absent, and the shipped sample's hyperqwen entry has no lifecycle or selector block at all. So a migration that treats "remote omitted" as "the router owns this engine" would hand load authority to an OpenAI-compatible endpoint with no controller behind it — today that engine simply fails to switch, which is the safe answer. The normaliser must be presence-aware, and the derived loadability must come from a provider bound to the target.
 <!-- SECTION:NOTES:END -->
