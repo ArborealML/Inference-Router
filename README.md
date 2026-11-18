@@ -30,7 +30,7 @@ On Windows, use Git Bash and pass the executable path ending in `air.exe`. A suc
 ### In progress
 
 - **Context fit during routing.** Verify that the engine can meet a request’s context requirement using a window measured for its current model and profile. [Serving gauge verification](backlog/tasks/task-68%20-%20Bind-the-serving-gauges-to-a-capability-epoch-so-a-stale-window-cannot-authorise-a-profile-the-engine-cannot-serve.md)
-- **Native model swaps on a shared host.** Drain in-flight requests before swapping the resident model, verify that the replacement is ready, and complete a pi turn after the swap. [Native swap milestone](backlog/milestones/m-4%20-%20native-model-swap-through-pi-clm.md)
+- **Native model swaps on a shared host.** An internal reservation and readiness handoff are exercised with fake controllers. Production swaps still require an enforced residency partition and instance-bound admission through inference completion. [Native swap milestone](backlog/milestones/m-4%20-%20native-model-swap-through-pi-clm.md)
 - **Lifecycle on managed peers.** Starting and stopping models on a peer still needs host-wide fencing that accounts for foreign occupancy and stays in force through readiness. Scheduling preference among loaded and switchable engines is also in progress. [Lifecycle ownership plan](backlog/tasks/task-77%20-%20Split-one-remote-flag-into-transport-reach-and-model-loading-ownership.md)
 
 ### Planned features

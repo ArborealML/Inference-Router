@@ -143,6 +143,34 @@ public sealed class DockerLifecycleProvider : IEngineLifecycleProvider, IDisposa
         return null;
     }
 
+    /// <summary>Read unfiltered Docker inventory for the host boundary. A Docker inventory alone
+    /// cannot grant exclusive host authority: it omits other launchers and host processes.</summary>
+    internal async ValueTask<HostOccupancy> ObserveExclusiveHostAsync(
+        Guid queryId, IReadOnlySet<string> managedEngines, CancellationToken ct)
+    {
+        var (ok, body, _) = await CallAsync(HttpMethod.Get, $"{_cfg.ApiVersion}/containers/json?all=true",
+            null, ct, requiredStatus: 200).ConfigureAwait(false);
+        var containers = ok ? TryRead(body, DockerJsonContext.Default.ListDockerContainerSummary) : null;
+        if (containers is not null)
+        {
+            foreach (var container in containers)
+            {
+                if (container is null || container.State is not ("running" or "restarting" or "paused")) continue;
+                var labels = container.Labels;
+                if (labels is null || !labels.TryGetValue(LabelRouter, out var router) || router != _cfg.RouterId ||
+                    !labels.TryGetValue(LabelEngine, out var engine) || !managedEngines.Contains(engine))
+                    return new HostOccupancy(queryId, HostOccupancyKind.Foreign);
+            }
+        }
+
+        return new HostOccupancy(queryId, HostOccupancyKind.Unknown);
+    }
+
+    /// <summary>Preserve a pending operation after a lost Docker response. Docker inventory and
+    /// inspect cannot supply a terminal receipt for the operation ID or rule out a delayed effect.</summary>
+    internal static HostMutationOutcome ReconcileUnacknowledgedHostMutation(HostMutation operation) =>
+        new(operation.Id, HostMutationStatus.Unknown);
+
     public async ValueTask<IReadOnlyList<EnginePeer>> OwnedPeersAsync(LifecycleTarget target, CancellationToken ct)
     {
         // Ask the daemon to filter, then prove the labels locally: the filter is an optimisation, the
@@ -360,7 +388,8 @@ public sealed class DockerLifecycleProvider : IEngineLifecycleProvider, IDisposa
     }
 
     private async ValueTask<(bool Ok, string Body, LifecycleResult? Failure)> CallAsync(
-        HttpMethod method, string path, HttpContent? content, CancellationToken ct, int[]? already = null)
+        HttpMethod method, string path, HttpContent? content, CancellationToken ct, int[]? already = null,
+        int? requiredStatus = null)
     {
         // Every call carries its own deadline. Without it a daemon that accepts the connection and then
         // says nothing holds a switch open indefinitely, the engine stays in "switching", and the request
@@ -375,7 +404,8 @@ public sealed class DockerLifecycleProvider : IEngineLifecycleProvider, IDisposa
             response = await _http.SendAsync(request, callCts.Token).ConfigureAwait(false);
             var body = await response.Content.ReadAsStringAsync(callCts.Token).ConfigureAwait(false);
             var status = (int)response.StatusCode;
-            if (response.IsSuccessStatusCode || (already is not null && Array.IndexOf(already, status) >= 0))
+            var accepted = requiredStatus is { } required ? status == required : response.IsSuccessStatusCode;
+            if (accepted || (already is not null && Array.IndexOf(already, status) >= 0))
                 return (true, body, default);   // the desired state already holds
 
             // Which statuses mean "already in the desired state" is decided per call site, not here: a
