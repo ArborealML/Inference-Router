@@ -42,6 +42,12 @@ public sealed class CapabilityPublicationTests
         public void HoldNextProbe() => _holdArmed = true;
         public void ReleaseProbe() => _released.TrySetResult();
 
+        /// <summary>Status the *held* request answers with once it is released. It has to be separate from
+        /// <see cref="ModelsStatus"/>, which is applied before the hold is armed: with one status for both, a
+        /// held probe could only ever answer 200, which is why a straddling <b>failed</b> poll — the case the
+        /// fenced negative publish exists for — could not be built at all.</summary>
+        public int HeldProbeStatus { get; set; } = 200;
+
         private static bool Matches(string path, string route) =>
             path == route || path.EndsWith("/" + route, StringComparison.Ordinal);
 
@@ -60,6 +66,9 @@ public sealed class CapabilityPublicationTests
                     _entered.TrySetResult();
                     await _released.Task.ConfigureAwait(false);
                     _answered.TrySetResult();
+                    if (HeldProbeStatus != 200)
+                        return new HttpResponseMessage((HttpStatusCode)HeldProbeStatus)
+                        { Content = new StringContent("{}") };
                 }
                 var items = string.Join(",", answer.Select(
                     m => "{\"id\":\"" + m + "\",\"status\":{\"value\":\"loaded\"}}"));
@@ -210,6 +219,94 @@ public sealed class CapabilityPublicationTests
         Assert.Contains("extra", engine.LoadedModels);
         Assert.True(engine.Healthy);
         Assert.Equal(proofVersion, engine.Capability.Version);   // the stale answer was dropped, not merged
+    }
+
+    [Fact(Timeout = 60_000)]
+    public async Task APollThatFailedBeforeASwitchCannotWithdrawWhatTheSwitchProved()
+    {
+        using var handler = new ProbeHandler("m");
+        var provider = new ScriptedProvider();
+        var def = Def(new HealthProbeDefinition { Path = "/props", IntervalMs = 50, TimeoutMs = 30_000 });
+        var engine = NewEngine(def, provider, handler);
+        await using var _ = engine;
+
+        using var loopCts = new CancellationTokenSource();
+        engine.StartHealthLoop(loopCts.Token);
+        await WaitUntil(() => engine.Healthy);
+
+        // One /models round trip is in flight, and it is going to come back bad: 503 on release.
+        handler.HoldNextProbe();
+        handler.HeldProbeStatus = 503;
+        await handler.EnteredAsync;
+        Assert.True(engine.Healthy);
+
+        // A switch proves the engine while that request is still on the wire.
+        handler.SetModels("m", "extra");
+        var switched = await engine.WaitForModelAsync("extra", TimeSpan.FromSeconds(30), CancellationToken.None);
+        Assert.True(switched.IsReady);
+        var proofVersion = engine.Capability.Version;
+
+        // Stop the loop, then let the straddling poll fail. An unfenced negative would mark this engine unknown
+        // for a whole poll interval: the scheduler skips an unhealthy engine, so a working engine loses its
+        // model to a failure that happened before the proof, and the refusal loses its grounds as well.
+        loopCts.Cancel();
+        handler.ReleaseProbe();
+        await handler.AnsweredAsync;
+        await Task.Delay(300);
+
+        Assert.True(engine.Healthy);
+        Assert.Equal(proofVersion, engine.Capability.Version);   // the stale failure was dropped, not applied
+        Assert.True(engine.IsReadyFor("extra", null));
+    }
+
+    [Fact(Timeout = 60_000)]
+    public async Task APollThatCannotAskWhatIsLoadedStillMarksTheEngineUnknown()
+    {
+        using var handler = new ProbeHandler("m");
+        var provider = new ScriptedProvider();
+        var def = Def(new HealthProbeDefinition { Path = "/props", IntervalMs = 50, TimeoutMs = 30_000 });
+        var engine = NewEngine(def, provider, handler);
+        await using var _ = engine;
+
+        using var loopCts = new CancellationTokenSource();
+        engine.StartHealthLoop(loopCts.Token);
+        await WaitUntil(() => engine.Healthy);
+
+        // Nothing else publishes here, so the fence must not become "the health loop can never report bad
+        // news": it drops answers that are *stale*, not answers that are the freshest thing known.
+        handler.ModelsStatus = 503;
+        await WaitUntil(() => !engine.Healthy);
+        loopCts.Cancel();
+
+        Assert.Contains("m", engine.LoadedModels);      // kept as history, not as a claim
+        Assert.False(engine.IsReadyFor("m", null));
+    }
+
+    [Fact(Timeout = 60_000)]
+    public async Task AServingStateRuleThatFailsMovesNoHealthFlagAndStillFeedsTheGauges()
+    {
+        using var handler = new ProbeHandler("m");
+        var provider = new ScriptedProvider();
+        // /props answers, with an 8192 window; the configured rule asks for a window the engine cannot offer.
+        var def = Def(new HealthProbeDefinition
+        {
+            Path = "/props", IntervalMs = 50, TimeoutMs = 30_000, Expect = "n_ctx >= 200000",
+        });
+        var engine = NewEngine(def, provider, handler);
+        await using var _ = engine;
+
+        using var loopCts = new CancellationTokenSource();
+        engine.StartHealthLoop(loopCts.Token);
+        await WaitUntil(() => engine.ActiveContextWindow == 8192);
+        await Task.Delay(250);      // several more ticks, so the discarded verdict is a pattern, not a fluke
+
+        // Two different questions: Healthy says this engine's /models answered, and health.expect says whether
+        // a *switch* to it counts as ready. Folding the rule's failure into health would make a passing
+        // /models answer look like a passing readiness rule in one direction and a failing rule look like a
+        // dead engine in the other. The gauges still move, because that is what the same payload is for.
+        Assert.True(engine.Healthy);
+        Assert.True(engine.IsReadyFor("m", null));
+        loopCts.Cancel();
     }
 
     [Fact(Timeout = 60_000)]

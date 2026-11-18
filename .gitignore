@@ -1,6 +1,7 @@
 bin/
 obj/
 *.user
+__pycache__/
 
 # Local-only working notes (handoffs, scratch, session context). Never published.
 .local/

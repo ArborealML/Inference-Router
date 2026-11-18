@@ -1,6 +1,6 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.28)
+Status: draft, continuously revised (v0.12.29)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
@@ -352,6 +352,24 @@ daemon transaction per engine. 137 tests green.
   that answers no `upload_url`, an upload that dies or answers no asset id, an asset name listed twice on
   the release, and a tag that moves after the first resolve. No tag has run the gate: still configured,
   not proven.
+- v0.12.29 — the probe fence made **two-directional** (§5.5), from the plan review of the publication-honesty fix set.
+  What changed: a health-loop failure publishes its negative under the same version fence the successful answer uses —
+  a new `PublishProbeFailure(expectedVersion)` holding the negative half that `PublishProbeResult` already carried — so
+  a poll that could not reach the engine *before* a switch proved that engine no longer marks it unknown for a whole
+  interval, which costs that model its engine (the scheduler skips an unhealthy engine) and takes the admission
+  refusal's grounds away with it; the version for that fence is read outside the `try`, because a catch that cannot see
+  it cannot fence on it; `PublishUnknown()` is documented as **unfenced on purpose** at every switch exit — a switch is
+  the fresher publisher by construction, so fencing it would let a quiet poll drop the publication that says the engine
+  was just stopped or relaunched; and §5.5 now states which observation moves health at all (the `/models` fetch) and
+  that the serving-state probe's `health.expect` verdict moves none, which the code comment claimed and nothing pinned.
+  The quiet-poll wording says what the comparison actually does — length-equal then index-by-index `OrdinalIgnoreCase`
+  against the list currently published — rather than naming the array the code reuses. Three new
+  `CapabilityPublicationTests`: a straddling failed poll cannot withdraw a switch's proof (needed a `ProbeHandler`
+  seam able to fail a *held* request, since one status code applied before the hold meant a held probe could only ever
+  answer 200); a poll that cannot ask what is loaded still marks the engine unknown when nothing newer has landed; and a
+  failing `health.expect` rule moves no health flag while the gauges still move. **Not closed here:** the gauge updates
+  still carry no epoch, so a stale window answer can still mislead readiness and the escalation ladder (TASK-63 AC #2);
+  and the fence still orders publications rather than engines, so a restart the router did not see evades it (§15).
 - v0.12.28 — an engine's account of itself is either **current-and-verified or unknown** (§5.5), from two plan
   reviews of the change plus a live ordering bug found while checking the first round's correction against the code:
   a switch's start installed the runtime's private switch state *before* publishing the snapshot marker, so a
@@ -1161,17 +1179,27 @@ engine forks land; the scheduler interface will not change shape.
   reported list stays as history while the marker is up, and what is withdrawn is the entitlement to use it.
   **A probe is fenced, not merely ordered:** it records the snapshot version before it awaits and re-checks that
   version inside every publish retry, abandoning the publication if it moved, so a fetch that began before a switch
-  cannot land after it and overwrite what the switch proved. The fence orders *publications*, not the engine: an
-  engine restarted outside the router's sight, with no visible discontinuity, evades it.
+  cannot land after it and overwrite what the switch proved — and, in the other direction, so a poll that **failed**
+  before that switch cannot withdraw the proof afterwards: the negative answer goes out as a health-only change under
+  the same version and the same drop rule, which is what stops one unreachable-tick poll from costing a working engine
+  its model for a whole interval. Of the health loop's two awaited observations only the `/models` fetch moves health:
+  the serving-state probe that follows it answers a different question — `health.expect` says whether a **switch**
+  counts as ready — moves no health flag in either direction, and still feeds the window and slot gauges. The fence
+  orders *publications*, not the engine: an engine restarted outside the router's sight, with no visible
+  discontinuity, evades it.
   **Uncertainty is published:** a switch that ends without having verified the engine — failed stop, failed launch,
   readiness timeout, an exec with `wait_health = false` — publishes `Healthy = false` as a health-only change that
   preserves the currently reported list, so the refusal says "not hopeless" and no stale list can refuse a model that
   has begun to be served or vouch for one that was just stopped; `engine.switch_completed` is still emitted where the
   exec itself succeeded, because that part is known. A switch that *does* verify publishes the reported list and
-  `Healthy = true` in one publication, which is what makes the engine eligible without another poll.
-  **A quiet poll says nothing new:** a probe whose payload equals the published list pairwise (`OrdinalIgnoreCase`)
-  reuses the prior array and leaves the version alone, so a healthy engine cannot keep the refusal scan spinning;
-  the comparison is content-wise, so a reordering or a changed duplicate count still bumps.
+  `Healthy = true` in one publication, which is what makes the engine eligible without another poll. Every switch exit
+  publishes **unfenced**, deliberately: the switch has just stopped or relaunched this engine, so its account cannot be
+  stale against a poll that happened to start earlier, and fencing it would let a quiet poll drop the one publication
+  that says the engine is no longer what it reported.
+  **A quiet poll says nothing new:** the comparison runs against the list *currently published* — equal length, then
+  index by index with `OrdinalIgnoreCase` — not against the payload the probe started with, so a reorder or a name
+  reported twice instead of once counts as a change and bumps the version, while a probe that learned nothing keeps the
+  existing array instance and leaves the version alone, so a healthy engine cannot keep the refusal scan spinning.
   The two ends of a transition are ordered by one await-free gate (taken after the switch lock, never the other way
   round, since the switch lock's holder calls the end): the claim publishes marker-then-state inside it, the
   switch-state read that decides claim-or-coalesce happens inside it, and the end writes idle state and clears its

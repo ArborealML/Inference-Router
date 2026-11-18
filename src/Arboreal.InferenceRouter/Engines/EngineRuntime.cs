@@ -167,8 +167,9 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
     /// round trip, a model switch can land inside it, and writing the older answer afterwards would replace
     /// fresher evidence with stale evidence — the failure the snapshot exists to prevent (§5.5). Dropping a
     /// stale publication costs one poll interval, not an answer: the next tick reads the engine again. The
-    /// fence is re-checked inside every CAS retry, because the version can move between the read and the
-    /// exchange.</summary>
+    /// fence covers both directions of the answer: a probe that could not reach the engine publishes its
+    /// health-only negative through <see cref="PublishProbeFailure"/> under the same version, so a poll that
+    /// failed before a switch proved the engine cannot withdraw that proof either.</summary>
     private void PublishProbeResult(long expectedVersion, bool healthy, string[] models)
     {
         while (true)
@@ -177,12 +178,8 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
             if (cur.Version != expectedVersion) return;   // someone else published; their answer is fresher
             if (!healthy)
             {
-                // A failed probe carries no list evidence, so it moves health only and keeps the models the
-                // engine last actually reported.
-                if (!cur.Healthy) return;
-                var unknown = cur with { Version = cur.Version + 1, Healthy = false };
-                if (Interlocked.CompareExchange(ref _cap, unknown, cur) == cur) return;
-                continue;
+                PublishProbeFailure(expectedVersion);
+                return;
             }
             // A switch mutates this engine, so a poll that merely got an answer out of it — possibly from the
             // process about to be stopped — is not evidence of capability. Only the switch's own proof may
@@ -197,6 +194,24 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
                 LoadedModels = SameModels(cur.LoadedModels, models) ? cur.LoadedModels : models,
             };
             if (Interlocked.CompareExchange(ref _cap, next, cur) == cur) return;
+        }
+    }
+
+    /// <summary>Publish a probe's *negative*: health false, the reported list untouched, and only while
+    /// nothing has published since <paramref name="expectedVersion"/> — the version read before the probe went
+    /// out. Same fence as the positive answer for the same reason: the poll interval is short, so losing a
+    /// stale negative costs one tick, while applying it marks a working engine unknown for a whole interval
+    /// and costs that model its engine (§5.5). A probe carries no list evidence, so the models the engine
+    /// last actually reported stay as history; only the entitlement to use them moves.</summary>
+    private void PublishProbeFailure(long expectedVersion)
+    {
+        while (true)
+        {
+            var cur = Volatile.Read(ref _cap);
+            if (cur.Version != expectedVersion) return;   // someone else published; their answer is fresher
+            if (!cur.Healthy) return;                     // already unknown: there is nothing to withdraw
+            var unknown = cur with { Version = cur.Version + 1, Healthy = false };
+            if (Interlocked.CompareExchange(ref _cap, unknown, cur) == cur) return;
         }
     }
 
@@ -227,7 +242,12 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
     /// already laid hands on the engine — stopped it, launched something, or left it restarting — because
     /// after that the last good probe describes a process that may no longer exist. Unknown is the one
     /// answer that cannot be wrong in either direction: the scheduler skips an unknown engine, and the
-    /// admission refusal refuses nothing while health is unknown (§5.5).</summary>
+    /// admission refusal refuses nothing while health is unknown (§5.5).
+    /// <para><b>Deliberately unfenced</b>, unlike a probe's two publications. Every caller is a switch's own
+    /// exit, and a switch is the fresher publisher by construction: it just stopped or relaunched this
+    /// engine, so its account cannot be stale relative to a poll that happened to start earlier. Fencing it
+    /// would let a quiet poll drop the one publication that says the engine is no longer what it reported.
+    /// Do not "finish the fencing" here — fence a *probe*, never a switch exit.</para></summary>
     private void PublishUnknown()
     {
         while (true)
@@ -304,6 +324,10 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
         while (true)
         {
             // bootstrap: probe immediately at startup, then on the interval
+            // Read the version before the round trip, *outside* the try: both the success publish and the
+            // failure publish below are fenced on it, so a poll can never overwrite fresher evidence with
+            // its own older answer — in either direction (§5.5).
+            var capBefore = Capability.Version;
             try
             {
                 // CA2000's "recommended dispose pattern" doesn't track `using var` in an async
@@ -311,10 +335,6 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
 #pragma warning disable CA2000
                 using var cts = new CancellationTokenSource(_def.Health?.TimeoutMs ?? 5_000);
 #pragma warning restore CA2000
-                // Read the version before the round trip: the publication is dropped if anything else
-                // published while the probe was in flight, so a poll can never overwrite fresher evidence
-                // with its own older answer (§5.5).
-                var capBefore = Capability.Version;
                 var models = await FetchLoadedModelsAsync(cts.Token).ConfigureAwait(false);
                 PublishProbeResult(capBefore, healthy: true, models);
                 Emit("engine.health", value: models.Length);
@@ -322,14 +342,20 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
                 // verdict is deliberately not folded into Healthy: Healthy means this engine's /models probe
                 // answered, while health.expect decides whether a *switch* counts as ready — two different
                 // questions, and collapsing them would make a passing /models answer look like a passing
-                // readiness rule (§5.5). The discard is spelled out so nobody "fixes" it by accident.
+                // readiness rule (§5.5). The discard is spelled out so nobody "fixes" it by accident: a
+                // failing expect rule moves no health flag, in this loop or anywhere else.
                 _ = await ProbeStateAsync(cts.Token).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
-                // Health is the thing that failed: the last reported model set stays as the last thing the
-                // engine actually said, and Healthy=false makes it unknown rather than evidence of absence.
-                PublishUnknown();
+                // The /models fetch is the observation that can fail here and the only one that moves health:
+                // the last reported model set stays as the last thing the engine actually said, and
+                // Healthy=false makes it unknown rather than evidence of absence. Fenced like the positive
+                // answer, so a poll that failed while a switch was proving the engine cannot withdraw that
+                // proof. It also cannot withdraw the recovery this same tick just published: if the fetch
+                // answered and a later line in the try threw, this tick's own publication has moved the
+                // version, and the fence drops the negative.
+                PublishProbeFailure(capBefore);
                 Emit("engine.health", reason: ex.Message, value: 0);
             }
             try
