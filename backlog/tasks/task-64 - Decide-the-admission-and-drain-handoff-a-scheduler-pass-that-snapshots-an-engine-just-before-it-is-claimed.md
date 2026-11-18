@@ -7,7 +7,7 @@ status: Preparing
 assignee:
   - '@gpt-6.2-sol-release'
 created_date: '2026-11-17T23:07:00Z'
-updated_date: '2026-11-18T22:58:00Z'
+updated_date: '2026-11-18T23:08:00Z'
 labels:
   - scheduling
   - architecture
@@ -28,6 +28,7 @@ Recorded as an accepted gap in SPEC 15 by the fix set for fd5e0cd; this row is t
 - [ ] #1 SPEC 15 carries the accepted gap with this task named and the fd5e0cd review as its source
 - [x] #2 the admission/drain shape is written as a decision with the in-flight-pass rule stated
 - [ ] #3 a test shows a ticket approved by an earlier pass is not dispatched to an engine claimed after that pass
+- [ ] #4 Consume completion and profile wakes while the route is closed. The same ticket stays queued with zero grants or bytes. Opening the matching generation wakes dispatch outside locks and sends that ticket once without another external event.
 <!-- AC:END -->
 
 ## Implementation Plan
