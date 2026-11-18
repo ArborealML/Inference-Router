@@ -246,6 +246,11 @@ preparation, implementation, test design, fixes and the evidence handoff describ
 transition so the coordinator can update the shared board. After a handoff, send revisions or the next
 assignment to the same implementer.
 
+Send assignments, blockers, review findings and commit handoffs through Codex TUI thread messages.
+For a thread already open in a worker session, use `codex queue --thread <thread-id> --message <text>`.
+A queue receipt confirms delivery to the inbox. The worker replies in the coordinator’s thread when it takes
+the handoff. Use tmux to host and display the sessions.
+
 Run five persistent tmux implementers under decision-66, each with one task and its own worktree.
 Use stable session-qualified board handles for active assignments: `@gpt-6.2-sol-config`,
 `@gpt-6.2-sol-shutdown`, `@gpt-6.2-sol-release`, `@gpt-6.2-sol-lifecycle` and `@gpt-6.2-sol-scheduling`. Transfer a task after
