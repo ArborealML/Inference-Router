@@ -7,7 +7,7 @@ status: To Do
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-18T06:27:00Z'
-updated_date: '2026-11-18T09:44:00Z'
+updated_date: '2026-11-18T09:56:00Z'
 labels:
   - flake
   - tests
@@ -30,14 +30,18 @@ Second flaky pin, separate from TASK-80's nudge case: SwitchClaimTests.cs:228 AW
 - [ ] #4 The pin still fails when the shutdown hunk it protects is reverted.
 <!-- AC:END -->
 
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Plan of record, not started; moves to the plan field when work opens. Proposed by the coding seat, held for disposition until the top-tier plan review lands. Stop asserting which side of the wake race the seam records. Keep pinned what the caller gets: an OperationCanceledException naming the router stopping, no target named in the body, the provider observing the cancel, the marker cleared. Satisfy AC #4 by reverting the hunk at EngineRuntime.cs:794-801 — the fold of the engine switch token into the settled-false decision — because that revert changes the caller answer, so the pin fails for a reason that is not a race.
+<!-- SECTION:PLAN:END -->
+
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Live on main, 08:12Z: CI run 44264855629, building a commit that changed no code at all, failed 1 of 194 on AWaiterInsideTheReadinessWaitIsToldTheRouterStopped — Expected settled, Actual cancelled. A board-only push now reds the regression gate, so every later red run is ambiguous until this is fixed: this is the highest-cost open defect. The v0.12.37 landing put three new assertions inside this same test, so the ambiguity lands there first.
+Live on main, three CI occurrences, all Expected settled / Actual cancelled: run 44264855629 at b7ab43d (1 of 194), 44275637518 at e0dcd0e (1 of 199), 44277482601 attempt 1 at 64b9f94 (1 of 206). The rerun of that last commit was green, so the pin is the variable, not the tree. Three of the last four pushes to main.
 
-The commit review of 610f0d8, re-checked by this seat: an assertion failure inside that test's hook leaves the hook parked, so a red run there can hang rather than fail — one more reason the pin has to be deterministic before anything else builds on it.
+Standing rule while this row is open: no new pins land in the switch-claim or capability-publication classes until this pin is deterministic. And an assertion failure inside this test's hook leaves the hook parked, so a red run here can hang rather than fail — the 30 s shape.
 
-Second CI occurrence, 09:26Z: run 44275637518 on e0dcd0e — a push touching only backlog/, AGENTS.md and the architecture map — failed 1 of 199 on the same pin with the same Expected settled, Actual cancelled. Two of the last three board-only pushes to main went red here, which is the cost this row names: the gate is ambiguous until the pin is deterministic.
-
-Third CI occurrence, 09:37Z: rerun-less attempt 1 of run 44277482601 (the v0.12.39 feed-bounds push) failed the same pin, 1 of 206, same Expected settled / Actual cancelled; the rerun of that same commit was green, which is the clearest evidence yet that the pin, not the tree, is the variable. Three of the last four pushes to main. Standing rule for the queue: no new pins land in the switch-claim or capability-publication classes until this one is deterministic.
+Mechanism, read by the coding seat and consistent with this seat's read of the same lines: the hook argument at SwitchClaimTests.cs:241-246 records the winner of two releases of one wait — EngineRuntime.cs:781, where shutdown settled the readiness task, versus :794, where the engine switch token cancelled the wait while the caller token was not. Shutdown does both inside one window and the waiter does not resume synchronously with the settle, so the recorded branch is scheduler-dependent while v0.12.35 folds both into one caller answer. Their Release counts at 64b9f94: 2 of 8 switch-filter runs failed, one of each shape; the pin alone 6 of 6 — their report, not this seat's.
 <!-- SECTION:NOTES:END -->
