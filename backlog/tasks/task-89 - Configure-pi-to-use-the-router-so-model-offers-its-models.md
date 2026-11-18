@@ -3,9 +3,9 @@ id: TASK-89
 title: Configure pi to use the router, so /model offers its models
 status: Waiting
 assignee:
-  - '@qwen3.8-flash-next-board'
+  - '@gpt-6.2-astra'
 created_date: '2026-11-18T07:15:00Z'
-updated_date: '2026-11-18T19:23:00Z'
+updated_date: '2026-11-18T19:54:00Z'
 labels:
   - serve
   - pi
@@ -18,7 +18,7 @@ ordinal: 88000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Wake when the router supplies verified model windows for the pi picker. Two real turns through an isolated router and pi profile have qualified the two-model client path.
+Wake when the deployed router serves the qualified catalog so the shared pi provider can declare the verified windows. The two-model path has been measured through a disposable router and pi session.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -38,7 +38,7 @@ Read back the current pi provider without printing secrets. Exercise /model and 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-On 2026-11-18 pi 1.3.0 selected the resident model through /model and completed one real Chat turn on the isolated Release router at 5c5e18a. The selected provider and model matched the session record, stopReason was stop, and exactly one completion returned HTTP 200. The private test profile used a separate listener and the shared provider file was byte-identical afterwards. The configured 131072-token value still lacks a live window observation. The deployed router and second model remain unqualified.
+The initial client qualification on [5c5e18a](https://github.com/ArborealML/Inference-Router/commit/5c5e18a) completed real pi turns on two already-resident models. In a second run on the integrated discovery build, ordinary GET /v1/models returned 256000 tokens for resident Qwen and 8192 for resident Ternary Bonsai. Independent properties reads matched both values. The Bonsai model reports a training context of 262144, which differs from its 8192-token serving window.
 
-At 5c5e18a, one isolated pi 1.3.0 session selected two models through /model on one AIR listener. Local Qwen completed the marker turn; remote resident Ternary Bonsai answered 5 and finished with stop. The Dax backend reported 8192 context and one slot. A provider wildcard hid the slash-containing Bonsai ID; removing the optional CLI filter exposed it. The two engines were already serving and the production listener was untouched. TASK-112 still requires an observed native residency transition.
+The disposable pi 1.3.0 provider copied the two discovered values. In the same interactive session, /model selected each model and each completed a turn with stop. One local Qwen turn returned the requested marker, and the Dax turn answered 5. Filtering model IDs with a wildcard can hide the slash in the Bonsai ID. The shared provider file remained byte-identical and still declares 131072 for Qwen. Before checking #2, align the shared provider with the deployed catalog. TASK-112 owns native residency change.
 <!-- SECTION:NOTES:END -->

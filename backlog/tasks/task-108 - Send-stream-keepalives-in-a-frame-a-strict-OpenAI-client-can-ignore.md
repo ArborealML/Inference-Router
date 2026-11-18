@@ -1,11 +1,11 @@
 ---
 id: TASK-108
 title: Send stream keepalives in a frame a strict OpenAI client can ignore
-status: Waiting
+status: To Do
 assignee:
   - '@gpt-6.2-sol'
 created_date: '2026-11-18T17:43:00Z'
-updated_date: '2026-11-18T19:45:00Z'
+updated_date: '2026-11-18T19:54:00Z'
 labels:
   - wire
   - stream
@@ -47,7 +47,5 @@ Detect a missing completion sentinel in streaming chat and complete. Preserve pa
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-The strict parser rejected the old data payload and accepted a completion with the comment writer in [4a5e214](https://github.com/ArborealML/Inference-Router/commit/4a5e214). Queued wire tests observe seq 0, 1 and 2, escaped status, byte-identical upstream frames and the terminal sentinel. A lifecycle-free standalone router streamed a real pi turn after periodic seq 2; 379 upstream bytes were preserved. The abort control observed TCP close, ticket cancellation, slot release and a subsequent completion. The implementation passed 36 focused checks and a zero-warning Linux AOT publish. A full Debug run exposed the independent nudge failure, reproduced on the parent (TASK-80). The commit review verified framing and identified the CLI EOF exit defect. Four manual CLI mode checks passed, but process-level regression coverage and early EOF handling remain. TASK-82 owns mid-frame failures and TASK-81 owns terminal arbitration. TASK-91 still owns reproduction of its historical sequence repeat.
-
-A separate CLI process posted to a loopback HTTP server that returned one valid delta and clean EOF. It printed partial, wrote no error and exited 0. Wake when the external CLI completion and regression plan review returns.
+At [4a5e214](https://github.com/ArborealML/Inference-Router/commit/4a5e214) the strict client rejected the old data payload and accepted the new comment writer. The standalone pi smoke observed seq 2 before admission, a completed turn and 379 preserved upstream bytes. The filtered stream set passed 36 checks. A separate CLI process printed partial and returned exit 0 on orderly EOF after one delta. The independent plan review confirmed the sentinel contract and existing chat/complete alias. Use focused C# subprocess fixtures for stdout, stderr, exit status, comments, error-plus-sentinel and EOF. Keep prior upstream error reporting singular, preserve JSON bytes and human trailing newline, and bound child cleanup. TASK-82 owns mid-frame failures, TASK-81 terminal arbitration and TASK-91 historical sequence reproduction.
 <!-- SECTION:NOTES:END -->

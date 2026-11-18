@@ -7,7 +7,7 @@ status: Testing
 assignee:
   - '@gpt-6.2-sol-shutdown'
 created_date: '2026-11-18T06:27:00Z'
-updated_date: '2026-11-18T19:50:00Z'
+updated_date: '2026-11-18T19:56:00Z'
 labels:
   - flake
   - tests
@@ -21,13 +21,13 @@ ordinal: 86000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-The shutdown fixture is integrated. Reconstruct both historical failure paths, then measure the reviewed fixed tree under the required quiet and loaded host conditions.
+The historical shutdown race is reproduced and the repaired fixture is integrated. Reserve the specified host for the fixed-tree focused, full, join and loaded cohorts.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [x] #1 A construction fails the pin in 10 or more of 20 focused Release runs against 64b9f94 — not the fixed tree — with the SHA, command, environment and counts in this row.
-- [ ] #2 The mechanism is named here and explains both observed shapes — the 30 s ceiling under load and the settled/cancelled assertion in CI — not a hypothesis
+- [x] #2 The mechanism is named here and explains both observed shapes — the 30 s ceiling under load and the settled/cancelled assertion in CI — not a hypothesis
 - [ ] #3 Afterwards, on a quiet host with load recorded: 50 focused and 3 full Release runs with no failure, plus the same construction against the fix.
 - [x] #4 Two named mutation controls fail pins: a barrier that cancels or settles readiness **before** the terminal outcome is published, red at `router_stopped`, and a stop read as a broken engine so a later write overwrites the cause.
 - [x] #5 The route assertion is gone, and a provider that records cancellation but stays held pins liveness: the stopped answer arrives while held, and the marker clears after release.
@@ -44,9 +44,11 @@ Dropping Assert.Equal("settled", wake) is right: the seam reports the winner of 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Historical worker measurement on 64b9f94: 24-core host, 40 concurrent CPU-only busy loops. Two blocks of 20 serial runs of dotnet test -c Release --no-build --filter FullyQualifiedName~SwitchClaimTests yielded 9/20 and 11/20 failures of the shutdown pin. The pin alone failed 0/20 quiet runs. On 51922fe, 42/50 focused runs passed; seven hit the 30000 ms ceiling and one expected settled but saw cancelled. Seven CI runs also saw that wake assertion. AC #2 still needs direct evidence for both mechanisms. CI run 44380388711 timed out in Pause.Enter in the later late-provider fixture. The amended fixture runs shutdown separately and releases the barrier before joining it.
+At 64b9f94 on a 24-core host with 40 CPU-only busy loops, two blocks of 20 serial dotnet test -c Release --no-build --filter FullyQualifiedName~SwitchClaimTests runs produced 9/20 and 11/20 shutdown-pin failures. The pin alone failed 0/20 quiet runs. At 51922fe, 42/50 focused runs passed; seven hit 30000 ms and one expected settled but observed cancelled.
 
-In [07408e2](https://github.com/ArborealML/Inference-Router/commit/07408e2) the held-provider pin captures the stopped answer before release. Coordinator inspected worker logs: waking before terminal publication failed AStoppedAnswerArrivesWhileTheProviderIsStillHeld; allowing a late overwrite failed AProviderFailureCannotOverwriteThePublishedStop. Both expected RouterStopped and observed Failed. Reading the private state from Switching failed SwitchingReportsThePublishedMarkerBeforePrivateStateIsInstalled at True versus False. The restored worker Release report records 69/69 in the focused set. Independent commit review accepted the fixture; TASK-59 carries the pre-install hook exception control. Fixed-tree host measurements remain open. Separate focused and join cohorts, record per-run load, and reserve the host under decision-55. Keep new pins outside the switch-claim and capability-publication classes until measurement finishes.
+On .NET 11.0.0 a diagnostic with byte-verified historical runtime and test sources reproduced three schedules. Readiness resumed on another thread and the disposer returned. Inline cancellation ran the hook on the disposing thread; the original release after DisposeAsync was unreachable. Queued cancellation let disposal return, then the settled/cancelled assertion threw before releasing the hook. The diagnostic bounded each wait and released the hook independently. Original timeout logs do not identify the schedule of each individual run.
 
-CI triage: [Ubuntu Release run 44380388711](https://github.com/ArborealML/Inference-Router/actions/runs/44380388711) at 8a7a937 timed out in AProviderFailureCannotOverwriteThePublishedStop at Pause.Enter. [Run 44382999975](https://github.com/ArborealML/Inference-Router/actions/runs/44382999975) passed with the repaired fixture. Keep this high-priority assignment open for the recorded stability criteria.
+The repaired [fixture](https://github.com/ArborealML/Inference-Router/commit/07408e2) captures the stopped answer before provider release. Early wake failed AStoppedAnswerArrivesWhileTheProviderIsStillHeld; late overwrite failed AProviderFailureCannotOverwriteThePublishedStop. Both expected RouterStopped and observed Failed. The private-state getter failed SwitchingReportsThePublishedMarkerBeforePrivateStateIsInstalled at True versus False. The restored worker report records 69/69 focused Release tests. Commit review accepted the fixture; TASK-59 owns pre-install hook exception coverage.
+
+[Failed CI](https://github.com/ArborealML/Inference-Router/actions/runs/44380388711) at 8a7a937 timed out in Pause.Enter. [CI with the repair](https://github.com/ArborealML/Inference-Router/actions/runs/44382999975) passed. Reserve the host under decision-55, record per-run load and keep the join cohort separate. Keep new pins outside the switch-claim and capability-publication classes until measurement finishes.
 <!-- SECTION:NOTES:END -->
