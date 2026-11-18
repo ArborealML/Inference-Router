@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@gpt-6.2-sol-shutdown'
 created_date: '2026-11-17T02:54:00Z'
-updated_date: '2026-11-18T21:10:00Z'
+updated_date: '2026-11-18T21:20:00Z'
 labels:
   - engine
   - lifecycle
@@ -49,6 +49,8 @@ Provider fixes landed in 18d7279. Use fake daemon responses and preserve the loa
 [Native image verification](https://github.com/ArborealML/Inference-Router/commit/c30ca3e) checks the full local image ID, named repository digest and platform before mutation. Create names the immutable image ID. The shipped selector-free native example passed CLI validation. The coordinator ran 128 focused and 419 full Release tests, then published the server with Native AOT. Four isolated regressions weakened ID, repository, platform variant and create-reference checks. Each failed its intended fixture; restoring source passed all 25 targeted cases. Production and fixture reviews are in flight. Device requests, mounts and resource limits are the next implementation slice.
 
 Resource configuration plan sent for review against the archived Qwen payload and Bonsai script. It covers Linux device mappings, read-only binds, CPU, memory, swap and core limits. Qualification must distinguish an observed container from a proposed launch.
+
+Review of 0e2fd2a confirmed that coordinator preflight verifies manifest and platform. Direct launch checks the configured ID alone; SPEC 5.3.1 documents that lower-level contract. Production activation must use the coordinated path.
 <!-- SECTION:NOTES:END -->
 
 ## Comments
