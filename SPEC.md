@@ -1,6 +1,6 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.33)
+Status: draft, continuously revised (v0.12.34)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
@@ -352,6 +352,25 @@ daemon transaction per engine. 137 tests green.
   that answers no `upload_url`, an upload that dies or answers no asset id, an asset name listed twice on
   the release, and a tag that moves after the first resolve. No tag has run the gate: still configured,
   not proven.
+- v0.12.34 — a waiter is authorised **when it resumes**, not when it was promised (§5.5), the resume half of the
+  publication-honesty fix set (TASK-61), whose shape a top-tier plan review corrected. What changed: at resume the
+  three answers are now ordered — the current snapshot authorises the target, so Ready; the caller's own attempt ended
+  false, so Failed once, because nothing retries inside the engine and a caller with no ceiling would otherwise
+  relaunch a switch that cannot improve; an attempt that *succeeded* but whose snapshot no longer authorises the
+  target takes its own turn through the claim path rather than being refused. That third case was the defect: the end
+  of a switch clears the marker and settles the readiness task before the waiter is scheduled, so a successor can
+  claim the engine in that window, and the overtaken waiter was being told `switch to X failed` for a switch that had
+  just succeeded — a wire answer contradicting the feed, and a request killed for someone else's claim. Refusing it was
+  the plan-review's rejected shape: single-flight is per engine, not per target (decision-9), so an overtaken caller
+  queues behind a new attempt of its own, bounded by its own ceiling. No wire surface changes; the categories
+  introduced in v0.12.33 are untouched. Pinned by
+  `SwitchClaimTests.AWaiterOvertakenAtTheResumeReadTakesItsOwnTurnInsteadOfAnAnswerItCannotSupport`, which parks the
+  first waiter in the existing seam **between the readiness await and the snapshot read**, lets a second claim win the
+  engine, releases it, and asserts the waiter is neither told Ready nor refused — three launches (`extra`, `m`,
+  `extra`), no `engine.switch_failed`, and Ready only off its own attempt; the whole pin runs in ~0.1 s in Release, so
+  it cannot be passing on thread-scheduling luck. Mutation evidence: dropping the `!ready` guard fails that pin and
+  nothing else. **Not closed here:** holding that authority across the admission handoff is TASK-25's criterion, and
+  the scheduler-pass/drain handoff stays an accepted gap (TASK-64, §15).
 - v0.12.33 — a switch the engine cannot confirm is **refused**, not served (§5.5, §6.1): the owner's answer to the
   posture question (decision-27), which is the half of TASK-62 that was policy rather than a bug. What changed: on the
   `wait_health = false` path a `/models` refresh that **could not answer** ended the switch ready — the exec's exit
@@ -1332,7 +1351,18 @@ engine forks land; the scheduler interface will not change shape.
   readiness answer and the marker come from the **same** capability snapshot: the claim is an expected-version
   compare-exchange on the version that decision read, and a lost exchange means something published while this
   caller was deciding — so it re-decides on the newer snapshot, and a poll that proved the requested model
-  retires the claim instead of buying a second launch of a model already served. Inside the transition gate the
+  retires the claim instead of buying a second launch of a model already served. **A waiter is authorised at the
+  moment it resumes, not at the moment it was promised:** the readiness task settling and the switch state clearing
+  happen before a waiter is scheduled, so a successor can claim the engine in that window and the waking waiter must
+  not be answered off a promise that is already dead. At resume there are three answers, in this order: the current
+  snapshot authorises the target, so `Ready`; this caller's **own** attempt ended false, so `Failed` once — nothing
+  retries inside the engine, and a caller with no ceiling would otherwise relaunch a switch that cannot get better;
+  an attempt that *succeeded* but is no longer authorised takes its own turn through the claim path, exactly as
+  single-flight fairness prescribes for a caller overtaken by another target, bounded by its own ceiling and never
+  by a refusal — answering that caller Ready would send a request at a model the successor is about to unload, and
+  answering it Failed would fail a request for a switch that worked. The check is defence in depth, not the
+  entitlement: authority held across the admission handoff is the reservation and admission/drain question, not this
+  one. Inside the transition gate the
   state write still follows the marker. **Settle, then nudge:** the readiness task is completed first, then the
   dispatcher nudge runs with the gate released and its own failure swallowed. A callback that throws must not
   rewrite a switch that already committed — before, the throw escaped into the switch's own catch, turned a proven

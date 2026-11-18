@@ -60,6 +60,14 @@ public sealed class SwitchClaimTests
             gate?.TrySetResult();
         }
 
+        /// <summary>Launches gated and not yet released. A test must wait on this rather than on
+        /// <see cref="Launches"/> before releasing: the launch is recorded a statement before its gate is
+        /// queued, so releasing on the record can dequeue nothing and hang the switch.</summary>
+        public int GateCount
+        {
+            get { lock (_gates) return _gates.Count; }
+        }
+
         // The trust path: the exec's own success starts the switch, but since decision-27 the engine still has
         // to say what it holds, so a pin that needs a switch to succeed supplies the answer below.
         public ReadinessPolicy Readiness(LifecycleTarget target) => new(false, TimeSpan.FromSeconds(1));
@@ -316,5 +324,58 @@ public sealed class SwitchClaimTests
         var retry = await engine.WaitForModelAsync("extra", TimeSpan.FromSeconds(10), CancellationToken.None);
         Assert.True(retry.IsReady);
         Assert.Single(provider.Launches);
+    }
+
+    /// <summary>§5.5, TASK-61 AC #3 and #4: a waiter whose own switch *succeeded* but whose snapshot no longer
+    /// authorises the target is neither answered Ready nor refused — it takes its own turn, which is what
+    /// decision-9 says a caller overtaken by another target does. The seam sits between the readiness await and
+    /// the resume snapshot read, so the successor wins the engine while the first waiter is deciding: the answer
+    /// cannot come out right by thread-scheduling luck. Before this rule the waiter was told "switch to extra
+    /// failed" for a switch that had just succeeded, and its request died while the model was about to be unloaded
+    /// by someone else's claim.</summary>
+    [Fact(Timeout = 30_000)]
+    public async Task AWaiterOvertakenAtTheResumeReadTakesItsOwnTurnInsteadOfAnAnswerItCannotSupport()
+    {
+        var provider = new GatedProvider { GateLaunches = true };
+        using var reported = new FakeEngineHandler { LoadedModels = ["extra"] };
+        var feed = new EventRing();
+        var engine = Engine(provider, feed, models: reported);
+        await using var _ = engine;
+
+        var parked = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var resume = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        engine.AfterReadyWaitForTests = _ =>
+        {
+            parked.TrySetResult();
+            resume.Task.GetAwaiter().GetResult();     // held after the await, before the snapshot read
+        };
+
+        var first = engine.WaitForModelAsync("extra", TimeSpan.FromSeconds(25), CancellationToken.None);
+        await WaitUntil(() => provider.GateCount == 1);
+        provider.ReleaseOne();                        // A's own switch proves "extra" and settles true
+        await parked.Task.WaitAsync(TimeSpan.FromSeconds(10));   // A is held at the resume read
+
+        // A successor claims the engine for another target while A is deciding — and the engine, one model at a
+        // time, no longer holds what A was promised.
+        var second = engine.WaitForModelAsync("m", TimeSpan.FromSeconds(25), CancellationToken.None);
+        await WaitUntil(() => provider.GateCount == 1 && provider.Launches.Count == 2);
+        reported.LoadedModels = ["m"];
+        resume.TrySetResult();                        // A resumes and reads a snapshot that says no
+
+        // Not answered with a model the successor is about to unload, and not refused either: it queues behind
+        // a new attempt of its own, which is the loop's whole point.
+        Assert.False(first.IsCompleted);
+        Assert.Equal(["extra", "m"], provider.Launches);
+
+        provider.ReleaseOne();                        // the successor's switch to "m" ends
+        await WaitUntil(() => provider.GateCount == 1 && provider.Launches.Count == 3);
+        Assert.Equal("extra", provider.Launches[^1]);  // A's own turn, not a refusal
+        reported.LoadedModels = ["extra"];
+        provider.ReleaseOne();
+
+        var answer = await first;
+        Assert.True(answer.IsReady);                  // Ready, but only off its own attempt
+        Assert.DoesNotContain("engine.switch_failed", feed.Replay(0).Select(e => e.Kind));
+        Assert.Equal(EngineRuntime.SwitchOutcome.Ready, answer.Outcome);
     }
 }

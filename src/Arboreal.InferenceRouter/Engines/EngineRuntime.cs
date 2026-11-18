@@ -777,23 +777,26 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
             }
 
             if (IsReadyFor(canonical, profileOverride)) return new SwitchResult(SwitchOutcome.Ready, null);
-            // Ready is never reported for a switch that was not this request's. A switch aimed at the same
-            // model under a *different* serving profile proves nothing about the window this caller needs,
-            // and a switch that failed for someone else's target must not fail this one: in both cases the
-            // waiter loops and takes its own turn.
-            if (state.Model == canonical && state.Profile == profileOverride?.Name)
+            // Three answers at resume, in this order (§5.5). The snapshot still authorises the target: Ready.
+            // This caller's **own** attempt ended false: Failed, once — nothing retries inside the engine, and a
+            // caller with no ceiling would otherwise relaunch the same broken switch forever. An attempt that
+            // *succeeded* but is no longer authorised — a successor claimed the engine in the window between the
+            // switch's end and this read: takes its own turn through the claim path, exactly as decision-9
+            // prescribes for a caller overtaken by another target. That last case is bounded by the caller's own
+            // ceiling and never by a refusal: answering it Ready would send a request at a model the successor is
+            // about to unload, and answering it Failed would contradict the single-flight fairness this loop is.
+            // A switch aimed at the same model under a *different* serving profile likewise proves nothing about
+            // the window this caller needs, and a switch that failed for someone else's target must not fail this one.
+            if (!ready && state.Model == canonical && state.Profile == profileOverride?.Name)
             {
-                // Our own attempt ended. Trust its own readiness proof (RunSwitchAsync proves health,
-                // loaded model and window before it says success) instead of looping into another switch.
-                // The caller gets the reason *category* its own switch ended with, not the operator's sentence:
-                // "the engine never named the model" and "the launch failed" are different retry decisions, and
-                // the sentence carrying provider text stays on the feed. Bounded at the write, never here.
-                return ready
-                    ? new SwitchResult(SwitchOutcome.Ready, null)
-                    : new SwitchResult(SwitchOutcome.Failed,
-                        state.FailureReason is { Length: > 0 } why
-                            ? $"switch to {DescribeTarget(canonical, profileOverride?.Name)} failed: {why}"
-                            : $"switch to {DescribeTarget(canonical, profileOverride?.Name)} failed");
+                // This attempt ended false, and it was this caller's own: the answer is Failed once, with the
+                // reason *category* the attempt recorded — not the operator's sentence, which carries provider text
+                // and stays on the feed. No retry happens here: the caller who gave no ceiling would otherwise
+                // relaunch a switch that is not going to get better (§5.5).
+                return new SwitchResult(SwitchOutcome.Failed,
+                    state.FailureReason is { Length: > 0 } why
+                        ? $"switch to {DescribeTarget(canonical, profileOverride?.Name)} failed: {why}"
+                        : $"switch to {DescribeTarget(canonical, profileOverride?.Name)} failed");
             }
             last = new SwitchResult(SwitchOutcome.Failed,
                 $"a switch to {DescribeTarget(state.Model, state.Profile)} ended; waiting for this request's own turn");
