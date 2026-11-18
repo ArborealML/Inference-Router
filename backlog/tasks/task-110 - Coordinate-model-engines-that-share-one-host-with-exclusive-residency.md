@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@gpt-6.2-sol-lifecycle'
 created_date: '2026-11-18T18:13:00Z'
-updated_date: '2026-11-18T23:08:00Z'
+updated_date: '2026-11-18T23:15:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -42,5 +42,5 @@ Configure an explicit physical host group and share one host-local arbiter acros
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Record operation identity and immutable target before mutation. Unknown effects fence successor epochs. Detect foreign occupancy across the whole host; independent hosts can progress. External writers need separate OS or daemon enforcement. The injected runtime passed 133 focused and 475 Release tests plus server Native AOT. Offline restart integration passed 563 Release tests and Native AOT; the diagnostic correction passed 57 focused tests and awaits review. Review of the offline receipt implementation found settlement clears the launch ID before admission commits. Preserve durable exact-instance evidence through refusal and lost reply. The child probe supports restart; its exclusive create file proves one successful effect but does not count attempted issues. Add independent attempt counts and mismatched applied-receipt cases. Exact stop target, launch-plan binding, storage durability, missing-instance recovery and physical permits remain production prerequisites. Live operations remain parked.
+Record operation identity and immutable target before mutation. Unknown effects fence successor epochs. Detect foreign occupancy across the host; independent hosts can progress. External writers need separate enforcement. Injected runtime passed 133 focused and 475 Release tests plus server Native AOT. Offline restart integration passed 563 Release tests and Native AOT; diagnostic correction passed 57 focused tests. Corrected offline receipt fixtures passed 38 host coordinator tests, including independent create-attempt counting and mismatched applied receipts. Restart after publication but before acknowledgment requested a stop of the exact incumbent; the fake refused before any stop effect. Production must preserve exact-instance evidence through refusal and lost acknowledgment and recover without repeating mutation. Fixture review, launch-plan binding, storage durability, missing-instance recovery and physical permits remain open. Live operations remain parked.
 <!-- SECTION:NOTES:END -->
