@@ -5,7 +5,7 @@ status: Blocked
 assignee:
   - '@claire'
 created_date: '2026-11-18T06:06:00Z'
-updated_date: '2026-11-18T07:24:00Z'
+updated_date: '2026-11-18T07:55:00Z'
 labels:
   - serve
 dependencies: []
@@ -16,7 +16,7 @@ ordinal: 84000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Blocked on @claire for one grant: may a seat start or stop an inference engine on this machine, or does it front an endpoint the owner already runs? Nothing else on this row is waiting. The owner is tuning the engine underneath this box and has said not to optimize the local router, so engine lifecycle here is shared-infrastructure mutation and stays a human act (safety section of AGENTS.md). What is unblocked: the router fronting an already-running engine and proving serving, streaming and one real pi turn end to end.
+Blocked on @claire for one answer: which credential the router may use. The only inference engine listening on this box is strata on 18021 — the engine carrying live pi lanes — and it demands a secret that exists only in the owner's own engine-start tree; no shipped sample names a key path that exists here, and a secret a seat invents is refused by the engine. Either name a key file the router may read, or name an unauthenticated engine to front. Everything else on this row is measured or unblocked: the front-only path — model list, one completion, a stream to the sentinel, one refusal in the single lowercase shape — already works off a live process. Engine lifecycle stays a human act (shared-infrastructure mutation, safety section of AGENTS.md), and the owner has said not to optimize the local router.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -31,11 +31,9 @@ Blocked on @claire for one grant: may a seat start or stop an inference engine o
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-**Provisional grant, relayed by the clerk at 07:06Z from the owner verbatim: "I'd really like to wake up to the inference router running successfully and Pi able to swap between models with /model." Grant text: "The owner wants the router running by morning. The router may run on this box and may start, stop or reconfigure engines **except the engine currently carrying live pi lanes**; `auto_switch` stays off until the switching safety rows pass; on any anomaly, stop and leave it as found." The owner may veto; absent that by 08:00Z it stands as provisional, not final.
+**Grant, provisional, relayed by the clerk at 07:06Z from the owner: the router may run on this box and may start, stop or reconfigure engines except the engine currently carrying live pi lanes; `auto_switch` stays off until the switching safety rows pass; on any anomaly, stop and leave it as found.** The same relay carries a standing constraint: pi's own lanes run on this box's strata config with one resident model, so swapping that resident model cuts the lanes this board, the implementer seat and the clerk are running on — proof goes on a separate engine or port. A veto overrides it; none has arrived.
 
-**Blocked on @claire for one answer.** The only engine listening here is strata on 18021 — the engine carrying live pi lanes — and it demands a key whose path both shipped samples name but which does not exist on this box. So: name the key file the router may read, or point it at an unauthenticated engine. Same question, second half: is **fronting** strata read-only (`auto_switch = false`, no lifecycle, no swap) acceptable, given the resident model is what these seats run on? AC #3's swap cannot be proven there without cutting those lanes.
+**Blocked on @claire for one answer.** The only inference engine listening here is strata on 18021 — the engine carrying live pi lanes — and it demands a key at a path both samples name that does not exist here. A secret invented here is refused: strata compares it against the one its own start script generated. So name a key file the router may read, or point it at an unauthenticated engine. AC #3's pi swap cannot be proven on strata at all without cutting those lanes.
 
-**Measured at 07:08Z:** nothing on 8321/18080; 18021 gives 401 `authentication_error`; 18020 refuses connection though both samples name it; 18044 is the session-manager bridge, 18081 the backlog server, 18082 a docs forwarder, not the API. A benchmark fake backend still listens — pid 716436, `/v1/models` → `bench-model` on 127.0.0.1:37541 — and is not the router.
-
-**Windows from `samples/router.toml`:** strata `max_context` 131072 (profiles 98304/131072/524288/1048576); hyperqwen 32768, and that engine is not running. The clerk's 32768-for-both draft is wrong for strata. Both samples set `auto_switch = true`, so neither is front-only as written (AC #4).
+**Measured 07:52Z on a front-only probe** (auto_switch off, no lifecycle block, loopback only, an already-running OpenAI-shaped fake upstream; nothing started, nothing stopped): the router listed the model on `/v1/models`, passed one completion, relayed a stream to the sentinel, and answered an unknown model in the single lowercase error shape. Every criterion but a real engine and a real pi turn is now proven off a live process. Neither shipped sample is front-only as written — both set `auto_switch = true`, which is what AC #4 asks to see named. A benchmark fake backend on a loopback port is not the router; nobody has touched it.
 <!-- SECTION:NOTES:END -->
