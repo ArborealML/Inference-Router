@@ -1,11 +1,11 @@
 ---
 id: TASK-46
 title: Render the final social preview card and verify it from outside the form
-status: Waiting
+status: Blocked
 assignee:
-  - '@qwen3.8-flash-next'
+  - '@claire'
 created_date: '2026-11-17T10:52:00Z'
-updated_date: '2026-11-17T16:11:00Z'
+updated_date: '2026-11-18T03:07:00Z'
 labels:
   - docs
 dependencies: []
@@ -17,9 +17,12 @@ ordinal: 45000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-**Rendering and measurement are done: b214ce6 committed the replacement card (1280x640, 38,150 bytes,
-sha256 `cee3237b7f98…98f09`, caps 109/48/42 against a 40 px floor). What is open is AC #5, the
-readback from outside the form, which waits for a person to press Save on TASK-29.**
+**Claire's act, roughly two minutes:** open the repository's Settings → Social preview, paste the
+committed `docs/images/air-social-1280x640.png`, press Save, then run
+`curl -s https://github.com/ArborealML/Inference-Router | grep og:image` and paste the line back.
+Everything else here is done: b214ce6 committed the card at the measured sizes (1280x640, 38,150
+bytes, sha256 `cee3237b7f98…98f09`, caps 109/48/42 against a 40 px floor), and only AC #5's readback
+from outside the form is open.
 
 **The finding first: the type is small, and it is measured, not a matter of taste.** The committed
 [docs/images/air-social-1280x640.png](https://github.com/ArborealML/Inference-Router/blob/main/docs/images/air-social-1280x640.png)
