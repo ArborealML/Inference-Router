@@ -511,6 +511,7 @@ public sealed class CapabilityPublicationTests
         var ct = timeout.Token;
         var def = Def(new HealthProbeDefinition { Path = "/props", IntervalMs = 3_600_000 }, "meta.n_ctx");
         await using var engine = NewEngine(def, new ScriptedProvider(), handler, feed: feed);
+        using var loopCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         engine.AfterSwitchProofForTests = () =>
         {
             published.TrySetResult();
@@ -522,18 +523,21 @@ public sealed class CapabilityPublicationTests
             await published.Task.WaitAsync(ct);
             var proven = engine.Capability;
             Assert.Equal("m", proven.SwitchingToward);
+            Assert.True(proven.Healthy);
             Assert.Equal(32_768, proven.ModelContextWindows["m"]);
+            var requestsAtProof = handler.ModelsRequests;
             handler.ModelsStatus = 503;
-            using var loopCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             engine.StartHealthLoop(loopCts.Token);
             var failed = await polls.ReadAsync(ct);
+            Assert.Equal("models endpoint 503", failed.Reason);
             Assert.Equal(0, failed.Value);
+            Assert.Equal(requestsAtProof + 1, handler.ModelsRequests);
             Assert.Same(proven, engine.Capability);
-            await loopCts.CancelAsync();
         }
         finally
         {
             finish.TrySetResult();
+            await loopCts.CancelAsync();
         }
         Assert.True((await pending).IsReady);
         Assert.Null(engine.Capability.SwitchingToward);
@@ -615,6 +619,47 @@ public sealed class CapabilityPublicationTests
         Assert.True(engine.Healthy);
         Assert.Equal(proofVersion, engine.Capability.Version);   // the stale failure was dropped, not applied
         Assert.True(engine.IsReadyFor("extra", null));
+    }
+
+    [Fact(Timeout = 60_000)]
+    public async Task APreFetchFaultCannotWithdrawHealth()
+    {
+        const string failure = "fixture: health round setup failed";
+        using var handler = new ProbeHandler("m");
+        var feed = new EventRing();
+        var def = Def(new HealthProbeDefinition { Path = "/props", IntervalMs = 3_600_000 });
+        await using var engine = NewEngine(def, new ScriptedProvider(), handler, feed: feed);
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        var ct = timeout.Token;
+        Assert.True((await engine.WaitForModelAsync("m", TimeSpan.FromSeconds(10), ct)).IsReady);
+        var proven = engine.Capability;
+        Assert.True(proven.Healthy);
+        var requestsAtProof = handler.ModelsRequests;
+
+        var observed = new TaskCompletionSource<EngineCapability>(TaskCreationOptions.RunContinuationsAsynchronously);
+        feed.Subscribe(item =>
+        {
+            if (item.Kind == "engine.health" && item.Reason == failure)
+                observed.TrySetResult(engine.Capability);
+        });
+        engine.BeforeModelsFetchForTests = () =>
+        {
+            engine.BeforeModelsFetchForTests = null;
+            throw new InvalidOperationException(failure);
+        };
+
+        using var loopCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        engine.StartHealthLoop(loopCts.Token);
+        try
+        {
+            var captured = await observed.Task.WaitAsync(ct);
+            Assert.Equal(requestsAtProof, handler.ModelsRequests);
+            Assert.Same(proven, captured);
+        }
+        finally
+        {
+            await loopCts.CancelAsync();
+        }
     }
 
     [Fact(Timeout = 60_000)]
@@ -780,6 +825,50 @@ public sealed class CapabilityPublicationTests
         Assert.False(CapabilityScan.DefinitelyHopeless(sources, "ghost"));
         await WaitUntil(() => engine.Healthy);
         Assert.True(CapabilityScan.DefinitelyHopeless(sources, "ghost"));
+    }
+
+    [Fact(Timeout = 60_000)]
+    public async Task FailedSwitchClearsClaimProvenanceBeforeTheMarker()
+    {
+        using var handler = new ProbeHandler("m");
+        var provider = new ScriptedProvider();
+        var feed = new EventRing();
+        await using var engine = NewEngine(Def(), provider, handler, feed: feed);
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        var ct = timeout.Token;
+        Assert.True((await engine.WaitForModelAsync("m", TimeSpan.FromSeconds(10), ct)).IsReady);
+        var incumbent = engine.Capability;
+        Assert.True(incumbent.Healthy);
+
+        EngineCapability? atClaim = null;
+        EngineCapability? atUnknown = null;
+        engine.AfterClaimForTests = () => atClaim = engine.Capability;
+        engine.AfterFailedMutationUnknownForTests = snapshot => atUnknown = snapshot;
+        provider.LaunchOutcome = LifecycleResult.Fail("launch_failed", "selector exited 1");
+        var failed = await engine.WaitForModelAsync("extra", TimeSpan.FromSeconds(10), ct);
+
+        Assert.False(failed.IsReady);
+        Assert.Equal("launch_failed", failed.Detail);
+        Assert.Equal(["m", "extra"], provider.Launches);
+        var claim = Assert.IsType<EngineCapability>(atClaim);
+        Assert.Equal(incumbent.Version + 1, claim.Version);
+        Assert.Equal("extra", claim.SwitchingToward);
+        Assert.False(claim.Healthy);
+        Assert.True(claim.HealthFromClaim);
+
+        var unknown = Assert.IsType<EngineCapability>(atUnknown);
+        Assert.Equal(claim.Version + 1, unknown.Version);
+        Assert.Equal(claim.SwitchingToward, unknown.SwitchingToward);
+        Assert.Same(incumbent.ModelRoster, unknown.ModelRoster);
+        Assert.False(unknown.Healthy);
+        Assert.False(unknown.HealthFromClaim);
+
+        var settled = engine.Capability;
+        Assert.Equal(claim.Version + 2, settled.Version);
+        Assert.Null(settled.SwitchingToward);
+        Assert.False(settled.Healthy);
+        Assert.False(settled.HealthFromClaim);
+        Assert.Single(feed.Replay(0), item => item.Kind == "engine.switch_failed");
     }
 
     /// <summary>§5.5, TASK-61 AC #8. One <c>Healthy</c> flag says "we do not know" but not <b>who</b> made us not

@@ -50,6 +50,10 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
     internal Action? BeforeScheduleSwitchForTests;
     // Observes the published proof before the switch clears the marker, outside the transition gate.
     internal Action? AfterSwitchProofForTests;
+    // Captures the uncertain snapshot produced after a failed mutation and before marker clear.
+    internal Action<EngineCapability>? AfterFailedMutationUnknownForTests;
+    // Throws from round setup on demand, outside the scope that can withdraw probe proof.
+    internal Action? BeforeModelsFetchForTests;
 
     /// <summary>Runs on a waiter immediately after it is woken from the readiness wait and **before** it reads
     /// the snapshot that decides what to answer, with the argument saying which wake-up it got: <c>true</c> when
@@ -313,8 +317,12 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
         ModelContextWindows = EngineCapability.NoModelContextWindows,
     };
 
+    private static bool IsIncumbentClaim(EngineCapability current, long expectedVersion) =>
+        current.Version == expectedVersion && current.SwitchingToward is not null &&
+        !current.Healthy && current.HealthFromClaim;
+
     private static bool CouldContradictIncumbent(EngineCapability current, long expectedVersion) =>
-        (current.HealthFromClaim && current.Version == expectedVersion) ||
+        IsIncumbentClaim(current, expectedVersion) ||
         (current.Healthy && current.SwitchingToward is null && current.Version == expectedVersion + 1);
 
     // An observation on the matching claim can veto restoration or withdraw the exact restored
@@ -325,9 +333,12 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
         {
             if (_stopped) return;
             var current = Capability;
-            if (current.Version == expectedVersion && _switchState.IncumbentProof is { } incumbent)
+            var state = _switchState;
+            if (IsIncumbentClaim(current, expectedVersion) && state.End == SwitchEnd.Pending &&
+                string.Equals(state.Model, current.SwitchingToward, StringComparison.Ordinal) &&
+                state.IncumbentProof is { } incumbent && incumbent.Version + 1 == expectedVersion)
             {
-                if (ContradictsIncumbent(incumbent, observation)) _switchState.IncumbentContradicted = true;
+                if (ContradictsIncumbent(incumbent, observation)) state.IncumbentContradicted = true;
                 return;
             }
 
@@ -401,7 +412,7 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
     /// engine, so its account cannot be stale relative to a poll that happened to start earlier. Fencing it
     /// would let a quiet poll drop the one publication that says the engine is no longer what it reported.
     /// Do not "finish the fencing" here — fence a *probe*, never a switch exit.</para></summary>
-    private void PublishUnknown()
+    private EngineCapability PublishUnknown()
     {
         while (true)
         {
@@ -410,7 +421,7 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
             // claim authored the unknown health, and a switch exit that lays hands on the engine supersedes that
             // claim as the author — a *provenance-only* change, which still has to advance `Version` or a reader
             // could not tell the two states apart (AC #8).
-            if (!cur.Healthy && !cur.HealthFromClaim) return;
+            if (!cur.Healthy && !cur.HealthFromClaim) return cur;
             var next = cur with
             {
                 Version = cur.Version + 1,
@@ -418,7 +429,7 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
                 HealthFromClaim = false,
                 ModelContextWindows = EngineCapability.NoModelContextWindows,
             };
-            if (Interlocked.CompareExchange(ref _cap, next, cur) == cur) return;
+            if (Interlocked.CompareExchange(ref _cap, next, cur) == cur) return next;
         }
     }
 
@@ -515,16 +526,27 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
             // failure publish below are fenced on it, so a poll can never overwrite fresher evidence with
             // its own older answer — in either direction (§5.5).
             var capBefore = Capability.Version;
-            ModelsObservation? models = null;
             try
             {
+                BeforeModelsFetchForTests?.Invoke();
                 // CA2000's "recommended dispose pattern" doesn't track `using var` in an async
                 // loop body; the CTS is disposed at each iteration and the await completes inside.
 #pragma warning disable CA2000
                 using var cts = new CancellationTokenSource(_def.Health?.TimeoutMs ?? 5_000);
 #pragma warning restore CA2000
-                var observation = await FetchModelsObservationAsync(cts.Token).ConfigureAwait(false);
-                models = observation;
+                ModelsObservation observation;
+                try
+                {
+                    observation = await FetchModelsObservationAsync(cts.Token).ConfigureAwait(false);
+                }
+                catch (Exception ex) when (!ct.IsCancellationRequested ||
+                    ex is not OperationCanceledException canceled || canceled.CancellationToken != ct)
+                {
+                    // The loop token stops future ticks. An in-flight fetch can still report a failure
+                    // under its own timeout and the ordinary publication fences.
+                    PublishProbeFailure(capBefore);
+                    throw;
+                }
                 PublishProbeResult(capBefore, observation);
                 Emit("engine.health", value: observation.LoadedModels.Count);
                 // Same payload family feeds the serving gauges (context window, slots). The readiness rule's
@@ -537,12 +559,6 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
             }
             catch (Exception ex)
             {
-                // The /models fetch is the observation that can fail here and the only one that moves health:
-                // the last reported model set stays as the last thing the engine actually said, and
-                // Healthy=false makes it unknown rather than evidence of absence. Fenced like the positive
-                // answer, so a poll that failed while a switch was proving the engine cannot withdraw that
-                // proof. A later exception after a successful fetch carries no negative evidence.
-                if (models is null) PublishProbeFailure(capBefore);
                 Emit("engine.health", reason: WireText.Bound(ex.Message, ProviderReasonChars), value: 0);
             }
             try
@@ -1209,7 +1225,11 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
                 state.FailureReason = SwitchReason.LaunchFailed;
                 // An attempted stop or launch can invalidate the earlier proof even when it returns failure.
                 // Only an explicit refusal before either call can restore a still-valid incumbent.
-                if (!report.RefusedBeforeMutation) PublishUnknown();
+                if (!report.RefusedBeforeMutation)
+                {
+                    var unknown = PublishUnknown();
+                    AfterFailedMutationUnknownForTests?.Invoke(unknown);
+                }
                 EndSwitch(state, false, restoreIncumbent: report.RefusedBeforeMutation);
                 return;
             }
