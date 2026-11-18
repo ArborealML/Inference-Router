@@ -16,39 +16,39 @@ ordinal: 93000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Two review rounds reopened this taxonomy row: the follow-up commit overclaimed three times, and the fix that answered them still leaves one lookup split. None changes an answer on the shipped boot path; all is reachable through the public constructor and the test seams.
+Two review rounds reopened this taxonomy row: the follow-up commit overclaimed three times; the fix for one of them moved a guard that now refuses a caller that should join.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [x] #1 Every visible refusal carries one named category, and a test walks every exit.
-- [x] #2 A permanent mismatch and a transient timeout do not share one name, and SPEC states the caller's action.
+- [x] #2 A permanent mismatch and a transient timeout do not share one name, and SPEC gives the caller's action.
 - [x] #3 SPEC 5.5 says what each category means: retry, retry elsewhere, fix the configuration.
 - [x] #4 The pin states its literals, asserts set equality against `SwitchReason`, and the audit covers every failed return.
 - [x] #5 The wait-ceiling path (`RouterCore.cs:551-554`) joins the named set, or SPEC scopes the set to completed attempts
 - [x] #6 The switch event is emitted once, before waiters settle, with `finally` cleanup, so a feed observer cannot wedge the claim
 - [x] #7 Each 14a01e2 finding carries a disposition: fixed later, or an accepted SPEC gap
-- [x] #8 One catalog definition feeds the check and `RunSwitchAsync` (decision-48), so a divergent same-name definition cannot split the answer.
-- [x] #9 SPEC states the mutation policy: an edit after that read changes no claimed transaction. A test pins it.
-- [ ] #10 A test with `AfterClaimForTests` shows a stable blank entry never claims: no claim, `no_select_command`, proof kept, provider not asked.
+- [x] #8 The check and the switch consume the same resolved catalog entry (decision-48), not two lookups.
+- [ ] #9 SPEC says a post-boot edit changes no already-claimed transaction; the pin names the selector handed to the provider, old and new distinguishable.
+- [ ] #10 A test arms `AfterClaimForTests` on a stable blank entry: no claim, `no_select_command`, proof kept, provider not asked.
 - [x] #11 The divergent pin runs both directions and asserts the provider kind, so a case that never reaches the switch cannot pass.
 - [x] #12 SPEC and the `RunSwitchAsync` comment state the invariant as implemented; the mutability claim narrows to the API.
-- [x] #13 Per decision-49 the transaction resolves its catalog entry before the claim and reads no configuration of its own; the post-claim missing-entry branch goes.
-- [ ] #14 The absent-entry refusal answers before a **new** claim with `no_select_command` and says absent, not unusable; a caller finding a matching claimed switch joins it first (decision-51), and §5.5 says so.
+- [x] #13 Per decision-49 the claim resolves the entry once and the switch consumes it without a lookup of its own; the post-claim missing-entry branch is gone.
+- [ ] #14 The absent-entry refusal answers a **new** claim with `no_select_command`, saying absent not unusable; a caller finding a matching claimed switch joins it first (decision-51), and §5.5 says so.
 <!-- AC:END -->
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Round one closed at **2f7e3e6**; routed findings sit on TASK-103 #4, TASK-68 #6, TASK-104 #4. Counts on these commits are the coding seat's report.
+Round one closed at **2f7e3e6**; its routed findings sit on TASK-103 #4, TASK-68 #6, TASK-104 #4. Counts are the coding seat's report.
 
-**764a195** (v0.12.45) resolves the catalog entry before the claim, carries it into the switch, deletes the post-claim missing-entry branch and writes the mutation policy into §5.5 — #9, #11 and #13 ticked on reading that commit; the v0.12.44 diagnosis lives in the SPEC rows beside it.
+**764a195** (v0.12.45) resolves the entry before the claim, carries it into the switch, and deletes the post-claim missing-entry branch: #11 and #13 hold on reading it. #9 does not — with the in-switch refusal gone, a swap pin that counts launches cannot tell the snapshot from a re-read.
 
-Its review found that the moved guard refuses a caller that should have **joined** an in-flight switch, hence decision-51 and #14. Its ask to drop "or mark this engine remote" falls away: the remote route returns at `:686`, ahead of the guard, so the advice is actionable. Reads: one `RunSwitchAsync` call site (`:803`); no in-place write of a catalog entry in `src/`. decision-50 declines a private copy of the config fields, the graph being read-only after boot.
+Its review found the moved guard refuses a caller that should have **joined** an in-flight switch: hence decision-51 and #14. Its ask to drop "or mark this engine remote" falls away, the remote route returning at `:686` ahead of the guard. Reads here: one `RunSwitchAsync` call site (`:803`); config-graph writes live only in `RouterConfigLoader`; the other `_config.Engines` read (`:1249`) is `CanonicalModel`, off this path. decision-50 stands on that.
 <!-- SECTION:NOTES:END -->
 
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Round four, one commit. #10: arm `AfterClaimForTests` on the stable blank pin and assert it never fires, the category, and the message halves. #14 (decision-51): resolve and validate the entry on the **claim** path inside the transition gate, so a caller that meets a matching claimed switch joins it instead — and keep the `Emit` outside the gate, because publishing under the switch lock is TASK-103 #4. Pin three shapes: first absence (both message halves), a joiner whose entry was removed mid-switch, and a joiner whose switch has already failed. Focused refusal and switch cases, clean build.
+Round four, one commit. Under the transition gate: read the switch state; a matching active switch is **joined**, its `Ready` awaited with no catalog read; otherwise the capability check, then resolve and validate the entry once for that attempt; invalid is a terminal refusal with no `TryPublishSwitchStarted` and no state write; valid claims and carries that entry down. One outcome is selected under the gate and acted on after release; one absolute deadline spans wait, join and retry. No sequencer — feed ordering is promised within a transaction, not across callers. Red-first pins: a joiner whose entry is removed mid-switch; a joiner whose switch then fails (refusal after, one `switch_started`, one witness). #10's hook and the absence wording are regression-only.
 <!-- SECTION:PLAN:END -->
