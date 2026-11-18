@@ -7,7 +7,7 @@ status: Ready for Review
 assignee:
   - '@gpt-6.2-sol-config'
 created_date: '2026-11-18T01:11:00Z'
-updated_date: '2026-11-18T23:11:00Z'
+updated_date: '2026-11-18T23:19:00Z'
 labels:
   - concurrency
   - scheduling
@@ -42,14 +42,7 @@ Three serving gauges — window, slots, inferred profile — are live fields out
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-1. Immutable serving tuple in `EngineCapability`, live fields deleted, every reader converted (`BuildEngineInfos`, `GetStats`, `EffectiveSlotLimit`, the settle path, the scheduler's view).
-2. Switch start publishes marker, health-unknown and serving-unknown in one expected-version exchange (decision-33).
-3. Fence the ordinary publisher by the version it read and by the marker; the switch publishes one atomic proof, taking a fresh post-launch read when `wait_health = false`.
-4. A waiter re-reads the snapshot (decision-36); a lost claim releases lock and gate before re-deciding, bounded by a named count and the wait deadline, exhausting to `switch_failed` 503.
-5. Nudge dispatch after a committed publication, outside the compare-exchange; inference model-scoped, null on ambiguity; slots stay an admission gauge (decision-35).
-6. SPEC 5.5 and 7.6 for zero/unknown and capacity; 15 for the unreported-window policy and the slots-versus-settle gap.
-
-Ordered after TASK-76 (criterion #2).
+Publish the immutable serving tuple with EngineCapability. Convert scheduler, engine status, slot limit and settle readers. On switch start atomically publish the marker and unknown health/capacity. Fence ordinary publication by its captured version and marker. Trust-mode readiness reads fresh state whenever a named tier or explicit ticket minimum requires it. With neither, fresh model proof suffices. Carry the ranked ticket’s explicit option through all applicable exact takes and post-switch proof. Join two tickets whose explicit minima straddle one measured window: only the fitting ticket may write. Keep the prompt estimate for tier selection. Preserve decision-36 waiter semantics and bounded claim retries outside the locks; exhaustion returns switch_failed 503. Nudge dispatch after publication outside locks. Keep inferred profile model-scoped, null on ambiguity, and slots admission-owned. Document unknown capacity and window policy in SPEC 5.5, 7.6 and 15. The ordinary publisher follows TASK-76 criterion 2.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
