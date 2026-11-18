@@ -1,11 +1,11 @@
 ---
 id: TASK-44
 title: Close the open release-gate review findings (SPEC v0.12.15 onward)
-status: In Progress
+status: Done
 assignee:
   - '@gpt-6.2-sol-release'
 created_date: '2026-11-17T10:52:00Z'
-updated_date: '2026-11-18T21:25:00Z'
+updated_date: '2026-11-18T22:12:00Z'
 labels:
   - ci
   - release
@@ -26,7 +26,7 @@ Qualify the release diagnostic fixtures. Commit 806d10d fixed the summary trunca
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [x] #1 the fourteen closed criteria are accounted for: twelve as [SPEC §15](https://github.com/ArborealML/Inference-Router/blob/main/SPEC.md) rows 'Deep review of v0.12.15' through 'Twelfth deep review' in 95410ba, 8f78a73 and 79a21e0, and two retired to the task that runs the gate
-- [ ] #2 the thirteenth round's two P2s are fixed with a fixture that fails without the fix, and the SPEC §15 row and revision-log line land in the same commit as the code
+- [x] #2 the thirteenth round's two P2s are fixed with a fixture that fails without the fix, and the SPEC §15 row and revision-log line land in the same commit as the code
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -38,5 +38,7 @@ Drive the real publish refusal with a long valid tag, a matching long name and a
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-The [fix and harness](https://github.com/ArborealML/Inference-Router/commit/806d10d) landed together with the SPEC revision and disposition. Its [CI harness job](https://github.com/ArborealML/Inference-Router/actions/runs/44139046103/job/134236447964) passed. The coordinator replayed that harness against both workflow versions. All 122 cases passed on the fixed version. Against 79a21e0 all three type_presence checks failed as intended, but line_bound_tail still passed with labels=1, tail=1 and maxmark=101. AC #2 remains open pending a discriminating test. The first canary attempt subsequently published successfully; its rerun refused in preflight.
+The [fix and harness](https://github.com/ArborealML/Inference-Router/commit/806d10d) landed together with the SPEC revision and disposition. Its [CI harness job](https://github.com/ArborealML/Inference-Router/actions/runs/44139046103/job/134236447964) passed. The coordinator replayed that harness against both workflow versions. All 122 cases passed on the fixed version. Against 79a21e0 all three type_presence checks failed as intended, but line_bound_tail still passed with labels=1, tail=1 and maxmark=101. The first canary attempt subsequently published successfully; its rerun refused in preflight.
+
+The coordinator ran the [corrected harness](https://github.com/ArborealML/Inference-Router/commit/336deab) in Release workflow fixtures. All 139 cases passed. The escaped current summary retained the URL tail at 218 bytes, the old step lost it at 202 bytes, and the below-limit control retained it at 200 bytes. Each made exactly two stub calls. The three type-presence cases passed. Independent commit review dispatched.
 <!-- SECTION:NOTES:END -->
