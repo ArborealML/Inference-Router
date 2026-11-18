@@ -676,7 +676,14 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
         // relation, so the wire token does not have to change again when reach and ownership split into two
         // config keys. Nothing was attempted and nothing was mutated, so the engine keeps its last proof, and no
         // switch marker went up, so there is no switch to end (§5.5).
-        if (_def.Remote) return SwitchResult.Failed(SwitchReason.NoLifecycleOwner);
+        // One definition for both sides of the claim. The runtime holds the definition it was built with, while
+        // the switch task re-read the config collection by name — two sources that a same-name definition handed to
+        // the constructor, or an entry swapped between the check and the switch, can make disagree. Resolving once
+        // here and passing the result down is what stops a refusal decided in front of the claim from being
+        // contradicted inside it; re-asking the question later would not, because the later ask would still read the
+        // second source (§5.5).
+        var def = _config.Engines.TryGetValue(_def.Name, out var cfgDef) ? cfgDef : _def;
+        if (def.Remote) return SwitchResult.Failed(SwitchReason.NoLifecycleOwner);
 
         // A catalog entry that names no selector is a fixed configuration gap the catalog can predict, and the
         // delegated provider would refuse it in preflight: the caller would be told `launch_failed` (a config
@@ -685,7 +692,7 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
         // uses, off the provider's own predicate so the two answers cannot drift. Nothing is mutated, so there is
         // no switch to end (§5.5, AC #2).
         if (_lifecycle.Kind == DelegatedExecProvider.ProviderKind &&
-            _def.Catalog.TryGetValue(canonical, out var entry) &&
+            def.Catalog.TryGetValue(canonical, out var entry) &&
             !DelegatedExecProvider.HasUsableSelector(entry))
         {
             Emit("engine.switch_failed", model: canonical,
@@ -782,7 +789,7 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
                         // dispose anything this task is still using.
 #pragma warning disable IDISP013 // await-in-using not applicable: intentionally detached Task, no shared source
                         _ = Task.Run(
-                            () => RunSwitchAsync(claim, canonical, profileOverride, switchToken),
+                            () => RunSwitchAsync(claim, canonical, profileOverride, def, switchToken),
                             // Deliberately not the caller's token: the switch's own token above decides whether the
                             // transaction runs, and a request that hangs up must not be able to abort it halfway
                             // through a model load.
@@ -1004,11 +1011,13 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
     /// still starting (§5.5).</summary>
     private enum ReadinessMiss { NeverHealthy, ModelNotReported, WindowTooSmall }
 
-    private async Task RunSwitchAsync(SwitchState state, string model, ServingProfile? profileOverride, CancellationToken ct)
+    private async Task RunSwitchAsync(
+        SwitchState state, string model, ServingProfile? profileOverride, EngineDefinition def, CancellationToken ct)
     {
+        // `def` is the claim site's resolved snapshot, not a re-read: the check in front of the claim and the
+        // catalog consulted here are the same object, which is what makes one ask sufficient (§5.5).
         try
         {
-            var def = _config.Engines[_def.Name];
             if (!def.Catalog.TryGetValue(model, out var md))
             {
                 state.FailureReason = SwitchReason.NoSelectCommand;

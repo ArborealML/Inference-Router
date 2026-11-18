@@ -480,6 +480,46 @@ public class RefusalCategoryTests
         Assert.True(engine.Capability.Healthy);
     }
 
+    /// <summary>The single check in front of the claim and the catalog the switch acts on have to be <b>one</b>
+    /// definition. The runtime used to hold its own definition object while the switch task re-read the config
+    /// collection by name, so a same-name definition handed to the constructor (or an entry swapped after the check)
+    /// made the two disagree: the refusal was decided on one catalog and the transaction ran against another. This
+    /// pins the fixed shape — the config's definition, which the switch would have used, is the one that decides —
+    /// under the config-picked provider and under a supplied exec provider (§5.5).</summary>
+    [Theory(Timeout = 120_000)]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task ADivergentDefinitionIsRefusedFromTheSnapshotTheSwitchWouldUse(bool suppliedProvider)
+    {
+        using var handler = new EngineAnswers("m");
+        var feed = new EventRing();
+        var probe = new HealthProbeDefinition { Path = "/props", IntervalMs = 50, TimeoutMs = 5_000 };
+
+        // What the constructor is handed: a selector that looks runnable. What the config holds, and what the
+        // switch task reads: the same entry with a blank exec.
+        var asConstructed = Def(probe, extraSelect: new LifecycleCommand { Exec = "/bin/true" });
+        var asConfigured = Def(probe, extraSelect: new LifecycleCommand { Exec = "" });
+
+        var provider = suppliedProvider
+            ? new Scripted { Kind = "exec", LaunchOutcome = LifecycleResult.Ok("the fake launched it") }
+            : null;
+        var engine = new EngineRuntime(
+            asConstructed,
+            new RouterConfig { Engines = new Dictionary<string, EngineDefinition> { ["fake"] = asConfigured } },
+            feed, handler, lifecycle: provider);
+        await using var _ = engine;
+        Assert.Equal("exec", engine.LifecycleProvider);
+
+        var claimed = false;
+        engine.AfterClaimForTests = () => claimed = true;
+
+        var failed = await engine.WaitForModelAsync("extra", TimeSpan.FromSeconds(10), CancellationToken.None);
+        Assert.Equal("no_select_command", Expect("no_select_command", failed));
+        Assert.False(claimed);                                     // decided before the claim, not after it
+        Assert.Null(engine.SwitchingToward);
+        Assert.DoesNotContain("engine.switch_started", feed.Replay(0).Select(e => e.Kind));
+    }
+
     // ── harness ───────────────────────────────────────────────────────────────
 
     /// <summary>The caller's half of a refusal is the whole <c>Detail</c>: one name, no sentence around it. Written
