@@ -184,7 +184,7 @@ public sealed class SwitchClaimTests
         var engine = Engine(provider, feed);
 
         var inFlight = engine.WaitForModelAsync("extra", TimeSpan.FromSeconds(30), CancellationToken.None);
-        await WaitUntil(() => provider.Launches.Count == 1);
+        await WaitUntil(() => provider.GateCount == 1);   // the launch is parked on its gate, not merely recorded
 
         var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var go = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -242,7 +242,7 @@ public sealed class SwitchClaimTests
         };
 
         var waiting = engine.WaitForModelAsync("extra", TimeSpan.FromSeconds(30), CancellationToken.None);
-        await WaitUntil(() => provider.Launches.Count == 1);      // the load is in flight, the caller is parked
+        await WaitUntil(() => provider.GateCount == 1);      // the load is in flight, the caller is parked
 
         await engine.DisposeAsync();
         await parked.Task;                                       // parked at the decision point
@@ -326,13 +326,14 @@ public sealed class SwitchClaimTests
         Assert.Single(provider.Launches);
     }
 
-    /// <summary>§5.5, TASK-61 AC #3 and #4: a waiter whose own switch *succeeded* but whose snapshot no longer
-    /// authorises the target is neither answered Ready nor refused — it takes its own turn, which is what
-    /// decision-9 says a caller overtaken by another target does. The seam sits between the readiness await and
-    /// the resume snapshot read, so the successor wins the engine while the first waiter is deciding: the answer
-    /// cannot come out right by thread-scheduling luck. Before this rule the waiter was told "switch to extra
-    /// failed" for a switch that had just succeeded, and its request died while the model was about to be unloaded
-    /// by someone else's claim.</summary>
+    /// <summary>§5.5, TASK-61 AC #3 and #4: the waiter takes its own turn — not a refusal, not an inherited
+    /// answer — when something **other than a later claim** contradicts the target its own switch proved. Here the
+    /// contradiction is the engine's own report: the successor's switch runs to completion and publishes a proof
+    /// that names only <c>m</c>, so <c>extra</c> is gone from the reported list. The seam holds the waiter between
+    /// the readiness await and the resume snapshot read across all of that, so the ordering is a fact the test
+    /// makes true rather than one it hopes the scheduler produces. Before this rule the waiter was told "switch to
+    /// extra failed" for a switch that had just succeeded, and its request died over a model it had itself loaded.
+    /// The successor's launch is gated and released by the test, so neither caller's answer turns on timing.</summary>
     [Fact(Timeout = 30_000)]
     public async Task AWaiterOvertakenAtTheResumeReadTakesItsOwnTurnInsteadOfAnAnswerItCannotSupport()
     {
@@ -355,27 +356,88 @@ public sealed class SwitchClaimTests
         provider.ReleaseOne();                        // A's own switch proves "extra" and settles true
         await parked.Task.WaitAsync(TimeSpan.FromSeconds(10));   // A is held at the resume read
 
-        // A successor claims the engine for another target while A is deciding — and the engine, one model at a
-        // time, no longer holds what A was promised.
+        // A successor claims the engine for another target while A is deciding, and *finishes*: its proof is the
+        // engine's answer about what it now serves. A marker alone would not contradict anything — that is the
+        // next test — so the successor's launch is gated and released here, and its proof is waited for.
         var second = engine.WaitForModelAsync("m", TimeSpan.FromSeconds(25), CancellationToken.None);
         await WaitUntil(() => provider.GateCount == 1 && provider.Launches.Count == 2);
-        reported.LoadedModels = ["m"];
+        reported.LoadedModels = ["m"];                // one model at a time: the load that landed displaced it
+        provider.ReleaseOne();
+        await WaitUntil(() => engine.SwitchingToward is null && engine.Healthy &&
+                              engine.LoadedModels.Contains("m") && !engine.LoadedModels.Contains("extra"));
+
         resume.TrySetResult();                        // A resumes and reads a snapshot that says no
 
-        // Not answered with a model the successor is about to unload, and not refused either: it queues behind
-        // a new attempt of its own, which is the loop's whole point.
-        Assert.False(first.IsCompleted);
-        Assert.Equal(["extra", "m"], provider.Launches);
-
-        provider.ReleaseOne();                        // the successor's switch to "m" ends
+        // Not answered Ready with a model the engine no longer reports, and not refused either: it queues behind
+        // a new attempt of its own, which is the loop's whole point. One own turn, then an answer.
         await WaitUntil(() => provider.GateCount == 1 && provider.Launches.Count == 3);
         Assert.Equal("extra", provider.Launches[^1]);  // A's own turn, not a refusal
+        Assert.True((await second).IsReady);           // the successor answers off its own switch
         reported.LoadedModels = ["extra"];
         provider.ReleaseOne();
 
         var answer = await first;
-        Assert.True(answer.IsReady);                  // Ready, but only off its own attempt
+        Assert.True(answer.IsReady,
+            $"answer={answer.Outcome}/{answer.Detail}; launches=[{string.Join(",", provider.Launches)}] " +
+            $"gates={provider.GateCount}; feed=[{string.Join(",", feed.Replay(0).Select(e => e.Kind + ":" + e.Model))}]");
         Assert.DoesNotContain("engine.switch_failed", feed.Replay(0).Select(e => e.Kind));
         Assert.Equal(EngineRuntime.SwitchOutcome.Ready, answer.Outcome);
+        Assert.Equal(["extra", "m", "extra"], provider.Launches);
+    }
+
+    /// <summary>§5.5, TASK-61 AC #5 (decision-36): the marker a **later** claim raises is somebody else's
+    /// transaction starting, not an observation about what this engine serves, so it does not withdraw the proof
+    /// this waiter's own switch published. The two publications are one snapshot — health down, marker up — and the
+    /// reported list the proof carried is untouched by them, so a waiter that holds its proof is answered from it.
+    /// This is the case that made v0.12.34 red: the waiter fell through, claimed again, and drove the other caller
+    /// into the same fall-through, so two callers wanting different models on a one-model engine alternated
+    /// lifecycle transactions until one hit its ceiling. The successor's launch stays on its gate until after the
+    /// answer, so the answer cannot be timing.</summary>
+    [Fact(Timeout = 30_000)]
+    public async Task AWaiterHoldingItsOwnProofIsNotQueuedBehindAnotherCallersClaim()
+    {
+        var provider = new GatedProvider { GateLaunches = true };
+        using var reported = new FakeEngineHandler { LoadedModels = ["extra"] };
+        var feed = new EventRing();
+        var engine = Engine(provider, feed, models: reported);
+        await using var _ = engine;
+
+        var parked = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var resume = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        engine.AfterReadyWaitForTests = _ =>
+        {
+            parked.TrySetResult();
+            resume.Task.GetAwaiter().GetResult();
+        };
+
+        var first = engine.WaitForModelAsync("extra", TimeSpan.FromSeconds(25), CancellationToken.None);
+        await WaitUntil(() => provider.GateCount == 1);
+        provider.ReleaseOne();                        // A's switch proves "extra": health and list in one publication
+        await parked.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.True(engine.Healthy);                  // the proof is out there before the successor arrives
+
+        // The successor claims the engine for "m" while A is deciding. Its claim takes health down and raises the
+        // marker; it publishes no new list, so the engine's last report still names what A loaded.
+        var second = engine.WaitForModelAsync("m", TimeSpan.FromSeconds(25), CancellationToken.None);
+        await WaitUntil(() => provider.GateCount == 1 && provider.Launches.Count == 2);
+        Assert.False(engine.Healthy);
+        Assert.Equal("m", engine.SwitchingToward);
+        Assert.Contains("extra", engine.LoadedModels);
+
+        resume.TrySetResult();                        // A resumes into exactly that snapshot
+
+        // Ready off its own proof, and — the half the launch sequence proves — no third switch of A's own to buy
+        // that answer back. What it is *not* is a guarantee the model survives the successor's switch: holding
+        // authority across the handoff is TASK-25 and TASK-72, and the window is stated in SPEC §15.
+        var answer = await first;
+        Assert.Equal(EngineRuntime.SwitchOutcome.Ready, answer.Outcome);
+        Assert.DoesNotContain("engine.switch_failed", feed.Replay(0).Select(e => e.Kind));
+        Assert.Equal(["extra", "m"], provider.Launches);
+
+        // The successor's transaction is completed, not rolled back (decision-34): it finishes on its own terms.
+        reported.LoadedModels = ["m"];
+        provider.ReleaseOne();
+        Assert.True((await second).IsReady);
+        Assert.Equal(["extra", "m"], provider.Launches);
     }
 }

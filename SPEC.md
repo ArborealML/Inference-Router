@@ -1,6 +1,6 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.34)
+Status: draft, continuously revised (v0.12.35)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
@@ -352,6 +352,34 @@ daemon transaction per engine. 137 tests green.
   that answers no `upload_url`, an upload that dies or answers no asset id, an asset name listed twice on
   the release, and a tag that moves after the first resolve. No tag has run the gate: still configured,
   not proven.
+- v0.12.35 — fix-forward over v0.12.34: a waiter that holds the proof **its own switch published** keeps that answer
+  (§5.5, decision-36). v0.12.34 left `main` red, and the defect was its rule rather than its test: `ReadyIn` answers
+  false while `SwitchingToward` is set, so the marker a **later** claim raises withdrew a proof this router had just
+  published, and the waiter that held it fell through to claim again. CI on that commit ran 191/192 with
+  `SwitchFairnessTests.AWaiterBehindAnotherProfilesSwitchTakesItsOwnTurn` failing at that caller's own 20 s ceiling —
+  it was waiting for the successor's switch, which the test had its launch gate on — and that commit's own new pin
+  was reproduced failing, showing the launch sequence `extra, m, extra, m`: two callers wanting different models on a
+  one-model engine alternating lifecycle transactions, the thrashing shape decision-25 rules out. What changed: the
+  resume answers are four, in order — the snapshot authorises the target, so Ready; the target is still stood behind
+  by this caller's own published proof (in the reported list, a fitting window, health absent **only** because a
+  marker is up), so Ready; this caller's own attempt ended false, so Failed once; anything else — a report that no
+  longer names the target, a window that no longer fits, health withdrawn with no switch in flight (a probe), or a
+  switch aimed at another target or profile — takes its own turn through the claim path. The Failed-once rule, the
+  reason categories and the caller-facing wording from v0.12.33/v0.12.34 are untouched, and no wire surface changes.
+  Pinned by `SwitchClaimTests.AWaiterHoldingItsOwnProofIsNotQueuedBehindAnotherCallersClaim` — the successor claims
+  the engine while the first waiter is held in the seam, its launch stays on its gate until after the answer, and the
+  waiter comes back Ready off its own proof with launches exactly `extra, m` and its successor's switch completed
+  rather than rolled back — and by `AWaiterOvertakenAtTheResumeReadTakesItsOwnTurnInsteadOfAnAnswerItCannotSupport`
+  re-armed on the same seam: the contradiction is now the engine's own report, the successor's switch running to
+  completion and its proof dropping `extra` from the reported list *before* the waiter reads the snapshot, so the
+  waiter takes exactly one turn of its own (`extra, m, extra`) rather than an argument it cannot support. v0.12.34's
+  pin of that name asserted the ping-pong instead of the rule — its successor had only *claimed*, and one assertion
+  turned on which waiter woke first. Mutation evidence on this tree: restoring the v0.12.34 fall-through fails the
+  new pin at its own ceiling and fails the fairness pin, and moves nothing else; dropping the contradiction check, so
+  a proved switch always answers Ready, fails the re-armed pin. **Not closed here:** a waiter answered Ready off its
+  own proof keeps an answer that can outlive the model, because the request is enqueued after the wait returns with no
+  revalidation before the engine receives it. That is unload authority — the switch's own reservation ticket
+  (TASK-25) and the age-weighted drain that decides whose switch runs (TASK-72) — and is recorded in §15.
 - v0.12.34 — a waiter is authorised **when it resumes**, not when it was promised (§5.5), the resume half of the
   publication-honesty fix set (TASK-61), whose shape a top-tier plan review corrected. What changed: at resume the
   three answers are now ordered — the current snapshot authorises the target, so Ready; the caller's own attempt ended
@@ -370,7 +398,9 @@ daemon transaction per engine. 137 tests green.
   `extra`), no `engine.switch_failed`, and Ready only off its own attempt; the whole pin runs in ~0.1 s in Release, so
   it cannot be passing on thread-scheduling luck. Mutation evidence: dropping the `!ready` guard fails that pin and
   nothing else. **Not closed here:** holding that authority across the admission handoff is TASK-25's criterion, and
-  the scheduler-pass/drain handoff stays an accepted gap (TASK-64, §15).
+  the scheduler-pass/drain handoff stays an accepted gap (TASK-64, §15). **Superseded in v0.12.35:** the third case as
+  stated here — any snapshot that no longer authorises the target sends the caller back through the claim path — is
+  what made this revision red; a later claim's marker is not a contradiction, and the rule is restated above.
 - v0.12.33 — a switch the engine cannot confirm is **refused**, not served (§5.5, §6.1): the owner's answer to the
   posture question (decision-27), which is the half of TASK-62 that was policy rather than a bug. What changed: on the
   `wait_health = false` path a `/models` refresh that **could not answer** ended the switch ready — the exec's exit
@@ -1352,17 +1382,31 @@ engine forks land; the scheduler interface will not change shape.
   compare-exchange on the version that decision read, and a lost exchange means something published while this
   caller was deciding — so it re-decides on the newer snapshot, and a poll that proved the requested model
   retires the claim instead of buying a second launch of a model already served. **A waiter is authorised at the
-  moment it resumes, not at the moment it was promised:** the readiness task settling and the switch state clearing
-  happen before a waiter is scheduled, so a successor can claim the engine in that window and the waking waiter must
-  not be answered off a promise that is already dead. At resume there are three answers, in this order: the current
-  snapshot authorises the target, so `Ready`; this caller's **own** attempt ended false, so `Failed` once — nothing
-  retries inside the engine, and a caller with no ceiling would otherwise relaunch a switch that cannot get better;
-  an attempt that *succeeded* but is no longer authorised takes its own turn through the claim path, exactly as
-  single-flight fairness prescribes for a caller overtaken by another target, bounded by its own ceiling and never
-  by a refusal — answering that caller Ready would send a request at a model the successor is about to unload, and
-  answering it Failed would fail a request for a switch that worked. The check is defence in depth, not the
-  entitlement: authority held across the admission handoff is the reservation and admission/drain question, not this
-  one. Inside the transition gate the
+  moment it resumes, not at the moment it was promised** — and what authorises it is the evidence this router has
+  about the engine, not a snapshot that has merely moved on. The readiness task settling and the switch state
+  clearing happen before a waiter is scheduled, so a successor can claim the engine in that window. A claim is one
+  publication that takes health down, raises the marker, and says nothing at all about what the engine serves: it is
+  somebody else's transaction starting. Withdrawing a proof this router published **itself** on that snapshot is
+  wrong in both directions — answering the waiter `Failed` fails a request over a switch that worked, and sending it
+  back through the claim path buys a lifecycle transaction that unloads the model it is waiting for and drives the
+  successor into the same fall-through, so two callers wanting different models on a one-model engine alternate
+  switches until one runs out of ceiling. At resume there are four answers, in this order: the current snapshot
+  authorises the target, so `Ready`; the target is still stood behind by the proof **this caller's own switch
+  published** — the model still in the reported list, a window that still fits, and health absent only because a
+  marker is up — so `Ready` as well; this caller's **own** attempt ended false, so `Failed` once, with the recorded
+  reason category — nothing retries inside the engine, and a caller with no ceiling would otherwise relaunch a switch
+  that cannot get better; anything else takes its own turn through the claim path, exactly as single-flight fairness
+  prescribes for a caller overtaken by another target, bounded by its own ceiling and never by a refusal. The
+  anything-else is a contradiction or a stranger: the target gone from what the engine reports, a window that no
+  longer fits, health withdrawn while no switch is in flight (which is a probe, not a claim), or a switch aimed at
+  another target or another serving profile. What this does **not** buy is authority held across the admission
+  handoff: a waiter answered `Ready` off its own proof can still have that model unloaded by the successor's
+  transaction before its request reaches the engine. That half is unload authority, and one sentence names its
+  owners: a request authorised at admission must not lose that authority between the wait returning `Ready` and the
+  engine receiving it (**TASK-25 AC #5**), and a ticket approved by an earlier scheduler pass must not be dispatched
+  to an engine claimed after that pass (**TASK-64 AC #3**), with whose-switch-runs policy in the age-weighted drain
+  (**TASK-72**). It is recorded as an accepted gap in §15 rather than closed here by a fall-through that ping-pongs.
+  Inside the transition gate the
   state write still follows the marker. **Settle, then nudge:** the readiness task is completed first, then the
   dispatcher nudge runs with the gate released and its own failure swallowed. A callback that throws must not
   rewrite a switch that already committed — before, the throw escaped into the switch's own catch, turned a proven
@@ -2228,6 +2272,7 @@ router robust until rows 2, 4 and 6 close.
 | Deep review of v0.12.9–v0.12.11 (release gate: artifact forgeries, cleanup ownership, the gh CLI contract) | **completed, dispositioned in v0.12.10–v0.12.12**: four artifact forgeries (an artifact named for two legs, a regex dot standing in for `air.exe`, an extra archive member, a symlink or directory wearing an expected name) are each reproduced as a forgery that passed the shipped gate and then fixed, and are standing cases in the local gate harness; cleanup ownership moved off `github.run_started_at` (not a documented Actions context property, so read as empty it protects nothing) to the release id this run captured; and the publish path moved to REST because `gh release create` has no `--json`/`--jq` (gh 2.46.0 fails at argument parsing) and `gh release view`/`edit` resolve their operand as a tag name, not a release id. The harness's stub `gh` was what let the contract error survive two reviews: it now enforces the documented flag set. **Accepted gap, and this is the row §14's published-surface bullet points at**: the gate compares each remote asset's name, `uploaded` state, byte size and GitHub's reported stored-bytes `digest` against the staged file, but never downloads the served bytes and hashes them itself — it proves what GitHub says it stored, not what a downloader receives. Closing that fully means a post-publish download-and-hash leg or a signing/attestation story, which is runner minutes plus a trust-anchor decision rather than a constant; the published per-archive sidecars and `SHA256SUMS` remain what a downloader verifies. **Deliberately not closed**: workspace-internal link tricks above the leg folder, PAX extension handling and decompression bounds in the archive inspection, and the window between re-resolving the tag and creating the release — `concurrency: release-${{ github.ref }}` serializes this repo's own runs, but no workflow line excludes an external actor with write access, so release-tag protection and who may publish are repository-settings decisions for the operator. |
 
 | Plan review of the publication-honesty fix set (TASK-61/62/63), before the code existed | **completed; the forced-CAS-retry pin is an accepted gap.** The claim's readiness answer and its switch marker come from one snapshot, and the marker goes up by a version compare-exchange on the version that answer read, so the raced second launch — a poll proving the model between the decision and the claim — is closed: the exchange loses, the caller re-decides on the newer snapshot, and the already-proved model is taken rather than launched again. **It is not pinned by a test.** Forcing the loser between its read and its exchange needs a seam in the middle of the claim's await-free gate region, which is more production surface than a race the code already excludes structurally is worth; the orderings that the same mechanism protects *are* pinned (marker-before-claim, a stale end cannot clear a successor's marker, a newcomer that arrives after the commit decides against an idle snapshot). Stated here rather than tested, so a reader knows which guarantee has a case and which has only the shape of the code. |
+| v0.12.34's resume rule, red on `main`, and the half v0.12.35 deliberately does not close | **the rule was wrong, not the test; fixed forward in v0.12.35, not reverted.** v0.12.34 sent a caller whose own switch *succeeded* back through the claim path whenever `IsReadyFor` read false, and `IsReadyFor` reads false while `SwitchingToward` is set — so the marker of a **later** claim withdrew a proof this router had itself published. Measured: CI on that commit 191/192, the one failure `SwitchFairnessTests.AWaiterBehindAnotherProfilesSwitchTakesItsOwnTurn` at that caller's own ceiling; the commit's own new pin reproduced failing with launches `extra, m, extra, m`, two callers wanting different models on one engine alternating lifecycle transactions. v0.12.35 keeps the Failed-once rule and the caller-facing category wording, and narrows the re-decide to an observation that actually contradicts the target (§5.5). **Accepted gap, and it is not closeable at the resume read:** a waiter answered `Ready` off its own proof holds an answer that can outlive the model — after the wait returns, the request is enqueued with no revalidation, so a re-read at resume could be stale before the engine ever sees the request. Closing it means the switch's own reservation ticket and admission closure (**TASK-25 AC #5**: a request authorised at admission cannot lose that authority between the wait returning `Ready` and the engine receiving it) together with **TASK-64 AC #3** (a ticket approved by an earlier scheduler pass is not dispatched to an engine claimed after that pass), and the policy that decides whose switch runs when callers want different models is the age-weighted drain (**TASK-72**). None of the three exists; closing the gap here with a fall-through trades a red build for a ping-pong. TASK-61 carries TASK-25 and TASK-72 as dependencies. |
 
 Findings feed §7 (TOML binding choice), §9 (AOT strategy), §5.4 (scheduler
 heuristics). Spec revisions cite them.

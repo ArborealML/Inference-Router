@@ -49,6 +49,14 @@ public sealed class SwitchFairnessTests
             gate?.TrySetResult();
         }
 
+        /// <summary>Launches gated and not yet released. Wait on this, not on <see cref="Launches"/>, before
+        /// releasing: a launch is recorded a statement before its gate is queued, so releasing on the record can
+        /// dequeue nothing and leave that switch held forever — which is a hang decided by thread scheduling.</summary>
+        public int GateCount
+        {
+            get { lock (_gates) return _gates.Count; }
+        }
+
         // The prove-health path: the switch's readiness loop asks the engine what it holds and what window it
         // serves, which is what lets these pins hold a *known* window. The trust path never refreshes the window
         // gauge, and since decision-27 an unconfirmable trust-path switch is refused, so a switch that is meant
@@ -93,7 +101,7 @@ public sealed class SwitchFairnessTests
         var large = Profile("large", 32_768);
 
         var first = engine.WaitForProfileAsync("m", small, TimeSpan.FromSeconds(20), CancellationToken.None);
-        await WaitUntil(() => provider.Launches.Count == 1);
+        await WaitUntil(() => provider.GateCount == 1);
 
         // Arrives while the "small" switch is in flight. It joins the wait — but the switch in flight is
         // not its transaction, so it must not inherit that switch's answer.
@@ -109,7 +117,7 @@ public sealed class SwitchFairnessTests
         // because its own transaction has not run.
         Assert.False(second.IsCompleted);
 
-        await WaitUntil(() => provider.Launches.Count == 2);   // its own switch, to its own profile
+        await WaitUntil(() => provider.GateCount == 1 && provider.Launches.Count == 2);   // its own switch, to its own profile
         Assert.Equal("m@large", provider.Launches[1]);
         reported.NCtx = 32_768;                                // the load the newcomer asked for
         provider.ReleaseOne();
@@ -128,7 +136,7 @@ public sealed class SwitchFairnessTests
 
         var first = engine.WaitForProfileAsync("m", Profile("small", 4_096),
             TimeSpan.FromSeconds(20), CancellationToken.None);
-        await WaitUntil(() => provider.Launches.Count == 1);
+        await WaitUntil(() => provider.GateCount == 1);
 
         var second = engine.WaitForProfileAsync("m", Profile("large", 32_768),
             TimeSpan.FromSeconds(20), CancellationToken.None);
@@ -143,7 +151,7 @@ public sealed class SwitchFairnessTests
 
         // This time the selector works: the newcomer's own attempt is what decides its answer.
         provider.LaunchOutcome = LifecycleResult.Ok();
-        await WaitUntil(() => provider.Launches.Count == 2);
+        await WaitUntil(() => provider.GateCount == 1 && provider.Launches.Count == 2);
         reported.NCtx = 32_768;                                // and it serves the window this caller needs
         provider.ReleaseOne();
         var secondResult = await second;

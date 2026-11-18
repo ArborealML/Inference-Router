@@ -605,6 +605,18 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
         return window == 0 || window >= profile.MaxContext;
     }
 
+    /// <summary>Does the proof this caller's **own switch published** still stand? A later claim on the engine
+    /// raises its marker and withdraws health in one publication, and neither is an observation about what the
+    /// engine serves: it is somebody else's transaction starting. Only a contradicting observation takes the proof
+    /// away — the target gone from the reported list, a window that no longer fits, or health withdrawn while no
+    /// switch is in flight (a probe, not a claim) (§5.5, the correction to decision-34). Holding authority across
+    /// the admission handoff is a different question (TASK-25, TASK-64); this is only about not punishing a caller
+    /// for a switch it did not start.</summary>
+    private bool OwnProofStillStands(EngineCapability cap, string canonical, ServingProfile? profile) =>
+        (cap.Healthy || cap.SwitchingToward is not null)
+        && cap.LoadedModels.Contains(canonical, StringComparer.OrdinalIgnoreCase)
+        && WindowFits(profile);
+
     private async Task<SwitchResult> EnsureLoadedAsync(string model, ServingProfile? profileOverride, TimeSpan timeout, CancellationToken ct)
     {
         var canonical = CanonicalModel(model) ?? model;
@@ -777,16 +789,21 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
             }
 
             if (IsReadyFor(canonical, profileOverride)) return new SwitchResult(SwitchOutcome.Ready, null);
-            // Three answers at resume, in this order (§5.5). The snapshot still authorises the target: Ready.
-            // This caller's **own** attempt ended false: Failed, once — nothing retries inside the engine, and a
-            // caller with no ceiling would otherwise relaunch the same broken switch forever. An attempt that
-            // *succeeded* but is no longer authorised — a successor claimed the engine in the window between the
-            // switch's end and this read: takes its own turn through the claim path, exactly as decision-9
-            // prescribes for a caller overtaken by another target. That last case is bounded by the caller's own
-            // ceiling and never by a refusal: answering it Ready would send a request at a model the successor is
-            // about to unload, and answering it Failed would contradict the single-flight fairness this loop is.
-            // A switch aimed at the same model under a *different* serving profile likewise proves nothing about
-            // the window this caller needs, and a switch that failed for someone else's target must not fail this one.
+            // Four answers at resume, in this order (§5.5). The snapshot still authorises the target: Ready. A caller
+            // whose **own** attempt *proved* its target keeps that proof unless something contradicts it: a
+            // successor's claim raises the marker and withdraws health in one publication, and that is somebody
+            // else's transaction starting, not evidence that the engine stopped serving — parking the caller behind
+            // it, or failing it for a switch that worked, both lose a proof the router itself published. This
+            // caller's own attempt ended false: Failed, once, because nothing retries inside the engine and a caller
+            // with no ceiling would otherwise relaunch the same broken switch forever. Anything else — a proof a
+            // later observation contradicted, or a switch that belonged to someone else's target or profile — takes
+            // its own turn through the claim path, exactly as decision-9 prescribes, bounded by its own ceiling and
+            // never by a refusal.
+            if (ready && state.Model == canonical && state.Profile == profileOverride?.Name &&
+                OwnProofStillStands(Capability, canonical, profileOverride))
+            {
+                return new SwitchResult(SwitchOutcome.Ready, null);
+            }
             if (!ready && state.Model == canonical && state.Profile == profileOverride?.Name)
             {
                 // This attempt ended false, and it was this caller's own: the answer is Failed once, with the
