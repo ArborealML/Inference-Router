@@ -7,7 +7,7 @@ status: Waiting
 assignee:
   - '@gpt-6.2-astra'
 created_date: '2026-11-18T02:36:00Z'
-updated_date: '2026-11-18T21:15:00Z'
+updated_date: '2026-11-18T21:45:00Z'
 labels:
   - concurrency
 milestone: m-2
@@ -36,4 +36,6 @@ Wake on the remaining refusal-path qualification under TASK-77. The models-fetch
 
 <!-- SECTION:NOTES:BEGIN -->
 The [combined implementation](https://github.com/ArborealML/Inference-Router/commit/fcff3ea) passed 90 integrated cases, 421 full Release tests and server Native AOT. A broad exception filter initially missed a late HTTP 503 when the polling loop was cancelled. The corrected code preserves that evidence. On the unfixed parent, an injected pre-fetch fault failed the same-snapshot assertion. On the final candidate, three isolated mutations each failed its intended assertion: pre-fetch snapshot, marker-held snapshot and intermediate claim provenance. Restoring each mutation passed its case. The marker protection predated this change, so its regression evidence is a deliberate reversal. Returned preflight refusals and attempted mutations passed; thrown read-only operations and subscriber failures remain with TASK-77.
+
+Review of 80f3bda found remaining coverage gaps. Hold a same-generation models request across loop cancellation and distinguish a 503, the independent fetch timeout, and cancellation attributed to the loop. After a successful fetch, inject a diagnostic fault and verify the published snapshot and next tick. Pin thrown mutation and readiness-timeout exits. Align §5.5 with PublishUnknown when health was already unknown without claim provenance: that path skips the intermediate version increment.
 <!-- SECTION:NOTES:END -->
