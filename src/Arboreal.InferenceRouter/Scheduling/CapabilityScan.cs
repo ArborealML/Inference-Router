@@ -22,6 +22,17 @@ public sealed record EngineCapability(
     string? SwitchingToward,
     string[] LoadedModels)
 {
+    /// <summary>Did the switch that raised the current marker author this engine's unknown health? One
+    /// <see cref="Healthy"/> flag cannot say both "we do not know" and "who made us not know", and the
+    /// difference decides whether a waiter keeps a proof its own switch published: a marker raised by a later
+    /// claim withdrew the health as the <i>price of starting a transaction</i>, which contradicts nothing about
+    /// what the engine serves, while a probe negative or a switch exit is an <i>observation</i> that does
+    /// (§5.5, TASK-61 AC #7-#8). True only for the claim that set <see cref="SwitchingToward"/> and only when
+    /// health was true when that claim started; every other author of a health change — a positive probe, a
+    /// switch proof, a probe negative that was allowed to publish, a switch exit, a marker clear — clears it.
+    /// Internal, and on no wire surface (decision-41).</summary>
+    internal bool HealthFromClaim { get; init; }
+
     /// <summary>An engine before its first probe: nothing known, nothing refused.</summary>
     public static readonly EngineCapability Initial = new(0, false, null, []);
 }

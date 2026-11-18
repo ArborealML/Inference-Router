@@ -1,6 +1,6 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.37)
+Status: draft, continuously revised (v0.12.38)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
@@ -352,6 +352,31 @@ daemon transaction per engine. 137 tests green.
   that answers no `upload_url`, an upload that dies or answers no asset id, an asset name listed twice on
   the release, and a tag that moves after the first resolve. No tag has run the gate: still configured,
   not proven.
+- v0.12.38 — the snapshot says **who made the engine unknown**, and only an observation withdraws a waiter's proof
+  (TASK-61 AC #7–#8, §5.5). One `Healthy` flag was carrying two different facts: a claim in flight takes health down
+  as the **price of starting a transaction**, and a probe that cannot ask what the engine serves takes it down because
+  the router has learned it does not know. The resume rule treats those two differently — the first leaves a waiter's
+  own proof standing, the second contradicts it — and the distinction rested on nothing in the snapshot:
+  `OwnProofStillStands` asked "healthy, or is a marker up?", so a failed probe followed by a successor's claim read as
+  somebody else's transaction and the waiter was answered `Ready` off a proof the engine had just contradicted. The
+  capability snapshot now carries one internal, non-positional bit — the claim that raised the current marker authored
+  the withdrawal, until any other author supersedes it — true only for a claim that started from a healthy engine, and
+  cleared by a positive probe, a switch's proof, a probe negative allowed to publish, a switch exit, and a marker clear.
+  `PublishUnknown` returned early when health was already false, which discarded the one publication that separates the
+  two accounts; it now publishes a **provenance-only** change and still advances `Version`, because the scan reads the
+  version as its "nothing moved" test and this is not nothing moving. The pair of pins: `SwitchClaimTests.AFailedProbeBetweenProofAndClaimWithdrawsTheWaitersOwnProof`
+  (a probe negative between the proof and the claim → the waiter pays for its own switch, launches exactly
+  `extra, m, extra`) beside the existing `AWaiterHoldingItsOwnProofIsNotQueuedBehindAnotherCallersClaim` (a marker
+  alone → `extra, m`, no third transaction for anybody to lose); and `CapabilityPublicationTests.TheClaimThatWithdrewHealthIsTheOnlyAuthorOfUnknownHealth`
+  reads the bit at a gated launch (true), after a fenced probe negative (unchanged, version unmoved), across a failed
+  exit (false, with two publications where the early return left one) and over a claim that started from an
+  already-unknown engine (false). The probe is driven by the health loop rather than a test-only publication seam: the
+  failing status is armed only after the proof is published with no switch in flight, so the probe is the only possible
+  author of the health the waiter loses, and the fenced case waits on a completed round trip (a second probe request
+  starting proves the first answered) rather than on a delay. Mutation probes, each restored and the working tree
+  proved byte-identical after: the predicate arm back to `healthy || marker up` fails the first pin alone; a claim that
+  always authors the withdrawal fails both new pins. Not closed here, unchanged: authority held across the admission
+  handoff stays the accepted gap in §15 (TASK-25 AC #5, TASK-64 AC #3, whose-switch-runs policy in TASK-72).
 - v0.12.37 — a refusal answers its caller with a **category**, and the feed keeps the measurements (§5.5, §10).
   Every switch exit records one token from a closed set named in the source — `no_select_command`, `launch_failed`,
   `health_timeout`, `refresh_omits`, `refresh_unanswered`, `window_too_small`, `switch_error` — and the caller's
@@ -1444,14 +1469,23 @@ engine forks land; the scheduler interface will not change shape.
   successor into the same fall-through, so two callers wanting different models on a one-model engine alternate
   switches until one runs out of ceiling. At resume there are four answers, in this order: the current snapshot
   authorises the target, so `Ready`; the target is still stood behind by the proof **this caller's own switch
-  published** — the model still in the reported list, a window that still fits, and health absent only because a
-  marker is up — so `Ready` as well; this caller's **own** attempt ended false, so `Failed` once, with the recorded
+  published** — the model still in the reported list, a window that still fits, and health absent only because the
+  claim that raised the marker is what took it down — so `Ready` as well; this caller's **own** attempt ended false, so `Failed` once, with the recorded
   reason category — nothing retries inside the engine, and a caller with no ceiling would otherwise relaunch a switch
   that cannot get better; anything else takes its own turn through the claim path, exactly as single-flight fairness
   prescribes for a caller overtaken by another target, bounded by its own ceiling and never by a refusal. The
   anything-else is a contradiction or a stranger: the target gone from what the engine reports, a window that no
   longer fits, health withdrawn while no switch is in flight (which is a probe, not a claim), or a switch aimed at
-  another target or another serving profile. What this does **not** buy is authority held across the admission
+  another target or another serving profile. **Which of the two took health down is a fact the snapshot carries, not a
+  fact a reader infers.** One boolean answers "do we know" and cannot also answer "who made us not know", so the
+  snapshot carries a second, internal bit: the claim that raised the current marker authored the withdrawal, and it is
+  cleared by every other author — a positive probe, a switch's own proof, a probe negative that was allowed to publish,
+  a switch exit, a marker clear — and is never set by a claim that started from an engine already unknown. A claim over
+  a healthy engine and a probe negative publish the same `Healthy = false`; only one of them is an observation, and the
+  bit is what keeps the resume rule from reading the other as one. An exit that finds health already false still
+  publishes when the claim in flight was the author, because the provenance changed: the version moves on a
+  provenance-only publication, or a scan cannot tell "the claim withdrew health" from "the transaction made the engine
+  unknown". What this does **not** buy is authority held across the admission
   handoff: a waiter answered `Ready` off its own proof can still have that model unloaded by the successor's
   transaction before its request reaches the engine. That half is unload authority, and one sentence names its
   owners: a request authorised at admission must not lose that authority between the wait returning `Ready` and the

@@ -434,6 +434,82 @@ public sealed class CapabilityPublicationTests
         Assert.True(CapabilityScan.DefinitelyHopeless(sources, "ghost"));
     }
 
+    /// <summary>§5.5, TASK-61 AC #8. One <c>Healthy</c> flag says "we do not know" but not <b>who</b> made us not
+    /// know, and that difference is what decides whether a waiter keeps a proof its own switch published — the
+    /// other half of the pair is pinned beside
+    /// <c>SwitchClaimTests.AWaiterHoldingItsOwnProofIsNotQueuedBehindAnotherCallersClaim</c>. The provenance reads
+    /// true only while the claim that raised the current marker authored the withdrawal, and a claim that started
+    /// from an already-unknown engine authors nothing. A probe that cannot answer while a marker is up publishes
+    /// nothing at all — the fenced negative needs health true to withdraw — so it neither clears the provenance nor
+    /// moves the version. And a switch exit that supersedes the claim as the author is a <b>provenance-only</b>
+    /// publication: health is already false, so the old code returned early and published nothing, leaving a reader
+    /// unable to tell "the claim withdrew health" from "the transaction made the engine unknown".</summary>
+    [Fact(Timeout = 60_000)]
+    public async Task TheClaimThatWithdrewHealthIsTheOnlyAuthorOfUnknownHealth()
+    {
+        using var handler = new ProbeHandler("m");
+        var provider = new ScriptedProvider { GateLaunches = true };
+        var def = Def(new HealthProbeDefinition { Path = "/props", IntervalMs = 50, TimeoutMs = 5_000 });
+        var engine = NewEngine(def, provider, handler);
+        await using var _ = engine;
+
+        using var loopCts = new CancellationTokenSource();
+        engine.StartHealthLoop(loopCts.Token);
+        await WaitUntil(() => engine.Healthy);
+        Assert.False(engine.Capability.HealthFromClaim);      // an answered probe authored no unknown health
+
+        var switched = engine.WaitForModelAsync("extra", TimeSpan.FromSeconds(30), CancellationToken.None);
+        await WaitUntil(() => engine.SwitchingToward == "extra");
+        Assert.False(engine.Healthy);
+        Assert.True(engine.Capability.HealthFromClaim,
+            "the claim raised the marker and withdrew the health in one publication, so it is the author");
+        var claimVersion = engine.Capability.Version;
+
+        // A probe that cannot answer while the marker is up is dropped by the fence, so it changes nothing — not
+        // the provenance, not the version. The probe having *completed* is what is waited for: the loop is
+        // sequential, so a second request starting proves the first one already answered and published (or did
+        // not), which a bare delay could not show.
+        handler.ModelsStatus = 503;
+        var probesBefore = handler.ModelsRequests;
+        await WaitUntil(() => handler.ModelsRequests > probesBefore + 1);
+        Assert.True(engine.Capability.HealthFromClaim);
+        Assert.Equal(claimVersion, engine.Capability.Version);
+
+        // The launch fails after the engine was stopped. The exit supersedes the claim as author, which is a
+        // provenance-only change over health that is already false — and it still has to advance the version.
+        // Two publications land after the claim here: the exit's, and the marker clear. Under the early return
+        // that the exit used to take on already-false health, only the marker clear ran: one publication, and the
+        // snapshot at the end read the claim as the author of an unknown the transaction had created.
+        provider.LaunchOutcome = LifecycleResult.Fail("launch_failed", "selector exited 1");
+        provider.ReleaseOne();
+        var answer = await switched;
+        Assert.False(answer.IsReady);
+        Assert.Null(engine.SwitchingToward);
+        Assert.False(engine.Healthy);
+        Assert.False(engine.Capability.HealthFromClaim,
+            $"the snapshot at the failed exit still reads the claim as the author: {engine.Capability}");
+        Assert.True(engine.Capability.Version >= claimVersion + 2,
+            $"the exit published nothing of its own: version went {claimVersion} -> {engine.Capability.Version} " +
+            "and only the marker clear moved it");
+
+        // A claim that starts from an engine already unknown authors nothing. The marker goes up over an absence
+        // of knowledge rather than over knowledge withdrawn, and a waiter must not read it as a transaction that
+        // took the proof away. The launch answers and the refresh cannot, so this switch is refused (v0.12.31) and
+        // the engine stays unknown either way.
+        var again = engine.WaitForModelAsync("second", TimeSpan.FromSeconds(30), CancellationToken.None);
+        await WaitUntil(() => engine.SwitchingToward == "second");
+        Assert.False(engine.Healthy);
+        Assert.False(engine.Capability.HealthFromClaim,
+            $"a claim over an already-unknown engine authored a withdrawal: {engine.Capability}");
+        provider.ReleaseOne();
+        Assert.False((await again).IsReady);
+
+        // The engine answering again is a fresh author: health returns with no claim provenance at all.
+        handler.ModelsStatus = 200;
+        await WaitUntil(() => engine.Healthy);
+        Assert.False(engine.Capability.HealthFromClaim);
+    }
+
     [Fact(Timeout = 60_000)]
     public async Task AReadinessTimeoutLeavesTheEngineUnknownNotConfidentlyWrong()
     {

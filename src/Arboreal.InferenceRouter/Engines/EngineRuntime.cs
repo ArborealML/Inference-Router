@@ -221,6 +221,9 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
                 Version = cur.Version + 1,
                 Healthy = true,
                 LoadedModels = SameModels(cur.LoadedModels, models) ? cur.LoadedModels : models,
+                // An answered probe is an observation: whatever claim put the marker up, this publication is
+                // not the price of a transaction, so the provenance does not survive it.
+                HealthFromClaim = false,
             };
             if (Interlocked.CompareExchange(ref _cap, next, cur) == cur) return;
         }
@@ -239,7 +242,10 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
             var cur = Volatile.Read(ref _cap);
             if (cur.Version != expectedVersion) return;   // someone else published; their answer is fresher
             if (!cur.Healthy) return;                     // already unknown: there is nothing to withdraw
-            var unknown = cur with { Version = cur.Version + 1, Healthy = false };
+            // The withdrawal this publishes was authored by a probe, not by a claim, and that distinction is the
+            // whole reason the provenance bit exists: a waiter must not read a failed probe as a transaction
+            // boundary and keep a proof the engine just contradicted (§5.5, AC #7).
+            var unknown = cur with { Version = cur.Version + 1, Healthy = false, HealthFromClaim = false };
             if (Interlocked.CompareExchange(ref _cap, unknown, cur) == cur) return;
         }
     }
@@ -261,6 +267,7 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
                 Version = cur.Version + 1,
                 Healthy = true,
                 LoadedModels = SameModels(cur.LoadedModels, models) ? cur.LoadedModels : models,
+                HealthFromClaim = false,
             };
             if (Interlocked.CompareExchange(ref _cap, next, cur) == cur) return;
         }
@@ -282,8 +289,12 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
         while (true)
         {
             var cur = Volatile.Read(ref _cap);
-            if (!cur.Healthy) return;
-            var next = cur with { Version = cur.Version + 1, Healthy = false };
+            // Health already false is not always nothing to publish. While a claim is in flight the bit says that
+            // claim authored the unknown health, and a switch exit that lays hands on the engine supersedes that
+            // claim as the author — a *provenance-only* change, which still has to advance `Version` or a reader
+            // could not tell the two states apart (AC #8).
+            if (!cur.Healthy && !cur.HealthFromClaim) return;
+            var next = cur with { Version = cur.Version + 1, Healthy = false, HealthFromClaim = false };
             if (Interlocked.CompareExchange(ref _cap, next, cur) == cur) return;
         }
     }
@@ -299,7 +310,15 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
     {
         var cur = Volatile.Read(ref _cap);
         if (cur.Version != expectedVersion) return false;   // someone published: their answer is the one to decide on
-        var next = cur with { Version = cur.Version + 1, SwitchingToward = model, Healthy = false };
+        // `Healthy` was true in the snapshot this claim is decided on, so this publication is the author of the
+        // withdrawal it makes; starting from an already-unknown engine authors nothing (AC #8).
+        var next = cur with
+        {
+            Version = cur.Version + 1,
+            SwitchingToward = model,
+            Healthy = false,
+            HealthFromClaim = cur.Healthy,
+        };
         return Interlocked.CompareExchange(ref _cap, next, cur) == cur;
     }
 
@@ -311,7 +330,14 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
         {
             var cur = Volatile.Read(ref _cap);
             if (string.Equals(cur.SwitchingToward, toward, StringComparison.Ordinal)) return;
-            var next = cur with { Version = cur.Version + 1, SwitchingToward = toward };
+            // Clearing the marker ends the claim, so the claim can no longer be the author of anything; raising
+            // one goes through TryPublishSwitchStarted, which sets the provenance from the health it displaced.
+            var next = cur with
+            {
+                Version = cur.Version + 1,
+                SwitchingToward = toward,
+                HealthFromClaim = toward is null ? false : cur.HealthFromClaim,
+            };
             if (Interlocked.CompareExchange(ref _cap, next, cur) == cur) return;
         }
     }
@@ -613,7 +639,7 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
     /// the admission handoff is a different question (TASK-25, TASK-64); this is only about not punishing a caller
     /// for a switch it did not start.</summary>
     private bool OwnProofStillStands(EngineCapability cap, string canonical, ServingProfile? profile) =>
-        (cap.Healthy || cap.SwitchingToward is not null)
+        (cap.Healthy || (cap.SwitchingToward is not null && cap.HealthFromClaim))
         && cap.LoadedModels.Contains(canonical, StringComparer.OrdinalIgnoreCase)
         && WindowFits(profile);
 

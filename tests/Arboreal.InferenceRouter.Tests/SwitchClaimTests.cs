@@ -446,6 +446,75 @@ public sealed class SwitchClaimTests
         Assert.Equal(["extra", "m"], provider.Launches);
     }
 
+    /// <summary>§5.5, TASK-61 AC #7: the proof that survives a later claim does <b>not</b> survive a probe that
+    /// could not ask what the engine serves. Both publish the same <c>Healthy = false</c>, and only one of them is
+    /// an observation — the claim is a transaction starting, the failed probe is the router learning that it does
+    /// not know. This is the pair of the test above: a marker alone leaves the waiter holding its proof (two
+    /// launches), a failed probe behind the marker takes the proof away and the waiter pays for its own switch
+    /// again. The order is made, not raced: the failing status is armed only after the proof is published, with no
+    /// switch in flight, so the probe is the only possible author of the health the waiter then loses; the health
+    /// loop starts after that proof, so the engine still begins unknown and the waiter's own switch is needed.</summary>
+    [Fact(Timeout = 30_000)]
+    public async Task AFailedProbeBetweenProofAndClaimWithdrawsTheWaitersOwnProof()
+    {
+        var provider = new GatedProvider { GateLaunches = true };
+        using var reported = new FakeEngineHandler { LoadedModels = ["extra"] };
+        var feed = new EventRing();
+        var engine = Engine(provider, feed, models: reported);
+        await using var _ = engine;
+
+        var parked = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var resume = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        engine.AfterReadyWaitForTests = _ =>
+        {
+            parked.TrySetResult();
+            resume.Task.GetAwaiter().GetResult();
+        };
+
+        var first = engine.WaitForModelAsync("extra", TimeSpan.FromSeconds(25), CancellationToken.None);
+        await WaitUntil(() => provider.GateCount == 1);
+        provider.ReleaseOne();                        // A's own switch proves "extra": health and list at once
+        await parked.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.True(engine.Healthy);
+
+        // The engine stops answering /models, and the probe loop — started only now, so it cannot have moved
+        // health before the proof — reports that it no longer knows. No switch is in flight, so whoever took the
+        // health down, it was not a claim.
+        reported.ModelsStatus = 503;
+        using var loopCts = new CancellationTokenSource();
+        engine.StartHealthLoop(loopCts.Token);
+        await WaitUntil(() => !engine.Healthy && engine.SwitchingToward is null);
+        var unknownByProbe = engine.Capability.Version;
+
+        // The successor claims while A is deciding. The marker goes up over an engine that is already unknown, so
+        // this claim authors no withdrawal (AC #8) and cannot make the probe's answer look like a transaction.
+        var second = engine.WaitForModelAsync("m", TimeSpan.FromSeconds(25), CancellationToken.None);
+        await WaitUntil(() => provider.GateCount == 1 && provider.Launches.Count == 2);
+        Assert.False(engine.Healthy);
+        Assert.Equal("m", engine.SwitchingToward);
+        Assert.Contains("extra", engine.LoadedModels);      // the list A's proof carried is untouched
+
+        resume.TrySetResult();                        // A resumes into exactly that snapshot
+
+        // Not answered Ready off its own proof. The successor's switch is completed on its own terms, and the
+        // third launch — A's own turn, for its own target — is the assertion that the proof was withdrawn.
+        reported.ModelsStatus = 200;
+        reported.LoadedModels = ["m"];
+        provider.ReleaseOne();
+        await WaitUntil(() => provider.GateCount == 1 && provider.Launches.Count == 3);
+        Assert.Equal("extra", provider.Launches[^1]);
+        Assert.DoesNotContain("engine.switch_failed", feed.Replay(0).Select(e => e.Kind));
+
+        reported.LoadedModels = ["extra"];
+        provider.ReleaseOne();
+        var answer = await first;
+        Assert.Equal(EngineRuntime.SwitchOutcome.Ready, answer.Outcome);
+        Assert.Equal(["extra", "m", "extra"], provider.Launches);
+        Assert.True((await second).IsReady);              // the successor answers off its own switch
+        Assert.True(engine.Capability.Version > unknownByProbe,
+            $"nothing published between the probe's negative and the answer: {engine.Capability}");
+    }
+
     /// <summary>§5.5, TASK-61 AC #6 (decision-36): the withdrawn rule did not answer a caller late, it bought
     /// lifecycle transactions nobody asked for. Two callers wanting <b>different models on a one-model engine</b>
     /// — one switch per caller, in arrival order, is the whole claim, and it is asserted as a launch sequence, not
