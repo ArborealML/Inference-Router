@@ -1,11 +1,11 @@
 ---
 id: TASK-77
 title: Split one remote flag into transport reach and model-loading ownership
-status: To Do
+status: Preparing
 assignee:
-  - '@qwen3.8-flash-next'
+  - '@gpt-6.2-sol'
 created_date: '2026-11-18T02:37:00Z'
-updated_date: '2026-11-18T19:18:00Z'
+updated_date: '2026-11-18T19:20:00Z'
 labels:
   - lifecycle
   - scheduling
@@ -41,4 +41,6 @@ Design direction to test in review, not to assume: two config keys, reach (can t
 A migration landmine, verified here rather than taken on report: the config loader reads Remote as false when the key is absent, and the shipped sample's hyperqwen entry has no lifecycle or selector block at all. So a migration that treats "remote omitted" as "the router owns this engine" would hand load authority to an OpenAI-compatible endpoint with no controller behind it — today that engine simply fails to switch, which is the safe answer. The normaliser must be presence-aware, and the derived loadability must come from a provider bound to the target.
 
 Owner ruling at 17:31Z and 17:41Z, recorded as decision-56: one engine instance per model, native provider only. The refusal this row owns is measured, not inferred — `EngineRuntime.cs:709` returns `no_lifecycle_owner` for any engine with `remote = true`, ahead of the selector check at `:689` (read at `2b751ec`). Consequence for the bring-up instance: a config whose only engine is `remote = true` cannot switch anything, and a request naming a model that engine declares but does not report is never refused either — it parks, see TASK-51.
+
+The Sol implementer is preparing the loader, runtime and migration plan for the cluster ownership split in an isolated worktree.
 <!-- SECTION:NOTES:END -->

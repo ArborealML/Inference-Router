@@ -5,7 +5,7 @@ status: Waiting
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-16T22:26:00Z'
-updated_date: '2026-11-18T19:18:00Z'
+updated_date: '2026-11-18T19:20:00Z'
 labels:
   - docs
   - ui
@@ -43,6 +43,8 @@ Refresh the landing page for a developer connecting an inference engine. Group t
 
 <!-- SECTION:NOTES:BEGIN -->
 README overhaul landed in de3f2ab. The Release CLI built with zero warnings. The fixture smoke passed model discovery, ordinary and streaming chat, CLI chat and the error path. A user-local SDK needed DOTNET_ROOT. Rendered Markdown verified the image group, heading hierarchy, local links and fragment targets. The published canary contains both archives and checksum files. The stable release badge remains pending. Editorial plan and commit reviews were dispatched on 2026-11-18.
+
+Review of de3f2ab confirmed the landing layout and canary status. cc07d13 corrects the model-list path and was exercised with a fixture backend. 866af71 addresses the local config placement, Windows executable name and priority behavior. Windows command scope was checked against the project and smoke script.
 <!-- SECTION:NOTES:END -->
 
 ## Comments
