@@ -1,6 +1,6 @@
 # Router delivery milestones
 
-The first milestone qualifies a deployed router with pi. An isolated pi session has already completed turns on two resident models. The native swap milestone requires observing a host change its resident model between turns. The cluster milestone adds shared admission and activation from either ingress.
+The first milestone requires a completed pi turn on the deployed router. An isolated pi session has already completed turns on two resident models. The native swap milestone requires observing a host change its resident model between turns. The cluster milestone adds shared admission and activation from either ingress.
 
 ## Delivery path
 
@@ -32,9 +32,9 @@ Stream integrity, switch safety and bounded admission can advance in parallel. E
 | [Operator live view](m-11%20-%20operator-live-view.md) | Bootstrap a bounded status view and follow ticket progress with the replayable event feed. |
 | [Inference API qualification](m-12%20-%20inference-api-qualification.md) | Qualify adapter choices against actual client behavior, including a real tool round before introducing a Responses surface. |
 
-## Completed foundations
+## Single-host comparison and fixes
 
-The [single-host robustness baseline](m-13%20-%20single-host-robustness-baseline.md) records the comparison with NVIDIA Personal AI Router and the resulting single-host changes. The earlier v0.9 cohort contained tasks 1 and 15. The v0.10 cohort contained tasks 10, 12 and 13. Their primary milestones now reflect what shipped, so each completed task contributes once.
+The [single-host robustness baseline](m-13%20-%20single-host-robustness-baseline.md) records the comparison with NVIDIA Personal AI Router and the readiness, transport and error-handling fixes that shipped. SPEC §14.1 tracks the remaining parity gaps. The earlier v0.9 cohort contained tasks 1 and 15. The v0.10 cohort contained tasks 10, 12 and 13. Their primary milestones now reflect what shipped, so each completed task contributes once.
 
 Five archived records retain their outcome assignments for reference. The board excludes archived records from its completion counts.
 
@@ -47,3 +47,21 @@ Five archived records retain their outcome assignments for reference. The board 
 - **Release, tooling and UI** have independent deliverables. The retained canary provides evidence for the stable release gate. The release badge waits for the stable release. Operator views consume bounded, replayable observations.
 
 The [SPEC](../../SPEC.md) describes the interfaces and acceptance bar. Its historical roadmap predates the native switching decision and the active fleet tasks. The milestone descriptions cite the relevant sections, and each task retains its own prerequisites and acceptance criteria.
+
+## Reading older board snapshots
+
+The board sorts milestones by numeric ID. Commit `54d329c` reordered the IDs and assigned historical work to its delivery outcome. For a snapshot before that commit, use the following crosswalk. The task IDs stayed stable.
+
+| Earlier ID | Current ID | Outcome |
+| --- | --- | --- |
+| m-1 | m-3 | [Bounded queue admission](m-3%20-%20bounded-queue-admission.md) |
+| m-2 | m-1 | [Completion stream integrity](m-1%20-%20completion-stream-integrity.md) |
+| m-3 | m-2 | [Reliable switch and shutdown state](m-2%20-%20reliable-switch-and-shutdown-state.md) |
+| m-6 | m-7 | [Pi ticket tracking and outage recovery](m-7%20-%20pi-ticket-tracking-and-outage-recovery.md) |
+| m-7 | m-8 | [Configuration reload during inference](m-8%20-%20configuration-reload-during-inference.md) |
+| m-8 | m-6 | [Cluster routing and model placement](m-6%20-%20cluster-routing-and-model-placement.md) |
+| m-10 | m-11 | [Operator live view](m-11%20-%20operator-live-view.md) |
+| m-11 | m-12 | [Inference API qualification](m-12%20-%20inference-api-qualification.md) |
+| m-12 | m-10 | [Repository and architecture checks](m-10%20-%20repository-and-architecture-checks.md) |
+
+The progress display counts tasks whose status is Done. A milestone reassignment also updates the task’s edit timestamp. For a completion date, use the commit that changed its status to Done.

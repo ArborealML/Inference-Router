@@ -5,9 +5,9 @@ title: >-
   authorize after the router decided to stop
 status: Testing
 assignee:
-  - '@gpt-6.2-sol'
+  - '@gpt-6.2-sol-shutdown'
 created_date: '2026-11-18T11:02:00Z'
-updated_date: '2026-11-18T19:37:00Z'
+updated_date: '2026-11-18T19:40:00Z'
 labels: []
 milestone: m-2
 dependencies: []

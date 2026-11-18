@@ -1,11 +1,11 @@
 ---
 id: TASK-119
 title: Rewrite the managed switch walkthrough around the native lifecycle provider
-status: Waiting
+status: In Progress
 assignee:
-  - '@gpt-6.2-sol'
+  - '@gpt-6.2-sol-lifecycle'
 created_date: '2026-11-18T19:04:00Z'
-updated_date: '2026-11-18T19:33:00Z'
+updated_date: '2026-11-18T19:40:00Z'
 labels: []
 milestone: m-4
 dependencies: []
@@ -37,5 +37,5 @@ Trace the managed switch examples to the config loader and provider. Distinguish
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Wake when the external plan review returns. It covers the native Docker example, authority to stop an incumbent, and the distinction between the shipped provider and host-wide recovery requirements.
+Plan review returned. The loader selects Docker whenever its table exists. Runtime checks the configured endpoint, accepts an unknown window, and does not match the profile slot count. The walkthrough will distinguish these shipped behaviors from exact instance proof, host exclusivity and target quarantine. The implementer is editing the walkthrough and will validate its verbatim example offline.
 <!-- SECTION:NOTES:END -->

@@ -5,9 +5,9 @@ title: >-
   chance
 status: Testing
 assignee:
-  - '@gpt-6.2-sol'
+  - '@gpt-6.2-sol-shutdown'
 created_date: '2026-11-18T06:27:00Z'
-updated_date: '2026-11-18T19:38:00Z'
+updated_date: '2026-11-18T19:40:00Z'
 labels:
   - flake
   - tests

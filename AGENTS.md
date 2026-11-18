@@ -230,8 +230,14 @@ transition so the coordinator can update the shared board. After a handoff, send
 assignment to the same implementer.
 
 Run four persistent tmux implementers under decision-63, each with one task and its own worktree.
-Ordinary builds and focused tests can run concurrently. When a measurement requires exclusive host
-conditions under decision-55, record its completion as the wake condition for waiting measurements or builds.
+Use stable session-qualified board handles for active assignments: `@gpt-6.2-sol-config`,
+`@gpt-6.2-sol-shutdown`, `@gpt-6.2-sol-release` and `@gpt-6.2-sol-lifecycle`. Transfer a task after
+the previous writer hands it off and stops editing. The temporary subagent overlap has ended.
+
+Ordinary builds and focused tests can run concurrently outside a host reservation. Under decision-55
+the coordinator announces the measured host and parks competing work before the first run. The series
+owner records load per run and releases the host after the whole series. A competing run invalidates
+the affected series and requires a fresh start.
 When a task is Done, confirm its changes have landed, retain any required private evidence, inspect tracked
 and untracked files, and release its worktree with Git. Preserve outstanding changes or evidence before
 removal, and move the implementer out of the retired directory before assigning its next worktree.

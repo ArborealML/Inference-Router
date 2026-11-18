@@ -3,9 +3,9 @@ id: TASK-77
 title: Split one remote flag into transport reach and model-loading ownership
 status: Waiting
 assignee:
-  - '@gpt-6.2-sol'
+  - '@gpt-6.2-sol-release'
 created_date: '2026-11-18T02:37:00Z'
-updated_date: '2026-11-18T19:33:00Z'
+updated_date: '2026-11-18T19:40:00Z'
 labels:
   - lifecycle
   - scheduling
