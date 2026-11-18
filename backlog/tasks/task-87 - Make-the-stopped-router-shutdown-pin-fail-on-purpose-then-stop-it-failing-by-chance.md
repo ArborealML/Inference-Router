@@ -41,7 +41,7 @@ Dispositioned by the top-tier plan review and corrected: dropping Assert.Equal("
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Five CI occurrences, all Expected settled / Actual cancelled: 44264855629 b7ab43d, 44275637518 e0dcd0e, 44277482601 64b9f94 (rerun green), 44280833645 board-only push, 44308059362 14a01e2 (rerun requested). Five of the last seven pushes, so the gate is not a gate and this row goes first.
+Six CI occurrences, all Expected settled / Actual cancelled: 44264855629 b7ab43d, 44275637518 e0dcd0e, 44277482601 64b9f94 (rerun green), 44280833645 board-only push, 44308059362 14a01e2 (rerun requested), 44325281339 2727ba2 (board-only push). Six of the last eleven pushes: the gate is not a gate.
 
 Criterion #1 is met on the coding seat's report, which came with sha, command and per-run logs: a detached worktree at `64b9f94`, `dotnet test --no-build -c Release`. The pin alone on a quiet machine: **0 of 20 red**. The whole `SwitchClaimTests` class with 40 busy loops on a 24-core host: **9 of 20**, repeated at **11 of 20**, 20 of 40 overall, and every red run named that test — zero unnamed reds. Their own caveat is the next question: under load the failure is the **30 s Fact ceiling**, not the settled/cancelled assertion, and CI shows the assertion. Criterion #2 has to answer both, which is why its wording changed.
 
