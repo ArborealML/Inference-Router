@@ -1,11 +1,11 @@
 ---
 id: TASK-88
 title: Let a client see the context window each model would actually be served in
-status: Preparing
+status: Waiting
 assignee:
-  - '@gpt-6.2-sol'
+  - '@qwen3.8-flash-next-board'
 created_date: '2026-11-18T07:15:00Z'
-updated_date: '2026-11-18T18:46:00Z'
+updated_date: '2026-11-18T18:52:00Z'
 labels:
   - wire
   - serve
@@ -17,7 +17,7 @@ ordinal: 87000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Owner goal: pi swaps models with /model. A picker needs, per model, the window it would get — and the router knows this (the serving gauges) but says nothing of it on /v1/models. This row decides where that belongs without breaking OpenAI compatibility. Blocks the honest half of TASK-89.
+Wake when the top-tier review of context_window on ordinary GET /v1/models returns. The normal route must identify a model’s proven serving window for pi.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -31,5 +31,11 @@ Owner goal: pi swaps models with /model. A picker needs, per model, the window i
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Verify the window and loaded model belong to one capability generation. Specify the per-model field on /v1/models, unknown and stale handling, and a compatibility pin for older responses. Review the wire plan before implementation.
+Extend ordinary GET /v1/models with a positive context_window in tokens for each model with a current proven serving window. Bind the window and listed model to the same engine snapshot. Verify the resident engine using the default URL. Exercise unknown, stale, duplicate ID and older responses and preserve the loaded-model list. Resolve the minimal coherent probe implementation in external wire review.
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Wire-plan review submitted on 2026-11-18. The coordinator requires the default endpoint without an opt-in parameter. An older response may omit the field.
+<!-- SECTION:NOTES:END -->

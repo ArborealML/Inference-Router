@@ -1,11 +1,11 @@
 ---
 id: TASK-108
 title: Send stream keepalives in a frame a strict OpenAI client can ignore
-status: Waiting
+status: To Do
 assignee:
-  - '@qwen3.8-flash-next-board'
+  - '@gpt-6.2-sol'
 created_date: '2026-11-18T17:43:00Z'
-updated_date: '2026-11-18T18:44:00Z'
+updated_date: '2026-11-18T18:52:00Z'
 labels:
   - wire
   - stream
@@ -24,7 +24,7 @@ ordinal: 106000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Wake on main CI and the commit review for 4a5e214. A strict client now accepts queued streams, and the final wire change passed focused integration checks on the merged checkout.
+Finish the CLI end-of-stream check and automated CLI regressions from the 4a5e214 review. The queued-client keepalive change is published.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -50,4 +50,6 @@ External plan review of the stream writer, CLI and tests at 3c83ecc returned on 
 The implementer reported a passing queued pi turn through the isolated router, byte-identical upstream chunks, upstream TCP close after client abort, and four CLI mode checks. The first full Debug run had one capability-publication failure (TASK-80).
 
 Commit review dispatched for 4a5e214. The worker reproduced the sole full-suite failure on the unchanged parent (one failure in eleven focused attempts). Both changed-tree full suites passed 237/238, stream checks passed 36/36 and Linux AOT published without warnings. The coordinator verified 12/12 merged stop and stream tests.
+
+Review verified framing, JSON quoting, upstream byte identity and AOT. The CLI currently returns success on EOF without a sentinel. Add a nonzero truncated-stream exit and process-level pins for text status, JSON, error and early EOF. TASK-82 #3 owns mid-frame failure and TASK-81 owns terminal arbitration.
 <!-- SECTION:NOTES:END -->

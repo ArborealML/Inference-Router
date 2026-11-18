@@ -3,11 +3,11 @@ id: TASK-98
 title: >-
   Make one stop decision visible to an in-flight claim, so a switch cannot
   authorize after the router decided to stop
-status: Waiting
+status: Preparing
 assignee:
-  - '@qwen3.8-flash-next-board'
+  - '@gpt-6.2-sol'
 created_date: '2026-11-18T11:02:00Z'
-updated_date: '2026-11-18T18:35:00Z'
+updated_date: '2026-11-18T18:52:00Z'
 labels: []
 dependencies: []
 ordinal: 97000
@@ -16,7 +16,7 @@ ordinal: 97000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Wake on CI and commit review for 380a2a4. Shutdown freezes the typed result under the same gate as a claim.
+Fix the two remaining shutdown edges identified in the 380a2a4 review before starting the quiet-host cohort.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -47,9 +47,5 @@ Three deliverables, in sequence, not one commit: lifecycle semantics here; the d
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Found by the plan review dispatched for TASK-87 (top reasoning tier): the review withdrew the plan's proposed mechanism and named this production half instead. Evidence for the current behaviour is in that row's Notes. This row is the one that can fix the second flake shape — a waiter released as `cancelled` and then reclassified.
-
-Sol delivered the v0.12.50 diff, a zero-warning solution build and 53 passing focused tests. Two deliberate regressions produced the expected failures. The four new stop cases passed after restoration. Coordinator review and integration are next.
-
-Coordinator integrated 380a2a4 and dispatched the bounded commit review on 2026-11-18. Confirm remote CI before closure.
+380a2a4 passed 53 focused tests and both stop-order mutation controls. Commit review verified first publication and the two cancellable waits. AnswerExpiredSwitchWait can still report timeout after an unrelated captured attempt finishes and shutdown wins before the deadline decision. The public Switching property still reads switch state outside the transition gate. Preserve earlier own outcomes, classify the expired foreign wait using the stopped state under the gate, and derive public switching from the scheduler marker. The shipped shutdown wire code remains cancelled/499 until TASK-81.
 <!-- SECTION:NOTES:END -->
