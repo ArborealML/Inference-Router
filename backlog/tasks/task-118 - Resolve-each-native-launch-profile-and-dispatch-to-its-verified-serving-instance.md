@@ -7,7 +7,7 @@ status: To Do
 assignee:
   - '@gpt-6.2-sol'
 created_date: '2026-11-18T18:56:00Z'
-updated_date: '2026-11-18T20:33:00Z'
+updated_date: '2026-11-18T21:09:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -35,3 +35,9 @@ The selector includes launch profiles with identical model, context and slot cou
 - [ ] #5 A positive control delivers the expected upstream model ID to the verified instance. Tests distinguish an explicit profile request from ordinary inference fitting an already proven resident profile.
 - [ ] #6 After the final readiness check, rebind the endpoint before the first upstream write. The replacement receives zero bytes under the previous proof. SPEC names the instance-bound transport or reservation and its retirement rule.
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Verify catalog names and aliases resolve to one immutable target, including an alias that shadows a different canonical spelling. Ambiguous routing must yield zero writes and zero lifecycle mutations.
+<!-- SECTION:NOTES:END -->

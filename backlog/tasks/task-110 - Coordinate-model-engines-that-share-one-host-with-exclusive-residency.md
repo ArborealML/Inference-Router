@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@gpt-6.2-sol-lifecycle'
 created_date: '2026-11-18T18:13:00Z'
-updated_date: '2026-11-18T20:59:00Z'
+updated_date: '2026-11-18T21:10:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -47,4 +47,6 @@ Coordinator ran the host reservation, Docker and lifecycle filters against the f
 The cross-process and fake inventory follow-up passed 49 focused cases. Production controller design and corrections for blank durable state and withdrawal ordering are under review.
 
 The coordinator verified 52 host, Docker and coordinator cases after the persistence corrections. A file reservation alone cannot prove physical vacancy or that a delayed mutation is finished. The implementer is reviewing enrollment outside the mutable store, enforcement over the full claimed host group and action-specific terminal receipts before runtime activation.
+
+Revised production enrollment and delayed-effect design sent for independent review before authorizing any host activation.
 <!-- SECTION:NOTES:END -->

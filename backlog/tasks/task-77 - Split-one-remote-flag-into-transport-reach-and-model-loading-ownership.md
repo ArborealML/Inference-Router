@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@gpt-6.2-sol-release'
 created_date: '2026-11-18T02:37:00Z'
-updated_date: '2026-11-18T20:53:00Z'
+updated_date: '2026-11-18T21:09:00Z'
 labels:
   - lifecycle
   - scheduling
@@ -49,4 +49,6 @@ Astra ran 112 focused checks on owner bindings and 61 on incumbent restoration; 
 The combined candidate reached local Release qualification. CLI owner diagnostics failed nullable analysis before test execution; correction assigned. Integration reviews of the runtime and fixtures are in flight.
 
 Integrated [lifecycle authority and incumbent recovery](https://github.com/ArborealML/Inference-Router/commit/2f04f2b). The corrected candidate passed 365/365 Release tests and Native AOT publish. Code, tests and SPEC match the integrated tree. Managed peer activation and refusal for foreign host occupancy still depend on the host arbiter.
+
+Review of 87d7043 verified that native injection checks only kind; TASK-128 owns concrete provider scope. Exceptions in read-only ownership/preflight and in refusal-event delivery must preserve valid incumbent proof when no mutation was attempted. After attempted stop or launch, retain conservative withdrawal.
 <!-- SECTION:NOTES:END -->

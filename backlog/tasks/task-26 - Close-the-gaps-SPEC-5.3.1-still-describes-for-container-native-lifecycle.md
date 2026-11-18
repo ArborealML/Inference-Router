@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@gpt-6.2-sol-shutdown'
 created_date: '2026-11-17T02:54:00Z'
-updated_date: '2026-11-18T21:02:00Z'
+updated_date: '2026-11-18T21:10:00Z'
 labels:
   - engine
   - lifecycle
@@ -47,16 +47,12 @@ Implement the reviewed image-identity slice first. Validate complete configured 
 Provider fixes landed in 18d7279. Use fake daemon responses and preserve the loader refusal for mixed ownership. The shipped native sample must remove the selectors from the same engine and pass sample validation. TASK-119 owns the SPEC walkthrough. Align README ownership versus image checks, integration terminology and the safe-smoke explanation with the shipped sample. The AGENTS.md smoke guidance landed in fef8789. TASK-33 records live-proof permissions.
 
 [Native image verification](https://github.com/ArborealML/Inference-Router/commit/c30ca3e) checks the full local image ID, named repository digest and platform before mutation. Create names the immutable image ID. The shipped selector-free native example passed CLI validation. The coordinator ran 128 focused and 419 full Release tests, then published the server with Native AOT. Four isolated regressions weakened ID, repository, platform variant and create-reference checks. Each failed its intended fixture; restoring source passed all 25 targeted cases. Production and fixture reviews are in flight. Device requests, mounts and resource limits are the next implementation slice.
+
+Resource configuration plan sent for review against the archived Qwen payload and Bonsai script. It covers Linux device mappings, read-only binds, CPU, memory, swap and core limits. Qualification must distinguish an observed container from a proposed launch.
 <!-- SECTION:NOTES:END -->
 
 ## Comments
 
 <!-- COMMENTS:BEGIN -->
-created: 2026-11-17T07:54:00Z
-
----
-
-Route question (TASK-20) is answered: unix socket, daemon reachable by this account, no TLS endpoint. All seven criteria here stay buildable against the fake daemon handler, so this task is not blocked by anything. What it cannot do is *show* a lifecycle transaction against a live daemon; that permission is now TASK-33 and it gates only the demonstration, not the implementation. Recorded so nobody re-derives the route question.
-
----
+Decision on transport: use the Unix socket. Implement and test against the fake daemon; TASK-33 gates live laptop demonstration.
 <!-- COMMENTS:END -->
