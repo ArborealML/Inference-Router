@@ -1,11 +1,11 @@
 ---
 id: TASK-127
 title: Keep an admitted stream alive while the model prepares its first byte
-status: To Do
+status: Preparing
 assignee:
-  - '@gpt-6.2-sol'
+  - '@gpt-6.2-sol-shutdown'
 created_date: '2026-11-18T20:43:00Z'
-updated_date: '2026-11-18T21:10:00Z'
+updated_date: '2026-11-18T21:25:00Z'
 labels: []
 milestone: m-1
 dependencies: []
@@ -29,7 +29,7 @@ Dispatch installs the stream channel before switching and waiting for the first 
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Keep one writer and one sequence through channel installation until the first upstream bytes or terminal outcome. Race readiness for bytes against the heartbeat interval without consuming or losing a pending read. After upstream bytes begin, preserve verbatim relay. Exercise held activation, empty-channel completion, fragmented frames, timeout and cancellation on the real HTTP path.
+Use one monotonic heartbeat deadline across StreamReady and the first nonempty read. Keep exactly one pending channel wait; on timer completion recheck bytes and terminal state first. Follow the actual producer completion order and drain buffered bytes before emitting a terminal frame. Stop heartbeats before forwarding the first nonempty chunk. Exercise empty completion, delayed first byte, fragment boundaries, timeout and cancellation.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes

@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@gpt-6.2-sol-lifecycle'
 created_date: '2026-11-18T18:13:00Z'
-updated_date: '2026-11-18T21:20:00Z'
+updated_date: '2026-11-18T21:31:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -51,4 +51,6 @@ The coordinator verified 52 host, Docker and coordinator cases after the persist
 Revised production enrollment and delayed-effect design sent for independent review before authorizing any host activation.
 
 The combined fake-controller runtime patch on fcff3ea passed 129 focused host, Docker, health and refusal tests and Native AOT. The positive fixture uses injected enrollment. Enforced production enrollment, dispatch leases, and preservation of proven incumbent state remain outstanding.
+
+The combined host candidate on the exact-ticket scheduler base passed 133 focused tests, all 475 Release tests, and server Native AOT. Runtime enrollment is internal to the controlled fixtures. Production host enforcement and a live swap remain open.
 <!-- SECTION:NOTES:END -->

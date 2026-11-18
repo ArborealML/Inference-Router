@@ -1,11 +1,11 @@
 ---
 id: TASK-44
 title: Close the open release-gate review findings (SPEC v0.12.15 onward)
-status: Preparing
+status: In Progress
 assignee:
   - '@gpt-6.2-sol-release'
 created_date: '2026-11-17T10:52:00Z'
-updated_date: '2026-11-18T21:02:00Z'
+updated_date: '2026-11-18T21:25:00Z'
 labels:
   - ci
   - release
