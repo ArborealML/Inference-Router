@@ -17,6 +17,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="Arboreal.InferenceRouter.Tests" />
     <ProjectReference Include="..\Arboreal.InferenceRouter\Arboreal.InferenceRouter.csproj" />
   </ItemGroup>
 
