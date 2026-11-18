@@ -1,11 +1,11 @@
 ---
 id: TASK-110
 title: Coordinate model engines that share one host with exclusive residency
-status: Ready for Review
+status: In Progress
 assignee:
   - '@gpt-6.2-sol-lifecycle'
 created_date: '2026-11-18T18:13:00Z'
-updated_date: '2026-11-18T22:58:00Z'
+updated_date: '2026-11-18T23:02:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -41,5 +41,5 @@ Configure an explicit physical host group and share one host-local arbiter acros
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Durably record the operation and immutable target before mutation. Unknown outcomes fence successor epochs. Detect foreign occupancy across the host; independent hosts can progress. External writers require separate OS or daemon enforcement. Live operations remain parked. The injected host runtime passed 133 focused cases, 475 Release tests and server Native AOT. Offline restart and receipt integration passed 563 Release tests and server Native AOT. The diagnostic correction passed 57 host coordinator tests. Independent review dispositions are pending. Production enrollment, physical dispatch permits, retained incumbent evidence and a live swap remain open.
+Record operation identity and immutable target before mutation. Unknown effects fence successor epochs. Detect foreign occupancy across the whole host; independent hosts can progress. External writers need separate OS or daemon enforcement. The injected runtime passed 133 focused and 475 Release tests plus server Native AOT. Offline restart integration passed 563 Release tests and Native AOT; the diagnostic correction passed 57 focused tests and awaits review. Review of the offline receipt implementation found settlement clears the launch ID before admission commits. Preserve durable exact-instance evidence through refusal and lost reply. The child probe supports restart; its exclusive create file proves one successful effect but does not count attempted issues. Add independent attempt counts and mismatched applied-receipt cases. Exact stop target, launch-plan binding, storage durability, missing-instance recovery and physical permits remain production prerequisites. Live operations remain parked.
 <!-- SECTION:NOTES:END -->
