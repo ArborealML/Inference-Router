@@ -1,11 +1,11 @@
 ---
 id: TASK-126
 title: Bound an individual readiness probe by the remaining switch deadline
-status: To Do
+status: In Progress
 assignee:
-  - '@gpt-6.2-sol'
+  - '@gpt-6.2-sol-shutdown'
 created_date: '2026-11-18T20:43:00Z'
-updated_date: '2026-11-18T21:02:00Z'
+updated_date: '2026-11-18T22:58:00Z'
 labels: []
 milestone: m-4
 dependencies: []
@@ -37,4 +37,6 @@ Use one monotonic readiness budget across state headers and body, model discover
 Pre-implementation review dispatched. The coordinator will verify the failure on the current path and run the integrated regression fixture.
 
 Review found that state probes write gauges internally and a deadline checked only before a fetch can lose at publication. The existing clock hook covers waiter deadlines only. Check one monotonic readiness deadline under the publication guard; late observations may dispose resources but cannot change gauges, events or the winner.
+
+The standalone deadline helper and expanded fixtures stopped at two disposal analyzers before any tests ran. The implementer owns the correction. Legacy and enrolled call sites follow the observation-only readers.
 <!-- SECTION:NOTES:END -->

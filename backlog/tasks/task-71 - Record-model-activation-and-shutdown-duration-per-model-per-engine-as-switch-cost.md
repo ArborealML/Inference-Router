@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@gpt-6.2-sol-scheduling'
 created_date: '2026-11-18T01:22:00Z'
-updated_date: '2026-11-18T21:23:00Z'
+updated_date: '2026-11-18T22:58:00Z'
 labels: []
 milestone: m-5
 dependencies:
@@ -50,4 +50,6 @@ Compare drain plus verified shutdown of A and activation of B against actual han
 External plan review dispatched. The candidate measures monotonic stages under one claim identity, preserves missing and failed observations, and compares eligible switches using a bounded cost history. The acceptance fixture keeps arrivals fixed and changes only the measured cost.
 
 The [integrated scheduler](https://github.com/ArborealML/Inference-Router/commit/a77d50a) now commits the exact thread-admissible ticket it evaluated. A blocked-head case and cancellation during selection both failed on the preceding dispatch implementation and passed after the change. A custom scheduler retained its call ordering. The combined filter passed 45 cases and the full Release suite passed 442. The cost history and ranking functions still require production stop/launch observations and a test changing the actual launch.
+
+Combined scheduling and capacity candidate passed 237 of 238 focused Release cases. The eligible loaded-route test selected a different ticket. The scheduling implementer owns diagnosis and correction before integration.
 <!-- SECTION:NOTES:END -->

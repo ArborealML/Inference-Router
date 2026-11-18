@@ -3,11 +3,11 @@ id: TASK-68
 title: >-
   Bind the serving gauges to a capability epoch, so a stale window cannot
   authorise a profile the engine cannot serve
-status: Preparing
+status: Ready for Review
 assignee:
   - '@gpt-6.2-sol-config'
 created_date: '2026-11-18T01:11:00Z'
-updated_date: '2026-11-18T21:20:00Z'
+updated_date: '2026-11-18T22:58:00Z'
 labels:
   - concurrency
   - scheduling
@@ -54,9 +54,5 @@ Ordered after TASK-76 (criterion #2).
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-At eba81d4, WindowFits accepted a zero gauge and an omitted key preserved a stale positive. Bind each measurement to its serving epoch and withhold capacity-dependent admission when current evidence is missing.
-
-The TASK-76 prerequisite was its marker-held proof, now verified in [the integration](https://github.com/ArborealML/Inference-Router/commit/fcff3ea). The remaining refusal-path review can proceed independently.
-
-At fcff3ea a fake-engine test called WaitForProfileAsync for 256000 tokens with the discovery window fixed at 256000 and static capability at 131072. It incorrectly returned Ready both when the serving window was always missing and when a previously wide observation lost its window. The same model remained eligible without a required profile.
+On fcff3ea a 256000-token discovery value authorized a required profile despite a missing or withdrawn serving window and a static 131072 ceiling. Model-only dispatch remained eligible. Marker-held proof landed in [the prerequisite](https://github.com/ArborealML/Inference-Router/commit/fcff3ea). Ordinary capacity publication passed 125 focused Release cases. Restoration passed 25 focused and 142 broader cases. Independent review is pending. Named host proof and exact-ticket commitment remain open.
 <!-- SECTION:NOTES:END -->

@@ -1,11 +1,11 @@
 ---
 id: TASK-77
 title: Split one remote flag into transport reach and model-loading ownership
-status: In Progress
+status: Waiting
 assignee:
   - '@gpt-6.2-sol-release'
 created_date: '2026-11-18T02:37:00Z'
-updated_date: '2026-11-18T21:09:00Z'
+updated_date: '2026-11-18T22:58:00Z'
 labels:
   - lifecycle
   - scheduling
@@ -19,7 +19,7 @@ ordinal: 77000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-A router must be able to forward inference to a resident model and independently decide whether it can request a switch on that host. Split transport from lifecycle authority, preserve legacy configurations, and prove a managed peer can switch under its own host authority.
+Waiting for TASK-110. Host coordination qualification wakes the managed-peer activation and foreign-occupancy tests. Preserve forwarding to resident models independently of lifecycle authority, including legacy configurations.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

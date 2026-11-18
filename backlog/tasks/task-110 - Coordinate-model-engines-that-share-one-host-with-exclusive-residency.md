@@ -1,11 +1,11 @@
 ---
 id: TASK-110
 title: Coordinate model engines that share one host with exclusive residency
-status: In Progress
+status: Ready for Review
 assignee:
   - '@gpt-6.2-sol-lifecycle'
 created_date: '2026-11-18T18:13:00Z'
-updated_date: '2026-11-18T22:19:00Z'
+updated_date: '2026-11-18T22:58:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -41,17 +41,5 @@ Configure an explicit physical host group and share one host-local arbiter acros
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Plan review verified the per-coordinator semaphore and engine-filtered discovery. Before a mutation, durably record its operation identity and immutable target. Prevent a successor epoch while the outcome is unknown. A fake daemon must accept an action, lose its response, and complete it after the router restarts. Verify the delayed action cannot affect a successor. Host-wide observation must detect foreign or unknown occupancy; independent hosts can progress. Direct writers outside the managed group require separate OS or daemon enforcement. Storage format is an implementation choice. Live engine operations remain parked.
-
-Coordinator ran the host reservation, Docker and lifecycle filters against the first boundary candidate: 37 passed. Commit review dispatched. Cross-process restart, production occupancy reconciliation and runtime admission still require proof.
-
-The cross-process and fake inventory follow-up passed 49 focused cases. Production controller design and corrections for blank durable state and withdrawal ordering are under review.
-
-The coordinator verified 52 host, Docker and coordinator cases after the persistence corrections. A file reservation alone cannot prove physical vacancy or that a delayed mutation is finished. The implementer is reviewing enrollment outside the mutable store, enforcement over the full claimed host group and action-specific terminal receipts before runtime activation.
-
-Revised production enrollment and delayed-effect design sent for independent review before authorizing any host activation.
-
-The combined fake-controller runtime patch on fcff3ea passed 129 focused host, Docker, health and refusal tests and Native AOT. The positive fixture uses injected enrollment. Enforced production enrollment, dispatch leases, and preservation of proven incumbent state remain outstanding.
-
-The combined host candidate on the exact-ticket scheduler base passed 133 focused tests, all 475 Release tests, and server Native AOT. Runtime enrollment is internal to the controlled fixtures. Production host enforcement and a live swap remain open.
+Durably record the operation and immutable target before mutation. Unknown outcomes fence successor epochs. Detect foreign occupancy across the host; independent hosts can progress. External writers require separate OS or daemon enforcement. Live operations remain parked. The injected host runtime passed 133 focused cases, 475 Release tests and server Native AOT. Offline restart and receipt integration passed 563 Release tests and server Native AOT. The diagnostic correction passed 57 host coordinator tests. Independent review dispositions are pending. Production enrollment, physical dispatch permits, retained incumbent evidence and a live swap remain open.
 <!-- SECTION:NOTES:END -->

@@ -3,11 +3,11 @@ id: TASK-64
 title: >-
   Decide the admission and drain handoff: a scheduler pass that snapshots an
   engine just before it is claimed
-status: To Do
+status: Preparing
 assignee:
-  - '@qwen3.8-flash-next'
+  - '@gpt-6.2-sol-release'
 created_date: '2026-11-17T23:07:00Z'
-updated_date: '2026-11-18T20:59:00Z'
+updated_date: '2026-11-18T22:58:00Z'
 labels:
   - scheduling
   - architecture
@@ -44,4 +44,6 @@ A top-tier plan review of the resume-authorisation row found the same shape from
 Pre-code review dispatched with both scheduling and HTTP invocation paths, including how the held permit releases on cancellation or stream termination.
 
 Decision-67 sets the ordering. Commit the exact eligible ticket evaluated by the scheduler. If its deadline, thread capacity or host generation changes before queue removal, release the provisional admission and re-evaluate.
+
+Exact-ticket admission plan under review. Separate selection from commitment and take host admission, router and queue locks in that order. Pin close-first, authorization before first byte, and waking a switch owner after admission opens.
 <!-- SECTION:NOTES:END -->
