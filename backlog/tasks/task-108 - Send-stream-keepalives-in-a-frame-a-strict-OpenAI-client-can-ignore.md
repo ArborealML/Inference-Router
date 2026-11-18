@@ -1,11 +1,11 @@
 ---
 id: TASK-108
 title: Send stream keepalives in a frame a strict OpenAI client can ignore
-status: Testing
+status: Waiting
 assignee:
-  - '@gpt-6.2-sol'
+  - '@qwen3.8-flash-next-board'
 created_date: '2026-11-18T17:43:00Z'
-updated_date: '2026-11-18T18:38:00Z'
+updated_date: '2026-11-18T18:44:00Z'
 labels:
   - wire
   - stream
@@ -24,7 +24,7 @@ ordinal: 106000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-The streaming implementation is in verification. The strict parser failed against the original writer and the worker is running solution and AOT checks against the new writer.
+Wake on main CI and the commit review for 4a5e214. A strict client now accepts queued streams, and the final wire change passed focused integration checks on the merged checkout.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -48,4 +48,6 @@ Write a strict SSE regression with an actual completion chunk and a fixed legacy
 External plan review of the stream writer, CLI and tests at 3c83ecc returned on 2026-11-18. Verified the writer interpolates quoted status and the CLI reads choices unconditionally. Adopt exact grammar, strict-parser controls, socket-level abort proof and a queued real-client run. TASK-99 owns the final frame-size policy. TASK-81 owns universal terminal arbitration. TASK-91 retains its historical sequence reproduction. Use the native AOT serialization context.
 
 The implementer reported a passing queued pi turn through the isolated router, byte-identical upstream chunks, upstream TCP close after client abort, and four CLI mode checks. The first full Debug run had one capability-publication failure (TASK-80).
+
+Commit review dispatched for 4a5e214. The worker reproduced the sole full-suite failure on the unchanged parent (one failure in eleven focused attempts). Both changed-tree full suites passed 237/238, stream checks passed 36/36 and Linux AOT published without warnings. The coordinator verified 12/12 merged stop and stream tests.
 <!-- SECTION:NOTES:END -->

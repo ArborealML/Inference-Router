@@ -5,7 +5,7 @@ status: Done
 assignee:
   - '@gpt-6.2-sol'
 created_date: '2026-11-18T18:29:00Z'
-updated_date: '2026-11-18T18:36:00Z'
+updated_date: '2026-11-18T18:44:00Z'
 labels: []
 dependencies: []
 modified_files:
@@ -37,4 +37,6 @@ Verify each new status and a mixed Preparing, Waiting, Testing, Ready for Review
 
 <!-- SECTION:NOTES:BEGIN -->
 Contract and configured order landed in 6a02535. Checker and regression fixtures landed in 8faba3b. CLI and checker readbacks verified delivery, open counts and the named wake requirement.
+
+The manager dispatched the bounded checker review of 8faba3b on 2026-11-18.
 <!-- SECTION:NOTES:END -->

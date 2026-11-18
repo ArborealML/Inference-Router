@@ -5,7 +5,7 @@ status: Done
 assignee:
   - '@claire'
 created_date: '2026-11-18T07:57:00Z'
-updated_date: '2026-11-18T18:27:00Z'
+updated_date: '2026-11-18T18:44:00Z'
 labels:
   - identity
 dependencies: []
@@ -28,4 +28,6 @@ The owner confirmed shadowndacorner, the account used by the default SSH credent
 
 <!-- SECTION:NOTES:BEGIN -->
 The owner ruling is recorded in [decision-29](https://github.com/ArborealML/Inference-Router/blob/main/backlog/decisions/decision-29%20-%20Each-seat-commits-as-a-named-agent-identity-supplied-per-commit-not-from-shared-config.md).
+
+Repository-local and effective user.name and user.email were read back. Both resolve to the confirmed account and its GitHub noreply address.
 <!-- SECTION:NOTES:END -->

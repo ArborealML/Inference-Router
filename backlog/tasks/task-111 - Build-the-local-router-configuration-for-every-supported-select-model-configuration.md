@@ -3,11 +3,11 @@ id: TASK-111
 title: >-
   Build the local router configuration for every supported select-model
   configuration
-status: Preparing
+status: Waiting
 assignee:
-  - '@gpt-6.2-sol'
+  - '@qwen3.8-flash-next-board'
 created_date: '2026-11-18T18:15:00Z'
-updated_date: '2026-11-18T18:28:00Z'
+updated_date: '2026-11-18T18:43:00Z'
 labels: []
 dependencies:
   - TASK-26
@@ -17,7 +17,7 @@ ordinal: 109000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Deliver the machine-local configuration. Use the installed selector and its delegated model validators as the compatibility reference. Implement selection through the native provider under decision-56. Keep host credentials, endpoints and launch arguments out of tracked evidence.
+Wake on the external plan review of native target selection and exact readiness. Deliver a machine-local configuration for the installed selector’s supported combinations using native lifecycle under decision-56.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -41,4 +41,6 @@ The local selector has model-specific validators and launch resource settings th
 Static inventory is underway. The reference exposes nine canonical models, thirteen model aliases and twenty-three profile spellings. Context and slot counts alone cannot identify every launch preset. The scheduler currently skips an inactive engine before considering launch eligibility. TASK-114 records the cold-start gap. Validate enumerated counts independently before accepting the inventory criterion.
 
 Independent static enumeration at selector source fingerprint 8af827d3c375efda08cad8a5b9b7fd862b44a2f5a7482042c5255623a891a030 covered 506 explicit spellings: 169 pass structural validation and 337 fail. The 75 distinct targets include 12 accepted spelling combinations requiring an explicit GPU. All 22 omitted-profile cases matched their defaults. Parking exposes 1,248 RAM and parallelism combinations. No runtime trial was part of this inventory.
+
+Target-proof plan dispatched on 2026-11-18. Static controls: single-device profiles require one explicit index; paired profiles require two distinct indices. GPU utilization accepts 0.50–0.95 inclusive, default 0.90. Parking RAM accepts 1–48 GiB, default 32; variable lanes accept 1–8. This revision has no supported suffix-cache launch mechanism. Controls cover malformed, out-of-range and unsupported options.
 <!-- SECTION:NOTES:END -->
