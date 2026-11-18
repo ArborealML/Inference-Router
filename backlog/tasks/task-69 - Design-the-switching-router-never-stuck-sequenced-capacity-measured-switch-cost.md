@@ -3,11 +3,11 @@ id: TASK-69
 title: >-
   Design the switching router: never stuck, sequenced capacity, measured switch
   cost
-status: Blocked
+status: Done
 assignee:
-  - '@claire'
+  - '@qwen3.8-flash-next-board'
 created_date: '2026-11-18T01:22:00Z'
-updated_date: '2026-11-18T18:47:00Z'
+updated_date: '2026-11-18T18:51:00Z'
 labels: []
 dependencies:
   - TASK-117
@@ -18,34 +18,26 @@ ordinal: 69000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-The owner must choose the same-target retry policy in TASK-117. The design review has returned. After the ruling, the coordinator records the selected policy and reconciles it with the existing no-retry contract.
+The design review and owner ruling are complete. Decision-62 records the failure contract. Implementation and runtime qualification belong to the linked tasks.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 the plan sits in this row before any code, and the design review at the required tier has returned and been dispositioned
-- [ ] #2 the plan names what a failed swap does to in-flight and to waiting requests, in wire and feed terms
-- [ ] #3 the plan honours four lanes for the whole box and one loaded model at a time, and says how capacity is sequenced
-- [ ] #4 the posture rows this goal un-parks are answered or explicitly kept open by the plan, not worked around
-- [ ] #5 Automatic switching is a core routing capability. After a failed swap, pending work for other demonstrably available models is served, with an observable outcome for the failed target.
+- [x] #1 the plan sits in this row before any code, and the design review at the required tier has returned and been dispositioned
+- [x] #2 the plan names what a failed swap does to in-flight and to waiting requests, in wire and feed terms
+- [x] #3 the plan honours four lanes for the whole box and one loaded model at a time, and says how capacity is sequenced
+- [x] #4 the posture rows this goal un-parks are answered or explicitly kept open by the plan, not worked around
+- [x] #5 Automatic switching is a core routing capability. After a failed swap, pending work for other demonstrably available models is served, with an observable outcome for the failed target.
 <!-- AC:END -->
 
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Define failure outcomes for admitted and waiting requests, wire errors and feed events. A failed swap clears its claim, settles waiters and serves only proven capacity. Apply the owner’s retry ruling from TASK-117. Design for four lanes on one host with one resident model. Reserve lifecycle work separately and fence admission before draining (25/64). Measure per-model activation and shutdown cost, including cold or sparse observations (71). Schedule age-weighted batches by work unlocked per second of switching, with a bounded wait, observable refusal and switch-rate bound even for streaming workloads (51/72). Read one capability snapshot (68). Distinguish reach from load authority (77), fence host ownership, and defer fleet placement to 78.
+Retain a single resident model and four host lanes. TASK-25/64 fence new admission and drain existing inference before a stop; lifecycle work holds no inference lane. Preserve a still-proven incumbent on preflight failure. If A fails after stop, terminate each affected A ticket once with a matching feed outcome and quarantine that exact target. TASK-26 implements the latch and target-scoped reset. TASK-110/114 prove B under a separate fenced transaction. TASK-51 bounds queued waits; TASK-71 measures phase cost and TASK-72 combines it with age and batching. For eight B waiters and one A, serve two four-lane B waves then the eligible aged A. Time limits and stream preemption remain separate decisions. TASK-68 covers coherent capability reads, TASK-77 authority and TASK-78 fleet placement.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-An external evaluation of an open-source AI gateway (2026-11-18) found nothing that makes this design redundant: no durable request claims, no residence placement or fencing across hosts, a switch-cost gate priced in prompt-cache dollars rather than stop and load time, and nothing that waits for confirmed serving. Its challenge — measurement needs no database and no wire change, so it should not wait behind this row — is recorded on TASK-71.
-
-Drift review checked at 2d50430. Settle failure policy first, then coordinate exclusive residency across engines on one host (TASK-110), close native-provider gaps (26), fence drain and admission (25/64), and bound waits and schedule by measured cost (51/71/72). Review reload (107) before the ownership split and fleet placement (77/78). Front-only proofs (85/89) can proceed after the strict-client keepalive fix (108). The local configuration (111) and an authorized pi-clm swap (112) gate lock cleanup (113).
-
-A bounded review of the three board commits ending at 60849d9 was submitted on 2026-11-18 for lifecycle permission, task dependencies and evidence retention.
-
-Failure-policy review at e0d3f02: fail A after the incumbent stops with B waiting. Verify B inference under a fresh ownership-checked transaction, one terminal per affected A ticket, and no unproven launch. Test wakeups and explicit reset against the selected retry limit. TASK-51 covers bounded waits; TASK-25/64 protect four lanes and drain; TASK-71/72 cover cost and age. Suggested timeouts await measurement. Ending a committed stream to enforce finite drain requires a separate wire decision.
-
-With eight B waiters, one A waiter and four lanes, test two B waves followed by the aged A turn (TASK-72). An unbounded stream invalidates a universal service-time guarantee; distinguish deadline/refusal from guaranteed service.
+[Accepted failure policy](https://github.com/ArborealML/Inference-Router/blob/main/backlog/decisions/decision-62%20-%20Quarantine-a-failed-switch-target-and-recover-other-models-under-fresh-proof.md) The reviewed design answers AC #5; TASK-26 and TASK-114 carry the implementation and negative controls. The review ruled out a cooled same-target retry. A committed stream uses its in-band error contract and an earlier ticket terminal stands. A deadline bounds the wait, while an unbounded stream prevents promising a fixed service time. TASK-112 gates the real pi-clm swap and TASK-113 follows it.
 <!-- SECTION:NOTES:END -->

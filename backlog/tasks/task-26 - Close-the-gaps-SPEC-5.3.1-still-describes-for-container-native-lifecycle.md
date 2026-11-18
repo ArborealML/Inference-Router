@@ -5,7 +5,7 @@ status: To Do
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T02:54:00Z'
-updated_date: '2026-11-18T18:16:00Z'
+updated_date: '2026-11-18T18:51:00Z'
 labels:
   - engine
   - lifecycle
@@ -31,6 +31,7 @@ TASK-1 put the seam and the first Docker provider into main; §5.3.1 describes m
 - [ ] #6 The Windows named-pipe transport is implemented or explicitly declined in SPEC with the reason
 - [ ] #7 A switch whose start call fails leaves no container behind: the provider reinspects the id it was given and removes what its own labels claim, instead of orphaning a dead container on the host
 - [ ] #8 A shipped native Docker example passes the config loader with every model selector removed from that engine. The shipped-sample load test passes and remaining delegated examples identify exec as legacy.
+- [ ] #9 After A fails, repeated scheduler wakeups and cooldown expiry produce zero attempts for its engine/model/profile/config generation. Resetting A permits a fresh attempt without resetting unrelated targets (decision-62).
 <!-- AC:END -->
 
 ## Implementation Notes
