@@ -3,11 +3,11 @@ id: TASK-67
 title: >-
   Settle the switch before its hint, make the claim decision atomic, and pin the
   claim's failure edges
-status: To Do
+status: In Progress
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-18T00:53:00Z'
-updated_date: '2026-11-18T00:53:00Z'
+updated_date: '2026-11-18T02:26:00Z'
 labels:
   - concurrency
   - scheduling
@@ -19,7 +19,7 @@ ordinal: 67000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-The plan review of the set-1 fix split the work: the resume-authorisation half waits on an owner decision, and this row carries the half that does not. Four defects in `Engines/EngineRuntime.cs`, all verified: `EndSwitch` runs the injected dispatch hint at :705 before settling the readiness task at :706, so a throwing callback escapes into the catch at :825-833 and rewrites a proven switch; `PublishSwitchStarted` (:245-253) re-reads the capability and discards the snapshot the readiness question was answered on, so a poll that proves the model between the check and the marker buys a second launch; `DisposeAsync` disposes the switch lock at :899, turning shutdown into `ObjectDisposedException` reported as `engine_unreachable`; and the claim hook at :591-593 runs inside the transition gate with nothing to undo a throw.
+Four defects in the switch-claim path in Engines/EngineRuntime.cs, all real, found in the set-1 plan review: the dispatch hint ran before the readiness task was settled, so a throwing callback rewrote a switch that had already succeeded and stranded its waiters; the switch marker was published from a different capability snapshot than the readiness answer, so a health poll that proved the model bought a second launch; shutdown disposed the switch lock, so a clean shutdown read as engine_unreachable; and a claim hook that threw had nothing to undo its claim. The fix is v0.12.31 at d31b35b and its shutdown pin does not pass — Notes.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -34,5 +34,13 @@ The plan review of the set-1 fix split the work: the resume-authorisation half w
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-(a) `EndSwitch`: commit in the gate → settle `state.Ready` → the hint in its own `try`, its throw swallowed with a comment. Every `Emit` already precedes `EndSwitch`, so decision-7's feed-before-wake rule still holds. (b) Atomic claim: make the marker come from the same snapshot the `IsReadyFor` decision used — an expected-version CAS that reports whether it claimed — and re-decide from the fresh snapshot when it did not; a re-check inside the gate only narrows the race, because the providers publish outside the gate. (c) Stop disposing `_switchLock` (:899, same reasoning as the deliberately undisposed `_switchCts` at :894-896); give the two waiter waits a linked token whose CTS *is* disposed, keep the token read at :582 for the engine-owned transaction, and move the shutdown expectation from `engine_unreachable` to `cancelled`. (d) On a throwing hook: leave the gate, then `EndSwitch(newState,false)`, then rethrow — `Monitor` is reentrant, so rolling back inside the lock would run the settle and the hint under the gate. Seams: keep `AfterClaimForTests` wrapped, add `AfterEndCommit` (past the gate, exceptions swallowed), a pre-wait hook between the fast-path miss and `_switchLock.WaitAsync`, and an injected launcher at the scheduling boundary. The forced-CAS-retry pin is dropped: publishing from the claim hook does not make `PublishProof`'s first exchange fail, and no seam is worth its production surface for it. This row claims no window or profile correctness — the gauge epochs stay open on their own row.
+(a) EndSwitch: commit in the gate, then settle state.Ready, then the hint in its own try with its throw swallowed and a comment. Every Emit already precedes EndSwitch, so decision-7's feed-before-wake rule still holds. (b) Atomic claim: the marker comes from the same snapshot the readiness answer was taken on — an expected-version CAS — and a lost exchange means re-deciding on the fresh snapshot, because the health loop and every switch exit publish outside the gate. (c) _switchLock is never disposed, as _switchCts is not; the two waiter waits carry a token linked to the engine's switch token, and that linked source is disposed with the call; shutdown answers cancelled, not engine_unreachable. (d) A throwing claim hook: leave the gate, then EndSwitch(claim,false), then rethrow — the gate is reentrant, so rolling back inside it runs the settle and the nudge while later claims queue behind it. The forced-CAS-retry pin is dropped: no seam is worth its production surface. Gauge epochs are TASK-68.
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+**Main is red and the failure is inside this row.** SwitchClaimTests.ShutdownDuringAClaimEndsCancelledNotEngineUnreachable fails deterministically: CI runs 44221179468 and 44221520169 each report Failed 1, Passed 186, Total 187, and a Release full-suite run at 6863b9a in this workspace reproduces it at SwitchClaimTests.cs:183. The waiter parked before the switch lock completes normally instead of throwing OperationCanceledException, so the shutdown release the commit describes does not happen on that path; SemaphoreSlim.WaitAsync does throw for an already-cancelled token, so that token is not reaching the wait.
+
+Order of work: reproduce, establish which path that waiter takes, fix so shutdown releases it as cancellation, show the pin fails before the fix and passes after, push, read the newest run on the branch. No criterion is checked until the suite is green at HEAD. The full-suite pass reported before the push did not reproduce at HEAD: measure at the commit that lands, in Release, the configuration CI tests. The red gate also holds TASK-28, TASK-42 and the dependent pin TASK-59.
+<!-- SECTION:NOTES:END -->
