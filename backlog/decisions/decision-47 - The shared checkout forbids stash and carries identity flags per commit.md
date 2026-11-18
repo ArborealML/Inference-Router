@@ -18,8 +18,8 @@ already pushed.
 
 ## Decision
 
-In the shared checkout: **no `git stash`** — park work in progress under the gitignored `.local/wip`
-and measure a clean tree in a separate worktree or by checking out the commit elsewhere. And **identity
+In the shared checkout: **no `git stash`** — park work in progress in the gitignored working-notes directory AGENTS.md names
+— the gitignored working-notes directory AGENTS.md already names — and measure a clean tree in a separate worktree or by checking out the commit elsewhere. And **identity
 flags go in the command**, `git -c user.name=… -c user.email=… commit …`, never in shared config
 (decision-29, decision-42): a seat that cannot show the flags in its command did not follow the rule.
 A commit that lands with the wrong identity is reported, tracked as its own row and answered by the
@@ -39,3 +39,7 @@ Clean-tree measurements cost a worktree instead of a stash, which is slower and 
 identity in pushed history is a permanent artifact that has to be accepted or rewritten by the owner,
 and the durable fix is a CI check on commit authorship, which the board opens as its own row once the
 owner's answer lands.
+
+One more consequence came from the same turn: a board commit carried a checker defect into pushed history because the seat
+piped the checker into `tail`, so the pipeline reported `tail`'s success rather than the checker's failure. The
+seat now runs the checker with no pipe and will not commit on a non-zero exit.
