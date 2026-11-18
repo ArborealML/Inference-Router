@@ -7,7 +7,7 @@ status: Waiting
 assignee:
   - '@qwen3.8-flash-next-board'
 created_date: '2026-11-18T01:22:00Z'
-updated_date: '2026-11-18T18:18:00Z'
+updated_date: '2026-11-18T18:21:00Z'
 labels: []
 dependencies: []
 priority: high
@@ -41,4 +41,6 @@ Define failure outcomes for admitted and waiting requests, wire errors and feed 
 An external evaluation of an open-source AI gateway (2026-11-18) found nothing that makes this design redundant: no durable request claims, no residence placement or fencing across hosts, a switch-cost gate priced in prompt-cache dollars rather than stop and load time, and nothing that waits for confirmed serving. Its challenge — measurement needs no database and no wire change, so it should not wait behind this row — is recorded on TASK-71.
 
 Drift review checked at 2d50430. Settle failure policy first, then coordinate exclusive residency across engines on one host (TASK-110), close native-provider gaps (26), fence drain and admission (25/64), and bound waits and schedule by measured cost (51/71/72). Review reload (107) before the ownership split and fleet placement (77/78). Front-only proofs (85/89) can proceed after the strict-client keepalive fix (108). The local configuration (111) and an authorized pi-clm swap (112) gate lock cleanup (113).
+
+A bounded review of the three board commits ending at 60849d9 was submitted on 2026-11-18 for lifecycle permission, task dependencies and evidence retention.
 <!-- SECTION:NOTES:END -->

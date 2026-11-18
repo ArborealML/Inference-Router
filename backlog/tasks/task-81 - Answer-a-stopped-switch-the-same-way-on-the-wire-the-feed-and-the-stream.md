@@ -5,7 +5,7 @@ status: To Do
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-18T04:09:00Z'
-updated_date: '2026-11-18T10:14:00Z'
+updated_date: '2026-11-18T18:26:00Z'
 labels:
   - lifecycle
   - shutdown
@@ -41,7 +41,5 @@ One frozen stop result, read by `EndSwitch` instead of re-derived from the token
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-One change with [TASK-87](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-87%20-%20Make-the-stopped-router-shutdown-pin-fail-on-purpose-then-stop-it-failing-by-chance.md): this row removes the race from production, that row proves the pin stopped betting on it. Anchored on decision-30: one monotonic stop decision, every surface the same cause. The review ran nothing.
-
-**From the stop-cause plan review (REVISE), the stream half.** `TicketState.Cancelled` does not own stream termination: provider completion can race cancellation into two terminal frames, a `finally` can write `[DONE]` with no terminal body, and cancellation can follow non-empty deltas. Require one atomic per-stream terminal owner and byte-level pins over: zero or more deltas, exactly one terminal representation, no delta after it, `[DONE]` only per contract. `finish_reason: "cancelled"` may break strict clients; an error envelope plus a normal finish gives one stream two meanings — settle against #3.
+Decision-30 requires one monotonic cause across surfaces. TASK-98 owns publication order and TASK-87 measures the shutdown fixture. The plan review identified competing stream terminal writers: cancellation after zero or more deltas, provider completion during cancellation, and cleanup appending a sentinel without a terminal body. The TASK-108 review adds an upstream sentinel followed by a transport fault. Assert byte-for-byte that each path has one terminal owner, no later delta, and the contracted sentinel count across arbitrary chunk boundaries. Settle the error representation under AC #3 with a strict client; emitting both an error and a normal finish gives conflicting outcomes.
 <!-- SECTION:NOTES:END -->
