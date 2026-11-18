@@ -111,6 +111,7 @@ public sealed class CapabilityPublicationTests
         {
             LaunchCount++;
             Launches.Add(target.Model);
+            if (ThrowOnLaunch is { } boom) throw new InvalidOperationException(boom);
             if (GateLaunches)
             {
                 TaskCompletionSource gate;
@@ -133,6 +134,11 @@ public sealed class CapabilityPublicationTests
 
         public ReadinessPolicy Readiness(LifecycleTarget target) =>
             new(ProveHealth, TimeSpan.FromMilliseconds(ReadinessMs));
+
+        /// <summary>When set, <see cref="LaunchAsync"/> throws this text instead of answering. The switch's
+        /// catch-all exit needs a throw to pin, and the text is deliberately machine-flavoured: it is the kind
+        /// of sentence a provider writes (a socket path) that must reach the feed and never the caller.</summary>
+        public string? ThrowOnLaunch { get; set; }
     }
 
     /// <summary>Records what the capability snapshot said at the instant the router nudged dispatch, so an
@@ -511,7 +517,8 @@ public sealed class CapabilityPublicationTests
         handler.ModelsStatus = 503;
         var second = await engine.WaitForModelAsync("second", TimeSpan.FromSeconds(30), CancellationToken.None);
         Assert.False(second.IsReady);
-        Assert.Contains("refresh_unanswered_second", second.Detail);   // the caller gets the reason category
+        Assert.Contains("refresh_unanswered", second.Detail);      // the caller gets the category
+        Assert.DoesNotContain("refresh_unanswered_second", second.Detail);   // the parameterised reason stays on the feed
         Assert.False(engine.Healthy);
         Assert.Null(engine.SwitchingToward);
         Assert.False(engine.IsReadyFor("second", null));
@@ -780,5 +787,196 @@ public sealed class CapabilityPublicationTests
         Assert.True(secondResult.IsReady);
         Assert.Null(engine.SwitchingToward);
         Assert.Equal(["m", "m"], provider.Launches);
+    }
+
+    /// <summary>The caller-facing half of a refusal is one token from a named, closed set, at every exit. Each block
+    /// reaches a different exit and reads back both halves: what the caller sees (<see cref="SwitchResult.Detail"/>)
+    /// and what the operator sees (the <c>engine.switch_failed</c> reason). The split is the point — a provider's
+    /// socket path, a readiness window, the names an engine actually reported, a window comparison — those are what
+    /// an operator acts on, and none of them belongs in the message of whoever asked for the model (§5.5).</summary>
+    [Fact(Timeout = 120_000)]
+    public async Task ACallerIsToldACategoryNotAParameterAtEveryRefusalExit()
+    {
+        var categories = new List<string>();
+
+        // 1. No select command for that model: the catalog was consulted and nothing was attempted.
+        {
+            using var handler = new ProbeHandler("m");
+            var engine = NewEngine(Def(), new ScriptedProvider { ProveHealth = false }, handler);
+            await using var _ = engine;
+            var ghost = await engine.WaitForModelAsync("ghost", TimeSpan.FromSeconds(10), CancellationToken.None);
+            Assert.False(ghost.IsReady);
+            categories.Add(CategoryOf(ghost));
+            Assert.Equal(SwitchReason.NoSelectCommand, CategoryOf(ghost));
+        }
+
+        // 2. The provider refused the launch. Its own sentence names a socket path: that is the operator's half.
+        {
+            using var handler = new ProbeHandler("m");
+            var provider = new ScriptedProvider
+            {
+                LaunchOutcome = LifecycleResult.Fail("selector exited 1", "connect refused: /run/arboreal/sockets/engine.sock"),
+            };
+            var feed = new EventRing();
+            var engine = NewEngine(Def(), provider, handler, feed: feed);
+            await using var _ = engine;
+            var failed = await engine.WaitForModelAsync("extra", TimeSpan.FromSeconds(10), CancellationToken.None);
+            Assert.False(failed.IsReady);
+            categories.Add(CategoryOf(failed));
+            Assert.Equal(SwitchReason.LaunchFailed, CategoryOf(failed));
+            Assert.DoesNotContain("engine.sock", failed.Detail);
+            Assert.DoesNotContain("selector exited 1", failed.Detail);
+            var shown = feed.Replay(0).Last(e => e.Kind == "engine.switch_failed");
+            Assert.Contains("engine.sock", shown.Reason);           // greppable where the operator reads it
+            Assert.Contains("selector exited 1", shown.Reason);
+        }
+
+        // 3. Readiness never arrived. The length of the wait is configuration, and the caller was never told it.
+        {
+            using var handler = new ProbeHandler("m");                // never names "extra"
+            var provider = new ScriptedProvider { ReadinessMs = 300 };
+            var feed = new EventRing();
+            var def = Def(new HealthProbeDefinition { Path = "/props", IntervalMs = 3_600_000 });
+            var engine = NewEngine(def, provider, handler, feed: feed);
+            await using var _ = engine;
+            var timedOut = await engine.WaitForModelAsync("extra", TimeSpan.FromSeconds(10), CancellationToken.None);
+            Assert.False(timedOut.IsReady);
+            categories.Add(CategoryOf(timedOut));
+            Assert.Equal(SwitchReason.HealthTimeout, CategoryOf(timedOut));
+            Assert.DoesNotContain("300", timedOut.Detail);
+            var shown = feed.Replay(0).Last(e => e.Kind == "engine.switch_failed");
+            Assert.Contains("health_timeout after 300ms", shown.Reason);   // parameters stay here
+        }
+
+        // 4. The engine answered and named something else. Its words are the fix, and they are config-side.
+        {
+            using var handler = new ProbeHandler("m", "stranger");
+            var provider = new ScriptedProvider { ProveHealth = false };
+            var feed = new EventRing();
+            var engine = NewEngine(Def(), provider, handler, feed: feed);
+            await using var _ = engine;
+            var failed = await engine.WaitForModelAsync("second", TimeSpan.FromSeconds(10), CancellationToken.None);
+            Assert.False(failed.IsReady);
+            categories.Add(CategoryOf(failed));
+            Assert.Equal(SwitchReason.RefreshOmits, CategoryOf(failed));
+            Assert.DoesNotContain("stranger", failed.Detail);
+            var shown = feed.Replay(0).Last(e => e.Kind == "engine.switch_failed");
+            Assert.Contains("refresh_omits_second", shown.Reason);
+            Assert.Contains("stranger", shown.Reason);
+        }
+
+        // 5. The engine did not answer at all after the launch.
+        {
+            using var handler = new ProbeHandler("m") { ModelsStatus = 503 };
+            var provider = new ScriptedProvider { ProveHealth = false };
+            var engine = NewEngine(Def(), provider, handler);
+            await using var _ = engine;
+            var failed = await engine.WaitForModelAsync("second", TimeSpan.FromSeconds(10), CancellationToken.None);
+            Assert.False(failed.IsReady);
+            categories.Add(CategoryOf(failed));
+            Assert.Equal(SwitchReason.RefreshUnanswered, CategoryOf(failed));
+        }
+
+        // 6. The window the engine reports is smaller than the profile asked for. Both numbers are config-side.
+        {
+            using var handler = new ProbeHandler("m");                // answers, and names the target
+            var provider = new ScriptedProvider { ProveHealth = false };
+            var feed = new EventRing();
+            var def = Def(new HealthProbeDefinition { Path = "/props", IntervalMs = 50, TimeoutMs = 5_000 });
+            var engine = NewEngine(def, provider, handler, feed: feed);
+            await using var _ = engine;
+            using var loopCts = new CancellationTokenSource();
+            engine.StartHealthLoop(loopCts.Token);
+            await WaitUntil(() => engine.ActiveContextWindow == 8_192);   // the gauge is the router's evidence
+            var failed = await engine.WaitForProfileAsync(
+                "m", Profile("huge", 16_384), TimeSpan.FromSeconds(10), CancellationToken.None);
+            Assert.False(failed.IsReady);
+            categories.Add(CategoryOf(failed));
+            Assert.Equal(SwitchReason.WindowTooSmall, CategoryOf(failed));
+            Assert.DoesNotContain("16384", failed.Detail);
+            Assert.DoesNotContain("8192", failed.Detail);
+            var shown = feed.Replay(0).Last(e => e.Kind == "engine.switch_failed");
+            Assert.Contains("16384", shown.Reason);
+            Assert.Contains("window_too_small", shown.Reason);        // the feed names the category as well
+        }
+
+        // 7. The attempt threw. Exception text is provider-visible and never travels to the caller.
+        {
+            using var handler = new ProbeHandler("m");
+            var provider = new ScriptedProvider
+            {
+                ProveHealth = false,
+                ThrowOnLaunch = "connect refused: /run/arboreal/sockets/engine.sock",
+            };
+            var feed = new EventRing();
+            var engine = NewEngine(Def(), provider, handler, feed: feed);
+            await using var _ = engine;
+            var failed = await engine.WaitForModelAsync("extra", TimeSpan.FromSeconds(10), CancellationToken.None);
+            Assert.False(failed.IsReady);
+            categories.Add(CategoryOf(failed));
+            Assert.Equal(SwitchReason.SwitchError, CategoryOf(failed));
+            Assert.DoesNotContain("engine.sock", failed.Detail);
+            Assert.Contains("engine.sock", feed.Replay(0).Last(e => e.Kind == "engine.switch_failed").Reason);
+        }
+
+        // Seven exits, seven distinct tokens, and every one of them a member of the set named in the source.
+        Assert.Equal(7, categories.Distinct(StringComparer.Ordinal).Count());
+        string[] named =
+        [
+            SwitchReason.NoSelectCommand, SwitchReason.LaunchFailed, SwitchReason.HealthTimeout,
+            SwitchReason.RefreshOmits, SwitchReason.RefreshUnanswered, SwitchReason.WindowTooSmall,
+            SwitchReason.SwitchError,
+        ];
+        Assert.All(categories, category => Assert.Contains(category, named));
+    }
+
+    /// <summary>The token is the tail of the caller's sentence: <c>switch to &lt;their target&gt; failed:
+    /// &lt;category&gt;</c>. Reading it back rather than matching a substring is what lets the pin above say the
+    /// caller's message carries *only* the caller's own identifiers plus this.</summary>
+    private static string CategoryOf(EngineRuntime.SwitchResult result)
+    {
+        Assert.NotNull(result.Detail);
+        var cut = result.Detail!.LastIndexOf(": ", StringComparison.Ordinal);
+        return cut < 0 ? result.Detail! : result.Detail![(cut + 2)..];
+    }
+
+    /// <summary>A caller-supplied model id is the caller's text, and nothing in the request path caps it. It reaches
+    /// the feed twice — inside a reason sentence, and as the event's own <c>Model</c> field — so both are cut to the
+    /// documented identifier length, with the marker that shows how much was cut. The id is still matched whole:
+    /// the cap is on reporting, never on lookup (§5.5, §6.1).</summary>
+    [Fact(Timeout = 60_000)]
+    public async Task ACallerSuppliedModelIdIsCappedBeforeItReachesTheFeed()
+    {
+        var longId = "qwen/" + new string('x', 400);
+        var def = new EngineDefinition
+        {
+            Name = "fake",
+            Kind = EngineKind.OpenAiCompatible,
+            Endpoint = new Uri("http://127.0.0.1:9/v1"),
+            Catalog = new Dictionary<string, EngineModelDefinition> { [longId] = new() { Name = longId } },
+        };
+        using var handler = new ProbeHandler("m");            // answers, and never names the long id
+        var provider = new ScriptedProvider { ProveHealth = false };
+        var feed = new EventRing();
+        var config = new RouterConfig { Engines = new Dictionary<string, EngineDefinition> { ["fake"] = def } };
+        var engine = new EngineRuntime(def, config, feed, handler, lifecycle: provider);
+        await using var _ = engine;
+
+        var failed = await engine.WaitForModelAsync(longId, TimeSpan.FromSeconds(10), CancellationToken.None);
+        Assert.False(failed.IsReady);
+
+        var refusal = feed.Replay(0).Last(e => e.Kind == "engine.switch_failed");
+        Assert.NotNull(refusal.Reason);
+        Assert.Contains(longId[..100], refusal.Reason);       // the head is quoted…
+        Assert.DoesNotContain(longId, refusal.Reason);        // …never whole…
+        Assert.Contains("ch)", refusal.Reason);               // …and the reader sees that it was cut
+        Assert.True(refusal.Reason!.Length <= WireText.ReasonChars,
+            $"a feed reason of {refusal.Reason!.Length} characters exceeds the documented {WireText.ReasonChars}");
+
+        Assert.NotNull(refusal.Model);
+        Assert.DoesNotContain(longId, refusal.Model!);
+        Assert.Contains(longId[..50], refusal.Model!);
+        Assert.True(refusal.Model!.Length <= WireText.IdentifierChars + 24,
+            $"the event payload carries {refusal.Model!.Length} characters of model id");
     }
 }

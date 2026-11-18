@@ -656,7 +656,8 @@ public class EndToEndTests
         // The caller-facing half: the canonical target, and the reason category — not the operator's sentence.
         Assert.Equal("switch_failed", failure.Code);
         Assert.Contains("could not serve aliasy", failure.Message);
-        Assert.Contains("refresh_omits_aliasy", failure.Message);
+        Assert.Contains("refresh_omits", failure.Message);              // the category…
+        Assert.DoesNotContain("refresh_omits_aliasy", failure.Message);  // …not the feed's parameterised reason
         Assert.DoesNotContain("aliasy-short", failure.Message);   // the alias is the caller's spelling, not a name
         Assert.Equal(TicketState.Failed, ticket.State);
 

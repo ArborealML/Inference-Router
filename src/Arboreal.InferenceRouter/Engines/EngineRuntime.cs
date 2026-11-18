@@ -387,7 +387,7 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
                 // answered and a later line in the try threw, this tick's own publication has moved the
                 // version, and the fence drops the negative.
                 PublishProbeFailure(capBefore);
-                Emit("engine.health", reason: ex.Message, value: 0);
+                Emit("engine.health", reason: WireText.Bound(ex.Message, ProviderReasonChars), value: 0);
             }
             try
             {
@@ -496,7 +496,7 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
         var name = InferProfileName(window);
         Volatile.Write(ref _activeProfileName, name);
         if (window > 0 && window != previousWindow)
-            Emit("engine.profile", reason: name ?? "unrecognized_window", value: window);
+            Emit("engine.profile", reason: name is null ? "unrecognized_window" : WireText.Ident(name), value: window);
     }
 
     private static bool TryReadGauge(JsonElement root, string dottedPath, out long value)
@@ -763,7 +763,7 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
                 return IsReadyFor(canonical, profileOverride)
                     ? new SwitchResult(SwitchOutcome.Ready, null)
                     : new SwitchResult(SwitchOutcome.TimedOut,
-                        $"still switching after {FormatWait(timeout)}; a switch to {DescribeTarget(state.Model, state.Profile)} is in flight");
+                        $"still switching after {FormatWait(timeout)}; a switch for another request is in flight");
             }
             catch (OperationCanceledException) when (!ct.IsCancellationRequested)
             {
@@ -784,8 +784,10 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
             // the readiness task settles, and a token-cancelled wake-up is folded into the same branch above.
             if (!ready && (wokeByCancellation || state.CancelledByShutdown))
             {
-                throw new OperationCanceledException(
-                    $"the router stopped while {DescribeTarget(state.Model, state.Profile)} was being loaded");
+                // No target is named. This is the switch this caller was waiting behind, which is not
+                // necessarily the switch this caller asked for, and the message reaches that caller's error
+                // body — another request's model id must not travel in it (§5.5).
+                throw new OperationCanceledException("the router stopped while the model was being loaded");
             }
 
             if (IsReadyFor(canonical, profileOverride)) return new SwitchResult(SwitchOutcome.Ready, null);
@@ -816,13 +818,14 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
                         : $"switch to {DescribeTarget(canonical, profileOverride?.Name)} failed");
             }
             last = new SwitchResult(SwitchOutcome.Failed,
-                $"a switch to {DescribeTarget(state.Model, state.Profile)} ended; waiting for this request's own turn");
+                "a switch for another request ended; waiting for this request's own turn");
         }
     }
 
-    // Bound for what a refusal puts in front of anyone: the feed record and the caller-facing half are both
-    // built from values the engine or a provider chose, and the event ring caps entries rather than characters.
-    private const int CallerReasonChars = 200;
+    // Bounds for what a refusal puts in front of an operator: the feed record is built from values the engine or
+    // a provider chose, and the event ring caps entries rather than characters. Identifier caps and the ceiling
+    // for one whole reason live in WireText; these are the provider-side caps the feed sentences use. The
+    // caller-facing half carries no value from here at all — it carries a SwitchReason token (§5.5).
     private const int ReportedNameCount = 8;
     private const int ReportedNameChars = 48;
     private const int ReportedNamesChars = 420;
@@ -840,29 +843,22 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
         for (var i = 0; i < shown; i++)
         {
             if (i > 0) sb.Append(", ");
-            sb.Append(Bound(reported[i], ReportedNameChars));
+            sb.Append(WireText.Bound(reported[i], ReportedNameChars));
         }
         if (reported.Count > shown)
             sb.Append(CultureInfo.InvariantCulture, $" … (+{reported.Count - shown} more)");
-        return Bound(sb.ToString(), ReportedNamesChars);
+        return WireText.Bound(sb.ToString(), ReportedNamesChars);
     }
 
-    /// <summary>Cuts a string to a fixed character budget and says how much was cut. Head-only: the half of a
-    /// model id or a provider reason that distinguishes it is the front, and the marker keeps the true length
-    /// visible so a reader knows the value was clipped rather than complete. Every budget here is above the
-    /// 24 characters the marker needs at its longest, so the result always fits.</summary>
-    private static string Bound(string value, int maxChars)
-    {
-        if (value.Length <= maxChars) return value;
-        var head = Math.Max(0, maxChars - 24);
-        return value[..head] + "… (+" + (value.Length - head).ToString(CultureInfo.InvariantCulture) + "ch)";
-    }
-
+    /// <summary>The target as a caller may spell it, at reporting length. Only ever the *asking* caller's own
+    /// model and profile: another request's target never appears in this sentence (§5.5).</summary>
     private static string DescribeTarget(string? model, string? profile) =>
-        profile is { Length: > 0 } p ? $"{model} @ {p}" : model ?? "(none)";
+        profile is { Length: > 0 } p
+            ? $"{WireText.Ident(model ?? "(none)")} @ {WireText.Ident(p)}"
+            : model is null ? "(none)" : WireText.Ident(model);
 
     private static string DescribeTarget(string model, ServingProfile? profile) =>
-        profile is null ? model : $"{model} @ {profile.Name}";
+        profile is null ? WireText.Ident(model) : $"{WireText.Ident(model)} @ {WireText.Ident(profile.Name)}";
 
     private static string FormatWait(TimeSpan wait) =>
         wait == Timeout.InfiniteTimeSpan ? "the whole wait" : $"{wait.TotalMilliseconds.ToString(CultureInfo.InvariantCulture)} ms";
@@ -921,8 +917,8 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
             var def = _config.Engines[_def.Name];
             if (!def.Catalog.TryGetValue(model, out var md))
             {
-                state.FailureReason = "no_select_command";
-                Emit("engine.switch_failed", model: model, reason: "no_select_command");
+                state.FailureReason = SwitchReason.NoSelectCommand;
+                Emit("engine.switch_failed", model: model, reason: SwitchReason.NoSelectCommand);
                 // Nothing was mutated on this path — the catalog was consulted and the switch refused — so
                 // the last probe is still a true account of the engine and health is left alone (§5.5).
                 EndSwitch(state, false);
@@ -932,7 +928,8 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
                 return;
             }
             var profileName = profileOverride?.Name ?? md.Profile;
-            Emit("engine.switch_started", model: model, reason: profileName is null ? null : $"profile={profileName}");
+            Emit("engine.switch_started", model: model,
+                reason: profileName is null ? null : $"profile={WireText.Ident(profileName)}");
 
             // One transaction through the provider seam: prove ownership, validate, stop what is ours,
             // launch the exact target. What "launch" means is the provider's business; the ordering is
@@ -945,13 +942,13 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
                 // rides along so the operator reading /admin/events does not have to go find a log.
                 // Both halves are bounded before they reach the feed: the ring caps entries, not characters,
                 // and a provider is free to answer with a sentence of any length.
-                var why = Bound(launched.Reason ?? "lifecycle_failed", ProviderReasonChars);
+                var why = WireText.Bound(launched.Reason ?? "lifecycle_failed", ProviderReasonChars);
                 var detail = launched.Action is { Length: > 0 } action
-                    ? $"{why} — {Bound(action, ProviderActionChars)}"
+                    ? $"{why} — {WireText.Bound(action, ProviderActionChars)}"
                     : why;
                 Emit("engine.switch_failed", model: model, reason: detail);
-                // The provider's own words stay on the feed; the caller is told only that the launch failed.
-                state.FailureReason = "launch_failed";
+                // The provider's own words stay on the feed; the caller is told only the category.
+                state.FailureReason = SwitchReason.LaunchFailed;
                 // A failed launch means the engine was stopped first: its previous answer described a
                 // process that is gone, so the capability becomes unknown before the marker comes down.
                 PublishUnknown();
@@ -976,7 +973,7 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
                         // poll happens to answer (§5.5).
                         PublishProof(modelsNow);
                         Emit("engine.switch_completed", model: model,
-                            reason: state.Profile is null ? null : $"profile={state.Profile}",
+                            reason: state.Profile is null ? null : $"profile={WireText.Ident(state.Profile)}",
                             value: (DateTimeOffset.UtcNow - state.StartedAt).TotalMilliseconds);
                         EndSwitch(state, true);
                         return;
@@ -986,10 +983,10 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
                 // A readiness timeout is the one failure that has no exit code and no stderr, so the
                 // message has to carry the actionable part itself: what to look at, and the fact that
                 // the router will not quietly retry or route elsewhere.
-                state.FailureReason = $"health_timeout after {readiness.Timeout.TotalMilliseconds:F0}ms";
+                state.FailureReason = SwitchReason.HealthTimeout;
                 Emit("engine.switch_failed", model: model, reason:
-                    $"health_timeout after {readiness.Timeout.TotalMilliseconds:F0}ms — engine {_def.Name} " +
-                    $"never reported {model} serving: inspect what the {_lifecycle.Kind} provider started " +
+                    $"health_timeout after {readiness.Timeout.TotalMilliseconds:F0}ms — engine {WireText.Ident(_def.Name)} " +
+                    $"never reported {WireText.Ident(model)} serving: inspect what the {_lifecycle.Kind} provider started " +
                     "(for docker: containers labelled arboreal.engine=<name>) or raise the wait timeout; " +
                     "the router does not retry or fall back to another engine");
                 PublishUnknown();
@@ -1018,10 +1015,11 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
                     // Names the rule and shows what the engine actually said, because the fix is in config:
                     // the catalog key has to match what `/models` reports. Aliases are the router's own
                     // request-side spelling and are never what an engine reports.
-                    state.FailureReason = Bound($"refresh_omits_{model}", CallerReasonChars);
+                    state.FailureReason = SwitchReason.RefreshOmits;
+                    var askedFor = WireText.Ident(model);
                     Emit("engine.switch_failed", model: model, reason:
-                        $"refresh_omits_{model}: engine {_def.Name} answered /models after the launch with " +
-                        $"[{DescribeReportedNames(freshModels)}] and none of those names is {model}: the catalog name has to match what " +
+                        $"refresh_omits_{askedFor}: engine {WireText.Ident(_def.Name)} answered /models after the launch with " +
+                        $"[{DescribeReportedNames(freshModels)}] and none of those names is {askedFor}: the catalog name has to match what " +
                         "the engine reports (an alias is the router's spelling, not the engine's); the router " +
                         "does not retry or fall back to another engine");
                     // The engine was relaunched, whatever it turned out to be serving: the list from before
@@ -1040,10 +1038,10 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
                 // a promise made in configuration rather than an observation the router had made; the owner's
                 // answer is refuse (decision-27). The reason names what could not be confirmed, because the
                 // fix is the select command or the engine, not a retry.
-                state.FailureReason = Bound($"refresh_unanswered_{model}", CallerReasonChars);
+                state.FailureReason = SwitchReason.RefreshUnanswered;
                 Emit("engine.switch_failed", model: model, reason:
-                    $"refresh_unanswered_{model}: engine {_def.Name} did not answer /models after the launch, " +
-                    $"so nothing confirms it serves {model}: with wait_health = false the exec's exit status is " +
+                    $"refresh_unanswered_{WireText.Ident(model)}: engine {WireText.Ident(_def.Name)} did not answer /models after the launch, " +
+                    $"so nothing confirms it serves {WireText.Ident(model)}: with wait_health = false the exec's exit status is " +
                     "all the router is given, and an exit code is not a loaded model — check that the select " +
                     "command leaves the engine answering /models; the router does not retry or fall back to " +
                     "another engine");
@@ -1057,16 +1055,16 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
             // (the gauge may already reflect the new window, e.g. an engine that reloads in place).
             if (!WindowFits(profileOverride))
             {
-                state.FailureReason = $"window_{ActiveContextWindow}_lt_{profileOverride!.MaxContext}";
+                state.FailureReason = SwitchReason.WindowTooSmall;
                 Emit("engine.switch_failed", model: model,
-                    reason: $"window_{ActiveContextWindow}_lt_{profileOverride!.MaxContext}");
+                    reason: $"window_{ActiveContextWindow}_lt_{profileOverride!.MaxContext} (the caller is told window_too_small)");
                 // The engine has been relaunched by now, whatever the window says about it.
                 PublishUnknown();
                 EndSwitch(state, false);
                 return;
             }
             Emit("engine.switch_completed", model: model,
-                reason: state.Profile is null ? null : $"profile={state.Profile}",
+                reason: state.Profile is null ? null : $"profile={WireText.Ident(state.Profile)}",
                 value: (DateTimeOffset.UtcNow - state.StartedAt).TotalMilliseconds);
             EndSwitch(state, true);
         }
@@ -1074,8 +1072,8 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
         {
             // Provider and IO text reaches the feed here, bounded; the caller is told only the category, so a
             // message that names a socket path or an address never travels to whoever made the request.
-            state.FailureReason = "switch_error";
-            Emit("engine.switch_failed", model: model, reason: Bound(ex.Message, ProviderReasonChars));
+            state.FailureReason = SwitchReason.SwitchError;
+            Emit("engine.switch_failed", model: model, reason: WireText.Bound(ex.Message, ProviderReasonChars));
             // An exception can escape after the engine was stopped and before anything was relaunched, and
             // the router cannot tell from here which half happened. Unknown is the honest answer (§5.5).
             PublishUnknown();
@@ -1148,7 +1146,16 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
     public string? ApiKey => _apiKey;
 
     internal void Emit(string kind, string? model = null, string? reason = null, double? value = null)
-        => _events.Append(new RouterEvent { Kind = kind, Engine = Name, Model = model, Reason = reason, Value = value });
+        // The reason is capped here as well as piece by piece at the sentence sites, so the ceiling SPEC names
+        // for one feed reason stays true if a sentence grows. Identifiers are capped where the ring stores them.
+        => _events.Append(new RouterEvent
+        {
+            Kind = kind,
+            Engine = Name,
+            Model = model,
+            Reason = reason is null ? null : WireText.Bound(reason, WireText.ReasonChars),
+            Value = value,
+        });
 
     public async ValueTask DisposeAsync()
     {

@@ -1,6 +1,6 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.36)
+Status: draft, continuously revised (v0.12.37)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
@@ -352,6 +352,30 @@ daemon transaction per engine. 137 tests green.
   that answers no `upload_url`, an upload that dies or answers no asset id, an asset name listed twice on
   the release, and a tag that moves after the first resolve. No tag has run the gate: still configured,
   not proven.
+- v0.12.37 — a refusal answers its caller with a **category**, and the feed keeps the measurements (§5.5, §10).
+  Every switch exit records one token from a closed set named in the source — `no_select_command`, `launch_failed`,
+  `health_timeout`, `refresh_omits`, `refresh_unanswered`, `window_too_small`, `switch_error` — and the caller's
+  failure sentence carries that token, while the readiness window in milliseconds, both sides of a window
+  comparison, the names an engine actually reported and a provider's exit status and action line stay on the feed,
+  pinned there to exact strings. Caller-facing text keeps only what the reader already holds: the model they asked
+  for, the profile they named, the engine's configured name, their own ceiling. Two sentences stopped naming
+  somebody else's request — the ceiling sentence and the shutdown sentence both interpolated the target of the switch
+  in flight, and the shutdown sentence reaches a caller's error body through the request path's outer catch, so one
+  caller's model id was travelling inside another caller's response. `WireText` now owns the character budgets:
+  identifiers at 128 characters with the cut marker and one feed reason at 1600, alongside the existing provider
+  reason 160, action line 200 and reported-name summary 420. Identifiers are cut **before** the reason sentence is
+  built, not after; the health probe's own exception text on `engine.health` is bounded where it is written; and the
+  event's `Model` field is stored at reporting length at the ring's single append funnel, because a model id is
+  request-side text and nothing in the request path checks its length. The id is still matched whole — the cap is on
+  reporting, never on lookup. Only wording moved: no status code, error shape or casing rule changed. Tests:
+  `ACallerIsToldACategoryNotAParameterAtEveryRefusalExit` walks all seven exits and reads back both halves, with the
+  observed set closed at seven members of the named set; `AWaitersRefusalNeverNamesAnotherCallsTarget` parks one
+  caller behind another's switch and asserts the refusal names its own ceiling and no target;
+  `ACallerSuppliedModelIdIsCappedBeforeItReachesTheFeed` posts a 405-character id and checks the reason and the
+  payload field. Mutation evidence, one pin per mutation: restoring the parameterised `health_timeout after 300ms`
+  fails with `Expected: "health_timeout"` / `Actual: "health_timeout after 300ms"`; restoring the target in the
+  ceiling sentence fails its `Assert.Contains`; uncapping the id fails its `Assert.DoesNotContain`. Release suite
+  197/197; AOT publish with `TrimmerSingleWarn=false` produced native code at 0 warnings.
 - v0.12.36 — the switch-claim tests stop betting on the scheduler, and TASK-61 AC #6 is pinned as a launch sequence
   (§5.5). `SwitchClaimTests.TwoCallersWantingDifferentModelsTakeOneSwitchEach` is the case the withdrawn rule produced
   in CI: two callers wanting different models on a one-model engine. The ordering is made rather than hoped for — the
@@ -1376,6 +1400,18 @@ engine forks land; the scheduler interface will not change shape.
   **quotes is bounded in length as well as in name count** — at most eight reported names, each itself cut with its true
   length marked, and always the count of what was left out — because the event ring caps entries rather than characters
   and the names are chosen by the engine, not by the router.
+  **What the caller is told is a category, not an account.** Every switch exit records its failure as one token from a
+  closed set named in the source — `no_select_command`, `launch_failed`, `health_timeout`, `refresh_omits`,
+  `refresh_unanswered`, `window_too_small`, `switch_error` — and that token, and nothing the attempt measured, is what
+  the caller's failure carries. The measurements stay on the feed because they are what an operator acts on: a
+  provider's exit status and action line, the readiness window in milliseconds, the names the engine reported, both
+  sides of a window comparison. A caller's **own** identifiers may come back to them — the model they asked for, the
+  profile they named, the engine that refused, their own ceiling in milliseconds — because those are already theirs.
+  Another request's identifiers never do: the ceiling sentence and the shutdown sentence used to name the model the
+  in-flight switch was loading, which put one caller's request into another caller's error body (the shutdown
+  sentence arrives there through the request path's outer catch, as `engine_unreachable`). Reporting a router that is
+  stopping as an unreachable engine is a separate wrong, recorded as one in §5.5 and not settled by closing the leak.
+  Exception text — a failed attempt's, and a health probe's own on `engine.health` — is bounded where it is written (§10).
   Every switch exit
   publishes **unfenced**, deliberately: the switch has just stopped or relaunched this engine, so its account cannot be
   stale against a poll that happened to start earlier, and fencing it would let a quiet poll drop the one publication
@@ -1851,6 +1887,16 @@ router's own internal subscription, so the key must be at least 2 to let one cli
 a feed that arrives when the ring is full is refused with `503 too_many_subscribers` **before** any SSE
 headers go out. A subscription ends when the router shuts down, and a caller that hangs up stops being
 delivered to. Field names on the wire are PascalCase (§6).
+
+The feed's text is a **bounded excerpt**, not a transcript. Identifiers — a model id, an engine name, a profile name —
+are carried at reporting length: 128 characters, cut head-only with a marker naming how much was dropped. A provider's
+reason is capped at 160 and its action line at 200, a quoted `/models` answer at eight names of 48 characters inside a
+420-character summary, and one reason sentence at 1600. The ring's cap on **entries** has never been a cap on size, and
+every one of these values is chosen upstream — by an engine, a provider, or the request body. Identifiers are cut
+before a reason sentence is built, so an over-long sentence never exists on its way to being stored, and the event's
+own `Model` field is stored at reporting length at the ring's single append funnel: a caller who posts a
+four-hundred-character model id cannot choose the size of a feed record. Lookup is unaffected — the id is matched
+whole, and only what is *reported* is cut.
 
 - `thread.registered`, `thread.priority_changed`
 - `request.enqueued {thread, ticket, model, priority, promptChars}`

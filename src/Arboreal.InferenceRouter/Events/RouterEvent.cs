@@ -59,7 +59,16 @@ public sealed class EventRing
     {
         lock (_lock)
         {
-            @event = @event with { Seq = _head + 1, Timestamp = DateTimeOffset.UtcNow };
+            // Identifiers are stored at reporting length. A model id arrives here from several producers and one
+            // of them is a request body, so the cap belongs at the single funnel rather than in each writer: an
+            // over-long id is cut with the same marker the reasons use, and the ring stops being a way for a
+            // caller to choose how much of their own text the feed carries (§6.1).
+            @event = @event with
+            {
+                Seq = _head + 1,
+                Timestamp = DateTimeOffset.UtcNow,
+                Model = @event.Model is { } m ? WireText.Ident(m) : null,
+            };
             _ring[(int)(_head % _ring.Length)] = @event;
             _head++;
             // drop stale subscribers silently; SSE layer reconnects by seq

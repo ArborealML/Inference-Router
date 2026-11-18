@@ -540,7 +540,9 @@ public sealed class RouterCore : IInferenceRouter
                     : await engine.WaitForProfileAsync(ticket.Model, targetProfile, switchWait, execCts.Token).ConfigureAwait(false);
                 if (!switchResult.IsReady)
                 {
-                    var what = targetProfile is null ? ticket.Model : $"{ticket.Model} @ {targetProfile.Name}";
+                    var what = targetProfile is null
+                        ? WireText.Ident(ticket.Model)
+                        : $"{WireText.Ident(ticket.Model)} @ {WireText.Ident(targetProfile.Name)}";
                     // Failed and TimedOut answer the only question the caller has — retry now and hit the
                     // same wall, or retry later and probably get through — so the message keeps them apart.
                     var detail = switchResult.Detail is { Length: > 0 } d ? $" ({d})" : "";

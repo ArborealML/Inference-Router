@@ -92,6 +92,9 @@ public sealed class SwitchClaimTests
             {
                 ["m"] = new() { Name = "m" },
                 ["extra"] = new() { Name = "extra" },
+                // A third selectable model, so a test can put one caller behind another's switch and still ask
+                // for a target of its own.
+                ["second"] = new() { Name = "second" },
             },
         };
         var config = new RouterConfig { Engines = new Dictionary<string, EngineDefinition> { ["fake"] = def } };
@@ -252,7 +255,9 @@ public sealed class SwitchClaimTests
         Assert.Equal("settled", wake);
         go.TrySetResult();
 
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => waiting);
+        var stopped = await Assert.ThrowsAnyAsync<OperationCanceledException>(() => waiting);
+        Assert.Contains("the router stopped", stopped.Message);
+        Assert.DoesNotContain("extra", stopped.Message);   // no target named: the message reaches a caller's body
         Assert.Contains("engine.switch_failed", await WaitUntilFeed(feed, "cancelled_during_launch"));
         await WaitUntil(() => engine.SwitchingToward is null);
         Assert.Null(engine.SwitchingToward);
@@ -494,5 +499,34 @@ public sealed class SwitchClaimTests
         Assert.Equal(["extra", "m"], provider.Launches);
         Assert.Equal(0, provider.GateCount);          // no third transaction for anybody to lose
         Assert.DoesNotContain("engine.switch_failed", feed.Replay(0).Select(e => e.Kind));
+    }
+
+    /// <summary>A refusal that is not this caller's must not read the other caller's request back to them. The
+    /// ceiling sentence used to name the target of the switch in flight, so caller B learned which model caller A
+    /// had asked for. A caller's own ceiling and their own target stay — they are the reader's own identifiers —
+    /// and another request's target never appears (§5.5).</summary>
+    [Fact(Timeout = 30_000)]
+    public async Task AWaitersRefusalNeverNamesAnotherCallsTarget()
+    {
+        var provider = new GatedProvider { GateLaunches = true };
+        var feed = new EventRing();
+        using var reported = Reports("m");            // "second" is selectable, and not loaded
+        var engine = Engine(provider, feed, models: reported);
+        await using var _ = engine;
+
+        var first = engine.WaitForModelAsync("extra", TimeSpan.FromSeconds(10), CancellationToken.None);
+        await WaitUntil(() => provider.GateCount == 1);   // the switch in front is claimed and held
+
+        var waiting = await engine.WaitForModelAsync("second", TimeSpan.FromMilliseconds(700), CancellationToken.None);
+        Assert.False(waiting.IsReady);
+        Assert.Equal(EngineRuntime.SwitchOutcome.TimedOut, waiting.Outcome);
+        Assert.Contains("700 ms", waiting.Detail);                    // their own ceiling, in their own message
+        Assert.Contains("another request", waiting.Detail);
+        Assert.DoesNotContain("a switch to", waiting.Detail);          // no target named at all…
+        Assert.DoesNotContain("extra", waiting.Detail);                // …and specifically not the other's
+
+        provider.ReleaseOne();
+        await first;
+        Assert.DoesNotContain("extra", waiting.Detail);                // still clean after the switch settles
     }
 }
