@@ -25,3 +25,9 @@ Re-measured at 610f0d8 after the commit review. Two refusal exits still hand the
 - [ ] #2 A permanent configuration mismatch and a transient timeout are not called by one category name, or SPEC states the phase-only reading in one sentence and the caller's retry decision follows from it.
 - [ ] #3 SPEC 5.5 says what each category means to the caller — retry, retry elsewhere, or fix the configuration.
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+The rule about new pins lives on TASK-87 and covers the switch-claim and capability-publication classes. It is not a checker rule, and this seat's earlier wording on another row named a checker rule that does not exist. The amendment in `SwitchClaimTests` replaces one assertion in an existing test — no new pin, wait, latch or method — so it is an amendment inside the rule and is allowed. Conditions: minimum edit, no new waits, and every red run names its failing test while TASK-87 is open.
+<!-- SECTION:NOTES:END -->

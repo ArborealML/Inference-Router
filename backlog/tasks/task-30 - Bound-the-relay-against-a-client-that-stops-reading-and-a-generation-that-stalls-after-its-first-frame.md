@@ -42,6 +42,7 @@ Precedent confirmed independently by the coding session after my check, so it is
 Superseded log entries for this task: [board trim, 2026-11-17](https://github.com/ArborealML/Inference-Router/blob/main/backlog/archive/board-trim-2026-11-17.md).
 
 Measured 08:05Z against a live router with a loopback upstream that holds its response nine seconds before its first byte: the client got two keepalive frames at the start and then silence until the stream completed. So silence BEFORE the first byte is bounded today only by the configured response timeout, while AC #3 speaks about silence after it. Whether a keepalive should cover upstream silence is a wire question for the row that adopts the bound, not a new criterion here.
+Re-measured at 58644bb: none of TASK-34's adopted values exists in `src/` or SPEC — no `stream_idle_timeout`, no 262,144-byte queue cap, no write watchdog, no `slow_consumer` — and the stream channel is `CreateUnbounded` (`RouterCore.cs:420`, `:566`). This row starts from nothing, not from a half-built bound.
 <!-- SECTION:NOTES:END -->
 
 ## Comments

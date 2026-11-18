@@ -33,8 +33,6 @@ place to mutate to prove the ceiling is live.
 ## Consequences
 
 A library-internal rename can now break the server build, which is intended: the caps move together
-or the break is loud. The AOT publish at that commit reported no trim warnings (the implementer
-seat's report), and the commit review was asked separately whether the visibility grant has any AOT,
-trimming or packaging consequence; its disposition belongs with this record. If the caps ever become
+or the break is loud. The commit review that followed answered the visibility question: `InternalsVisibleTo` grants compile-time visibility only — no reflection root, no public-surface change, no trimming or AOT consequence of its own (it read the project file; it ran nothing). The publish at that commit reported no trim warnings, on the coding seat's report. If the caps ever become
 a public, documented surface for integrators, that needs an explicit public API rather than a wider
 internals list.

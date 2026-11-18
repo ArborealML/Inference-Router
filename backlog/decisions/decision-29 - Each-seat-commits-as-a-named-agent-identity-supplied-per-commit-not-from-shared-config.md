@@ -41,3 +41,4 @@ inventing a fake one. Adding a seat is one entry in the sanctioned set. The cost
 author lines will not resolve to a GitHub profile until a bot account exists, and that act is the
 owner's whenever they want it.
 
+One breach is on the record: a board commit carried the machine identity because the commit command omitted these flags. It is pushed, so correcting it is the owner's call (decision-24) and is tracked as its own row. Until that answer lands, a mismatched identity in pushed history is a known gap rather than a mystery, and the seat's guard is mechanical: the flags go in the command, not in shared config.
