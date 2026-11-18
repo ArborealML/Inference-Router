@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@gpt-6.2-sol'
 created_date: '2026-11-18T07:15:00Z'
-updated_date: '2026-11-18T19:18:00Z'
+updated_date: '2026-11-18T19:25:00Z'
 labels:
   - wire
   - serve
@@ -39,4 +39,6 @@ Extend ordinary GET /v1/models with a positive context_window in tokens for each
 
 <!-- SECTION:NOTES:BEGIN -->
 Wire plan reviewed against 5c5e18a. Use one immutable observation for the model ID and its effective window. Identical IDs on different engines retain independent values. Suppress ambiguous evidence within one engine, withdraw stale proof, and keep discovery independent of admission. Qualify one actual backend and exercise legacy clients.
+
+The resident model-list row reported 256000 tokens. Independent authenticated backend health reported the same model alias, effective generation context 256000, four slots and Strata 0.1.60. Qualify the matching build and verify the value through ordinary AIR model discovery before accepting the wire criterion.
 <!-- SECTION:NOTES:END -->

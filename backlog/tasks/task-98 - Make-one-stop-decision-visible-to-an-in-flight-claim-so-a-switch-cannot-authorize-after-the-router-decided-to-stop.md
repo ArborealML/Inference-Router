@@ -7,7 +7,7 @@ status: Testing
 assignee:
   - '@gpt-6.2-sol'
 created_date: '2026-11-18T11:02:00Z'
-updated_date: '2026-11-18T19:18:00Z'
+updated_date: '2026-11-18T19:25:00Z'
 labels: []
 milestone: m-3
 dependencies: []
@@ -48,5 +48,5 @@ Three deliverables, in sequence, not one commit: lifecycle semantics here; the d
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-380a2a4 passed 53 focused tests and both stop-order mutation controls. Commit review verified first publication and the two cancellable waits. AnswerExpiredSwitchWait can still report timeout after an unrelated captured attempt finishes and shutdown wins before the deadline decision. The public Switching property still reads switch state outside the transition gate. Preserve earlier own outcomes, classify the expired foreign wait using the stopped state under the gate, and derive public switching from the scheduler marker. The shipped shutdown wire code remains cancelled/499 until TASK-81.
+The fix from 8107a9f was integrated as [86f7bd6](https://github.com/ArborealML/Inference-Router/commit/86f7bd6). All 66 focused tests passed. The bounded review confirmed earlier own-outcome precedence and stop-before-timeout for a foreign wait. Public Switching now reads the capability marker. Its test currently samples after the switch state is installed; add a discriminating check inside the publication interval and verify reverting the getter fails it. The 137-test counts are historical revision entries. Wire mapping remains cancelled/499 until TASK-81.
 <!-- SECTION:NOTES:END -->
