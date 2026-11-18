@@ -2,6 +2,12 @@ using System.Collections.Immutable;
 
 namespace Arboreal.InferenceRouter;
 
+internal readonly record struct ServingCapacity(string? Model, long ContextWindow, int TotalSlots, string? Profile)
+{
+    public long WindowFor(string model) =>
+        string.Equals(Model, model, StringComparison.OrdinalIgnoreCase) ? ContextWindow : 0;
+}
+
 /// <summary>
 /// Everything the router is entitled to claim about one engine's capability, as a single immutable value
 /// (§5.5, "a model nothing here can serve"). Health, the set of models the engine reports serving, and the
@@ -33,6 +39,7 @@ public sealed record EngineCapability(
         {
             _modelRoster = ImmutableList.CreateRange(value);
             ModelContextWindows = NoModelContextWindows;
+            Serving = default;
         }
     }
 
@@ -47,6 +54,8 @@ public sealed record EngineCapability(
 
     // Each value came from its identified model row in the observation that published this roster.
     internal ImmutableDictionary<string, long> ModelContextWindows { get; init; } = NoModelContextWindows;
+
+    internal ServingCapacity Serving { get; init; }
 
     /// <summary>Did the switch that raised the current marker author this engine's unknown health? One
     /// <see cref="Healthy"/> flag cannot say both "we do not know" and "who made us not know", and the

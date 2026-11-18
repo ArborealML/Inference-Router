@@ -95,16 +95,9 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
     private readonly CancellationTokenSource _switchCts = new();
 
     // ── serving-profile state (context-window escalation) ───────────────────
-    // Active context window in tokens (0 = engine does not report it → no constraint),
-    // active slot count (0 = unknown → fall back to configured max_inflight), and the
-    // catalog profile name inferred from the window.
-    private long _activeContextWindow;
-    private int _activeSlots;
-    private string? _activeProfileName;
-
-    public long ActiveContextWindow => Volatile.Read(ref _activeContextWindow);
-    public int ActiveSlots => Volatile.Read(ref _activeSlots);
-    public string? ActiveProfile => Volatile.Read(ref _activeProfileName);
+    public long ActiveContextWindow => Capability.Serving.ContextWindow;
+    public int ActiveSlots => Capability.Serving.TotalSlots;
+    public string? ActiveProfile => Capability.Serving.Profile;
 
     private enum SwitchEnd { Pending, Ready, Failed, RouterStopped }
 
@@ -117,6 +110,7 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
         public EngineCapability? IncumbentProof;
         // Read and written under the transition gate. In-flight probes cannot publish a new proof.
         public bool IncumbentContradicted;
+        public bool IncumbentServingContradicted;
         public TaskCompletionSource Ready { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public DateTimeOffset StartedAt;
         private int _end;
@@ -282,22 +276,20 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
     /// fence covers both directions of the answer: a probe that could not reach the engine publishes its
     /// health-only negative through <see cref="PublishProbeFailure"/> under the same version, so a poll that
     /// failed before a switch proved the engine cannot withdraw that proof either.</summary>
-    private void PublishProbeResult(long expectedVersion, ModelsObservation observation)
+    private void PublishProbeResult(EngineCapability expected, ModelsObservation observation, ServingCapacity serving)
     {
-        while (true)
+        if (Volatile.Read(ref _stopped)) return;
+        var current = Capability;
+        if (!ReferenceEquals(current, expected) || current.SwitchingToward is not null)
         {
-            var cur = Volatile.Read(ref _cap);
-            if (Volatile.Read(ref _stopped)) return;
-            if (cur.Version != expectedVersion || cur.SwitchingToward is not null)
-            {
-                if (CouldContradictIncumbent(cur, expectedVersion))
-                    ReconcileIncumbentObservation(expectedVersion, observation);
-                return;
-            }
-            var next = WithModelsObservation(cur, observation);
-            if (ReferenceEquals(cur, next)) return;
-            if (Interlocked.CompareExchange(ref _cap, next, cur) == cur) return;
+            if (CouldContradictIncumbent(current, expected.Version))
+                ReconcileIncumbentObservation(expected.Version, observation, serving);
+            return;
         }
+
+        var next = WithModelsObservation(expected, observation, serving);
+        if (!ReferenceEquals(expected, next) && ReferenceEquals(Interlocked.CompareExchange(ref _cap, next, expected), expected))
+            NotifyServingChange(expected.Serving, next.Serving);
     }
 
     /// <summary>Publish a probe's *negative*: health false, the reported list untouched, and only while
@@ -306,25 +298,21 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
     /// stale negative costs one tick, while applying it marks a working engine unknown for a whole interval
     /// and costs that model its engine (§5.5). A probe carries no list evidence, so the models the engine
     /// last actually reported stay as history; only the entitlement to use them moves.</summary>
-    private void PublishProbeFailure(long expectedVersion)
+    private void PublishProbeFailure(EngineCapability expected)
     {
-        while (true)
+        if (Volatile.Read(ref _stopped)) return;
+        var current = Capability;
+        if (!ReferenceEquals(current, expected) || current.SwitchingToward is not null)
         {
-            var cur = Volatile.Read(ref _cap);
-            if (Volatile.Read(ref _stopped)) return;
-            if (cur.Version != expectedVersion || cur.SwitchingToward is not null)
-            {
-                if (CouldContradictIncumbent(cur, expectedVersion))
-                    ReconcileIncumbentObservation(expectedVersion, observation: null);
-                return;
-            }
-            if (!cur.Healthy) return;
-            // The withdrawal this publishes was authored by a probe, not by a claim, and that distinction is the
-            // whole reason the provenance bit exists: a waiter must not read a failed probe as a transaction
-            // boundary and keep a proof the engine just contradicted (§5.5, AC #7).
-            var unknown = WithoutProbeProof(cur);
-            if (Interlocked.CompareExchange(ref _cap, unknown, cur) == cur) return;
+            if (CouldContradictIncumbent(current, expected.Version))
+                ReconcileIncumbentObservation(expected.Version, observation: null);
+            return;
         }
+
+        if (!expected.Healthy) return;
+        var unknown = WithoutProbeProof(expected);
+        if (ReferenceEquals(Interlocked.CompareExchange(ref _cap, unknown, expected), expected))
+            NotifyServingChange(expected.Serving, unknown.Serving);
     }
 
     private static EngineCapability WithoutProbeProof(EngineCapability current) => current with
@@ -333,6 +321,7 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
         Healthy = false,
         HealthFromClaim = false,
         ModelContextWindows = EngineCapability.NoModelContextWindows,
+        Serving = default,
     };
 
     private static bool IsIncumbentClaim(EngineCapability current, long expectedVersion) =>
@@ -345,7 +334,8 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
 
     // An observation on the matching claim can veto restoration or withdraw the exact restored
     // generation. It can never publish a new roster or revoke a successor's proof.
-    private void ReconcileIncumbentObservation(long expectedVersion, ModelsObservation? observation)
+    private void ReconcileIncumbentObservation(long expectedVersion, ModelsObservation? observation,
+        ServingCapacity serving = default)
     {
         lock (_transitionGate)
         {
@@ -357,6 +347,7 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
                 state.IncumbentProof is { } incumbent && incumbent.Version + 1 == expectedVersion)
             {
                 if (ContradictsIncumbent(incumbent, observation)) state.IncumbentContradicted = true;
+                else if (incumbent.Serving != serving) state.IncumbentServingContradicted = true;
                 return;
             }
 
@@ -375,7 +366,7 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
     /// skipped by the scheduler anyway, and the whole point of the proof is to remove that skip. The marker
     /// is cleared only after this, so no snapshot ever reads "not switching and does not have it" for a
     /// model that was in fact being loaded (§5.5).</summary>
-    private bool TryPublishProof(SwitchState state, ModelsObservation observation)
+    private bool TryPublishProof(SwitchState state, ModelsObservation observation, ServingCapacity serving = default)
     {
         lock (_transitionGate)
         {
@@ -383,8 +374,9 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
                 return false;
             var cur = Capability;
             // The transition gate holds the claim in place. Ordinary polls cannot publish while its marker is up.
-            var next = WithModelsObservation(cur, observation);
-            if (Interlocked.CompareExchange(ref _cap, next, cur) != cur) return false;
+            if (state.Profile is not null && serving.ContextWindow <= 0) return false;
+            var next = WithModelsObservation(cur, observation, serving);
+            if (!ReferenceEquals(Interlocked.CompareExchange(ref _cap, next, cur), cur)) return false;
         }
         AfterSwitchProofForTests?.Invoke();
         return true;
@@ -405,16 +397,18 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
         return (sameRoster, sameWindows);
     }
 
-    private static EngineCapability WithModelsObservation(EngineCapability current, ModelsObservation observation)
+    private static EngineCapability WithModelsObservation(
+        EngineCapability current, ModelsObservation observation, ServingCapacity serving)
     {
         var (sameRoster, sameWindows) = CompareModelsObservation(current, observation);
-        if (current.Healthy && sameRoster && sameWindows) return current;
+        if (current.Healthy && sameRoster && sameWindows && current.Serving == serving) return current;
         return current with
         {
             Version = current.Version + 1,
             Healthy = true,
             ModelRoster = sameRoster ? current.ModelRoster : observation.LoadedModels,
             ModelContextWindows = sameWindows ? current.ModelContextWindows : observation.ContextWindows,
+            Serving = serving,
             HealthFromClaim = false,
         };
     }
@@ -439,13 +433,15 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
             // claim authored the unknown health, and a switch exit that lays hands on the engine supersedes that
             // claim as the author — a *provenance-only* change, which still has to advance `Version` or a reader
             // could not tell the two states apart (AC #8).
-            if (!cur.Healthy && !cur.HealthFromClaim) return cur;
+            if (!cur.Healthy && !cur.HealthFromClaim && cur.ModelContextWindows.IsEmpty && cur.Serving == default)
+                return cur;
             var next = cur with
             {
                 Version = cur.Version + 1,
                 Healthy = false,
                 HealthFromClaim = false,
                 ModelContextWindows = EngineCapability.NoModelContextWindows,
+                Serving = default,
             };
             if (Interlocked.CompareExchange(ref _cap, next, cur) == cur) return next;
         }
@@ -462,6 +458,7 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
             {
                 Version = cur.Version + 1,
                 ModelContextWindows = EngineCapability.NoModelContextWindows,
+                Serving = default,
             };
             if (Interlocked.CompareExchange(ref _cap, retired, cur) == cur) return;
         }
@@ -487,6 +484,7 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
             Healthy = false,
             HealthFromClaim = cur.Healthy,
             ModelContextWindows = EngineCapability.NoModelContextWindows,
+            Serving = default,
         };
         return Interlocked.CompareExchange(ref _cap, next, cur) == cur;
     }
@@ -543,7 +541,7 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
             // Read the version before the round trip, *outside* the try: both the success publish and the
             // failure publish below are fenced on it, so a poll can never overwrite fresher evidence with
             // its own older answer — in either direction (§5.5).
-            var capBefore = Capability.Version;
+            var capBefore = Capability;
             try
             {
                 BeforeModelsFetchForTests?.Invoke();
@@ -565,18 +563,14 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
                     PublishProbeFailure(capBefore);
                     throw;
                 }
-                PublishProbeResult(capBefore, observation);
+                var state = await ReadServingProbeAsync(cts.Token).ConfigureAwait(false);
+                PublishProbeResult(capBefore, observation, BindServing(observation, state));
+                if (Volatile.Read(ref _stopped)) break;
                 Emit("engine.health", value: observation.LoadedModels.Count);
-                // Same payload family feeds the serving gauges (context window, slots). The readiness rule's
-                // verdict is deliberately not folded into Healthy: Healthy means this engine's /models probe
-                // answered, while health.expect decides whether a *switch* counts as ready — two different
-                // questions, and collapsing them would make a passing /models answer look like a passing
-                // readiness rule (§5.5). The discard is spelled out so nobody "fixes" it by accident: a
-                // failing expect rule moves no health flag, in this loop or anywhere else.
-                _ = await ProbeStateAsync(cts.Token).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
+                if (Volatile.Read(ref _stopped)) break;
                 Emit("engine.health", reason: WireText.Bound(ex.Message, ProviderReasonChars), value: 0);
             }
             try
@@ -623,7 +617,9 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
     }
 
     private readonly record struct ModelsObservation(
-        ImmutableList<string> LoadedModels, ImmutableDictionary<string, long> ContextWindows);
+        ImmutableList<string> LoadedModels, ImmutableDictionary<string, long> ContextWindows, string? ServingModel = null);
+
+    private readonly record struct ServingProbe(bool Satisfied, long Window, int Slots);
 
     private async Task<ModelsObservation> FetchModelsObservationAsync(CancellationToken ct)
     {
@@ -636,6 +632,8 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
         var contextPath = _def.ModelsContextWindowPath;
         var windows = contextPath is null ? null : EngineCapability.NoModelContextWindows.ToBuilder();
         var seenIds = contextPath is null ? null : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        string? servingModel = null;
+        var rows = 0;
         if (doc.RootElement.ValueKind == JsonValueKind.Object &&
             doc.RootElement.TryGetProperty("data", out var data) && data.ValueKind == JsonValueKind.Array)
         {
@@ -644,6 +642,7 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
                 if (m.ValueKind != JsonValueKind.Object ||
                     !m.TryGetProperty("id", out var id) || id.ValueKind != JsonValueKind.String) continue;
                 var model = id.GetString()!;
+                rows++;
                 // Filtered rows still contribute evidence that an ID is ambiguous.
                 var duplicate = seenIds?.Add(model) == false;
                 if (duplicate) windows!.Remove(model);
@@ -655,6 +654,7 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
                 if (_def.LoadedRequiresStatusLoaded && (alias || !loaded)) continue;
 
                 list.Add(model);
+                if (rows == 1 && !alias && (!hasStatus || loaded)) servingModel = model;
                 if (duplicate || windows is null || contextPath is null) continue;
                 if (!alias && (!hasStatus || loaded) && !string.IsNullOrWhiteSpace(model) &&
                     ProbeExpect.TryResolvePath(m, contextPath, out var value) &&
@@ -662,73 +662,79 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
                     windows.Add(model, tokens);
             }
         }
-        return new(list.ToImmutable(), windows?.ToImmutable() ?? EngineCapability.NoModelContextWindows);
+        return new(list.ToImmutable(), windows?.ToImmutable() ?? EngineCapability.NoModelContextWindows,
+            rows == 1 ? servingModel : null);
     }
 
-    /// <summary>Run the configured health probe (GET path + Expect DSL), returns true when satisfied.</summary>
-    internal Task<bool> ProbeAsync(CancellationToken ct) => ProbeStateAsync(ct);
-
-    /// <summary>One probe fetch that both evaluates the Expect DSL and refreshes the serving
-    /// gauges (active context window, slot count, inferred profile name) from the same payload.</summary>
-    internal async Task<bool> ProbeStateAsync(CancellationToken ct)
+    private async Task<ServingProbe> ReadServingProbeAsync(CancellationToken ct, CancellationToken stopToken = default)
     {
-        var path = _def.Health?.Path ?? "/props";
         try
         {
-            using var req = AuthedGet(path);
+            using var req = AuthedGet(_def.Health?.Path ?? "/props");
             using var res = await _http.SendAsync(req, ct).ConfigureAwait(false);
-            if (!res.IsSuccessStatusCode) return false;
-            var probeBytes = await res.Content.ReadAsByteArrayAsync(ct).ConfigureAwait(false);
-            using var doc = JsonDocument.Parse(probeBytes);
-            UpdateServingGauges(doc.RootElement);
-            return _def.Health?.Expect is { } expect ? ProbeExpect.Evaluate(doc.RootElement, expect) : true;
+            if (!res.IsSuccessStatusCode) return default;
+            var bytes = await res.Content.ReadAsByteArrayAsync(ct).ConfigureAwait(false);
+            using var doc = JsonDocument.Parse(bytes);
+            var root = doc.RootElement;
+            var window = ReadGauge(root, _def.Health?.ContextPath ?? "n_ctx");
+            var slots = (int)Math.Min(int.MaxValue, ReadGauge(root, _def.Health?.SlotsPath ?? "total_slots"));
+            var satisfied = _def.Health?.Expect is not { } expect || ProbeExpect.Evaluate(root, expect);
+            return new(satisfied, window, slots);
         }
-        catch
+        catch (Exception) when (!stopToken.IsCancellationRequested)
         {
-            return false;   // unreachable or malformed payload
+            return default;
         }
     }
 
-    private void UpdateServingGauges(JsonElement root)
+    private ServingCapacity BindServing(ModelsObservation observation, ServingProbe probe)
     {
-        var window = TryReadGauge(root, _def.Health?.ContextPath ?? "n_ctx", out var ctx) ? ctx : 0;
-        var slots = TryReadGauge(root, _def.Health?.SlotsPath ?? "total_slots", out var sl) ? sl : 0;
-        var previousWindow = ActiveContextWindow;
-        if (window > 0) Volatile.Write(ref _activeContextWindow, window);
-        if (slots > 0) Volatile.Write(ref _activeSlots, (int)Math.Min(int.MaxValue, slots));
-        var name = InferProfileName(window);
-        Volatile.Write(ref _activeProfileName, name);
-        if (window > 0 && window != previousWindow)
-            Emit("engine.profile", reason: name is null ? "unrecognized_window" : WireText.Ident(name), value: window);
+        if (probe.Window <= 0 || observation.ServingModel is not { } model)
+            return new(null, 0, probe.Slots, null);
+
+        string? boundModel = null;
+        foreach (var canonical in _catalog.Keys)
+        {
+            if (!string.Equals(canonical, model, StringComparison.OrdinalIgnoreCase)) continue;
+            if (boundModel is not null) return new(null, 0, probe.Slots, null);
+            boundModel = canonical;
+        }
+        if (boundModel is null) return new(null, 0, probe.Slots, null);
+
+        string? profile = null;
+        foreach (var candidate in _catalog[boundModel].ServingProfiles)
+        {
+            if (candidate.MaxContext != probe.Window) continue;
+            if (profile is not null) return new(boundModel, probe.Window, probe.Slots, null);
+            profile = candidate.Name;
+        }
+        return new(boundModel, probe.Window, probe.Slots, profile);
     }
 
-    private static bool TryReadGauge(JsonElement root, string dottedPath, out long value)
+    private void NotifyServingChange(ServingCapacity previous, ServingCapacity next)
     {
-        value = 0;
-        if (!ProbeExpect.TryResolvePath(root, dottedPath, out var leaf)) return false;
+        if (previous == next || Volatile.Read(ref _stopped)) return;
+        EmitServingProfileChange(previous, next);
+        try { _dispatchHint?.Invoke(); }
+        catch (Exception) { /* The next poll or switch event can wake dispatch. */ }
+    }
+
+    private void EmitServingProfileChange(ServingCapacity previous, ServingCapacity next)
+    {
+        if (!Volatile.Read(ref _stopped) && next.ContextWindow > 0 &&
+            (next.ContextWindow != previous.ContextWindow || next.Profile != previous.Profile))
+            Emit("engine.profile", reason: next.Profile is { } profile ? WireText.Ident(profile) : "unrecognized_window",
+                value: next.ContextWindow);
+    }
+
+    private static long ReadGauge(JsonElement root, string path)
+    {
+        if (!ProbeExpect.TryResolvePath(root, path, out var leaf)) return 0;
         if (leaf.ValueKind == JsonValueKind.Number)
-        {
-            value = (long)leaf.GetDouble();
-            return value > 0;
-        }
-        if (leaf.ValueKind == JsonValueKind.String &&
-            long.TryParse(leaf.GetString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed) &&
-            parsed > 0)
-        {
-            value = parsed;
-            return true;
-        }
-        return false;
-    }
-
-    /// <summary>Catalog profile whose MaxContext equals the live window (null when unrecognized).</summary>
-    private string? InferProfileName(long window)
-    {
-        if (window <= 0) return null;
-        foreach (var md in _catalog.Values)
-            foreach (var p in md.ServingProfiles)
-                if (p.MaxContext == window) return p.Name;
-        return null;
+            return leaf.TryGetInt64(out var numeric) && numeric > 0 ? numeric : 0;
+        return leaf.ValueKind == JsonValueKind.String &&
+            long.TryParse(leaf.GetString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var text) &&
+            text > 0 ? text : 0;
     }
 
     public IReadOnlyList<ServingProfile> ProfilesForModel(string canonical)
@@ -817,35 +823,35 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
     /// <summary>The same predicate against a snapshot the caller already holds. The claim path needs that form:
     /// the readiness decision and the switch marker have to come from one snapshot, or a poll that proves the
     /// model in between buys a second launch (§5.5).</summary>
-    private bool ReadyIn(EngineCapability cap, string canonical, ServingProfile? profile)
+    private static bool ReadyIn(EngineCapability cap, string canonical, ServingProfile? profile)
     {
         if (!cap.Healthy || cap.SwitchingToward is not null) return false;
         foreach (var name in cap.ModelRoster)
         {
-            if (string.Equals(name, canonical, StringComparison.OrdinalIgnoreCase)) return WindowFits(profile);
+            if (string.Equals(name, canonical, StringComparison.OrdinalIgnoreCase))
+                return WindowFits(cap.Serving.WindowFor(canonical), profile);
         }
         return false;
     }
 
-    /// <summary>Live window fits the profile (gauge 0 = unknown → never block on it).</summary>
-    private bool WindowFits(ServingProfile? profile)
-    {
-        if (profile is null) return true;
-        var window = ActiveContextWindow;
-        return window == 0 || window >= profile.MaxContext;
-    }
+    private static bool WindowFits(long window, ServingProfile? profile) =>
+        profile is null || (window > 0 && window >= profile.MaxContext);
 
-    /// <summary>Does the proof this caller's **own switch published** still stand? A later claim on the engine
-    /// raises its marker and withdraws health in one publication, and neither is an observation about what the
-    /// engine serves: it is somebody else's transaction starting. Only a contradicting observation takes the proof
-    /// away — the target gone from the reported list, a window that no longer fits, or health withdrawn while no
-    /// switch is in flight (a probe, not a claim) (§5.5, the correction to decision-34). Holding authority across
-    /// the admission handoff is a different question (TASK-25, TASK-64); this is only about not punishing a caller
-    /// for a switch it did not start.</summary>
-    private bool OwnProofStillStands(EngineCapability cap, string canonical, ServingProfile? profile) =>
-        (cap.Healthy || (cap.SwitchingToward is not null && cap.HealthFromClaim))
-        && cap.ModelRoster.Contains(canonical, StringComparer.OrdinalIgnoreCase)
-        && WindowFits(profile);
+    private bool OwnProofStillStands(EngineCapability cap, string canonical, ServingProfile? profile)
+    {
+        if (cap.Healthy)
+            return cap.ModelRoster.Contains(canonical, StringComparer.OrdinalIgnoreCase) &&
+                WindowFits(cap.Serving.WindowFor(canonical), profile);
+        lock (_transitionGate)
+        {
+            var state = _switchState;
+            return ReferenceEquals(cap, Capability) && IsIncumbentClaim(cap, cap.Version) &&
+                state.End == SwitchEnd.Pending && !state.IncumbentContradicted &&
+                (profile is null || !state.IncumbentServingContradicted) &&
+                cap.SwitchingToward == state.Model && state.IncumbentProof is { } incumbent &&
+                incumbent.Version + 1 == cap.Version && ReadyIn(incumbent, canonical, profile);
+        }
+    }
 
     /// <summary>Authority and catalog checks for an idle acquisition.</summary>
     private enum EntryGuard { Ok, NoLifecycleOwner, Absent, NoUsableSelector }
@@ -1091,7 +1097,8 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
 
         // An own proof still authorises the caller while a successor's claim alone has withdrawn health.
         if (end == SwitchEnd.Ready)
-            return OwnProofStillStands(cap, canonical, profile) ? new SwitchResult(SwitchOutcome.Ready, null) : null;
+            return Volatile.Read(ref _stopped) || OwnProofStillStands(cap, canonical, profile)
+                ? new SwitchResult(SwitchOutcome.Ready, null) : null;
 
         // A real wake requires a terminal state. If that invariant is broken, fail with the same
         // bounded category used by a failed switch with no recorded reason.
@@ -1120,6 +1127,7 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
     private const int ReportedNamesChars = 500;
     private const int ProviderReasonChars = 160;
     private const int ProviderActionChars = 200;
+    private const int TrustStateReadCapMs = 5_000;
 
     /// <summary>What an engine reported, for a refusal reason: at most <see cref="ReportedNameCount"/> names, each
     /// keeping its first <see cref="ReportedNameHeadChars"/> characters with its true length and a fingerprint
@@ -1168,6 +1176,7 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
     private SwitchEnd EndSwitch(SwitchState state, bool ready, bool restoreIncumbent = false)
     {
         var committed = false;
+        var serving = default(ServingCapacity);
         SwitchEnd end;
         lock (_transitionGate)
         {
@@ -1180,6 +1189,7 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
                 if (end == SwitchEnd.RouterStopped) PublishUnknown();
                 var incumbent = end == SwitchEnd.Failed && restoreIncumbent && !state.IncumbentContradicted
                     ? state.IncumbentProof : null;
+                if (end == SwitchEnd.Ready) serving = Capability.Serving;
                 _switchState = new SwitchState();
                 ClearSwitchMarker(incumbent);
                 committed = true;
@@ -1189,11 +1199,11 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
             // idle state and this line, which would hide a running model load from the scheduler. A second
             // EndSwitch for the same attempt (the finally block) sees a successor's state and does nothing.
         }
-        // Settle the waiters first, then nudge: an injected callback, or the dispatcher the nudge wakes, must not
-        // be able to rewrite a switch that has already committed, and a waiter must not stay parked behind a
-        // callback that throws. Every Emit has already happened before EndSwitch, so the feed still precedes the
-        // wake (decision 7); the hint's own failure costs at most one poll interval, because the next dispatch
-        // pass is woken by the next event instead.
+        // A switch reports its outcome before EndSwitch. Report the profile after marker clear, then release
+        // waiters before invoking the explicit nudge. A throwing nudge cannot hold a waiter or rewrite the
+        // committed outcome, and the next engine observation can still wake dispatch.
+        if (committed && end == SwitchEnd.Ready)
+            EmitServingProfileChange(state.IncumbentProof?.Serving ?? default, serving);
         state.Ready.TrySetResult();
         if (committed)
         {
@@ -1255,9 +1265,10 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
             }
             if (_hostEnrollment is not null) return; // the controller committed readiness under its host guard
             var readiness = lifecycle.Readiness(target);
+            var deadline = readiness.Timeout == Timeout.InfiniteTimeSpan
+                ? DateTimeOffset.MaxValue : DateTimeOffset.UtcNow + readiness.Timeout;
             if (readiness.ProveHealth)
             {
-                var deadline = DateTimeOffset.UtcNow + readiness.Timeout;
                 // What the last poll actually saw, so the refusal names why readiness never arrived rather than
                 // naming the clock. Three ways this loop ends unsatisfied, and the caller's action differs for
                 // each: an engine that never said it was healthy is worth retrying later, an engine that stayed up
@@ -1266,35 +1277,39 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
                 // were `health_timeout` — a fixed mismatch reading as a transient one (§5.5).
                 var miss = ReadinessMiss.NeverHealthy;
                 IReadOnlyList<string> lastReported = [];
+                long lastWindow = 0;
                 while (DateTimeOffset.UtcNow < deadline && !ct.IsCancellationRequested)
                 {
-                    // Probe first: it refreshes the window gauge that the profile check below reads.
-                    var healthy = await ProbeStateAsync(ct).ConfigureAwait(false);
                     var observation = await FetchModelsObservationAsync(ct).ConfigureAwait(false);
+                    var stateProbe = await ReadServingProbeAsync(ct, ct).ConfigureAwait(false);
+                    var serving = BindServing(observation, stateProbe);
+                    lastWindow = serving.WindowFor(model);
+                    ct.ThrowIfCancellationRequested();
                     var modelsNow = observation.LoadedModels;
-                    if (healthy && modelsNow.Contains(model, StringComparer.OrdinalIgnoreCase) &&
-                        WindowFits(profileOverride))
+                    if (stateProbe.Satisfied && modelsNow.Contains(model, StringComparer.OrdinalIgnoreCase) &&
+                        WindowFits(lastWindow, profileOverride))
                     {
                         // Published before EndSwitch clears the marker, and as a proof: the switch saw the
                         // model reported, so it publishes the list *and* the health together rather than
                         // leaving a successful switch sitting behind a stale unhealthy flag until the next
                         // poll happens to answer (§5.5).
-                        if (!TryPublishProof(state, observation)) return;
+                        if (!TryPublishProof(state, observation, serving)) return;
                         Emit("engine.switch_completed", model: model,
                             reason: state.Profile is null ? null : $"profile={WireText.Ident(state.Profile)}",
                             value: (DateTimeOffset.UtcNow - state.StartedAt).TotalMilliseconds);
                         EndSwitch(state, true);
                         return;
                     }
-                    if (!healthy) miss = ReadinessMiss.NeverHealthy;
+                    if (!stateProbe.Satisfied) miss = ReadinessMiss.NeverHealthy;
                     else if (!modelsNow.Contains(model, StringComparer.OrdinalIgnoreCase))
                     {
                         miss = ReadinessMiss.ModelNotReported;
                         lastReported = modelsNow;
                     }
                     else miss = ReadinessMiss.WindowTooSmall;
-                    try { await Task.Delay(2_000, ct).ConfigureAwait(false); } catch (OperationCanceledException) { }
+                    await Task.Delay(2_000, ct).ConfigureAwait(false);
                 }
+                ct.ThrowIfCancellationRequested();
                 // A readiness timeout is the one failure that has no exit code and no stderr, so the
                 // message has to carry the actionable part itself: what to look at, and the fact that
                 // the router will not quietly retry or route elsewhere. The clock stays in the operator's
@@ -1315,8 +1330,9 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
                         break;
                     case ReadinessMiss.WindowTooSmall:
                         state.FailureReason = SwitchReason.WindowTooSmall;
+                        var mismatch = DescribeWindowMiss(lastWindow, profileOverride!);
                         Emit("engine.switch_failed", model: model, reason:
-                            $"{window} — window_{ActiveContextWindow}_lt_{profileOverride!.MaxContext}: engine " +
+                            $"{window} — {mismatch}: engine " +
                             $"{WireText.Ident(_def.Name)} serves {askedFor} in a context window too small for the profile the " +
                             "caller asked for: give the engine a ladder tier that fits or ask a smaller profile; " +
                             "the router does not retry or fall back to another engine");
@@ -1343,7 +1359,8 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
             // is not a loaded model (§5.5, decision-27).
             ModelsObservation? refreshed = null;
             try { refreshed = await FetchModelsObservationAsync(ct).ConfigureAwait(false); }
-            catch { /* best-effort refresh: no evidence, so no claim */ }
+            catch (Exception) when (!ct.IsCancellationRequested) { /* best-effort refresh */ }
+            ct.ThrowIfCancellationRequested();
             if (refreshed is { } observationAfterLaunch)
             {
                 var freshModels = observationAfterLaunch.LoadedModels;
@@ -1394,23 +1411,44 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
                 EndSwitch(state, false);
                 return;
             }
-            // wait_health=false: trust the exec, but still verify the window when a profile was requested
-            // (the gauge may already reflect the new window, e.g. an engine that reloads in place).
-            if (!WindowFits(profileOverride))
+            // A named tier needs a state observation from this launch. Model-only callers can use the roster.
+            var trustServing = default(ServingCapacity);
+            if (profileOverride is not null)
+            {
+                var probeMs = _def.Health?.TimeoutMs ?? TrustStateReadCapMs;
+                var budget = TimeSpan.FromMilliseconds(probeMs == Timeout.Infinite
+                    ? TrustStateReadCapMs : Math.Min(TrustStateReadCapMs, probeMs));
+                var remaining = deadline - DateTimeOffset.UtcNow;
+                if (remaining < budget) budget = remaining;
+                if (budget > TimeSpan.Zero)
+                {
+                    using var probeCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                    probeCts.CancelAfter(budget);
+                    var stateProbe = await ReadServingProbeAsync(probeCts.Token, ct).ConfigureAwait(false);
+                    trustServing = BindServing(refreshed.Value, stateProbe);
+                }
+            }
+            ct.ThrowIfCancellationRequested();
+            var trustWindow = trustServing.WindowFor(model);
+            if (!WindowFits(trustWindow, profileOverride))
             {
                 state.FailureReason = SwitchReason.WindowTooSmall;
                 Emit("engine.switch_failed", model: model,
-                    reason: $"window_{ActiveContextWindow}_lt_{profileOverride!.MaxContext} (the caller is told window_too_small)");
+                    reason: $"{DescribeWindowMiss(trustWindow, profileOverride!)} (the caller is told window_too_small)");
                 // The engine has been relaunched by now, whatever the window says about it.
                 PublishUnknown();
                 EndSwitch(state, false);
                 return;
             }
-            if (!TryPublishProof(state, refreshed.Value)) return;
+            if (!TryPublishProof(state, refreshed.Value, trustServing)) return;
             Emit("engine.switch_completed", model: model,
                 reason: state.Profile is null ? null : $"profile={WireText.Ident(state.Profile)}",
                 value: (DateTimeOffset.UtcNow - state.StartedAt).TotalMilliseconds);
             EndSwitch(state, true);
+        }
+        catch (Exception) when (ct.IsCancellationRequested || Volatile.Read(ref _stopped))
+        {
+            // Shutdown owns the terminal outcome while an in-flight operation unwinds.
         }
         catch (Exception ex)
         {
@@ -1434,6 +1472,10 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
         }
     }
 
+
+    private static string DescribeWindowMiss(long window, ServingProfile profile) => window > 0
+        ? $"window_{window}_lt_{profile.MaxContext}"
+        : $"window_unreported_for_{profile.MaxContext}";
 
     public string? CanonicalModel(string requested)
     {
@@ -1478,12 +1520,13 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
         Interlocked.Add(ref _tokenProxy, -promptChars);
     }
 
-    public bool HasCapacity => Inflight < EffectiveSlotLimit;
+    public bool HasCapacity => Inflight < EffectiveSlotLimit(Capability);
 
     /// <summary>Admission ceiling: the tighter of the configured max_inflight_per_engine and the
     /// slots the engine currently advertises (profile switches change the advertised count).
     /// Unknown advertised slots → configured ceiling alone.</summary>
-    private int EffectiveSlotLimit => ActiveSlots > 0 ? Math.Max(1, Math.Min(_maxInflight, ActiveSlots)) : _maxInflight;
+    private int EffectiveSlotLimit(EngineCapability cap) => cap.Serving.TotalSlots > 0
+        ? Math.Max(1, Math.Min(_maxInflight, cap.Serving.TotalSlots)) : _maxInflight;
 
     public HttpClient Http => _http;
     public string? ApiKey => _apiKey;
