@@ -199,14 +199,52 @@ public class ConfigLoaderTests
             kind = "openai-compatible"
             endpoint = "http://127.0.0.1:10/v1"
             models_endpoint = "/v1/models"
+            models_context_window_path = "meta.n_ctx"
             loaded_requires_status_loaded = false
             [engine.openai_only.catalog."m1"]
             """;
 
         var cfg = RouterConfigLoader.Load(Text, "test.toml");
         Assert.Equal("/models", cfg.Engines["plain"].ModelsEndpoint);
+        Assert.Null(cfg.Engines["plain"].ModelsContextWindowPath);
         Assert.Equal("/v1/models", cfg.Engines["openai_only"].ModelsEndpoint);
+        Assert.Equal("meta.n_ctx", cfg.Engines["openai_only"].ModelsContextWindowPath);
         Assert.False(cfg.Engines["openai_only"].LoadedRequiresStatusLoaded);
+    }
+
+    [Theory]
+    [InlineData("n_ctx", true)]
+    [InlineData("meta.n_ctx", true)]
+    [InlineData("runtime.context.tokens", true)]
+    [InlineData("", false)]
+    [InlineData(".meta", false)]
+    [InlineData("meta.", false)]
+    [InlineData("meta..n_ctx", false)]
+    [InlineData("meta. n_ctx", false)]
+    public void ModelContextPathsAreValidatedForTomlAndJson(string path, bool valid)
+    {
+        var toml = $$"""
+            [engine.fake]
+            kind = "openai-compatible"
+            endpoint = "http://127.0.0.1:9/v1"
+            models_context_window_path = "{{path}}"
+            """;
+        var json = $$"""
+            {"engine":{"fake":{"kind":"openai-compatible","endpoint":"http://127.0.0.1:9/v1",
+            "models_context_window_path":"{{path}}" } } }
+            """;
+        if (valid)
+        {
+            Assert.Equal(path, RouterConfigLoader.Load(toml, "test.toml").Engines["fake"].ModelsContextWindowPath);
+            Assert.Equal(path, RouterConfigLoader.Load(json, "test.json", isJson: true).Engines["fake"].ModelsContextWindowPath);
+        }
+        else
+        {
+            var tomlError = Assert.Throws<RouterConfigException>(() => RouterConfigLoader.Load(toml, "test.toml"));
+            var jsonError = Assert.Throws<RouterConfigException>(() => RouterConfigLoader.Load(json, "test.json", isJson: true));
+            Assert.Contains("models_context_window_path", tomlError.Message, StringComparison.Ordinal);
+            Assert.Contains("models_context_window_path", jsonError.Message, StringComparison.Ordinal);
+        }
     }
 
     /// <summary>Native Docker lifecycle is opt-in per engine, and a half-configured one is a load-time

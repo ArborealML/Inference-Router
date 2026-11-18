@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using System.Globalization;
 using System.Runtime.ExceptionServices;
 using System.Text;
@@ -46,6 +47,8 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
     internal Action? BeforeSwitchWaitForTests;
     internal Action<bool>? AfterEndCommitForTests;
     internal Action? BeforeScheduleSwitchForTests;
+    // Observes the published proof before the switch clears the marker, outside the transition gate.
+    internal Action? AfterSwitchProofForTests;
 
     /// <summary>Runs on a waiter immediately after it is woken from the readiness wait and **before** it reads
     /// the snapshot that decides what to answer, with the argument saying which wake-up it got: <c>true</c> when
@@ -169,7 +172,7 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
     /// refused, what was stopped, what was launched. Not part of the wire contract.</summary>
     public IReadOnlyList<string> LifecycleJournal => _lifecycle.Journal;
     public bool Healthy => Volatile.Read(ref _cap).Healthy;
-    public string[] LoadedModels => Volatile.Read(ref _cap).LoadedModels;
+    public string[] LoadedModels => Capability.LoadedModels;
 
     /// <summary>This engine's capability claim as one atomic, versioned snapshot. The scheduler's view and
     /// the admission refusal both read it exactly once per engine per decision, so a decision cannot mix an
@@ -195,7 +198,7 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
     public bool CanServeModel(string model, EngineCapability cap)
     {
         if (DeclaresModel(model)) return true;
-        foreach (var name in cap.LoadedModels)
+        foreach (var name in cap.ModelRoster)
             if (string.Equals(name, model, StringComparison.OrdinalIgnoreCase)) return true;
         return false;
     }
@@ -214,32 +217,18 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
     /// fence covers both directions of the answer: a probe that could not reach the engine publishes its
     /// health-only negative through <see cref="PublishProbeFailure"/> under the same version, so a poll that
     /// failed before a switch proved the engine cannot withdraw that proof either.</summary>
-    private void PublishProbeResult(long expectedVersion, bool healthy, string[] models)
+    private void PublishProbeResult(long expectedVersion, ModelsObservation observation)
     {
         while (true)
         {
             var cur = Volatile.Read(ref _cap);
-            if (cur.Version != expectedVersion) return;   // someone else published; their answer is fresher
-            if (!healthy)
-            {
-                PublishProbeFailure(expectedVersion);
-                return;
-            }
+            if (cur.Version != expectedVersion || Volatile.Read(ref _stopped)) return;
             // A switch mutates this engine, so a poll that merely got an answer out of it — possibly from the
             // process about to be stopped — is not evidence of capability. Only the switch's own proof may
             // make a positive claim while the marker is up.
             if (cur.SwitchingToward is not null) return;
-            var unchanged = cur.Healthy && SameModels(cur.LoadedModels, models);
-            if (unchanged) return;
-            var next = cur with
-            {
-                Version = cur.Version + 1,
-                Healthy = true,
-                LoadedModels = SameModels(cur.LoadedModels, models) ? cur.LoadedModels : models,
-                // An answered probe is an observation: whatever claim put the marker up, this publication is
-                // not the price of a transaction, so the provenance does not survive it.
-                HealthFromClaim = false,
-            };
+            var next = WithModelsObservation(cur, observation);
+            if (ReferenceEquals(cur, next)) return;
             if (Interlocked.CompareExchange(ref _cap, next, cur) == cur) return;
         }
     }
@@ -255,12 +244,18 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
         while (true)
         {
             var cur = Volatile.Read(ref _cap);
-            if (cur.Version != expectedVersion) return;   // someone else published; their answer is fresher
-            if (!cur.Healthy) return;                     // already unknown: there is nothing to withdraw
+            if (cur.Version != expectedVersion || Volatile.Read(ref _stopped)) return;
+            if (cur.SwitchingToward is not null || !cur.Healthy) return;
             // The withdrawal this publishes was authored by a probe, not by a claim, and that distinction is the
             // whole reason the provenance bit exists: a waiter must not read a failed probe as a transaction
             // boundary and keep a proof the engine just contradicted (§5.5, AC #7).
-            var unknown = cur with { Version = cur.Version + 1, Healthy = false, HealthFromClaim = false };
+            var unknown = cur with
+            {
+                Version = cur.Version + 1,
+                Healthy = false,
+                HealthFromClaim = false,
+                ModelContextWindows = EngineCapability.NoModelContextWindows,
+            };
             if (Interlocked.CompareExchange(ref _cap, unknown, cur) == cur) return;
         }
     }
@@ -271,21 +266,41 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
     /// skipped by the scheduler anyway, and the whole point of the proof is to remove that skip. The marker
     /// is cleared only after this, so no snapshot ever reads "not switching and does not have it" for a
     /// model that was in fact being loaded (§5.5).</summary>
-    private void PublishProof(string[] models)
+    private bool TryPublishProof(SwitchState state, ModelsObservation observation)
     {
-        while (true)
+        lock (_transitionGate)
         {
-            var cur = Volatile.Read(ref _cap);
-            if (cur.Healthy && SameModels(cur.LoadedModels, models)) return;
-            var next = cur with
-            {
-                Version = cur.Version + 1,
-                Healthy = true,
-                LoadedModels = SameModels(cur.LoadedModels, models) ? cur.LoadedModels : models,
-                HealthFromClaim = false,
-            };
-            if (Interlocked.CompareExchange(ref _cap, next, cur) == cur) return;
+            if (_stopped || !ReferenceEquals(_switchState, state) || state.End != SwitchEnd.Pending)
+                return false;
+            var cur = Capability;
+            // The transition gate holds the claim in place. Ordinary polls cannot publish while its marker is up.
+            var next = WithModelsObservation(cur, observation);
+            if (Interlocked.CompareExchange(ref _cap, next, cur) != cur) return false;
         }
+        AfterSwitchProofForTests?.Invoke();
+        return true;
+    }
+
+    private static EngineCapability WithModelsObservation(EngineCapability current, ModelsObservation observation)
+    {
+        // A row carrying proof keeps the exact spelling that accompanied that proof. On an unqualified roster,
+        // preserve the existing quiet behavior for case-only changes.
+        var nameComparer = current.ModelContextWindows.IsEmpty && observation.ContextWindows.IsEmpty
+            ? StringComparer.OrdinalIgnoreCase
+            : StringComparer.Ordinal;
+        var sameRoster = current.ModelRoster.SequenceEqual(observation.LoadedModels, nameComparer);
+        var sameWindows = current.ModelContextWindows.Count == observation.ContextWindows.Count &&
+            current.ModelContextWindows.All(pair =>
+                observation.ContextWindows.TryGetValue(pair.Key, out var tokens) && tokens == pair.Value);
+        if (current.Healthy && sameRoster && sameWindows) return current;
+        return current with
+        {
+            Version = current.Version + 1,
+            Healthy = true,
+            ModelRoster = sameRoster ? current.ModelRoster : observation.LoadedModels,
+            ModelContextWindows = sameWindows ? current.ModelContextWindows : observation.ContextWindows,
+            HealthFromClaim = false,
+        };
     }
 
     /// <summary>Make this engine's capability unknown: health false, the reported list kept as the last thing
@@ -309,8 +324,30 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
             // claim as the author — a *provenance-only* change, which still has to advance `Version` or a reader
             // could not tell the two states apart (AC #8).
             if (!cur.Healthy && !cur.HealthFromClaim) return;
-            var next = cur with { Version = cur.Version + 1, Healthy = false, HealthFromClaim = false };
+            var next = cur with
+            {
+                Version = cur.Version + 1,
+                Healthy = false,
+                HealthFromClaim = false,
+                ModelContextWindows = EngineCapability.NoModelContextWindows,
+            };
             if (Interlocked.CompareExchange(ref _cap, next, cur) == cur) return;
+        }
+    }
+
+    private void WithdrawDiscoveryOnStop()
+    {
+        // A committed switch can still owe its waiter Ready. Retire discovery and fence in-flight
+        // polls here while keeping the health evidence needed to deliver that outcome.
+        while (true)
+        {
+            var cur = Capability;
+            var retired = cur with
+            {
+                Version = cur.Version + 1,
+                ModelContextWindows = EngineCapability.NoModelContextWindows,
+            };
+            if (Interlocked.CompareExchange(ref _cap, retired, cur) == cur) return;
         }
     }
 
@@ -333,6 +370,7 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
             SwitchingToward = model,
             Healthy = false,
             HealthFromClaim = cur.Healthy,
+            ModelContextWindows = EngineCapability.NoModelContextWindows,
         };
         return Interlocked.CompareExchange(ref _cap, next, cur) == cur;
     }
@@ -357,20 +395,6 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
         }
     }
 
-    /// <summary>Do two reported model sets say the same thing? Content rather than identity: a probe
-    /// allocates a fresh array every tick, so comparing references made every ordinary poll a version bump,
-    /// and a scan straddling a poll then burned its one retry on a poll that had learned nothing (§5.5).
-    /// Pairwise and case-insensitive because every consumer of the list compares model names that way. The
-    /// scope is deliberate: a reorder, or a name reported twice instead of once, still counts as a change —
-    /// nothing in the router treats those as noise today.</summary>
-    private static bool SameModels(string[] a, string[] b)
-    {
-        if (ReferenceEquals(a, b)) return true;
-        if (a.Length != b.Length) return false;
-        for (var i = 0; i < a.Length; i++)
-            if (!string.Equals(a[i], b[i], StringComparison.OrdinalIgnoreCase)) return false;
-        return true;
-    }
     public int Inflight => Volatile.Read(ref _inflight);
     private int _inflight;
     public long InflightTokenProxy => Interlocked.Read(ref _tokenProxy);
@@ -400,6 +424,7 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
             // failure publish below are fenced on it, so a poll can never overwrite fresher evidence with
             // its own older answer — in either direction (§5.5).
             var capBefore = Capability.Version;
+            ModelsObservation? models = null;
             try
             {
                 // CA2000's "recommended dispose pattern" doesn't track `using var` in an async
@@ -407,9 +432,10 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
 #pragma warning disable CA2000
                 using var cts = new CancellationTokenSource(_def.Health?.TimeoutMs ?? 5_000);
 #pragma warning restore CA2000
-                var models = await FetchLoadedModelsAsync(cts.Token).ConfigureAwait(false);
-                PublishProbeResult(capBefore, healthy: true, models);
-                Emit("engine.health", value: models.Length);
+                var observation = await FetchModelsObservationAsync(cts.Token).ConfigureAwait(false);
+                models = observation;
+                PublishProbeResult(capBefore, observation);
+                Emit("engine.health", value: observation.LoadedModels.Count);
                 // Same payload family feeds the serving gauges (context window, slots). The readiness rule's
                 // verdict is deliberately not folded into Healthy: Healthy means this engine's /models probe
                 // answered, while health.expect decides whether a *switch* counts as ready — two different
@@ -424,10 +450,8 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
                 // the last reported model set stays as the last thing the engine actually said, and
                 // Healthy=false makes it unknown rather than evidence of absence. Fenced like the positive
                 // answer, so a poll that failed while a switch was proving the engine cannot withdraw that
-                // proof. It also cannot withdraw the recovery this same tick just published: if the fetch
-                // answered and a later line in the try threw, this tick's own publication has moved the
-                // version, and the fence drops the negative.
-                PublishProbeFailure(capBefore);
+                // proof. A later exception after a successful fetch carries no negative evidence.
+                if (models is null) PublishProbeFailure(capBefore);
                 Emit("engine.health", reason: WireText.Bound(ex.Message, ProviderReasonChars), value: 0);
             }
             try
@@ -473,34 +497,47 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
         return builder.Uri;
     }
 
-    /// <summary>Loaded model ids from the configured models endpoint (llama.cpp /v1/models shape).
-    /// Optionally requires status==loaded and no alias_of.</summary>
-    internal async Task<string[]> FetchLoadedModelsAsync(CancellationToken ct)
+    private readonly record struct ModelsObservation(
+        ImmutableList<string> LoadedModels, ImmutableDictionary<string, long> ContextWindows);
+
+    private async Task<ModelsObservation> FetchModelsObservationAsync(CancellationToken ct)
     {
         using var req = AuthedGet(_def.ModelsEndpoint);
         using var res = await _http.SendAsync(req, ct).ConfigureAwait(false);
         if (!res.IsSuccessStatusCode) throw new HttpRequestException($"models endpoint {(int)res.StatusCode}");
         var bodyBytes = await res.Content.ReadAsByteArrayAsync(ct).ConfigureAwait(false);
         using var doc = JsonDocument.Parse(bodyBytes);
-        var list = new List<string>();
+        var list = ImmutableList.CreateBuilder<string>();
+        var contextPath = _def.ModelsContextWindowPath;
+        var windows = contextPath is null ? null : EngineCapability.NoModelContextWindows.ToBuilder();
+        var seenIds = contextPath is null ? null : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         if (doc.RootElement.ValueKind == JsonValueKind.Object &&
             doc.RootElement.TryGetProperty("data", out var data) && data.ValueKind == JsonValueKind.Array)
         {
             foreach (var m in data.EnumerateArray())
             {
-                if (m.ValueKind != JsonValueKind.Object || m.TryGetProperty("id", out var id) == false) continue;
-                if (_def.LoadedRequiresStatusLoaded)
-                {
-                    if (m.TryGetProperty("alias_of", out var alias) && alias.ValueKind != JsonValueKind.Null) continue;
-                    if (!m.TryGetProperty("status", out var status) ||
-                        status.ValueKind != JsonValueKind.Object ||
-                        !status.TryGetProperty("value", out var sv) || sv.ValueKind != JsonValueKind.String ||
-                        sv.GetString() != "loaded") continue;
-                }
-                if (id.ValueKind == JsonValueKind.String) list.Add(id.GetString()!);
+                if (m.ValueKind != JsonValueKind.Object ||
+                    !m.TryGetProperty("id", out var id) || id.ValueKind != JsonValueKind.String) continue;
+                var model = id.GetString()!;
+                // Filtered rows still contribute evidence that an ID is ambiguous.
+                var duplicate = seenIds?.Add(model) == false;
+                if (duplicate) windows!.Remove(model);
+                var alias = m.TryGetProperty("alias_of", out var aliasOf) && aliasOf.ValueKind != JsonValueKind.Null;
+                var hasStatus = m.TryGetProperty("status", out var status);
+                var loaded = status.ValueKind == JsonValueKind.Object &&
+                    status.TryGetProperty("value", out var state) &&
+                    state.ValueKind == JsonValueKind.String && state.ValueEquals("loaded");
+                if (_def.LoadedRequiresStatusLoaded && (alias || !loaded)) continue;
+
+                list.Add(model);
+                if (duplicate || windows is null || contextPath is null) continue;
+                if (!alias && (!hasStatus || loaded) && !string.IsNullOrWhiteSpace(model) &&
+                    ProbeExpect.TryResolvePath(m, contextPath, out var value) &&
+                    value.ValueKind == JsonValueKind.Number && value.TryGetInt64(out var tokens) && tokens > 0)
+                    windows.Add(model, tokens);
             }
         }
-        return list.ToArray();
+        return new(list.ToImmutable(), windows?.ToImmutable() ?? EngineCapability.NoModelContextWindows);
     }
 
     /// <summary>Run the configured health probe (GET path + Expect DSL), returns true when satisfied.</summary>
@@ -658,7 +695,7 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
     private bool ReadyIn(EngineCapability cap, string canonical, ServingProfile? profile)
     {
         if (!cap.Healthy || cap.SwitchingToward is not null) return false;
-        foreach (var name in cap.LoadedModels)
+        foreach (var name in cap.ModelRoster)
         {
             if (string.Equals(name, canonical, StringComparison.OrdinalIgnoreCase)) return WindowFits(profile);
         }
@@ -682,7 +719,7 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
     /// for a switch it did not start.</summary>
     private bool OwnProofStillStands(EngineCapability cap, string canonical, ServingProfile? profile) =>
         (cap.Healthy || (cap.SwitchingToward is not null && cap.HealthFromClaim))
-        && cap.LoadedModels.Contains(canonical, StringComparer.OrdinalIgnoreCase)
+        && cap.ModelRoster.Contains(canonical, StringComparer.OrdinalIgnoreCase)
         && WindowFits(profile);
 
     /// <summary>What the catalog says about a model a **new claim** would run on. Three answers, because the two
@@ -1125,12 +1162,13 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
                 // serving the model in too small a window needs a ladder tier. Under the clock alone all three
                 // were `health_timeout` — a fixed mismatch reading as a transient one (§5.5).
                 var miss = ReadinessMiss.NeverHealthy;
-                string[] lastReported = [];
+                IReadOnlyList<string> lastReported = [];
                 while (DateTimeOffset.UtcNow < deadline && !ct.IsCancellationRequested)
                 {
                     // Probe first: it refreshes the window gauge that the profile check below reads.
                     var healthy = await ProbeStateAsync(ct).ConfigureAwait(false);
-                    var modelsNow = await FetchLoadedModelsAsync(ct).ConfigureAwait(false);
+                    var observation = await FetchModelsObservationAsync(ct).ConfigureAwait(false);
+                    var modelsNow = observation.LoadedModels;
                     if (healthy && modelsNow.Contains(model, StringComparer.OrdinalIgnoreCase) &&
                         WindowFits(profileOverride))
                     {
@@ -1138,7 +1176,7 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
                         // model reported, so it publishes the list *and* the health together rather than
                         // leaving a successful switch sitting behind a stale unhealthy flag until the next
                         // poll happens to answer (§5.5).
-                        PublishProof(modelsNow);
+                        if (!TryPublishProof(state, observation)) return;
                         Emit("engine.switch_completed", model: model,
                             reason: state.Profile is null ? null : $"profile={WireText.Ident(state.Profile)}",
                             value: (DateTimeOffset.UtcNow - state.StartedAt).TotalMilliseconds);
@@ -1200,16 +1238,17 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
             // as a proof. Anything less — a list that omits the model, or no answer at all — refuses the switch:
             // the engine was relaunched, so its old list is not evidence of what it holds now, and an exit code
             // is not a loaded model (§5.5, decision-27).
-            string[]? refreshed = null;
-            try { refreshed = await FetchLoadedModelsAsync(ct).ConfigureAwait(false); }
+            ModelsObservation? refreshed = null;
+            try { refreshed = await FetchModelsObservationAsync(ct).ConfigureAwait(false); }
             catch { /* best-effort refresh: no evidence, so no claim */ }
-            if (refreshed is { } freshModels)
+            if (refreshed is { } observationAfterLaunch)
             {
+                var freshModels = observationAfterLaunch.LoadedModels;
                 // The refresh is the only evidence this path has, and it has to name the model that was
                 // asked for. `wait_health = false` skips the readiness *rule*, never the check that the
                 // engine says it holds this model: publishing a proof for a list that omits the target
                 // would have the router vouch for a model nothing ever reported, and the switch would end
-                // ready on its own say-so. Checked **before** PublishProof because a proof is a published
+                // ready on its own say-so. Checked **before** TryPublishProof because a proof is a published
                 // claim: checking afterwards would leave the engine verified for whatever else it holds,
                 // and burn the version, on a switch this call is about to refuse (§5.5).
                 if (!freshModels.Contains(model, StringComparer.OrdinalIgnoreCase))
@@ -1230,7 +1269,6 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
                     EndSwitch(state, false);
                     return;
                 }
-                PublishProof(freshModels);
             }
             else
             {
@@ -1265,6 +1303,7 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
                 EndSwitch(state, false);
                 return;
             }
+            if (!TryPublishProof(state, refreshed.Value)) return;
             Emit("engine.switch_completed", model: model,
                 reason: state.Profile is null ? null : $"profile={WireText.Ident(state.Profile)}",
                 value: (DateTimeOffset.UtcNow - state.StartedAt).TotalMilliseconds);
@@ -1369,6 +1408,7 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
             stopping = _switchState;
             if (stopping.Model is not null) stopping.End = SwitchEnd.RouterStopped;
             Volatile.Write(ref _stopped, true);
+            WithdrawDiscoveryOnStop();
         }
         AfterStopDecisionForTests?.Invoke();
 

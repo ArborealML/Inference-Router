@@ -464,7 +464,7 @@ public sealed class RouterCore : IInferenceRouter
             list.Add(new EngineRuntimeInfo
             {
                 Name = e.Name,
-                LoadedModels = cap.LoadedModels,
+                LoadedModels = cap.ModelRoster,
                 CatalogModels = e.Definition.Catalog.Keys.ToArray(),
                 SwitchingToward = cap.SwitchingToward is null ? [] : [cap.SwitchingToward],
                 CanServeModel = e.CanServeModel(head.Ticket.Model, cap),
@@ -905,6 +905,16 @@ public sealed class RouterCore : IInferenceRouter
     // ── helpers ─────────────────────────────────────────────────────────────
 
     private string NewTicketId() => $"t{Interlocked.Increment(ref _seq):x8}-{Random.Shared.Next(0xffff):x4}";
+
+    internal long? ObservedModelContextWindow(EngineRuntime engine, EngineCapability capability, string model)
+    {
+        if (capability.Healthy && capability.SwitchingToward is null &&
+            capability.ModelContextWindows.TryGetValue(model, out var tokens) &&
+            string.Equals(ResolveCanonical(model), model, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(engine.CanonicalModel(model) ?? model, model, StringComparison.OrdinalIgnoreCase))
+            return tokens;
+        return null;
+    }
 
     private string ResolveCanonical(string requested)
     {

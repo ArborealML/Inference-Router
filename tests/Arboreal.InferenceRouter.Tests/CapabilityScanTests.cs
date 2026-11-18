@@ -5,6 +5,31 @@ namespace Arboreal.InferenceRouter.Tests;
 /// where a plausible implementation would make it true at no instant that ever existed (§7).</summary>
 public sealed class CapabilityScanTests
 {
+    [Fact]
+    public void PositionalRecordKeepsTheOriginalArraySurfaceAndCopiesItsRoster()
+    {
+        string[] reported = ["m", "extra"];
+        var cap = new EngineCapability(Version: 42, Healthy: true, SwitchingToward: "next", LoadedModels: reported);
+        string[] direct = cap.LoadedModels;
+        cap.Deconstruct(out long version, out bool healthy, out string? toward, out string[] roster);
+
+        Assert.Equal(42, version);
+        Assert.True(healthy);
+        Assert.Equal("next", toward);
+        Assert.Equal(reported, direct);
+        Assert.Equal(reported, roster);
+
+        string[] replacement = ["replacement"];
+        var changed = cap with { LoadedModels = replacement };
+        reported[0] = "mutated input";
+        direct[0] = "mutated getter result";
+        roster[0] = "mutated deconstruction";
+        replacement[0] = "mutated initializer";
+
+        Assert.Equal(["m", "extra"], cap.LoadedModels);
+        Assert.Equal("replacement", Assert.Single(changed.LoadedModels));
+    }
+
     private sealed class FakeSource : ICapabilitySource
     {
         private readonly Queue<EngineCapability> _script = new();

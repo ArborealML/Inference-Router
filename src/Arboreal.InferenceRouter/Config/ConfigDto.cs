@@ -52,6 +52,8 @@ public sealed class EngineDto
     [JsonPropertyName("api_key")][TomlPropertyName("api_key")] public string? ApiKey { get; set; }
     [JsonPropertyName("api_key_file")][TomlPropertyName("api_key_file")] public string? ApiKeyFile { get; set; }
     [JsonPropertyName("models_endpoint")][TomlPropertyName("models_endpoint")] public string? ModelsEndpoint { get; set; }
+    [JsonPropertyName("models_context_window_path")][TomlPropertyName("models_context_window_path")]
+    public string? ModelsContextWindowPath { get; set; }
     [JsonPropertyName("loaded_requires_status_loaded")][TomlPropertyName("loaded_requires_status_loaded")] public bool? LoadedRequiresStatusLoaded { get; set; }
     [JsonPropertyName("response_timeout_ms")][TomlPropertyName("response_timeout_ms")] public int? ResponseTimeoutMs { get; set; }
     [JsonPropertyName("remote")][TomlPropertyName("remote")] public bool? Remote { get; set; }

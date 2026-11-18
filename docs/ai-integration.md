@@ -5,9 +5,8 @@ POST JSON can use it. What it adds over pointing an agent straight at one engine
 
 - **A URL that survives a model switch.** When the router loads a different model on the same
   engine, your base URL and model list keep working; you do not have to know which engine is live.
-- **A call that cannot over-run its budget.** A thread gets its configured share of the engine's
-  context window and the queue gets bounded, so a runaway agent is rejected with `429` instead of
-  pushing the engine into a context overflow.
+- **Context-aware scheduling and bounded queues.** The scheduler accepts a context requirement in
+  tokens. If the queue is full, the router returns `429`.
 - **One place to watch what happened.** Every decision lands on a bounded event ring: `Seq`,
   `Timestamp`, `Kind`, and whichever of `ThreadId`, `TicketId`, `Engine`, `Model`, `Reason`, `Value`
   apply (admin JSON is PascalCase, and `EventSurfaceTests` pins it). `Seq` is monotonic, and the
@@ -30,6 +29,18 @@ The front door is `http://127.0.0.1:8321` (override with `--listen`); health is 
 already have, or keep it on loopback. The `air` binary is also a client: `air chat`, `air models`,
 `air status`, `air events`, `air threads`, `air switch`, `air tickets`. If your harness can shell
 out but not speak HTTP, drive it through those.
+
+## Discover loaded models
+
+`GET /v1/models` lists the models reported loaded by each engine. A row can include
+`context_window`, a positive integer in tokens, when AIR has a usable observation for
+that model and engine. If the upstream lists effective serving context per model,
+set `models_context_window_path` to the dotted path inside that row. An omitted field means the
+window is unknown. If several engines report the same model ID, their rows identify
+each engine by `owned_by` and can report different windows.
+
+Use the value to display the last observed window for that engine. A later inference
+request can use a different engine or profile.
 
 ## Thread identity: how an agent gets its share
 
@@ -81,17 +92,17 @@ router adds:
   `data: {"error":{"code":…, "message":…}}` then `data: [DONE]`. A client that stops at `[DONE]`
   will not hang, and can tell a truncated completion from a finished one.
 
-Declare a context need instead of guessing the window: send `X-Inference-Required-Context: 24000`
-(tokens) and the router will move the request to a profile/engine that can serve it rather than
-cramming it into the active window. Without the header it estimates the demand from prompt
-characters.
+Send `X-Inference-Required-Context: 24000` to give the scheduler a context requirement in
+tokens for choosing a profile or requesting a switch. Without the header, AIR estimates
+demand from prompt characters. [Verifying context fit against the active model and profile](../backlog/tasks/task-68%20-%20Bind-the-serving-gauges-to-a-capability-epoch-so-a-stale-window-cannot-authorise-a-profile-the-engine-cannot-serve.md)
+is still in progress. A scheduler decision can use a serving gauge that is stale or missing.
 
 ## What to call when something goes wrong
 
 | Need | Call |
 | --- | --- |
 | The id of the request you just made | response header `X-Inference-Ticket` (streaming and non-streaming) |
-| Which models exist right now, and which engine owns each | `GET /v1/models` |
+| Which models are reported loaded, and what window was observed on each engine | `GET /v1/models` |
 | Who is running, queue depths, per-thread state | `GET /admin/status` |
 | What the router decided, replayably | `GET /admin/events?since=<seq>` (SSE); filters `kinds=a,b`, `thread=`, `engine=`, `ticket=` |
 | Only the events for the request you own | `GET /admin/tickets/{id}/events?since=<seq>` (SSE) |
@@ -103,8 +114,8 @@ characters.
 
 | Header | Effect |
 | --- | --- |
-| `X-Inference-Thread` | conversation identity: its priority class, context budget and queue share |
-| `X-Inference-Required-Context` | tokens you need served; drives profile choice and switching |
+| `X-Inference-Thread` | Conversation identity for priority and queueing |
+| `X-Inference-Required-Context` | Requested context in tokens for profile choice and switching |
 | `X-Inference-Priority` | per-request priority override (not clamped today — see the caveat above) |
 | `X-Inference-Affinity` | opaque hash the scheduler uses to keep a request on an engine that already holds its prefix |
 

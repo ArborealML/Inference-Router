@@ -1,6 +1,6 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.55)
+Status: draft, continuously revised (v0.12.56)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
@@ -352,6 +352,9 @@ daemon transaction per engine. 137 tests green.
   that answers no `upload_url`, an upload that dies or answers no asset id, an asset name listed twice on
   the release, and a tag that moves after the first resolve. No tag has run the gate: still configured,
   not proven.
+- v0.12.56 — `GET /v1/models` can report the observed context window for each loaded model.
+  Roster and windows come from one engine observation. Unknown windows and ambiguous model
+  identities omit the field. Public capability array signatures remain compatible (§6, TASK-88).
 - v0.12.55 — `air chat` and `air complete` exit unsuccessfully on orderly stream EOF before
   `[DONE]`, keeping partial stdout and reporting early EOF once when the stream supplied no error
   (§11, TASK-108). Process tests cover both verbs and both output modes.
@@ -1633,13 +1636,15 @@ engine forks land; the scheduler interface will not change shape.
   **A probe is fenced, not merely ordered:** it records the snapshot version before it awaits and re-checks that
   version inside every publish retry, abandoning the publication if it moved, so a fetch that began before a switch
   cannot land after it and overwrite what the switch proved — and, in the other direction, so a poll that **failed**
-  before that switch cannot withdraw the proof afterwards: the negative answer goes out as a health-only change under
-  the same version and the same drop rule, which is what stops one unreachable-tick poll from costing a working engine
+  before that switch cannot withdraw the proof afterwards. The negative answer withdraws health and model-window proof
+  under the same version and the same drop rule, which is what stops one unreachable-tick poll from costing a working engine
   its model for a whole interval. Of the health loop's two awaited observations only the `/models` fetch moves health:
   the serving-state probe that follows it answers a different question — `health.expect` says whether a **switch**
   counts as ready — moves no health flag in either direction, and still feeds the window and slot gauges. The fence
   orders *publications*, not the engine: an engine restarted outside the router's sight, with no visible
-  discontinuity, evades it.
+  discontinuity, evades it. Ordinary polls publish neither a positive nor a negative while the switch marker is set.
+  The immutable model-window observations used for discovery (§6) are published with the same roster and version.
+  A newer observation replaces them in full, and a failed model probe, claim, or runtime shutdown withdraws them.
   **Uncertainty is published:** a switch that ends without having verified the engine — failed stop, failed launch,
   readiness timeout, an exec with `wait_health = false` whose refresh cannot answer — publishes `Healthy = false` as a
   health-only change that preserves the currently reported list, so the refusal says "not hopeless" and no stale list can
@@ -1884,8 +1889,18 @@ OpenAI-compatible (path-for-verbatim):
   compares the client's bytes with the upstream's, so a torn, duplicated or keepalive-interleaved frame fails a test rather
   than reading as a slow stream.
 - `POST /v1/completions` — same for legacy completions.
-- `GET /v1/models` — union of loaded + catalog-visible models
-  (`OpenAiModelList` DTO with `owned_by: "<engine>"`).
+- `GET /v1/models` returns the OpenAI model list envelope with the last reported loaded row for
+  each model and engine, in roster order. Entries retain `id`, `object`, `created`, and `owned_by`.
+  A healthy engine with no switch in flight may also report `context_window` as a positive
+  signed 64-bit JSON integer in tokens. It comes from the same observed loaded row and immutable capability snapshot
+  as the ID. Queries do not change this contract. Rows with the same ID on different engines each
+  describe their own route candidate. A row with unknown or ambiguous window evidence omits the
+  member. This includes aliases and repeated case-equivalent IDs anywhere in an engine's
+  observation, including rows filtered out of the loaded roster. A row also omits the member if
+  either request canonicalization or forwarding on that engine would select a different model.
+  A historical row can remain listed after its proof has
+  been withdrawn. The response uses `Cache-Control: no-store`. A window describes the last
+  accepted observation for the named engine and grants no admission or engine reservation.
 - Errors: engine errors proxied with status preserved; router errors use
   OpenAI error JSON shape with `code` values: `model_unavailable`,
   `engine_unreachable`, `queue_overflow`, `deadline_exceeded`,
@@ -2004,6 +2019,11 @@ bound on the wire. `docs/ai-integration.md` carries the same table for integrato
 ## 7. Configuration (TOML)
 
 Single file; loaded at boot; `--config` may repeat (merge, later wins).
+An engine can set `models_context_window_path` in TOML or JSON when its models endpoint reports
+the effective serving context as a positive signed 64-bit integer in each individual loaded row.
+The dotted object path is relative to that row. Leave it unset when the backend exposes an
+architecture limit, an engine-wide gauge, or a value whose serving meaning is unverified.
+
 This managed example uses one engine definition and two model instances that take turns serving
 at the same endpoint. Supply an image already present on the Docker host whose entrypoint accepts
 `--model` and `--profile` and serves a single model on container port 8080. It must

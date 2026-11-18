@@ -326,13 +326,16 @@ public static class ServerApp
             w.WriteStartArray("data");
             foreach (var e in router.Engines.Values)
             {
-                foreach (var model in e.LoadedModels)
+                var capability = e.Capability;
+                foreach (var model in capability.ModelRoster)
                 {
                     w.WriteStartObject();
                     w.WriteString("id", model);
                     w.WriteString("object", "model");
                     w.WriteNumber("created", DateTimeOffset.UtcNow.ToUnixTimeSeconds());
                     w.WriteString("owned_by", e.Name);
+                    if (router.ObservedModelContextWindow(e, capability, model) is { } window)
+                        w.WriteNumber("context_window", window);
                     w.WriteEndObject();
                 }
             }
@@ -340,6 +343,7 @@ public static class ServerApp
             w.WriteEndObject();
         }
         ctx.Response.Headers.ContentType = "application/json";
+        ctx.Response.Headers.CacheControl = "no-store";
         await ctx.Response.Body.WriteAsync(ms.ToArray().AsMemory(), ctx.RequestAborted).ConfigureAwait(false);
     }
 

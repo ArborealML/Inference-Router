@@ -271,6 +271,11 @@ public static class RouterConfigLoader
             throw new RouterConfigException(
                 $"engine.{name}.response_timeout_ms must be >= 0 (0 disables the cap on waiting for the engine's first byte)");
 
+        if (e.ModelsContextWindowPath is { } modelsContextPath &&
+            modelsContextPath.Split('.').Any(segment => segment.Length == 0 || segment != segment.Trim()))
+            throw new RouterConfigException(
+                $"engine.{name}.models_context_window_path must contain nonempty dotted object field names");
+
         return new EngineDefinition
         {
             Name = name,
@@ -280,6 +285,7 @@ public static class RouterConfigLoader
             ApiKeyFile = e.ApiKeyFile,
             Health = health,
             ModelsEndpoint = e.ModelsEndpoint ?? "/models",
+            ModelsContextWindowPath = e.ModelsContextWindowPath,
             LoadedRequiresStatusLoaded = e.LoadedRequiresStatusLoaded ?? false,
             Capabilities = capabilities,
             Catalog = catalog,

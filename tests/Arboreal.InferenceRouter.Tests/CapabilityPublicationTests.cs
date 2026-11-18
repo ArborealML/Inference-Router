@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text;
+using System.Threading.Channels;
 using Arboreal.InferenceRouter.Lifecycle;
 
 namespace Arboreal.InferenceRouter.Tests;
@@ -23,14 +24,19 @@ public sealed class CapabilityPublicationTests
         private string[] _models;
         private bool _holdArmed;
         private int _modelsRequests;
+        private IReadOnlyDictionary<string, long>? _contextWindows;
 
         public ProbeHandler(params string[] models) => _models = models;
 
-        public void SetModels(params string[] models) => _models = models;
+        public void SetModels(params string[] models) => Volatile.Write(ref _models, models);
 
         /// <summary>Status the fake answers <c>/models</c> with. Non-200 means the router cannot ask what is
         /// loaded, which is a different situation from an engine that answers and names nothing.</summary>
         public int ModelsStatus { get; set; } = 200;
+        public IReadOnlyDictionary<string, long> ContextWindows
+        {
+            set => Volatile.Write(ref _contextWindows, value);
+        }
         public int ModelsRequests => Volatile.Read(ref _modelsRequests);
         public Task EnteredAsync => _entered.Task;
         public Task AnsweredAsync => _answered.Task;
@@ -39,7 +45,7 @@ public sealed class CapabilityPublicationTests
         /// announces that it is in flight, and then waits to be released. The answer it eventually writes
         /// is the set as it was when the request started — which is exactly the state a switch can overtake.
         /// Later requests are answered normally, so only the one straddling probe is affected.</summary>
-        public void HoldNextProbe() => _holdArmed = true;
+        public void HoldNextProbe() => Volatile.Write(ref _holdArmed, true);
         public void ReleaseProbe() => _released.TrySetResult();
 
         /// <summary>Status the *held* request answers with once it is released. It has to be separate from
@@ -59,10 +65,11 @@ public sealed class CapabilityPublicationTests
                 Interlocked.Increment(ref _modelsRequests);
                 if (ModelsStatus != 200)
                     return new HttpResponseMessage((HttpStatusCode)ModelsStatus) { Content = new StringContent("{}") };
-                var answer = _models;                       // bytes as they would have arrived
-                if (_holdArmed)
+                var answer = Volatile.Read(ref _models);
+                var windows = Volatile.Read(ref _contextWindows);
+                if (Volatile.Read(ref _holdArmed))
                 {
-                    _holdArmed = false;
+                    Volatile.Write(ref _holdArmed, false);
                     _entered.TrySetResult();
                     await _released.Task.ConfigureAwait(false);
                     _answered.TrySetResult();
@@ -70,8 +77,13 @@ public sealed class CapabilityPublicationTests
                         return new HttpResponseMessage((HttpStatusCode)HeldProbeStatus)
                         { Content = new StringContent("{}") };
                 }
-                var items = string.Join(",", answer.Select(
-                    m => "{\"id\":\"" + m + "\",\"status\":{\"value\":\"loaded\"}}"));
+                var items = string.Join(",", answer.Select(model =>
+                {
+                    var meta = windows is not null && windows.TryGetValue(model, out var window)
+                        ? FormattableString.Invariant($",\"meta\":{{\"n_ctx\":{window}}}")
+                        : "";
+                    return "{\"id\":\"" + model + "\",\"status\":{\"value\":\"loaded\"}" + meta + "}";
+                }));
                 return Ok("{\"object\":\"list\",\"data\":[" + items + "]}");
             }
             if (Matches(path, "props"))
@@ -155,12 +167,13 @@ public sealed class CapabilityPublicationTests
         }
     }
 
-    private static EngineDefinition Def(HealthProbeDefinition? health = null) => new()
+    private static EngineDefinition Def(HealthProbeDefinition? health = null, string? modelContextPath = null) => new()
     {
         Name = "fake",
         Kind = EngineKind.OpenAiCompatible,
         Endpoint = new Uri("http://127.0.0.1:9/v1"),
         Health = health,
+        ModelsContextWindowPath = modelContextPath,
         Catalog = new Dictionary<string, EngineModelDefinition>
         {
             ["m"] = new() { Name = "m" },
@@ -190,6 +203,159 @@ public sealed class CapabilityPublicationTests
             await Task.Delay(20).ConfigureAwait(false);
         }
         throw new TimeoutException("condition not met within " + timeoutMs + " ms");
+    }
+
+    private static ChannelReader<RouterEvent> ObserveHealthPolls(EventRing feed)
+    {
+        var observations = Channel.CreateUnbounded<RouterEvent>();
+        feed.Subscribe(item =>
+        {
+            if (item.Kind == "engine.health") observations.Writer.TryWrite(item);
+        });
+        return observations.Reader;
+    }
+
+    [Theory(Timeout = 60_000)]
+    [InlineData(200, true)]
+    [InlineData(503, true)]
+    [InlineData(200, false)]
+    [InlineData(503, false)]
+    public async Task StalePollCannotReplaceOrWithdrawTheSwitchModelWindows(int oldStatus, bool proveHealth)
+    {
+        using var handler = new ProbeHandler("m")
+        {
+            ContextWindows = new Dictionary<string, long> { ["m"] = 131_072 },
+            HeldProbeStatus = oldStatus,
+        };
+        var provider = new ScriptedProvider { ProveHealth = proveHealth };
+        var feed = new EventRing();
+        var polls = ObserveHealthPolls(feed);
+        var def = Def(new HealthProbeDefinition { Path = "/props", IntervalMs = 20 }, "meta.n_ctx");
+        await using var engine = NewEngine(def, provider, handler, feed: feed);
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        var ct = timeout.Token;
+        using var loopCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        try
+        {
+            engine.StartHealthLoop(loopCts.Token);
+            await polls.ReadAsync(ct);
+            var old = engine.Capability;
+            Assert.Equal(131_072, old.ModelContextWindows["m"]);
+            handler.HoldNextProbe();
+            await handler.EnteredAsync.WaitAsync(ct);
+            handler.SetModels("m", "extra");
+            handler.ContextWindows = new Dictionary<string, long> { ["m"] = 32_768, ["extra"] = 262_144 };
+            var ready = await engine.WaitForModelAsync("extra", TimeSpan.FromSeconds(10), ct);
+            Assert.True(ready.IsReady);
+            var proven = engine.Capability;
+            Assert.Equal(32_768, proven.ModelContextWindows["m"]);
+            Assert.Equal(262_144, proven.ModelContextWindows["extra"]);
+
+            // The single health loop is still awaiting the held response. Its next health event
+            // follows publication, and the callback sees it before another poll can repair the state.
+            var checkpoint = feed.CurrentSeq;
+            var processed = new TaskCompletionSource<(RouterEvent Event, EngineCapability Capability)>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+            feed.Subscribe(item =>
+            {
+                if (item.Kind == "engine.health" && item.Seq > checkpoint)
+                    processed.TrySetResult((item, engine.Capability));
+            });
+            handler.ReleaseProbe();
+            var (stale, afterStalePoll) = await processed.Task.WaitAsync(ct);
+            Assert.Equal(oldStatus == 200 ? 1d : 0d, stale.Value);
+            Assert.Equal(oldStatus == 503 ? "models endpoint 503" : null, stale.Reason);
+            Assert.Same(proven, afterStalePoll);
+            Assert.Equal(131_072, old.ModelContextWindows["m"]);
+            Assert.DoesNotContain("extra", old.LoadedModels);
+        }
+        finally
+        {
+            loopCts.Cancel();
+            handler.ReleaseProbe();
+        }
+    }
+
+    [Fact(Timeout = 60_000)]
+    public async Task ANewObservationWithoutAWindowWithdrawsItOnceAndLeavesOldSnapshotsImmutable()
+    {
+        using var handler = new ProbeHandler("m", "extra")
+        {
+            ContextWindows = new Dictionary<string, long> { ["m"] = 131_072, ["extra"] = 32_768 },
+        };
+        var feed = new EventRing();
+        var polls = ObserveHealthPolls(feed);
+        var def = Def(new HealthProbeDefinition { Path = "/props", IntervalMs = 20 }, "meta.n_ctx");
+        await using var engine = NewEngine(def, new ScriptedProvider(), handler, feed: feed);
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        var ct = timeout.Token;
+        using var loopCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        engine.StartHealthLoop(loopCts.Token);
+        await polls.ReadAsync(ct);
+        var proven = engine.Capability;
+        await polls.ReadAsync(ct);
+        Assert.Same(proven, engine.Capability);
+
+        var reportedCopy = engine.LoadedModels;
+        reportedCopy[0] = "forged";
+        Assert.Equal(["m", "extra"], engine.Capability.LoadedModels);
+        handler.ContextWindows = new Dictionary<string, long> { ["extra"] = 32_768 };
+        while (engine.Capability.ModelContextWindows.ContainsKey("m"))
+            await polls.ReadAsync(ct);
+        var unknown = engine.Capability;
+        Assert.Equal(proven.Version + 1, unknown.Version);
+        Assert.Equal(["m", "extra"], unknown.LoadedModels);
+        var remaining = Assert.Single(unknown.ModelContextWindows);
+        Assert.Equal("extra", remaining.Key);
+        Assert.Equal(32_768, remaining.Value);
+        Assert.True(unknown.Healthy);
+        Assert.Equal(131_072, proven.ModelContextWindows["m"]);
+        await polls.ReadAsync(ct);
+        Assert.Same(unknown, engine.Capability);
+    }
+
+    [Fact(Timeout = 60_000)]
+    public async Task FailedPollDuringASwitchCannotWithdrawTheSwitchsPublishedWindows()
+    {
+        using var handler = new ProbeHandler("m")
+        {
+            ContextWindows = new Dictionary<string, long> { ["m"] = 32_768 },
+        };
+        var feed = new EventRing();
+        var polls = ObserveHealthPolls(feed);
+        var published = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var finish = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        var ct = timeout.Token;
+        var def = Def(new HealthProbeDefinition { Path = "/props", IntervalMs = 3_600_000 }, "meta.n_ctx");
+        await using var engine = NewEngine(def, new ScriptedProvider(), handler, feed: feed);
+        engine.AfterSwitchProofForTests = () =>
+        {
+            published.TrySetResult();
+            finish.Task.WaitAsync(ct).GetAwaiter().GetResult();
+        };
+        var pending = engine.WaitForModelAsync("m", TimeSpan.FromSeconds(10), ct);
+        try
+        {
+            await published.Task.WaitAsync(ct);
+            var proven = engine.Capability;
+            Assert.Equal("m", proven.SwitchingToward);
+            Assert.Equal(32_768, proven.ModelContextWindows["m"]);
+            handler.ModelsStatus = 503;
+            using var loopCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            engine.StartHealthLoop(loopCts.Token);
+            var failed = await polls.ReadAsync(ct);
+            Assert.Equal(0, failed.Value);
+            Assert.Same(proven, engine.Capability);
+            await loopCts.CancelAsync();
+        }
+        finally
+        {
+            finish.TrySetResult();
+        }
+        Assert.True((await pending).IsReady);
+        Assert.Null(engine.Capability.SwitchingToward);
+        Assert.Equal(32_768, engine.Capability.ModelContextWindows["m"]);
     }
 
     [Fact(Timeout = 60_000)]
@@ -577,10 +743,13 @@ public sealed class CapabilityPublicationTests
     [Fact(Timeout = 60_000)]
     public async Task ASwitchTheEngineCannotConfirmAfterTheLaunchIsRefusedAndClaimsNothing()
     {
-        using var handler = new ProbeHandler("m");
+        using var handler = new ProbeHandler("m")
+        {
+            ContextWindows = new Dictionary<string, long> { ["m"] = 131_072, ["extra"] = 131_072 },
+        };
         var provider = new ScriptedProvider { ProveHealth = false };
         var feed = new EventRing();
-        var def = Def(new HealthProbeDefinition { Path = "/props", IntervalMs = 3_600_000 });
+        var def = Def(new HealthProbeDefinition { Path = "/props", IntervalMs = 3_600_000 }, "meta.n_ctx");
         var engine = NewEngine(def, provider, handler, feed: feed);
         await using var _ = engine;
 
@@ -589,6 +758,7 @@ public sealed class CapabilityPublicationTests
         Assert.True(first.IsReady);
         Assert.True(engine.Healthy);
         Assert.Contains("extra", engine.LoadedModels);
+        Assert.Equal(131_072, engine.Capability.ModelContextWindows["extra"]);
 
         // wait_health=false: the provider's exec says it launched, and the router asks what is loaded.
         // This time the engine will not answer. Nothing confirms the model, and an exit code is not a loaded
@@ -603,6 +773,7 @@ public sealed class CapabilityPublicationTests
         Assert.Null(engine.SwitchingToward);
         Assert.False(engine.IsReadyFor("second", null));
         Assert.Contains("extra", engine.LoadedModels);      // kept as history, not as a claim
+        Assert.Empty(engine.Capability.ModelContextWindows);
         Assert.DoesNotContain("second", engine.LoadedModels);
         Assert.Equal(2, provider.LaunchCount);              // refused after the launch, never before it
 

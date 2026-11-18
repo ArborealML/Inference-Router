@@ -1,3 +1,5 @@
+using System.Collections.Immutable;
+
 namespace Arboreal.InferenceRouter;
 
 /// <summary>
@@ -14,14 +16,38 @@ namespace Arboreal.InferenceRouter;
 /// <param name="Healthy">The last model probe answered. False means "we do not know", never "it cannot".</param>
 /// <param name="SwitchingToward">Model a switch is in flight toward, or null. A switch that has started but
 /// not landed is not an absence: the model will be there.</param>
-/// <param name="LoadedModels">Models the engine itself reported serving at <see cref="Version"/>. Never
-/// mutated after publication — a snapshot owns its array.</param>
+/// <param name="LoadedModels">Models the engine reported serving. The snapshot copies this array.</param>
 public sealed record EngineCapability(
     long Version,
     bool Healthy,
     string? SwitchingToward,
     string[] LoadedModels)
 {
+    private readonly ImmutableList<string> _modelRoster = ImmutableList.CreateRange(LoadedModels);
+
+    /// <summary>A copy of the roster in the original public record shape.</summary>
+    public string[] LoadedModels
+    {
+        get => _modelRoster.ToArray();
+        init
+        {
+            _modelRoster = ImmutableList.CreateRange(value);
+            ModelContextWindows = NoModelContextWindows;
+        }
+    }
+
+    internal ImmutableList<string> ModelRoster
+    {
+        get => _modelRoster;
+        init => _modelRoster = value;
+    }
+
+    internal static readonly ImmutableDictionary<string, long> NoModelContextWindows =
+        ImmutableDictionary.Create<string, long>(StringComparer.OrdinalIgnoreCase);
+
+    // Each value came from its identified model row in the observation that published this roster.
+    internal ImmutableDictionary<string, long> ModelContextWindows { get; init; } = NoModelContextWindows;
+
     /// <summary>Did the switch that raised the current marker author this engine's unknown health? One
     /// <see cref="Healthy"/> flag cannot say both "we do not know" and "who made us not know", and the
     /// difference decides whether a waiter keeps a proof its own switch published: a marker raised by a later
@@ -79,7 +105,7 @@ internal static class CapabilityScan
                 if (cap.SwitchingToward is { } toward
                     && string.Equals(toward, model, StringComparison.OrdinalIgnoreCase)) return false;
                 if (e.DeclaresModel(model)) return false;
-                foreach (var name in cap.LoadedModels)
+                foreach (var name in cap.ModelRoster)
                 {
                     // Case-insensitive to match the scheduler, which has always compared model names this
                     // way; a catalog-only fast path that were ordinal would answer a different question.

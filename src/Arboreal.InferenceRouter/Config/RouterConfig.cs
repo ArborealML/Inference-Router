@@ -109,6 +109,8 @@ public sealed class EngineDefinition
     public string? ApiKeyFile { get; init; }
     public HealthProbeDefinition? Health { get; init; }
     public string ModelsEndpoint { get; init; } = "/models";
+    /// <summary>Dotted path inside a model row to its observed effective serving context in tokens.</summary>
+    public string? ModelsContextWindowPath { get; init; }
     /// <summary>When true, an entry counts as loaded only when its status says loaded
     /// (llama.cpp-style servers with alias entries).</summary>
     public bool LoadedRequiresStatusLoaded { get; init; }

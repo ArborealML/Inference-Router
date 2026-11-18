@@ -21,14 +21,15 @@ On Windows, use Git Bash and pass the executable path ending in `air.exe`. A suc
 
 ## Features
 
-- **OpenAI-compatible inference.** List loaded models and send chat or legacy text completions with optional SSE streaming. [Client integration guide](docs/ai-integration.md)
+- **OpenAI-compatible inference.** Send chat or legacy text completions with optional SSE streaming. [Client integration guide](docs/ai-integration.md)
+- **Model discovery.** `GET /v1/models` includes an observed context window in tokens when AIR has usable evidence for that loaded model on its engine. [Model discovery contract](docs/ai-integration.md#discover-loaded-models)
 - **Routing and serving profiles.** Queue requests by model, apply thread priorities, and route to configured local and remote engines using health and available slots. A request can specify the context window it needs in tokens. [Serving profiles specification](SPEC.md)
 - **Per-engine lifecycle.** Use the native Docker provider or a configured selector for model switches. The Docker provider checks ownership before stopping a container and is verified against a fake daemon. [Docker provider](src/Arboreal.InferenceRouter/Engines/Lifecycle/DockerLifecycleProvider.cs)
 - **Operator controls.** Inspect engine and queue status, replay events for a ticket, or cancel it through the admin API. The `air` CLI can host the router and act as a client. [HTTP reference](SPEC.md#6-http-surface-server-project)
 
 ### In progress
 
-- **Context discovery for pi.** Report verified context windows for loaded models in `GET /v1/models` and qualify model selection and streaming through the deployed router. [Pi integration milestone](backlog/milestones/m-0%20-%20pi-on-a-running-router.md)
+- **Context fit during routing.** Verify that the engine can meet a request’s context requirement using a window measured for its current model and profile. [Serving gauge verification](backlog/tasks/task-68%20-%20Bind-the-serving-gauges-to-a-capability-epoch-so-a-stale-window-cannot-authorise-a-profile-the-engine-cannot-serve.md)
 - **Native model swaps on a shared host.** Drain in-flight requests before swapping the resident model, verify that the replacement is ready, and complete a pi turn after the swap. [Native swap milestone](backlog/milestones/m-4%20-%20native-model-swap-through-pi-clm.md)
 - **Lifecycle ownership for remote engines.** Separate where AIR sends inference requests from which engines it can start and stop. [Lifecycle ownership plan](backlog/tasks/task-77%20-%20Split-one-remote-flag-into-transport-reach-and-model-loading-ownership.md)
 
