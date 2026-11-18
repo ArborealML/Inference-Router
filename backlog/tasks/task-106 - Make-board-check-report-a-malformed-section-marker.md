@@ -25,8 +25,16 @@ The checker reads section bodies between `SECTION:<NAME>:BEGIN` and `:END` marke
 - [ ] #4 Body text stranded outside a known section's markers — a missing opener leaving a duplicate under the heading — is reported with the heading
 <!-- AC:END -->
 
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Markers are matched only in comment form today: `tools/board-check.py:157` at `0ddd8f3` searches for the full comment form of the `AC:BEGIN` pair, so a line reading `SECTION:NOTES:END -->` — the opener lost — is no marker at all and the section body runs on unnoticed. Scan every line holding `SECTION:` or `AC:BEGIN`/`AC:END` and require the complete comment, reporting file, line and marker name; report a name outside the known set (AC #3); report text stranded outside markers under a rendered heading (AC #4). Fixtures join `--self-test`, which already runs the checker over temporary task files and asserts its exit code and defect names.
+<!-- SECTION:PLAN:END -->
+
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Found by the board while editing rows in this tree: `grep -rn "^SECTION:" backlog/tasks/` listed four files at the time of writing, all closing markers; the board repaired those files in the same commit. Cheap rule, worth having before the corpus outgrows anyone's ability to eyeball it. Sequencing decided by the board: it lands after the stop-cause change, because TASK-87 is the gate and nothing waits on this row.
+Found by the board while editing rows in this tree: `grep -rn "^SECTION:" backlog/tasks/` listed four files at the time of writing, all closing markers; the board repaired those files in the same commit. Cheap rule, worth having before the corpus outgrows anyone's ability to eyeball it. Sequencing decided by the board: it lands after the stop-cause change, because TASK-87 is the gate and nothing waits on this row — and a check that reports nothing in the current corpus is prevention, not repair. TASK-86 #5 is the sibling hole in the same file (empty decision bodies); different deliverable, separate commit.
+
+How the current gate behaves, measured by this row's own edit: the marker count is taken over the whole body, so prose that quotes a marker in full comment form is counted as a marker and the row comes back `ACBLOCK`. AC #1 has to distinguish a marker from a quotation of one, or the check will push writers into paraphrase.
 <!-- SECTION:NOTES:END -->
