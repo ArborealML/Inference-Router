@@ -238,6 +238,60 @@ public sealed class DockerLifecycleProviderTests
         Assert.Equal(["GET /v1.44/version", $"GET /v1.44/images/{Uri.EscapeDataString(Locator)}/json"], daemon.Requests);
     }
 
+    [Theory(Timeout = 20_000)]
+    [InlineData("running")]
+    [InlineData("restarting")]
+    [InlineData("paused")]
+    public async Task HostInventoryChecksUnfilteredActiveContainers(string state)
+    {
+        using var daemon = new FakeDockerDaemonHandler
+        {
+            Responder = _ => (HttpStatusCode.OK,
+                $$$"""[{"Id":"sibling","State":"{{{state}}}","Labels":{"arboreal.router":"r1","arboreal.engine":"unrelated"}}]"""),
+        };
+        using var provider = new DockerLifecycleProvider(Cfg(), "strata", daemon);
+        var queryId = Guid.NewGuid();
+
+        var observed = await provider.ObserveExclusiveHostAsync(queryId, new HashSet<string>(StringComparer.Ordinal) { "strata" },
+            CancellationToken.None);
+
+        Assert.Equal(new HostOccupancy(queryId, HostOccupancyKind.Foreign), observed);
+        Assert.Equal(["GET /v1.44/containers/json?all=true"], daemon.Requests);
+    }
+
+    [Theory(Timeout = 20_000)]
+    [InlineData(HttpStatusCode.OK, "[]")]
+    [InlineData(HttpStatusCode.OK, "[null]")]
+    [InlineData(HttpStatusCode.OK, "{broken")]
+    [InlineData(HttpStatusCode.NoContent, "")]
+    [InlineData(HttpStatusCode.Forbidden, "[]")]
+    [InlineData(HttpStatusCode.OK, """[{"Id":"managed","State":"running","Labels":{"arboreal.router":"r1","arboreal.engine":"strata"}}]""")]
+    public async Task RawDockerInventoryCannotGrantHostAuthority(HttpStatusCode status, string body)
+    {
+        using var daemon = new FakeDockerDaemonHandler { Responder = _ => (status, body) };
+        using var provider = new DockerLifecycleProvider(Cfg(), "strata", daemon);
+        var queryId = Guid.NewGuid();
+
+        var observed = await provider.ObserveExclusiveHostAsync(queryId, new HashSet<string>(StringComparer.Ordinal) { "strata" },
+            CancellationToken.None);
+
+        Assert.Equal(new HostOccupancy(queryId, HostOccupancyKind.Unknown), observed);
+        Assert.Equal(["GET /v1.44/containers/json?all=true"], daemon.Requests);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void LostDockerMutationResponseLeavesItsExactOperationUnsettled(bool stop)
+    {
+        var operation = new HostMutation(1, Guid.NewGuid(), stop ? HostMutationKind.Stop : HostMutationKind.Launch,
+            "strata", stop ? Ours : "model-a", null);
+
+        var outcome = DockerLifecycleProvider.ReconcileUnacknowledgedHostMutation(operation);
+
+        Assert.Equal(new HostMutationOutcome(operation.Id, HostMutationStatus.Unknown), outcome);
+    }
+
     [Fact(Timeout = 20_000)]
     public async Task PreflightRefusesAnImageThatIsNotOnTheHost_AndPullsNothing()
     {

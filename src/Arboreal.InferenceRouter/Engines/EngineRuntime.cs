@@ -9,7 +9,7 @@ namespace Arboreal.InferenceRouter;
 
 /// <summary>Runtime for one configured engine: health probing, loaded-model detection,
 /// prefix trie, switch execution (serialized per engine), busy-ness accounting.</summary>
-public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
+public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
 {
     private readonly EngineDefinition _def;
     private readonly Dictionary<string, EngineModelDefinition> _catalog;
@@ -139,14 +139,25 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
 
     public EngineRuntime(EngineDefinition def, RouterConfig config, EventRing events, HttpMessageHandler? handler = null,
                          IEngineLifecycleProvider? lifecycle = null, Action? dispatchHint = null)
+        : this(def, config, events, handler, lifecycle, dispatchHint, hostEnrollment: null)
+    {
+    }
+
+    internal EngineRuntime(EngineDefinition def, RouterConfig config, EventRing events, HttpMessageHandler? handler,
+                           IEngineLifecycleProvider? lifecycle, Action? dispatchHint, HostEngineEnrollment? hostEnrollment)
     {
         config.ValidateLifecycleTopology(def);
         _lifecycleBinding = BindLifecycle(def, lifecycle);
+        if (hostEnrollment is { } enrollment &&
+            (!def.HasExplicitRouterLifecycle || enrollment.Engine != def.Name || enrollment.RouterId != def.Docker?.RouterId ||
+             lifecycle is not null))
+            throw new RouterConfigException($"engine.{def.Name}: host enrollment does not match the bound lifecycle owner");
+        _hostEnrollment = hostEnrollment;
         _def = def;
         _catalog = def.Catalog.ToDictionary(entry => entry.Key, entry => CopyCatalogEntry(entry.Value), StringComparer.Ordinal);
         _events = events;
         _dispatchHint = dispatchHint;
-        if (_lifecycleBinding is { } binding)
+        if (_lifecycleBinding is { } binding && _hostEnrollment is null)
         {
             _lifecycle = new EngineLifecycleCoordinator(lifecycle ?? CreateLifecycleProvider(def, binding.Owner),
                 ownsProvider: lifecycle is null);
@@ -1208,7 +1219,9 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
             // One transaction through the provider seam: prove ownership, validate, stop what is ours,
             // launch the exact target. What "launch" means is the provider's business; the ordering is
             // the router's, and it is what keeps a refusal from costing the engine anything it had.
-            var report = await lifecycle.SwitchWithReportAsync(target, ct).ConfigureAwait(false);
+            var report = _hostEnrollment is { } enrollment
+                ? await SwitchEnrolledHostAsync(enrollment, state, target, ct).ConfigureAwait(false)
+                : await lifecycle.SwitchWithReportAsync(target, ct).ConfigureAwait(false);
             var launched = report.Result;
             if (!launched.Succeeded)
             {
@@ -1233,6 +1246,7 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
                 EndSwitch(state, false, restoreIncumbent: report.RefusedBeforeMutation);
                 return;
             }
+            if (_hostEnrollment is not null) return; // the controller committed readiness under its host guard
             var readiness = lifecycle.Readiness(target);
             if (readiness.ProveHealth)
             {

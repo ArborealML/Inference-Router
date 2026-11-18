@@ -1,6 +1,6 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.60)
+Status: draft, continuously revised (v0.12.61)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
@@ -352,6 +352,10 @@ daemon transaction per engine. 137 tests green.
   that answers no `upload_url`, an upload that dies or answers no asset id, an asset name listed twice on
   the release, and a tag that moves after the first resolve. No tag has run the gate: still configured,
   not proven.
+- v0.12.61 — Add the shared-host reservation and an internal runtime path for fake-controller
+  qualification. The coordinator persists mutation intent before dispatch and holds the reservation
+  through guarded proof publication and switch settlement. Production host enrollment remains gated
+  (§5.3.1, TASK-110).
 - v0.12.60 — dispatch evaluates and takes the same thread-admissible ticket, restarting the
   queue scan if that ticket loses its place before selection commits (§5.5).
 - v0.12.59 — Only an exception from the ordinary `/models` fetch can withdraw probe health.
@@ -1567,6 +1571,40 @@ switch (`RouterCore` reserves at dispatch and releases in the `finally` after th
 defensible while an engine serves exactly one model — there is nothing else it could answer — but once
 the router performs the drain itself the switch must be an explicit *lifecycle* reservation, not
 inference capacity, or the scheduler will read a switching engine as a busy one.
+
+**Host reservation foundation (TASK-110).** An exclusive handle serializes cooperating processes that
+open the same stable local file. The fixture provisions a checksummed genesis record and retains the
+file and directory across restarts. A missing, empty or unreadable record refuses mutation. The
+coordinator flushes each new owner and epoch and persists the operation ID and target before stop or
+launch. For stop, it flushes the intent before withdrawing the incumbent's serving authority. A
+pending intent blocks a successor epoch until the provider supplies a matching terminal outcome.
+This file protects ordering among its holders. Host authority, store identity, and protection against
+restoring earlier checksummed contents require independent evidence.
+
+**Internal qualification path.** Tests bind the already selected lifecycle target to a fake host
+controller. The coordinator closes the supplied admission guard for vacant and occupied groups and
+rechecks vacancy before launch. For an occupied group it repeats preflight after drain and stops only
+the freshly observed, owned immutable ID. The fake verifies the launched instance and commits
+readiness through the guard while the reservation is held. Foreign or unknown occupancy refuses the
+switch without a provider fallback on this path. The admission callback exercises proof publication
+and switch settlement. Public configuration and the request dispatcher do not construct this
+binding, and the dedicated single-engine restriction for explicit native ownership still applies.
+
+**Production evidence.** The raw Docker inventory can report known foreign containers. Even an
+empty inventory leaves vacancy unproven, and raw Docker supplies no terminal receipt for an
+unacknowledged router operation ID. Positive authority requires independently verified enrollment,
+operating-system enforcement over the full claimed residency partition, and durable operation
+receipts that exclude delayed effects across provider restart. A partial partition supports a claim
+only for the resources it covers. Keep unresolved mutations fenced until an authoritative receipt
+or reconciliation settles them.
+
+The production handoff must preserve a still-valid incumbent after a proved pre-mutation refusal
+(decision 62). The internal fixture preserves the physical incumbent at preflight and withholds
+runtime restoration pending instance-bound evidence. Production inference must acquire an
+instance-bound permit before writing upstream. The permit lasts through response disposal and
+remains with cleanup when a timed-out or cancelled caller leaves a physical invocation running
+(decision 67, TASK-25, TASK-64, TASK-118). Production activation awaits those admission and host
+qualifications.
 
 Target config sketch: `image`, `container_name`, `labels`, `entrypoint`/`cmd`
 template, `env`, `mounts`, `ports`, `gpu` (device requests / `count = -1` /
