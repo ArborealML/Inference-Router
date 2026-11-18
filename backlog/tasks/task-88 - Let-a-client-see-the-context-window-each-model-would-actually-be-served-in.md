@@ -5,7 +5,7 @@ status: Testing
 assignee:
   - '@gpt-6.2-sol-config'
 created_date: '2026-11-18T07:15:00Z'
-updated_date: '2026-11-18T19:40:00Z'
+updated_date: '2026-11-18T19:48:00Z'
 labels:
   - wire
   - serve
@@ -38,9 +38,9 @@ Extend ordinary GET /v1/models with a positive context_window in tokens for each
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Wire plan reviewed against 5c5e18a. Use one immutable observation for the model ID and its effective window. Identical IDs on different engines retain independent values. Suppress ambiguous evidence within one engine, withdraw stale proof, and keep discovery independent of admission. Qualify one actual backend and exercise legacy clients.
+Wire plan reviewed against 5c5e18a. Use one immutable observation for the model ID and effective window. Identical IDs on different engines keep independent values. Suppress ambiguous evidence, withdraw stale proof, and keep discovery separate from admission.
 
-The resident model-list row reported 256000 tokens. Independent authenticated backend health reported the same model alias, effective generation context 256000, four slots and Strata 0.1.60. Qualify the matching build and verify the value through ordinary AIR model discovery before accepting the wire criterion.
+The coordinator queried ordinary GET /v1/models through a disposable front running the integrated worker build. HTTP 200 returned the exact resident model ID, owned_by strata, context_window 256000, and Cache-Control no-store. The independent authenticated backend health read named the same model, context 256000, four slots and Strata 0.1.60. The deployed router still requires qualification.
 
-Runtime and fixture reviews dispatched for 27ab65c. Verify the integrated code against the shutdown fixture, then check the exact resident row through an isolated router before accepting the deployment evidence.
+Runtime and fixture reviews dispatched for 27ab65c. Fixture review identified missing contradictory declared/observed windows, a valid neighbor alongside malformed evidence, an alternate metadata path, per-model switch windows, and distinct stale success/failure controls. The implementer is validating these on the integrated tree. TASK-68 carries admission behavior under stale evidence.
 <!-- SECTION:NOTES:END -->
