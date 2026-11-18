@@ -87,6 +87,11 @@ warning rather than suppressing it, and add a suppression only with a comment sa
    review changed, and say **what** was reviewed and answered rather than **where** the transcript
    sits. When you ingest a review, name the commit it covered and record each finding's
    disposition where the work lives, so a later reader can tell a decision from an oversight.
+4. **Ask the owner once.** Before anything goes to the owner as a question, read `backlog decision list` and the
+   task's own text: an accepted decision is the answer of record, and citing it *is* the reply. Re-asking what a
+   decision already settles is a context-management defect rather than a clarification, and it charges the owner
+   for the same turn twice. When a seat compacts its own context, what has to survive the compaction is the
+   settled decisions, the open owner decisions and the exact numbers still in play; everything else may go.
 
 ## Safety on a real machine
 
