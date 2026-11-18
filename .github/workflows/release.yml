@@ -5,8 +5,8 @@
 # Pushing such a tag runs this workflow. A tag that already has a release — published or draft —
 # is rejected in `preflight`, before any checkout, build or runner time is spent.
 #
-# Debugging without publishing: Actions → Release → Run workflow, with `dry_run` checked.
-# Every declared platform leg builds and smoke-tests; no release is created.
+# Debugging without publishing: Actions → Release → Run workflow.
+# Manual dispatch always builds and smoke-tests without creating a release.
 name: release
 
 on:
@@ -55,22 +55,24 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}   # lets `gh api repos/{owner}/{repo}/…` resolve
+          DISPATCH_TAG: ${{ inputs.tag }}
         run: |
           set -euo pipefail
+          export LC_ALL=C
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            tag="${{ inputs.tag }}"
+            tag="$DISPATCH_TAG"
             dry="true"
           else
             tag="${GITHUB_REF_NAME}"
             dry="false"
           fi
-          if ! printf '%s' "$tag" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'; then
-            echo "::error::'$tag' is not a release tag (expected vMAJOR.MINOR.PATCH[-prerelease])"
+          if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::input is not a release tag (expected vMAJOR.MINOR.PATCH[-prerelease])"
             exit 1
           fi
-          # Resolves annotated and lightweight tags alike; also proves the tag is on this repo.
-          commit="$(gh api "repos/{owner}/{repo}/commits/$tag" --jq .sha 2>/dev/null || true)"
-          if [ -z "$commit" ]; then
+          # The full tag ref resolves to a commit for annotated and lightweight tags and excludes branches.
+          commit="$(gh api "repos/{owner}/{repo}/commits/refs/tags/$tag" --jq .sha 2>/dev/null)" || commit=""
+          if [[ ! "$commit" =~ ^[0-9a-f]{40}$ ]]; then
             echo "::error::tag $tag does not exist in this repository (or does not resolve to a commit)"
             exit 1
           fi
@@ -499,7 +501,7 @@ jobs:
           # Preflight proved the tag exists, and the tag was never the thing at issue: a tag can move
           # after preflight. Re-resolve it and compare against what the legs
           # actually built, or a tag moved after preflight would publish somebody else's commit.
-          tag_sha="$(gh api "repos/{owner}/{repo}/commits/$TAG" --jq .sha 2>/dev/null || true)"
+          tag_sha="$(gh api "repos/{owner}/{repo}/commits/refs/tags/$TAG" --jq .sha 2>/dev/null)" || tag_sha=""
           if [ -z "$tag_sha" ] || [ "$tag_sha" != "$COMMIT" ]; then
             # printf, not echo: $tag_sha came back from an API call, and a shell with xpg_echo would
             # turn a literal backslash-n inside it into a second log line.
@@ -687,7 +689,7 @@ jobs:
           # draft could have been touched while we were reading it. This narrows the window; it does
           # not close it, and tag protection plus a restricted set of release writers is what closes
           # it (a repository setting, not something YAML can enforce).
-          tag_now="$(gh api "repos/{owner}/{repo}/commits/$TAG" --jq .sha 2>/dev/null || true)"
+          tag_now="$(gh api "repos/{owner}/{repo}/commits/refs/tags/$TAG" --jq .sha 2>/dev/null)" || tag_now=""
           if [ -z "$tag_now" ] || [ "$tag_now" != "$COMMIT" ]; then
             echo "::error::tag $TAG now resolves ${tag_now:-nothing}, but the legs built $COMMIT — leaving draft $rel_id unpublished for a human"
             exit 1

@@ -28,6 +28,7 @@ STEPS = {
     "stage": "Stage, verify and bind every declared asset",
     "publish": "Create the draft, inspect the remote, then publish",
     "cleanup": "Remove a half-finished draft",
+    "resolve": "Resolve the tag and its commit",
     "preflight_release_check": "Refuse if a release already exists for this tag",
 }
 
@@ -37,24 +38,23 @@ def bodies_at(rev):
     import subprocess as sp
     text = sp.run(["git", "show", f"{rev}:.github/workflows/release.yml"], cwd=REPO,
                   capture_output=True, text=True, check=True).stdout
-    doc = yaml.safe_load(text)
+    return extract_bodies(yaml.safe_load(text))
+
+
+def extract_bodies(doc):
     out = {}
     for job in ("release", "preflight"):
         for step in doc["jobs"][job]["steps"]:
             for key, name in STEPS.items():
                 if step.get("name") == name:
                     out[key] = step["run"]
+                    if key == "resolve":
+                        out["dispatch_tag_binding"] = step.get("env", {}).get("DISPATCH_TAG", "")
     return out
 
 
 def bodies():
-    doc = yaml.safe_load(open(WF, encoding="utf-8"))
-    out = {}
-    for job in ("release", "preflight"):
-        for step in doc["jobs"][job]["steps"]:
-            for key, name in STEPS.items():
-                if step.get("name") == name:
-                    out[key] = step["run"]
+    out = extract_bodies(yaml.safe_load(open(WF, encoding="utf-8")))
     missing = set(STEPS) - set(out)
     if missing:
         sys.exit(f"steps not found: {missing}")
@@ -295,7 +295,14 @@ $CREATE_EXTRA_DOC"; fi
         if [ -n "${ASSETS_EXTRA_DOC:-}" ]; then body="$body
 $ASSETS_EXTRA_DOC"; fi
         ;;
+      */commits/tags/*)                               # shortened tag ref, rejected by GitHub
+        echo "HTTP 422: Unprocessable Entity" >&2; exit 1
+        ;;
       */commits/*)                                    # tag -> commit, as the API answers it
+        # A same-named branch answers the bare lookup but the tag-qualified lookup fails.
+        if [[ "$endpoint" == */commits/refs/tags/"${BRANCH_ONLY_TAG:-}" ]]; then
+          echo "HTTP 404: Not Found" >&2; exit 1
+        fi
         SHA_CALLS=$(( $(cat "$STATE_DIR/sha_calls" 2>/dev/null || echo 0) + 1 )); printf '%s' "$SHA_CALLS" > "$STATE_DIR/sha_calls"
         sha="$COMMIT_SHA"
         if [ -n "${MOVED_TAG_SHA:-}" ] && { [ "${LATE_TAG_MOVE:-0}" != 1 ] || [ "$SHA_CALLS" -ge 2 ]; }; then
@@ -668,8 +675,10 @@ def main():
     state_reads = sum(1 for L in log.splitlines()
                       if re.fullmatch(r"gh api repos/\{owner\}/\{repo\}/releases/\d+", L))
     create_line = [L for L in log.splitlines() if "-X POST repos/{owner}/{repo}/releases " in L]
+    tag_reads = [line for line in log.splitlines() if "/commits/" in line]
+    qualified_reads = tag_reads == ["gh api repos/{owner}/{repo}/commits/refs/tags/v0.1.0 --jq .sha"] * 2
     ok = p.returncode == 0 and "releases/tags/" not in log and create_line \
-        and "-f name=v0.1.0" in log and log.count("assets?per_page=100") == 2 and state_reads == 3 \
+        and qualified_reads and "-f name=v0.1.0" in log and log.count("assets?per_page=100") == 2 and state_reads == 3 \
         and not any("--jq" in L for L in create_line)
     print(f"{'PASS' if ok else 'FAIL'}  publish: pub_no_tag_lookup   rc={p.returncode} by-tag_calls={'releases/tags/' in log} snapshot_calls={log.count('assets?per_page=100')} state_reads={state_reads} create_projected={any('--jq' in L for L in create_line)}  create answers with the id and the whole object; nothing looks a draft up by tag; the draft is inspected twice")
     if not ok:
@@ -833,6 +842,43 @@ def main():
     if not ok:
         fails += 1
         print("      ", " | ".join(msgs(p)[-3:]))
+
+    # The historical resolver accepts a branch when there is no tag of that name.
+    prior_resolver = bodies_at("0365993")
+    branch_only = "v9.8.6"
+    ref = "v0.1.0"
+    for label, bd, event, tag, lookup, expected_tag, diagnostic in [
+        ("dispatch_valid", b, "workflow_dispatch", "v9.8.7-rc.1", "refs/tags/v9.8.7-rc.1", "v9.8.7-rc.1", ""),
+        ("dispatch_branch_only_old", prior_resolver, "workflow_dispatch", branch_only, branch_only, branch_only, ""),
+        ("dispatch_branch_only", b, "workflow_dispatch", branch_only, f"refs/tags/{branch_only}", None, "does not exist"),
+        ("dispatch_multiline", b, "workflow_dispatch", "v9.8.7\nnot-a-tag", None, None, "is not a release tag"),
+        ("tag_push", b, "push", "v9.8.7", f"refs/tags/{ref}", ref, ""),
+    ]:
+        # These inert values also bind the old workflow's inline expressions for comparison.
+        values = {"${{ github.event_name }}": event, "${{ inputs.tag }}": tag, "${{ inputs.dry_run }}": "false"}
+        body = bd["resolve"]
+        for expression, value in values.items():
+            body = body.replace(expression, value)
+        binding = bd["dispatch_tag_binding"]
+        env = {"DISPATCH_TAG": values.get(binding, binding), "GITHUB_REF_NAME": ref, "BRANCH_ONLY_TAG": branch_only}
+        wd = os.path.join(ROOT, label)
+        os.makedirs(wd)
+        p = run_step(body, wd, env, "resolve")
+        output_file = os.path.join(wd, ".state", "output")
+        outputs = []
+        if os.path.exists(output_file):
+            with open(output_file, encoding="utf-8") as fh:
+                outputs = fh.read().splitlines()
+        dry = "true" if event == "workflow_dispatch" else "false"
+        wanted = [f"tag={expected_tag}", f"commit={COMMIT_SHA}", f"dry_run={dry}"] if expected_tag else []
+        calls = [f"gh api repos/{{owner}}/{{repo}}/commits/{lookup} --jq .sha"] if lookup else []
+        ok = (p.returncode == 0) == bool(expected_tag) and outputs == wanted and gh_log(wd).splitlines() == calls
+        if diagnostic:
+            ok = ok and diagnostic in refusal(p)
+        print(f"{'PASS' if ok else 'FAIL'}  resolve: {label:<24} rc={p.returncode} want_zero={int(bool(expected_tag))}")
+        if not ok:
+            fails += 1
+            print("      ", " | ".join(msgs(p)[-3:]), "outputs:", outputs, "gh:", gh_log(wd).splitlines())
 
     # preflight: an existing release of any kind blocks the build, across pages
     for label, flaglist, expect_zero, note in [

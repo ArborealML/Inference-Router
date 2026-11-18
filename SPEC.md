@@ -1,6 +1,6 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.51)
+Status: draft, continuously revised (v0.12.52)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
@@ -352,6 +352,12 @@ daemon transaction per engine. 137 tests green.
   that answers no `upload_url`, an upload that dies or answers no asset id, an asset name listed twice on
   the release, and a tag that moves after the first resolve. No tag has run the gate: still configured,
   not proven.
+- v0.12.52 — release preflight validates the entire manual tag input as data and always forces
+  dry run for manual dispatch (TASK-90). The preflight lookup and both publication rechecks resolve
+  the full `refs/tags/<tag>` reference. The offline harness rejects the short `tags/<tag>` form with
+  HTTP 422, compares historical branch-only acceptance with the current refusal, and checks both
+  publish lookup paths. The CI job
+  `release gate harness (release.yml step bodies)` runs 137 cases (§15).
 - v0.12.51 — completion streams carry router keepalives as SSE comments (§6, TASK-108). The
   strict-parser pin rejected the original writer at the first keepalive and accepts the same upstream
   completion with comment framing. Status is a JSON string on one comment line. The CLI shows status
@@ -2565,7 +2571,8 @@ and cohort/residency hysteresis in the scheduler (§12.3 hook).
   printable ASCII, cut at 200 characters after that reduction, and escaped for `%` and `:`: the runner scans
   stdout for workflow commands, and a control character, an ANSI escape, a bidi override or a split UTF-8
   sequence from a response has no business in a log line either.
-  Before publication the tag is re-resolved and must still name the commit the legs built, and the
+  Preflight and both publication rechecks resolve the full `refs/tags/<tag>` reference. Before
+  publication it must still name the commit the legs built, and the
   draft is inspected on the remote from one list of that release's own assets, every entry of which is
   required to be well-formed before any of it is parsed — the length equal to the expected count, so a list
   cut off by pagination is not an inventory that passes, with a declared set of 100 or more assets refused
@@ -2679,6 +2686,7 @@ router robust until rows 2, 4 and 6 close.
 
 | Question | Disposition |
 |---|---|
+| Manual release preflight and exact tag resolution (TASK-90) | **Covered offline in v0.12.52.** The historical resolver accepted a same-named branch when the tag was absent. The current resolver reads manual input through the step environment, rejects a malformed full value before any lookup, and forces dry run. GitHub returned HTTP 422 for the short `tags/<tag>` lookup on the annotated canary and returned its peeled commit for `refs/tags/<tag>`. Initial resolution and both publish-time rechecks use the full tag reference. The harness models the 422 and pins manual dispatch, historical branch-only acceptance, tag push, and both publish lookups. `release gate harness (release.yml step bodies)` runs 137 cases with fake `gh`. The live gate run remains TASK-42. |
 | Cysharp-style performance guidance for this codebase | **completed** — no prior packet existed; the result is the style digest in §9.1. |
 | AOT-safe TOML: CsToml vs Tomlyn on .NET 11 | **completed, confirms shipped choice**: Tomlyn 2.11.1 ships a Roslyn source generator (`TomlSerializerContext`, `[TomlSerializable]`, `[TomlPropertyName]`) — what §9/`ConfigDto` use. CsToml + CsToml.Generator 1.8.6 (prozolic, *not* Cysharp) is the alternative with per-property annotations. |
 | ASP.NET minimal APIs under Native AOT on .NET 11; STJ source-gen for streaming | completed; dispositioned in §9 |
