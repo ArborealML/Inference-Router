@@ -17,8 +17,11 @@ broken route, so no control could have separated them — the tick was premature
 A control is a mutation that removes the behaviour the pin claims, and it **must redden that pin**, named,
 with the run counts. A mutation that leaves the condition intact — an equivalent rewrite, a change on a
 branch this route never reaches, a commented-out guard the route does not use — is not a control, and a green
-run under it is not evidence. Where a control turns out to have been void, every criterion it closed goes
-back to open in the turn the withdrawal is read.
+run under it is not evidence. Four conditions make a control count: the run is green before the mutation; the
+mutation is reachable on the route under test and removes the behaviour rather than the syntax; the failure
+lands at the assertion the pin claims, not in a crash, a timeout or an unrelated test; and the red and green
+counts are named. Where a control turns out to have been void, only the criteria that depended on it go back
+to open — independent evidence stands, labelled.
 
 ## Consequences
 

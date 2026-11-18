@@ -17,13 +17,17 @@ records why the check is a standard.
 
 ## Decision
 
-A commit that changes **what the gate reports** — a new defect class, or a widened or narrowed one — lands
-with a decision entry naming the standard it enforces and the defect that motivated it, in the same commit.
-Code without the record is a gate change nobody agreed to.
+A change to **what the gate reports** — a new defect class, or a widened or narrowed one — requires a decision
+entry naming the standard it enforces and the defect that motivated it. The seat split decides the mechanism:
+the record is written by the board seat under `backlog/decisions/`, the code by the implementer seat under
+`tools:`, so one commit cannot hold both. The record lands in the same push, and the gate-change commit cites
+the decision id; code without a record to cite is a gate change nobody agreed to. A change that only conforms
+to a standard already on the books cites that standard instead of opening a new record.
 
 ## Consequences
 
 The checker's vocabulary is auditable from `backlog/decisions/` rather than by reading the script. The board
-seat owns both halves — the dispatch and the record; the implementer seat owns the `tools:` commit that
-carries them. A reviewer who thinks a check is wrong now has something to argue with, and a check that
-reportedly fires on nothing is prevention rather than repair, which the row has to say out loud.
+seat owns the record and the dispatch; the implementer seat owns the `tools:` commit that cites it, and the
+citation is what makes the rule checkable across the split rather than a courtesy. A reviewer who thinks a
+check is wrong now has something to argue with, and a check that reportedly fires on nothing is prevention
+rather than repair, which the row has to say out loud.

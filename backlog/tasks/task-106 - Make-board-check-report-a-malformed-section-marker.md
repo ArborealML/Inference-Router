@@ -23,6 +23,7 @@ The checker reads section bodies between `SECTION:<NAME>:BEGIN` and `:END` marke
 - [ ] #2 A fixture for that case joins the checker's own tests
 - [ ] #3 A marker misspelled out of the known set is reported too, so a renamed section is not silently dropped from the render
 - [ ] #4 Body text stranded outside a known section's markers — a missing opener leaving a duplicate under the heading — is reported with the heading
+- [ ] #5 A marker quoted in prose or a fence is **not** counted as a structural marker, and a fixture carries both cases
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -36,5 +37,5 @@ Markers are matched only in comment form today: `tools/board-check.py:157` at `0
 <!-- SECTION:NOTES:BEGIN -->
 Found by the board while editing rows in this tree: `grep -rn "^SECTION:" backlog/tasks/` listed four files at the time of writing, all closing markers; the board repaired those files in the same commit. Cheap rule, worth having before the corpus outgrows anyone's ability to eyeball it. Sequencing decided by the board: it lands after the stop-cause change, because TASK-87 is the gate and nothing waits on this row — and a check that reports nothing in the current corpus is prevention, not repair. TASK-86 #5 is the sibling hole in the same file (empty decision bodies); different deliverable, separate commit.
 
-How the current gate behaves, measured by this row's own edit: the marker count is taken over the whole body, so prose that quotes a marker in full comment form is counted as a marker and the row comes back `ACBLOCK`. AC #1 has to distinguish a marker from a quotation of one, or the check will push writers into paraphrase.
+AC #5 came from this row's own edit, measured: the marker count is taken over the whole body, so prose that quotes a marker in full comment form is counted as one and the row came back `ACBLOCK`. The check has to tell a marker from a quotation of one, or it pushes writers into paraphrase.
 <!-- SECTION:NOTES:END -->

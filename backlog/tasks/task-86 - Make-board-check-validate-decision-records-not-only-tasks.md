@@ -25,13 +25,13 @@ Four decision records were committed with a stray opening fence and no front mat
 - [ ] #2 A CI failure results when the decision-file count and the listed decision count disagree.
 - [ ] #3 The four malformed records are reproduced as a fixture, so the check is shown to fail on the real defect.
 - [ ] #4 Text inside an acceptance-criteria block that is not a checkbox, and a criterion repeated in the same block, are reported: TASK-82 carried both at 0 defects.
-- [ ] #5 A decision record whose Context, Decision or Consequences body is empty is reported as a defect, naming the file and its byte size.
+- [ ] #5 A decision record whose Context, Decision or Consequences body is empty or a placeholder is reported as a defect, naming file, section and byte size.
 <!-- AC:END -->
 
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-One pass over `backlog/decisions/*.md` beside the task pass: parse front matter (`id`, `title`, `date`, `status`) and the three section bodies, so a missing key, an unparsable file, or an empty section is a defect naming the file. Count decision files against what `backlog decision list` reports, so a record invisible to the CLI is also a defect. Fixtures — the four malformed records and an empty-body skeleton — join `--self-test`.
+One pass over `backlog/decisions/*.md` beside the task pass: parse front matter (`id`, `title`, `date`, `status`) and the three section bodies, so a missing key, an unparsable file, or an empty, whitespace-only or placeholder section (`TBD`, `TODO`, `…`) is a defect naming the file and section. Count decision files against what `backlog decision list` reports, so a record invisible to the CLI is also a defect. Fixtures — the four malformed records, an empty-body skeleton, a padded stub, and one legitimately terse decision that must pass — join `--self-test`. A byte count is reported, never the test: size rejects terse records and admits verbose garbage.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes

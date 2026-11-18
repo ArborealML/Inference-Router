@@ -19,7 +19,7 @@ ordinal: 86000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-The pin SwitchClaimTests.cs:230 AWaiterInsideTheReadinessWaitIsToldTheRouterStopped fails in two shapes: it has hit its 30 s Fact ceiling, and on CI four times it answered an assertion instead — Expected settled, Actual cancelled. Load-dependent, never reproduced on demand at will, and a red main costs the next real failure its reading.
+The pin `AWaiterInsideTheReadinessWaitIsToldTheRouterStopped` fails in two shapes: it has hit its 30 s Fact ceiling, and seven CI runs answered an assertion instead — Expected settled, Actual cancelled. Load-dependent, never reproduced at will, and a red main costs the next real failure its reading.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -35,17 +35,17 @@ The pin SwitchClaimTests.cs:230 AWaiterInsideTheReadinessWaitIsToldTheRouterStop
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Dispositioned by the top-tier plan review and corrected: dropping Assert.Equal("settled", wake) is right, because the seam reports the winner of Task.WaitAsync arbitration, not a call order, and that branch is no contract. Reverting the readiness-wait block in EngineRuntime.cs is the wrong mutation: it changes the custom answer only when token cancellation wins, and may be unreachable once a stop is one decision. Worked as one change with TASK-81, whose frozen stop cause removes the race from production; this row proves the pin is deterministic and liveness survives.
+Dispositioned by the top-tier plan review and corrected: dropping Assert.Equal("settled", wake) is right, because the seam reports the winner of Task.WaitAsync arbitration, not a call order, and that branch is no contract. Reverting the readiness-wait block in EngineRuntime.cs is the wrong mutation: it changes the custom answer only when token cancellation wins, and may be unreachable once a stop is one decision. One change with TASK-81, whose frozen stop cause removes the race from production; this row proves the pin deterministic and liveness surviving.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Seven CI occurrences, all Expected settled / Actual cancelled: 44264855629 b7ab43d, 44275637518 e0dcd0e, 44277482601 64b9f94, 44280833645, 44308059362 14a01e2, 44325281339, 44330807651 dd22653 — board-only pushes included. Seven of the last thirteen pushes: the gate is not a gate.
+Seven CI occurrences, all Expected settled / Actual cancelled: 44264855629 b7ab43d, 44275637518 e0dcd0e, 44277482601 64b9f94, 44280833645, 44308059362 14a01e2, 44325281339, 44330807651 dd22653 — board-only pushes among them. Seven of the last thirteen pushes: the gate is not a gate.
 
-Criterion #1 is met on the coding seat's report (sha, command, per-run logs): a detached worktree at `64b9f94`, `dotnet test --no-build -c Release`. The pin alone on a quiet machine: **0 of 20 red**. The whole `SwitchClaimTests` class with 40 busy loops on a 24-core host: **9 of 20**, repeated at **11 of 20**, 20 of 40 overall, and every red run named that test. Their caveat is the next question: under load it is the **30 s Fact ceiling**, not the settled/cancelled assertion CI shows — which is why #2 names both.
+Criterion #1 is met on the coding seat's report (sha, command, per-run logs): detached worktree at `64b9f94`, `dotnet test --no-build -c Release`. The pin alone on a quiet machine: **0 of 20 red**. The whole `SwitchClaimTests` class with 40 busy loops on a 24-core host: **9 of 20**, repeated at **11 of 20**, 20 of 40 overall, every red run named that test. Their caveat: under load it is the **30 s Fact ceiling**, not the settled/cancelled assertion CI shows — which is why #2 names both.
 
-The earlier sighting — `Failed 1 / Passed 221`, name lost to a pipe — is the failure mode #6 ends. Their load hogs poisoned two local suite runs until killed; any count from that window, mine included, is unusable. Standing rule while open: no new pins in the switch-claim or capability-publication classes; amendments are allowed, and the taxonomy class is not covered.
+The earlier sighting (`Failed 1 / Passed 221`, name lost to a pipe) is the failure mode #6 ends. Their load hogs poisoned two local suite runs until killed; any count from that window, mine included, is unusable. Standing rule while open: no new pins in the switch-claim or capability-publication classes (amendments allowed; the taxonomy class is not covered).
 
-No quiet-host count exists yet: at `0ddd8f3` the seat reports host load 11.0 on 24 cores and offers none, so AC #3 stays unmet. Board order: TASK-94 #14 lands first — it changes what a caller inside the readiness wait does, the shape this pin fails on — and AC #3's runs are taken on the tree after it; counts taken before are void.
+No quiet-host count exists yet: at `0ddd8f3` the seat reports host load 11.0 on 24 cores and offers none, so AC #3 stays unmet. Board order: TASK-94 #14 lands first — it changes what a caller inside the readiness wait does, the shape this pin fails on — so AC #3's runs are taken on the post-#14 tree. Earlier runs do not qualify for AC #3; AC #1's `64b9f94` counts stand as history, and the final tree must still excite that wait/join scenario.
 <!-- SECTION:NOTES:END -->
