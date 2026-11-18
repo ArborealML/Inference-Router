@@ -3,11 +3,11 @@ id: TASK-82
 title: >-
   Prove the stream relay preserves every frame when the upstream splits it at
   any byte
-status: In Progress
+status: Waiting
 assignee:
   - '@codex-6.2-sol'
 created_date: '2026-11-18T04:09:00Z'
-updated_date: '2026-11-18T07:30:00Z'
+updated_date: '2026-11-18T08:10:00Z'
 labels:
   - stream
   - wire
@@ -40,4 +40,6 @@ No test sleeps: boundaries are driven by the fixture, and the whole set runs aga
 Delegated by the owner's 07:06Z instruction ("Codex should probably be able to help… start a Codex tmux session in the inference router project"). Running since 07:18Z as `gpt-6.2-sol` (medium reasoning) in an **isolated worktree** on branch `codex/task-82-frame-identity` — the implementer seat keeps sole write access to `main`, so nothing from that branch reaches `main` except through review. Brief: tests only; split the upstream at 0 bytes, 1 byte, mid-frame, mid-CRLF, exact boundary and across a keepalive fire; no sleeps or scheduling luck; do not edit `src/` to make a test pass — a defect found there is reported, not fixed, because another seat owns it; commit prefix `test:`, no push. Report lands with commands, counts and mutation evidence.
 
 **Verify before merging:** that worktree shares `main`'s repository config (decision-42), so its commits carry whatever identity the shared config holds. Check author and committer, and correct on the branch — unpushed, therefore amendable — rather than letting a human identity through or rewriting anything published.
+
+Worker finished at 07:45Z with three tests, uncommitted in its own worktree: build passed with 0 warnings, the built test assembly was run directly ten consecutive times (30 passes), and three separate mutations of the relay each failed the matching pin — so the pins discriminate rather than decorate. It observed no frame corruption, and showed that every keepalive write precedes the channel drain. Its sandbox could not write the shared gitdir, so the commit is a seated reviewer's act, not the worker's. Wake condition: the implementer seat reviews that diff and commits it; the criterion stays unchecked until the tests are on main.
 <!-- SECTION:NOTES:END -->

@@ -1,11 +1,11 @@
 ---
 id: TASK-91
 title: Make one stream keepalive sequence monotonic, and prove the repeat is gone
-status: To Do
+status: Waiting
 assignee:
-  - '@qwen3.8-flash-next'
+  - '@codex-6.2-sol'
 created_date: '2026-11-18T07:51:00Z'
-updated_date: '2026-11-18T07:52:00Z'
+updated_date: '2026-11-18T08:10:00Z'
 labels:
   - wire
   - stream
@@ -31,4 +31,6 @@ Measured live at 7d01520, twice, through the router fronting one OpenAI-shaped l
 
 <!-- SECTION:NOTES:BEGIN -->
 Provenance: first defect this seat measured off a live router rather than a test. At 07:52Z the already-built Debug server was run with an untracked front-only probe config (remote engine, no lifecycle block, auto_switch off) against an already-running OpenAI-shaped fake backend on a loopback port; no engine was started or stopped, and the router bound loopback only and was stopped again. Reproduction, identical in two runs: curl -N -X POST http://127.0.0.1:18099/v1/chat/completions -H "content-type: application/json" -d "{\"model\":\"bench-model\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}],\"stream\":true}" | grep -n keepalive -> frames seq=0 status, seq=1, seq=0 status. One candidate mechanism, NOT verified: a rented frame buffer reaching the pipe twice, since the repeated frame is byte-identical to the first. Sequencing: [TASK-82](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-82%20-%20Prove-the-stream-relay-preserves-every-frame-when-the-upstream-splits-it-at-any-byte.md) asserts frame identity over the same relay, so these two land one at a time.
+
+Second measurement at 08:05Z, same build, same request: an upstream that stalls nine seconds before its first byte produced only seq=0 and seq=1, then the chunks and the sentinel — no repeat, and no keepalive at all during the stall. So the repeat is timing-dependent, and the periodic tick is not the writer: every keepalive write precedes the channel drain. Delegated at 08:09Z to a delegated worker (gpt-6.2-sol, medium reasoning) in its own worktree on its own branch, tests only and no commits, because its sandbox cannot write the shared gitdir. Wake condition: its report, with raw command output, ten consecutive runs, and a mutation control.
 <!-- SECTION:NOTES:END -->
