@@ -1,11 +1,11 @@
 ---
 id: TASK-88
 title: Let a client see the context window each model would actually be served in
-status: Waiting
+status: In Progress
 assignee:
-  - '@qwen3.8-flash-next-board'
+  - '@gpt-6.2-sol'
 created_date: '2026-11-18T07:15:00Z'
-updated_date: '2026-11-18T18:52:00Z'
+updated_date: '2026-11-18T18:57:00Z'
 labels:
   - wire
   - serve
@@ -17,7 +17,7 @@ ordinal: 87000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Wake when the top-tier review of context_window on ordinary GET /v1/models returns. The normal route must identify a model’s proven serving window for pi.
+Implement model-specific context discovery on ordinary GET /v1/models for pi. Preserve each loaded row and its owning engine.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -25,7 +25,7 @@ Wake when the top-tier review of context_window on ordinary GET /v1/models retur
 - [ ] #1 A caller can learn, for each model the router will serve, the context window it would be served in, from a named surface stated in SPEC.
 - [ ] #2 The /v1 surface stays OpenAI-compatible: any added member is written into SPEC 6, and a pinned client tolerates its absence.
 - [ ] #3 A stale or unknown window never authorises a profile the engine cannot serve (pairs with TASK-68 AC #1).
-- [ ] #4 The plan for any change to a /v1 body goes to a top-tier review before code exists.
+- [x] #4 The plan for any change to a /v1 body goes to a top-tier review before code exists.
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -37,5 +37,5 @@ Extend ordinary GET /v1/models with a positive context_window in tokens for each
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Wire-plan review submitted on 2026-11-18. The coordinator requires the default endpoint without an opt-in parameter. An older response may omit the field.
+Wire plan reviewed against 5c5e18a. Use one immutable observation for the model ID and its effective window. Identical IDs on different engines retain independent values. Suppress ambiguous evidence within one engine, withdraw stale proof, and keep discovery independent of admission. Qualify one actual backend and exercise legacy clients.
 <!-- SECTION:NOTES:END -->
