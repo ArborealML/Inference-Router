@@ -7,7 +7,7 @@ status: To Do
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T02:41:00Z'
-updated_date: '2026-11-18T19:18:00Z'
+updated_date: '2026-11-18T20:59:00Z'
 labels:
   - engine
   - lifecycle
@@ -30,6 +30,7 @@ The lifecycle coordinator now runs ownership proof, preflight, stop and launch i
 - [ ] #3 Existing inflight requests finish before anything is stopped, and the drain has a timeout with an actionable outcome
 - [ ] #4 Queue counters and terminal events still agree with what actually happened to each ticket
 - [ ] #5 Pause a waiter after Ready and begin a competing switch. Its request reaches only the instance its reservation authorizes, or returns to admission before any upstream write.
+- [ ] #6 Hold an upstream send past caller timeout. Verify one caller terminal, a released logical slot, and zero stop or rebind operations through drain expiry. After late-response disposal, a fresh authorized drain can proceed.
 <!-- AC:END -->
 
 ## Implementation Notes

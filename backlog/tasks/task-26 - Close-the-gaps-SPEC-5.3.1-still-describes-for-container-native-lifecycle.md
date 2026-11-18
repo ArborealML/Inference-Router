@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@gpt-6.2-sol-shutdown'
 created_date: '2026-11-17T02:54:00Z'
-updated_date: '2026-11-18T20:39:00Z'
+updated_date: '2026-11-18T20:59:00Z'
 labels:
   - engine
   - lifecycle
@@ -47,6 +47,8 @@ Implement the reviewed image-identity slice first. Validate complete configured 
 Provider fixes landed in 18d7279. Use fake daemon responses and preserve the loader refusal for mixed ownership. The shipped native sample must remove the selectors from the same engine and pass sample validation. TASK-119 owns the SPEC walkthrough. Align README ownership versus image checks, integration terminology and the safe-smoke explanation with the shipped sample. The AGENTS.md smoke guidance landed in fef8789. TASK-33 records live-proof permissions.
 
 External review dispatched for native image identity and create-by-immutable-ID. The worker audited all nine criteria at b65aab7. The current preflight discards the inspect result and creates by configured tag. Host fencing and proof of target authority remain separate work.
+
+Functional and fixture reviews dispatched for the image-pin candidate. The first integrated build stopped on analyzer MA0001 before tests. The coordinator will verify the corrected build with fake-daemon coverage.
 <!-- SECTION:NOTES:END -->
 
 ## Comments
