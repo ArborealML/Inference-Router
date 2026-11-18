@@ -7,7 +7,7 @@ status: Testing
 assignee:
   - '@gpt-6.2-sol'
 created_date: '2026-11-18T11:02:00Z'
-updated_date: '2026-11-18T19:29:00Z'
+updated_date: '2026-11-18T19:37:00Z'
 labels: []
 milestone: m-2
 dependencies: []
@@ -17,16 +17,15 @@ ordinal: 97000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Fix the two remaining shutdown edges identified in the 380a2a4 review before starting the quiet-host cohort.
+Verify the post-stop claim mutation against the integrated shutdown code. The production changes and marker readback are on main.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
-
 <!-- AC:BEGIN -->
-- [ ] #1 The stop cause is written once and never rewritten, and the cancellation token source is not re-armed after a stop
-- [ ] #2 A claim that passed the switch gate before the stop sees the stop: it is released with a cause, and the cause it reports cannot change afterwards
+- [x] #1 The stop cause is written once and never rewritten, and the cancellation token source is not re-armed after a stop
+- [x] #2 A claim that passed the switch gate before the stop sees the stop: it is released with a cause, and the cause it reports cannot change afterwards
 - [ ] #3 A named test fails when the stop cause is re-armed or overwritten, and a second named test fails when the claim path ignores it
-- [ ] #4 SPEC says which cause wins when a stop and a switch race, in §5.5, in the same commit as the code
+- [x] #4 SPEC says which cause wins when a stop and a switch race, in §5.5, in the same commit as the code
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -48,5 +47,5 @@ Three deliverables, in sequence, not one commit: lifecycle semantics here; the d
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-The fix from 8107a9f was integrated as [86f7bd6](https://github.com/ArborealML/Inference-Router/commit/86f7bd6). All 66 focused tests passed. The bounded review confirmed earlier own-outcome precedence and stop-before-timeout for a foreign wait. Public Switching now reads the capability marker. Its test currently samples after the switch state is installed; add a discriminating check inside the publication interval and verify reverting the getter fails it. The 137-test counts are historical revision entries. Wire mapping remains cancelled/499 until TASK-81.
+Stop publication and the SPEC §5.5 first-outcome rule landed together in [380a2a4](https://github.com/ArborealML/Inference-Router/commit/380a2a4). The timeout-precedence fix landed in [86f7bd6](https://github.com/ArborealML/Inference-Router/commit/86f7bd6). Review confirmed own-outcome precedence and stop-before-timeout for a foreign wait. The split-window fixture landed in [07408e2](https://github.com/ArborealML/Inference-Router/commit/07408e2). Its marker-only regression turned red against the old getter. The focused Release set passed 69/69. The late-overwrite mutation failed at RouterStopped versus Failed. Verify the distinct mutation removing the post-stop claim check before closing AC #3. TASK-81 owns the wire mapping.
 <!-- SECTION:NOTES:END -->
