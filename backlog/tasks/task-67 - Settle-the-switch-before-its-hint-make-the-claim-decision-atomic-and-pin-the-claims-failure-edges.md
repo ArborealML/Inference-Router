@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-18T00:53:00Z'
-updated_date: '2026-11-18T03:45:00Z'
+updated_date: '2026-11-18T04:25:00Z'
 labels:
   - concurrency
   - scheduling
@@ -34,11 +34,15 @@ Four defects in the switch-claim path in Engines/EngineRuntime.cs, all real, fou
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-(a) EndSwitch: commit in the gate, then settle state.Ready, then the hint in its own try with its throw swallowed and a comment. Every Emit already precedes EndSwitch, so decision-7's feed-before-wake rule still holds. (b) Atomic claim: the marker comes from the same snapshot the readiness answer was taken on — an expected-version CAS — and a lost exchange means re-deciding on the fresh snapshot, because the health loop and every switch exit publish outside the gate. (c) _switchLock is never disposed, as _switchCts is not; the two waiter waits carry a token linked to the engine's switch token, and that linked source is disposed with the call; shutdown answers cancelled, not engine_unreachable. (d) A throwing claim hook: leave the gate, then EndSwitch(claim,false), then rethrow — the gate is reentrant, so rolling back inside it runs the settle and the nudge while later claims queue behind it. The forced-CAS-retry pin is dropped: no seam is worth its production surface. Gauge epochs are TASK-68.
+Only AC #5 remains: the SPEC §15 accepted-gap line for the unpinned raced second launch, ordered into TASK-62's commit and worded so it does not overstate the existing test's coverage (see Notes).
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-**Landed at a228c6e (v0.12.32) on top of d31b35b (v0.12.31): CI green, and 7 of 7 focused Release runs here pass.** The failure was not the newcomer waiter at all: the in-flight caller woke on its readiness task resolving false and was told switch_failed, while a lifecycle gate disposed under a live transaction put ObjectDisposedException into that switch's own reason. #1–#4 are checked: their pins exist in SwitchClaimTests and pass, and revert runs put the newest hunk at 6 of 6 failing with the answer guard removed and 4 of 4 with the gate disposal restored. **What the mutation work honestly does not cover:** removing settle-before-cancel leaves 8 of 8 passing, so that ordering is construction rather than a regression-caught hunk, and the row does not claim otherwise. #5 stays open on one thing only — the raced second launch is closed by the version CAS but has no pin, the seam having been rejected as too much production surface, so SPEC owes an accepted-gap line, in TASK-62's commit.
+**Landed at a228c6e (v0.12.32) on top of d31b35b (v0.12.31): CI green, 7 of 7 focused Release runs here.** The failure was not the newcomer waiter: the in-flight caller woke on its readiness task resolving false and was told switch_failed, and a gate disposed under a live transaction threw into that switch's own reason. #1–#4 are checked: their pins exist in SwitchClaimTests, and revert runs put the newest hunk at 6 of 6 failing with the answer guard removed and 4 of 4 with the gate disposal restored. **Not covered by the mutation work:** removing settle-before-cancel leaves 8 of 8 passing, so that ordering is construction, not a regression-caught hunk. #5 stays open on one thing only — the raced second launch is closed by the version CAS but has no pin, the seam having been rejected as too much production surface, so SPEC owes an accepted-gap line, in TASK-62's commit.
+
+**What that gap line must not overstate** (external review, checked here): `ASecondCallerTakesTheProofInsteadOfClaimingASecondSwitch` parks the second caller **before** it takes `_switchLock`, so it proves the claimant re-reads authority; it does not exercise losing the CAS exchange to a concurrent claim. Either the §15 line says the lost exchange is unpinned too, or a barrier between the readiness check and the CAS closes it.
+
+**Trimmed at this landing:** the Implementation Plan section was spent by the commit that closed four of five criteria — 163 words to 30.
 <!-- SECTION:NOTES:END -->

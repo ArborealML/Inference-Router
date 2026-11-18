@@ -7,6 +7,7 @@ status: To Do
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-18T03:46:00Z'
+updated_date: '2026-11-18T04:10:00Z'
 labels:
   - concurrency
 dependencies: []
@@ -27,3 +28,9 @@ A named flake, with numbers and no reproduction anyone can fire on demand. The i
 - [ ] #3 Afterwards the pin is deterministic: 50 focused Release runs and 3 full Release suite runs, no failure
 - [ ] #4 The pin still fails when the hunk it protects is reverted
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+**A mechanism worth testing, from the commit review of `ab54d27..a228c6e` (external, 2026-11-18) — evidence, not an answer.** `EndSwitch` clears the marker and settles `Ready`, and only then invokes the dispatch hint **outside** the transition gate, so a test that asserts `Samples` immediately after `Ready` can legitimately see nothing yet; a throwing hint cannot rewrite an already-settled success. The reviewer reads that as the likelier cause of the observed 2-3/20 than capability-version churn, and says `SwitchClaimTests`' one-nudge assertion races the same way. That matches the shape of the failure (the sample asserted on being the *first* switch's nudge). Cheaper pin than my seam idea: have the provider-side hint set a completion the test awaits, so the assertion stops racing it. AC #2 is not met by a reviewer's plausible story: the reproduction still has to fire on demand, and this row's deliverable is unchanged.
+<!-- SECTION:NOTES:END -->
