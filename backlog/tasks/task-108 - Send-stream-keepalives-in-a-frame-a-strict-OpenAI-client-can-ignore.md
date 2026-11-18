@@ -1,11 +1,11 @@
 ---
 id: TASK-108
 title: Send stream keepalives in a frame a strict OpenAI client can ignore
-status: In Progress
+status: Testing
 assignee:
   - '@gpt-6.2-sol'
 created_date: '2026-11-18T17:43:00Z'
-updated_date: '2026-11-18T18:34:00Z'
+updated_date: '2026-11-18T18:38:00Z'
 labels:
   - wire
   - stream
@@ -24,7 +24,7 @@ ordinal: 106000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-The implementer is changing the stream writer and CLI under the reviewed plan. The external review and fixed legacy-parser control are complete.
+The streaming implementation is in verification. The strict parser failed against the original writer and the worker is running solution and AOT checks against the new writer.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -46,4 +46,6 @@ Write a strict SSE regression with an actual completion chunk and a fixed legacy
 
 <!-- SECTION:NOTES:BEGIN -->
 External plan review of the stream writer, CLI and tests at 3c83ecc returned on 2026-11-18. Verified the writer interpolates quoted status and the CLI reads choices unconditionally. Adopt exact grammar, strict-parser controls, socket-level abort proof and a queued real-client run. TASK-99 owns the final frame-size policy. TASK-81 owns universal terminal arbitration. TASK-91 retains its historical sequence reproduction. Use the native AOT serialization context.
+
+The implementer reported a passing queued pi turn through the isolated router, byte-identical upstream chunks, upstream TCP close after client abort, and four CLI mode checks. The first full Debug run had one capability-publication failure (TASK-80).
 <!-- SECTION:NOTES:END -->

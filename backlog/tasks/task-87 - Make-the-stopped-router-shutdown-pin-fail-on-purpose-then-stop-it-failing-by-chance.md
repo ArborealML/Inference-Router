@@ -3,11 +3,11 @@ id: TASK-87
 title: >-
   Make the stopped-router shutdown pin fail on purpose, then stop it failing by
   chance
-status: Preparing
+status: In Progress
 assignee:
   - '@gpt-6.2-sol'
 created_date: '2026-11-18T06:27:00Z'
-updated_date: '2026-11-18T18:31:00Z'
+updated_date: '2026-11-18T18:38:00Z'
 labels:
   - flake
   - tests
@@ -20,7 +20,7 @@ ordinal: 86000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-The stop decision landed in 380a2a4. Prepare the deterministic fixture and mutation controls against that revision, then run the quiet-host series in a dedicated measurement window.
+The dedicated implementer is building the reviewed shutdown fixture against 380a2a4. Ordinary focused checks can run concurrently; the quiet-host measurement series requires an exclusive window.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

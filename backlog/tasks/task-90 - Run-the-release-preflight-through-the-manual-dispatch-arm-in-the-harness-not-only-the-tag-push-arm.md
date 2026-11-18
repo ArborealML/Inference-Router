@@ -3,11 +3,11 @@ id: TASK-90
 title: >-
   Run the release preflight through the manual-dispatch arm in the harness, not
   only the tag-push arm
-status: To Do
+status: Preparing
 assignee:
-  - '@qwen3.8-flash-next'
+  - '@gpt-6.2-sol'
 created_date: '2026-11-18T07:44:00Z'
-updated_date: '2026-11-18T08:37:00Z'
+updated_date: '2026-11-18T18:38:00Z'
 labels:
   - ci
   - release
@@ -29,6 +29,14 @@ CI already runs the release-gate harness: ci.yml has a job named "release gate h
 - [ ] #3 The harness case count and the CI job are named in the SPEC 15 row and revision-log line landing in the same commit as the harness change.
 - [ ] #4 No tag is cut for this row: the live run stays TASK-42.
 <!-- AC:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Exercise the extracted release preflight step under workflow_dispatch. Map the input and event expressions to controlled test data, compare a valid dry-run input with absent and malformed values, and prove a pass-open control fails. Use the existing offline harness and record the verified case count in SPEC.
+
+Prefer C# for new tooling. Assess reusing the release step extraction and old-versus-new fixture without duplicating the harness. Exercise the actual workflow script whichever test driver is chosen.
+<!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
 
