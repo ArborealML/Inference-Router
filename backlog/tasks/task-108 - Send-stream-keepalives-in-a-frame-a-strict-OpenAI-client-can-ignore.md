@@ -1,11 +1,11 @@
 ---
 id: TASK-108
 title: Send stream keepalives in a frame a strict OpenAI client can ignore
-status: In Progress
+status: Done
 assignee:
   - '@gpt-6.2-sol-shutdown'
 created_date: '2026-11-18T17:43:00Z'
-updated_date: '2026-11-18T19:59:00Z'
+updated_date: '2026-11-18T20:12:00Z'
 labels:
   - wire
   - stream
@@ -25,7 +25,7 @@ ordinal: 106000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Finish the CLI end-of-stream check and automated CLI regressions from the 4a5e214 review. The queued-client keepalive change is published.
+Queued and switching keepalives use SSE comments. The streaming CLI detects premature EOF and reports upstream failures while preserving partial output.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -35,7 +35,7 @@ Finish the CLI end-of-stream check and automated CLI regressions from the 4a5e21
 - [x] #3 The frame keeps its seq and status, and TASK-91's monotonic-seq pins keep their meaning after the change
 - [x] #4 Byte-level tests prove nothing else moved: upstream bytes identical, one terminal representation, `[DONE]` unchanged
 - [x] #5 A live-router proof, not only a harness: one streamed completion with the safe-smoke posture, no lifecycle commands
-- [ ] #6 CLI process tests cover text and JSON output, progress comments, upstream errors and early EOF. A stream ending before its completion sentinel exits nonzero.
+- [x] #6 CLI process tests cover text and JSON output, progress comments, upstream errors and early EOF. A stream ending before its completion sentinel exits nonzero.
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -48,4 +48,6 @@ Detect a missing completion sentinel in streaming chat and complete. Preserve pa
 
 <!-- SECTION:NOTES:BEGIN -->
 At [4a5e214](https://github.com/ArborealML/Inference-Router/commit/4a5e214) the strict client rejected the old data payload and accepted the new comment writer. The standalone pi smoke observed seq 2 before admission, a completed turn and 379 preserved upstream bytes. The filtered stream set passed 36 checks. A separate CLI process printed partial and returned exit 0 on orderly EOF after one delta. The independent plan review confirmed the sentinel contract and existing chat/complete alias. Use focused C# subprocess fixtures for stdout, stderr, exit status, comments, error-plus-sentinel and EOF. Keep prior upstream error reporting singular, preserve JSON bytes and human trailing newline, and bound child cleanup. TASK-82 owns mid-frame failures, TASK-81 terminal arbitration and TASK-91 historical sequence reproduction.
+
+At [2764b6a](https://github.com/ArborealML/Inference-Router/commit/2764b6a), the coordinator ran 40 process cases in the worker checkout and 48 CLI and router stream checks on integrated main. All passed. The independently requested commit review covers the process fixtures and terminal detection.
 <!-- SECTION:NOTES:END -->
