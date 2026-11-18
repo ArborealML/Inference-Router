@@ -15,7 +15,7 @@ public sealed class SwitchFairnessTests
         private readonly Queue<TaskCompletionSource> _gates = new();
         public List<string> Launches { get; } = [];
         public LifecycleResult LaunchOutcome { get; set; } = LifecycleResult.Ok();
-        public string Kind => "gated";
+        public string Kind => "docker";
 
         public ValueTask<LifecycleResult> PreflightAsync(LifecycleTarget target, CancellationToken ct)
             => ValueTask.FromResult(LifecycleResult.Ok("fake"));
@@ -71,6 +71,8 @@ public sealed class SwitchFairnessTests
             Name = "fake",
             Kind = EngineKind.OpenAiCompatible,
             Endpoint = new Uri("http://127.0.0.1:9/v1"),
+            Lifecycle = EngineLifecycleKind.Docker,
+            Docker = new DockerLifecycleConfig { Image = "fixture", RouterId = "test" },
             Health = new HealthProbeDefinition { Path = "/props", ContextPath = "n_ctx" },
             Catalog = new Dictionary<string, EngineModelDefinition>
             {

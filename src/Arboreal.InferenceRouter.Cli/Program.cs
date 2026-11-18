@@ -98,7 +98,14 @@ public static class Program
             foreach (var (name, e) in cfg.Engines)
             {
                 var key = e.ApiKey is { Length: > 0 } ? "inline" : e.ApiKeyFile is { Length: > 0 } ? $"file:{e.ApiKeyFile}" : "none";
+                var provider = e.LifecycleOwner switch
+                {
+                    EngineLifecycleOwner.Router => "docker",
+                    EngineLifecycleOwner.Delegated => "exec",
+                    _ => "none",
+                };
                 Console.WriteLine($"engine {name}: kind={e.Kind} endpoint={e.Endpoint} remote={e.Remote} " +
+                    $"lifecycle_owner={e.LifecycleOwner.ToString().ToLowerInvariant()} provider={provider} " +
                     $"health={(e.Health?.Path ?? "/props (default)")} ctx={(e.Health?.ContextPath ?? "n_ctx (default)")} " +
                     $"slots={(e.Health?.SlotsPath ?? "total_slots (default)")} key={key}");
                 foreach (var (model, md) in e.Catalog)

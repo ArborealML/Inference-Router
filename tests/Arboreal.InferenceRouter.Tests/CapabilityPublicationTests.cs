@@ -40,6 +40,7 @@ public sealed class CapabilityPublicationTests
         public int ModelsRequests => Volatile.Read(ref _modelsRequests);
         public Task EnteredAsync => _entered.Task;
         public Task AnsweredAsync => _answered.Task;
+        public Func<CancellationToken, Task>? BeforeProps { get; init; }
 
         /// <summary>Arm once: the next <c>/models</c> request takes its answer as if the engine had replied,
         /// announces that it is in flight, and then waits to be released. The answer it eventually writes
@@ -87,7 +88,10 @@ public sealed class CapabilityPublicationTests
                 return Ok("{\"object\":\"list\",\"data\":[" + items + "]}");
             }
             if (Matches(path, "props"))
+            {
+                if (BeforeProps is { } beforeProps) await beforeProps(ct).ConfigureAwait(false);
                 return Ok("""{"total_slots": 4, "n_ctx": 8192}""");
+            }
             return new HttpResponseMessage(HttpStatusCode.NotFound) { Content = new StringContent("{}") };
         }
 
@@ -101,7 +105,7 @@ public sealed class CapabilityPublicationTests
     {
         private readonly Queue<TaskCompletionSource> _gates = new();
 
-        public string Kind => "scripted";
+        public string Kind => "docker";
         public LifecycleResult LaunchOutcome { get; set; } = LifecycleResult.Ok();
         public bool ProveHealth { get; set; } = true;
         public int ReadinessMs { get; set; } = 10_000;
@@ -172,6 +176,8 @@ public sealed class CapabilityPublicationTests
         Name = "fake",
         Kind = EngineKind.OpenAiCompatible,
         Endpoint = new Uri("http://127.0.0.1:9/v1"),
+        Lifecycle = EngineLifecycleKind.Docker,
+        Docker = new DockerLifecycleConfig { Image = "fixture", RouterId = "test" },
         Health = health,
         ModelsContextWindowPath = modelContextPath,
         Catalog = new Dictionary<string, EngineModelDefinition>
@@ -213,6 +219,182 @@ public sealed class CapabilityPublicationTests
             if (item.Kind == "engine.health") observations.Writer.TryWrite(item);
         });
         return observations.Reader;
+    }
+
+    [Theory(Timeout = 40_000)]
+    [InlineData(131_072, true)]
+    [InlineData(32_768, false)]
+    public async Task ReadOnlyRefusalRestoresDiscoveryOnlyWhenTheCurrentObservationAgrees(int observedWindow, bool restored)
+    {
+        using var handler = new ProbeHandler("m", "other")
+        {
+            ContextWindows = new Dictionary<string, long> { ["m"] = 131_072, ["other"] = 65_536 },
+        };
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        using var loop = CancellationTokenSource.CreateLinkedTokenSource(deadline.Token);
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var preflight = new TaskCompletionSource<LifecycleResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var provider = new RecordingLifecycleProvider
+        {
+            Kind = "docker",
+            PreflightHandler = () =>
+            {
+                entered.TrySetResult();
+                return new ValueTask<LifecycleResult>(preflight.Task);
+            },
+        };
+        var feed = new EventRing();
+        var polls = ObserveHealthPolls(feed);
+        var def = Def(new HealthProbeDefinition { Path = "/props", IntervalMs = 20 }, "meta.n_ctx");
+        await using var engine = new EngineRuntime(def, new RouterConfig(), feed, handler, lifecycle: provider);
+        var ct = deadline.Token;
+        engine.StartHealthLoop(loop.Token);
+        await polls.ReadAsync(ct);
+        var incumbent = engine.Capability;
+        Assert.Equal(131_072, incumbent.ModelContextWindows["m"]);
+        Assert.Equal(65_536, incumbent.ModelContextWindows["other"]);
+
+        handler.HoldNextProbe();
+        try
+        {
+            await handler.EnteredAsync.WaitAsync(ct);
+            var pending = engine.WaitForModelAsync("extra", TimeSpan.FromSeconds(20), ct);
+            await entered.Task.WaitAsync(ct);
+            Assert.Empty(engine.Capability.ModelContextWindows);
+            handler.ContextWindows = new Dictionary<string, long> { ["m"] = observedWindow, ["other"] = 65_536 };
+
+            // Read the stale round trip and the next poll, which started with the live claim.
+            var checkpoint = feed.CurrentSeq;
+            handler.ReleaseProbe();
+            for (var processed = 0; processed < 2;)
+            {
+                if ((await polls.ReadAsync(ct)).Seq > checkpoint) processed++;
+            }
+            await loop.CancelAsync();
+            Assert.Equal("extra", engine.SwitchingToward);
+            Assert.Empty(engine.Capability.ModelContextWindows);
+            preflight.SetResult(LifecycleResult.Fail("image_missing", "fixture"));
+
+            Assert.Equal("launch_failed", (await pending).Detail);
+            var after = engine.Capability;
+            Assert.Null(after.SwitchingToward);
+            Assert.Equal(restored, after.Healthy);
+            Assert.Same(incumbent.ModelRoster, after.ModelRoster);
+            if (restored) Assert.Same(incumbent.ModelContextWindows, after.ModelContextWindows);
+            else Assert.Empty(after.ModelContextWindows);
+            Assert.Equal(["ownership", "preflight"], provider.Calls);
+        }
+        finally
+        {
+            await loop.CancelAsync();
+            handler.ReleaseProbe();
+            preflight.TrySetResult(LifecycleResult.Fail("image_missing", "fixture"));
+        }
+    }
+
+    [Theory(Timeout = 40_000)]
+    [InlineData(200, "claim")]
+    [InlineData(503, "claim")]
+    [InlineData(200, "before")]
+    [InlineData(503, "before")]
+    [InlineData(200, "successor")]
+    [InlineData(503, "successor")]
+    public async Task LateContradictionWithdrawsOnlyTheProofRestoredByItsOwnClaim(int status, string ordering)
+    {
+        var initialProps = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var preflight = new TaskCompletionSource<LifecycleResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var refusal = LifecycleResult.Fail("image_missing", "fixture");
+        using var handler = new ProbeHandler("m")
+        {
+            ContextWindows = new Dictionary<string, long> { ["m"] = 131_072 },
+            HeldProbeStatus = status,
+            BeforeProps = ct => initialProps.Task.WaitAsync(ct),
+        };
+        var provider = new RecordingLifecycleProvider
+        {
+            Kind = "docker",
+            PreflightHandler = () =>
+            {
+                if (preflight.Task.IsCompleted) return ValueTask.FromResult(LifecycleResult.Ok());
+                entered.TrySetResult();
+                return new ValueTask<LifecycleResult>(preflight.Task);
+            },
+        };
+        var feed = new EventRing();
+        var polls = ObserveHealthPolls(feed);
+        var def = Def(new HealthProbeDefinition { Path = "/props", IntervalMs = 20, TimeoutMs = 20_000 }, "meta.n_ctx");
+        await using var engine = new EngineRuntime(def, new RouterConfig(), feed, handler, lifecycle: provider);
+        var limit = TimeSpan.FromSeconds(20);
+        using var deadline = new CancellationTokenSource(limit);
+        using var loop = CancellationTokenSource.CreateLinkedTokenSource(deadline.Token);
+        var ct = deadline.Token;
+        try
+        {
+            engine.StartHealthLoop(loop.Token);
+            await polls.ReadAsync(ct);
+            var incumbent = engine.Capability;
+            Assert.Equal(131_072, incumbent.ModelContextWindows["m"]);
+            handler.SetModels("different");
+            handler.HoldNextProbe();
+            if (ordering == "before")
+            {
+                initialProps.SetResult();
+                await handler.EnteredAsync.WaitAsync(ct);
+            }
+
+            var pending = engine.WaitForModelAsync("extra", limit, ct);
+            await entered.Task.WaitAsync(ct);
+            Assert.Equal("extra", engine.SwitchingToward);
+            if (ordering != "before")
+            {
+                initialProps.SetResult();
+                await handler.EnteredAsync.WaitAsync(ct);
+            }
+            await loop.CancelAsync(); // The held request still replies, but no later health tick can repair it.
+            preflight.SetResult(refusal);
+            Assert.Equal("launch_failed", (await pending).Detail);
+            Assert.True(engine.IsReadyFor("m", null));
+            Assert.Same(incumbent.ModelContextWindows, engine.Capability.ModelContextWindows);
+
+            if (ordering == "successor")
+            {
+                handler.SetModels("second");
+                handler.ContextWindows = new Dictionary<string, long> { ["second"] = 262_144 };
+                Assert.True((await engine.WaitForModelAsync("second", limit, ct)).IsReady);
+                Assert.Equal(262_144, engine.Capability.ModelContextWindows["second"]);
+            }
+
+            var beforeLatePoll = engine.Capability;
+            var checkpoint = feed.CurrentSeq;
+            handler.ReleaseProbe();
+            RouterEvent late;
+            do { late = await polls.ReadAsync(ct); } while (late.Seq <= checkpoint);
+            Assert.Equal(status == 200 ? 1d : 0d, late.Value);
+            Assert.Equal(status == 503 ? "models endpoint 503" : null, late.Reason);
+            var afterLatePoll = engine.Capability;
+            Assert.Null(afterLatePoll.SwitchingToward);
+            if (ordering == "claim")
+            {
+                Assert.False(afterLatePoll.Healthy);
+                Assert.False(engine.IsReadyFor("m", null));
+                Assert.Empty(afterLatePoll.ModelContextWindows);
+                Assert.Same(incumbent.ModelRoster, afterLatePoll.ModelRoster);
+                Assert.Equal(beforeLatePoll.Version + 1, afterLatePoll.Version);
+            }
+            else
+            {
+                Assert.Same(beforeLatePoll, afterLatePoll);
+                Assert.True(engine.IsReadyFor(ordering == "successor" ? "second" : "m", null));
+            }
+        }
+        finally
+        {
+            await loop.CancelAsync();
+            initialProps.TrySetResult();
+            handler.ReleaseProbe();
+            preflight.TrySetResult(refusal);
+        }
     }
 
     [Theory(Timeout = 60_000)]
@@ -1215,6 +1397,8 @@ public sealed class CapabilityPublicationTests
             Name = "fake",
             Kind = EngineKind.OpenAiCompatible,
             Endpoint = new Uri("http://127.0.0.1:9/v1"),
+            Lifecycle = EngineLifecycleKind.Docker,
+            Docker = new DockerLifecycleConfig { Image = "fixture", RouterId = "test" },
             Catalog = new Dictionary<string, EngineModelDefinition> { [longId] = new() { Name = longId } },
         };
         using var handler = new ProbeHandler("m");            // answers, and never names the long id

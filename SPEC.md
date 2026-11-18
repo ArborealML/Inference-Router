@@ -1,6 +1,6 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.56)
+Status: draft, continuously revised (v0.12.57)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
@@ -352,6 +352,11 @@ daemon transaction per engine. 137 tests green.
   that answers no `upload_url`, an upload that dies or answers no asset id, an asset name listed twice on
   the release, and a tag that moves after the first resolve. No tag has run the gate: still configured,
   not proven.
+- v0.12.57 — Inference reach and lifecycle authority are independent engine settings. Legacy
+  configurations normalize at startup, and a bound provider must match the configured kind.
+  Engines without authority still forward loaded models. A verified refusal before mutation can
+  retain the incumbent's discovery proof, including per-model context windows. Explicit native
+  authority is limited to a dedicated local engine until host fencing is available (§5.3, §5.5, §7, TASK-77).
 - v0.12.56 — `GET /v1/models` can report the observed context window for each loaded model.
   Roster and windows come from one engine observation. Unknown windows and ambiguous model
   identities omit the field. Public capability array signatures remain compatible (§6, TASK-88).
@@ -1371,7 +1376,7 @@ A request may declare:
 
 ### 5.3 Engines (configured, not coded)
 
-Set `lifecycle = "docker"` and add an `[engine.<name>.docker]` table to manage model
+Set `lifecycle_owner = "router"` and add an `[engine.<name>.docker]` table to manage local model
 switches through the native Docker provider. The catalog lists the models and serving profiles
 that the engine can run. A model or profile switch replaces the serving container with an instance
 for the requested model and profile at the configured endpoint (§5.3.1, §7). Loading another model
@@ -1379,26 +1384,34 @@ inside the same instance is deferred. The external launcher's switch sequence is
 reference for native lifecycle.
 
 The engine registry tracks the configured engines and the models reported by their endpoints.
-With `remote = true`, the router can serve requests for a loaded model, but any request to
-change what that engine serves is refused with `no_lifecycle_owner` before lifecycle runs (§5.5).
+`endpoint` determines where inference and discovery requests go. `lifecycle_owner` determines
+who may change what the engine serves. `external` gives AIR no lifecycle authority, and AIR can
+still serve requests for loaded models. `delegated` runs a configured selector for the bound
+target. `router` binds the native Docker provider to the engine and its catalog targets. The
+runtime copies the startup catalog entries, aliases, profile collections and selector arguments
+and resolves the canonical target before claiming a switch. The native provider copies its
+launch command and environment at startup. A provider supplied to the public runtime constructor for a managed engine must report
+the configured kind. A mismatch fails construction with the engine name and both provider kinds.
+An external engine binds no provider (§5.5, §7).
 
 ```csharp
 public sealed class EngineDefinition {         // from TOML §7
     string Name; EngineKind Kind;              // v1: OpenAiCompatible
     Uri Endpoint;                              // e.g. http://127.0.0.1:18021/v1
     string? ApiKey; string? ApiKeyFile;        // inline or file path
+    EngineLifecycleOwner? LifecycleOwner;      // External, Delegated, Router or infer legacy ownership
     EngineLifecycleKind Lifecycle;            // Docker or legacy delegated exec
     DockerLifecycleConfig? Docker;             // native provider settings
-    bool Remote;                               // true disables lifecycle for this engine
+    bool Remote;                               // legacy true maps to External
     IReadOnlyDictionary<string, EngineModelDefinition> Catalog;
     HealthProbeDefinition? Health;             // probe + readiness predicate
     EngineCapabilities Capabilities;           // vision, suffixCache, slots...
 }
 ```
 
-**Legacy exec compatibility.** With no Docker table and no explicit lifecycle kind, the loader
-defaults to delegated exec. `lifecycle = "exec"` selects it explicitly on an engine without a
-Docker table. A catalog entry's legacy `select = { exec = … }` runs the configured selector via
+**Legacy exec compatibility.** With no Docker table, a usable catalog selector or an explicit
+`lifecycle = "exec"` gives a legacy engine delegated ownership unless `remote = true`.
+A catalog entry's legacy `select = { exec = … }` runs the configured selector via
 `Process`. The selector is responsible for stopping and starting serving processes. The router
 serializes switches per engine and uses the selector's exit status before checking readiness.
 
@@ -1688,13 +1701,10 @@ engine forks land; the scheduler interface will not change shape.
   returns the typed switch outcome `RouterStopped`. The request path maps it to the shipped `cancelled` (499) response
   without naming a model. A caller's own cancellation token still cancels its wait.
   Exception text — a failed attempt's, and a health probe's own on `engine.health` — is bounded where it is written (§10).
-  **A phase is not a cause, and a wait is not an attempt.** Two exits used to answer in prose, and both answer with a
-  name now. The router holds no loading authority over an engine whose models it does not start: such a request
-  attempts nothing, mutates nothing, leaves that engine's last proof published, and is answered `no_lifecycle_owner`.
-  The name states the **relation**, not the config flag that answers it today — `remote` is the whole predicate until
-  reach and ownership split (TASK-77) — because a wire token renamed when a flag splits is a second breaking change;
-  a remote engine stays a switch *candidate* in every other respect, since its probes still publish proofs and
-  `IsReadyFor` still answers from them. A switch task that never started — a synchronous failure at the scheduling
+  **An unbound engine refuses a switch before claiming it.** With external ownership, such a request
+  answers `no_lifecycle_owner` and leaves the last proof published. A healthy external engine remains
+  a routing candidate. Its probes still publish proofs and `IsReadyFor` still answers from them.
+  A switch task that never started — a synchronous failure at the scheduling
   boundary, a thread-pool rejection — answers `switch_error`, the catch-all, because the caller's action is the same
   as for an attempt that threw; what separates the two is the **phase**, `switch_not_started`, which is feed-only and
   deliberately outside the caller's set: a caller shown a phase is a mapping bug, and the closed-set walk is what says
@@ -1715,26 +1725,12 @@ engine forks land; the scheduler interface will not change shape.
   distinction a retry decision exists to make. The expired window and its milliseconds stay on the feed at all three
   exits beside the names the engine reported and both sides of the comparison, so the grep key for an expired
   readiness window survives the name change. `wait_health = false` reaches the same names from its own evidence, and
-  the check that a catalog entry names a selector the router can run is **one predicate, asked once per acquisition
-  attempt, of the caller that is about to claim**: `DelegatedExecProvider.HasUsableSelector` decides it, and a missing
-  entry, a missing `select` or a blank `exec` is `no_select_command`, and the refusal costs the engine nothing it had —
-  no marker, no publication, its
-  last proof intact. The switch path used to ask the same question a second time, and v0.12.43 removed that ask on a
-  claim that was wrong: the two sides did not read the same thing. The check in front of the claim read the definition
-  the runtime was **built with**, while the switch task re-read the config collection **by name**, so a same-name
-  definition handed to the public constructor, or an entry swapped between the check and the switch, put a usable
-  selector in front of the claim and a blank one inside the transaction — `launch_failed`, proof discarded, exactly
-  the answer the refusal exists to prevent. The fix is **one definition snapshot, resolved before the claim and passed
-  into the switch**, not a second ask: a later ask would still be reading a second source. **The model's catalog entry
-  is resolved the same way** (decision-49): the claim reads it once, in front of the marker, and the transaction runs on
-  that object — so an absent entry is refused where a blank selector is refused, before anything is claimed, and the
-  post-claim missing-entry branch is gone rather than answered by a fresh lookup. That read is also the **mutation
-  policy**: a configuration edit landing after it changes no switch already claimed from it — the transaction runs on
-  the entry it was authorised on, and the edit is seen by the next claim. A swapped definition is pinned in both
-  directions: a config entry the switch can run is not refused because a stale constructed definition was blank, and a
-  definition replaced mid-transaction does not re-decide a claim already made. Both shapes are pinned, under
-  the config-picked provider and a supplied exec provider, and both were red before the fix.
-  **Neither catalog question is asked of a caller that has come to join** (decision-51). Under the transition gate the
+  the prospective claim first checks the bound owner and then resolves the target against the startup
+  catalog. A managed engine with an absent entry, or a delegated engine with a missing `select` or blank
+  `exec`, answers `no_select_command` with no marker or capability publication. The transaction receives
+  that same engine and target definition. Changing a source dictionary or a same-name config definition
+  cannot change what a runtime is authorized to switch. A new runtime uses the new configuration.
+  **Target validation is skipped for a caller that has come to join** (decision-51). Under the transition gate the
   order is fixed: read the switch state, and a switch already running on this engine is **joined** — its completion
   awaited with no catalog read at all. Only a caller the idle engine hands to the claim path is asked what its catalog
   says, and an invalid answer is a **terminal refusal for that attempt**: no marker, no state write, one feed record,
@@ -1753,14 +1749,20 @@ engine forks land; the scheduler interface will not change shape.
   can be old, and a refresh that cannot be read at all during a `wait_health = true` wait ends `switch_error` rather
   than one of the three readiness names, because the attempt itself threw. A timed-out wait says nothing about the
   attempt at all and carries no name.
-  Every switch exit
-  publishes **unfenced**, deliberately: the switch has just stopped or relaunched this engine, so its account cannot be
-  stale against a poll that happened to start earlier, and fencing it would let a quiet poll drop the one publication
-  that says the engine is no longer what it reported.
-  **A quiet poll says nothing new:** the comparison runs against the list *currently published* — equal length, then
-  index by index with `OrdinalIgnoreCase` — not against the payload the probe started with, so a reorder or a name
-  reported twice instead of once counts as a change and bumps the version, while a probe that learned nothing keeps the
-  existing array instance and leaves the version alone, so a healthy engine cannot keep the refusal scan spinning.
+  An ownership or preflight refusal verified before any possible mutation clears its matching claim
+  and restores the displaced incumbent's health and per-model window evidence together. The claim must
+  have displaced a healthy proof and still own the same version. While the marker is raised, a poll
+  started on that claim can veto restoration if its models query fails or its roster or windows differ
+  from the incumbent. If it finishes after the refusal, it makes that exact restored generation unknown
+  and withdraws its windows on contradiction. The poll publishes no capability through the marker or
+  across a successor snapshot. An observation started before the claim cannot revoke the restored
+  proof. A refusal after attempted stop or launch, a thrown transaction, a superseded claim, and
+  shutdown cannot restore the displaced proof. The caller still receives the switch failure and its
+  existing category, even when the incumbent remains schedulable.
+  A quiet poll keeps the published roster and version when the roster and context windows agree with the
+  current snapshot. Without window evidence the ordered roster comparison ignores case. With window
+  evidence it keeps the reported spelling alongside the proof. A reordered roster, a repeated name that
+  changes the roster, or a changed window advances the version.
   The two ends of a transition are ordered by one await-free gate (taken after the switch lock, never the other way
   round, since the switch lock's holder calls the end): the claim publishes marker-then-state inside it, the
   switch-state read that decides claim-or-coalesce happens inside it, and the end writes idle state and clears its
@@ -2019,6 +2021,28 @@ bound on the wire. `docs/ai-integration.md` carries the same table for integrato
 ## 7. Configuration (TOML)
 
 Single file; loaded at boot; `--config` may repeat (merge, later wins).
+`lifecycle_owner` accepts `external`, `delegated` and `router` in TOML and JSON. Remove `remote`
+when setting it, including `remote = false`. Explicit `external` requires no controller or selector.
+Explicit `delegated` requires a usable selector and no Docker controller. Explicit `router` requires
+Docker configuration, a loopback inference endpoint, a local Unix Docker socket and a dedicated
+single-engine configuration. Host-wide fencing and native lifecycle on a managed peer are still pending.
+Programmatic explicit owners use the same provider and topology checks. A standalone runtime with
+an empty engine map counts as one engine. A programmatic `Remote = true` conflicts with an explicit
+owner, while `Remote = false` is the public default.
+
+Existing configurations may keep `remote`. `remote = true` maps to `external`, including when
+accepted legacy controller settings are present. With `remote = false` or omitted, a configured
+Docker provider maps to `router`, and a usable selector or explicit exec mode (`"exec"` or `"delegated"`) maps to
+`delegated`. With none of these declarations, the engine maps to `external`. An attempt to switch
+such a legacy selectorless engine now returns `no_lifecycle_owner` where it previously returned
+`no_select_command`. Existing explicit exec configurations and engines with selectors still return
+`no_select_command` for a target they cannot select. Requests for an already-loaded model continue
+to forward in all of these cases. Legacy native Docker retains the existing per-engine switch
+behavior, including a peer inference endpoint, a Docker daemon reached over HTTP(S), or a router
+with multiple engine definitions. This compatibility path acts only on the configured daemon and
+the engine's label-owned containers. It supplies no proof of host-wide occupancy or exclusion.
+Fenced managed-peer actuation requires an enrolled host controller.
+
 An engine can set `models_context_window_path` in TOML or JSON when its models endpoint reports
 the effective serving context as a positive signed 64-bit integer in each individual loaded row.
 The dotted object path is relative to that row. Leave it unset when the backend exposes an
@@ -2043,6 +2067,7 @@ max_inflight_per_engine = 4
 [engine.strata]
 kind = "openai-compatible"
 endpoint = "http://127.0.0.1:18021/v1"
+lifecycle_owner = "router"
 lifecycle = "docker"
 models_endpoint = "/v1/models"
 health_probe = { path = "/props", expect = "total_slots>0", context_path = "n_ctx", slots_path = "total_slots" }

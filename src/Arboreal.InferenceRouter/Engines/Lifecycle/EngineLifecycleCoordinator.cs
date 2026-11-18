@@ -43,7 +43,12 @@ public sealed class EngineLifecycleCoordinator : IDisposable
 
     public ReadinessPolicy Readiness(LifecycleTarget target) => _provider.Readiness(target);
 
-    public async ValueTask<LifecycleResult> SwitchAsync(LifecycleTarget target, CancellationToken ct)
+    internal readonly record struct SwitchReport(LifecycleResult Result, bool RefusedBeforeMutation);
+
+    public async ValueTask<LifecycleResult> SwitchAsync(LifecycleTarget target, CancellationToken ct) =>
+        (await SwitchWithReportAsync(target, ct).ConfigureAwait(false)).Result;
+
+    internal async ValueTask<SwitchReport> SwitchWithReportAsync(LifecycleTarget target, CancellationToken ct)
     {
         await _gate.WaitAsync(ct).ConfigureAwait(false);
         try
@@ -63,9 +68,10 @@ public sealed class EngineLifecycleCoordinator : IDisposable
             foreach (var peer in peers)
             {
                 if (peer.QueryFailed)
-                    return LifecycleResult.Fail(
+                    return new SwitchReport(LifecycleResult.Fail(
                         $"ownership_query_failed {peer.Id}",
-                        "the router could not prove which containers it already owns, so it changed nothing: fix the daemon connection and switch again");
+                        "the router could not prove which containers it already owns, so it changed nothing: fix the daemon connection and switch again"),
+                        RefusedBeforeMutation: true);
             }
 
             // 2. Preflight before any mutation, so a refusal costs the engine nothing it had.
@@ -73,7 +79,7 @@ public sealed class EngineLifecycleCoordinator : IDisposable
             if (!preflight.Succeeded)
             {
                 Record($"preflight_refused:{preflight.Reason}");
-                return preflight;
+                return new SwitchReport(preflight, RefusedBeforeMutation: true);
             }
             Record("preflight:ok");
 
@@ -85,7 +91,7 @@ public sealed class EngineLifecycleCoordinator : IDisposable
                 if (!stopped.Succeeded)
                 {
                     Record($"stop_failed:{stopped.Reason}");
-                    return stopped;
+                    return new SwitchReport(stopped, RefusedBeforeMutation: false);
                 }
                 Record($"stopped:{ours.Count}");
             }
@@ -96,10 +102,10 @@ public sealed class EngineLifecycleCoordinator : IDisposable
             if (!launched.Succeeded)
             {
                 Record($"launch_failed:{launched.Reason}");
-                return launched;
+                return new SwitchReport(launched, RefusedBeforeMutation: false);
             }
             Record($"launched:{target.Model}");
-            return launched;
+            return new SwitchReport(launched, RefusedBeforeMutation: false);
         }
         finally
         {

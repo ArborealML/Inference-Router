@@ -98,16 +98,15 @@ public sealed class SwitchJoinTests
         using var reported = new FakeEngineHandler { LoadedModels = ["m"] };
         var provider = new GatedExec();
         var feed = new EventRing();
-        var engines = new Dictionary<string, EngineDefinition> { ["fake"] = Def(withExtra: true) };
+        var engines = new Dictionary<string, EngineDefinition> { ["fake"] = Def(withExtra: false) };
         await using var engine = new EngineRuntime(engines["fake"], new RouterConfig { Engines = engines }, feed, reported, lifecycle: provider);
 
         var claims = 0;
         engine.AfterClaimForTests = () => claims++;
 
-        // A's target is selectable; B's stops being selectable while A's switch is in flight.
+        // A can claim its target. B must still join A before its own absent target is refused.
         var a = engine.WaitForModelAsync("second", TimeSpan.FromSeconds(20), CancellationToken.None);
         await WaitUntil(() => provider.GateCount == 1);
-        engines["fake"] = Def(withExtra: false);
 
         var b = engine.WaitForModelAsync("extra", TimeSpan.FromSeconds(20), CancellationToken.None);
         await Task.Delay(500);
@@ -136,26 +135,25 @@ public sealed class SwitchJoinTests
         using var reported = new FakeEngineHandler { LoadedModels = ["m"] };
         var provider = new GatedExec();
         var feed = new EventRing();
-        var engines = new Dictionary<string, EngineDefinition> { ["fake"] = Def(withExtra: true) };
+        var engines = new Dictionary<string, EngineDefinition> { ["fake"] = Def(withExtra: false) };
         await using var engine = new EngineRuntime(engines["fake"], new RouterConfig { Engines = engines }, feed, reported, lifecycle: provider);
 
         var claims = 0;
         engine.AfterClaimForTests = () => claims++;
 
-        var a = engine.WaitForModelAsync("extra", TimeSpan.FromSeconds(20), CancellationToken.None);
+        var a = engine.WaitForModelAsync("second", TimeSpan.FromSeconds(20), CancellationToken.None);
         await WaitUntil(() => provider.GateCount == 1);
-        engines["fake"] = Def(withExtra: false);
 
         var joined = await engine.WaitForModelAsync("extra", TimeSpan.FromMilliseconds(400), CancellationToken.None);
         Assert.False(joined.IsReady);
         Assert.NotNull(joined.Detail);
         Assert.Contains("still switching after", joined.Detail);
         Assert.DoesNotContain("no_select_command", joined.Detail);
-        Assert.Equal("extra", engine.SwitchingToward);          // the switch it left behind is still running
+        Assert.Equal("second", engine.SwitchingToward);          // the switch it left behind is still running
         Assert.DoesNotContain("engine.switch_failed", feed.Replay(0).Select(e => e.Kind));   // no refusal was recorded
         Assert.Equal(1, claims);                                // the joiner never claimed
 
-        reported.LoadedModels = ["m", "extra"];
+        reported.LoadedModels = ["m", "second"];
         provider.ReleaseAll(LifecycleResult.Ok());
         var first = await a;
         Assert.True(first.IsReady);

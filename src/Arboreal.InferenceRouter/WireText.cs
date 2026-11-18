@@ -115,9 +115,8 @@ internal static class SwitchReason
     internal const string SwitchError = "switch_error";
 
     /// <summary>No lifecycle owner: the router cannot load models into this engine, so it attempted nothing.
-    /// Named for the relation rather than for the config flag that answers it today — <c>remote</c> is the
-    /// predicate until the reach/ownership split lands, and a wire token that has to be renamed when the flag
-    /// is split is a second breaking change (§5.5). The caller's action is to retry elsewhere, or after that
+    /// The idle claim found no bound lifecycle authority for the engine (§5.5).
+    /// The caller's action is to retry elsewhere, or after that
     /// engine's loaded state or the router's lifecycle configuration changes; an immediate retry here repeats
     /// the refusal.</summary>
     internal const string NoLifecycleOwner = "no_lifecycle_owner";

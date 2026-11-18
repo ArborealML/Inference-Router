@@ -30,6 +30,8 @@ public sealed class DockerLifecycleProvider : IEngineLifecycleProvider, IDisposa
     public const string LabelModel = "arboreal.model";
 
     private readonly DockerLifecycleConfig _cfg;
+    private readonly string[] _command;
+    private readonly string[] _env;
     private readonly string _engineName;
     private readonly HttpClient _http;
     private readonly HttpMessageHandler? _ownedHandler;
@@ -37,6 +39,8 @@ public sealed class DockerLifecycleProvider : IEngineLifecycleProvider, IDisposa
     public DockerLifecycleProvider(DockerLifecycleConfig cfg, string engineName, HttpMessageHandler? handler = null)
     {
         _cfg = cfg;
+        _command = cfg.Command.ToArray();
+        _env = cfg.Env.ToArray();
         _engineName = engineName;
         if (handler is null)
         {
@@ -185,8 +189,8 @@ public sealed class DockerLifecycleProvider : IEngineLifecycleProvider, IDisposa
             Labels = labels,
             StopTimeoutSeconds = Math.Max(1, _cfg.StopTimeoutMs / 1000),
         };
-        if (_cfg.Command.Length > 0) body.Cmd = Expand(_cfg.Command, target);
-        if (_cfg.Env.Length > 0) body.Env = Expand(_cfg.Env, target);
+        if (_command.Length > 0) body.Cmd = Expand(_command, target);
+        if (_env.Length > 0) body.Env = Expand(_env, target);
         if (_cfg.HostPort is not null)
         {
             body.HostConfig = new DockerHostConfig
@@ -243,7 +247,7 @@ public sealed class DockerLifecycleProvider : IEngineLifecycleProvider, IDisposa
         return outValues;
     }
 
-    private static bool TryParseUnixSocket(string socket, out string path)
+    internal static bool TryParseUnixSocket(string socket, out string path)
     {
         if (socket.StartsWith("unix://", StringComparison.OrdinalIgnoreCase))
         {

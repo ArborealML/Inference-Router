@@ -144,7 +144,10 @@ public sealed class DockerLifecycleProviderTests
                 ? (HttpStatusCode.Created, """{"Id":"deadbeefcafebabe","Warnings":[]}""")
                 : (HttpStatusCode.NoContent, ""),
         };
-        using var provider = new DockerLifecycleProvider(Cfg(), "strata", daemon);
+        var config = Cfg();
+        using var provider = new DockerLifecycleProvider(config, "strata", daemon);
+        config.Command[0] = "changed-command";
+        config.Env[0] = "changed-environment";
 
         var result = await provider.LaunchAsync(Target(), CancellationToken.None);
 
@@ -157,6 +160,8 @@ public sealed class DockerLifecycleProviderTests
         Assert.Contains("--model", created);
         Assert.Contains("--ctx", created);         // {{profile}} expanded, empty because no profile
         Assert.Contains("AIR_ENGINE=strata", created);
+        Assert.DoesNotContain("changed-command", created);
+        Assert.DoesNotContain("changed-environment", created);
     }
 
     [Fact(Timeout = 20_000)]

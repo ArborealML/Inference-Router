@@ -351,6 +351,8 @@ public sealed class ShutdownStopCauseTests
             Name = "fake",
             Kind = EngineKind.OpenAiCompatible,
             Endpoint = new Uri("http://127.0.0.1:9/v1"),
+            Lifecycle = EngineLifecycleKind.Docker,
+            Docker = new DockerLifecycleConfig { Image = "fixture", RouterId = "test" },
             Catalog = new Dictionary<string, EngineModelDefinition> { [Model] = new() { Name = Model } },
         };
         var config = new RouterConfig { Engines = new Dictionary<string, EngineDefinition> { [def.Name] = def } };
@@ -378,7 +380,7 @@ public sealed class ShutdownStopCauseTests
         private readonly TaskCompletionSource _launched = new(TaskCreationOptions.RunContinuationsAsynchronously);
         private readonly TaskCompletionSource _cancellationObserved = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        public string Kind => "held";
+        public string Kind => "docker";
         public Task Launched => _launched.Task;
         public Task CancellationObserved => _cancellationObserved.Task;
         public void Release(LifecycleResult result) => _release.TrySetResult(result);

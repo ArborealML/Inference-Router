@@ -34,6 +34,7 @@ public sealed class RouterCore : IInferenceRouter
 
     public RouterCore(RouterConfig config, IRequestScheduler? scheduler = null, EventRing? events = null)
     {
+        config.ValidateLifecycleTopology();
         _config = config;
         _wakeOnEngineState = WakeOnEngineState;
         _scheduler = scheduler ?? new PrefixAwareScheduler();
@@ -465,7 +466,7 @@ public sealed class RouterCore : IInferenceRouter
             {
                 Name = e.Name,
                 LoadedModels = cap.ModelRoster,
-                CatalogModels = e.Definition.Catalog.Keys.ToArray(),
+                CatalogModels = e.CatalogModelNames.ToArray(),
                 SwitchingToward = cap.SwitchingToward is null ? [] : [cap.SwitchingToward],
                 CanServeModel = e.CanServeModel(head.Ticket.Model, cap),
                 Inflight = e.Inflight,

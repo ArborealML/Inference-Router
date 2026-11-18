@@ -24,14 +24,14 @@ On Windows, use Git Bash and pass the executable path ending in `air.exe`. A suc
 - **OpenAI-compatible inference.** Send chat or legacy text completions with optional SSE streaming. [Client integration guide](docs/ai-integration.md)
 - **Model discovery.** `GET /v1/models` includes an observed context window in tokens when AIR has usable evidence for that loaded model on its engine. [Model discovery contract](docs/ai-integration.md#discover-loaded-models)
 - **Routing and serving profiles.** Queue requests by model, apply thread priorities, and route to configured local and remote engines using health and available slots. A request can specify the context window it needs in tokens. [Serving profiles specification](SPEC.md)
-- **Per-engine lifecycle.** Use the native Docker provider or a configured selector for model switches. The Docker provider checks ownership before stopping a container and is verified against a fake daemon. [Docker provider](src/Arboreal.InferenceRouter/Engines/Lifecycle/DockerLifecycleProvider.cs)
+- **Per-engine lifecycle authority.** Set `lifecycle_owner` independently of the inference endpoint. Externally managed engines forward loaded models. A dedicated local engine can use the native Docker provider, and a delegated engine can use a configured selector. A verified refusal before any mutation can leave the incumbent available to serve requests. [Lifecycle configuration](SPEC.md#7-configuration-toml)
 - **Operator controls.** Inspect engine and queue status, replay events for a ticket, or cancel it through the admin API. The `air` CLI can host the router and act as a client. [HTTP reference](SPEC.md#6-http-surface-server-project)
 
 ### In progress
 
 - **Context fit during routing.** Verify that the engine can meet a request’s context requirement using a window measured for its current model and profile. [Serving gauge verification](backlog/tasks/task-68%20-%20Bind-the-serving-gauges-to-a-capability-epoch-so-a-stale-window-cannot-authorise-a-profile-the-engine-cannot-serve.md)
 - **Native model swaps on a shared host.** Drain in-flight requests before swapping the resident model, verify that the replacement is ready, and complete a pi turn after the swap. [Native swap milestone](backlog/milestones/m-4%20-%20native-model-swap-through-pi-clm.md)
-- **Lifecycle ownership for remote engines.** Separate where AIR sends inference requests from which engines it can start and stop. [Lifecycle ownership plan](backlog/tasks/task-77%20-%20Split-one-remote-flag-into-transport-reach-and-model-loading-ownership.md)
+- **Lifecycle on managed peers.** Starting and stopping models on a peer still needs host-wide fencing that accounts for foreign occupancy and stays in force through readiness. Scheduling preference among loaded and switchable engines is also in progress. [Lifecycle ownership plan](backlog/tasks/task-77%20-%20Split-one-remote-flag-into-transport-reach-and-model-loading-ownership.md)
 
 ### Planned features
 
@@ -55,12 +55,12 @@ auto_switch = false
 kind = "openai-compatible"
 endpoint = "http://127.0.0.1:8000/v1"
 models_endpoint = "/v1/models"
-remote = true
+lifecycle_owner = "external"
 
 [engine.local.catalog."example-model"]
 ```
 
-With `remote = true`, another service must have the model loaded before AIR can route to it. For multiple engines and serving profiles, see the [remote-only sample](samples/router.safe-smoke.toml). Keep the router on loopback unless a proxy authenticates callers and terminates TLS.
+With `lifecycle_owner = "external"`, another service must have the model loaded before AIR can route to it. Legacy `remote = true` still gives the same forward-only behavior. For multiple engines and serving profiles, see the [remote-only sample](samples/router.safe-smoke.toml). Keep the router on loopback unless a proxy authenticates callers and terminates TLS.
 
 ```bash
 dotnet run --project src/Arboreal.InferenceRouter.Cli -- config -c "$PWD/.local/router.toml"
@@ -89,7 +89,11 @@ Reuse the thread ID to identify the conversation across turns. The default class
 
 An engine’s catalog maps model IDs and aliases to serving profiles. Each profile declares a context window and slot count. The scheduler considers those profiles alongside capacity reported by the backend. A larger context window can mean fewer concurrent requests.
 
-For router-managed engines, the native Docker provider checks ownership labels, performs preflight checks and acts on owned containers by ID. The existing coordinator serializes switches per engine. Host-wide exclusion and verified recovery after a failed swap are still under development. Native lifecycle verification currently uses a fake daemon.
+For router-managed engines, the native Docker provider checks ownership labels, performs preflight checks and acts on owned containers by ID. The coordinator serializes switches per engine. Host-wide exclusion and verified recovery after a failed swap are still under development. Native lifecycle verification currently uses a fake daemon.
+
+Legacy Docker configurations can continue using their existing daemon transports and per-engine ownership checks, including in a router with multiple engines. These settings provide no host-wide occupancy proof. Fenced lifecycle on a managed peer requires an enrolled host controller. [Lifecycle configuration](SPEC.md#7-configuration-toml)
+
+With legacy configuration, omitting `remote` or setting it to `false` without a Docker provider, an explicit `lifecycle = "exec"`, or a usable selector gives AIR no lifecycle authority. An attempted switch now returns `no_lifecycle_owner` instead of `no_select_command`. Loaded models remain routable. An explicitly delegated engine with a missing target selector still returns `no_select_command`. [Migration rules](SPEC.md#7-configuration-toml)
 
 The [reference configuration](samples/router.toml) also illustrates the legacy external selector. Running a lifecycle-enabled configuration can start or stop real backends. Use the `config` command to inspect it offline. TOML and JSON use the same schema. [Lifecycle and configuration specification](SPEC.md)
 
