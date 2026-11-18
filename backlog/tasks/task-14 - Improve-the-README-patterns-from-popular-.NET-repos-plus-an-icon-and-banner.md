@@ -5,7 +5,7 @@ status: Waiting
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-16T22:26:00Z'
-updated_date: '2026-11-17T16:18:00Z'
+updated_date: '2026-11-18T19:08:00Z'
 labels:
   - docs
   - ui
@@ -18,17 +18,7 @@ ordinal: 14000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Low priority. The README is accurate but plain: no identity (icon/banner), no badges, and it leads
-with prose instead of what the reader can do in 60 seconds. Two steps:
-
-1. **Pattern research** (dispatched, logged below): review the READMEs of widely used .NET OSS repos
-   and extract the structure, badge, section-order and example conventions that recur, plus what to
-   avoid.
-2. **Apply + art**: restructure our README around those findings and add an icon and a banner image
-   (generated on demand through the external image service once the shape is settled).
-
-Keep whatever the research recommends that does not fight the house style: no marketing voice, no
-feature-wall, no claim that is not measured (SPEC §9.1 gate).
+Wake on the tagged stable release in TASK-28 for the release badge. The landing page groups project identity and badges, provides a runnable fixture smoke test and documents the path from a running engine to a client request.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -42,18 +32,16 @@ feature-wall, no claim that is not measured (SPEC §9.1 gate).
 - [x] #5 No claim in the README that SPEC §9.1 does not back with measurements
 <!-- AC:END -->
 
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Refresh the landing page for a developer connecting an inference engine. Group the banner, title and linked badges before prose. Lead with one safe runnable quick start. Consolidate repeated feature, configuration and trust material, shorten release internals to artifact and verification essentials, and link detailed operator and contributor references. Verify commands, sample port, Markdown rendering and local links. Keep the release badge gated on an actual published release.
+<!-- SECTION:PLAN:END -->
+
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-**What is left, and why it is not finished.** The mark, banner and social preview are in the repository as vector markup, wired into the README, with
-provenance and palette in `docs/images/README.md`. How they look — rendering in a browser and through GitHub's proxy,
-and taste — is for a person, and that half lives on the upload task.
-
-**The one open criterion is about a tag, not the README.** The build and licence badges resolve; a release badge cannot
-exist until a tag exists. **Wake, as an event:** the first tag run on [TASK-28](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-28%20-%20Cut-the-first-release-tag-and-watch-the-release-run.md) publishing real assets.
-
-Earlier rounds of this task — the pattern review that returned art specifications only, the identity review, the
-argument over whether the mark was undispatched art — are superseded history: [board trim, 2026-11-17](https://github.com/ArborealML/Inference-Router/blob/main/backlog/archive/board-trim-2026-11-17.md).
+README overhaul landed in de3f2ab. The Release CLI built with zero warnings. The fixture smoke passed model discovery, ordinary and streaming chat, CLI chat and the error path. A user-local SDK needed DOTNET_ROOT. Rendered Markdown verified the image group, heading hierarchy, local links and fragment targets. The published canary contains both archives and checksum files. The stable release badge remains pending. Editorial plan and commit reviews were dispatched on 2026-11-18.
 <!-- SECTION:NOTES:END -->
 
 ## Comments
