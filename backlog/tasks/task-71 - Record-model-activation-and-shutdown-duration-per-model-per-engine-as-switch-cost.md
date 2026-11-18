@@ -3,11 +3,11 @@ id: TASK-71
 title: >-
   Record model activation and shutdown duration per model per engine as switch
   cost
-status: To Do
+status: Preparing
 assignee:
-  - '@qwen3.8-flash-next'
+  - '@gpt-6.2-sol-scheduling'
 created_date: '2026-11-18T01:22:00Z'
-updated_date: '2026-11-18T19:18:00Z'
+updated_date: '2026-11-18T20:13:00Z'
 labels: []
 milestone: m-5
 dependencies:
@@ -30,6 +30,12 @@ Switch cost stops being an assumption. Per model per engine, the router already 
 - [ ] #4 SPEC 5.5 or 7 says what the numbers mean and what they never decide alone
 - [ ] #5 5 Each stage is recorded as its own value, an unobserved stage is distinguishable from a zero, and a failed or cancelled attempt is still recorded with its outcome
 <!-- AC:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Trace timing evidence from incumbent shutdown to verified target readiness. Identify where the scheduler compares eligible work and propose a deterministic cost-sensitive selection fixture with a starvation bound. Agree interfaces with host lifecycle and capability publication before coding. The coordinator runs the qualification tests.
+<!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
 

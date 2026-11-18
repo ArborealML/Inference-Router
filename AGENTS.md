@@ -18,8 +18,8 @@ dotnet run --project src/Arboreal.InferenceRouter.Cli -- config -c samples/route
 python3 tools/board-check.py       # backlog/ against the task-content rules below; CI runs it too
 ```
 
-**Local verification.** Implementers run the smallest filtered tests that exercise the changed behavior
-and its failure paths. At integration, rerun the affected tests when resolving conflicts changes the
+**Local verification.** Implementers identify the smallest filtered tests that exercise the changed behavior
+and its failure paths. The coordinator executes them in the assigned worktree and returns the results. At integration, rerun the affected tests when resolving conflicts changes the
 tested code. CI runs the full Release suite on main pushes and pull requests. Run a full suite locally only
 when a named acceptance measurement explicitly requires it or a documented failure occurs only in
 the complete suite. Record that reason in the task.
@@ -78,8 +78,7 @@ warning rather than suppressing it, and add a suppression only with a comment sa
 
 Keep the [README feature list](README.md#features) current for readers deciding what AIR can do.
 Add significant user-facing plans under Planned features. When implementation starts, move the entry
-to In progress. When the user-visible
-behavior lands with its acceptance evidence, describe the supported scope under Features in the
+to In progress. When the user-visible behavior lands with its acceptance evidence, describe the supported scope under Features in the
 same change. Keep any unfinished portion under In progress or Planned. The implementer includes
 the README update with the feature, and the coordinator checks it against main and the
 [delivery milestones](backlog/milestones/README.md) at integration. Update or remove entries when
@@ -247,9 +246,9 @@ preparation, implementation, testing, fixes and the evidence handoff described a
 transition so the coordinator can update the shared board. After a handoff, send revisions or the next
 assignment to the same implementer.
 
-Run four persistent tmux implementers under decision-63, each with one task and its own worktree.
+Run five persistent tmux implementers under decision-66, each with one task and its own worktree.
 Use stable session-qualified board handles for active assignments: `@gpt-6.2-sol-config`,
-`@gpt-6.2-sol-shutdown`, `@gpt-6.2-sol-release` and `@gpt-6.2-sol-lifecycle`. Transfer a task after
+`@gpt-6.2-sol-shutdown`, `@gpt-6.2-sol-release`, `@gpt-6.2-sol-lifecycle` and `@gpt-6.2-sol-scheduling`. Transfer a task after
 the previous writer hands it off and stops editing. The temporary subagent overlap has ended.
 
 Ordinary builds and focused tests can run concurrently outside a host reservation. Under decision-55
@@ -273,7 +272,7 @@ machine identity is reported and tracked, never repaired by rewriting pushed his
   and owner-facing decisions. It commits `board:` for `backlog/`-only changes, and `contract:` when a commit
   changes `AGENTS.md` together with its decision entry. It writes no `src/`, no `tests/`, no `SPEC.md`, nothing
   under `tools/` or `.github/`.
-- **The assigned implementer** is the single writer in its worktree for `src/`, `tests/`, `SPEC.md`, `tools/`,
+- **The assigned implementer** is the single writer in its worktree for `README.md`, `docs/`, `src/`, `tests/`, `SPEC.md`, `tools/`,
   `.github/` and `.gitignore`. Its commits carry `feat:`/`fix:`/`docs:`/`tools:`/`ci:`/`release:`, with the SPEC
   version in the subject for a behaviour change, and land SPEC section + code + tests + revision-log line together.
   It works the plan the manager wrote and never edits `backlog/`: it reports the findings it can prove — the file,
