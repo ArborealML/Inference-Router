@@ -7,7 +7,7 @@ status: Testing
 assignee:
   - '@gpt-6.2-sol-shutdown'
 created_date: '2026-11-18T06:27:00Z'
-updated_date: '2026-11-18T19:40:00Z'
+updated_date: '2026-11-18T19:46:00Z'
 labels:
   - flake
   - tests
@@ -44,7 +44,7 @@ Dropping Assert.Equal("settled", wake) is right: the seam reports the winner of 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Historical baseline at 64b9f94: the old pin was green alone in 20 quiet runs and red 20 times in 40 loaded runs, including 11 failures in one block of 20. Seven CI runs observed the settled/cancelled mismatch. At 51922fe the 50-run focused cohort had seven timeouts and one route mismatch. Those counts precede the fix. AC #2 still requires direct evidence explaining the timeout stack as well as the assertion. CI run 44380388711 independently timed out in the later late-provider fixture at Pause.Enter. The new fixture runs shutdown on a separate task and releases its barrier before joining it.
+Historical worker measurement on 64b9f94: 24-core host, 40 concurrent CPU-only busy loops. Two blocks of 20 serial runs of dotnet test -c Release --no-build --filter FullyQualifiedName~SwitchClaimTests yielded 9/20 and 11/20 failures of the shutdown pin. The pin alone failed 0/20 quiet runs. On 51922fe, 42/50 focused runs passed; seven hit the 30000 ms ceiling and one expected settled but saw cancelled. Seven CI runs also saw that wake assertion. AC #2 still needs direct evidence for both mechanisms. CI run 44380388711 timed out in Pause.Enter in the later late-provider fixture. The amended fixture runs shutdown separately and releases the barrier before joining it.
 
-The fixture landed in [07408e2](https://github.com/ArborealML/Inference-Router/commit/07408e2). Both stop-order controls failed at RouterStopped versus Failed. The old Switching getter failed at True versus False between marker publication and private state installation. The restored focused Release set passed 69/69. Commit review dispatched. Keep the focused and join cohorts separate. Hold the measured host for each cohort under decision-55. Keep new pins outside the switch-claim and capability-publication classes until measurement finishes.
+In [07408e2](https://github.com/ArborealML/Inference-Router/commit/07408e2) the held-provider pin captures the stopped answer before release. Coordinator inspected worker logs: waking before terminal publication failed AStoppedAnswerArrivesWhileTheProviderIsStillHeld; allowing a late overwrite failed AProviderFailureCannotOverwriteThePublishedStop. Both expected RouterStopped and observed Failed. Reading the private state from Switching failed SwitchingReportsThePublishedMarkerBeforePrivateStateIsInstalled at True versus False. The restored worker Release report records 69/69 in the focused set. Independent commit review accepted the fixture; TASK-59 carries the pre-install hook exception control. Fixed-tree host measurements remain open. Separate focused and join cohorts, record per-run load, and reserve the host under decision-55. Keep new pins outside the switch-claim and capability-publication classes until measurement finishes.
 <!-- SECTION:NOTES:END -->
