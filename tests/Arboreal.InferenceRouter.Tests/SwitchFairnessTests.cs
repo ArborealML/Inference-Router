@@ -100,13 +100,19 @@ public sealed class SwitchFairnessTests
         var small = Profile("small", 4_096);
         var large = Profile("large", 32_768);
 
+        var arrivals = 0;
+        // Counts the waiters that reach the switch-lock wait. The seam runs before that wait, so two arrivals is
+        // the fact this class needs — the newcomer has reached its own decision point, and while the first switch
+        // is held by its launch gate the only thing it can do next is join that switch's wait.
+        engine.BeforeSwitchWaitForTests = () => Interlocked.Increment(ref arrivals);
+
         var first = engine.WaitForProfileAsync("m", small, TimeSpan.FromSeconds(20), CancellationToken.None);
         await WaitUntil(() => provider.GateCount == 1);
 
         // Arrives while the "small" switch is in flight. It joins the wait — but the switch in flight is
         // not its transaction, so it must not inherit that switch's answer.
         var second = engine.WaitForProfileAsync("m", large, TimeSpan.FromSeconds(20), CancellationToken.None);
-        await Task.Delay(150);
+        await WaitUntil(() => Volatile.Read(ref arrivals) >= 2);   // both callers are at the decision point
 
         provider.ReleaseOne();                       // the "small" switch completes
         await WaitUntil(() => first.IsCompleted);
@@ -134,13 +140,16 @@ public sealed class SwitchFairnessTests
         var (engine, provider) = Engine(reported);
         await using var _ = engine;
 
+        var arrivals = 0;
+        engine.BeforeSwitchWaitForTests = () => Interlocked.Increment(ref arrivals);
+
         var first = engine.WaitForProfileAsync("m", Profile("small", 4_096),
             TimeSpan.FromSeconds(20), CancellationToken.None);
         await WaitUntil(() => provider.GateCount == 1);
 
         var second = engine.WaitForProfileAsync("m", Profile("large", 32_768),
             TimeSpan.FromSeconds(20), CancellationToken.None);
-        await Task.Delay(150);
+        await WaitUntil(() => Volatile.Read(ref arrivals) >= 2);
 
         // Fail the first switch. The newcomer shares the engine, not the transaction: it should still get
         // its own attempt rather than a switch_failed it did not earn.
@@ -166,5 +175,8 @@ public sealed class SwitchFairnessTests
         {
             await Task.Delay(25);
         }
+        // A wait that gives up quietly turns every ordering assertion after it into a check of whatever the
+        // scheduler happened to do, so the failed wait has to be the failure.
+        if (!condition()) throw new TimeoutException($"condition never became true within {limitMs} ms");
     }
 }

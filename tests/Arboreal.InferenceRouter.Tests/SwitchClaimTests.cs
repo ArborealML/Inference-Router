@@ -440,4 +440,59 @@ public sealed class SwitchClaimTests
         Assert.True((await second).IsReady);
         Assert.Equal(["extra", "m"], provider.Launches);
     }
+
+    /// <summary>§5.5, TASK-61 AC #6 (decision-36): the withdrawn rule did not answer a caller late, it bought
+    /// lifecycle transactions nobody asked for. Two callers wanting <b>different models on a one-model engine</b>
+    /// — one switch per caller, in arrival order, is the whole claim, and it is asserted as a launch sequence, not
+    /// as the absence of a timeout. The ordering is made, not hoped for: the first caller is held in the seam
+    /// between its readiness wake-up and its snapshot read while its own switch is already committed and idle, the
+    /// successor then arrives and claims for its own target, and the successor's launch stays on its gate while the
+    /// first caller answers. Under the withdrawn rule this pin fails on the sequence — the first caller lost its
+    /// proof to a marker it did not raise, coalesced onto the successor's switch, and claimed again, so the
+    /// sequence reached three launches with the first caller's answer arriving only after someone else's load.</summary>
+    [Fact(Timeout = 30_000)]
+    public async Task TwoCallersWantingDifferentModelsTakeOneSwitchEach()
+    {
+        var provider = new GatedProvider { GateLaunches = true };
+        using var reported = new FakeEngineHandler { LoadedModels = ["extra"] };
+        var feed = new EventRing();
+        var engine = Engine(provider, feed, models: reported);
+        await using var _ = engine;
+
+        var parked = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var resume = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        engine.AfterReadyWaitForTests = _ =>
+        {
+            parked.TrySetResult();
+            resume.Task.GetAwaiter().GetResult();
+        };
+
+        var first = engine.WaitForModelAsync("extra", TimeSpan.FromSeconds(25), CancellationToken.None);
+        await WaitUntil(() => provider.GateCount == 1);
+        provider.ReleaseOne();                        // its own switch proves "extra" and commits
+        await parked.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.False(engine.Switching);               // the attempt is over: a latecomer claims for itself
+        Assert.True(engine.Healthy);
+
+        // The successor arrives after that commit, so it takes its own turn, and its launch is held: while the
+        // first caller is still deciding, the engine carries a marker for a target it does not want.
+        var second = engine.WaitForModelAsync("m", TimeSpan.FromSeconds(25), CancellationToken.None);
+        await WaitUntil(() => provider.GateCount == 1 && provider.Launches.Count == 2);
+        Assert.Equal("m", engine.SwitchingToward);
+
+        resume.TrySetResult();
+        var answer = await first;
+        Assert.Equal(EngineRuntime.SwitchOutcome.Ready, answer.Outcome);
+        Assert.Equal(1, provider.GateCount);          // answered while the successor's load was still held
+
+        // AC #6 itself: one launch per caller, in arrival order.
+        Assert.Equal(["extra", "m"], provider.Launches);
+
+        reported.LoadedModels = ["m"];
+        provider.ReleaseOne();                        // the successor finishes on its own terms
+        Assert.True((await second).IsReady);
+        Assert.Equal(["extra", "m"], provider.Launches);
+        Assert.Equal(0, provider.GateCount);          // no third transaction for anybody to lose
+        Assert.DoesNotContain("engine.switch_failed", feed.Replay(0).Select(e => e.Kind));
+    }
 }

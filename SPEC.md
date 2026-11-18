@@ -1,6 +1,6 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.35)
+Status: draft, continuously revised (v0.12.36)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
@@ -352,6 +352,22 @@ daemon transaction per engine. 137 tests green.
   that answers no `upload_url`, an upload that dies or answers no asset id, an asset name listed twice on
   the release, and a tag that moves after the first resolve. No tag has run the gate: still configured,
   not proven.
+- v0.12.36 — the switch-claim tests stop betting on the scheduler, and TASK-61 AC #6 is pinned as a launch sequence
+  (§5.5). `SwitchClaimTests.TwoCallersWantingDifferentModelsTakeOneSwitchEach` is the case the withdrawn rule produced
+  in CI: two callers wanting different models on a one-model engine. The ordering is made rather than hoped for — the
+  first caller is held in the seam between its readiness wake-up and its snapshot read while its own switch has already
+  committed and left the state idle, the successor then arrives and claims for its own target, and that load stays on
+  its gate while the first caller answers — so the marker the first caller reads is one it did not raise, and its answer
+  is asserted while the successor's load is still held. What is asserted is the sequence, not a clock: launches
+  `extra`, `m`, still `extra`, `m` after the successor's own proof lands, no third transaction for anybody to lose, and
+  no `engine.switch_failed`. Under the rule v0.12.35 withdrew this fails on the sequence, because that caller coalesced
+  onto the successor's switch and then claimed again. In `SwitchFairnessTests` the two `Task.Delay(150)` waits that let
+  a newcomer "arrive" are replaced by a count on `BeforeSwitchWaitForTests`, the seam that runs on the way to the
+  switch-lock wait: two arrivals is the fact the class needs — the newcomer reached its own decision point, and with the
+  first switch held by its launch gate the only thing left to it is that switch's wait. That class's `WaitUntil` also
+  returned quietly when its deadline passed, which made every ordering assertion after such a wait a check of whatever
+  the scheduler happened to do; a missed wait now fails as a timeout. No behaviour change: `src/` is untouched, so the
+  AOT publish measured at v0.12.35 covers this source.
 - v0.12.35 — fix-forward over v0.12.34: a waiter that holds the proof **its own switch published** keeps that answer
   (§5.5, decision-36). v0.12.34 left `main` red, and the defect was its rule rather than its test: `ReadyIn` answers
   false while `SwitchingToward` is set, so the marker a **later** claim raises withdrew a proof this router had just
@@ -1437,7 +1453,9 @@ engine forks land; the scheduler interface will not change shape.
   `AfterReadyWaitForTests(wokeByCancellation)` lets a test park a waiter between its readiness wake-up and the snapshot
   read that decides its answer, which makes the ordering a fact the test observes rather than one it hopes the
   scheduler produces. The claim edges are pinned in `SwitchClaimTests`; the retired claim, in
-  `CapabilityPublicationTests`.
+  `CapabilityPublicationTests`. The sequence the withdrawn rule broke is pinned there as well: two callers wanting
+  different models on one engine take **one lifecycle transaction each, in arrival order**, asserted as a launch
+  sequence while the successor's load is still held (`TwoCallersWantingDifferentModelsTakeOneSwitchEach`).
 - **The other two waits are bounded separately**: a model switch and an engine's turn each get their own
   ceiling, because an expired queue deadline says nothing about them. `switch_wait_timeout_ms`
   (scheduler, default `0` = no ceiling) caps how long a queued request waits for a switch it triggered:
