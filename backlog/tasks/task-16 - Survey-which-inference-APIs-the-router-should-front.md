@@ -1,11 +1,11 @@
 ---
 id: TASK-16
 title: Survey which inference APIs the router should front
-status: To Do
+status: Waiting
 assignee:
-  - '@chatswarm'
+  - '@qwen3.8-flash-next-board'
 created_date: '2026-11-16T23:02:00Z'
-updated_date: '2026-11-17T05:55:00Z'
+updated_date: '2026-11-18T18:39:00Z'
 labels: []
 dependencies:
   - TASK-14
@@ -16,14 +16,7 @@ ordinal: 16000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-
-Owner ask (2026-11-16): find out which upstream inference APIs the router should speak besides OpenAI-compatible. Anthropic's Messages API is the obvious one. The open question is the local engine world: does Strata expose a native API (it already has /props and /models probes beyond OpenAI shape), and does Project Maya? Also worth pricing in: Ollama, llama.cpp's llama-server, vLLM/SGLang, LM Studio, and OpenAI's newer Responses API (versus chat/completions). Deliverable is a decision with consequences, not a survey dump: which 1-2 adapters to build, which to decline, and what the engine-kind seam in EngineRuntime/RouterConfig needs to support them. Sequence AFTER the README updates (TASK-14). The request goes to the external research service once TASK-14 lands; if a request has to be re-issued, re-issue the same one rather than inventing a new one.
-
-**Links**
-- Seam the answer must fit: [EngineRuntime.cs](https://github.com/ArborealML/Inference-Router/blob/main/src/Arboreal.InferenceRouter/Engines/EngineRuntime.cs), [Config/](https://github.com/ArborealML/Inference-Router/tree/main/src/Arboreal.InferenceRouter/Config/).
-- What is promised on the wire: [SPEC §6](https://github.com/ArborealML/Inference-Router/blob/main/SPEC.md#L635); engine configuration: [SPEC §5.3](https://github.com/ArborealML/Inference-Router/blob/main/SPEC.md#L379).
-- Local-engine probes already recorded: [samples/](https://github.com/ArborealML/Inference-Router/tree/main/samples/), [docs/ai-integration.md](https://github.com/ArborealML/Inference-Router/blob/main/docs/ai-integration.md).
-
+Wake when the two remaining research passes arrive. The owner requested a comparison of upstream engine adapters and a v0.2 decision after TASK-14. The first pass covers client ingress. Assess Strata, Maya and other candidate engine APIs against the existing provider seam before selecting adapters.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -32,7 +25,14 @@ Owner ask (2026-11-16): find out which upstream inference APIs the router should
 - [ ] #2 Candidate APIs compared on what they cost us: streaming shape, tool/thinking blocks, cancellation, context-window signalling, auth, AOT-safe JSON story
 - [ ] #3 A decision recorded in SPEC: which adapters are in for v0.2, which are explicitly out, and the engine 'kind' taxonomy that supports both
 - [ ] #4 Any new kind gets a fake-handler wire test before real engine wiring
+- [ ] #5 Any proposed Responses route must pass typed sync and SSE fixtures plus a real Codex tool round with matching call IDs. Unsupported response history, hidden reasoning and cache counts are refused or reported unavailable.
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+First pass received 2026-11-18. At 854d7ad ServerApp registers Chat and legacy Completions; Responses is a candidate for Codex. Retain Chat for pi and legacy Completions for existing clients. The review recommends declining vendor-specific client facades. Compare those recommendations with the upstream adapter evidence. TASK-108 owns queued Chat keepalives.
+<!-- SECTION:NOTES:END -->
 
 ## Comments
 
