@@ -7,7 +7,7 @@ status: To Do
 assignee:
   - '@gpt-6.2-sol'
 created_date: '2026-11-18T18:56:00Z'
-updated_date: '2026-11-18T19:18:00Z'
+updated_date: '2026-11-18T20:33:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -33,4 +33,5 @@ The selector includes launch profiles with identical model, context and slot cou
 - [ ] #3 For each supported engine family, fixtures verify all profile-distinguishing settings against one serving instance. Missing, conflicting or stale observations withhold readiness and prevent dispatch.
 - [ ] #4 After an instance restart or port rebind between proof and dispatch, a paused waiter rechecks its reservation. Neither a stale pooled connection nor the replacement listener receives the request under the old proof.
 - [ ] #5 A positive control delivers the expected upstream model ID to the verified instance. Tests distinguish an explicit profile request from ordinary inference fitting an already proven resident profile.
+- [ ] #6 After the final readiness check, rebind the endpoint before the first upstream write. The replacement receives zero bytes under the previous proof. SPEC names the instance-bound transport or reservation and its retirement rule.
 <!-- AC:END -->

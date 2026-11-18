@@ -5,7 +5,7 @@ status: To Do
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-18T02:37:00Z'
-updated_date: '2026-11-18T19:29:00Z'
+updated_date: '2026-11-18T20:33:00Z'
 labels:
   - scheduling
 milestone: m-6
@@ -35,7 +35,7 @@ decision-25 parked a fleet-wide queue and cross-host model residence as later wo
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Deliberately coarse until TASK-69's design lands and TASK-77 has split reach from ownership: residence is meaningless while one flag decides whether a host can be switched at all. Expected to split into implementation rows once reviewed — a fleet queue that admits against fleet capacity, a residence policy that consumes switch cost, and the ceiling rule for a request that declared no max_queue_time (TASK-51 decides that number). Milestone-level means nobody should start coding it from this text.
+TASK-122 owns shared admission and ticket claims. TASK-123 owns measured placement and service for aged requests. TASK-124 qualifies managed activation and recovery through both ingress endpoints. SPEC sections 12 and 14 must identify this milestone and its implementation rows. TASK-77 controls lifecycle authority and TASK-110 controls physical host occupancy.
 
-Cross-host forwarding verified on 2026-11-18 with an isolated router and an existing remote Ternary Bonsai server over an SSH tunnel. Ordinary discovery returned the exact model ID and engine, and streamed Chat returned HTTP 200, answer 5, finish reason stop and [DONE] in 1.61 seconds. A 24-token attempt completed without visible text. This exercised one ingress and an already-resident model. Shared admission, either-ingress routing, peer activation and recovery remain unproved.
+At 31179e3 one live ingress served turns on resident Qwen and a remote resident Bonsai model in the same pi session. The tests for shared admission, either-ingress placement, peer activation and recovery remain open.
 <!-- SECTION:NOTES:END -->
