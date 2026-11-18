@@ -29,7 +29,7 @@ The commit review of 0e016e5 found the health loop's catch is wider than the obs
 - [ ] #2 A poll that starts after a switch published its proof and then fails before the marker clears leaves the proven snapshot healthy
 - [ ] #3 SPEC 5.5 names the one observation that moves Healthy, and both new pins fail before the change and pass after it, with the runs named
 - [ ] #4 The failed-exit pin asserts the snapshot between the unknown publication and the marker clear, with an exact version check, so leaving the provenance bit set at the exit fails a pin.
-- [ ] #5 A switch refused before it touched the engine leaves that engine schedulable, or SPEC 5.5 states the poll interval as intended — pinned at that exit.
+- [ ] #5 A preflight refusal before mutation preserves the incumbent’s valid proof and permits a subsequent inference on it. An uncertain mutating operation withdraws readiness pending fresh proof.
 <!-- AC:END -->
 
 ## Implementation Notes

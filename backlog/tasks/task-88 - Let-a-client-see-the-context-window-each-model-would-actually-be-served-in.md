@@ -42,5 +42,5 @@ At [31179e3](https://github.com/ArborealML/Inference-Router/commit/31179e3) disc
 
 Ordinary GET /v1/models on the deployed router returned Qwen with owned_by strata and context_window 256000. The backend independently returned the same value under default_generation_settings.n_ctx and four total slots. The shared pi provider declares 256000 and a real turn succeeded. TASK-68 owns admission with stale gauges.
 
-Review of 2edf7e7 raised case-only roster changes. Integrated WithModelsObservation compares exact spelling whenever either observation carries a window. Case-insensitive comparison remains the previous behavior when neither has window evidence. The public array signature matches the preceding main release; the intermediate list signature existed only on a worker branch.
+Review of the discovery implementation integrated in 31179e3 raised case-only roster changes. Integrated WithModelsObservation compares exact spelling whenever either observation carries a window. Case-insensitive comparison remains the previous behavior when neither has window evidence. The public array signature matches the preceding main release; the intermediate list signature existed only on a worker branch.
 <!-- SECTION:NOTES:END -->

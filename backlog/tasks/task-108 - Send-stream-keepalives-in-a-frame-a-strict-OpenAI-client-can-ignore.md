@@ -51,5 +51,5 @@ At [4a5e214](https://github.com/ArborealML/Inference-Router/commit/4a5e214) the 
 
 At [2764b6a](https://github.com/ArborealML/Inference-Router/commit/2764b6a), the coordinator ran 40 process cases in the worker checkout and 48 CLI and router stream checks on integrated main. All passed. The independently requested commit review covers the process fixtures and terminal detection.
 
-Commit review of de5ac24 accepted orderly EOF detection. The integrated main version is 2764b6a.
+Commit review accepted orderly EOF detection in the published 2764b6a change.
 <!-- SECTION:NOTES:END -->

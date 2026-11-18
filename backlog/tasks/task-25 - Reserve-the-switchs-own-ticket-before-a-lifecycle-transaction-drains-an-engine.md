@@ -29,7 +29,7 @@ The lifecycle coordinator now runs ownership proof, preflight, stop and launch i
 - [ ] #2 Admission to the engine is closed for the duration of the transaction, and a request aimed at it is queued rather than admitted
 - [ ] #3 Existing inflight requests finish before anything is stopped, and the drain has a timeout with an actionable outcome
 - [ ] #4 Queue counters and terminal events still agree with what actually happened to each ticket
-- [ ] #5 A request authorised at admission cannot lose that authority between the wait returning Ready and the engine receiving it; any gap left open is named in SPEC with its window
+- [ ] #5 Pause a waiter after Ready and begin a competing switch. Its request reaches only the instance its reservation authorizes, or returns to admission before any upstream write.
 <!-- AC:END -->
 
 ## Implementation Notes

@@ -7,7 +7,7 @@ status: To Do
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-18T17:42:00Z'
-updated_date: '2026-11-18T19:29:00Z'
+updated_date: '2026-11-18T20:23:00Z'
 labels:
   - config
   - lifecycle
@@ -33,6 +33,7 @@ Owner requirement, relayed 17:38Z: the configuration has to be reloadable while 
 - [ ] #5 A stream running across a reload completes on the snapshot it started with, asserted on bytes as in TASK-82
 - [ ] #6 A reload that fails validation leaves the running config untouched and answers in the single lowercase error shape
 - [ ] #7 decision-50 is restated in the same push, its read-only-after-boot premise bounded and the revalidation rule attached
+- [ ] #8 A reload unrelated to a quarantined target leaves its latch intact. Resetting or changing one target permits its next attempt while other quarantined targets remain latched.
 <!-- AC:END -->
 
 ## Implementation Notes

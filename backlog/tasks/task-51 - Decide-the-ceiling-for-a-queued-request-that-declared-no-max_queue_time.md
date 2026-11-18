@@ -1,11 +1,11 @@
 ---
 id: TASK-51
-title: Decide the ceiling for a queued request that declared no max_queue_time
+title: Bound queue admission when a caller supplies no deadline
 status: To Do
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T19:15:00Z'
-updated_date: '2026-11-18T19:29:00Z'
+updated_date: '2026-11-18T20:23:00Z'
 labels:
   - scheduling
   - wire
@@ -18,7 +18,7 @@ ordinal: 51000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-The only permanent-wait path left after 83ebc75: a request for a model an engine declares, while that engine is unhealthy, is queued with no timer armed at all — the queue bound is armed only when the caller sets max_queue_time, and MaybeFailDeadline needs the option — so it waits until the caller disconnects. A posture choice with a latency consequence, not a bug fix: keep the caller opt-out (a patient caller waits indefinitely, nothing in the router bounds it) or give the queue a default ceiling (bounded worst case; a request that would eventually be served is refused at the ceiling instead). Write which into SPEC 7 next to the fast-refuse rule and into 14.1, with the reason and the worst-case number either way. If the option analysis wants an external pass, hand this task to the research service rather than settling it in a commit message.
+Decision-25 requires every request to leave the queue within a finite time. Use measured switch and admission timings to specify a default bound when the caller supplies none. Cover both a declared engine that stays unhealthy and a healthy forwarding-only engine that never reports the requested model. Define the refusal and test the bound with a controlled clock.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

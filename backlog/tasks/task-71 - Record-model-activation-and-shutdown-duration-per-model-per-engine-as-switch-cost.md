@@ -26,7 +26,7 @@ Switch cost stops being an assumption. Per model per engine, the router already 
 <!-- AC:BEGIN -->
 - [ ] #1 Activation and shutdown durations are measured per model per engine from a switch's own timings, not read from config
 - [ ] #2 The same arrivals pick a different model once the measured cost changes, pinned, so the number is an input to the choice and not a report
-- [ ] #3 A single sample or a stale cost cannot starve a model of its turn forever
+- [ ] #3 Under bounded offered load, stale estimates or a single sample cannot postpone an eligible aged model past the documented scheduling bound. A deterministic test observes its successful dispatch.
 - [ ] #4 SPEC 5.5 or 7 says what the numbers mean and what they never decide alone
 - [ ] #5 5 Each stage is recorded as its own value, an unobserved stage is distinguishable from a zero, and a failed or cancelled attempt is still recorded with its outcome
 <!-- AC:END -->

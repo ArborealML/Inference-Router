@@ -27,8 +27,8 @@ For a cohort of eight comparable-age requests for model B and one for A, serve a
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Under steady competing load the router does not alternate switches between two models, pinned by a test that counts switches
-- [ ] #2 Under arrivals that never stop, every waiting request keeps an age under a bound named in SPEC and switches per unit time stay bounded, with the refusal that enforces the bound on the feed
+- [ ] #1 Under continuing arrivals for A and B, count switches and completed cohorts. A bounded-load test respects the SPEC switch limit while serving both models repeatedly.
+- [ ] #2 With bounded inference durations and continuing B arrivals inside capacity, an aged eligible A completes within the SPEC scheduling bound. A separate overload test verifies bounded queue expiry and its event.
 - [ ] #3 For eligible hosts, batching uses measured transition cost and hysteresis while the maximum-wait bound still protects aged requests. Demand and age cannot override a host refusal.
 - [ ] #4 With B resident and eight B tickets plus one equally aged A ticket queued before dispatch, all eight B tickets finish before the switch to A. Record one B-to-A transition and successful A completion.
 - [ ] #5 Repeat the fixed cohort with A initially resident. With the batch selected before dispatch, verify A-to-B then B-to-A, eight successful B completions before A, and no intervening switch.

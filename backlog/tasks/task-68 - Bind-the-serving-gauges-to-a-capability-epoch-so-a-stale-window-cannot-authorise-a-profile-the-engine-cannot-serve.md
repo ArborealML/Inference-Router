@@ -31,7 +31,7 @@ Three serving gauges — window, slots, inferred profile — are live fields out
 - [ ] #3 An ordinary /props observation publishes only at the version it read and never while the marker is up
 - [ ] #4 A wait_health=false switch answers the window question from a fresh post-launch state read, never a pre-switch window
 - [ ] #5 Equal tuples publish nothing, one payload bumps once, and a known window becoming unknown publishes once
-- [ ] #6 Unknown window evidence authorises nothing, or the policy is recorded in SPEC 15: `WindowFits` passes every profile on a gauge of 0, and a window a probe stops reporting stops counting as current
+- [ ] #6 A missing or stale serving window cannot authorize a profile requiring known capacity. Withdraw a previously wide observation and prove the narrower or unknown state governs the next decision.
 - [ ] #7 A waiter answers from the current snapshot, except that a marker raised by a later claim never withdraws a proof its own switch published (decision-36)
 - [ ] #8 A lost claim releases the lock and gate, re-decides within a named count and the wait deadline, and exhaustion returns the existing switch_failed 503
 - [ ] #9 A committed gauge change nudges dispatch outside the compare-exchange, no new event kind

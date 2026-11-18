@@ -5,7 +5,7 @@ status: To Do
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T23:07:00Z'
-updated_date: '2026-11-18T19:29:00Z'
+updated_date: '2026-11-18T20:24:00Z'
 labels:
   - concurrency
   - wire
@@ -30,7 +30,7 @@ This row owns the shape of the refusal the owner ordered (decision-27): a reason
 - [x] #4 SPEC 5.5 says which name space a /models answer lives in: the omission rule refuses a name differing only by alias or provider id
 - [x] #5 The refusal reason is bounded in length as well as in name count, keeping the count of what was omitted
 - [x] #6 One request-side test walks the refusal: an aliased model gets switch_failed with no inference dispatch, the feed names the near miss, and the capability reads unknown
-- [ ] #7 The caller-facing reason is one of a named finite set of categories, with no model name or window number in it; the parameters stay on the feed, pinned to exact strings
+- [x] #7 The caller-facing reason is one of a named finite set of categories, with no model name or window number in it; the parameters stay on the feed, pinned to exact strings
 - [x] #8 Every identifier interpolated into a feed reason is bounded before the string is built, and the docs call the feed text a bounded excerpt
 - [ ] #9 The request-side pin asserts the HTTP response — status, the one lowercase error shape, and the category — not only the in-process exception
 - [ ] #10 One fairness case still runs the trust path with an answering /models refresh
@@ -40,7 +40,7 @@ This row owns the shape of the refusal the owner ordered (decision-27): a reason
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Two commits; sites re-measured at `6ea83ca`. **A — src, tests, SPEC.** `state.FailureReason` carries one token from a closed set of seven: `no_select_command` (`EngineRuntime.cs:924`), `launch_failed` (`:954`), `health_timeout` (`:989`), `refresh_omits` (`:1021`), `refresh_unanswered` (`:1043`), `window_too_small` (`:1060`), `switch_error` (`:1077`); nothing else is ever written to that field. `model`, `_def.Name` and the `profile=` name are bounded before any `Emit` sentence is built (`:935`, `:990`, `:1022`, `:1044`, `:1061`); provider text and the reported-list summary keep their caps. Pins walk the set exit by exit; the eight-long-names case bounds the whole `engine.switch_failed` reason and keeps the omitted count. **B — tests only.** AC #9 asserts the 503 body over `WireHarness`; AC #10 restores a trust-path fairness case (`SwitchFairnessTests.cs:64` runs `true, 20s`; the trust path is `false`, as at `SwitchClaimTests.cs:73`).
+The eight bounded refusal categories, including no_lifecycle_owner, are exercised by RefusalCategoryTests and the TASK-94 taxonomy. Verify the HTTP response in WireHarness and preserve the wait_health=false fairness scenario. Check limits before interpolating model identifiers into event text.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
