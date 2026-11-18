@@ -1,11 +1,11 @@
 ---
 id: TASK-77
 title: Split one remote flag into transport reach and model-loading ownership
-status: Preparing
+status: Waiting
 assignee:
   - '@gpt-6.2-sol'
 created_date: '2026-11-18T02:37:00Z'
-updated_date: '2026-11-18T19:29:00Z'
+updated_date: '2026-11-18T19:33:00Z'
 labels:
   - lifecycle
   - scheduling
@@ -36,11 +36,5 @@ One flag answers two questions. remote says both that the router can reach the e
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Design direction to test in review, not to assume: two config keys, reach (can the router probe this engine) and lifecycle ownership (may the router start or stop it), with remote mapping to reach-without-ownership for existing configs and a stated migration. A switch would then be licensed by the lifecycle provider rather than by the absence of remoteness, so a provider that talks to a remote host over a transport can drive a switch there, while an engine nobody owns is never touched. Probing, admission and the wait_health posture all read reach, not ownership.
-
-A migration landmine, verified here rather than taken on report: the config loader reads Remote as false when the key is absent, and the shipped sample's hyperqwen entry has no lifecycle or selector block at all. So a migration that treats "remote omitted" as "the router owns this engine" would hand load authority to an OpenAI-compatible endpoint with no controller behind it — today that engine simply fails to switch, which is the safe answer. The normaliser must be presence-aware, and the derived loadability must come from a provider bound to the target.
-
-Owner ruling at 17:31Z and 17:41Z, recorded as decision-56: one engine instance per model, native provider only. The refusal this row owns is measured, not inferred — `EngineRuntime.cs:709` returns `no_lifecycle_owner` for any engine with `remote = true`, ahead of the selector check at `:689` (read at `2b751ec`). Consequence for the bring-up instance: a config whose only engine is `remote = true` cannot switch anything, and a request naming a model that engine declares but does not report is never refused either — it parks, see TASK-51.
-
-The Sol implementer is preparing the loader, runtime and migration plan for the cluster ownership split in an isolated worktree.
+The reviewed migration must preserve the shipped sample with no lifecycle block. The loader currently maps an omitted remote key to false, so load authority must come from an explicit target-bound provider. A routable unmanaged engine can serve a resident model. A request for an absent model currently waits for capacity (TASK-51). Decision-56 requires one serving instance per model. TASK-110 carries host-exclusive authority. Wake when the external review of the migration plan returns. It covers presence-aware legacy mappings, delegated provider binding and host admission.
 <!-- SECTION:NOTES:END -->

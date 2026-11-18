@@ -1,11 +1,11 @@
 ---
 id: TASK-119
 title: Rewrite the managed switch walkthrough around the native lifecycle provider
-status: Preparing
+status: Waiting
 assignee:
   - '@gpt-6.2-sol'
 created_date: '2026-11-18T19:04:00Z'
-updated_date: '2026-11-18T19:30:00Z'
+updated_date: '2026-11-18T19:33:00Z'
 labels: []
 milestone: m-4
 dependencies: []
@@ -33,3 +33,9 @@ Make the primary operator walkthrough consistent with decisions 56 and 62. At a8
 <!-- SECTION:PLAN:BEGIN -->
 Trace the managed switch examples to the config loader and provider. Distinguish proven behavior from the host fencing and independent recovery requirements. Submit the proposed walkthrough for review, validate the example offline, and cross-check each cited section before review handoff.
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Wake when the external plan review returns. It covers the native Docker example, authority to stop an incumbent, and the distinction between the shipped provider and host-wide recovery requirements.
+<!-- SECTION:NOTES:END -->

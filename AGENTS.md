@@ -226,12 +226,12 @@ integrates accepted work using the appropriate seat identity, checks CI and reco
 Run each implementer as a long-lived GPT-6.2 Sol agent with high reasoning in its own named tmux session.
 The coordinator gives it one task and an isolated Git worktree with a single writer. The implementer owns
 preparation, implementation, testing, fixes and the evidence handoff described above. It reports each
-transition so the coordinator can update the shared board. A test-slot delay moves the task to Waiting
-with its wake condition. After a handoff, send revisions or the next assignment to the same implementer.
+transition so the coordinator can update the shared board. After a handoff, send revisions or the next
+assignment to the same implementer.
 
-Target three persistent tmux implementers. During migration the three current subagents may finish alongside
-them, for up to six implementation lanes. Give a tmux worker independent work until its predecessor has
-delivered its handoff. Transfer ownership after the previous writer has drained. The coordinator keeps the successor session across tasks.
+Run four persistent tmux implementers under decision-63, each with one task and its own worktree.
+Ordinary builds and focused tests can run concurrently. When a measurement requires exclusive host
+conditions under decision-55, record its completion as the wake condition for waiting measurements or builds.
 When a task is Done, confirm its changes have landed, retain any required private evidence, inspect tracked
 and untracked files, and release its worktree with Git. Preserve outstanding changes or evidence before
 removal, and move the implementer out of the retired directory before assigning its next worktree.
