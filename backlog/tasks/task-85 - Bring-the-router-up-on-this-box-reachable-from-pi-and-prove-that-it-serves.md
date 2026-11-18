@@ -5,6 +5,7 @@ status: Blocked
 assignee:
   - '@claire'
 created_date: '2026-11-18T06:06:00Z'
+updated_date: '2026-11-18T06:09:00Z'
 labels:
   - serve
 dependencies: []
@@ -26,3 +27,11 @@ Blocked on @claire for one grant: may a seat start or stop an inference engine o
 - [ ] #4 The bring-up config names auto_switch and wait_health explicitly while TASK-61/62/64/25 are open, so serving is never read as swapping being safe.
 - [ ] #5 No engine is started, stopped or reconfigured on this box without the owner's go-ahead recorded in this row.
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Pairing: AC #2 is the live half of TASK-82 (frame preservation at any split byte) and TASK-30 (a relay against a client that stops reading); a green unit suite is not evidence for this row. AC #3 needs only what is already true in code — the router forwards exactly Authorization and Content-Type upstream (`RouterCore.cs:670-681`), so no router-side header reaches a backend.
+
+Config trap, re-measured: `Remote = e.Remote ?? false` at `RouterConfigLoader.cs:286`, and `samples/router.toml`'s hyperqwen entry carries neither `remote = true` nor a lifecycle block — it lands on the router-owns-it side with nothing to run. A bring-up config either names `remote = true` for every endpoint it does not own or states the lifecycle command it expects; `samples/router.safe-smoke.toml` is the only sample safe to smoke-test.
+<!-- SECTION:NOTES:END -->

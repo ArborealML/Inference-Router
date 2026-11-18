@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T23:07:00Z'
-updated_date: '2026-11-18T06:07:00Z'
+updated_date: '2026-11-18T06:09:00Z'
 labels:
   - concurrency
   - scheduling
@@ -45,7 +45,7 @@ Do not read the resume check as the entitlement: authority held across the hando
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-**Green again at [f89fead](https://github.com/ArborealML/Inference-Router/commit/f89fead) (v0.12.35), commit 1 of the fix-forward.** Re-measured 06:05Z: `origin/main = f89fead`; CI run 44248248881 success on all three jobs after four red pushes. The pins resolve at HEAD: `OwnProofStillStands` in `EngineRuntime.cs`, `SwitchClaimTests.cs:397` for AC #5, and both resume pins take the seam at `EngineRuntime.cs:765` before the snapshot read at `:782` — the seam AC #4 needs, so neither pin passes on thread scheduling. The implementer reports the combined switch filter 11/11 over five consecutive runs plus a differential failing the new pin under v0.12.34's fall-through: their measurement, not the board's.
+**Green again at [f89fead](https://github.com/ArborealML/Inference-Router/commit/f89fead) (v0.12.35), commit 1 of the fix-forward.** Re-measured 06:05Z: `origin/main = f89fead`; CI run 44248248881 success on all three jobs after four red pushes. The pins resolve at HEAD: `OwnProofStillStands` in `EngineRuntime.cs`, `SwitchClaimTests.cs:397` for AC #5, and both resume pins take the seam at `EngineRuntime.cs:765` before the snapshot read at `:782` — the seam AC #4 needs, so neither pin passes on thread scheduling. The implementer reports the combined switch filter 11/11 over five consecutive runs plus a differential failing the new pin under v0.12.34's fall-through: their measurement, not the board's. **An external deep-tier review of 3dce284..f89fead is in flight** (dispatched 06:09Z); it changes neither this row's status nor its assignee.
 
-**Open: AC #6**, the two-caller launch-sequence pin, and the fairness pin re-armed on an arrival event instead of the `Task.Delay(150)` pair. Standing rules for that commit: the parked half stays parked — SPEC §15 names TASK-25 AC #5, TASK-64 AC #3 and this row as owners and says v0.12.34 is deliberately narrowed, so do not revert 042e212 and do not read the resume check as the entitlement (authority across the handoff is TASK-25's criterion, decision-36). TASK-62's AC #7-#10 come after this row is Done.
+**Open: AC #6**, the two-caller launch-sequence pin, and the fairness pin re-armed on an arrival event instead of the `Task.Delay(150)` pair. Standing rules for that commit: the parked half stays parked — SPEC §15 names TASK-25 AC #5, TASK-64 AC #3 and this row as owners and says v0.12.34 is deliberately narrowed, so do not revert 042e212 and do not read the resume check as the entitlement (authority across the handoff is TASK-25's criterion, decision-36).
 <!-- SECTION:NOTES:END -->
