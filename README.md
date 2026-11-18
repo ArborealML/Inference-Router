@@ -17,11 +17,11 @@ dotnet build src/Arboreal.InferenceRouter.Cli -c Release
 bash tools/ci/smoke.sh ./src/Arboreal.InferenceRouter.Cli/bin/Release/net11.0/air
 ```
 
-A successful run ends with `SMOKE OK`. It checks model discovery, ordinary and streaming chat, the CLI client, and the error returned when the engine fails. If the executable reports that .NET is missing despite a successful build, set `DOTNET_ROOT` to the directory containing your installed `dotnet` runtime and rerun the script.
+On Windows, use Git Bash and pass the executable path ending in `air.exe`. A successful run ends with `SMOKE OK`. It checks model discovery, ordinary and streaming chat, the CLI client, and the error returned when the engine fails. If the executable reports that .NET is missing despite a successful build, set `DOTNET_ROOT` to the directory containing your installed `dotnet` runtime and rerun the script.
 
 ## Connect an inference engine
 
-Save this one-engine configuration as `router.local.toml`. Replace the example endpoint and both occurrences of `example-model` with your backend’s base URL and model ID. Set `models_endpoint` to its model-list path. A leading slash resolves from the backend’s root, so an OpenAI-compatible engine mounted at `/v1` typically uses `/v1/models`.
+Create the ignored directory with `mkdir -p .local` and save this configuration as `.local/router.toml`. Replace the example endpoint and both occurrences of `example-model` with your backend’s base URL and model ID. Set `models_endpoint` to its model-list path. A leading slash resolves from the backend’s root, so an OpenAI-compatible engine mounted at `/v1` typically uses `/v1/models`.
 
 ```toml
 listen = "http://127.0.0.1:8399"
@@ -37,11 +37,11 @@ remote = true
 [engine.local.catalog."example-model"]
 ```
 
-Here another service owns the backend’s lifecycle. For multiple engines and serving profiles, see the [remote-only sample](samples/router.safe-smoke.toml). Keep the router on loopback unless a proxy authenticates callers and terminates TLS.
+With `remote = true`, another service must have the model loaded before AIR can route to it. For multiple engines and serving profiles, see the [remote-only sample](samples/router.safe-smoke.toml). Keep the router on loopback unless a proxy authenticates callers and terminates TLS.
 
 ```bash
-dotnet run --project src/Arboreal.InferenceRouter.Cli -- config -c "$PWD/router.local.toml"
-dotnet run --project src/Arboreal.InferenceRouter.Cli -- serve -c "$PWD/router.local.toml"
+dotnet run --project src/Arboreal.InferenceRouter.Cli -- config -c "$PWD/.local/router.toml"
+dotnet run --project src/Arboreal.InferenceRouter.Cli -- serve -c "$PWD/.local/router.toml"
 ```
 
 The first command validates the configuration offline. Its output includes resolved endpoints, key-file paths and lifecycle arguments, so keep it local. The second command starts AIR. From another terminal, check the listener and see which models the engines currently report.
@@ -60,7 +60,7 @@ curl -N http://127.0.0.1:8399/v1/chat/completions \
   -d '{"model":"MODEL_ID","stream":true,"messages":[{"role":"user","content":"Hello"}]}'
 ```
 
-Reuse the thread ID across turns to preserve queue priority. If a client knows its context demand, it can send `X-Inference-Required-Context` in tokens so AIR can consider a fitting serving profile. Queued streams carry SSE keepalive comments until data is available. AIR also supports the legacy `/v1/completions` endpoint. See the [client integration guide](docs/ai-integration.md) for headers, cancellation, error codes and a worked example.
+Reuse the thread ID to identify the conversation across turns. The default class is `normal` in this example. Register a thread priority through the admin API or set `X-Inference-Priority` on a request. If a client knows its context demand, it can send `X-Inference-Required-Context` in tokens so AIR can consider a fitting serving profile. Queued streams carry SSE keepalive comments until data is available. AIR also supports the legacy `/v1/completions` endpoint. See the [client integration guide](docs/ai-integration.md) for headers, cancellation, error codes and a worked example.
 
 ## Model switches and serving profiles
 
