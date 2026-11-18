@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@gpt-6.2-sol-scheduling'
 created_date: '2026-11-18T01:22:00Z'
-updated_date: '2026-11-18T20:47:00Z'
+updated_date: '2026-11-18T21:23:00Z'
 labels: []
 milestone: m-5
 dependencies:
@@ -43,11 +43,11 @@ Implement attempt-scoped monotonic stage observations with missing and failed ou
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-A goal-level audit of the switching rows found the old criterion #2 passable with the measured cost having no influence at all: a number that reaches the decision and changes nothing satisfies it. #2 now requires the choice to move when the cost moves.
-
-The external evaluation of an open-source gateway (2026-11-18) argues this row must not wait for the adaptive design: stage timings need no database and no change to `/v1`. It also names the shape to copy — record each stage separately (queue, stop, load, confirmed readiness, first forwarding, terminal outcome), separate a missing or failed observation from a zero, and classify attempts as successful, failed, cancelled or overtaken. Estimates stay advisory: they never license admission and never relax confirmation.
+Record queue, shutdown, load, confirmed readiness, first forwarding and terminal outcome separately. Distinguish unobserved duration from zero and classify failed, cancelled or overtaken attempts. Estimates influence selection only among eligible targets.
 
 Compare drain plus verified shutdown of A and activation of B against actual handoff time, keyed by host, engine version, model digest and effective config. Distinguish cold from warm samples. Track timeouts and failures separately from successful durations. Evaluate the proposed 64-success, 30-day recency-weighted percentile window against recorded workloads before fixing its parameters.
 
 External plan review dispatched. The candidate measures monotonic stages under one claim identity, preserves missing and failed observations, and compares eligible switches using a bounded cost history. The acceptance fixture keeps arrivals fixed and changes only the measured cost.
+
+The [integrated scheduler](https://github.com/ArborealML/Inference-Router/commit/a77d50a) now commits the exact thread-admissible ticket it evaluated. A blocked-head case and cancellation during selection both failed on the preceding dispatch implementation and passed after the change. A custom scheduler retained its call ordering. The combined filter passed 45 cases and the full Release suite passed 442. The cost history and ranking functions still require production stop/launch observations and a test changing the actual launch.
 <!-- SECTION:NOTES:END -->
