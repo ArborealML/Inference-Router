@@ -3,11 +3,11 @@ id: TASK-90
 title: >-
   Run the release preflight through the manual-dispatch arm in the harness, not
   only the tag-push arm
-status: Preparing
+status: In Progress
 assignee:
   - '@gpt-6.2-sol'
 created_date: '2026-11-18T07:44:00Z'
-updated_date: '2026-11-18T19:01:00Z'
+updated_date: '2026-11-18T19:11:00Z'
 labels:
   - ci
   - release
@@ -42,4 +42,6 @@ Prefer C# for new tooling. Assess reusing the release step extraction and old-ve
 
 <!-- SECTION:NOTES:BEGIN -->
 At 3f20784 release.yml uses a bare commit lookup at lines 72, 502 and 690. Verify an exact tag and its built commit at all three reads. Pass input through the step environment and validate its entire value. Reuse the offline workflow extraction, fake service and historical comparison in tools/relgate.py. Duplicating that machinery in xUnit would exercise another harness. Coordinate edits with TASK-44.
+
+Integration check on 2026-11-18 used read-only GitHub requests for the existing annotated canary. The proposed commits/tags/ lookup returned 422. The full commits/refs/tags/ lookup returned the commit matching the locally peeled tag. Update all three lookups and the fake service before integration.
 <!-- SECTION:NOTES:END -->
