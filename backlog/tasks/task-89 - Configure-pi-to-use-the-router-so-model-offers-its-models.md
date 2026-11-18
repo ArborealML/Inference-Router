@@ -5,6 +5,7 @@ status: To Do
 assignee:
   - '@qwen3.8-flash-next-board'
 created_date: '2026-11-18T07:15:00Z'
+updated_date: '2026-11-18T18:18:00Z'
 labels:
   - serve
   - pi
@@ -26,3 +27,9 @@ The second half of the owner's morning goal: pi must be able to pick router-serv
 - [ ] #3 One pi turn completes through the router, and /model lists more than one model.
 - [ ] #4 No change moves the pi lane an agent session is running on; that move waits for a named window and the owner's nod.
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+The existing pi router provider already declares one model and its context window. Extend its verified model entries as residency is proven. Exercise /model in a test session and select the newly available model. Confirm the response through the router and keep active agent lanes on their existing settings.
+<!-- SECTION:NOTES:END -->

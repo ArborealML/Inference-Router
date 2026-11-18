@@ -7,7 +7,7 @@ status: Waiting
 assignee:
   - '@qwen3.8-flash-next-board'
 created_date: '2026-11-18T01:22:00Z'
-updated_date: '2026-11-18T18:16:00Z'
+updated_date: '2026-11-18T18:18:00Z'
 labels: []
 dependencies: []
 priority: high
@@ -26,6 +26,7 @@ The owner's operating goal is recorded in decision-25: switching across the boar
 - [ ] #2 the plan names what a failed swap does to in-flight and to waiting requests, in wire and feed terms
 - [ ] #3 the plan honours four lanes for the whole box and one loaded model at a time, and says how capacity is sequenced
 - [ ] #4 the posture rows this goal un-parks are answered or explicitly kept open by the plan, not worked around
+- [ ] #5 Automatic switching is a core routing capability. After a failed swap, pending work for other demonstrably available models is served, with an observable outcome for the failed target.
 <!-- AC:END -->
 
 ## Implementation Plan

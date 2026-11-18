@@ -3,15 +3,16 @@ id: TASK-87
 title: >-
   Make the stopped-router shutdown pin fail on purpose, then stop it failing by
   chance
-status: In Progress
+status: Waiting
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-18T06:27:00Z'
-updated_date: '2026-11-18T10:13:00Z'
+updated_date: '2026-11-18T18:18:00Z'
 labels:
   - flake
   - tests
-dependencies: []
+dependencies:
+  - TASK-98
 priority: high
 ordinal: 86000
 ---
@@ -19,7 +20,7 @@ ordinal: 86000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-The pin `AWaiterInsideTheReadinessWaitIsToldTheRouterStopped` fails in two shapes: it has hit its 30 s Fact ceiling, and seven CI runs answered an assertion instead — Expected settled, Actual cancelled. Load-dependent, never reproduced at will, and a red main costs the next real failure its reading.
+Wake when TASK-98 lands the production stop decision. The readiness-wait test has failed both at its 30-second ceiling and when cancellation wins its assertion. Resume the deterministic fixture and quiet-host measurements against the corrected shutdown path.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
