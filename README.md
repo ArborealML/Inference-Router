@@ -19,6 +19,28 @@ bash tools/ci/smoke.sh ./src/Arboreal.InferenceRouter.Cli/bin/Release/net11.0/ai
 
 On Windows, use Git Bash and pass the executable path ending in `air.exe`. A successful run ends with `SMOKE OK`. It checks model discovery, ordinary and streaming chat, the CLI client, and the error returned when the engine fails. If the executable reports that .NET is missing despite a successful build, set `DOTNET_ROOT` to the directory containing your installed `dotnet` runtime and rerun the script.
 
+## Features
+
+- **OpenAI-compatible inference.** List loaded models and send chat or legacy text completions with optional SSE streaming. [Client integration guide](docs/ai-integration.md)
+- **Routing and serving profiles.** Queue requests by model, apply thread priorities, and route to configured local and remote engines using health and available slots. A request can specify the context window it needs in tokens. [Serving profiles specification](SPEC.md)
+- **Per-engine lifecycle.** Use the native Docker provider or a configured selector for model switches. The Docker provider checks ownership before stopping a container and is verified against a fake daemon. [Docker provider](src/Arboreal.InferenceRouter/Engines/Lifecycle/DockerLifecycleProvider.cs)
+- **Operator controls.** Inspect engine and queue status, replay events for a ticket, or cancel it through the admin API. The `air` CLI can host the router and act as a client. [HTTP reference](SPEC.md#6-http-surface-server-project)
+
+### In progress
+
+- **Context discovery for pi.** Report verified context windows for loaded models in `GET /v1/models` and qualify model selection and streaming through the deployed router. [Pi integration milestone](backlog/milestones/m-0%20-%20pi-on-a-running-router.md)
+- **Native model swaps on a shared host.** Drain in-flight requests before swapping the resident model, verify that the replacement is ready, and complete a pi turn after the swap. [Native swap milestone](backlog/milestones/m-4%20-%20native-model-swap-through-pi-clm.md)
+- **Lifecycle ownership for remote engines.** Separate where AIR sends inference requests from which engines it can start and stop. [Lifecycle ownership plan](backlog/tasks/task-77%20-%20Split-one-remote-flag-into-transport-reach-and-model-loading-ownership.md)
+
+### Planned features
+
+- **Cluster routing and model placement.** Accept requests from either ingress into one shared queue and let an eligible host activate the selected model. [Cluster milestone](backlog/milestones/m-6%20-%20cluster-routing-and-model-placement.md)
+- **Cost-aware scheduling.** Use measured model load and shutdown times to batch queued requests while bounding how long they wait. [Scheduling milestone](backlog/milestones/m-5%20-%20measured-model-scheduling.md)
+- **Configuration reload.** Apply validated changes while in-flight requests and switches keep the configuration they started with. [Reload milestone](backlog/milestones/m-8%20-%20configuration-reload-during-inference.md)
+- **Operator live view.** Follow engine status and per-ticket progress in a web interface backed by the replayable event feed. [Live view milestone](backlog/milestones/m-11%20-%20operator-live-view.md)
+
+See the [delivery milestones](backlog/milestones/README.md) for the full roadmap.
+
 ## Connect an inference engine
 
 Create the ignored directory with `mkdir -p .local` and save this configuration as `.local/router.toml`. Replace the example endpoint and both occurrences of `example-model` with your backend’s base URL and model ID. Set `models_endpoint` to its model-list path. A leading slash resolves from the backend’s root, so an OpenAI-compatible engine mounted at `/v1` typically uses `/v1/models`.
@@ -95,7 +117,7 @@ dotnet publish src/Arboreal.InferenceRouter.Cli -c Release -r linux-x64 -p:Publi
 
 Run `dotnet test` from the repository root. The [routing library](src/Arboreal.InferenceRouter/) owns queues, scheduling and engine state. The [server](src/Arboreal.InferenceRouter.Server/) exposes the HTTP API, and the [CLI](src/Arboreal.InferenceRouter.Cli/) can host the server or act as a client.
 
-- [Specification and roadmap](SPEC.md) — wire contracts, scheduling behavior and planned work, including fleet routing and runtime configuration reload.
+- [Specification](SPEC.md) — wire contracts, scheduling behavior and configuration.
 - [Benchmarks](docs/benchmarks.md) — routing and streaming overhead measured against the same fixture engine, with latency and allocation breakdowns.
 - [Contributor guide](AGENTS.md) — focused tests, worktrees and the review process. Work is tracked in the [backlog](backlog/).
 
