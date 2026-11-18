@@ -11,6 +11,7 @@ public sealed class RouterCore : IInferenceRouter
     private readonly RouterConfig _config;
     private readonly IRequestScheduler _scheduler;
     private readonly EventRing _events;
+    private readonly TimeProvider _clock;
     private readonly Dictionary<string, EngineRuntime> _engines = new(StringComparer.OrdinalIgnoreCase);
     /// <summary>The same engines as the capability scan sees, fixed once at construction. A stable list is
     /// what lets one scan prove that no engine published while it was deciding (§5.5).</summary>
@@ -33,9 +34,15 @@ public sealed class RouterCore : IInferenceRouter
     private readonly CancellationTokenSource _shutdown = new();
 
     public RouterCore(RouterConfig config, IRequestScheduler? scheduler = null, EventRing? events = null)
+        : this(config, scheduler, events, TimeProvider.System)
+    {
+    }
+
+    internal RouterCore(RouterConfig config, IRequestScheduler? scheduler, EventRing? events, TimeProvider clock)
     {
         config.ValidateLifecycleTopology();
         _config = config;
+        _clock = clock;
         _wakeOnEngineState = WakeOnEngineState;
         _scheduler = scheduler ?? new PrefixAwareScheduler();
         _events = events ?? new EventRing(maxLiveSubscribers: config.MaxEventSubscribers);
@@ -125,7 +132,8 @@ public sealed class RouterCore : IInferenceRouter
 
         var requestedModel = request.Model ?? thread.ModelAffinity ?? _config.DefaultModel;
         var canonical = ResolveCanonical(requestedModel);
-        var ticket = new RouterTicket(NewTicketId(), threadId, canonical, DateTimeOffset.UtcNow);
+        var enqueuedAt = _clock.GetTimestamp();
+        var ticket = new RouterTicket(NewTicketId(), threadId, canonical, _clock.GetUtcNow());
         var prio = opts.Priority ?? thread.Priority;
         var node = new PrioritizedRequest(ticket, prio, Interlocked.Increment(ref _seq));
         var promptChars = PromptCharsProbe(request.Body);
@@ -136,6 +144,7 @@ public sealed class RouterCore : IInferenceRouter
             PriorityNode = node,
             Thread = thread,
             EnqueuedSeq = node.Sequence,
+            EnqueuedAtTimestamp = enqueuedAt,
             PromptChars = promptChars,
             RequiredContextTokens = opts.RequiredContext is { } rc && rc > 0
                 ? rc
@@ -368,14 +377,16 @@ public sealed class RouterCore : IInferenceRouter
             {
                 return;
             }
-            while (await TryDispatchOnce().ConfigureAwait(false))
+            while (TryDispatchOnce())
             {
                 // drain
             }
         }
     }
 
-    private async Task<bool> TryDispatchOnce()
+    private static bool HasThreadCapacity(RouterThread thread) => thread.Inflight < thread.MaxInflight;
+
+    internal bool TryDispatchOnce()
     {
         QueuedRequest? candidate = null;
         EngineRuntime? engine = null;
@@ -384,12 +395,16 @@ public sealed class RouterCore : IInferenceRouter
 
         lock (_gate)
         {
-            foreach (var q in _queues.Values.OrderBy(q => q.Depth))
+            var ordered = _queues.Values
+                .Select(static (queue, ordinal) =>
+                    (Queue: queue, Candidate: queue.SnapshotCandidate(ordinal, HasThreadCapacity)))
+                .OrderBy(entry => entry.Candidate.Depth)
+                .ThenBy(entry => entry.Candidate.BaselineOrdinal);
+            foreach (var (q, snapshot) in ordered)
             {
-                var head = q.PeekHead();
-                if (head is null) continue;
-                var infos = BuildEngineInfos(head);
-                var decision = _scheduler.SelectNext(head, new SchedulerView(infos, DateTimeOffset.UtcNow), _config);
+                if (snapshot.Request is not { } request) continue;
+                var infos = BuildEngineInfos(request);
+                var decision = _scheduler.SelectNext(request, new SchedulerView(infos, _clock.GetUtcNow()), _config);
                 if (decision.Engine is null)
                 {
                     // The scheduler's reason (no_engines / no_available_engine) is internal: read by the
@@ -397,19 +412,20 @@ public sealed class RouterCore : IInferenceRouter
                     // wait ends as deadline_exceeded if it ends at all (§6.1). A request that nothing here
                     // could ever take is refused before it is queued (§5.5), so what reaches this line is a
                     // wait that could still resolve.
-                    MaybeFailDeadline(head);
+                    MaybeFailDeadline(request);
                     continue;
                 }
                 var e = _engines[decision.Engine];
                 if (!e.HasCapacity) continue;
-                var popped = q.TryPopHead(t => t.Inflight < t.MaxInflight);
-                if (popped is null) continue;
-                candidate = popped;
+                // A cancelled or displaced candidate invalidates this pass. Reapply queue ordering
+                // on the next pass so the scheduler evaluates whichever ticket is now first.
+                if (!q.TryTakeExact(snapshot, HasThreadCapacity)) return true;
+                candidate = request;
                 engine = e;
                 switchRequired = decision.SwitchRequired;
                 targetProfile = decision.TargetProfile;
-                popped.Thread.IncrementInflight();
-                engine.BeginRequest(popped.PromptChars);   // reserve engine capacity now:
+                request.Thread.IncrementInflight();
+                engine.BeginRequest(request.PromptChars);  // reserve engine capacity now:
                 break;                                     // the drain loop must not over-dispatch
             }
         }
@@ -501,7 +517,7 @@ public sealed class RouterCore : IInferenceRouter
     private void MaybeFailDeadline(QueuedRequest head)
     {
         var maxQueue = head.Request.Options.MaxQueueTime;
-        if (maxQueue is { } window && DateTimeOffset.UtcNow - head.Ticket.QueuedAt > window)
+        if (maxQueue is { } window && _clock.GetElapsedTime(head.EnqueuedAtTimestamp) > window)
         {
             if (GetQueue(head.Ticket.Model)?.TryRemoveById(head.Ticket.Id) == true)
                 Fail(head.Ticket, "deadline_exceeded", $"queue wait exceeded {window}");
