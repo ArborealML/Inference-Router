@@ -1,6 +1,6 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.58)
+Status: draft, continuously revised (v0.12.59)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
@@ -352,6 +352,9 @@ daemon transaction per engine. 137 tests green.
   that answers no `upload_url`, an upload that dies or answers no asset id, an asset name listed twice on
   the release, and a tag that moves after the first resolve. No tag has run the gate: still configured,
   not proven.
+- v0.12.59 — Only an exception from the ordinary `/models` fetch can withdraw probe health.
+  An ordinary poll preserves a switch's proof while its marker is raised. A failed mutation clears
+  claim authorship in the unknown snapshot, one publication before marker clear (§5.5, TASK-76).
 - v0.12.58 — native Docker preflight checks the image ID, named repository digest and platform
   before it stops owned containers. Create uses the full pinned ID without a tag fallback.
   Legacy files still load. Native switches require the pins (§5.3.1, §7, TASK-26).
@@ -1669,9 +1672,13 @@ engine forks land; the scheduler interface will not change shape.
   cannot land after it and overwrite what the switch proved — and, in the other direction, so a poll that **failed**
   before that switch cannot withdraw the proof afterwards. The negative answer withdraws health and model-window proof
   under the same version and the same drop rule, which is what stops one unreachable-tick poll from costing a working engine
-  its model for a whole interval. Of the health loop's two awaited observations only the `/models` fetch moves health:
-  the serving-state probe that follows it answers a different question — `health.expect` says whether a **switch**
-  counts as ready — moves no health flag in either direction, and still feeds the window and slot gauges. The fence
+  its model for a whole interval. Only the awaited `/models` fetch can supply an ordinary health observation.
+  A fetch exception can withdraw probe health or contradict a matching incumbent proof. The loop token stops
+  future ticks. An in-flight fetch keeps its own timeout and publication fences, so a failed response can
+  still withdraw the proof of its own generation. Cancellation attributable to the loop token, timeout setup,
+  diagnostics, event delivery, serving-state and readiness work, gauges and timer faults carry no such authority.
+  The serving-state probe still feeds the window and slot gauges. Its `health.expect` rule determines whether a
+  **switch** counts as ready. The fence
   orders *publications*, not the engine: an engine restarted outside the router's sight, with no visible
   discontinuity, evades it. Ordinary polls publish neither a positive nor a negative while the switch marker is set.
   The immutable model-window observations used for discovery (§6) are published with the same roster and version.
@@ -1679,8 +1686,10 @@ engine forks land; the scheduler interface will not change shape.
   **Uncertainty is published:** a switch that ends without having verified the engine — failed stop, failed launch,
   readiness timeout, an exec with `wait_health = false` whose refresh cannot answer — publishes `Healthy = false` as a
   health-only change that preserves the currently reported list, so the refusal says "not hopeless" and no stale list can
-  refuse a model that has begun to be served or vouch for one that was just stopped. Nothing is served on an unverified
-  proof: such a switch ends **not-ready** and emits `engine.switch_failed`, never a completion, because an exit code is
+  refuse a model that has begun to be served or vouch for one that was just stopped. After a failed mutation,
+  this publication clears `HealthFromClaim` and advances the version while the marker remains raised, even
+  when health was already false under the claim. Clearing the marker is a separate versioned publication.
+  An unverified switch ends **not-ready** and emits `engine.switch_failed`, never a completion, because an exit code is
   what the router was told and not an observation it made — the owner's posture (decision-27), which replaces the earlier
   promise that a `wait_health = false` exec was served on its own word. A switch that *does* verify publishes the reported
   list and `Healthy = true` in one publication, which is what makes the engine eligible without another poll.
