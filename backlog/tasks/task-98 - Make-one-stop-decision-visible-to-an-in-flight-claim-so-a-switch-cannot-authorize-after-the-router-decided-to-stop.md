@@ -3,11 +3,11 @@ id: TASK-98
 title: >-
   Make one stop decision visible to an in-flight claim, so a switch cannot
   authorize after the router decided to stop
-status: Preparing
+status: Testing
 assignee:
   - '@gpt-6.2-sol'
 created_date: '2026-11-18T11:02:00Z'
-updated_date: '2026-11-18T18:52:00Z'
+updated_date: '2026-11-18T19:02:00Z'
 labels: []
 dependencies: []
 ordinal: 97000
