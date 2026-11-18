@@ -160,13 +160,17 @@ public sealed class CapabilityPublicationTests
             ["m"] = new() { Name = "m" },
             ["extra"] = new() { Name = "extra" },
             ["second"] = new() { Name = "second" },
+            // An aliased catalog key: the switch target is the key, and the alias is only how a caller may
+            // spell the request. The engine never reports the alias, and a test needs that distinction.
+            ["aliasy"] = new() { Name = "aliasy", Aliases = ["aliasy-short"] },
         },
     };
 
     private static EngineRuntime NewEngine(
-        EngineDefinition def, ScriptedProvider provider, ProbeHandler? handler = null, Action? hint = null) =>
+        EngineDefinition def, ScriptedProvider provider, ProbeHandler? handler = null, Action? hint = null,
+        EventRing? feed = null) =>
         new(def, new RouterConfig { Engines = new Dictionary<string, EngineDefinition> { ["fake"] = def } },
-            new EventRing(), handler, lifecycle: provider, dispatchHint: hint);
+            feed ?? new EventRing(), handler, lifecycle: provider, dispatchHint: hint);
 
     private static ServingProfile Profile(string name, long window) =>
         new() { Name = name, MaxContext = window };
@@ -508,6 +512,101 @@ public sealed class CapabilityPublicationTests
 
         ICapabilitySource[] sources = [engine];
         Assert.False(CapabilityScan.DefinitelyHopeless(sources, "ghost"));
+    }
+
+    /// <summary>The positive half of the path that trusts the exec: a refresh that answers *and* names the
+    /// model is still a proof, and the switch is still ready. Without this control, a fix to the omission bug
+    /// below could pass by moving the whole path instead of the hole in it.</summary>
+    [Fact(Timeout = 60_000)]
+    public async Task ARefreshThatNamesTheTargetOnTheTrustingPathStillProvesTheSwitch()
+    {
+        using var handler = new ProbeHandler("m");
+        var provider = new ScriptedProvider { ProveHealth = false };
+        var feed = new EventRing();
+        var def = Def(new HealthProbeDefinition { Path = "/props", IntervalMs = 3_600_000 });
+        var engine = NewEngine(def, provider, handler, feed: feed);
+        await using var _ = engine;
+
+        handler.SetModels("m", "extra");
+        var switched = await engine.WaitForModelAsync("extra", TimeSpan.FromSeconds(30), CancellationToken.None);
+
+        Assert.True(switched.IsReady);
+        Assert.True(engine.Healthy);                        // the answered refresh is the evidence
+        Assert.True(engine.IsReadyFor("extra", null));
+        Assert.Equal(1, provider.LaunchCount);
+        var kinds = feed.Replay(0).Select(e => e.Kind).ToArray();
+        Assert.Contains("engine.switch_completed", kinds);
+        Assert.DoesNotContain("engine.switch_failed", kinds);
+    }
+
+    /// <summary>The bug: on the <c>wait_health = false</c> path an answered refresh was published as a proof,
+    /// and the switch ended ready whatever the list named. The router could vouch for a model nothing had ever
+    /// reported, with its own say-so as the only evidence (§5.5).</summary>
+    [Fact(Timeout = 60_000)]
+    public async Task ARefreshThatNeverNamedTheRequestedModelRefusesTheSwitch()
+    {
+        using var handler = new ProbeHandler("m");
+        var provider = new ScriptedProvider { ProveHealth = false };
+        var feed = new EventRing();
+        var def = Def(new HealthProbeDefinition { Path = "/props", IntervalMs = 3_600_000 });
+        var engine = NewEngine(def, provider, handler, feed: feed);
+        await using var _ = engine;
+
+        handler.SetModels("m", "extra");
+        var first = await engine.WaitForModelAsync("extra", TimeSpan.FromSeconds(30), CancellationToken.None);
+        Assert.True(first.IsReady);
+
+        // The engine answers — it is reachable and talking — it just never names "second".
+        handler.SetModels("m", "extra", "stranger");
+        var failed = await engine.WaitForModelAsync("second", TimeSpan.FromSeconds(30), CancellationToken.None);
+        Assert.False(failed.IsReady);
+        Assert.False(engine.Healthy);                       // relaunched: what it reported before is not current
+        Assert.Null(engine.SwitchingToward);
+        Assert.False(engine.IsReadyFor("second", null));
+        Assert.Equal(2, provider.LaunchCount);              // refused after the launch, never before it
+
+        // Ordering evidence, not a health assertion: the refused switch's list never became a claim, so the
+        // membership check has to have run *before* the proof published. A check after PublishProof would
+        // leave "stranger" presented as something this engine holds.
+        Assert.DoesNotContain("stranger", engine.LoadedModels);
+        Assert.Contains("extra", engine.LoadedModels);      // kept as history, not as a claim
+
+        // The reason carries the actionable part: which name is missing and what the engine actually said.
+        var events = feed.Replay(0);
+        Assert.Equal("engine.switch_failed", events[^1].Kind);
+        var refusal = events[^1];
+        Assert.Contains("refresh_omits_second", refusal.Reason);
+        Assert.Contains("stranger", refusal.Reason);
+        Assert.Single(events, e => e.Kind == "engine.switch_completed");   // only the first switch completed
+    }
+
+    /// <summary>What namespace the omission rule reads: the engine's reported names and the catalog's model
+    /// keys are one namespace compared case-insensitively — so a case difference is not a refusal — while a
+    /// catalog **alias** is the router's request-side spelling and never satisfies the check (§5.5).</summary>
+    [Fact(Timeout = 60_000)]
+    public async Task TheReportedNamespaceFoldsCaseButNotAliases()
+    {
+        using var handler = new ProbeHandler("m");
+        var provider = new ScriptedProvider { ProveHealth = false };
+        var feed = new EventRing();
+        var def = Def(new HealthProbeDefinition { Path = "/props", IntervalMs = 3_600_000 });
+        var engine = NewEngine(def, provider, handler, feed: feed);
+        await using var _ = engine;
+
+        handler.SetModels("EXTRA");
+        var upper = await engine.WaitForModelAsync("extra", TimeSpan.FromSeconds(30), CancellationToken.None);
+        Assert.True(upper.IsReady);                         // the same namespace, different case
+        Assert.True(engine.IsReadyFor("extra", null));
+
+        // An engine that reports only the alias is a config mistake, not a name the router may invent: the
+        // fix is the catalog key, and refusing says so instead of quietly matching on the alias.
+        handler.SetModels("aliasy-short");
+        var failed = await engine.WaitForModelAsync("aliasy", TimeSpan.FromSeconds(30), CancellationToken.None);
+        Assert.False(failed.IsReady);
+        Assert.False(engine.Healthy);
+        var refusal = feed.Replay(0).Last(e => e.Kind == "engine.switch_failed");
+        Assert.Contains("refresh_omits_aliasy", refusal.Reason);
+        Assert.Contains("aliasy-short", refusal.Reason);    // the near-miss is what the operator has to see
     }
 
     [Fact(Timeout = 60_000)]

@@ -817,7 +817,35 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
             string[]? refreshed = null;
             try { refreshed = await FetchLoadedModelsAsync(ct).ConfigureAwait(false); }
             catch { /* best-effort refresh: no evidence, so no claim */ }
-            if (refreshed is { } freshModels) PublishProof(freshModels);
+            if (refreshed is { } freshModels)
+            {
+                // The refresh is the only evidence this path has, and it has to name the model that was
+                // asked for. `wait_health = false` skips the readiness *rule*, never the check that the
+                // engine says it holds this model: publishing a proof for a list that omits the target
+                // would have the router vouch for a model nothing ever reported, and the switch would end
+                // ready on its own say-so. Checked **before** PublishProof because a proof is a published
+                // claim: checking afterwards would leave the engine verified for whatever else it holds,
+                // and burn the version, on a switch this call is about to refuse (§5.5).
+                if (!freshModels.Contains(model, StringComparer.OrdinalIgnoreCase))
+                {
+                    // Names the rule and shows what the engine actually said, because the fix is in config:
+                    // the catalog key has to match what `/models` reports. Aliases are the router's own
+                    // request-side spelling and are never what an engine reports.
+                    var reported = string.Join(", ", freshModels.Take(8));
+                    if (freshModels.Length > 8) reported += $" … (+{freshModels.Length - 8} more)";
+                    Emit("engine.switch_failed", model: model, reason:
+                        $"refresh_omits_{model}: engine {_def.Name} answered /models after the launch with " +
+                        $"[{reported}] and none of those names is {model}: the catalog name has to match what " +
+                        "the engine reports (an alias is the router's spelling, not the engine's); the router " +
+                        "does not retry or fall back to another engine");
+                    // The engine was relaunched, whatever it turned out to be serving: the list from before
+                    // the switch describes a process that has been stopped.
+                    PublishUnknown();
+                    EndSwitch(state, false);
+                    return;
+                }
+                PublishProof(freshModels);
+            }
             else PublishUnknown();
             // wait_health=false: trust the exec, but still verify the window when a profile was requested
             // (the gauge may already reflect the new window, e.g. an engine that reloads in place).

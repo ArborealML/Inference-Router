@@ -1,6 +1,6 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.29)
+Status: draft, continuously revised (v0.12.30)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
@@ -352,6 +352,23 @@ daemon transaction per engine. 137 tests green.
   that answers no `upload_url`, an upload that dies or answers no asset id, an asset name listed twice on
   the release, and a tag that moves after the first resolve. No tag has run the gate: still configured,
   not proven.
+- v0.12.30 — a switch that trusts its exec still has to be told the engine serves the model (§5.5), from the
+  same plan review of the publication-honesty fix set. What changed: on the `wait_health = false` path a post-launch
+  `/models` refresh that **answers** was published as a proof and the switch ended ready whether or not the reported
+  list named the requested model — the router could vouch for a model nothing had ever reported, with the switch's own
+  say-so as the only evidence. The membership check the prove-health path already made is made here too, and made
+  **before** the proof publishes, so a refused switch leaves no positive snapshot behind and burns no version on an
+  engine it is about to refuse: the exit is the existing `engine.switch_failed` kind with reason `refresh_omits_<model>`,
+  naming what the engine did report, then unknown, then not-ready. No new wire surface — the refusal travels the
+  `switch_failed` path a caller already sees (`RouterCore`'s switch-wait failure branch). §5.5 also states the namespace
+  that rule assumes: an engine's reported names and the catalog's model keys are one namespace matched case-insensitively,
+  and a catalog **alias** never satisfies the check, so a report that differs only by alias or provider-side spelling is
+  refused and the fix is config rather than a router-side translation. Three new `CapabilityPublicationTests`: the
+  omission refuses with an actionable reason and keeps the older list as history only; a refresh that names the target is
+  a **positive control** for the trusting path (ready, verified, one publication); and the match folds case but not
+  aliases. **Not closed here:** a refresh that cannot answer at all still serves the request on the exec's word — that
+  posture is an open owner decision (TASK-66) and the test pinning it moves with that answer, not with this commit; the
+  wire wording behind a refusal on the other posture is TASK-62 AC #2, which waits on it.
 - v0.12.29 — the probe fence made **two-directional** (§5.5), from the plan review of the publication-honesty fix set.
   What changed: a health-loop failure publishes its negative under the same version fence the successful answer uses —
   a new `PublishProbeFailure(expectedVersion)` holding the negative half that `PublishProbeResult` already carried — so
@@ -1192,7 +1209,18 @@ engine forks land; the scheduler interface will not change shape.
   preserves the currently reported list, so the refusal says "not hopeless" and no stale list can refuse a model that
   has begun to be served or vouch for one that was just stopped; `engine.switch_completed` is still emitted where the
   exec itself succeeded, because that part is known. A switch that *does* verify publishes the reported list and
-  `Healthy = true` in one publication, which is what makes the engine eligible without another poll. Every switch exit
+  `Healthy = true` in one publication, which is what makes the engine eligible without another poll.
+  **A proof has to name what it proves:** on the `wait_health = false` path the post-launch `/models` refresh is the
+  only evidence the router has, and a list that does not contain the requested model **refuses the switch** —
+  `engine.switch_failed` with reason `refresh_omits_<model>` carrying what the engine actually reported, `Healthy = false`,
+  and a not-ready result — and the check runs **before** any proof is published, so a refused switch leaves nothing
+  presented as verified and burns no version. Trusting the exec skips the readiness *rule*, never the check that the
+  engine says it holds the model. The names an engine reports and the catalog's model keys are **one namespace**, matched
+  `OrdinalIgnoreCase`; a catalog **alias** is the router's request-side spelling and never satisfies that check, so an
+  engine that reports only an alias is refused and the fix is the catalog key — the same namespace `IsReadyFor` already
+  assumes, and nothing here translates engine names into config names. A refresh that cannot answer at all is unchanged
+  here: the exec's success is still emitted and the engine becomes unknown, which is an open posture question (TASK-66).
+  Every switch exit
   publishes **unfenced**, deliberately: the switch has just stopped or relaunched this engine, so its account cannot be
   stale against a poll that happened to start earlier, and fencing it would let a quiet poll drop the one publication
   that says the engine is no longer what it reported.
