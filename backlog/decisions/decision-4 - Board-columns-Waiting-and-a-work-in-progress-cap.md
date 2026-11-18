@@ -36,6 +36,8 @@ Two rules that make the columns worth having:
 2. **Anything `Waiting` for a week without being woken is re-triaged**: dispatch it, descope it, or park
    it out loud. A column that never changes is a bug in the board, not a fact about the work.
 
+The current column order and task handoff are defined in decisions 58 and 59. Decision-60 supersedes the original implementation cap for isolated workers.
+
 ## Consequences
 
 - `In Progress` becomes a claim on attention rather than on ownership, so it can be read as WIP.

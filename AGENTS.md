@@ -152,7 +152,7 @@ repo work, run `backlog task list` and `backlog decision list`. Put the implemen
 task (`backlog task edit <id> --plan`) before writing code for it, and record anything that changes
 the shape of the system as a decision rather than in a commit message. Task and decision text is
 public: the hygiene rule below applies to it. Status means *my* work: a task is `In Progress` only while
-someone is actually changing repo state for it — an external review being in flight does **not** make a
+someone is implementing the deliverable — an external review being in flight does **not** make a
 task `In Progress` (record the in-flight review inside the task body instead, and move the task when
 implementation starts). Reviews and plans under review are noted in the task, not implied by its status.
 
