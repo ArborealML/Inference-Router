@@ -89,13 +89,13 @@ Reuse the thread ID to identify the conversation across turns. The default class
 
 An engine’s catalog maps model IDs and aliases to serving profiles. Each profile declares a context window and slot count. The scheduler considers those profiles alongside capacity reported by the backend. A larger context window can mean fewer concurrent requests.
 
-For router-managed engines, the native Docker provider checks ownership labels, performs preflight checks and acts on owned containers by ID. The coordinator serializes switches per engine. Host-wide exclusion and verified recovery after a failed swap are still under development. Native lifecycle verification currently uses a fake daemon.
+For router-managed engines, the native Docker provider checks ownership labels and verifies the image ID, named repository digest, and platform before stopping an owned container. Create uses the pinned image ID. Existing tag-only configurations still load. Add all three pins before using native switching. A local-only image with no repository digest cannot pass verification. Switches serialize per engine. Native lifecycle verification uses a fake daemon, and host-wide exclusion and verified recovery are still under development. [Lifecycle and configuration specification](SPEC.md#531-container-native-lifecycle-partly-implemented)
 
 Legacy Docker configurations can continue using their existing daemon transports and per-engine ownership checks, including in a router with multiple engines. These settings provide no host-wide occupancy proof. Fenced lifecycle on a managed peer requires an enrolled host controller. [Lifecycle configuration](SPEC.md#7-configuration-toml)
 
 With legacy configuration, omitting `remote` or setting it to `false` without a Docker provider, an explicit `lifecycle = "exec"`, or a usable selector gives AIR no lifecycle authority. An attempted switch now returns `no_lifecycle_owner` instead of `no_select_command`. Loaded models remain routable. An explicitly delegated engine with a missing target selector still returns `no_select_command`. [Migration rules](SPEC.md#7-configuration-toml)
 
-The [reference configuration](samples/router.toml) also illustrates the legacy external selector. Running a lifecycle-enabled configuration can start or stop real backends. Use the `config` command to inspect it offline. TOML and JSON use the same schema. [Lifecycle and configuration specification](SPEC.md)
+The [native Docker sample](samples/router.native-docker.toml) uses illustrative pins. The [reference configuration](samples/router.toml) shows the legacy external selector. Converting all selector profiles is tracked in TASK-111. Running a lifecycle-enabled configuration can start or stop real backends. Use `air config` for offline inspection and the [remote-only sample](samples/router.safe-smoke.toml) for smoke tests. TOML and JSON use the same schema.
 
 ## Inspect a running router
 

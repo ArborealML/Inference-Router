@@ -2,7 +2,8 @@
 # Modeled on one developer's local inference box (strata / hyperqwen / glm). Adjust
 # endpoints, model ids, serving tiers and key paths to your own setup.
 # TOML is human-friendly; the same schema works as JSON (config .json → JSON loader).
-# The select tables demonstrate legacy exec compatibility. See SPEC.md §7 for native Docker lifecycle.
+# The select tables demonstrate legacy exec compatibility. See router.native-docker.toml
+# and SPEC.md §7 for a native example with image pins.
 #
 # NOTE: dotted model ids are TOML table separators, so they MUST be quoted:
 #   [engine.strata.catalog."qwen-3.8-flash-next"]   (correct)

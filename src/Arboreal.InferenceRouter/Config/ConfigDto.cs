@@ -67,7 +67,31 @@ public sealed class EngineDto
 
 public sealed class DockerDto
 {
+    private string? _imageId;
+    private string? _imageRepoDigest;
+    private string? _imagePlatform;
+    // JSON null is an explicit value, so it must not take the legacy all-omitted path.
+    internal bool HasImageIdentity { get; private set; }
+
     [JsonPropertyName("image")][TomlPropertyName("image")] public string? Image { get; set; }
+    [JsonPropertyName("image_id")][TomlPropertyName("image_id")]
+    public string? ImageId
+    {
+        get => _imageId;
+        set { _imageId = value; HasImageIdentity = true; }
+    }
+    [JsonPropertyName("image_repo_digest")][TomlPropertyName("image_repo_digest")]
+    public string? ImageRepoDigest
+    {
+        get => _imageRepoDigest;
+        set { _imageRepoDigest = value; HasImageIdentity = true; }
+    }
+    [JsonPropertyName("image_platform")][TomlPropertyName("image_platform")]
+    public string? ImagePlatform
+    {
+        get => _imagePlatform;
+        set { _imagePlatform = value; HasImageIdentity = true; }
+    }
     [JsonPropertyName("socket")][TomlPropertyName("socket")] public string? Socket { get; set; }
     [JsonPropertyName("api_version")][TomlPropertyName("api_version")] public string? ApiVersion { get; set; }
     [JsonPropertyName("router_id")][TomlPropertyName("router_id")] public string? RouterId { get; set; }

@@ -1,6 +1,6 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.57)
+Status: draft, continuously revised (v0.12.58)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
@@ -352,6 +352,9 @@ daemon transaction per engine. 137 tests green.
   that answers no `upload_url`, an upload that dies or answers no asset id, an asset name listed twice on
   the release, and a tag that moves after the first resolve. No tag has run the gate: still configured,
   not proven.
+- v0.12.58 — native Docker preflight checks the image ID, named repository digest and platform
+  before it stops owned containers. Create uses the full pinned ID without a tag fallback.
+  Legacy files still load. Native switches require the pins (§5.3.1, §7, TASK-26).
 - v0.12.57 — Inference reach and lifecycle authority are independent engine settings. Legacy
   configurations normalize at startup, and a bound provider must match the configured kind.
   Engines without authority still forward loaded models. A verified refusal before mutation can
@@ -1458,11 +1461,25 @@ coordinator's semaphore is per engine. The label query neither detects nor reser
 by a sibling engine, another router or an unrelated container. A conflict on `host_ip:host_port`
 can therefore make Docker create or start fail after the owned incumbent has stopped.
 
-Docker preflight checks daemon access, the pinned API version and local image presence before any
-stop, removal, create or start. A preflight refusal leaves the existing containers untouched, but the
-runtime marks the engine's published capability unknown on a provider failure, even at preflight.
-The provider refuses unavailable or unauthorized daemon access without escalating and requires the
-image to be present without pulling it. Once stop begins, a failure can leave some peers stopped or
+Docker preflight checks daemon access, the configured API version and local image identity before
+any stop, removal, create or start. It looks up `docker.image` on the daemon and checks three pins
+against the inspect response. `image_id` must match `Id` as a full `sha256:` digest with 64 hex digits.
+`image_repo_digest` must appear verbatim in `RepoDigests` as a complete
+`repository@sha256:<64 hex digits>` entry. `image_platform` must match the reported
+`Os/Architecture[/Variant]`. A pin without a variant matches an absent or empty reported variant.
+The image ID and repository manifest digest describe different objects.
+
+Tag-only Docker configurations still load. A native switch requires all three pins. The loader
+rejects a partial or malformed set. Missing or mismatched inspect evidence refuses preflight with
+one operator action. Images built or loaded locally may report no named repository digest.
+An image without that evidence cannot pass native verification. The router never pulls an image.
+Create uses the configured full image ID. If that ID disappears after preflight, create fails
+without trying the lookup reference. A direct provider launch also requires the pins and uses the
+full ID. The coordinator supplies repository and platform verification by running preflight.
+
+A preflight refusal leaves existing containers untouched and can retain a still-valid incumbent
+discovery proof (§5.5). The provider refuses unavailable or unauthorized daemon access without
+escalating. Once stop begins, a failure can leave some peers stopped or
 removed. A create, start or readiness failure can leave the target container behind. The shipped
 path has no rollback and no persistent target quarantine. The scheduler considers only healthy
 engines for an automatic switch, so `auto_switch` alone cannot load the first model on a cold engine.
@@ -1503,9 +1520,10 @@ API version and source-generated JSON (§9). The target design adds Windows `npi
 version negotiation, logs and daemon events. Docker exec output would be demultiplexed from the
 8-byte frame header (stream ID and big-endian length), with a nonzero exec exit code treated as failure.
 
-**Target ownership and image checks.** Reconcile ownership and occupancy before mutation and
-verify image identity (`Id`, `RepoDigests`, platform and layer digests) in addition to presence.
-Mounts, GPU requests and resource limits remain part of the target launch configuration.
+**Target ownership and launch checks.** Host-wide occupancy and ownership reconciliation remain
+target design. The per-engine image check above verifies the daemon's local image mapping.
+Registry trust, host vacancy and serving-instance identity require separate proof. Mounts, GPU
+requests and resource limits remain part of the target launch configuration.
 
 **Target error handling.** `404` from inspect means *absent* and nothing else. `ENOENT`,
 `ECONNREFUSED`, `EACCES`, TLS and timeout failures mean *daemon unavailable* — never
@@ -2053,8 +2071,10 @@ at the same endpoint. Supply an image already present on the Docker host whose e
 `--model` and `--profile` and serves a single model on container port 8080. It must
 report the canonical model ID at `/v1/models` and expose `n_ctx` and the configured total slot
 count `total_slots` at `/props`. The image reference, model IDs and profile tiers are illustrative.
-The image must implement each tier's context and slot settings. Keep the endpoint port and
-`host_port` aligned for this local binding.
+The image must implement each tier's context and slot settings. Fill all three pins from the
+intended image on that daemon. Keep the endpoint port and `host_port` aligned for this local
+binding. The [shipped native example](samples/router.native-docker.toml) illustrates these fields.
+Reproducing every legacy selector configuration is tracked in TASK-111.
 
 ```toml
 listen = "http://127.0.0.1:8321"
@@ -2074,6 +2094,9 @@ health_probe = { path = "/props", expect = "total_slots>0", context_path = "n_ct
 
 [engine.strata.docker]
 image = "example/inference-backend:1"
+image_id = "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+image_repo_digest = "example/inference-backend@sha256:2222222222222222222222222222222222222222222222222222222222222222"
+image_platform = "linux/amd64"
 router_id = "example-router"
 socket = "unix:///var/run/docker.sock"
 api_version = "v1.44"

@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text;
+using System.Text.Json;
 using Arboreal.InferenceRouter.Lifecycle;
 
 namespace Arboreal.InferenceRouter.Tests;
@@ -40,10 +41,16 @@ public sealed class FakeDockerDaemonHandler : HttpMessageHandler
 public sealed class DockerLifecycleProviderTests
 {
     private const string Ours = "abc123def456";
+    private const string Locator = "registry.local/strata:2026-11";
+    private const string ImageId = "sha256:1111111111111111111111111111111111111111111111111111111111111111";
+    private const string DifferentId = "sha256:3333333333333333333333333333333333333333333333333333333333333333";
+    private const string Manifest = "sha256:2222222222222222222222222222222222222222222222222222222222222222";
+    private const string RepoDigest = "registry.local/strata@" + Manifest;
 
-    private static DockerLifecycleConfig Cfg(string api = "v1.44") => new()
+    private static DockerLifecycleConfig Cfg(string api = "v1.44", bool pinned = true, string platform = "linux/amd64") => new()
     {
-        Image = "registry.local/strata:2026-11",
+        Image = Locator,
+        ImageIdentity = pinned ? new DockerImageIdentity(ImageId, RepoDigest, platform) : null,
         Socket = "unix:///run/docker.sock",
         ApiVersion = api,
         RouterId = "r1",
@@ -56,6 +63,180 @@ public sealed class DockerLifecycleProviderTests
     private static LifecycleTarget Target() => new(
         "strata", "strata-8b", null,
         new EngineModelDefinition { Name = "strata-8b" });
+
+    private static string Inspect(string id = ImageId, string digest = RepoDigest, string os = "linux",
+        string architecture = "amd64", string? variant = null)
+    {
+        var variantField = variant is null ? "" : $",\"Variant\":\"{variant}\"";
+        return $"{{\"Id\":\"{id}\",\"RepoDigests\":[\"{digest}\"],\"Os\":\"{os}\",\"Architecture\":\"{architecture}\"{variantField}}}";
+    }
+
+    private static (HttpStatusCode, string) OwnedIncumbent() => (HttpStatusCode.OK,
+        $$$"""[{"Id":"{{{Ours}}}","Labels":{"arboreal.router":"r1","arboreal.engine":"strata","arboreal.model":"incumbent"}}]""");
+
+    public static TheoryData<string, string> RejectedImages => new()
+    {
+        { "", "image_inspect_unverifiable" },
+        { "not json", "image_inspect_unverifiable" },
+        { "{}", "image_id_unverifiable" },
+        { Inspect(id: "sha256:1111"), "image_id_unverifiable" },
+        { Inspect(id: DifferentId), "image_id_mismatch" },
+        { Inspect(id: Manifest), "image_id_mismatch" },
+        { Inspect().Replace("\"RepoDigests\"", "\"OtherDigests\"", StringComparison.Ordinal), "image_repo_digest_unverifiable" },
+        { Inspect().Replace($"\"{RepoDigest}\"", "", StringComparison.Ordinal), "image_repo_digest_unverifiable" },
+        { Inspect(digest: Manifest), "image_repo_digest_unverifiable" },
+        { Inspect(digest: "registry.local/other@" + Manifest), "image_repo_digest_mismatch" },
+        { Inspect(digest: "registry.local/strata@" + ImageId), "image_repo_digest_mismatch" },
+        { Inspect().Replace("\"Os\"", "\"OtherOs\"", StringComparison.Ordinal), "image_platform_unverifiable" },
+        { Inspect(architecture: ""), "image_platform_unverifiable" },
+        { Inspect(os: "linux/amd64", architecture: "v3"), "image_platform_unverifiable" },
+        { Inspect(variant: " "), "image_platform_unverifiable" },
+        { Inspect(os: "windows"), "image_platform_mismatch" },
+        { Inspect(architecture: "arm64"), "image_platform_mismatch" },
+        { Inspect(variant: "v3"), "image_platform_mismatch" },
+    };
+
+    [Theory(Timeout = 20_000)]
+    [MemberData(nameof(RejectedImages))]
+    public async Task DockerImageIdentityMismatchRefusesBeforeEngineMutation(string imageBody, string reason)
+    {
+        using var daemon = new FakeDockerDaemonHandler
+        {
+            Responder = path => path switch
+            {
+                _ when path.Contains("/containers/json", StringComparison.Ordinal) => OwnedIncumbent(),
+                _ when path.EndsWith("/version", StringComparison.Ordinal) => (HttpStatusCode.OK, """{"ApiVersion":"1.44"}"""),
+                _ when path.Contains("/images/", StringComparison.Ordinal) => (HttpStatusCode.OK, imageBody),
+                _ => (HttpStatusCode.InternalServerError, ""),
+            },
+        };
+        using var provider = new DockerLifecycleProvider(Cfg(), "strata", daemon);
+        using var coordinator = new EngineLifecycleCoordinator(provider, ownsProvider: false);
+
+        var report = await coordinator.SwitchWithReportAsync(Target(), CancellationToken.None);
+        var result = report.Result;
+
+        Assert.True(report.RefusedBeforeMutation);
+        Assert.False(result.Succeeded);
+        Assert.Equal(reason, result.Reason);
+        Assert.False(string.IsNullOrWhiteSpace(result.Action));
+        Assert.Collection(daemon.Requests,
+            request => Assert.StartsWith("GET /v1.44/containers/json?", request),
+            request => Assert.Equal("GET /v1.44/version", request),
+            request => Assert.Equal($"GET /v1.44/images/{Uri.EscapeDataString(Locator)}/json", request));
+    }
+
+    [Theory(Timeout = 20_000)]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task DockerImageIdentityPreflightPinsAnImmutableCreateReference(bool imageDisappears)
+    {
+        var locatorId = ImageId;
+        using var daemon = new FakeDockerDaemonHandler
+        {
+            Responder = path =>
+            {
+                if (path.Contains("/containers/json", StringComparison.Ordinal)) return OwnedIncumbent();
+                if (path.EndsWith("/version", StringComparison.Ordinal))
+                    return (HttpStatusCode.OK, """{"ApiVersion":"1.44"}""");
+                if (path.Contains("/images/", StringComparison.Ordinal)) return (HttpStatusCode.OK, Inspect(locatorId));
+                if (path.Contains("/stop?", StringComparison.Ordinal))
+                {
+                    locatorId = DifferentId;
+                    return (HttpStatusCode.NoContent, "");
+                }
+                if (path.EndsWith("/containers/create", StringComparison.Ordinal))
+                    return imageDisappears
+                        ? (HttpStatusCode.NotFound, """{"message":"image disappeared"}""")
+                        : (HttpStatusCode.Created, """{"Id":"new-container"}""");
+                return (HttpStatusCode.NoContent, "");
+            },
+        };
+        using var provider = new DockerLifecycleProvider(Cfg(), "strata", daemon);
+        using var coordinator = new EngineLifecycleCoordinator(provider, ownsProvider: false);
+
+        var result = await coordinator.SwitchAsync(Target(), CancellationToken.None);
+
+        Assert.Equal(!imageDisappears, result.Succeeded);
+        if (imageDisappears) Assert.Equal("http_404", result.Reason);
+        Assert.Equal(DifferentId, locatorId);
+        Assert.StartsWith("GET /v1.44/containers/json?", daemon.Requests[0]);
+        var expected = new List<string>
+        {
+            "GET /v1.44/version",
+            $"GET /v1.44/images/{Uri.EscapeDataString(Locator)}/json",
+            $"POST /v1.44/containers/{Ours}/stop?t=30",
+            $"DELETE /v1.44/containers/{Ours}?force=true",
+            "POST /v1.44/containers/create",
+        };
+        if (!imageDisappears) expected.Add("POST /v1.44/containers/new-container/start");
+        Assert.Equal(expected, daemon.Requests.Skip(1));
+        using var create = JsonDocument.Parse(Assert.Single(daemon.Bodies, body => body.Length != 0));
+        Assert.Equal(ImageId, create.RootElement.GetProperty("Image").GetString());
+    }
+
+    [Theory(Timeout = 20_000)]
+    [InlineData("linux/amd64", null, true)]
+    [InlineData("linux/amd64", "", true)]
+    [InlineData("linux/amd64/v3", "v3", true)]
+    [InlineData("linux/amd64/v3", null, false)]
+    [InlineData("linux/amd64/v3", "v2", false)]
+    public async Task DockerImagePlatformIncludesTheExactVariant(string platform, string? variant, bool valid)
+    {
+        using var daemon = new FakeDockerDaemonHandler
+        {
+            Responder = path => path.EndsWith("/version", StringComparison.Ordinal)
+                ? (HttpStatusCode.OK, """{"ApiVersion":"1.44"}""")
+                : (HttpStatusCode.OK, Inspect(variant: variant)),
+        };
+        using var provider = new DockerLifecycleProvider(Cfg(platform: platform), "strata", daemon);
+
+        var result = await provider.PreflightAsync(Target(), CancellationToken.None);
+
+        Assert.Equal(valid, result.Succeeded);
+        if (!valid) Assert.Equal("image_platform_mismatch", result.Reason);
+    }
+
+    [Theory(Timeout = 20_000)]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task DirectUnpinnedPreflightAndLaunchRefuseWithoutDaemonCalls(bool launch)
+    {
+        using var daemon = new FakeDockerDaemonHandler();
+        using var provider = new DockerLifecycleProvider(Cfg(pinned: false), "strata", daemon);
+
+        var result = launch
+            ? await provider.LaunchAsync(Target(), CancellationToken.None)
+            : await provider.PreflightAsync(Target(), CancellationToken.None);
+
+        Assert.False(result.Succeeded);
+        Assert.Equal("image_identity_required", result.Reason);
+        Assert.Contains("docker.image_id", result.Action);
+        Assert.Empty(daemon.Requests);
+    }
+
+    [Fact(Timeout = 20_000)]
+    public async Task ImageInspectPropagatesCallerCancellation()
+    {
+        using var caller = new CancellationTokenSource();
+        using var daemon = new FakeDockerDaemonHandler
+        {
+            Responder = path =>
+            {
+                if (path.Contains("/images/", StringComparison.Ordinal))
+                {
+                    caller.Cancel();
+                    caller.Token.ThrowIfCancellationRequested();
+                }
+                return (HttpStatusCode.OK, """{"ApiVersion":"1.44"}""");
+            },
+        };
+        using var provider = new DockerLifecycleProvider(Cfg(), "strata", daemon);
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => provider.PreflightAsync(Target(), caller.Token).AsTask());
+
+        Assert.Equal(["GET /v1.44/version", $"GET /v1.44/images/{Uri.EscapeDataString(Locator)}/json"], daemon.Requests);
+    }
 
     [Fact(Timeout = 20_000)]
     public async Task PreflightRefusesAnImageThatIsNotOnTheHost_AndPullsNothing()
@@ -156,7 +337,7 @@ public sealed class DockerLifecycleProviderTests
             daemon.Requests.Select(r => r.Replace("deadbeefcafebabe", "abc")).ToArray());
         var created = daemon.Bodies.Single(b => b.Contains("arboreal.router"));
         Assert.Contains("\"arboreal.model\":\"strata-8b\"", created);
-        Assert.Contains("\"Image\":\"registry.local/strata:2026-11\"", created);
+        Assert.Contains($"\"Image\":\"{ImageId}\"", created);
         Assert.Contains("--model", created);
         Assert.Contains("--ctx", created);         // {{profile}} expanded, empty because no profile
         Assert.Contains("AIR_ENGINE=strata", created);
@@ -170,16 +351,18 @@ public sealed class DockerLifecycleProviderTests
         using var daemon = new FakeDockerDaemonHandler
         {
             Responder = path => path.Contains("/images/")
-                ? (HttpStatusCode.OK, """{"Id":"sha256:x"}""")
+                ? (HttpStatusCode.OK, Inspect())
                 : path.Contains("/version")
                     ? (HttpStatusCode.OK, """{"ApiVersion":"1.44"}""")
-                    : (HttpStatusCode.NoContent, ""),
+                    : path.Contains("/containers/create")
+                        ? (HttpStatusCode.Created, """{"Id":"new-container"}""")
+                        : (HttpStatusCode.NoContent, ""),
         };
         using var provider = new DockerLifecycleProvider(Cfg("v1.41"), "strata", daemon);
 
-        await provider.PreflightAsync(Target(), CancellationToken.None);
+        Assert.True((await provider.PreflightAsync(Target(), CancellationToken.None)).Succeeded);
         await provider.OwnedPeersAsync(Target(), CancellationToken.None);
-        await provider.LaunchAsync(Target(), CancellationToken.None);
+        Assert.True((await provider.LaunchAsync(Target(), CancellationToken.None)).Succeeded);
 
         Assert.NotEmpty(daemon.Requests);
         Assert.All(daemon.Requests, r => Assert.Contains("/v1.41/", r));
@@ -214,7 +397,7 @@ public sealed class DockerLifecycleProviderTests
         var cfg = Cfg();
         cfg = new DockerLifecycleConfig
         {
-            Image = cfg.Image, Socket = cfg.Socket, ApiVersion = cfg.ApiVersion, RouterId = cfg.RouterId,
+            Image = cfg.Image, ImageIdentity = cfg.ImageIdentity, Socket = cfg.Socket, ApiVersion = cfg.ApiVersion, RouterId = cfg.RouterId,
             Command = cfg.Command, Env = cfg.Env, HostPort = cfg.HostPort, ContainerPort = cfg.ContainerPort,
             CallTimeoutMs = 150,
         };
@@ -290,7 +473,7 @@ public sealed class DockerLifecycleProviderTests
         var cfg = Cfg();
         cfg = new DockerLifecycleConfig
         {
-            Image = cfg.Image, Socket = cfg.Socket, ApiVersion = cfg.ApiVersion, RouterId = cfg.RouterId,
+            Image = cfg.Image, ImageIdentity = cfg.ImageIdentity, Socket = cfg.Socket, ApiVersion = cfg.ApiVersion, RouterId = cfg.RouterId,
             Command = cfg.Command, Env = cfg.Env, HostPort = cfg.HostPort, ContainerPort = cfg.ContainerPort,
             HostIp = "10.0.0.5",
         };
@@ -328,7 +511,7 @@ public sealed class DockerLifecycleProviderTests
         var cfg = Cfg();
         cfg = new DockerLifecycleConfig
         {
-            Image = cfg.Image, Socket = cfg.Socket, ApiVersion = cfg.ApiVersion, RouterId = cfg.RouterId,
+            Image = cfg.Image, ImageIdentity = cfg.ImageIdentity, Socket = cfg.Socket, ApiVersion = cfg.ApiVersion, RouterId = cfg.RouterId,
             Command = cfg.Command, Env = cfg.Env, HostPort = cfg.HostPort, ContainerPort = cfg.ContainerPort,
             RemoveStopped = false,
         };

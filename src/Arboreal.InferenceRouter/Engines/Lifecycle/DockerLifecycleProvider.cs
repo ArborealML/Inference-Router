@@ -77,6 +77,8 @@ public sealed class DockerLifecycleProvider : IEngineLifecycleProvider, IDisposa
 
     public async ValueTask<LifecycleResult> PreflightAsync(LifecycleTarget target, CancellationToken ct)
     {
+        if (_cfg.ImageIdentity is not { } identity) return MissingImageIdentity();
+
         // Reachability first: every later failure is ambiguous if the daemon is not answering at all.
         var (ok, versionBody, failure) = await CallAsync(
             HttpMethod.Get, $"{_cfg.ApiVersion}/version", null, ct).ConfigureAwait(false);
@@ -89,7 +91,7 @@ public sealed class DockerLifecycleProvider : IEngineLifecycleProvider, IDisposa
 
         // The image has to be here already. A pull during a switch is an outage.
         var imageRef = _cfg.Image;
-        var (imageOk, _, imageFailure) = await CallAsync(
+        var (imageOk, imageBody, imageFailure) = await CallAsync(
             HttpMethod.Get, $"{_cfg.ApiVersion}/images/{Uri.EscapeDataString(imageRef)}/json", null, ct).ConfigureAwait(false);
         if (!imageOk)
         {
@@ -100,7 +102,45 @@ public sealed class DockerLifecycleProvider : IEngineLifecycleProvider, IDisposa
             return imageFailure!;
         }
 
-        return LifecycleResult.Ok($"daemon_ok image={imageRef}");
+        var image = TryRead(imageBody, DockerJsonContext.Default.DockerImageInspectResponse);
+        return ImageIdentityFailure(image, identity) ?? LifecycleResult.Ok($"daemon_ok image={imageRef}");
+    }
+
+    private static LifecycleResult MissingImageIdentity() => LifecycleResult.Fail(
+        "image_identity_required", "set docker.image_id, docker.image_repo_digest and docker.image_platform before switching");
+
+    private static LifecycleResult? ImageIdentityFailure(DockerImageInspectResponse? image, DockerImageIdentity expected)
+    {
+        if (image is null)
+            return LifecycleResult.Fail("image_inspect_unverifiable",
+                "check that this daemon returns valid JSON for the configured image lookup");
+        if (!DockerImageIdentity.IsFullSha256(image.Id.AsSpan()))
+            return LifecycleResult.Fail("image_id_unverifiable",
+                "check that this daemon reports a full sha256 image ID for the configured image lookup");
+        if (!string.Equals(image.Id, expected.Id, StringComparison.Ordinal))
+            return LifecycleResult.Fail("image_id_mismatch",
+                "use the image that matches docker.image_id or update the pins for the intended image");
+
+        if (image.RepoDigests is not { } digests || !digests.Any(DockerImageIdentity.IsNamedDigest))
+            return LifecycleResult.Fail("image_repo_digest_unverifiable",
+                "use an image with a named repository digest reported by this daemon");
+        if (!digests.Contains(expected.RepoDigest, StringComparer.Ordinal))
+            return LifecycleResult.Fail("image_repo_digest_mismatch",
+                "use the image that reports docker.image_repo_digest or update the pins for the intended image");
+
+        var variant = image.Variant;
+        if (!DockerImageIdentity.IsPlatformSegment(image.Os) || !DockerImageIdentity.IsPlatformSegment(image.Architecture) ||
+            (!string.IsNullOrEmpty(variant) && !DockerImageIdentity.IsPlatformSegment(variant)))
+            return LifecycleResult.Fail("image_platform_unverifiable",
+                "check that this daemon reports the image OS, architecture and any platform variant");
+        var platform = string.IsNullOrEmpty(variant)
+            ? $"{image.Os}/{image.Architecture}"
+            : $"{image.Os}/{image.Architecture}/{variant}";
+        if (!string.Equals(platform, expected.Platform, StringComparison.Ordinal))
+            return LifecycleResult.Fail("image_platform_mismatch",
+                "use the image for docker.image_platform or update the pins for the intended image");
+
+        return null;
     }
 
     public async ValueTask<IReadOnlyList<EnginePeer>> OwnedPeersAsync(LifecycleTarget target, CancellationToken ct)
@@ -177,6 +217,8 @@ public sealed class DockerLifecycleProvider : IEngineLifecycleProvider, IDisposa
 
     public async ValueTask<LifecycleResult> LaunchAsync(LifecycleTarget target, CancellationToken ct)
     {
+        if (_cfg.ImageIdentity is not { } identity) return MissingImageIdentity();
+
         var labels = new Dictionary<string, string>(StringComparer.Ordinal)
         {
             [LabelRouter] = _cfg.RouterId,
@@ -185,7 +227,7 @@ public sealed class DockerLifecycleProvider : IEngineLifecycleProvider, IDisposa
         };
         var body = new DockerCreateRequest
         {
-            Image = _cfg.Image,
+            Image = identity.Id,
             Labels = labels,
             StopTimeoutSeconds = Math.Max(1, _cfg.StopTimeoutMs / 1000),
         };

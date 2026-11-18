@@ -236,6 +236,7 @@ public static class RouterConfigLoader
             docker = new DockerLifecycleConfig
             {
                 Image = d.Image!,
+                ImageIdentity = ParseDockerImageIdentity(d, name),
                 Socket = d.Socket ?? "unix:///var/run/docker.sock",
                 ApiVersion = d.ApiVersion ?? "v1.44",
                 RouterId = d.RouterId ?? throw new RouterConfigException(
@@ -319,6 +320,25 @@ public static class RouterConfigLoader
         };
         _ = definition.ResolveLifecycleOwner();
         return definition;
+    }
+
+    private static DockerImageIdentity? ParseDockerImageIdentity(DockerDto docker, string engineName)
+    {
+        if (!docker.HasImageIdentity) return null;
+        try
+        {
+            return new DockerImageIdentity(docker.ImageId ?? "", docker.ImageRepoDigest ?? "", docker.ImagePlatform ?? "");
+        }
+        catch (ArgumentException ex)
+        {
+            var field = ex.ParamName switch
+            {
+                "id" => "image_id",
+                "repoDigest" => "image_repo_digest",
+                _ => "image_platform",
+            };
+            throw new RouterConfigException($"engine.{engineName}.docker.{field} is missing or malformed. {ex.Message}");
+        }
     }
 
     private static ThreadPriority ParsePriority(PriorityDto t, string path)
