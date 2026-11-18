@@ -208,8 +208,9 @@ Two sessions work this repository and they share one checkout, so every commit n
   a manager task with acceptance criteria; the *code* of it, and `tools/relgate.py` and
   `.github/workflows/ci.yml`, are the implementer's edits.
 - **`groma/` moves only through the `groma` CLI** (`scan`, `edit`, `add`) and the seat that runs the CLI commits the
-  result — today the manager. Nobody hand-edits a Groma-owned file, and an untracked element left by a scan is a
-  loose end, not a draft.
+  result — today the manager, under the `map:` prefix for a commit that touches only `groma/`. Nobody hand-edits a
+  Groma-owned file, and an untracked element a scan leaves behind is a loose end, not a draft: describe it through
+  `groma edit` and commit it, or remove it, in the turn that finds it.
 - **Only the manager dispatches external reviews** — the plan review before the code exists, the commit review as
   soon as the implementer's sha lands. The implementer reports the sha and dispatches nothing.
 
