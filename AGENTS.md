@@ -288,8 +288,9 @@ not a pass, and neither is a zero-defect count from a checker that stopped measu
 was about.
 
 The gate is **`tools/board-check.py`**, tracked in the repo and run by CI, so "the checker says zero" is
-something a reader can reproduce. A commit that changes **what the gate reports** — a new defect class, or a
-widened or narrowed one — lands with a decision entry naming the standard it enforces (decision-54). Scripts
+something a reader can reproduce. A change to **what the gate reports** — a new defect class, or a widened or
+narrowed one — needs a decision entry naming the standard it enforces: the record sits under
+`backlog/decisions/`, and the `tools:` commit that changes the gate cites it by id (decision-54). Scripts
 under `.local/` are the board's own analysis and can add to it, but they are not the pass. Word budgets are **enforced** in CI (`--strict-budget`): the corpus came inside them and
 the flag landed in the same push window as the last task that was over. Nobody moves a limit back down to meet
 the work — a task that busts its budget gets trimmed, or split into two tasks, in the commit that fixes it.
