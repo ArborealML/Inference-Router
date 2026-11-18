@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T23:07:00Z'
-updated_date: '2026-11-18T06:27:00Z'
+updated_date: '2026-11-18T06:32:00Z'
 labels:
   - concurrency
   - scheduling
@@ -46,7 +46,7 @@ Do not read the resume check as the entitlement: authority held across the hando
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-**Green from `f89fead` (v0.12.35) through `6ea83ca` (v0.12.36).** Re-measured 06:20Z: `origin/main = 6ea83ca`, run 44248248881 success on all three jobs. AC #3-#6 verified at HEAD: `OwnProofStillStands` (`EngineRuntime.cs:615-618`), the own-proof pin (`SwitchClaimTests.cs:397`), the sequence pin (`:454`), both resume pins on the seam, no sleeping arrival in the fairness class. Repeated-run and mutation counts are theirs, not the board's.
+**Green through `6ea83ca` (v0.12.36):** run 44250245947 success. AC #3-#6 verified at HEAD: `OwnProofStillStands` (`EngineRuntime.cs:615-618`), the own-proof pin (`SwitchClaimTests.cs:397`), the sequence pin (`:454`, `extra, m` twice, `GateCount` 0), both resume pins on the seam, no sleeping arrival left in fairness. Repeated-run and mutation counts are theirs.
 
-**Deep review of the two fix commits landed; one accepted finding sits in this row's own read.** F1, now AC #7: `ReadyIn` and `OwnProofStillStands` reason about absent health from one bit, so a probe withdrawal published before the claim (`PublishProbeFailure` `:235-245`, unfenced — that half is TASK-76) is indistinguishable from the claim's own `Healthy = false` (`:302`), and a waiter answers Ready on health nobody confirmed after a failure. The rule is decision-40. F3, the unprotected handoff between a Ready answer and dispatch, stays parked in SPEC 15 with its named owners, and the review's proof check is recorded on TASK-25. F2 (the unversioned gauge this read shares) and F4 (the re-decide loop under the switch lock) are TASK-68's. Standing rules: do not revert `042e212`; TASK-62's category work comes after this row is Done.
+**Deep review of the two fix commits landed; one accepted finding sits in this row's own read.** F1, now AC #7: `ReadyIn` and `OwnProofStillStands` reason about absent health from one bit, so a probe withdrawal published before the claim (`PublishProbeFailure` `:235-245`, unfenced — that half is TASK-76) is indistinguishable from the claim's own `Healthy = false` (`:302`), and a waiter answers Ready on health nobody confirmed after a failure. Rule: decision-40. **AC #7's design is at a top-tier plan review: no `EngineCapability` change before it lands.** F3, the unprotected handoff between a Ready answer and dispatch, stays parked in SPEC 15 with its named owners; the review's proof check is on TASK-25. F2 (the unversioned gauge this read shares) and F4 (the re-decide loop under the switch lock) are TASK-68's. Standing rules: do not revert `042e212`; TASK-62's category work comes after this row is Done.
 <!-- SECTION:NOTES:END -->
