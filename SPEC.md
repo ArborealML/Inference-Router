@@ -1,6 +1,6 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.45)
+Status: draft, continuously revised (v0.12.46)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
@@ -352,6 +352,19 @@ daemon transaction per engine. 137 tests green.
   that answers no `upload_url`, an upload that dies or answers no asset id, an asset name listed twice on
   the release, and a tag that moves after the first resolve. No tag has run the gate: still configured,
   not proven.
+- v0.12.46 — two refusal pins now prove the thing they claim, and one claim of mine is withdrawn (§5.5, TASK-94 #9/#10).
+  `ABlankSelectorExecIsRefusedBeforeTheClaimToo` arms the seam at the claim itself and requires **zero** fires, which is
+  what separates a refusal in front of the transaction from one a step behind the marker: before this it proved only
+  that the provider was never asked, and a post-claim refusal would have satisfied that. It also reads both halves at
+  their own seam — the caller's bare name, the feed's actionable sentence — and keeps the last-proof assertion.
+  `ADefinitionSwappedAfterTheClaimStillRunsOnItsSnapshot` stopped counting launches, because a launch count of one is
+  the same answer for the claim's snapshot and for a re-read: both routes launch once. It asserts the selector the
+  provider was **handed** — the snapshot carries the exec the claim was authorised on, the replaced config entry carries
+  a blank one. **Controls, both run against this tree and reverted byte-identical afterwards:** dropping the
+  unusable-selector clause reddens the armed-witness pin, the catalog-miss pin and the divergent-definition pin (4 cases);
+  making the switch re-read the live config instead of the claim's entry reddens the swap pin alone. An earlier control
+  attempt of mine — prefixing the condition with `false ||` — left the clause intact, reddened nothing, and is withdrawn:
+  it tested nothing. The whole suite 227/227 in Debug, build 0 warnings.
 - v0.12.45 — the claim's catalog entry is part of the snapshot, and the mutation policy is stated where it can be read (§5.5, TASK-94 #9–#13).
   v0.12.44 unified the definition object but left each side doing its own `Catalog.TryGetValue` at a different moment —
   two asks of a mutable dictionary, the same mistake one level down, and it made §5.5's "one predicate, asked once" true

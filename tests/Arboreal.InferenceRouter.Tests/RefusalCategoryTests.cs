@@ -468,15 +468,27 @@ public class RefusalCategoryTests
         await using var engine = Engine(def, handler, lifecycle: provider, feed: feed);
         Assert.Equal("exec", engine.LifecycleProvider);
 
+        // The witness at the claim itself. `LaunchCalls == 0` proves the provider was never asked, which a refusal
+        // one step after the marker would also satisfy; this seam fires only when the claim is actually taken, so
+        // zero fires is what says the refusal sits in front of the transaction rather than inside it (§5.5).
+        var claims = 0;
+        engine.AfterClaimForTests = () => claims++;
+
         using var loopCts = new CancellationTokenSource();
         engine.StartHealthLoop(loopCts.Token);
         await WaitUntil(() => engine.Capability.Healthy);
 
         var failed = await engine.WaitForModelAsync("extra", TimeSpan.FromSeconds(10), CancellationToken.None);
         Assert.Equal("no_select_command", Expect("no_select_command", failed));
-        Assert.Equal(0, provider.LaunchCalls);                    // the transaction never began
-        Assert.Null(engine.SwitchingToward);                       // and no marker went up
+        Assert.Equal(0, claims);                                     // never claimed, not merely never launched
+        Assert.Equal(0, provider.LaunchCalls);                       // the transaction never began
+        Assert.Null(engine.SwitchingToward);                          // and no marker went up
         Assert.DoesNotContain("engine.switch_started", feed.Replay(0).Select(e => e.Kind));
+        // Both halves, at their own seam: the caller gets the bare name and nothing else, the operator gets the
+        // sentence that names the fix, and the engine's last proof stands because nothing was mutated.
+        Assert.Contains("no usable select exec",
+            feed.Replay(0).Last(e => e.Kind == "engine.switch_failed").Reason);
+        Assert.DoesNotContain("exec", failed.Detail);                 // no config detail crosses to the caller
         Assert.True(engine.Capability.Healthy);
     }
 
@@ -553,7 +565,11 @@ public class RefusalCategoryTests
         var result = await engine.WaitForModelAsync("extra", TimeSpan.FromSeconds(10), CancellationToken.None);
         Assert.False(result.IsReady);
         Assert.NotEqual("no_select_command", result.Detail);   // the claim is not re-decided mid-flight
-        Assert.Equal(1, provider.LaunchCalls);                 // and the transaction ran on its own snapshot
+        Assert.Equal(1, provider.LaunchCalls);                 // the transaction ran, once
+        // The half that counts: a launch count of one is the same for the snapshot and for a re-read, because both
+        // routes launch now. The selector the provider was **handed** is not — the snapshot carries the exec the
+        // claim was authorised on, and the replaced config entry carries a blank one (§5.5).
+        Assert.Equal("/bin/true", provider.LaunchedExec);
         Assert.Contains("engine.switch_started", feed.Replay(0).Select(e => e.Kind));
     }
 
@@ -675,6 +691,9 @@ public class RefusalCategoryTests
         /// identity the selector check and the lifecycle coordinator both key on.</summary>
         public string Kind { get; init; } = "scripted";
         public int LaunchCalls { get; private set; }
+        /// <summary>The selector the provider was actually handed, so a pin can tell the claim's snapshot from a
+        /// later re-read of the config: a launch count alone cannot, because both routes launch exactly once.</summary>
+        public string? LaunchedExec { get; private set; }
         public LifecycleResult LaunchOutcome { get; set; } = LifecycleResult.Ok();
         public bool ProveHealth { get; set; } = true;
         public int ReadinessMs { get; set; } = 10_000;
@@ -694,6 +713,7 @@ public class RefusalCategoryTests
         public async ValueTask<LifecycleResult> LaunchAsync(LifecycleTarget target, CancellationToken ct)
         {
             LaunchCalls++;
+            LaunchedExec = target.Definition.Select?.Exec;
             if (ThrowOnLaunch is { } boom) throw new InvalidOperationException(boom);
             if (LaunchGate is { } gate) await gate.Task.ConfigureAwait(false);
             return LaunchOutcome;
