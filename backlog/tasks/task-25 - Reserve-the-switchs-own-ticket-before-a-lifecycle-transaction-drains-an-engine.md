@@ -7,7 +7,7 @@ status: To Do
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T02:41:00Z'
-updated_date: '2026-11-18T02:54:00Z'
+updated_date: '2026-11-18T06:27:00Z'
 labels:
   - engine
   - lifecycle
@@ -30,3 +30,11 @@ The lifecycle coordinator now runs ownership proof, preflight, stop and launch i
 - [ ] #4 Queue counters and terminal events still agree with what actually happened to each ticket
 - [ ] #5 A request authorised at admission cannot lose that authority between the wait returning Ready and the engine receiving it; any gap left open is named in SPEC with its window
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+SPEC 15 names this row, TASK-64 AC #3 and TASK-72 as the owners of the window the v0.12.35 resume read leaves open: a Ready answer is not protected admission, because the successor whose switch was already gated may unload the model before the waiter's request reaches the engine.
+
+**Proof check the deep review supplied for AC #5:** hold a waiter between its Ready answer and actual receipt at the engine, let the successor's unload complete, and show that dispatch is held or redirected by a reservation or drain rule rather than sent to the displaced model. A test that only orders the two switches does not pin this.
+<!-- SECTION:NOTES:END -->

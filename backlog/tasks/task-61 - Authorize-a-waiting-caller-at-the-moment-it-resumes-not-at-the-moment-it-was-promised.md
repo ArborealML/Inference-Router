@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T23:07:00Z'
-updated_date: '2026-11-18T06:09:00Z'
+updated_date: '2026-11-18T06:27:00Z'
 labels:
   - concurrency
   - scheduling
@@ -21,7 +21,7 @@ ordinal: 61000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-The owner decided the posture this row waited on: a switch the engine cannot confirm is **refused** (decision-27), so the capability and the answer to the caller can no longer disagree. The invariant: **a caller waiting on a switch is told Ready only if the capability snapshot still authorises it when it resumes.** The first attempt landed at 042e212 and ping-ponged (decision-36); this row is the narrowed half plus the gap it leaves.
+The owner's posture: a switch the engine cannot confirm is **refused** (decision-27). The invariant: **a caller waiting on a switch is told Ready only if the capability snapshot still authorises it when it resumes.** The first attempt ping-ponged (decision-36); this row is the narrowed half plus the gap it leaves.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -31,13 +31,14 @@ The owner decided the posture this row waited on: a switch the engine cannot con
 - [x] #3 A waiter whose own attempt succeeded takes its own turn rather than a refusal when something other than a later claim contradicts the target, pinned where a second claim wins the engine
 - [x] #4 The resume check is pinned by a gate between the readiness await and the snapshot read, so the pin cannot pass on thread scheduling
 - [x] #5 A switch marker raised by a LATER claim never withdraws the proof a waiter's own switch published: a caller that holds its own proof is not sent behind another caller's transaction
-- [ ] #6 Two callers wanting different models on a one-model engine produce no alternating launch sequence — pinned as a launch sequence, not as the absence of a timeout
+- [x] #6 Two callers wanting different models on a one-model engine produce no alternating launch sequence — pinned as a launch sequence, not as the absence of a timeout
+- [ ] #7 Health absence is attributed to the publisher that caused it: a probe-withdrawn health contradicts this waiter's own proof, so a marker alone cannot license a Ready answer — pinned with a probe failure published between proof and claim.
 <!-- AC:END -->
 
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Fix-forward inside this row, two commits — 042e212 is not narrowed into the refusal work (that is TASK-62, shipped and reviewed at 3dce284). **Commit 1, green main again:** keep AC #2 and the wire-versus-feed fix; stop a waiter that holds its own proof from falling through; re-decide only on health withdrawn, the model gone from the reported list, or a window that no longer fits; put the residual "successor claims after my proof" window in SPEC §15 naming TASK-25 AC #5 and TASK-64 AC #3 as owners — that row must say the narrowing leaves this open deliberately, not that the earlier behaviour was sound. **Commit 2:** AC #6's launch-sequence pin, and the fairness pin re-armed on an event rather than a sleep.
+Three commits. **1, landed `f89fead`:** SPEC 5.5 as four resume answers, `OwnProofStillStands`, both resume pins on the seam. **2, landed `6ea83ca`:** AC #6's sequence pin; the fairness class counts arrivals at `BeforeSwitchWaitForTests` instead of sleeping. **3, AC #7:** attribute a health absence to the publisher that caused it (decision-40), so a probe-withdrawn health contradicts this waiter's own proof; pinned by publishing a failed probe between the proof and the claim, gating the claim, releasing the waiter at the seam and requiring that it not answer Ready, while the no-probe case still does. The 5.5 sentence and AC #3's wording move with it. **That design goes to a top-tier plan review before any code exists** (decision-23: concurrency plus lifecycle).
 
 Do not read the resume check as the entitlement: authority held across the handoff is TASK-25's criterion.
 <!-- SECTION:PLAN:END -->
@@ -45,7 +46,7 @@ Do not read the resume check as the entitlement: authority held across the hando
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-**Green again at [f89fead](https://github.com/ArborealML/Inference-Router/commit/f89fead) (v0.12.35), commit 1 of the fix-forward.** Re-measured 06:05Z: `origin/main = f89fead`; CI run 44248248881 success on all three jobs after four red pushes. The pins resolve at HEAD: `OwnProofStillStands` in `EngineRuntime.cs`, `SwitchClaimTests.cs:397` for AC #5, and both resume pins take the seam at `EngineRuntime.cs:765` before the snapshot read at `:782` — the seam AC #4 needs, so neither pin passes on thread scheduling. The implementer reports the combined switch filter 11/11 over five consecutive runs plus a differential failing the new pin under v0.12.34's fall-through: their measurement, not the board's. **An external deep-tier review of 3dce284..f89fead is in flight** (dispatched 06:09Z); it changes neither this row's status nor its assignee.
+**Green from `f89fead` (v0.12.35) through `6ea83ca` (v0.12.36).** Re-measured 06:20Z: `origin/main = 6ea83ca`, run 44248248881 success on all three jobs. AC #3-#6 verified at HEAD: `OwnProofStillStands` (`EngineRuntime.cs:615-618`), the own-proof pin (`SwitchClaimTests.cs:397`), the sequence pin (`:454`), both resume pins on the seam, no sleeping arrival in the fairness class. Repeated-run and mutation counts are theirs, not the board's.
 
-**Open: AC #6**, the two-caller launch-sequence pin, and the fairness pin re-armed on an arrival event instead of the `Task.Delay(150)` pair. Standing rules for that commit: the parked half stays parked — SPEC §15 names TASK-25 AC #5, TASK-64 AC #3 and this row as owners and says v0.12.34 is deliberately narrowed, so do not revert 042e212 and do not read the resume check as the entitlement (authority across the handoff is TASK-25's criterion, decision-36).
+**Deep review of the two fix commits landed; one accepted finding sits in this row's own read.** F1, now AC #7: `ReadyIn` and `OwnProofStillStands` reason about absent health from one bit, so a probe withdrawal published before the claim (`PublishProbeFailure` `:235-245`, unfenced — that half is TASK-76) is indistinguishable from the claim's own `Healthy = false` (`:302`), and a waiter answers Ready on health nobody confirmed after a failure. The rule is decision-40. F3, the unprotected handoff between a Ready answer and dispatch, stays parked in SPEC 15 with its named owners, and the review's proof check is recorded on TASK-25. F2 (the unversioned gauge this read shares) and F4 (the re-decide loop under the switch lock) are TASK-68's. Standing rules: do not revert `042e212`; TASK-62's category work comes after this row is Done.
 <!-- SECTION:NOTES:END -->

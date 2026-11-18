@@ -7,7 +7,7 @@ status: To Do
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-18T01:11:00Z'
-updated_date: '2026-11-18T04:57:00Z'
+updated_date: '2026-11-18T06:26:00Z'
 labels:
   - concurrency
   - scheduling
@@ -20,7 +20,7 @@ ordinal: 68000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Three serving gauges — window, slots, inferred profile — are live fields outside the capability snapshot, written by the health round with no version bump, while readiness answers everything else from a snapshot. A poll can widen a window between a claim's readiness read and its compare-exchange and license a reload of a window the engine already serves. decision-31 chose the shape; this row is the change.
+Three serving gauges — window, slots, inferred profile — are live fields outside the capability snapshot, written by the health round with no version bump, while readiness answers everything else from a snapshot. A poll can widen a window between a claim's readiness read and its compare-exchange and license a reload of a window the engine already serves.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -42,17 +42,19 @@ Three serving gauges — window, slots, inferred profile — are live fields out
 
 <!-- SECTION:PLAN:BEGIN -->
 1. Add an immutable serving tuple to `EngineCapability`, delete the live fields, and convert every reader (`BuildEngineInfos`, `GetStats`, `EffectiveSlotLimit`, the settle path, the scheduler's view) to one snapshot each (decision-31).
-2. Switch start publishes marker plus health unknown plus serving unknown in one expected-version exchange (decision-33).
-3. Fence the ordinary state publisher by the version it read and by the marker; the switch keeps its own state read local and publishes one atomic proof of models, health and gauges, taking a fresh post-launch read on `wait_health = false`.
+2. Switch start publishes marker, health unknown and serving unknown in one expected-version exchange (decision-33).
+3. Fence the ordinary state publisher by the version it read and by the marker; the switch publishes one atomic proof of models, health and gauges, taking a fresh post-launch read on `wait_health = false`.
 4. A waiter re-reads the snapshot, subject to decision-36; a lost claim releases the lock and the gate before re-deciding, bounded by a named count plus the wait deadline, exhausting to `switch_failed`/503 with an internal `claim_epoch_exhausted` reason (decision-34).
 5. Nudge dispatch after a committed gauge publication, outside the compare-exchange; make profile-name inference model-scoped and null on ambiguity, with slots left an admission gauge (decision-35).
-6. SPEC §5.5 and §7.6 wording for zero/unknown and capacity; §15 for the unreported-window policy and the slots-versus-settle discrepancy.
+6. SPEC 5.5 and 7.6 wording for zero/unknown and capacity; 15 for the unreported-window policy and the slots-versus-settle discrepancy.
 
-Ordered after the probe-marker-guard row (its AC #2 owns that guard).
+Ordered after TASK-76 (probe-marker guard, AC #2).
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-**Plan review ingested before any code existed** (top tier, REVISE), findings checked against `3dce284`: the marker-blind negative publisher (`:235-247`) duplicates the guard row's own criterion and stays there; proof-before-window-check (`:1013` vs `:1038`), the claim loop re-deciding inside the gate (`:640-676`) and a waiter answering from its own ready boolean (`:782`, `:789`) are real. Unknown-publishes-once supersedes decision-31's first wording. Not adopted: a separate gauge generation, a monotonic-window shortcut, rollback.
+**Plan review ingested before code** (top tier, REVISE), checked against `3dce284`: the marker-blind negative publisher duplicates TASK-76's criterion; proof-before-window-check and the claim loop re-deciding inside the gate are real. Unknown-publishes-once supersedes decision-31's first wording. Not adopted: a separate gauge generation, a monotonic-window shortcut, rollback.
+
+**Deep review finding, verified at `6ea83ca`, belongs to AC #8:** the named bound is not in code — the re-decide loop at `EngineRuntime.cs:667-675` runs under the switch lock and gate with no count or deadline check. AC #1's reader list grew again in the v0.12.35 resume path.
 <!-- SECTION:NOTES:END -->
