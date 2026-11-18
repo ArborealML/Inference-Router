@@ -2,6 +2,7 @@
 # Modeled on one developer's local inference box (strata / hyperqwen / glm). Adjust
 # endpoints, model ids, serving tiers and key paths to your own setup.
 # TOML is human-friendly; the same schema works as JSON (config .json → JSON loader).
+# The select tables demonstrate legacy exec compatibility. See SPEC.md §7 for native Docker lifecycle.
 #
 # NOTE: dotted model ids are TOML table separators, so they MUST be quoted:
 #   [engine.strata.catalog."qwen-3.8-flash-next"]   (correct)
@@ -26,7 +27,7 @@ max_inflight_per_engine = 8        # router-side ceiling; never admits more than
 prefix_trie_max_nodes = 8192
 chars_per_token_estimate = 4.0    # used when a client doesn't declare required context
 # How long a queued request waits for a model switch to finish before it fails with
-# switch_failed. 0 (the default) means no ceiling: a switch whose select command never
+# switch_failed. 0 (the default) means no ceiling: a switch whose legacy select command never
 # completes parks queued traffic for that model until the command itself times out.
 switch_wait_timeout_ms = 0
 
@@ -98,6 +99,7 @@ name = "1m"
 max_context = 1048576
 max_slots = 1
 
+# Legacy exec selector.
 [engine.strata.catalog."qwen-3.8-flash-next".select]
 exec = "select-model"
 args = ["{{model}}", "--profile", "{{profile}}"]
@@ -109,6 +111,7 @@ aliases = ["coder"]
 profiles = ["max"]
 default_profile = "max"
 
+# Legacy exec selector.
 [engine.strata.catalog."qwen-3.8-flash-next-coder".select]
 exec = "select-model"
 args = ["{{model}}", "--profile", "{{profile}}"]

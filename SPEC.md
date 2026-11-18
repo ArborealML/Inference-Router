@@ -1,6 +1,6 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.53)
+Status: draft, continuously revised (v0.12.54)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
@@ -352,6 +352,11 @@ daemon transaction per engine. 137 tests green.
   that answers no `upload_url`, an upload that dies or answers no asset id, an asset name listed twice on
   the release, and a tag that moves after the first resolve. No tag has run the gate: still configured,
   not proven.
+- v0.12.54 — the managed switch walkthrough uses the native Docker provider (§5.3, §5.3.1,
+  §7 and §7.6). It documents the shipped ownership and readiness checks, the legacy exec
+  path, and the target rules for host exclusivity, failure quarantine and alternate recovery.
+  The CLI synopsis uses the shipped `air` tool (§11), and the Docker walkthrough explains the
+  port conflict that can surface after the incumbent stops.
 - v0.12.53 — an expired switch wait checks the shutdown latch after reading a prior outcome
   (§5.5, TASK-98). A foreign attempt that already finished does not hide a stop. A caller retains
   its own committed failure or a readiness proof that still stands. The public switching flag
@@ -1201,10 +1206,9 @@ engines. It:
 2. Provides **thread prioritization APIs** — logical threads (conversations /
    agents) carry priority, weight, and affinity; the router schedules requests
    against them.
-3. Can **switch the underlying engine and model** — on this machine that means
-   driving `select-model` (backends: strata, hyperqwen, glm, deepseek-serving)
-   and health-waiting on the resulting server; the mechanism is fully
-   configured, not hardcoded.
+3. Can **switch the underlying engine and model**. For a managed engine, configure the native
+   Docker provider to replace the serving instance and check readiness at the engine endpoint
+   (§5.3). The delegated exec provider remains available for legacy configurations.
 4. **Enqueues requests that need different models** — a request declares model
    affinity (or capability); the router queues it until an engine serving that
    model is available (and may trigger a switch if configured to).
@@ -1246,11 +1250,9 @@ remote peers without schema changes.
 
 ## 3. Glossary
 
-- **Engine**: a configured inference backend: an OpenAI-compatible HTTP
-  endpoint plus lifecycle commands (start/stop/select-model), health probe,
-  and a model catalog. Engines are *declaratively configured*; the library
-  ships only adapters for the *kinds* of engine, not specific backends.
-  v1 kinds: `openai-compatible` (endpoint + optional lifecycle exec).
+- **Engine**: a configured inference backend with an `openai-compatible` HTTP endpoint,
+  a model catalog and optional health probe. A managed engine has a lifecycle provider.
+  One engine definition can describe several models, each served by its own instance on a switch.
 - **Model**: a served model identity (name + alias set + capabilities: context
   length, vision, coder, suffix-cache support). Engines expose which models
   they currently serve (`loadedModels`) and which they could serve
@@ -1293,9 +1295,8 @@ Projects:
   OpenAI DTOs. AOT-clean, no ASP.NET dependency.
 - `src/Arboreal.InferenceRouter.Server` — ASP.NET Core (Kestrel) host exposing
   the OpenAI-compatible surface + admin surface; wires the core library.
-- `src/Arboreal.InferenceRouter.Cli` — `inference-router` tool: `serve`,
-  `chat`, `complete`, `models`, `select-model`, `status`, `enqueue`; also
-  library entry points for embedding.
+- `src/Arboreal.InferenceRouter.Cli` — the `air` tool for serving, inference requests,
+  model switching and status inspection (§11).
 - `tests/Arboreal.InferenceRouter.Tests` — unit + integration tests (in-memory
   fake engine).
 - (future, stubbed only) `src/Arboreal.InferenceRouter.Web` — Blazor live view.
@@ -1364,113 +1365,104 @@ A request may declare:
 
 ### 5.3 Engines (configured, not coded)
 
+Set `lifecycle = "docker"` and add an `[engine.<name>.docker]` table to manage model
+switches through the native Docker provider. The catalog lists the models and serving profiles
+that the engine can run. A model or profile switch replaces the serving container with an instance
+for the requested model and profile at the configured endpoint (§5.3.1, §7). Loading another model
+inside the same instance is deferred. The external launcher's switch sequence is a behavioral
+reference for native lifecycle.
+
+The engine registry tracks the configured engines and the models reported by their endpoints.
+With `remote = true`, the router can serve requests for a loaded model, but any request to
+change what that engine serves is refused with `no_lifecycle_owner` before lifecycle runs (§5.5).
+
 ```csharp
 public sealed class EngineDefinition {         // from TOML §7
     string Name; EngineKind Kind;              // v1: OpenAiCompatible
     Uri Endpoint;                              // e.g. http://127.0.0.1:18021/v1
     string? ApiKey; string? ApiKeyFile;        // inline or file path
-    LifecycleDefinition Lifecycle;             // optional start/stop/select
-    ModelCatalogDefinition Catalog;            // models this engine can serve
-    HealthProbeDefinition Health;              // probe + readiness predicate
+    EngineLifecycleKind Lifecycle;            // Docker or legacy delegated exec
+    DockerLifecycleConfig? Docker;             // native provider settings
+    bool Remote;                               // true disables lifecycle for this engine
+    IReadOnlyDictionary<string, EngineModelDefinition> Catalog;
+    HealthProbeDefinition? Health;             // probe + readiness predicate
     EngineCapabilities Capabilities;           // vision, suffixCache, slots...
 }
 ```
 
-The **engine registry** owns: enumeration, current loaded model set (from
-health probe `/v1/models`-equivalent + `/props`-equivalent when configured),
-and lifecycle execution. Lifecycle commands run via `Process` with
-argument-template expansion (`{{model}}`, `{{profile}}`, `{{gpu}}`,
-`{{suffixCache}}`), non-zero exit = failure, and are serialized per engine
-(one switch at a time). **Model switching** = configured `select` command +
-wait-for-ready loop against the health probe (configurable timeout, default
-7200s to match select-model's strata wait).
+**Legacy exec compatibility.** With no Docker table and no explicit lifecycle kind, the loader
+defaults to delegated exec. `lifecycle = "exec"` selects it explicitly on an engine without a
+Docker table. A catalog entry's legacy `select = { exec = … }` runs the configured selector via
+`Process`. The selector is responsible for stopping and starting serving processes. The router
+serializes switches per engine and uses the selector's exit status before checking readiness.
 
-Lifecycle exec contract (implementation notes, since these are the failure
-modes that bite real `select-model` runs):
-
+- Argument substitution expands `{{model}}` to the canonical catalog name and `{{profile}}` to the
+  target or default profile name (empty if unset). `{{suffixCache}}` expands to an empty string.
 - Args are re-quoted with `CommandLineToArgvW` rules before being handed to
   `ProcessStartInfo.Arguments` (the parser .NET uses on Unix too), so a single
-  configured arg may contain spaces — e.g. `args = ["-c", "select-model {{model}}"]`.
-- stdout and stderr are drained **concurrently** with the exit wait: chatty
-  commands (select-model prints progress) would otherwise block on a full pipe
-  buffer while the router waits for exit.
-- Timeout kills the process tree (`Kill(entireProcessTree: true)`) and emits
-  `engine.switch_failed reason=timeout_after_<ms>ms`.
-- Every failure path resets the engine's switch state, so one failed switch can
-  never wedge the engine in "switching" (which would exclude it from scheduling
-  forever).
-- When the switch targets a serving profile, readiness requires the reported
-  context window to fit it, not merely that the model id appears in the models
-  list (§7.6).
+  configured arg can contain spaces, as in the legacy shell argv `args = ["-c", "select-model {{model}}"]`.
+- The provider drains stdout and stderr concurrently with the exit wait to keep a full pipe
+  from blocking the selector. A nonzero exit fails the switch.
+- `select.wait_timeout_ms` defaults to 7,200,000 ms. A selector timeout kills the process tree
+  (`Kill(entireProcessTree: true)`) and reports `timeout_after_<ms>ms` on `engine.switch_failed`.
+- After a successful exit, readiness follows `select.wait_health` and its wait timeout. Even with
+  `wait_health = false`, the model-list refresh must report the requested model. The runtime
+  clears the switching state when the attempt ends (§5.5).
 
 #### 5.3.1 Container-native lifecycle (partly implemented)
 
-Shell-outs to a launcher script are an integration cost, not a feature: they hide the
-state the router needs, and a failed script leaves an orphaned container the scheduler
-cannot see. The target design drives the container runtime directly.
+**Provider configuration.** Use the Docker engine and catalog declarations in §7 together.
+The loader selects Docker whenever the `[engine.<name>.docker]` table is present, even if
+`lifecycle = "exec"` was specified. It rejects a Docker engine if any catalog entry carries a
+legacy `select` block. The Docker table's image, command, environment and port binding apply to
+every target on that engine. In `command` and `env`, `{{model}}` is the canonical catalog name,
+`{{profile}}` is the target or default profile name (empty if unset), and `{{endpoint}}` is the engine
+name, such as `strata`.
 
-**Implemented today.** The seam exists and is what the switch path runs through:
-`IEngineLifecycleProvider` (in `Engines/Lifecycle/`) over an `EngineLifecycleCoordinator` that owns the
-ordering, with the existing selector program wrapped as `DelegatedExecProvider` and the Docker Engine API
-implemented as `DockerLifecycleProvider`. A provider answers four questions in a fixed order — what exists
-that we own (`OwnedPeersAsync`), may this switch proceed (`PreflightAsync`, validate-only), stop these
-units (`StopAsync`), start this exact target (`LaunchAsync`) — and reports `LifecycleResult` with a short
-reason for the event feed plus one actionable sentence for the operator. The coordinator is single-flight
-per engine, never hands an unowned peer to the stop step, and treats a **failed ownership query as a
-refusal**, not as "nothing is running". Readiness is proved by whoever owns the engine's health probe (the
-runtime), on the provider's `ReadinessPolicy`.
+Give each router sharing a daemon a distinct `router_id`. Published ports default to loopback
+(`host_ip = "127.0.0.1"`). `remove_stopped` defaults to `true`, so switched-out containers are
+removed. `stop_timeout_ms` defaults to 30,000 ms and sets the Docker stop grace in whole seconds
+(minimum one second). `call_timeout_ms` defaults to 15,000 ms per Engine API call, independently of
+the readiness wait after launch.
 
-Config is per engine, and the two owners are mutually exclusive:
+**Shipped provider seam.** `EngineLifecycleCoordinator` calls `IEngineLifecycleProvider`
+in order: `OwnedPeersAsync`, validate-only `PreflightAsync`, `StopAsync` for owned peers if any,
+then `LaunchAsync`. The implementations are `DockerLifecycleProvider` and the legacy
+`DelegatedExecProvider`. A `LifecycleResult` carries a reason for the event feed and, on refusal,
+an actionable operator message. The runtime performs readiness checks after launch according to
+the provider's `ReadinessPolicy`.
 
-```toml
-[engine.strata]
-lifecycle = "docker"            # or "exec" (default): a selector program owns the switch
-[engine.strata.docker]
-image = "registry.local/strata:2026-11"   # required: the router never pulls
-socket = "unix:///run/docker.sock"        # or http(s)://host:port
-api_version = "v1.44"                     # pinned; a daemon below it is refused
-router_id = "r1"                          # required; written into labels, the ownership proof
-command = ["--model", "{{model}}", "--ctx", "{{profile}}"]
-env = ["AIR_ENGINE={{endpoint}}"]
-host_port = 18020
-host_ip = "127.0.0.1"                     # the interface a published port binds to; loopback by default
-container_port = 8080
-remove_stopped = true                     # delete the containers we stopped, instead of accumulating them
-stop_timeout_ms = 30000
-wait_health = true
-wait_timeout_ms = 600000
-call_timeout_ms = 15000                   # one Engine API call; a wedged daemon must not hold a switch
-```
+Docker stamps `arboreal.router`, `arboreal.engine` and `arboreal.model` on each container it creates.
+Peer discovery filters by both router and engine labels and rechecks both locally. Only matching peers
+reach the stop step, which uses container IDs. An ownership-query failure aborts the switch. The
+coordinator's semaphore is per engine. The label query neither detects nor reserves a host port held
+by a sibling engine, another router or an unrelated container. A conflict on `host_ip:host_port`
+can therefore make Docker create or start fail after the owned incumbent has stopped.
 
-`router_id` has no default on purpose: it is the label that says which router owns a container, and a
-shared default on a host with two routers would entitle each one to stop the other's work.
-`host_ip` exists because an empty `HostIp` in the Engine API means *every interface*, and an
-unauthenticated inference backend on `0.0.0.0` is a public port; the router always names one, and
-loopback is the default. `remove_stopped` is what keeps a long-lived host from collecting one stopped
-container per model change.
+Docker preflight checks daemon access, the pinned API version and local image presence before any
+stop, removal, create or start. A preflight refusal leaves the existing containers untouched, but the
+runtime marks the engine's published capability unknown on a provider failure, even at preflight.
+The provider refuses unavailable or unauthorized daemon access without escalating and requires the
+image to be present without pulling it. Once stop begins, a failure can leave some peers stopped or
+removed. A create, start or readiness failure can leave the target container behind. The shipped
+path has no rollback and no persistent target quarantine. The scheduler considers only healthy
+engines for an automatic switch, so `auto_switch` alone cannot load the first model on a cold engine.
 
-`lifecycle = "docker"` with a model that still carries `select = { exec = … }` is a **config error**:
-two owners cannot both prove ownership of one model's container. Ownership labels are
-`arboreal.router`, `arboreal.engine`, `arboreal.model`; the daemon's label filter is an optimisation and
-the labels are re-checked locally, so a daemon that hands back a foreign container does not make it ours
-to stop. A daemon that is unreachable, refuses the router, or is older than the pinned API version
-produces one actionable message and **no escalation** (§15.1 decision: refuse rather than re-exec under
-sudo).
+With `wait_health = true` (the Docker default), readiness requires a passing health probe and a
+model list containing the canonical target. For an explicit profile target, a known context window
+must meet the profile minimum. A missing context value can pass because an unknown gauge is accepted,
+and a previous gauge may survive a probe that omits the field (TASK-68). The runtime does not match
+the reported slot count to the profile. The probes reach the configured endpoint and carry no proof
+that its responder is the container ID returned by Docker (TASK-118). With `wait_health = false`,
+the runtime still refreshes the model list and requires the target. The native provider's verification
+uses fake providers and fake Docker HTTP responses. A live model swap has its own acceptance work
+(TASK-112).
 
-Not implemented yet, and not implied by the code above: image **identity** pinning (presence is checked,
-`Id`/`RepoDigests`/platform are not compared), `mounts`/`gpu`/resource limits, exec frame demux, logs and
-daemon event subscription, the `npipe` transport on Windows, closing admission and draining the cohort
-before a mutation (see the reservation note below — this needs a lifecycle reservation, not an inference
-slot), and the latched-failure rule that stops a dispatcher wake-up from turning a failed switch into a
-retry. What follows is the target shape, kept here because the implemented part is a subset of it, not a
-different design.
-
-**Seam.** Extract `IEngineLifecycle` out of the switch path (keeping switch
-serialization and failure reset exactly as above) and implement it over a fakeable,
-cancellable `IContainerRuntime`:
+**Target container-runtime interface.** The remaining design adds a fakeable, cancellable
+`IContainerRuntime` below the provider seam:
 
 ```csharp
-public interface IContainerRuntime            // Docker Engine API adapter; fake in tests
+public interface IContainerRuntime            // proposed Docker Engine API adapter
 {
     Task<ContainerInfo?> Inspect(string name, CancellationToken ct);   // null IFF 404
     Task<IReadOnlyList<ContainerInfo>> List(string labelSelector, CancellationToken ct);
@@ -1486,38 +1478,47 @@ public interface IContainerRuntime            // Docker Engine API adapter; fake
 }
 ```
 
-**Transport and AOT.** Raw Docker Engine HTTP: `SocketsHttpHandler.ConnectCallback` to a
-`UnixDomainSocketEndPoint` (`npipe` on Windows via `System.IO.Pipes`), `HttpClient` based at
-`http://docker/`, HTTP/1.1, no proxy/redirect, per-call timeouts, API version pinned
-(`/_ping` + `/version` to negotiate, reject a daemon outside a configured min/max). All JSON
-through a source-generated `JsonSerializerContext` — no Docker client library, which needs
-reflection roots and breaks the zero-warning AOT rule (§9). Exec output is demultiplexed from
-the 8-byte frame header (stream id + big-endian length) and a non-zero exec exit code is a
-failure.
+**Transport and AOT.** The shipped provider uses raw Docker Engine HTTP over a Unix socket or an
+HTTP(S) daemon address, with proxy and redirect handling disabled, per-call timeouts, a configured
+API version and source-generated JSON (§9). The target design adds Windows `npipe` transport,
+version negotiation, logs and daemon events. Docker exec output would be demultiplexed from the
+8-byte frame header (stream ID and big-endian length), with a nonzero exec exit code treated as failure.
 
-**Ownership gate.** Every container the router manages carries an ownership label from config
-(e.g. `air.launcher=<engine>`); inspect/list happens **before** anything is stopped or started,
-and a container without our label is refused rather than adopted. Image references must be
-pinned (verify `Id`, `RepoDigests`, platform, layer digests); the router never pulls.
+**Target ownership and image checks.** Reconcile ownership and occupancy before mutation and
+verify image identity (`Id`, `RepoDigests`, platform and layer digests) in addition to presence.
+Mounts, GPU requests and resource limits remain part of the target launch configuration.
 
-**Error fidelity.** `404` from inspect means *absent* and nothing else. `ENOENT`,
+**Target error handling.** `404` from inspect means *absent* and nothing else. `ENOENT`,
 `ECONNREFUSED`, `EACCES`, TLS and timeout failures mean *daemon unavailable* — never
 “the container is gone”, because acting on that confusion deletes other people's
 containers. `409` is surfaced as a conflict, `304` treated as idempotent success, and an
 uncertain outcome is re-inspected by immutable id.
 
-**Transaction order (what a switch actually is).** A lifecycle change is one host transaction, not a
-command: prove ownership and admissibility → prove asset/receipt/qualification/image-pin/privilege →
-close admission for the engine group → let the admitted cohort drain → re-validate preflight resource
-versions → stop **only owned** peers → launch the exact target → prove readiness (liveness, loaded
-non-alias model, exact context, exact slots, required modalities, provider-exec verification) → publish
-readiness and reopen admission. There is **no automatic retry, rollback or readiness fallback**; a
-timeout leaves the target in place for inspection, and a failure on an exact target is latched so a
-dispatcher wake-up cannot silently turn it into a retry. Same-target callers join one operation
-(cancelling one detaches only that waiter); a competing target gets a transient busy result and its
-request stays queued. Recovery treats any journal as advisory and re-derives truth from runtime state
-plus probes — it never resumes an interrupted mutation and never adopts or relabels a resource it does
-not own. All mutations bind **immutable container ids**, never names.
+**Target host transaction.** Reserve the host, prove ownership and admissibility, and validate
+assets, receipts, qualification, image identity and privileges. Close admission and drain active
+requests, revalidate preflight evidence, then stop only owned peers and launch the
+exact target. Bind container operations to immutable IDs. Verify the serving instance, health,
+canonical model, exact context and slots, and required modalities, including provider-exec checks,
+before publishing readiness and reopening admission. A competing target waits for the host.
+Same-target callers can join the active switch, and cancelling one waiter detaches only that
+waiter (§5.5). The host reservation and
+restart reconciliation are pending (TASK-110), as are the admission reservation and drain (TASK-25).
+
+**Target quarantine and recovery (decision 62).** A preflight refusal preserves an incumbent with
+valid proof. Quarantine the failed model, serving profile and configuration generation on that engine.
+Scheduler wakeups and cooldown expiry leave the quarantine in force. An explicit operator reset or
+relevant config change permits a fresh attempt. Each affected ticket still pending settles once with a
+corresponding terminal feed event. A ticket that has already terminated keeps its outcome. A failed
+switch returns `503` with `switch_failed` before response commitment and uses the in-band error
+contract on a committed stream (§6).
+
+After the incumbent stops, a host that can hold only one resident inference instance cannot serve
+locally until a target has verified readiness. If activation of A fails, service for B is a separate
+request or cohort. It requires a fresh, ownership-checked host transaction and proof of B's readiness.
+The failed A request keeps its own failure. Reconcile runtime state and probes before recovery and
+treat the journal as advisory. Uncertain occupancy blocks launch. Recovery starts a fresh transaction
+with no automatic rollback and leaves unrelated resources untouched. Quarantine and alternate
+recovery remain implementation work (TASK-26, TASK-114). Configuration reload is tracked in TASK-107.
 
 **Reservation semantics.** Today a dispatched ticket holds its engine-slot reservation across a model
 switch (`RouterCore` reserves at dispatch and releases in the `finally` after the engine call). That is
@@ -1525,11 +1526,11 @@ defensible while an engine serves exactly one model — there is nothing else it
 the router performs the drain itself the switch must be an explicit *lifecycle* reservation, not
 inference capacity, or the scheduler will read a switching engine as a busy one.
 
-Config additions (§7 sketch): `image`, `container_name`, `labels`, `entrypoint`/`cmd`
+Target config sketch: `image`, `container_name`, `labels`, `entrypoint`/`cmd`
 template, `env`, `mounts`, `ports`, `gpu` (device requests / `count = -1` /
 `capabilities = [["gpu"]]`), `stop_grace_ms`, `restart = "no"`, resource limits, and
-`daemon = "unix:///var/run/docker.sock" | DOCKER_HOST`. Podman's socket is supported as a
-Docker-API-compatible endpoint at its own version floor; containerd-native is out of scope
+`daemon = "unix:///var/run/docker.sock" | DOCKER_HOST`. The design allows a Docker-compatible
+Podman socket at its own version floor. A native containerd adapter is out of scope
 (different protocol, separate adapter).
 
 ### 5.4 Scheduler (pluggable; v1 policy included)
@@ -2000,75 +2001,69 @@ bound on the wire. `docs/ai-integration.md` carries the same table for integrato
 ## 7. Configuration (TOML)
 
 Single file; loaded at boot; `--config` may repeat (merge, later wins).
-No code changes needed to support new engines. Sketch:
+This managed example uses one engine definition and two model instances that take turns serving
+at the same endpoint. Supply an image already present on the Docker host whose entrypoint accepts
+`--model` and `--profile` and serves a single model on container port 8080. It must
+report the canonical model ID at `/v1/models` and expose `n_ctx` and the configured total slot
+count `total_slots` at `/props`. The image reference, model IDs and profile tiers are illustrative.
+The image must implement each tier's context and slot settings. Keep the endpoint port and
+`host_port` aligned for this local binding.
 
 ```toml
 listen = "http://127.0.0.1:8321"
-default_model = "qwen-3.8-flash-next"
-default_priority = { class = "normal", sub = 0 }
-auto_switch = true          # router may trigger select-model when needed
-switch_cooldown_ms = 15000  # don't thrash switches
+default_model = "example.chat-v1"
+auto_switch = true  # allow the router to load a catalog model through its lifecycle provider
 
 [scheduler]
-prefix_affinity_threshold_chars = 512
-affinity_weight = 1.5
-prefill_cost_alpha = 1.0
-max_queue_per_model = 64
-max_inflight_per_engine = 8
-switch_wait_timeout_ms = 0        # ceiling on a queued request's wait for a model switch; 0 = none
+max_inflight_per_engine = 4
 
-[threads."agent-42"]
-priority = { class = "interactive", sub = 10 }
-weight = 2.0
-model_affinity = "qwen-3.8-flash-next-coder"
-
-# ── engines ─────────────────────────────────────────────────────────
 [engine.strata]
 kind = "openai-compatible"
 endpoint = "http://127.0.0.1:18021/v1"
-api_key_file = "/etc/arboreal/keys/strata-api-key"
-health_probe = { path = "/props", expect = "total_slots>0", interval_ms = 2000, timeout_ms = 5000 }
-models_endpoint = "/v1/models"     # loaded models + status
-capabilities = { vision = true, suffix_cache = false, max_context = 65536 }
-response_timeout_ms = 600000      # ceiling on one turn at this engine; 0 = no ceiling
+lifecycle = "docker"
+models_endpoint = "/v1/models"
+health_probe = { path = "/props", expect = "total_slots>0", context_path = "n_ctx", slots_path = "total_slots" }
 
-[engine.strata.catalog."qwen-3.8-flash-next"]
-aliases = ["flash-next", "default"]
-profiles = ["max", "coder"]
-select = { exec = "select-model", args = ["{{model}}", "--profile", "{{profile}}"],
-           wait_health = true, wait_timeout_ms = 7200000 }
+[engine.strata.docker]
+image = "example/inference-backend:1"
+router_id = "example-router"
+socket = "unix:///var/run/docker.sock"
+api_version = "v1.44"
+command = ["--model", "{{model}}", "--profile", "{{profile}}"]
+host_ip = "127.0.0.1"
+host_port = 18021
+container_port = 8080
+wait_health = true
+wait_timeout_ms = 600000
 
-[engine.strata.catalog."qwen-3.8-flash-next-coder"]
-aliases = ["flash-next-coder", "coder"]
-profiles = ["max-coder"]
-select = { exec = "select-model", args = ["{{model}}"], wait_health = true }
+[engine.strata.catalog."example.chat-v1"]
+aliases = ["chat"]
+default_profile = "32k-4"
+serving = [
+  { name = "32k-4", max_context = 32768, max_slots = 4 },
+  { name = "64k-2", max_context = 65536, max_slots = 2 },
+]
 
-[engine.hyperqwen]
-kind = "openai-compatible"
-endpoint = "http://127.0.0.1:18020/v1"
-api_key_file = "/etc/arboreal/keys/hyperqwen-api-key"
-capabilities = { vision = false, suffix_cache = true, max_context = 131072 }
-[engine.hyperqwen.catalog."qwen-3.8-27b"]
-aliases = ["classic"]
-select = { exec = "select-model", args = ["{{model}}"], wait_health = true }
-
-[engine.remote-a]                     # future: remote peer (no lifecycle)
-kind = "openai-compatible"
-endpoint = "http://host-b.lan:8321/v1"
-remote = true
+[engine.strata.catalog."example.code-v1"]
+aliases = ["code"]
+default_profile = "32k-2"
+serving = [{ name = "32k-2", max_context = 32768, max_slots = 2 }]
 ```
 
 Requirements: comments preserved for round-tripping is **not** required;
 schema errors fail fast at boot with path-precise messages; unknown engine
 kinds rejected. Config binding is source-generated (§9) — no reflection.
 
-**Dotted model ids must be quoted.** TOML treats `.` as a table separator, so
-`[engine.strata.catalog.qwen-3.8-flash-next]` silently nests under a `qwen-3`
-table and yields a bogus catalog entry; write
-`[engine.strata.catalog."qwen-3.8-flash-next"]`. `arboreal config --config <path>`
-validates a file and prints the resolved engine/model/serving-ladder plan without
-opening sockets or running lifecycle commands — the check to run after any edit
-(a test asserts the shipped samples load as written).
+**Dotted model IDs must be quoted.** TOML treats `.` as a table separator, so
+`[engine.strata.catalog.example.chat-v1]` nests under `example`. Write
+`[engine.strata.catalog."example.chat-v1"]` to keep the full ID as the catalog key.
+
+**Offline validation.** Save the complete block as `router.managed.toml` and run
+`air config --config router.managed.toml` (§11). The command should exit successfully and list
+`strata` with both catalog IDs and their profile ladders. It only loads configuration, so it
+needs neither Docker access nor the example image. Image presence, launch and readiness are
+runtime checks. Use `samples/router.safe-smoke.toml` for a runtime smoke test. The selector tables
+in `samples/router.toml` demonstrate legacy exec compatibility.
 
 **URI composition.** Engine request paths are joined against `endpoint` by one rule, applied
 identically to completion calls, the health probe and the catalogue probe
@@ -2082,27 +2077,24 @@ this rule the base path was dropped and every such engine answered 404 (§14 rev
 
 ### 7.6 Serving profiles and context-window escalation
 
-GPU memory per slot scales with `n_ctx`, so a fixed engine that always serves the maximum
-window costs concurrency. AIR therefore models each model as a ladder of **serving
-profiles** — a context-window tier plus the slots it affords — and switches tier on demand
-instead of permanently paying for the largest window:
+GPU memory per slot scales with `n_ctx`, so an engine that always serves the maximum window
+costs concurrency. A model's **serving profiles** define its context tiers and slot counts.
+This catalog entry is the chat model from the managed configuration in §7:
 
 ```toml
-[engine.strata.catalog."qwen-3.8-flash-next"]
-aliases = ["flash-next", "default"]
-default_profile = "128k-2"            # profile used for a plain model switch
+[engine.strata.catalog."example.chat-v1"]
+aliases = ["chat"]
+default_profile = "32k-4"
 serving = [
-  { name = "max",    max_context = 98304,  max_slots = 4 },
-  { name = "128k-2", max_context = 131072, max_slots = 2 },
-  { name = "1m",     max_context = 1048576, max_slots = 1 },
+  { name = "32k-4", max_context = 32768, max_slots = 4 },
+  { name = "64k-2", max_context = 65536, max_slots = 2 },
 ]
-select = { exec = "select-model", args = ["{{model}}", "--profile", "{{profile}}"], wait_health = true }
-
-[engine.strata.health_probe]          # gauges read from the probe body
-path = "/props"
-context_path = "n_ctx"               # active context window (tokens); empty string → engine doesn't report
-slots_path = "total_slots"           # active concurrent slots; empty → fall back to max_inflight_per_engine
 ```
+
+The Docker `command` template passes the chosen profile name to the image as `--profile`.
+A plain model switch uses `default_profile`. A switch targeting `64k-2` passes that name to the
+new container. The image configures the window and slots, and the router uses `health_probe.context_path`
+and `health_probe.slots_path` to read those gauges. The probe checks described in §5.3.1 apply.
 
 Semantics:
 
@@ -2116,9 +2108,8 @@ Semantics:
 - **Escalation**: when `required > engine.active_context_window` (only when the engine
   reports a window — a blind engine is never escalated), the scheduler selects the
   *smallest* profile with `max_context >= required`, emits `TargetProfile`, and the ticket
-  queues behind a lifecycle switch to that profile (`{{profile}}` expansion) instead of
-  being compacted or rejected. `auto_switch = false`, no fitting profile, or a
-  `wait_health` timeout ⇒ the ticket fails with `switch_failed` (never silently truncated).
+  waits for a lifecycle switch to that profile when `auto_switch = true`. An engine whose ladder
+  has no fitting tier is skipped for the request. A failed switch returns `switch_failed` (§5.5, §6).
 - **Observability**: `engine.profile` events fire when the inferred active profile changes;
   `EngineStats` carries `active_profile` / `active_context_window` / `active_slots`.
 - **Non-goal for now**: automatic *de*-escalation (shrinking a window when big-context
@@ -2321,15 +2312,16 @@ admin schema and casing (§15.1) is a prerequisite, not a follow-up.
 ## 11. CLI
 
 ```
-inference-router serve [--config f.toml] [--listen http://...]
-inference-router chat  [--server url] [--thread id] [--priority high:200]
-                       [--model name] [-p prompt | --stdin]
-inference-router complete [--server url] [...]
-inference-router enqueue --server url --thread id --model m --payload f.json
-inference-router models [--server url]
-inference-router select-model <name> [--server url | --engine e] [--profile p]
-inference-router status [--server url] [--watch]
-inference-router config [--config f.toml]
+air serve [--config f.toml] [--listen url]
+air chat [--server url] [--thread id] [--priority high:200] [--model name] [prompt]
+air complete [--server url] [--thread id] [--priority high:200] [--model name] [prompt]
+air models [--server url]
+air switch --engine e --model m [--server url]
+air status [--server url]
+air events [--server url] [--since seq]
+air threads --id id [--priority high:200] [--server url]
+air tickets id [--server url]
+air config [--config f.toml]
 ```
 
 `config` is the dry run: parse + validate + print the resolved engine / model /
