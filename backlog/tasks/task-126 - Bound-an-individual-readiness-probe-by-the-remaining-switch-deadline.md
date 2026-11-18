@@ -5,7 +5,7 @@ status: Ready for Review
 assignee:
   - '@gpt-6.2-sol-shutdown'
 created_date: '2026-11-18T20:43:00Z'
-updated_date: '2026-11-18T23:16:00Z'
+updated_date: '2026-11-18T23:20:00Z'
 labels: []
 milestone: m-4
 dependencies: []
@@ -25,6 +25,7 @@ The readiness loop checks its deadline before calling the state and model endpoi
 - [ ] #2 A delayed successful reply after timeout cannot publish readiness or revive a retired attempt. A healthy alternate can still make progress.
 - [ ] #3 Return an enrolled refusal through RunSwitchAsync after expiry or shutdown has won. The caller retains the original terminal cause and the feed records one terminal event, with no second capability change, completion, or dispatch wake.
 - [ ] #4 Exercise successful guarded publication with hooks that verify both short locks are released. A joined waiter woken by shutdown or expiry receives its committed result only after the outcome event is delivered.
+- [ ] #5 Hold the committed outcome event and stop the engine with two joined waiters on the same tier. After event delivery only the waiter whose minimum fits the committed measured window receives Ready. Neither waiter can dispatch.
 <!-- AC:END -->
 
 ## Implementation Plan
