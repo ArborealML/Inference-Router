@@ -1167,28 +1167,46 @@ def main():
         fails += 1
         print("      ", " | ".join(msgs(p)[-2:])[:300])
 
-    # The declared line bound must never bite: with a long tag AND a long upload address, every label
-    # and the END of the address still reach the log, and no marker carries the length of the whole
-    # line (that would mean brief() cut the line rather than a field). Escaping still applies, so the
-    # segment is ASCII and every colon is %3A.
-    long_tag = "v0.1.0" + "T" * 94                                  # 100 characters
+    # The URL alone is invalid. Using the same 41-character tag and title forces both field caps
+    # and renders 216 bytes before escaping in the old step. At 39 characters it renders 198.
     long_url = ("https://uploads.github.com/repos/o/r/releases/12345/assets"
-                + "u" * 34 + "-TAILMARK")                          # 103 characters
-    raw_long = ('{"id":12345,"tag_name":"%s","name":"v0.1.0","draft":true,"prerelease":false,'
-                '"upload_url":"%s"}') % (long_tag, long_url)
-    wd = make_fixture("pub_line_bound", "good")
-    p = run_step(b["publish"], wd, {"CREATE_BODY_RAW": raw_long}, "publish")
-    out = p.stdout + p.stderr
-    seg = out.split("(fields: ", 1)[1].split(") \u2014 not publishing", 1)[0] if "(fields: " in out else ""
-    marks = [int(m) for m in re.findall(r"\+\((\d+)ch\)+", seg)]
-    ok = (p.returncode != 0 and all(lbl in seg for lbl in
-          ("id=", " tag=", " name=", " draft=", " pre=", " upload_url="))
-          and "TAILMARK" in seg and seg.isascii() and "%3A" in seg
-          and bool(marks) and max(marks) <= 103)
-    print(f"{'PASS' if ok else 'FAIL'}  publish: {'line_bound_tail':<18} rc={p.returncode} labels={int(all(l in seg for l in ('id=',' tag=',' name=',' draft=',' pre=',' upload_url=')))} tail={int('TAILMARK' in seg)} maxmark={max(marks) if marks else 0}  a long tag and a long address cannot erase the field that explains the refusal")
-    if not ok:
-        fails += 1
-        print("      ", " | ".join(msgs(p)[-2:])[:300])
+                + "u" * 34 + "-TAILMARK")  # 101 characters
+    old_publish = bodies_at("79a21e0")["publish"]
+    for label, body, suffix_len, expected_marks, expect_tail in (
+        ("line_bound_tail", b["publish"], 34, [41, 41, 101], True),
+        ("line_bound_tail_prev", old_publish, 34, [41, 41, 101], False),
+        ("line_bound_below_limit", old_publish, 32, [101], True),
+    ):
+        tag = "v0.1.0-" + "t" * suffix_len
+        raw = ('{"id":12345,"tag_name":"%s","name":"%s","draft":true,"prerelease":true,'
+               '"upload_url":"%s"}') % (tag, tag, long_url)
+        wd = make_fixture("pub_" + label, "good")
+        p = run_step(body, wd, {"TAG": tag, "CREATE_BODY_RAW": raw}, "publish")
+        line = refusal(p)
+        prefix, fields_start, rest = line.partition("(fields: ")
+        fields, fields_end, _ = rest.partition(") — not publishing")
+        # The separate comparison can describe the URL too. Only the field summary proves tail retention.
+        summary = fields.partition("; upload_url ")[0]
+        ordered = re.fullmatch(r'id=12345 tag=\S+ name=\S+ draft=true pre=true upload_url="?https%3A//\S+', summary)
+        marks = [int(mark) for mark in re.findall(r"\+\((\d+)ch\)\+", summary)]
+        tail_present = summary.endswith(("-TAILMARK", '-TAILMARK"'))
+        tail_ok = tail_present if expect_tail else "-TAILMARK" not in summary
+
+        calls = gh_log(wd).splitlines()
+        lookup = "gh api repos/{owner}/{repo}/commits/"
+        create = ("gh api -X POST repos/{owner}/{repo}/releases "
+                  f"-f tag_name={tag} -f name={tag} -F draft=true -F prerelease=true -F generate_release_notes=true")
+        # The old workflow resolved a bare ref. Both paths must stop at the one stub create.
+        calls_ok = (len(calls) == 2 and calls[0] in (f"{lookup}{tag} --jq .sha", f"{lookup}refs/tags/{tag} --jq .sha")
+                    and calls[1] == create)
+        ok = (p.returncode == 1 and prefix.startswith("::error::create did not answer with ")
+              and fields_start and fields_end and ordered is not None and summary.isascii()
+              and marks == expected_marks and tail_ok and calls_ok)
+        print(f"{'PASS' if ok else 'FAIL'}  publish: {label:<22} rc={p.returncode} labels={int(ordered is not None)} "
+              f"summary_bytes={len(summary)} marks={marks} tail={int(tail_present)} gh_calls={len(calls)}")
+        if not ok:
+            fails += 1
+            print("      refusal:", line, "\n      gh:", calls)
 
     # Type and presence are visible: the string "false" is quoted and a boolean is not, an absent field
     # says <missing>, a null says <null>, and a value that happens to spell "absent" is quoted so it
