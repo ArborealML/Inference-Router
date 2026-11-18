@@ -3,11 +3,11 @@ id: TASK-76
 title: >-
   Withdraw health only when the /models fetch failed, and never over a switch's
   own proof
-status: Preparing
+status: In Progress
 assignee:
   - '@gpt-6.2-sol-config'
 created_date: '2026-11-18T02:36:00Z'
-updated_date: '2026-11-18T20:31:00Z'
+updated_date: '2026-11-18T20:50:00Z'
 labels:
   - concurrency
 milestone: m-2
@@ -36,4 +36,6 @@ The commit review of 0e016e5 found the health loop's catch is wider than the obs
 
 <!-- SECTION:NOTES:BEGIN -->
 Pre-code review dispatched against 31179e3. The publisher already checks marker and version. The held-switch fixture starts an ordinary poll at the already-proven version and observes its failure before marker clear. Remaining work isolates actual models-fetch failure from faults elsewhere in the round and proves the exact provenance version at failed exit. Use bounded latches. TASK-77 stage B covers pre-mutation refusal preserving the incumbent for subsequent inference.
+
+Plan approved for the combined lifecycle candidate. Prove pre-fetch failure preserves the captured snapshot, a failed ordinary poll cannot withdraw a marker-bearing healthy proof, and attempted mutation clears claim provenance one version before clearing the marker. Verify all three mutation controls on the integrated tree.
 <!-- SECTION:NOTES:END -->
