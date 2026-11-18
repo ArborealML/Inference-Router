@@ -1,7 +1,7 @@
 ---
 id: TASK-94
 title: Name every refusal category, and stop a fixed mismatch reading as a timeout
-status: Done
+status: To Do
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-18T08:30:00Z'
@@ -16,7 +16,7 @@ ordinal: 93000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Re-measured at 610f0d8. Two refusal exits still hand the caller free-form prose outside the closed set of seven: EngineRuntime.cs:620, where a remote engine loads its own models, and :728-729, where the switch task never started — the second interpolates the switch target into the caller's sentence. Separately, one token carries three causes: with the prove-health path on, an unhealthy probe, a `/models` answer omitting the target, and a window too small all arrive as one category; with it off, the last two get their own names. A caller cannot tell a fixed configuration mismatch from a transient timeout, which is the one distinction a retry decision needs. This is the taxonomy half of the refusal work; the size and leak half is the row before it.
+The taxonomy landed: every visible refusal carries one named category, the three readiness causes are separated, and §5.5 says what each means to the caller. The deep review of the follow-up commit reopened the row on three overclaims, each re-measured here. None changes a caller-visible answer on the shipped boot path; one deletes a real backstop and one is a false SPEC claim.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -28,12 +28,21 @@ Re-measured at 610f0d8. Two refusal exits still hand the caller free-form prose 
 - [x] #5 The wait-ceiling path (`RouterCore.cs:551-554`) joins the named set, or SPEC scopes the set to completed attempts
 - [x] #6 The added switch event is emitted once, before waiters settle, with cleanup in `finally`, so a feed observer cannot wedge the claim marker
 - [x] #7 The deep commit review of 14a01e2 lands and each finding carries a disposition: fixed in a later commit, or written up as an accepted SPEC gap
+- [ ] #8 The pre-claim selector check and `RunSwitchAsync` consult one catalog definition — restore the post-lookup backstop, or resolve one definition before the claim and pass that snapshot through — so a divergent or mutated definition cannot skip the refusal.
+- [ ] #9 One `AfterClaimForTests` witness that the stable blank-selector case never claims, plus a `BeforeSwitchWaitForTests` regression flipping a usable entry to blank after the check, under both lifecycle providers.
+- [ ] #10 SPEC stops calling the in-switch selector branch unreachable, and the uneditable-set claim narrows to what the advertised API allows.
 <!-- AC:END -->
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Landed at **14a01e2** (SPEC v0.12.42); criteria ticked on a read of the commit, not a run by this seat. Runs are the coding seat's report — 93/93 focused, 222/222 in four Debug and three Release runs, AOT silent, six mutation probes reverted. **CI 44308059362 went red at that sha** on `SwitchClaimTests.AWaiterInsideTheReadinessWaitIsToldTheRouterStopped`: TASK-87's flake, not this change; a rerun was requested and TASK-87 went to the front of the queue.
+Delivered at **14a01e2** (SPEC v0.12.42), corrected at **2f7e3e6** (v0.12.43); CI green at both. Counts there are the coding seat's report. The v0.12.42 review's seven findings are dispositioned and closed: the false §5.5 stop arm replaced (cancellation / 499, naming `RouterCore`'s `OperationCanceledException` arm), `SwitchReason.All` moved to `ReadOnlySpan<string>`, the refusal walk asserts `Detail` whole, the blank-`select.exec` case pinned before the claim; routed findings sit on TASK-103 #4, TASK-68 #6, TASK-104 #4.
 
-**Deep commit review at that sha (extra-high): REVISE, seven findings; every code claim re-measured by this seat at `eba81d4` before recording. **Closed at 2f7e3e6 (SPEC v0.12.43)**, verified here: the false §5.5 arm replaced by a new version line saying the stop answers cancellation / 499 and naming `RouterCore`'s `OperationCanceledException` arm; `SwitchReason.All` is now a `ReadOnlySpan<string>` over a private array; the refusal helper asserts `Detail` whole; the blank-`select.exec` case is pinned before the claim and the unreachable in-switch check is deleted rather than kept. Routed findings sit on TASK-103 #4, TASK-68 #6 and TASK-104 #4. A deep review of 2f7e3e6 went out at the top tier at 13:51Z; its findings will be dispositioned on whichever row they touch.
+Re-measured here for the v0.12.43 review: the pre-claim check reads `_def.Catalog` (`EngineRuntime.cs:709`) while `RunSwitchAsync` reads `_config.Engines[_def.Name]` (`:1046`), so the deleted in-switch guard was reachable — a same-name divergent definition, or an entry replaced after the check (`BeforeSwitchWaitForTests`, `:733`) — and reaching it yields `launch_failed` with the engine's proof discarded, the failure the precheck exists to prevent. The blank-selector pin installs one definition object in both sources and asserts only `SwitchingToward == null`, so it witnesses neither shape. SPEC v0.12.43 and §5.5 both assert unreachability; #10 corrects that.
 <!-- SECTION:NOTES:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+One commit at the implementer's prefix: give the switch path one definition source — a snapshot captured before the claim is preferred over re-adding the branch, since the branch alone leaves two sources — add the two pins in #9, and correct the SPEC v0.12.43 row plus the §5.5 sentence. Build clean plus the focused refusal and switch cases; a full run belongs to whichever round crosses engine lifecycle. Shutdown-race work stays on TASK-87.
+<!-- SECTION:PLAN:END -->
