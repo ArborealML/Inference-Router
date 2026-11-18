@@ -243,6 +243,11 @@ public sealed class RouterCore : IInferenceRouter
         }
     }
 
+    /// <summary>One ticket's state for the admin surface (§6). The identifiers here are <b>whole</b>, not the
+    /// reporting-length excerpt the feed carries: an operator who reads a thread id or a model id off this response
+    /// follows it up — a query, a retry, a cancel — and a cut id is a value that looks valid and matches nothing.
+    /// What this response cannot inherit from a request body is an unbounded <b>sentence</b>: <c>Error</c> is capped
+    /// where the ticket became terminal, so it arrives here already at reporting length (§10).</summary>
     public TicketSnapshot? TryGetTicket(string ticketId)
     {
         lock (_ticketGate)
@@ -828,6 +833,13 @@ public sealed class RouterCore : IInferenceRouter
     private void Fail(RouterTicket ticket, string code, string message)
     {
         if (!ticket.TryEnterTerminal()) return;
+        // One terminal path, one ceiling. From here the same string is three caller-visible things at once —
+        // <c>ticket.Error</c>, the <see cref="RouterRequestException"/> the HTTP writer turns into an error body,
+        // and the error frame of a stream that already committed its 200 — plus the feed reason below. Some of it
+        // the router wrote and cut piece by piece; some of it it did not write at all (an HTTP client's exception
+        // text, an upstream sentence), so the ceiling goes on the finished sentence here, where it is true of every
+        // consumer, rather than at one writer (§10).
+        message = WireText.Bound(message, WireText.ReasonChars);
         ticket.DetachWaitHooks();
         DisposeQueueTimer(ticket);
         RetainTerminalTicket(ticket);
@@ -912,8 +924,10 @@ public sealed class RouterCore : IInferenceRouter
         }
     }
 
+    // The model id in this sentence comes out of a request body, so it is cut before the sentence is built, the
+    // same rule the request path's other producers follow (§10).
     private void OnQueueRejected(QueuedRequest item, string reason)
-        => RejectAtAdmission(item, reason, $"queue for {item.Ticket.Model} is full");
+        => RejectAtAdmission(item, reason, $"queue for {WireText.Ident(item.Ticket.Model)} is full");
 
     /// <summary>One shape for every request refused before it joins a queue: terminal once, thread counter
     /// moved, caller answered with the code, and exactly one <c>queue.rejected</c> event — no
@@ -929,6 +943,10 @@ public sealed class RouterCore : IInferenceRouter
         RetainTerminalTicket(item.Ticket);
         item.Ticket.State = TicketState.Failed;
         item.Ticket.ErrorCode = reason;
+        // Same ceiling as the failure path: an admission refusal is a caller's error body, and one of its two
+        // sentences quotes a model id that came out of a request body. Bound once, here, so the stored error, the
+        // exception and the feed reason cannot disagree about what the caller was told (§5.5, §10).
+        message = WireText.Bound(message, WireText.ReasonChars);
         item.Ticket.Error = message;
         item.Ticket.CompletionTcs.TrySetException(new RouterRequestException(reason, message));
         _events.Append(new RouterEvent

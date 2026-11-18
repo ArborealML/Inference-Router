@@ -1,3 +1,4 @@
+using System.Net;
 using System.Text;
 using Arboreal.InferenceRouter;
 
@@ -257,8 +258,8 @@ public class EventRingTests
     [Fact(Timeout = 60_000)]
     public async Task ARequestPathFailureStoresItsFieldsAtReportingLength()
     {
-        var one = "qwen/" + new string('x', 400);                       // 405 characters, all caller-chosen
-        var two = "qwen/" + new string('x', 400) + "-tail";             // same head, different whole value
+        var one = "qwen/" + new string('x', 400);                    // 405 characters, all caller-chosen
+        var two = "qwen/" + new string('x', 395) + "abcde";          // 405 too: same head, different tail
         var events = new EventRing();
         var cfg = new RouterConfig
         {
@@ -309,8 +310,8 @@ public class EventRingTests
             Assert.NotNull(record.Model);
             Assert.True(record.Reason!.Length <= WireText.ReasonChars,
                 $"a request-path reason of {record.Reason!.Length} characters exceeds the documented {WireText.ReasonChars}");
-            Assert.True(record.Model!.Length <= WireText.IdentifierChars + WireText.MarkerReserve,
-                $"the event payload carries {record.Model!.Length} characters of model id");
+            Assert.True(record.Model!.Length <= WireText.IdentifierChars,
+                $"the feed carries {record.Model!.Length} characters of model id, over the stated {WireText.IdentifierChars}");
             Assert.DoesNotContain(one, record.Reason!);
             Assert.DoesNotContain(two, record.Reason!);
             Assert.DoesNotContain(one, record.Model!);
@@ -319,10 +320,14 @@ public class EventRingTests
             Assert.Contains("ch #", record.Reason!);            // …and how much, and which value it was
         }
 
-        // The head is what the caller chose, so the two records agree there; the whole record does not, which is
-        // what makes either request findable by an operator reading the feed.
+        // Both ids are the same length and share their first 96 characters, so the head and the dropped count
+        // agree and cannot separate the two records: only the fingerprint of the whole value does. That is the
+        // strong form of the claim, and it is deliberately narrow — a 32-bit folded hash is a distinguisher for
+        // an operator reading a feed, not an identity (§10, decision-45).
         Assert.StartsWith(one[..96], records[0].Model!);
         Assert.Equal(records[0].Model![..96], records[1].Model![..96]);
+        Assert.Contains("(+309ch #", records[0].Model!);
+        Assert.Contains("(+309ch #", records[1].Model!);
         Assert.NotEqual(records[0].Model, records[1].Model);
         Assert.NotEqual(records[0].Reason, records[1].Reason);
 
@@ -330,6 +335,196 @@ public class EventRingTests
         // inside it is the caller's.
         Assert.DoesNotContain(one, exOne.Message!);
         Assert.Contains("… (+", exOne.Message!);
+        Assert.True(exOne.Message!.Length <= WireText.ReasonChars,
+            $"a caller's error sentence of {exOne.Message!.Length} characters exceeds the documented {WireText.ReasonChars}");
+    }
+
+    /// <summary>§10, TASK-93 AC #6: the ceiling on a sentence lives where a ticket becomes terminal, not at one
+    /// writer, because the same string is a caller's error body, a feed reason and an admin snapshot field at
+    /// once. The queue-cap refusal quotes a model id out of a request body. The identifiers the snapshot reports
+    /// stay <b>whole</b> — an operator retries on the model id and follows up on the thread id, and a cut id is a
+    /// value that looks valid and matches nothing — while the feed record for that same request carries the cut
+    /// excerpt. One request, two surfaces, two different rules, both stated in §10.</summary>
+    [Fact(Timeout = 60_000)]
+    public async Task AQueuedRefusalBoundsItsSentenceAndLeavesTheSnapshotsIdentitiesWhole()
+    {
+        var longId = "qwen/" + new string('y', 400);                 // 405 characters, all caller-chosen
+        var longThread = new string('t', 300);
+        using var fake = new FakeEngineHandler { LoadedModels = [longId], HoldCompletions = true };
+        var events = new EventRing();
+        var cfg = new RouterConfig
+        {
+            DefaultModel = longId,
+            Scheduler = new SchedulerConfig { MaxInflightPerEngine = 1, MaxQueuePerModel = 1 },
+            HttpHandlerFactory = _ => fake,
+            Engines = new Dictionary<string, EngineDefinition>
+            {
+                ["fake"] = new EngineDefinition
+                {
+                    Name = "fake",
+                    Kind = EngineKind.OpenAiCompatible,
+                    Endpoint = new Uri("http://127.0.0.1:9/v1"),
+                    Catalog = new Dictionary<string, EngineModelDefinition>
+                    {
+                        [longId] = new EngineModelDefinition { Name = longId },
+                    },
+                },
+            },
+        };
+        var router = new RouterCore(cfg, events: events);
+        await using var _ = router;
+        router.Start();
+        await WaitModelReportedAsync(router, longId);
+
+        var running = await router.EnqueueAsync("t-run", LongIdRequest(longId));
+        await WaitStateAsync(running, TicketState.Executing);          // the one slot is now reserved
+        var queued = await router.EnqueueAsync("t-wait", LongIdRequest(longId));
+        var overflow = await router.EnqueueAsync(longThread, LongIdRequest(longId));
+
+        var refused = await Assert.ThrowsAsync<RouterRequestException>(
+            () => overflow.CompletionTask.WaitAsync(TimeSpan.FromSeconds(20)));
+        Assert.Equal("queue_overflow", refused.Code);
+        Assert.DoesNotContain(longId, refused.Message!);
+        Assert.Contains("… (+", refused.Message!);                     // the id in the sentence is a cut excerpt
+        Assert.True(refused.Message!.Length <= WireText.ReasonChars,
+            $"a refusal sentence of {refused.Message!.Length} characters exceeds the documented {WireText.ReasonChars}");
+
+        var snapshot = router.TryGetTicket(overflow.Id)!;
+        Assert.Equal(overflow.Id, snapshot.Id);                        // whole: this is the lookup, never cut
+        Assert.Equal(longId, snapshot.Model);                          // whole: the retry has to name the real id
+        Assert.Equal(longThread, snapshot.ThreadId);                   // whole: the follow-up query needs it
+        Assert.Equal(refused.Code, snapshot.ErrorCode);
+        Assert.Equal(refused.Message, snapshot.Error);                 // one sentence, not two that drifted
+        Assert.True(snapshot.Error!.Length <= WireText.ReasonChars,
+            $"the admin snapshot carries {snapshot.Error!.Length} characters of error sentence");
+
+        var record = events.Replay(0).Single(e => e.Kind == "queue.rejected" && e.TicketId == overflow.Id);
+        Assert.Equal(longThread[..96], record.ThreadId![..96]);        // the feed excerpt is cut, and says so
+        Assert.NotEqual(longThread, record.ThreadId);
+
+        fake.ReleaseGate();
+        await running.CompletionTask.WaitAsync(TimeSpan.FromSeconds(20));
+        await queued.CompletionTask.WaitAsync(TimeSpan.FromSeconds(20));
+    }
+
+    /// <summary>§10, AC #6, the half the router did not write: an engine that reports the model and then fails the
+    /// completion hands over text of its own choosing — here 5,000 characters of an HTTP client's exception. The
+    /// router cannot shorten it upstream, so the ceiling goes on the finished sentence where the ticket becomes
+    /// terminal, and the caller's answer and the feed's reason end up the same bounded string.</summary>
+    [Fact(Timeout = 60_000)]
+    public async Task AnUpstreamSentenceOfAnyLengthEndsAtTheCallersCeiling()
+    {
+        var longId = "qwen/" + new string('y', 400);
+        var events = new EventRing();
+        var cfg = new RouterConfig
+        {
+            DefaultModel = longId,
+            HttpHandlerFactory = _ => new VolubleFailureHandler(longId),
+            Engines = new Dictionary<string, EngineDefinition>
+            {
+                ["fake"] = new EngineDefinition
+                {
+                    Name = "fake",
+                    Kind = EngineKind.OpenAiCompatible,
+                    Endpoint = new Uri("http://127.0.0.1:9/v1"),
+                    Catalog = new Dictionary<string, EngineModelDefinition>
+                    {
+                        [longId] = new EngineModelDefinition { Name = longId },
+                    },
+                },
+            },
+        };
+        var router = new RouterCore(cfg, events: events);
+        await using var _ = router;
+        router.Start();
+        await WaitModelReportedAsync(router, longId);
+
+        var ticket = await router.EnqueueAsync("t-a", LongIdRequest(longId));
+        var failure = await Assert.ThrowsAsync<RouterRequestException>(
+            () => ticket.CompletionTask.WaitAsync(TimeSpan.FromSeconds(20)));
+        Assert.Equal("engine_unreachable", failure.Code);
+        Assert.True(failure.Message!.Length <= WireText.ReasonChars,
+            $"an upstream sentence of {failure.Message!.Length} characters reached the caller whole");
+        Assert.Contains("upstream refused", failure.Message!);         // the head an operator acts on survives
+        Assert.Contains("… (+", failure.Message!);                     // and the cut says how much is missing
+
+        var record = events.Replay(0).Single(e => e.Kind == "request.failed");
+        Assert.Equal(failure.Message, record.Reason);                  // one ceiling, one sentence
+    }
+
+    /// <summary>§10, AC #7, the honesty case: the thread and engine filters match at reporting length, which is
+    /// excerpt matching and not isolation. Another thread's <b>cut form</b> is short enough to pass the cap
+    /// unchanged, so writing it literally into a query selects that thread's records — no hash collision needed.
+    /// What the cap does not do is conflate two long ids through a whole-id query: the fingerprint keeps those
+    /// apart. Correlation on this surface is <c>ticket</c>, which is exact because the router generates the id.</summary>
+    [Fact]
+    public void AFeedFilterMatchesAtReportingLengthAndIsNotIsolation()
+    {
+        var shared = new string('t', 300);
+        var first = shared + "-one";
+        var second = shared + "-two";
+        var events = new EventRing();
+        events.Append(new RouterEvent { Kind = "request.enqueued", ThreadId = first, TicketId = "t00000001-aaaa" });
+        events.Append(new RouterEvent { Kind = "request.enqueued", ThreadId = second, TicketId = "t00000002-bbbb" });
+
+        var cutFirst = WireText.Ident(first);
+        Assert.Equal(cutFirst, WireText.Ident(cutFirst));              // a cut form is a complete value to Ident
+        Assert.Single(events.Replay(0),
+            e => new RouterEventFilter { SinceSeq = 0, ThreadId = cutFirst }.Matches(e));
+
+        // A whole id still finds its own thread and not the neighbour that shares its head.
+        Assert.Single(events.Replay(0), e => new RouterEventFilter { SinceSeq = 0, ThreadId = first }.Matches(e));
+
+        // The ticket filter is exact: one request's history, and a neighbour id matches nothing.
+        Assert.Single(events.Replay(0),
+            e => new RouterEventFilter { SinceSeq = 0, TicketId = "t00000001-aaaa" }.Matches(e));
+        Assert.DoesNotContain(events.Replay(0),
+            e => new RouterEventFilter { SinceSeq = 0, TicketId = "t00000001-aaab" }.Matches(e));
+    }
+
+    private static async Task WaitModelReportedAsync(RouterCore router, string model)
+    {
+        // The refusal under test is only ever correct once an engine has answered the model probe, so a test that
+        // wants the request to reach the engine waits for that answer rather than racing the first poll.
+        var deadline = DateTimeOffset.UtcNow + TimeSpan.FromSeconds(20);
+        while (DateTimeOffset.UtcNow < deadline &&
+               !router.GetStats().Engines.Any(e => e.Healthy && e.LoadedModels.Contains(model, StringComparer.Ordinal)))
+        {
+            await Task.Delay(25);
+        }
+        Assert.Contains(model, router.GetStats().Engines.SelectMany(e => e.LoadedModels));
+    }
+
+    private static async Task WaitStateAsync(RouterTicket ticket, TicketState state)
+    {
+        var deadline = DateTimeOffset.UtcNow + TimeSpan.FromSeconds(20);
+        while (DateTimeOffset.UtcNow < deadline && ticket.State != state) await Task.Delay(25);
+        Assert.Equal(state, ticket.State);
+    }
+
+    /// <summary>An engine that answers the probes — so the model is proven and the completion is really sent — and
+    /// then fails the completion with an exception sentence 5,000 characters long. The router never wrote that
+    /// text, which is the point: the ceiling it promises has to hold on text it did not author.</summary>
+    private sealed class VolubleFailureHandler(string loaded) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
+        {
+            var path = request.RequestUri!.AbsolutePath.Trim('/');
+            if (path.EndsWith("models", StringComparison.Ordinal))
+            {
+                // Concatenation with escaped quotes, not an interpolated raw literal: the JSON braces collide
+                // with the double-brace interpolation delimiter, and a value quote next to a raw delimiter makes
+                // a run of four quotes, which no raw literal can close.
+                var payload = "{\"object\":\"list\",\"data\":[{\"id\":\"" + loaded + "\",\"status\":{\"value\":\"loaded\"}}]}";
+                return Task.FromResult(Json(payload));
+            }
+            if (path.EndsWith("props", StringComparison.Ordinal))
+                return Task.FromResult(Json("""{"total_slots":4}"""));
+            throw new HttpRequestException("upstream refused: " + new string('z', 5_000));
+        }
+
+        private static HttpResponseMessage Json(string body) =>
+            new(HttpStatusCode.OK) { Content = new StringContent(body, Encoding.UTF8, "application/json") };
     }
 
     private static InferenceRequest LongIdRequest(string model) => new()
@@ -363,12 +558,14 @@ public class EventRingTests
 
         var stored = events.Replay(0).Single();
         Assert.Equal(seq, stored.Seq);
-        Assert.True(stored.Engine!.Length <= WireText.IdentifierChars + WireText.MarkerReserve,
-            $"the feed carries {stored.Engine!.Length} characters of engine name");
-        Assert.True(stored.ThreadId!.Length <= WireText.IdentifierChars + WireText.MarkerReserve,
-            $"the feed carries {stored.ThreadId!.Length} characters of thread id");
-        Assert.True(stored.Model!.Length <= WireText.IdentifierChars + WireText.MarkerReserve,
-            $"the feed carries {stored.Model!.Length} characters of model id");
+        // The reserve sits **inside** the stated length, so the number a reader can rely on is 128 whole
+        // characters of feed text, not 128 plus a marker on top.
+        Assert.True(stored.Engine!.Length <= WireText.IdentifierChars,
+            $"the feed carries {stored.Engine!.Length} characters of engine name, over the stated {WireText.IdentifierChars}");
+        Assert.True(stored.ThreadId!.Length <= WireText.IdentifierChars,
+            $"the feed carries {stored.ThreadId!.Length} characters of thread id, over the stated {WireText.IdentifierChars}");
+        Assert.True(stored.Model!.Length <= WireText.IdentifierChars,
+            $"the feed carries {stored.Model!.Length} characters of model id, over the stated {WireText.IdentifierChars}");
         Assert.True(stored.Reason!.Length <= WireText.ReasonChars,
             $"a feed reason of {stored.Reason!.Length} characters exceeds the documented {WireText.ReasonChars}");
         Assert.Contains("… (+", stored.Reason!);

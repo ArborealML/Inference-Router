@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
+using System.Text.Json;
 using Arboreal.InferenceRouter;
 using Arboreal.InferenceRouter.Server;
 using Microsoft.AspNetCore.Builder;
@@ -211,8 +212,116 @@ public class ErrorContractTests
     }
 
     // 429 queue_overflow is refused by the queue (pinned at library level in
-    // EndToEndTests.Queue_Overflow_Fails_Ticket) and reaches the client through the same
-    // WriteErrorAsync writer as every case above, so its body shape is covered here; driving it
-    // over HTTP would need a held-connection pool dance for no added coverage.
+    // EndToEndTests.Queue_Overflow_Fails_Ticket and in EventRingTests, which also pins its sentence), and reaches
+    // the client through the same WriteErrorAsync writer as every case above, so its body shape is covered here;
+    // driving it over HTTP would need a held-connection pool dance for no added coverage.
 
+    /// <summary>§10, TASK-93 AC #6, end to end. An upstream engine's own words reach the caller embedded in the
+    /// router's sentence (§6.1), and their length is nobody's choice but the caller's. The criterion is the whole
+    /// contract, not an exception's <c>Message</c>: the <c>/v1</c> status, the one lowercase shape, the message
+    /// length, and a ceiling on the <b>serialized bytes</b> — escaping means the body is longer than the character
+    /// count, so a character assertion alone would let the wire grow while the test stayed green. Which layer did
+    /// the cutting is not the contract: the producer reads at most 256 bytes of an upstream error body and the
+    /// writer caps the finished sentence, so a caller who posts a 5,000-byte body gets a bounded answer either way.</summary>
+    [Fact(Timeout = 30_000)]
+    public async Task AnUpstreamBodyOfAnyLengthLeavesTheCallersErrorBodyBounded()
+    {
+        using var fake = new FakeEngineHandler
+        {
+            CompletionStatus = 400,
+            CompletionErrorBody = "{\"error\":{\"type\":\"server_error\",\"message\":\"" + new string('m', 5_000) + "\"}}",
+        };
+        var (app, _, port) = await StartAsync(fake);
+        try
+        {
+            using var http = new HttpClient { BaseAddress = new Uri($"http://127.0.0.1:{port}") };
+            var res = await http.PostAsync("/v1/chat/completions",
+                new StringContent("""{"model":"test-model","messages":[]}""", Encoding.UTF8, "application/json"));
+
+            Assert.Equal(HttpStatusCode.BadGateway, res.StatusCode);
+            var bytes = await res.Content.ReadAsByteArrayAsync();
+            var body = Encoding.UTF8.GetString(bytes);
+            AssertShape(body, "engine_error");
+
+            using var doc = JsonDocument.Parse(body);
+            var message = doc.RootElement.GetProperty("error").GetProperty("message").GetString()!;
+            Assert.True(message.Length <= WireText.ReasonChars,
+                $"the caller's error message is {message.Length} characters, over the documented {WireText.ReasonChars}");
+            Assert.Contains("server_error", message);       // "the engine said this" still reads
+            Assert.DoesNotContain(new string('m', 400), message);   // …and the caller did not choose the size
+
+            // The ceiling in bytes: the message is at most ReasonChars characters, and one character costs at
+            // most six bytes once JSON escapes it (\uXXXX), so the body cannot exceed that plus its envelope —
+            // whatever the caller's text happens to contain.
+            Assert.True(bytes.Length <= WireText.ReasonChars * 6 + 256,
+                $"the serialized error body is {bytes.Length} bytes, over the ceiling of {WireText.ReasonChars * 6 + 256}");
+        }
+        finally { await app.StopAsync(); await app.DisposeAsync(); }
+    }
+
+    /// <summary>§10, AC #6, the writer's own ceiling: an admin refusal that quotes the caller's own rejected value.
+    /// The writer, not the caller, decides how much of it the body carries — a 4,000-character profile name is a
+    /// legal thing to send, and the answer is still one bounded lowercase body. Take the cap out of the writer and
+    /// this is the pin that goes red.</summary>
+    [Fact(Timeout = 30_000)]
+    public async Task ACallerCannotChooseTheSizeOfAnAdminRefusalThatQuotesItsOwnValue()
+    {
+        using var fake = new FakeEngineHandler();
+        var (app, _, port) = await StartAsync(fake);
+        try
+        {
+            using var http = new HttpClient { BaseAddress = new Uri($"http://127.0.0.1:{port}") };
+            var longProfile = new string('p', 4_000);
+            using var content = new StringContent(
+                "{\"engine\":\"fake\",\"model\":\"test-model\",\"profile\":\"" + longProfile + "\"}",
+                Encoding.UTF8, "application/json");
+            var res = await http.PostAsync("/admin/switch", content);
+
+            Assert.Equal(HttpStatusCode.BadRequest, res.StatusCode);
+            var bytes = await res.Content.ReadAsByteArrayAsync();
+            var body = Encoding.UTF8.GetString(bytes);
+            AssertShape(body, "unknown_profile");
+
+            using var doc = JsonDocument.Parse(body);
+            var message = doc.RootElement.GetProperty("error").GetProperty("message").GetString()!;
+            Assert.DoesNotContain(longProfile, message);
+            Assert.Contains("… (+", message);              // cut, and it says how much is missing
+            Assert.True(message.Length <= WireText.ReasonChars,
+                $"the caller's error message is {message.Length} characters, over the documented {WireText.ReasonChars}");
+            Assert.True(bytes.Length <= WireText.ReasonChars * 6 + 256,
+                $"the serialized error body is {bytes.Length} bytes, over the ceiling of {WireText.ReasonChars * 6 + 256}");
+        }
+        finally { await app.StopAsync(); await app.DisposeAsync(); }
+    }
+
+    /// <summary>§10, AC #6, the other producer of a long sentence: a caller's text inside a sentence this assembly
+    /// writes, with no ticket and no terminal path involved. Nothing upstream bounds a 4,000-character path
+    /// segment, so the ceiling has to be the router's, and the shape stays the contract.</summary>
+    [Fact(Timeout = 30_000)]
+    public async Task TheErrorWriterCapsTextTheRouterNeverWrote()
+    {
+        using var fake = new FakeEngineHandler();
+        var (app, _, port) = await StartAsync(fake);
+        try
+        {
+            using var http = new HttpClient { BaseAddress = new Uri($"http://127.0.0.1:{port}") };
+            var longId = new string('q', 4_000);
+            var res = await http.GetAsync($"/admin/tickets/{longId}");
+
+            Assert.Equal(HttpStatusCode.NotFound, res.StatusCode);
+            var bytes = await res.Content.ReadAsByteArrayAsync();
+            var body = Encoding.UTF8.GetString(bytes);
+            AssertShape(body, "not_found");
+
+            using var doc = JsonDocument.Parse(body);
+            var message = doc.RootElement.GetProperty("error").GetProperty("message").GetString()!;
+            Assert.DoesNotContain(longId, message);
+            Assert.Contains("… (+", message);
+            Assert.True(message.Length <= WireText.ReasonChars,
+                $"the caller's error message is {message.Length} characters, over the documented {WireText.ReasonChars}");
+            Assert.True(bytes.Length <= WireText.ReasonChars * 6 + 256,
+                $"the serialized error body is {bytes.Length} bytes, over the ceiling of {WireText.ReasonChars * 6 + 256}");
+        }
+        finally { await app.StopAsync(); await app.DisposeAsync(); }
+    }
 }

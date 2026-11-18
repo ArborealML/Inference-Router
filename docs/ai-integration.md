@@ -117,6 +117,9 @@ Error bodies are `{"error":{"type":…,"code":…,"message":…}}`, and `code` d
 emitted yet: once the first token is out the response is committed, and a retry would duplicate
 output.
 
+The `message` in that body is a bounded excerpt — at most 1600 characters, cut with a marker that names how much is missing —
+however long the upstream sentence or the value it quotes happens to be. Branch on `code`, not on the wording.
+
 A `switch_failed` message names the model it could not serve and, when the switch ended rather than
 ran out of patience, the reason it ended with: `refresh_omits_<model>` or `refresh_unanswered_<model>`
 (the engine never confirmed the model), `health_timeout after <ms>ms`, `launch_failed`,

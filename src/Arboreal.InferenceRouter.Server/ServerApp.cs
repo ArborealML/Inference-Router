@@ -290,6 +290,11 @@ public static class ServerApp
 
     private static async Task WriteErrorAsync(HttpContext ctx, int status, string code, string message)
     {
+        // The terminal paths in the router cap the sentences they build, and the identifiers inside a sentence
+        // this assembly writes are cut before interpolation. This is the ceiling for the rest: text a caller put
+        // into a URL segment or a header, and anything a future producer hands the writer unbounded. The body's
+        // shape is the contract (§6.1); its size is the router's, never the caller's (§10).
+        message = WireText.Bound(message, WireText.ReasonChars);
         ctx.Response.StatusCode = status;
         ctx.Response.Headers.ContentType = "application/json";
         var json = JsonSerializer.Serialize(
@@ -431,7 +436,7 @@ public static class ServerApp
                     ? (int)sub2.GetDouble() : 0;
                 if (classStr is null || !ThreadPriorityClass.TryParseClass(classStr, out var cls))
                 {
-                    await WriteErrorAsync(ctx, 400, "invalid_request", $"priority.class '{classStr}' unknown")
+                    await WriteErrorAsync(ctx, 400, "invalid_request", $"priority.class '{WireText.Ident(classStr ?? string.Empty)}' unknown")
                         .ConfigureAwait(false);
                     return;
                 }
@@ -509,7 +514,7 @@ public static class ServerApp
         var snapshot = router.TryGetTicket(id);
         if (snapshot is null)
         {
-            await WriteErrorAsync(ctx, 404, "not_found", $"ticket {id} not found").ConfigureAwait(false);
+            await WriteErrorAsync(ctx, 404, "not_found", $"ticket {WireText.Ident(id)} not found").ConfigureAwait(false);
             return;
         }
         await AirJson.WriteAsync(ctx.Response, snapshot, AirServerJson.AirServerContext.Default.TicketSnapshot,

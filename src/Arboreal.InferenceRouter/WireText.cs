@@ -15,11 +15,14 @@ internal static class WireText
     /// record or an error body.</summary>
     internal const int IdentifierChars = 128;
 
-    /// <summary>The ceiling for one feed reason. Every piece of a reason is already capped — identifiers at
+    /// <summary>The ceiling for one <b>sentence</b> a person reads: a feed reason, or the message inside a caller's
+    /// error body (§10, §6.1). Every piece of a reason is already capped — identifiers at
     /// <see cref="IdentifierChars"/>, a provider's reason and action line, the quoted reported-name list — so
     /// this is a sum with room to spare rather than a cut applied to working text. It is applied at the event
     /// ring's one append funnel, so the ceiling holds for <b>every</b> producer, including the request path,
-    /// which builds its sentences rather than going through the engine's emitter.</summary>
+    /// which builds its sentences rather than going through the engine's emitter; and where a ticket becomes
+    /// terminal and in the HTTP error writer, which is what makes it true of a sentence the router did not write —
+    /// an upstream client's exception text arrives already long.</summary>
     internal const int ReasonChars = 1_600;
 
     /// <summary>What the cut marker costs, worst case: <c>"… (+"</c>, a dropped count of up to ten digits, a

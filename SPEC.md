@@ -1,6 +1,6 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.39)
+Status: draft, continuously revised (v0.12.40)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
@@ -352,6 +352,27 @@ daemon transaction per engine. 137 tests green.
   that answers no `upload_url`, an upload that dies or answers no asset id, an asset name listed twice on
   the release, and a tag that moves after the first resolve. No tag has run the gate: still configured,
   not proven.
+- v0.12.40 — a caller's error body is bounded where the router ends a request, not where a writer happens to remember (§10, §6).
+  The v0.12.39 funnel capped the **feed**, and §10 went on claiming the same was true of a caller's error body; reading the
+  exits found that it was not. `Fail` and `RejectAtAdmission` stored the sentence and threw it unbounded, the queue-cap refusal
+  quoted a model id out of a request body whole, and the HTTP error writer forwarded an exception message it had never
+  measured — so `ticket.Error`, the `/v1` body, a stream's error frame and `GET /admin/tickets/{id}` each carried text whose
+  length somebody upstream chose. Both terminal paths now cap the **finished sentence** at the 1600-character ceiling (one
+  string, so the caller's answer and the feed's reason cannot drift), the queue sentence cuts the id before interpolation, and
+  the writer caps what it serialises — which is the layer that owns an admin refusal quoting a rejected profile name or an
+  unknown ticket id. The admin snapshot keeps `Id`, `ThreadId` and `Model` **whole** on purpose: the reporting caps bind
+  excerpts and prose, not the identities an operator acts on, and that response's size is bounded by `max_request_body_bytes`.
+  §10 also stops claiming the cut marker is an identity: it is 32 bits of folded FNV-1a, a diagnostic distinguisher with about
+  one colliding pair in 4.3 billion, and a value written literally as another id's head-plus-marker passes the cap unchanged,
+  so `thread`/`engine` filters are excerpt matching and `ticket` stays exact (decision-45). The server assembly shares the
+  library's `WireText` through `InternalsVisibleTo` instead of keeping a second mechanism with its own numbers.
+  Five pins: two over real HTTP (a 5,000-byte upstream error body; a 4,000-character profile name in an admin refusal — each
+  asserting the status, the one lowercase shape, the message length and a ceiling in **serialized bytes**, because escaping
+  makes the body exceed the count) and three at the library level (the queue refusal against its ticket snapshot, an upstream
+  exception sentence, and the filter's alias case with an exact-ticket control). The feed pins tightened from
+  `IdentifierChars + MarkerReserve` to `IdentifierChars`, since the reserve sits inside the stated length. Cost, read and not
+  measured: over-budget values are hashed while the ring lock is held and a filter re-hashes per replayed event — a
+  measurement-driven follow-up, first felt by the live view.
 - v0.12.39 — every feed field is bounded where the feed is written, not where each producer happens to remember (§10, §5.5).
   The cap that v0.12.37 installed sat on the event's `Model` field and inside the engine's own emitter, so the ceiling §10
   states for one feed reason was untrue of the request path's failure producer: `RouterCore.Fail` builds its sentence by
@@ -1689,8 +1710,12 @@ tests, never wire codes: the only code an expired wait produces is `deadline_exc
 deliberately carries no arm for a reason string — an unrecognised code landing on its `500` default is a
 bug to fix at the producer, not a contract to rely on.
 An upstream engine's own 4xx/5xx arrives as `engine_error` with the engine's message embedded, so a
-caller can tell "my request was wrong" from "the engine is down". `docs/ai-integration.md` carries
-the same table for integrators, and `ErrorContractTests` pins both the mapping and the casing.
+caller can tell "my request was wrong" from "the engine is down". Every message in that body carries the router's ceiling: the
+finished sentence is capped where the ticket becomes terminal and again at the writer that serialises it, so a caller cannot
+choose the size of an answer about their own request — whether the long text came from an upstream engine, a URL segment, or a
+rejected value in a request body (§10). `ErrorContractTests` pins the mapping, the casing, the message length, and a ceiling in
+**serialized bytes**, because JSON escaping makes the body longer than the character count and a character count alone is not a
+bound on the wire. `docs/ai-integration.md` carries the same table for integrators.
 
 ## 7. Configuration (TOML)
 
@@ -1948,9 +1973,15 @@ delivered to. Field names on the wire are PascalCase (§6).
 
 The feed's text is a **bounded excerpt**, not a transcript. Identifiers — a model id, an engine name, a profile
 name, a thread id — are carried at reporting length: **128** characters in total, which is a head of 96 characters
-plus the cut marker. The marker names how much was dropped and carries an eight-hex-character fingerprint of the
-whole value, so two identifiers that share a head — the caller chooses the head of their own id — stay
-distinguishable in the record that holds them, without the feed holding the caller's text. A cut never lands between
+plus the cut marker. The marker names how much was dropped and carries a fingerprint of the whole value — the first eight
+hex digits of a 64-bit FNV-1a, so **32 bits** — which keeps two identifiers that share a head (the caller chooses the head of
+their own id) distinguishable **in the record that holds them**, without the feed holding the caller's text. That is a
+diagnostic distinguisher for an operator reading a feed, not an identity and not an integrity check: 32 bits collide — on the
+order of one colliding pair in 4.3 billion values taken at random — and a value written literally as another value's head plus
+its marker is already at reporting length, so the cap leaves it untouched. Correlating one request across its records is
+`TicketId`, which the router generates and never cuts; a stable opaque id for arbitrary caller-chosen values would need an
+assignment map with an eviction rule, and a new wire identity field is an owner decision, not a side effect (§6.1,
+decision-45). A cut never lands between
 the two halves of a surrogate pair: a head ending in a lone high surrogate is text that cannot be encoded, printed or
 compared back to what it came from. The marker fits inside the 32 characters the cap reserves, which is what makes
 the total a stated bound rather than an approximation, and a budget too small to leave a head is refused. Where the
@@ -1961,14 +1992,25 @@ names inside a 500-character summary, and one reason sentence at **1600**. The r
 been a cap on size, and every one of these values is chosen upstream — by an engine, a provider, or the request body.
 
 Two rules make those numbers true of every producer rather than only of the careful ones. Pieces are cut **before**
-the sentence is built, so an over-long sentence never exists on its way to being stored; and the identifier length
-and the ceiling for one whole reason are applied at the ring's **single append funnel**, so the request path's failure
-producer — which writes its own sentences, and interpolates a model id that came out of a request body — is held to
-the same numbers as the engine's emitter. The feed filter cuts its own values the same way, so a caller whose thread
-id is longer than the reporting length still finds their records: reporting is bounded, lookup is not, and a filter
-that matches a capped value by head can show an operator the wrong thread but never hides the right one. A caller's
-own error body is bounded the same way, because the sentence is the router's even when the identifier inside it is
-the caller's.
+the sentence is built, and the ceiling for one whole sentence is applied where the text is stored or published: at the ring's
+**single append funnel**, which holds the request path's failure
+producer — it writes its own sentences, and interpolates a model id that came out of a request body — to the same numbers as
+the engine's emitter; and where a ticket becomes **terminal**, which is the one place a failure turns into `ticket.Error`, the
+exception the HTTP layer serialises, and the error frame of a stream that has already committed its `200`. The error writer caps
+what it serialises as well, because the sentences it writes quote values a caller chose: a rejected profile name, an unknown
+ticket id. The promise is about text **before it is stored or published**, not a denial that an over-long sentence ever exists —
+an upstream engine's words arrive already long, whether as a provider's exception text or as an error body read at 256 bytes
+where the failure is built — and the router bounds them instead of pretending they did not arrive. The feed filter cuts its own values the same way, so a caller whose thread
+id is longer than the reporting length still finds their records: reporting is bounded, lookup is not. What that buys is not
+isolation. The `thread` and `engine` filters are **excerpt matching**: two filter values that share a head select the same
+records, and a filter written literally as another thread's cut form selects that thread's records with no collision involved at
+all. On a surface that is unauthenticated and loopback-or-behind-a-proxy (§6.1) that is an operator looking at the wrong thread,
+never a way in — and it never hides the right one. Isolation on the feed is the `ticket` filter, and that one stays **exact**.
+
+What the reporting caps deliberately do **not** cut is the admin ticket snapshot, which reports `Id`, `ThreadId` and `Model`
+**whole**: an operator who reads a model id off a response retries with it, and a cut id is a value that looks valid and matches
+nothing. That response's size is bounded by `max_request_body_bytes` rather than by the reporting caps; the bounded surfaces are
+the feed excerpt and error prose, and a size policy for admin responses generally is a separate question.
 
 - `thread.registered`, `thread.priority_changed`
 - `request.enqueued {thread, ticket, model, priority, promptChars}`
