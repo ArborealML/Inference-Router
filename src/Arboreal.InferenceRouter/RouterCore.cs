@@ -870,9 +870,11 @@ public sealed class RouterCore : IInferenceRouter
         ticket.DetachWaitHooks();
         DisposeQueueTimer(ticket);
         RetainTerminalTicket(ticket);
-        ticket.State = code is "cancelled" ? TicketState.Cancelled : TicketState.Failed;
+        // Setting a terminal state can resolve StreamReady without a channel. Publish the error
+        // details first so an HTTP relay woken by that path sees the same error as a channel reader.
         ticket.ErrorCode = code;
         ticket.Error = message;
+        ticket.State = code is "cancelled" ? TicketState.Cancelled : TicketState.Failed;
         // A stream that will never produce another byte has to be closed. The HTTP side pumps the
         // channel until its writer completes, so a failure that leaves the channel open parks the
         // caller on a 200 response that can no longer say anything — not even its own error frame.

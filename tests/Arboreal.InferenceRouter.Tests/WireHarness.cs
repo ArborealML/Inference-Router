@@ -13,7 +13,8 @@ internal static class WireHarness
 {
     public static async Task<(WebApplication App, FakeEngineHandler Fake, int Port)> StartAsync(
         bool holdCompletions = true, int maxInflight = 8, int maxEventSubscribers = 256, int maxRequestBodyBytes = 16 * 1024 * 1024,
-        int responseTimeoutMs = 600_000, int switchWaitTimeoutMs = 0, FakeEngineHandler? fake = null)
+        int responseTimeoutMs = 600_000, int switchWaitTimeoutMs = 0, FakeEngineHandler? fake = null,
+        TimeProvider? streamClock = null)
     {
         fake ??= new FakeEngineHandler { HoldCompletions = holdCompletions };
         int port;
@@ -47,7 +48,7 @@ internal static class WireHarness
                 },
             },
         };
-        var app = ServerApp.Build([], configOverride: cfg);
+        var app = ServerApp.Build([], configPath: null, configOverride: cfg, streamClock: streamClock ?? TimeProvider.System);
         await app.StartAsync();
         return (app, fake, port);
     }
@@ -55,12 +56,12 @@ internal static class WireHarness
     /// <summary>Start one streaming request and return its ticket id (X-Inference-Ticket) plus the
     /// response, whose body the caller drains when it wants the completion to finish.</summary>
     public static async Task<(string TicketId, HttpResponseMessage Response)> StartStreamAsync(
-        HttpClient http, string thread, string content)
+        HttpClient http, string thread, string content, CancellationToken ct = default)
     {
         using var req = new HttpRequestMessage(HttpMethod.Post, "/v1/chat/completions");
         req.Headers.Add("X-Inference-Thread", thread);
         req.Content = new StringContent(content, System.Text.Encoding.UTF8, "application/json");
-        var res = await http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead);
+        var res = await http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct);
         res.EnsureSuccessStatusCode();
         var id = res.Headers.TryGetValues("X-Inference-Ticket", out var v)
             ? v.Single() : throw new InvalidOperationException("no X-Inference-Ticket header");

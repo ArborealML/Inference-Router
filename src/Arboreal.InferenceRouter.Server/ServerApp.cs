@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Globalization;
 using System.IO.Pipelines;
 using System.Text;
@@ -15,9 +14,13 @@ namespace Arboreal.InferenceRouter.Server;
 /// DTO binding); responses are raw passthrough bytes; admin DTOs use AirServerJson.</summary>
 public static class ServerApp
 {
+    public static WebApplication Build(string[] args, string? configPath = null, RouterConfig? configOverride = null)
+        => Build(args, configPath, configOverride, TimeProvider.System);
+
     [System.Diagnostics.CodeAnalysis.SuppressMessage("Microsoft.Reliability", "CA2000:Dispose objects before losing scope",
         Justification = "Owned by the DI container: disposed (async) when the WebApplication is disposed in RunAsync.")]
-    public static WebApplication Build(string[] args, string? configPath = null, RouterConfig? configOverride = null)
+    internal static WebApplication Build(string[] args, string? configPath, RouterConfig? configOverride,
+        TimeProvider streamClock)
     {
         configPath ??= Environment.GetEnvironmentVariable("ARBOREAL_ROUTER_CONFIG")
                        ?? Environment.GetEnvironmentVariable("AIR_CONFIG")
@@ -29,6 +32,7 @@ public static class ServerApp
 
         var builder = WebApplication.CreateSlimBuilder(args);
         builder.Services.AddSingleton(router);
+        builder.Services.AddSingleton(streamClock);
 
         var app = builder.Build();
         // Explicit --urls / ASPNETCORE_URLS win over the config's listen address; setting
@@ -43,8 +47,8 @@ public static class ServerApp
 #pragma warning disable IL2026 // CA2026-like: RDG-rewritten Map* request delegates
 #pragma warning disable IL3050 // Dynamic code (ReflectionMetadata) in Map* — RDG replaces it
         // OpenAI-compatible surface (passthrough).
-        app.MapPost("/v1/chat/completions", (HttpContext ctx, RouterCore r) => HandleInference(ctx, r));
-        app.MapPost("/v1/completions", (HttpContext ctx, RouterCore r) => HandleInference(ctx, r));
+        app.MapPost("/v1/chat/completions", (HttpContext ctx, RouterCore r, TimeProvider clock) => HandleInference(ctx, r, clock));
+        app.MapPost("/v1/completions", (HttpContext ctx, RouterCore r, TimeProvider clock) => HandleInference(ctx, r, clock));
         app.MapGet("/v1/models", (HttpContext ctx, RouterCore r) => HandleModels(ctx, r));
 
         // Admin / control surface.
@@ -79,7 +83,7 @@ public static class ServerApp
 
     // ── inference endpoints ─────────────────────────────────────────────────
 
-    private static async Task HandleInference(HttpContext ctx, RouterCore router)
+    private static async Task HandleInference(HttpContext ctx, RouterCore router, TimeProvider streamClock)
     {
         var ct = ctx.RequestAborted;
         var read = await ReadBodyAsync(ctx, router, ct).ConfigureAwait(false);
@@ -150,7 +154,7 @@ public static class ServerApp
 
         if (stream)
         {
-            await StreamTicketAsync(ctx, ticket).ConfigureAwait(false);
+            await StreamTicketAsync(ctx, ticket, streamClock).ConfigureAwait(false);
         }
         else
         {
@@ -176,9 +180,10 @@ public static class ServerApp
         return long.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var v) && v > 0 ? v : null;
     }
 
-    /// <summary>SSE passthrough: upstream frames verbatim; SSE keepalive comment frames while the
-    /// request is queued/switching so clients (e.g. Pi's idle timeout) never time out.</summary>
-    private static async Task StreamTicketAsync(HttpContext ctx, RouterTicket ticket)
+    private static readonly TimeSpan StreamKeepaliveInterval = TimeSpan.FromSeconds(4);
+
+    /// <summary>SSE passthrough with keepalive comments until the first upstream byte.</summary>
+    internal static async Task StreamTicketAsync(HttpContext ctx, RouterTicket ticket, TimeProvider clock)
     {
         var ct = ctx.RequestAborted;
         ctx.Response.StatusCode = 200;
@@ -187,52 +192,84 @@ public static class ServerApp
         ctx.Response.Headers.Connection = "keep-alive";
 
         var writer = ctx.Response.BodyWriter;
-        var lastStatus = "";
-        var keepaliveSeq = 0;
-        lastStatus = await WriteKeepaliveAsync(writer, ticket, keepaliveSeq, lastStatus, ct).ConfigureAwait(false);
-        keepaliveSeq++;
-
-        ChannelReader<ReadOnlyMemory<byte>>? reader = null;
-        var channel = ticket.StreamChannel;
-        if (channel is null)
+        try
         {
-            // Wait on readiness, not on a poll interval: the gap between the relay starting and the
-            // request being admitted is normally microseconds, and a fixed poll would add that
-            // interval to time-to-first-token for every stream. Keepalives go out every 4 s while
-            // the request is queued or switching models.
+            ct.ThrowIfCancellationRequested();
+            var (reader, first) = await ReadFirstChunkAsync(writer, ticket, clock, ct).ConfigureAwait(false);
+            if (reader is not null)
+            {
+                await writer.WriteAsync(first, ct).ConfigureAwait(false);
+                while (await reader.WaitToReadAsync(ct).ConfigureAwait(false))
+                {
+                    while (reader.TryRead(out var chunk))
+                        await writer.WriteAsync(chunk, ct).ConfigureAwait(false);
+                    await writer.FlushAsync(ct).ConfigureAwait(false);
+                }
+            }
+
+            ct.ThrowIfCancellationRequested();
+            if (ticket.State is TicketState.Failed)
+            {
+                var json = JsonSerializer.Serialize(
+                    new ErrorBody { Error = new ErrorDetail { Message = ticket.Error ?? "engine error", Code = ticket.ErrorCode ?? "engine_error" } },
+                    AirServerJson.AirServerContext.Default.ErrorBody);
+                await AirJson.WriteFrameAsync(writer, AirJson.Frame(json, "[DONE]"), ct).ConfigureAwait(false);
+            }
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            // The caller went away. HandleInference links the abort to the producer.
+        }
+    }
+
+    private static async Task<(ChannelReader<ReadOnlyMemory<byte>>? Reader, ReadOnlyMemory<byte> First)> ReadFirstChunkAsync(
+        PipeWriter writer, RouterTicket ticket, TimeProvider clock, CancellationToken ct)
+    {
+        var lastStatus = await WriteKeepaliveAsync(writer, ticket, 0, "", ct).ConfigureAwait(false);
+        var sequence = 1;
+        using var stopHeartbeat = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        Task? heartbeat = null;
+        try
+        {
             var ready = ticket.StreamReady;
-            while (!ready.IsCompleted)
+            await WaitWithKeepalivesAsync(ready).ConfigureAwait(false);
+            var reader = (await ready.WaitAsync(ct).ConfigureAwait(false))?.Reader;
+            if (reader is null) return default;
+
+            while (true)
             {
-                if (ct.IsCancellationRequested) return;
-                lastStatus = await WriteKeepaliveAsync(writer, ticket, keepaliveSeq, lastStatus, ct).ConfigureAwait(false);
-                keepaliveSeq++;
-                await Task.WhenAny(ready, Task.Delay(TimeSpan.FromSeconds(4), ct)).ConfigureAwait(false);
-            }
+                // Keep this wait in flight across ticks. Its producer publishes the terminal
+                // outcome before completing the channel, so buffered data still drains first.
+                var readable = reader.WaitToReadAsync(ct).AsTask();
+                await WaitWithKeepalivesAsync(readable, reader).ConfigureAwait(false);
+                if (!await readable.ConfigureAwait(false)) return default;
 
-            channel = await ready.ConfigureAwait(false);
-        }
-
-        if (channel is not null)
-        {
-            reader = channel.Reader;
-        }
-
-        if (reader is not null)
-        {
-            while (await reader.WaitToReadAsync(ct).ConfigureAwait(false))
-            {
                 while (reader.TryRead(out var chunk))
-                    await writer.WriteAsync(chunk, ct).ConfigureAwait(false);
-                await writer.FlushAsync(ct).ConfigureAwait(false);
+                {
+                    if (!chunk.IsEmpty) return (reader, chunk);
+                }
             }
         }
-
-        if (ticket.State is TicketState.Failed)
+        finally
         {
-            var json = JsonSerializer.Serialize(
-                new ErrorBody { Error = new ErrorDetail { Message = ticket.Error ?? "engine error", Code = ticket.ErrorCode ?? "engine_error" } },
-                AirServerJson.AirServerContext.Default.ErrorBody);
-            await AirJson.WriteFrameAsync(writer, AirJson.Frame(json, "[DONE]"), ct).ConfigureAwait(false);
+            // The relay owns the timer. Disarm it before returning the first upstream bytes or
+            // letting the caller write the terminal frame.
+            if (heartbeat is { IsCompleted: false }) await stopHeartbeat.CancelAsync().ConfigureAwait(false);
+        }
+
+        async Task WaitWithKeepalivesAsync(Task progress, ChannelReader<ReadOnlyMemory<byte>>? reader = null)
+        {
+            while (!progress.IsCompleted && !ticket.IsTerminal)
+            {
+                // Retain the same deadline when StreamReady hands off to the first read.
+                heartbeat ??= Task.Delay(StreamKeepaliveInterval, clock, stopHeartbeat.Token);
+                await Task.WhenAny(progress, heartbeat).ConfigureAwait(false);
+                ct.ThrowIfCancellationRequested();
+                if (progress.IsCompleted || ticket.IsTerminal || reader?.TryPeek(out _) == true) return;
+
+                lastStatus = await WriteKeepaliveAsync(writer, ticket, sequence++, lastStatus, ct).ConfigureAwait(false);
+                heartbeat = null;
+            }
         }
     }
 

@@ -1,6 +1,6 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.62)
+Status: draft, continuously revised (v0.12.63)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
@@ -352,6 +352,9 @@ daemon transaction per engine. 137 tests green.
   that answers no `upload_url`, an upload that dies or answers no asset id, an asset name listed twice on
   the release, and a tag that moves after the first resolve. No tag has run the gate: still configured,
   not proven.
+- v0.12.63 — the SSE relay keeps one heartbeat cadence across admission and the wait for the
+  first upstream byte. Buffered data and terminal results take precedence over a due heartbeat
+  (§6, TASK-127).
 - v0.12.62 — the offline release harness now distinguishes the old 200-byte whole-summary cut
   from the fixed diagnostic. The same 216-byte summary loses its URL tail on `79a21e0` and
   must retain it on the current workflow. A 198-byte control retains the tail on `79a21e0`.
@@ -2016,14 +2019,18 @@ client start parsing it (§15 open question).
 
 **Streaming handoff**: the SSE relay does not poll for the ticket's stream channel. The
 channel is created at admission, before the `Executing` event is published, and
-`RouterTicket.StreamReady` resolves with it (or with `null` at a terminal state). The relay sends an
-initial keepalive and emits keepalives immediately and every 4 s while the channel remains pending.
+`RouterTicket.StreamReady` resolves with it (or with `null` at a terminal state). The relay flushes
+one initial keepalive and then one every 4 s while it waits for the channel or the first nonempty
+upstream chunk. Installing the channel carries forward the same monotonic deadline and sequence.
+Available data or a terminal result takes precedence over a due keepalive. After the first
+nonempty chunk, the relay forwards upstream bytes in order and emits no further keepalives.
 Each keepalive is an SSE comment such as `: [router keepalive seq=7 status="switching model=qwen-long engine=hyperqwen"]` followed by a blank line.
 The sequence starts at zero and increases by one on that stream. The optional JSON-quoted `status`
 appears on the first comment and when the status changes. SSE parsers ignore comments when
 dispatching data events. A stream that fails after it started ends with
 `data: {"error":{…}}` then `data: [DONE]`, so a client that stops at the sentinel cannot hang and
-can tell a truncated completion from a finished one. Poll-based handoffs stall time-to-first-token
+can tell a truncated completion from a finished one. Successful EOF adds no bytes, and a client
+disconnect stops the relay without an extra terminal frame. Poll-based handoffs stall time-to-first-token
 by the whole poll interval — the benchmark harness measured exactly that before this fix (§14,
 `docs/benchmarks.md`).
 
