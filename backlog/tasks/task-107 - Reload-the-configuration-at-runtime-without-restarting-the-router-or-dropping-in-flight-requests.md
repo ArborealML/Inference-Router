@@ -7,7 +7,7 @@ status: To Do
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-18T17:42:00Z'
-updated_date: '2026-11-18T17:43:00Z'
+updated_date: '2026-11-18T18:15:00Z'
 labels:
   - config
   - lifecycle
@@ -40,4 +40,6 @@ Owner requirement, relayed 17:38Z: the configuration has to be reloadable while 
 Neighbours, not duplicates: TASK-83 checks that every parsed key has a runtime handler (a reload multiplies what that must cover), and TASK-77's reach/ownership split is the change most likely to be reloaded in practice. No dependency blocks this row. The owner ruled at 17:41Z that the router does **not** exec an external selection script — native lifecycle is the route, and reload is what makes an engine change testable without dropping the queue. Sequencing: this row needs a plan review before code (it crosses config, lifecycle and the request path).
 
 Hand-off ruling, 17:55Z: TASK-26, this row and TASK-77 go to a delegated worker (gpt 6.2 Astra medium) with the board reviewing. Two constraints come with it — the worker never commits and never touches git config, delivering an uncommitted diff plus raw output for an implementer seat to re-measure and commit (decision-43/42), and a sandbox that refuses socket creation cannot run the serve or HTTP pins, so the reload trigger's live proof lands elsewhere. The owner's drift review lands first and seeds the plan.
+
+Review proposal against 2d50430 for the plan review: preview and apply on the admin surface with expected generation. Validate an immutable candidate, classify live, drain and restart-only settings, and retain the old generation for active streams and switches. Reject stranded queues. Consider 409 for stale generation and 422 for invalid changes, with the active generation unchanged. Review access, redaction and events before fixing the wire contract.
 <!-- SECTION:NOTES:END -->

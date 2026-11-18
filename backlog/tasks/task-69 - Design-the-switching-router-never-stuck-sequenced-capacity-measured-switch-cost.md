@@ -7,7 +7,7 @@ status: Waiting
 assignee:
   - '@qwen3.8-flash-next-board'
 created_date: '2026-11-18T01:22:00Z'
-updated_date: '2026-11-18T04:18:00Z'
+updated_date: '2026-11-18T18:16:00Z'
 labels: []
 dependencies: []
 priority: high
@@ -31,11 +31,13 @@ The owner's operating goal is recorded in decision-25: switching across the boar
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Drafting in progress. The plan settles these, in order. (1) Cost as data: per model per engine, activation and shutdown durations written from a switch's own timings, with a validity rule for a cold or single sample (TASK-71). (2) Cost as policy: the next model is the queue value it unlocks per second of switch time, weighted by request age; the owner's drain example serves eight waiting elsewhere before one waiting on the loaded model (TASK-72). (3) Never stuck: a failed swap leaves the engine serving what it can show, the queue keeps its ceiling, and no switch holds the claim while it retries (TASK-64, TASK-25, TASK-51 are the parked corners). (4) Fairness floor: a cost-minimising scheduler cannot starve a model, so a named maximum wait exists and its refusal is observable. (5) Split reach from ownership: where an engine is reachable from is transport, who may load a model into it is lifecycle; one flag means both today, so a remote engine refuses to switch (TASK-77). (6) Out of scope but constraining: one forwarder, four lanes box-wide, one loaded model; decisions read capability snapshots, never three separate readings (TASK-68). (7) A swap-recovery contract every provider satisfies: after a failed swap the engine reports what it can show, the marker clears, waiters settle, and a later request retries without a restart — TASK-67 pinned the edges this implements. (8) Host groups: which hosts a switch may execute on, and what fences an executor from a host it does not own (TASK-78, built on TASK-77's two flags). (9) Latency claims stay auditable: bounds are stated as wait age and switches per unit time; the fleet pass's cohort formula is unusable because its service term is unbounded for streaming.
+Define failure outcomes for admitted and waiting requests, wire errors and feed events. A failed swap clears its claim, settles waiters and serves only proven capacity. Specify when a later request may retry (TASK-67). Design for four lanes on one host with one resident model. Reserve lifecycle work separately and fence admission before draining (25/64). Measure per-model activation and shutdown cost, including cold or sparse observations (71). Schedule age-weighted batches by work unlocked per second of switching, with a bounded wait, observable refusal and switch-rate bound even for streaming workloads (51/72). Read one capability snapshot (68). Distinguish reach from load authority (77), fence host ownership, and defer fleet placement to 78.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
 An external evaluation of an open-source AI gateway (2026-11-18) found nothing that makes this design redundant: no durable request claims, no residence placement or fencing across hosts, a switch-cost gate priced in prompt-cache dollars rather than stop and load time, and nothing that waits for confirmed serving. Its challenge — measurement needs no database and no wire change, so it should not wait behind this row — is recorded on TASK-71.
+
+Drift review checked at 2d50430. Settle failure policy first, then coordinate exclusive residency across engines on one host (TASK-110), close native-provider gaps (26), fence drain and admission (25/64), and bound waits and schedule by measured cost (51/71/72). Review reload (107) before the ownership split and fleet placement (77/78). Front-only proofs (85/89) can proceed after the strict-client keepalive fix (108). The local configuration (111) and an authorized pi-clm swap (112) gate lock cleanup (113).
 <!-- SECTION:NOTES:END -->
