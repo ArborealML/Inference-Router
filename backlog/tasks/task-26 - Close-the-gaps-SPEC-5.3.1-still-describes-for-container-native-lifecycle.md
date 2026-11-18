@@ -19,7 +19,7 @@ ordinal: 26000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-TASK-1 put the seam and the first Docker provider into main; §5.3.1 describes more than that, and the difference is now written into the spec rather than left to guesswork. What is missing is not cosmetic: presence-only image checks mean a moving tag is not the pin the design promises; no GPU or mount configuration means a real inference image cannot be started as configured; no exec, logs or daemon-event subscription means the router can start a container but cannot ask it anything after; latched failures are what stop a dispatcher wake-up from turning one broken loader into a retry loop.
+Complete the container-native lifecycle requirements in SPEC section 5.3.1. Verify image identity before mutation, supply launch resources, observe daemon state, and quarantine failed targets. TASK-110 owns exclusive host reconciliation.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
