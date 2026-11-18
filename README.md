@@ -22,7 +22,7 @@ On Windows, use Git Bash and pass the executable path ending in `air.exe`. A suc
 ## Features
 
 - **OpenAI-compatible inference.** Send chat or legacy text completions with optional SSE streaming. [Client integration guide](docs/ai-integration.md)
-- **Model discovery.** `GET /v1/models` includes an observed context window in tokens when AIR has usable evidence for that loaded model on its engine. [Model discovery contract](docs/ai-integration.md#discover-loaded-models)
+- **Model discovery.** `GET /v1/models` lists each engine’s last accepted roster and can include observed context windows in tokens. [Model discovery contract](docs/ai-integration.md#discover-loaded-models)
 - **Routing and serving profiles.** Queue requests by model, apply thread priorities, and route to configured local and remote engines using health and available slots. A request can specify the context window it needs in tokens. [Serving profiles specification](SPEC.md)
 - **Per-engine lifecycle.** Use the native Docker provider or a configured selector for model switches. The Docker provider checks ownership before stopping a container and is verified against a fake daemon. [Docker provider](src/Arboreal.InferenceRouter/Engines/Lifecycle/DockerLifecycleProvider.cs)
 - **Operator controls.** Inspect engine and queue status, replay events for a ticket, or cancel it through the admin API. The `air` CLI can host the router and act as a client. [HTTP reference](SPEC.md#6-http-surface-server-project)

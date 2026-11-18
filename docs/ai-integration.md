@@ -32,15 +32,22 @@ out but not speak HTTP, drive it through those.
 
 ## Discover loaded models
 
-`GET /v1/models` lists the models reported loaded by each engine. A row can include
-`context_window`, a positive integer in tokens, when AIR has a usable observation for
-that model and engine. If the upstream lists effective serving context per model,
-set `models_context_window_path` to the dotted path inside that row. An omitted field means the
-window is unknown. If several engines report the same model ID, their rows identify
-each engine by `owned_by` and can report different windows.
+`GET /v1/models` lists each engine’s last accepted roster. With `loaded_requires_status_loaded = true`,
+AIR lists only rows whose `status.value` is `"loaded"` and whose `alias_of` is absent or `null`.
+With the default `false`, AIR lists every upstream row with a string `id`, including aliases and
+rows without load status. When the previous and new observations both lack verified windows,
+AIR can keep the previous spelling if only letter case changes.
 
-Use the value to display the last observed window for that engine. A later inference
-request can use a different engine or profile.
+On a healthy engine with no switch in progress, a row can include `context_window`, a positive
+integer in tokens observed for that model on that engine. If the upstream reports effective
+serving context per model, set `models_context_window_path` to the dotted path inside that row.
+AIR omits the field when it has no usable window for the row, including for aliases. If several
+engines report the same model ID, `owned_by` identifies the engine for each row and each can
+report a different window.
+
+A row can remain listed after its window and health evidence have been withdrawn. AIR evaluates
+readiness when it handles an inference request, which can wait for a model or use a different
+engine or profile.
 
 ## Thread identity: how an agent gets its share
 
@@ -102,7 +109,7 @@ is still in progress. A scheduler decision can use a serving gauge that is stale
 | Need | Call |
 | --- | --- |
 | The id of the request you just made | response header `X-Inference-Ticket` (streaming and non-streaming) |
-| Which models are reported loaded, and what window was observed on each engine | `GET /v1/models` |
+| Which model IDs AIR lists for each engine and what windows it observed | `GET /v1/models` |
 | Who is running, queue depths, per-thread state | `GET /admin/status` |
 | What the router decided, replayably | `GET /admin/events?since=<seq>` (SSE); filters `kinds=a,b`, `thread=`, `engine=`, `ticket=` |
 | Only the events for the request you own | `GET /admin/tickets/{id}/events?since=<seq>` (SSE) |
