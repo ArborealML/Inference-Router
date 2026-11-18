@@ -112,6 +112,11 @@ the full range being pushed: deleting a file later does not un-publish it. One o
 `air config` prints engine endpoints, key-file locations and lifecycle argv, so never paste its raw
 output into a task, review or commit message.
 
+Commits carry **the repository's configured git identity**. Never set a per-commit author or committer for a
+session, and never rewrite or force-push published history without the owner's explicit word: the five published
+outliers stay as they are, and prevention is the CI check over the whole push range rather than a remembered rule
+(decision-24).
+
 <!-- backlog:start -->
 ## Backlog
 

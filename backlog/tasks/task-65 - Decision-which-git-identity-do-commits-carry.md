@@ -1,11 +1,11 @@
 ---
 id: TASK-65
 title: 'Decision: which git identity do commits carry?'
-status: Blocked
+status: Done
 assignee:
   - '@claire'
 created_date: '2026-11-17T23:14:00Z'
-updated_date: '2026-11-18T00:49:00Z'
+updated_date: '2026-11-18T01:30:00Z'
 labels:
   - chore
   - governance
@@ -34,25 +34,14 @@ spends a force-push on a public repository to settle an ambiguity A removes goin
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 one line choosing A, B or C, with the reason if it is not A
-- [ ] #2 the chosen rule is recorded as a decision and, for A or C, the working contract says in words that the model-naming rule covers task assignees only
-- [ ] #3 if B: both authors rewritten, main force-pushed, TASK-55 renamed and every citation repointed, with the sweep shown
+- [x] #1 one line choosing A, B or C, with the reason if it is not A
+- [x] #2 the chosen rule is recorded as a decision and, for A or C, the working contract says in words that the model-naming rule covers task assignees only
 <!-- AC:END -->
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-No agit-style identity wrapper is installed on this machine, which is why the agent-named commits happened per commit rather than by
-configuration; and nothing in the release gate depends on the author identity — the tag and release runs work under the default
-author. Carried from the archived duplicate row that first asked the general form of this question.
+Closed on the owner's ruling, recorded as decision-24: **"I do like A, then C later."** Published history is left untouched — no rewrite, no force-push — the rule moves into the working contract, prevention lands as TASK-70, and linkable per-agent identities are accepted as a later act, not part of this one. Measured at the time of closing: five commits on main carry a non-default author name — two under an agent-model name with an unresolvable address, three under a role name on the account's own no-reply mailbox.
 
-**Census at 23:1xZ** (`git log --all --format='%an <%ae>' | sort | uniq -c`): 199 default identity, 15 `Claire <claire@localhost>`,
-3 `board`, 1 `Ian Diaz <shadowndacorner@gmail.com>`, 2 `qwen3.8-flash-next <qwen3.8-flash-next@local>`.
-
-**Cost of B, measured here:** 7 citations outside this task — TASK-54 twice, TASK-55's title and filename, TASK-56, TASK-57,
-TASK-58, and the external review records — plus this task's own text. No tag points at either commit (only `v0.0.9-canary` and
-`v0.0.10-canary` exist) and main is unprotected: the sole ruleset is `release-tag-protection` on tags, so a force-push is
-mechanically possible.
-
-**Re-measured at d3258d0.** Two commits carry a model name (`4dd1e0e`, `20a06fa`: `qwen3.8-flash-next <…@local>`, rendered as unlinked authors); three more (`4e7b87a`, `2470c93`, `2195fe6`) carry the role name `board` on the repository's own noreply mailbox, so they link to the account but are the same class of per-commit override. The count of published overrides is five, not two, and option A's rule and gate check are meant to cover both kinds.
+Option B's criterion was removed rather than checked: it described the rewrite sweep, and the owner chose A, so the sweep will never run and a criterion for it cannot be met.
 <!-- SECTION:NOTES:END -->

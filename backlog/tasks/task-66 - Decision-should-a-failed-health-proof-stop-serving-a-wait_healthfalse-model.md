@@ -5,7 +5,7 @@ status: Blocked
 assignee:
   - '@claire'
 created_date: '2026-11-17T23:26:00Z'
-updated_date: '2026-11-18T00:54:00Z'
+updated_date: '2026-11-18T01:26:00Z'
 labels:
   - release
   - governance
@@ -30,4 +30,6 @@ For an engine configured wait_health=false — one the operator has told the rou
 
 <!-- SECTION:NOTES:BEGIN -->
 **This answer now gates a scheduled commit, as measured at d3258d0.** A `wait_health=false` switch whose refresh failed publishes unknown, emits `engine.switch_completed` and ends ready (:794-812). Authorising a waiting caller against the snapshot at resume (TASK-61) cannot coexist with that: the request would be refused on the wire while the feed says completed. Two coherent shapes: no-refresh means no proof (refusal, unknown, switch ends failed — the pinned test and the wire wording move together), or the switch vouches for a target it launched but could not query, as its own state in the capability, with the vouch valid only while that snapshot version is unchanged. `Ready` with health unknown is not a third shape; it is the hole TASK-61 exists to close.
+
+**Not deferrable any more.** decision-25 makes switching the normal path rather than an opt-in, and its rule that a failed swap must never leave the router stuck while it can still serve sets the direction: serve what it can. What is still the owner's to answer is the mechanism, not the philosophy — either a failed confirmation refuses the switch (a wire-visible change, with the pinned test and wording moving together) or the switch records its own unconfirmed-launch state in the capability, valid only while nothing else has published. The plan row owns drafting that choice; the answer lands here.
 <!-- SECTION:NOTES:END -->
