@@ -1,11 +1,11 @@
 ---
 id: TASK-62
 title: Refuse a switch proof that never named the requested model
-status: To Do
+status: In Progress
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T23:07:00Z'
-updated_date: '2026-11-18T02:48:00Z'
+updated_date: '2026-11-18T03:46:00Z'
 labels:
   - concurrency
   - wire

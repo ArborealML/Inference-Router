@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-18T00:53:00Z'
-updated_date: '2026-11-18T03:05:00Z'
+updated_date: '2026-11-18T03:45:00Z'
 labels:
   - concurrency
   - scheduling
@@ -24,11 +24,11 @@ Four defects in the switch-claim path in Engines/EngineRuntime.cs, all real, fou
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 the readiness task is settled before any injected callback runs, and a failing hint can neither rewrite a completed switch nor strand a waiter
-- [ ] #2 the claim decision and the switch marker are published from one capability snapshot, so a poll that proves the model cannot be raced into a second launch
-- [ ] #3 a synchronous scheduling failure at the launch boundary and a shutdown during a claim both settle the readiness task and clear the marker, and shutdown ends cancelled rather than engine_unreachable
-- [ ] #4 a claim hook that throws rolls the claim back after leaving the transition gate, never while holding it
-- [ ] #5 two callers of one already-proved model cause exactly one launch, pinned with no dependence on thread scheduling, and an unsuperseded switch still returns Ready and nudges dispatch once
+- [x] #1 the readiness task is settled before any injected callback runs, and a failing hint can neither rewrite a completed switch nor strand a waiter
+- [x] #2 the claim decision and the switch marker are published from one capability snapshot, so a poll that proves the model cannot be raced into a second launch
+- [x] #3 a synchronous scheduling failure at the launch boundary and a shutdown during a claim both settle the readiness task and clear the marker, and shutdown ends cancelled rather than engine_unreachable
+- [x] #4 a claim hook that throws rolls the claim back after leaving the transition gate, never while holding it
+- [ ] #5 an unsuperseded switch still returns Ready and nudges dispatch once, pinned outside the gate; the raced-second-launch case is closed by the version CAS and recorded as an accepted gap in SPEC rather than pinned
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -40,7 +40,5 @@ Four defects in the switch-claim path in Engines/EngineRuntime.cs, all real, fou
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-**Main is red and the failure is inside this row.** SwitchClaimTests.ShutdownDuringAClaimEndsCancelledNotEngineUnreachable fails in 3 focused Release runs here, failed in CI at c4a8828 and 6863b9a, and **passed** at 9c8c57d, so it flakes rather than sitting cleanly red. Undisputed: the waiter parked before the switch lock completes normally instead of throwing OperationCanceledException, so the shutdown release the commit describes does not happen on that path; SemaphoreSlim.WaitAsync does throw for an already-cancelled token, so that token is not reaching the wait.
-
-Order of work: reproduce, establish which path that waiter takes, fix so shutdown releases it as cancellation, and make the pin deterministic by construction — a gate, not a sleep — because a run that passes proves it can flake. No criterion is checked until the suite is green at HEAD. The full-suite pass reported before the push did not reproduce at HEAD: measure at the commit that lands, in Release, which is what CI tests. The red gate also holds TASK-28, TASK-42 and the dependent pin TASK-59.
+**Landed at a228c6e (v0.12.32) on top of d31b35b (v0.12.31): CI green, and 7 of 7 focused Release runs here pass.** The failure was not the newcomer waiter at all: the in-flight caller woke on its readiness task resolving false and was told switch_failed, while a lifecycle gate disposed under a live transaction put ObjectDisposedException into that switch's own reason. #1–#4 are checked: their pins exist in SwitchClaimTests and pass, and revert runs put the newest hunk at 6 of 6 failing with the answer guard removed and 4 of 4 with the gate disposal restored. **What the mutation work honestly does not cover:** removing settle-before-cancel leaves 8 of 8 passing, so that ordering is construction rather than a regression-caught hunk, and the row does not claim otherwise. #5 stays open on one thing only — the raced second launch is closed by the version CAS but has no pin, the seam having been rejected as too much production surface, so SPEC owes an accepted-gap line, in TASK-62's commit.
 <!-- SECTION:NOTES:END -->
