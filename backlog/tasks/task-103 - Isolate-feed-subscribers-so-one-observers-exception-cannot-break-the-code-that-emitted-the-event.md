@@ -24,6 +24,7 @@ ordinal: 102000
 - [ ] #1 A subscriber that throws cannot break the code that emitted the event, and the failure is visible somewhere an operator can see it
 - [ ] #2 A pin emits to a subscriber that throws and asserts the producer's state completes and the other subscribers still receive the event
 - [ ] #3 SPEC §6.1 says what a slow or faulting subscriber costs the feed — dropped, isolated, or unsubscribed — in one sentence
+- [ ] #4 The emit runs outside the switch lock, and a subscriber that throws leaves the caller's answer exactly as it was
 <!-- AC:END -->
 
 ## Implementation Notes
