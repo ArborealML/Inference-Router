@@ -1,0 +1,43 @@
+# Illustrative native lifecycle configuration. Replace the image and every pin
+# with values from the intended image on the configured Docker daemon.
+# A switch can stop and replace containers. Use router.safe-smoke.toml for smoke tests.
+# Inspect the configuration offline with: air config --config samples/router.native-docker.toml
+
+listen = "http://127.0.0.1:8321"
+default_model = "example.chat-v1"
+auto_switch = true
+
+[scheduler]
+max_inflight_per_engine = 4
+
+[engine.native]
+kind = "openai-compatible"
+endpoint = "http://127.0.0.1:18021/v1"
+lifecycle_owner = "router"
+models_endpoint = "/v1/models"
+health_probe = { path = "/props", expect = "total_slots>0", context_path = "n_ctx", slots_path = "total_slots" }
+
+[engine.native.docker]
+image = "example/inference-backend:1"
+image_id = "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+image_repo_digest = "example/inference-backend@sha256:2222222222222222222222222222222222222222222222222222222222222222"
+image_platform = "linux/amd64"
+router_id = "example-router"
+socket = "unix:///var/run/docker.sock"
+api_version = "v1.44"
+command = ["--model", "{{model}}", "--profile", "{{profile}}"]
+host_ip = "127.0.0.1"
+host_port = 18021
+container_port = 8080
+wait_health = true
+wait_timeout_ms = 600000
+
+[engine.native.catalog."example.chat-v1"]
+aliases = ["chat"]
+default_profile = "32k-4"
+serving = [{ name = "32k-4", max_context = 32768, max_slots = 4 }]
+
+[engine.native.catalog."example.code-v1"]
+aliases = ["code"]
+default_profile = "32k-4"
+serving = [{ name = "32k-4", max_context = 32768, max_slots = 4 }]

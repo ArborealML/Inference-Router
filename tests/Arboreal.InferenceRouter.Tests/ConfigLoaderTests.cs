@@ -332,6 +332,92 @@ public class ConfigLoaderTests
             RouterConfigLoader.Load(Base + "\n[engine.native.catalog.\"m1\"]\n", "test.toml").Engines["native"].Lifecycle);
     }
 
+    private static readonly string[] DockerIdentityFields = ["image_id", "image_repo_digest", "image_platform"];
+    private static readonly string?[] DockerIdentityValues =
+    [
+        "sha256:" + new string('1', 64),
+        "example/inference-backend@sha256:" + new string('2', 64),
+        "linux/arm64/v8",
+    ];
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Native_Docker_Image_Identity_RoundTrips_And_Rejects_Partial_Pins(bool json)
+    {
+        var value = Assert.IsType<DockerImageIdentity>(LoadDockerPins(json, DockerIdentityFields.Zip(DockerIdentityValues)).ImageIdentity);
+        Assert.Equal(DockerIdentityValues[0], value.Id);
+        Assert.Equal(DockerIdentityValues[1], value.RepoDigest);
+        Assert.Equal(DockerIdentityValues[2], value.Platform);
+        Assert.Null(LoadDockerPins(json, []).ImageIdentity);
+
+        // Every strict nonempty subset must fail rather than silently loading as a legacy config.
+        for (var mask = 1; mask < 7; mask++)
+        {
+            var partial = DockerIdentityFields.Zip(DockerIdentityValues).Where((_, index) => (mask & (1 << index)) != 0);
+            var ex = Assert.Throws<RouterConfigException>(() => LoadDockerPins(json, partial));
+            Assert.Contains("engine.native.docker.image_", ex.Message);
+        }
+    }
+
+    [Theory]
+    [InlineData(false, 0, "")]
+    [InlineData(true, 0, "")]
+    [InlineData(false, 0, "sha256:1111")]
+    [InlineData(true, 0, "sha256:1111")]
+    [InlineData(false, 0, "sha256:111111111111111111111111111111111111111111111111111111111111111g")]
+    [InlineData(true, 0, "sha256:111111111111111111111111111111111111111111111111111111111111111g")]
+    [InlineData(false, 1, "")]
+    [InlineData(true, 1, "")]
+    [InlineData(false, 1, "sha256:2222222222222222222222222222222222222222222222222222222222222222")]
+    [InlineData(true, 1, "sha256:2222222222222222222222222222222222222222222222222222222222222222")]
+    [InlineData(false, 1, "image@sha256:2222")]
+    [InlineData(true, 1, "image@sha256:2222")]
+    [InlineData(false, 2, "")]
+    [InlineData(true, 2, "")]
+    [InlineData(false, 2, "linux/arm64/")]
+    [InlineData(true, 2, "linux/arm64/")]
+    [InlineData(false, 2, "Linux/arm64")]
+    [InlineData(true, 2, "Linux/arm64")]
+    [InlineData(true, 0, null)]
+    [InlineData(true, 1, null)]
+    [InlineData(true, 2, null)]
+    public void Native_Docker_Image_Identity_Rejects_Malformed_Fields(bool json, int fieldIndex, string? badValue)
+    {
+        var values = DockerIdentityValues.Select((value, index) => index == fieldIndex ? badValue : value);
+        var ex = Assert.Throws<RouterConfigException>(() => LoadDockerPins(json, DockerIdentityFields.Zip(values)));
+        Assert.Contains($"engine.native.docker.{DockerIdentityFields[fieldIndex]} is missing or malformed", ex.Message);
+    }
+
+    [Theory]
+    [InlineData("image_id")]
+    [InlineData("image_repo_digest")]
+    [InlineData("image_platform")]
+    public void Native_Docker_Image_Identity_Rejects_A_Lone_Explicit_Json_Null(string field) =>
+        Assert.Throws<RouterConfigException>(() => LoadDockerPins(json: true, [(field, null)]));
+
+    private static DockerLifecycleConfig LoadDockerPins(bool json, IEnumerable<(string Field, string? Value)> pins)
+    {
+        const string Toml = """
+            default_model = "m1"
+            [engine.native]
+            kind = "openai-compatible"
+            endpoint = "http://127.0.0.1:9/v1"
+            [engine.native.catalog."m1"]
+            [engine.native.docker]
+            image = "example/inference-backend:1"
+            router_id = "r1"
+            """;
+        const string JsonStart = """
+            {"default_model":"m1","engine":{"native":{"kind":"openai-compatible","endpoint":"http://127.0.0.1:9/v1",
+            "catalog":{"m1":{}},"docker":{"image":"example/inference-backend:1","router_id":"r1"
+            """;
+        var text = json
+            ? JsonStart + string.Concat(pins.Select(pin => $",\"{pin.Field}\":{(pin.Value is null ? "null" : $"\"{pin.Value}\"")}")) + "}}}}"
+            : Toml + string.Concat(pins.Select(pin => $"\n{pin.Field} = \"{pin.Value}\""));
+        return RouterConfigLoader.Load(text, isJson: json).Engines["native"].Docker!;
+    }
+
     /// <summary>The shipped samples must load as written: dotted model ids quoted (TOML table
     /// separators otherwise silently create bogus catalog entries) and the smoke config inert.</summary>
     [Fact]
@@ -359,6 +445,15 @@ public class ConfigLoaderTests
         Assert.Equal("128k-2", model.Profile);
         Assert.NotNull(model.Select);
         Assert.Equal("n_ctx", strata.Health!.ContextPath);
+
+        var nativePath = RepoFile("samples/router.native-docker.toml");
+        Assert.NotNull(nativePath);
+        var native = Assert.Single(RouterConfigLoader.LoadFile(nativePath!).Engines).Value;
+        Assert.Equal(EngineLifecycleKind.Docker, native.Lifecycle);
+        Assert.Equal<EngineLifecycleOwner?>(EngineLifecycleOwner.Router, native.LifecycleOwner);
+        Assert.NotNull(native.Docker?.ImageIdentity);
+        Assert.NotEmpty(native.Catalog);
+        Assert.All(native.Catalog.Values, entry => Assert.Null(entry.Select));
 
         var smokeCfg = RouterConfigLoader.LoadFile(smoke!);
         Assert.Contains("qwen-3.8-flash-next", smokeCfg.Engines["strata"].Catalog.Keys);

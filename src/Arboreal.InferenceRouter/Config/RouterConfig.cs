@@ -28,7 +28,9 @@ public enum EngineLifecycleOwner : byte { External, Router, Delegated }
 /// router can only verify what it can name.</summary>
 public sealed class DockerLifecycleConfig
 {
+    /// <summary>Local image lookup reference used for preflight. Launch uses the pinned image ID.</summary>
     public required string Image { get; init; }
+    public DockerImageIdentity? ImageIdentity { get; init; }
     /// <summary><c>unix:///path/to/sock</c> or <c>http(s)://host:port</c>.</summary>
     public string Socket { get; init; } = "unix:///var/run/docker.sock";
     /// <summary>Pinned so a daemon update cannot change the API under a running router.</summary>
@@ -55,6 +57,63 @@ public sealed class DockerLifecycleConfig
     /// open forever: the wait above is how long a model may take to load, not how long one HTTP call
     /// may take.</summary>
     public int CallTimeoutMs { get; init; } = 15_000;
+}
+
+/// <summary>The local image ID, named manifest digest and platform a native switch must verify.</summary>
+public sealed record DockerImageIdentity
+{
+    public DockerImageIdentity(string id, string repoDigest, string platform)
+    {
+        if (!IsFullSha256(id.AsSpan()))
+            throw new ArgumentException("must be sha256: followed by 64 hex digits", nameof(id));
+        if (!IsNamedDigest(repoDigest))
+            throw new ArgumentException("must be a repository name followed by @sha256: and 64 hex digits", nameof(repoDigest));
+        if (!IsCanonicalPlatform(platform))
+            throw new ArgumentException("must be a lowercase os/architecture[/variant]", nameof(platform));
+        Id = id;
+        RepoDigest = repoDigest;
+        Platform = platform;
+    }
+
+    public string Id { get; }
+    public string RepoDigest { get; }
+    public string Platform { get; }
+
+    internal static bool IsFullSha256(ReadOnlySpan<char> value)
+    {
+        const string prefix = "sha256:";
+        if (value.Length != prefix.Length + 64 || !value.StartsWith(prefix, StringComparison.Ordinal))
+            return false;
+        foreach (var digit in value[prefix.Length..])
+            if (!char.IsAsciiHexDigit(digit)) return false;
+        return true;
+    }
+
+    internal static bool IsNamedDigest(string? value)
+    {
+        var separator = value?.IndexOf('@') ?? -1;
+        if (value is null || separator < 1 || !IsFullSha256(value.AsSpan(separator + 1))) return false;
+        var repository = value.AsSpan(0, separator);
+        if (repository[0] == '/' || repository[^1] == '/' || repository.Contains("//", StringComparison.Ordinal))
+            return false;
+        foreach (var character in repository)
+            if (!char.IsAsciiLetterLower(character) && !char.IsAsciiDigit(character) &&
+                character is not ('.' or '_' or '-' or '/' or ':' or '[' or ']')) return false;
+        // Colons before the final slash can be registry ports. A tag belongs in the locator.
+        return !repository[(repository.LastIndexOf('/') + 1)..].Contains(':');
+    }
+
+    internal static bool IsCanonicalPlatform(string? value)
+    {
+        if (value is null) return false;
+        var segments = value.Split('/');
+        return segments.Length is 2 or 3 && segments.All(IsPlatformSegment);
+    }
+
+    internal static bool IsPlatformSegment(string? segment) =>
+        segment is { Length: > 0 } &&
+        (char.IsAsciiLetterLower(segment[0]) || char.IsAsciiDigit(segment[0])) &&
+        segment.All(c => char.IsAsciiLetterLower(c) || char.IsAsciiDigit(c) || c is '.' or '_' or '-');
 }
 
 /// <summary>Health probe definition. Expect is a tiny comparison DSL: "path OP value" with

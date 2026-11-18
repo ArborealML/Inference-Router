@@ -13,6 +13,15 @@ public sealed class DockerVersionResponse
     [JsonPropertyName("Os")] public string? Os { get; set; }
 }
 
+public sealed class DockerImageInspectResponse
+{
+    [JsonPropertyName("Id")] public string? Id { get; set; }
+    [JsonPropertyName("RepoDigests")] public string[]? RepoDigests { get; set; }
+    [JsonPropertyName("Os")] public string? Os { get; set; }
+    [JsonPropertyName("Architecture")] public string? Architecture { get; set; }
+    [JsonPropertyName("Variant")] public string? Variant { get; set; }
+}
+
 public sealed class DockerContainerSummary
 {
     [JsonPropertyName("Id")] public string? Id { get; set; }
@@ -61,6 +70,7 @@ public sealed class DockerCreateResponse
 
 [JsonSourceGenerationOptions(DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
 [JsonSerializable(typeof(DockerVersionResponse))]
+[JsonSerializable(typeof(DockerImageInspectResponse))]
 [JsonSerializable(typeof(List<DockerContainerSummary>))]
 [JsonSerializable(typeof(DockerCreateRequest))]
 [JsonSerializable(typeof(DockerCreateResponse))]
