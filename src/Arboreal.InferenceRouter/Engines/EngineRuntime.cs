@@ -691,14 +691,25 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
         // that never began. Answered here — before any switch marker goes up — with the same name the catalog miss
         // uses, off the provider's own predicate so the two answers cannot drift. Nothing is mutated, so there is
         // no switch to end (§5.5, AC #2).
-        if (_lifecycle.Kind == DelegatedExecProvider.ProviderKind &&
-            def.Catalog.TryGetValue(canonical, out var entry) &&
-            !DelegatedExecProvider.HasUsableSelector(entry))
+        // One entry, resolved here and carried into the transaction: the switch task no longer looks the model up
+        // again, so the answer given in front of the claim *is* the answer the claim acts on, and "one predicate,
+        // asked once in front of the transaction" is literally true rather than true of the definition only. This
+        // read is also the mutation policy: a configuration edit landing after it changes no switch already claimed
+        // from it — that transaction runs on the entry it was authorised on, and the edit takes effect on the next
+        // claim (§5.5, decision-49).
+        def.Catalog.TryGetValue(canonical, out var modelDef);
+        if (modelDef is null ||
+            (_lifecycle.Kind == DelegatedExecProvider.ProviderKind &&
+             !DelegatedExecProvider.HasUsableSelector(modelDef)))
         {
             Emit("engine.switch_failed", model: canonical,
-                reason: "no_select_command: the catalog entry has no usable select exec — name one with " +
-                    "select = { exec = … }, move the model to an engine whose lifecycle the router owns, or " +
-                    "mark this engine remote");
+                reason: modelDef is null
+                    ? "no_select_command: no catalog entry names this model on this engine — add it under " +
+                      "[engine.strata.catalog], move the request to an engine that declares it, or mark this " +
+                      "engine remote"
+                    : "no_select_command: the catalog entry has no usable select exec — name one with " +
+                      "select = { exec = … }, move the model to an engine whose lifecycle the router owns, or " +
+                      "mark this engine remote");
             return SwitchResult.Failed(SwitchReason.NoSelectCommand);
         }
 
@@ -789,7 +800,7 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
                         // dispose anything this task is still using.
 #pragma warning disable IDISP013 // await-in-using not applicable: intentionally detached Task, no shared source
                         _ = Task.Run(
-                            () => RunSwitchAsync(claim, canonical, profileOverride, def, switchToken),
+                            () => RunSwitchAsync(claim, canonical, profileOverride, modelDef, switchToken),
                             // Deliberately not the caller's token: the switch's own token above decides whether the
                             // transaction runs, and a request that hangs up must not be able to abort it halfway
                             // through a model load.
@@ -1012,24 +1023,15 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
     private enum ReadinessMiss { NeverHealthy, ModelNotReported, WindowTooSmall }
 
     private async Task RunSwitchAsync(
-        SwitchState state, string model, ServingProfile? profileOverride, EngineDefinition def, CancellationToken ct)
+        SwitchState state, string model, ServingProfile? profileOverride,
+        EngineModelDefinition md, CancellationToken ct)
     {
-        // `def` is the claim site's resolved snapshot, not a re-read: the check in front of the claim and the
-        // catalog consulted here are the same object, which is what makes one ask sufficient (§5.5).
+        // `md` is the entry the claim was authorised on — resolved once, in front of the claim — not a re-read.
+        // There is no missing-entry branch left to guard against: the claim could not have been made without one,
+        // and a second ask of the catalog would be a second snapshot of a mutable dictionary, which is the mistake
+        // v0.12.44 removed the definition re-read for (§5.5).
         try
         {
-            if (!def.Catalog.TryGetValue(model, out var md))
-            {
-                state.FailureReason = SwitchReason.NoSelectCommand;
-                Emit("engine.switch_failed", model: model, reason: SwitchReason.NoSelectCommand);
-                // Nothing was mutated on this path — the catalog was consulted and the switch refused — so
-                // the last probe is still a true account of the engine and health is left alone (§5.5).
-                EndSwitch(state, false);
-                // Reset, like every other exit: a request for a model this engine cannot select must not
-                // leave the engine permanently "switching", because every later waiter would join a
-                // readiness task that is already resolved false and never start a switch of its own.
-                return;
-            }
             // The entry exists but names no usable selector: that is refused **before** the claim, off this same
             // predicate, so the caller is told `no_select_command` and the engine keeps its last proof. There is
             // deliberately no second ask here. With the refusal in front of the transaction and one predicate on

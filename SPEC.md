@@ -1,6 +1,6 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.44)
+Status: draft, continuously revised (v0.12.45)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
@@ -352,6 +352,20 @@ daemon transaction per engine. 137 tests green.
   that answers no `upload_url`, an upload that dies or answers no asset id, an asset name listed twice on
   the release, and a tag that moves after the first resolve. No tag has run the gate: still configured,
   not proven.
+- v0.12.45 — the claim's catalog entry is part of the snapshot, and the mutation policy is stated where it can be read (§5.5, TASK-94 #9–#13).
+  v0.12.44 unified the definition object but left each side doing its own `Catalog.TryGetValue` at a different moment —
+  two asks of a mutable dictionary, the same mistake one level down, and it made §5.5's "one predicate, asked once" true
+  of the definition only. The target's `EngineModelDefinition` is now resolved before the claim marker goes up and
+  carried into the switch; the post-claim missing-entry branch is deleted rather than re-guarded, so an absent entry is
+  refused in front of the transaction like a blank selector is — no marker, no publication, last proof intact. The read
+  fixes the policy too: a configuration edit landing after it changes no already-claimed switch. Three pins:
+  `ADefinitionSwappedAfterTheClaimStillRunsOnItsSnapshot` (the config entry replaced from `AfterClaimForTests`
+  mid-switch — the transaction still launches and is not re-decided), `AUsableConfigDefinitionIsNotRefusedByABlankConstructedOne`
+  (the other divergence direction: a runnable config entry is not refused on a stale constructed blank one), and the
+  divergent-definition pin extended to require the last proof standing afterwards. The v0.12.44 row's sentence "the check
+  and the transaction cannot disagree" was true of the definition and not of the entry, and is corrected in place here.
+  Measured in this checkout: build 0 warnings; RefusalCategory 12/12; the switch/refusal/contract/end-to-end filter 69/69;
+  whole suite 227/227 in Debug; AOT publish trim-silent.
 - v0.12.44 — one definition decides a switch, from the refusal to the transaction (§5.5). The commit review of v0.12.42
   had removed the selector ask inside `RunSwitchAsync` as unreachable; it was reachable, because the check in front of
   the claim read the definition the runtime was constructed with and the switch re-read the config collection by name.
@@ -359,8 +373,8 @@ daemon transaction per engine. 137 tests green.
   runnable selector in front of the claim and a blank one inside the transaction, and answered `launch_failed` after
   throwing away the engine's last proof — the exact cost the refusal exists to avoid. The claim site now resolves one
   snapshot (`_config.Engines[name]`, falling back to the constructed definition) and passes it to the switch, so the
-  check and the transaction cannot disagree; a second ask would not have fixed it, since it would still read a second
-  source. `ADivergentDefinitionIsRefusedFromTheSnapshotTheSwitchWouldUse` pins both provider shapes; measured red 2/2 on
+  check and the transaction read one definition object — **though each still looked the model up in it separately,
+  which v0.12.45 closes**; a second ask would not have fixed it, since it would still read a second source. `ADivergentDefinitionIsRefusedFromTheSnapshotTheSwitchWouldUse` pins both provider shapes; measured red 2/2 on
   `main` at `2f7e3e6` and green 2/2 here, with the whole suite 225/225 in Debug and the build at 0 warnings. §5.5 and the
   v0.12.43 row are corrected where they asserted the deleted branch was unreachable, and the set claim is narrowed to
   what the type actually guarantees: no caller-facing route to editing it, not a set that nothing in the assembly can write.
@@ -1623,7 +1637,14 @@ engine forks land; the scheduler interface will not change shape.
   definition handed to the public constructor, or an entry swapped between the check and the switch, put a usable
   selector in front of the claim and a blank one inside the transaction — `launch_failed`, proof discarded, exactly
   the answer the refusal exists to prevent. The fix is **one definition snapshot, resolved before the claim and passed
-  into the switch**, not a second ask: a later ask would still be reading a second source. Both shapes are pinned, under
+  into the switch**, not a second ask: a later ask would still be reading a second source. **The model's catalog entry
+  is resolved the same way** (decision-49): the claim reads it once, in front of the marker, and the transaction runs on
+  that object — so an absent entry is refused where a blank selector is refused, before anything is claimed, and the
+  post-claim missing-entry branch is gone rather than answered by a fresh lookup. That read is also the **mutation
+  policy**: a configuration edit landing after it changes no switch already claimed from it — the transaction runs on
+  the entry it was authorised on, and the edit is seen by the next claim. A swapped definition is pinned in both
+  directions: a config entry the switch can run is not refused because a stale constructed definition was blank, and a
+  definition replaced mid-transaction does not re-decide a claim already made. Both shapes are pinned, under
   the config-picked provider and a supplied exec provider, and both were red before the fix. **What the set names is what a completed attempt observed**, not a diagnosis of
   the engine: a last poll that saw a healthy engine omit the target may precede a model still loading, a window gauge
   can be old, and a refresh that cannot be read at all during a `wait_health = true` wait ends `switch_error` rather

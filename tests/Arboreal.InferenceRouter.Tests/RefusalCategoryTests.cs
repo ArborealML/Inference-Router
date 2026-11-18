@@ -513,11 +513,70 @@ public class RefusalCategoryTests
         var claimed = false;
         engine.AfterClaimForTests = () => claimed = true;
 
+        // A proof to keep: the refusal's promise is that the engine loses nothing it had, so the pin starts the
+        // health loop and requires the last proof to still be standing afterwards.
+        using var loopCts = new CancellationTokenSource();
+        engine.StartHealthLoop(loopCts.Token);
+        await WaitUntil(() => engine.Capability.Healthy);
+
         var failed = await engine.WaitForModelAsync("extra", TimeSpan.FromSeconds(10), CancellationToken.None);
         Assert.Equal("no_select_command", Expect("no_select_command", failed));
         Assert.False(claimed);                                     // decided before the claim, not after it
         Assert.Null(engine.SwitchingToward);
         Assert.DoesNotContain("engine.switch_started", feed.Replay(0).Select(e => e.Kind));
+        Assert.True(engine.Capability.Healthy);                     // and the last proof is intact
+    }
+
+    /// <summary>The entry the transaction runs on is the one the claim was authorised on. A configuration edit
+    /// landing after that read — here, the whole definition swapped out from under a running switch — changes no
+    /// already-claimed transaction: the switch proceeds on its snapshot, and the edit is seen by the next claim.
+    /// The reverse of the v0.12.44 bug, and the half that makes "asked once" a policy rather than an ordering
+    /// accident (§5.5, decision-49).</summary>
+    [Fact(Timeout = 120_000)]
+    public async Task ADefinitionSwappedAfterTheClaimStillRunsOnItsSnapshot()
+    {
+        using var handler = new EngineAnswers("m");           // answers, and never names "extra"
+        var feed = new EventRing();
+        var probe = new HealthProbeDefinition { Path = "/props", IntervalMs = 50, TimeoutMs = 5_000 };
+        var usable = Def(probe, extraSelect: new LifecycleCommand { Exec = "/bin/true" });
+        // The config view is read-only, so the test mutates the collection the engine reads through.
+        var engines = new Dictionary<string, EngineDefinition> { ["fake"] = usable };
+        var config = new RouterConfig { Engines = engines };
+        var provider = new Scripted { Kind = "exec", ProveHealth = false, LaunchOutcome = LifecycleResult.Ok() };
+        await using var engine = new EngineRuntime(usable, config, feed, handler, lifecycle: provider);
+        Assert.Equal("exec", engine.LifecycleProvider);
+
+        // Mid-transaction, the config is replaced with a definition that can no longer select the target at all.
+        engine.AfterClaimForTests = () =>
+            engines["fake"] = Def(probe, extraSelect: new LifecycleCommand { Exec = "" });
+
+        var result = await engine.WaitForModelAsync("extra", TimeSpan.FromSeconds(10), CancellationToken.None);
+        Assert.False(result.IsReady);
+        Assert.NotEqual("no_select_command", result.Detail);   // the claim is not re-decided mid-flight
+        Assert.Equal(1, provider.LaunchCalls);                 // and the transaction ran on its own snapshot
+        Assert.Contains("engine.switch_started", feed.Replay(0).Select(e => e.Kind));
+    }
+
+    /// <summary>The other direction of a same-name divergence: the definition the config holds is runnable, the one
+    /// handed to the constructor is blank. A refusal here would be a refusal decided from a source the switch never
+    /// acts on, and it would cost a working engine a load it can perform (§5.5).</summary>
+    [Fact(Timeout = 120_000)]
+    public async Task AUsableConfigDefinitionIsNotRefusedByABlankConstructedOne()
+    {
+        using var handler = new EngineAnswers("m");
+        var feed = new EventRing();
+        var probe = new HealthProbeDefinition { Path = "/props", IntervalMs = 50, TimeoutMs = 5_000 };
+        var blank = Def(probe, extraSelect: new LifecycleCommand { Exec = "  " });
+        var runnable = Def(probe, extraSelect: new LifecycleCommand { Exec = "/bin/true" });
+        var provider = new Scripted { Kind = "exec", ProveHealth = false, LaunchOutcome = LifecycleResult.Ok() };
+        await using var engine = new EngineRuntime(
+            blank, new RouterConfig { Engines = new Dictionary<string, EngineDefinition> { ["fake"] = runnable } },
+            feed, handler, lifecycle: provider);
+
+        var result = await engine.WaitForModelAsync("extra", TimeSpan.FromSeconds(10), CancellationToken.None);
+        Assert.Equal(1, provider.LaunchCalls);                 // asked to load it, not refused on a stale source
+        Assert.DoesNotContain("no_select_command", result.Detail ?? "");
+        Assert.Contains("engine.switch_started", feed.Replay(0).Select(e => e.Kind));
     }
 
     // ── harness ───────────────────────────────────────────────────────────────
