@@ -7,7 +7,7 @@ status: Preparing
 assignee:
   - '@gpt-6.2-sol-release'
 created_date: '2026-11-17T23:07:00Z'
-updated_date: '2026-11-18T23:08:00Z'
+updated_date: '2026-11-18T23:10:00Z'
 labels:
   - scheduling
   - architecture
@@ -29,22 +29,18 @@ Recorded as an accepted gap in SPEC 15 by the fix set for fd5e0cd; this row is t
 - [x] #2 the admission/drain shape is written as a decision with the in-flight-pass rule stated
 - [ ] #3 a test shows a ticket approved by an earlier pass is not dispatched to an engine claimed after that pass
 - [ ] #4 Consume completion and profile wakes while the route is closed. The same ticket stays queued with zero grants or bytes. Opening the matching generation wakes dispatch outside locks and sends that ticket once without another external event.
+- [ ] #5 Hold the queue expiry callback behind the router lock past the original monotonic deadline. The final admission check refuses the expired ticket with zero upstream writes.
+- [ ] #6 Close the ranked winner after scanning the first eligible ticket beyond its group. That ticket dispatches exactly once in baseline order; repeated wakes neither spin nor restart the closed preparation.
 <!-- AC:END -->
 
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Capture one engine admission generation at scheduling. Before dispatch, acquire the engine admission guard and revalidate the generation and serving target. If the host starts draining first, leave the ticket queued without an upstream write. If admission wins, hold a counted permit until completion or cancellation. Share the guard with TASK-25 and host lifecycle. Pin both interleavings with barriers and verify queue counters, terminal events and no partial delivery.
+Carry the final ranked ticket and its route generation through preparation. Release the router lock after selection. At first-write authorization take host admission, router and queue locks in that order. Recheck the exact ticket, model-bound capacity, free permits, thread room and original deadline. An explicit minimum context survives independently of tier inference. Count the physical use before releasing the guard and retain it through cleanup. Closed generations advance or park. Preserve the first candidate beyond the ranked group and publish reopen or capacity changes before waking dispatch outside locks.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-A top-tier plan review of the resume-authorisation row found the same shape from the other side: a capability snapshot re-read when a waiter resumes can already be stale before the engine receives the request, because RouterCore enqueues on the strength of that answer with no revalidation. The entitlement therefore has to be revalidated and held across admission, which is this row's handoff and not the waiter's. TASK-25 carries the criterion; this row decides what an in-flight pass is told when an engine is claimed under it.
-
-Pre-code review dispatched with both scheduling and HTTP invocation paths, including how the held permit releases on cancellation or stream termination.
-
-Decision-67 sets the ordering. Commit the exact eligible ticket evaluated by the scheduler. If its deadline, thread capacity or host generation changes before queue removal, release the provisional admission and re-evaluate.
-
-Exact-ticket admission plan under review. Separate selection from commitment and take host admission, router and queue locks in that order. Pin close-first, authorization before first byte, and waking a switch owner after admission opens.
+Scheduling and lifecycle dispositions agree on host-first commitment. Independent plan review is pending. Use an injected sink to count bytes and physical permits. Check both close-first and authorization-first interleavings, cancellation before submission, and progress on an independent ticket during stalled preparation. TASK-25 owns the uncounted switch owner and physical late cleanup under decision-67. TASK-130 owns verified-instance transport.
 <!-- SECTION:NOTES:END -->
