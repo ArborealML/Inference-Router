@@ -1,3 +1,5 @@
+using Arboreal.InferenceRouter.Lifecycle;
+
 namespace Arboreal.InferenceRouter;
 
 /// <summary>Engine kinds the library ships adapters for. New kinds = new adapter class,
@@ -17,6 +19,9 @@ public sealed class LifecycleCommand
 /// historical <c>select = { exec = … }</c>); Docker means the router drives the Engine API itself and can
 /// therefore prove which containers it owns.</summary>
 public enum EngineLifecycleKind : byte { Delegated, Docker }
+
+/// <summary>Who may change the engine's model residency. Independent of the inference endpoint.</summary>
+public enum EngineLifecycleOwner : byte { External, Router, Delegated }
 
 /// <summary>Native Docker lifecycle for one engine: the image, how it is launched, and how long the
 /// router waits for it to prove it is serving. What readiness must prove stays in config, because the
@@ -122,9 +127,50 @@ public sealed class EngineDefinition
     /// engine has started answering, a long generation is never cut off — this bounds a wedged
     /// engine, not a slow completion. Over the limit the ticket fails `engine_timeout` (504).</summary>
     public int ResponseTimeoutMs { get; init; } = 600_000;
-    public bool Remote { get; init; }                 // remote peer: no lifecycle commands
+    /// <summary>Legacy forward-only flag. A false value does not grant lifecycle authority.</summary>
+    public bool Remote { get; init; }
+    /// <summary>Configured lifecycle owner. Null uses the legacy provider declarations.</summary>
+    public EngineLifecycleOwner? LifecycleOwner { get; init; }
     public EngineLifecycleKind Lifecycle { get; init; } = EngineLifecycleKind.Delegated;
     public DockerLifecycleConfig? Docker { get; init; }
+
+    // Loaded legacy configurations retain their existing Docker transport and delegated declaration.
+    internal bool LegacyLifecycleConfiguration { get; init; }
+    internal bool HasExplicitRouterLifecycle => LifecycleOwner == EngineLifecycleOwner.Router && !LegacyLifecycleConfiguration;
+
+    internal EngineLifecycleOwner ResolveLifecycleOwner()
+    {
+        var native = Lifecycle == EngineLifecycleKind.Docker && Docker is not null;
+        var owner = LifecycleOwner ?? (Remote ? EngineLifecycleOwner.External
+            : native ? EngineLifecycleOwner.Router
+            : Catalog.Values.Any(DelegatedExecProvider.HasUsableSelector) ? EngineLifecycleOwner.Delegated
+            : EngineLifecycleOwner.External);
+        if (Remote && LifecycleOwner.HasValue && !LegacyLifecycleConfiguration)
+            throw new RouterConfigException($"engine.{Name}: remove remote when setting lifecycle_owner");
+        if (LifecycleOwner is null || LegacyLifecycleConfiguration) return owner;
+        if (!Endpoint.IsAbsoluteUri || (Endpoint.Scheme != Uri.UriSchemeHttp && Endpoint.Scheme != Uri.UriSchemeHttps))
+            throw new RouterConfigException($"engine.{Name}.endpoint must be an absolute http(s) URI");
+
+        var hasSelector = Catalog.Values.Any(model => model.Select is not null);
+        return owner switch
+        {
+            EngineLifecycleOwner.External when Lifecycle != EngineLifecycleKind.Docker && Docker is null && !hasSelector => owner,
+            EngineLifecycleOwner.External => throw new RouterConfigException(
+                $"engine.{Name}.lifecycle_owner = external conflicts with a lifecycle controller"),
+            EngineLifecycleOwner.Router when !native || hasSelector || string.IsNullOrWhiteSpace(Docker!.Image) ||
+                string.IsNullOrWhiteSpace(Docker.RouterId) => throw new RouterConfigException(
+                $"engine.{Name}.lifecycle_owner = router requires native docker configuration and no delegated selectors"),
+            EngineLifecycleOwner.Router when !Endpoint.IsLoopback ||
+                !DockerLifecycleProvider.TryParseUnixSocket(Docker!.Socket, out var socketPath) || !Path.IsPathFullyQualified(socketPath) =>
+                throw new RouterConfigException($"engine.{Name}.lifecycle_owner = router requires a loopback inference endpoint and a local Docker socket until managed peer fencing is available"),
+            EngineLifecycleOwner.Router => owner,
+            EngineLifecycleOwner.Delegated when Lifecycle == EngineLifecycleKind.Delegated && Docker is null &&
+                Catalog.Values.Any(DelegatedExecProvider.HasUsableSelector) => owner,
+            EngineLifecycleOwner.Delegated => throw new RouterConfigException(
+                $"engine.{Name}.lifecycle_owner = delegated requires a usable selector and no native docker configuration"),
+            _ => throw new RouterConfigException($"engine.{Name}.lifecycle_owner is invalid"),
+        };
+    }
 }
 
 /// <summary>Thread pre-configuration from TOML.</summary>
@@ -178,6 +224,25 @@ public sealed class RouterConfig
     /// <summary>Optional per-engine HTTP handler factory (test harnesses, custom transports).
     /// Production config leaves it null; engines then use a default HttpClient.</summary>
     public Func<EngineDefinition, HttpMessageHandler>? HttpHandlerFactory { get; set; }
+
+    internal void ValidateLifecycleTopology(EngineDefinition? runtimeEngine = null)
+    {
+        if (runtimeEngine is not null)
+        {
+            if (runtimeEngine.HasExplicitRouterLifecycle &&
+                (Engines.Count > 1 || (Engines.Count == 1 &&
+                    !string.Equals(Engines.Values.Single().Name, runtimeEngine.Name, StringComparison.Ordinal))))
+                throw DedicatedEngineRequired(runtimeEngine.Name);
+            return;
+        }
+
+        if (Engines.Count <= 1) return;
+        foreach (var engine in Engines.Values)
+            if (engine.HasExplicitRouterLifecycle) throw DedicatedEngineRequired(engine.Name);
+    }
+
+    private static RouterConfigException DedicatedEngineRequired(string engine) => new(
+        $"engine.{engine}.lifecycle_owner = router requires a dedicated single-engine configuration until managed peer fencing is available");
 }
 
 public sealed class RouterConfigException(string message) : Exception(message);

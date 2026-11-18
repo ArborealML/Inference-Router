@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Arboreal.InferenceRouter.Lifecycle;
 using Tomlyn;
 using Tomlyn.Serialization;
 
@@ -119,6 +120,7 @@ public static class RouterConfigLoader
 
         if (cfg.Engines.Count == 0)
             throw new RouterConfigException($"{source}: at least one [engine.<name>] is required");
+        cfg.ValidateLifecycleTopology();
         return cfg;
     }
 
@@ -276,7 +278,26 @@ public static class RouterConfigLoader
             throw new RouterConfigException(
                 $"engine.{name}.models_context_window_path must contain nonempty dotted object field names");
 
-        return new EngineDefinition
+        if (e.Remote.HasValue && e.LifecycleOwner is not null)
+            throw new RouterConfigException($"engine.{name}: remove remote when setting lifecycle_owner");
+        var owner = e.LifecycleOwner switch
+        {
+            "external" when e.Lifecycle is not null => throw new RouterConfigException(
+                $"engine.{name}.lifecycle_owner = external conflicts with lifecycle"),
+            "external" => EngineLifecycleOwner.External,
+            "router" when e.Lifecycle is { Length: > 0 } mode && !mode.Trim().Equals("docker", StringComparison.OrdinalIgnoreCase) =>
+                throw new RouterConfigException($"engine.{name}.lifecycle_owner = router conflicts with delegated lifecycle"),
+            "router" => EngineLifecycleOwner.Router,
+            "delegated" => EngineLifecycleOwner.Delegated,
+            null when e.Remote == true => EngineLifecycleOwner.External,
+            null when docker is not null => EngineLifecycleOwner.Router,
+            null when e.Lifecycle is { } controller && !string.IsNullOrWhiteSpace(controller) ||
+                catalog.Values.Any(DelegatedExecProvider.HasUsableSelector) => EngineLifecycleOwner.Delegated,
+            null => EngineLifecycleOwner.External,
+            _ => throw new RouterConfigException($"engine.{name}.lifecycle_owner must be external, router, or delegated"),
+        };
+
+        var definition = new EngineDefinition
         {
             Name = name,
             Kind = kind,
@@ -290,10 +311,14 @@ public static class RouterConfigLoader
             Capabilities = capabilities,
             Catalog = catalog,
             Remote = e.Remote ?? false,
+            LifecycleOwner = owner,
+            LegacyLifecycleConfiguration = e.LifecycleOwner is null,
             ResponseTimeoutMs = responseTimeoutMs,
             Lifecycle = lifecycle,
             Docker = docker,
         };
+        _ = definition.ResolveLifecycleOwner();
+        return definition;
     }
 
     private static ThreadPriority ParsePriority(PriorityDto t, string path)

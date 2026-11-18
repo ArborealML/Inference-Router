@@ -335,7 +335,7 @@ public class ConfigLoaderTests
     /// <summary>The shipped samples must load as written: dotted model ids quoted (TOML table
     /// separators otherwise silently create bogus catalog entries) and the smoke config inert.</summary>
     [Fact]
-    public void Shipped_Sample_Configs_Load_As_Written()
+    public async Task Shipped_Sample_Configs_Load_As_Written()
     {
         var path = RepoFile("samples/router.toml");
         var smoke = RepoFile("samples/router.safe-smoke.toml");
@@ -344,6 +344,9 @@ public class ConfigLoaderTests
 
         var cfg = RouterConfigLoader.LoadFile(path!);
         var strata = cfg.Engines["strata"];
+        Assert.Equal(EngineLifecycleOwner.Delegated, strata.LifecycleOwner);
+        Assert.Equal(EngineLifecycleOwner.External, cfg.Engines["hyperqwen"].LifecycleOwner);
+        Assert.Equal(EngineLifecycleOwner.External, cfg.Engines["glm"].LifecycleOwner);
         Assert.Contains("qwen-3.8-flash-next", strata.Catalog.Keys);
         Assert.DoesNotContain("qwen-3", strata.Catalog.Keys);
         var model = strata.Catalog["qwen-3.8-flash-next"];
@@ -360,12 +363,21 @@ public class ConfigLoaderTests
         var smokeCfg = RouterConfigLoader.LoadFile(smoke!);
         Assert.Contains("qwen-3.8-flash-next", smokeCfg.Engines["strata"].Catalog.Keys);
         Assert.All(smokeCfg.Engines.Values, e => Assert.True(e.Remote));
+        Assert.All(smokeCfg.Engines.Values, e => Assert.Equal(EngineLifecycleOwner.External, e.LifecycleOwner));
         Assert.All(smokeCfg.Engines.Values, e => Assert.All(e.Catalog.Values, m => Assert.Null(m.Select)));
+        var safe = smokeCfg.Engines["strata"];
+        using var handler = new FakeEngineHandler();
+        var provider = new RecordingLifecycleProvider { Kind = "docker" };
+        await using var runtime = new EngineRuntime(safe, smokeCfg, new EventRing(), handler, lifecycle: provider);
+        var result = await runtime.WaitForModelAsync("qwen-3.8-flash-next", TimeSpan.FromSeconds(5), CancellationToken.None);
+        Assert.Equal("no_lifecycle_owner", result.Detail);
+        Assert.Empty(provider.Calls);
 
         // The CI smoke config pins where its catalogue probe looks, matching the fake engine.
         var ciSmoke = RepoFile("samples/router.ci-smoke.toml");
         Assert.NotNull(ciSmoke);
         var ciCfg = RouterConfigLoader.LoadFile(ciSmoke!);
+        Assert.Equal(EngineLifecycleOwner.External, ciCfg.Engines["fixture"].LifecycleOwner);
         Assert.Equal("/v1/models", ciCfg.Engines["fixture"].ModelsEndpoint);
         Assert.Equal("/models", strata.ModelsEndpoint);
         Assert.Equal("/v1/models", cfg.Engines["hyperqwen"].ModelsEndpoint);

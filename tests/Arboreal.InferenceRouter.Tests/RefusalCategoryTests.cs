@@ -425,7 +425,8 @@ public class RefusalCategoryTests
     {
         using var handler = new EngineAnswers("m");
         var feed = new EventRing();
-        var def = Def(new HealthProbeDefinition { Path = "/props", IntervalMs = 50, TimeoutMs = 5_000 });
+        var def = Def(new HealthProbeDefinition { Path = "/props", IntervalMs = 50, TimeoutMs = 5_000 },
+            omitExtraSelector: true);
         await using var engine = Engine(def, handler, lifecycle: null, feed: feed);   // the provider config picks
         Assert.Equal("exec", engine.LifecycleProvider);
 
@@ -509,25 +510,19 @@ public class RefusalCategoryTests
         Assert.Equal(string.Join('\u0000', before.LoadedModels), string.Join('\u0000', after.LoadedModels));
     }
 
-    /// <summary>The single check in front of the claim and the catalog the switch acts on have to be <b>one</b>
-    /// definition. The runtime used to hold its own definition object while the switch task re-read the config
-    /// collection by name, so a same-name definition handed to the constructor (or an entry swapped after the check)
-    /// made the two disagree: the refusal was decided on one catalog and the transaction ran against another. This
-    /// pins the fixed shape — the config's definition, which the switch would have used, is the one that decides —
-    /// under the config-picked provider and under a supplied exec provider (§5.5).</summary>
+    /// <summary>A same-name entry in the router config cannot grant the runtime authority over a
+    /// target for which its own definition has no usable selector.</summary>
     [Theory(Timeout = 120_000)]
     [InlineData(true)]
     [InlineData(false)]
-    public async Task ADivergentDefinitionIsRefusedFromTheSnapshotTheSwitchWouldUse(bool suppliedProvider)
+    public async Task ARunnableConfigEntryDoesNotAuthorizeABlankBoundTarget(bool suppliedProvider)
     {
         using var handler = new EngineAnswers("m");
         var feed = new EventRing();
         var probe = new HealthProbeDefinition { Path = "/props", IntervalMs = 50, TimeoutMs = 5_000 };
 
-        // What the constructor is handed: a selector that looks runnable. What the config holds, and what the
-        // switch task reads: the same entry with a blank exec.
-        var asConstructed = Def(probe, extraSelect: new LifecycleCommand { Exec = "/bin/true" });
-        var asConfigured = Def(probe, extraSelect: new LifecycleCommand { Exec = "" });
+        var asConstructed = Def(probe, extraSelect: new LifecycleCommand { Exec = "" });
+        var asConfigured = Def(probe, extraSelect: new LifecycleCommand { Exec = "/bin/true" });
 
         var provider = suppliedProvider
             ? new Scripted { Kind = "exec", LaunchOutcome = LifecycleResult.Ok("the fake launched it") }
@@ -558,9 +553,7 @@ public class RefusalCategoryTests
 
     /// <summary>The entry the transaction runs on is the one the claim was authorised on. A configuration edit
     /// landing after that read — here, the whole definition swapped out from under a running switch — changes no
-    /// already-claimed transaction: the switch proceeds on its snapshot, and the edit is seen by the next claim.
-    /// The reverse of the v0.12.44 bug, and the half that makes "asked once" a policy rather than an ordering
-    /// accident (§5.5, decision-49).</summary>
+    /// already-claimed transaction. The runtime retains its startup binding (§5.5).</summary>
     [Fact(Timeout = 120_000)]
     public async Task ADefinitionSwappedAfterTheClaimStillRunsOnItsSnapshot()
     {
@@ -568,7 +561,7 @@ public class RefusalCategoryTests
         var feed = new EventRing();
         var probe = new HealthProbeDefinition { Path = "/props", IntervalMs = 50, TimeoutMs = 5_000 };
         var usable = Def(probe, extraSelect: new LifecycleCommand { Exec = "/bin/true" });
-        // The config view is read-only, so the test mutates the collection the engine reads through.
+        // Replace the surrounding config entry to check that it cannot rebind the engine.
         var engines = new Dictionary<string, EngineDefinition> { ["fake"] = usable };
         var config = new RouterConfig { Engines = engines };
         var provider = new Scripted { Kind = "exec", ProveHealth = false, LaunchOutcome = LifecycleResult.Ok() };
@@ -590,25 +583,22 @@ public class RefusalCategoryTests
         Assert.Contains("engine.switch_started", feed.Replay(0).Select(e => e.Kind));
     }
 
-    /// <summary>The other direction of a same-name divergence: the definition the config holds is runnable, the one
-    /// handed to the constructor is blank. A refusal here would be a refusal decided from a source the switch never
-    /// acts on, and it would cost a working engine a load it can perform (§5.5).</summary>
     [Fact(Timeout = 120_000)]
-    public async Task AUsableConfigDefinitionIsNotRefusedByABlankConstructedOne()
+    public async Task AnUsableBoundTargetIsUnaffectedByABlankConfigEntry()
     {
         using var handler = new EngineAnswers("m");
         var feed = new EventRing();
-        var probe = new HealthProbeDefinition { Path = "/props", IntervalMs = 50, TimeoutMs = 5_000 };
-        var blank = Def(probe, extraSelect: new LifecycleCommand { Exec = "  " });
-        var runnable = Def(probe, extraSelect: new LifecycleCommand { Exec = "/bin/true" });
+        var runnable = Def(extraSelect: new LifecycleCommand { Exec = "/bin/true" });
+        var blank = Def(extraSelect: new LifecycleCommand { Exec = "  " });
         var provider = new Scripted { Kind = "exec", ProveHealth = false, LaunchOutcome = LifecycleResult.Ok() };
         await using var engine = new EngineRuntime(
-            blank, new RouterConfig { Engines = new Dictionary<string, EngineDefinition> { ["fake"] = runnable } },
+            runnable, new RouterConfig { Engines = new Dictionary<string, EngineDefinition> { ["fake"] = blank } },
             feed, handler, lifecycle: provider);
 
         var result = await engine.WaitForModelAsync("extra", TimeSpan.FromSeconds(10), CancellationToken.None);
-        Assert.Equal(1, provider.LaunchCalls);                 // asked to load it, not refused on a stale source
-        Assert.DoesNotContain("no_select_command", result.Detail ?? "");
+        Assert.Equal(1, provider.LaunchCalls);
+        Assert.Equal("refresh_omits", result.Detail);
+        Assert.Equal("/bin/true", provider.LaunchedExec);
         Assert.Contains("engine.switch_started", feed.Replay(0).Select(e => e.Kind));
     }
 
@@ -632,7 +622,8 @@ public class RefusalCategoryTests
             feed ?? new EventRing(), handler, lifecycle: lifecycle);
 
     private static EngineDefinition Def(
-        HealthProbeDefinition? health = null, bool remote = false, LifecycleCommand? extraSelect = null) => new()
+        HealthProbeDefinition? health = null, bool remote = false, LifecycleCommand? extraSelect = null,
+        bool omitExtraSelector = false) => new()
     {
         Name = "fake",
         Kind = EngineKind.OpenAiCompatible,
@@ -641,9 +632,9 @@ public class RefusalCategoryTests
         Remote = remote,
         Catalog = new Dictionary<string, EngineModelDefinition>
         {
-            ["m"] = new() { Name = "m" },
-            ["extra"] = new() { Name = "extra", Select = extraSelect },
-            ["second"] = new() { Name = "second" },
+            ["m"] = new() { Name = "m", Select = new LifecycleCommand { Exec = "/bin/true" } },
+            ["extra"] = new() { Name = "extra", Select = omitExtraSelector ? null : extraSelect ?? new LifecycleCommand { Exec = "/bin/true" } },
+            ["second"] = new() { Name = "second", Select = new LifecycleCommand { Exec = "/bin/true" } },
         },
     };
 
@@ -706,7 +697,7 @@ public class RefusalCategoryTests
     {
         /// <summary>Overridable so a pin can put a provider under the runtime's delegated-exec identity — the
         /// identity the selector check and the lifecycle coordinator both key on.</summary>
-        public string Kind { get; init; } = "scripted";
+        public string Kind { get; init; } = "exec";
         public int LaunchCalls { get; private set; }
         /// <summary>The selector the provider was actually handed, so a pin can tell the claim's snapshot from a
         /// later re-read of the config: a launch count alone cannot, because both routes launch exactly once.</summary>

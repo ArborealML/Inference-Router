@@ -9,17 +9,19 @@ public sealed class RecordingLifecycleProvider : IEngineLifecycleProvider
 {
     public List<string> Calls { get; } = [];
     public LifecycleResult PreflightOutcome { get; set; } = LifecycleResult.Ok("fake");
+    public Func<ValueTask<LifecycleResult>>? PreflightHandler { get; init; }
     public LifecycleResult StopOutcome { get; set; } = LifecycleResult.Ok();
     public LifecycleResult LaunchOutcome { get; set; } = LifecycleResult.Ok();
     public List<EnginePeer> Peers { get; set; } = [];
     public IReadOnlyList<EnginePeer> StoppedPeers { get; private set; } = [];
+    public LifecycleTarget? LaunchedTarget { get; private set; }
 
-    public string Kind => "fake";
+    public string Kind { get; init; } = "fake";
 
     public ValueTask<LifecycleResult> PreflightAsync(LifecycleTarget target, CancellationToken ct)
     {
         Calls.Add("preflight");
-        return ValueTask.FromResult(PreflightOutcome);
+        return PreflightHandler?.Invoke() ?? ValueTask.FromResult(PreflightOutcome);
     }
 
     public ValueTask<IReadOnlyList<EnginePeer>> OwnedPeersAsync(LifecycleTarget target, CancellationToken ct)
@@ -39,6 +41,7 @@ public sealed class RecordingLifecycleProvider : IEngineLifecycleProvider
     public ValueTask<LifecycleResult> LaunchAsync(LifecycleTarget target, CancellationToken ct)
     {
         Calls.Add("launch");
+        LaunchedTarget = target;
         return ValueTask.FromResult(LaunchOutcome);
     }
 

@@ -98,7 +98,14 @@ public static class Program
             foreach (var (name, e) in cfg.Engines)
             {
                 var key = e.ApiKey is { Length: > 0 } ? "inline" : e.ApiKeyFile is { Length: > 0 } ? $"file:{e.ApiKeyFile}" : "none";
+                var (owner, provider) = e.LifecycleOwner switch
+                {
+                    EngineLifecycleOwner.Router => ("router", "docker"),
+                    EngineLifecycleOwner.Delegated => ("delegated", "exec"),
+                    _ => ("external", "none"),
+                };
                 Console.WriteLine($"engine {name}: kind={e.Kind} endpoint={e.Endpoint} remote={e.Remote} " +
+                    $"lifecycle_owner={owner} provider={provider} " +
                     $"health={(e.Health?.Path ?? "/props (default)")} ctx={(e.Health?.ContextPath ?? "n_ctx (default)")} " +
                     $"slots={(e.Health?.SlotsPath ?? "total_slots (default)")} key={key}");
                 foreach (var (model, md) in e.Catalog)
@@ -107,7 +114,7 @@ public static class Program
                         ? "-"
                         : string.Join(", ", md.ServingProfiles.Select(p =>
                             $"{p.Name}({p.MaxContext}tok/{p.MaxSlots}slot)"));
-                    var select = md.Select is null ? "none" : $"{md.Select.Exec} {string.Join(' ', md.Select.Args)}";
+                    var select = md.Select is { } selector ? $"{selector.Exec} {string.Join(' ', selector.Args)}" : "none";
                     Console.WriteLine($"  model {model}: aliases=[{string.Join(", ", md.Aliases)}] " +
                         $"default_profile={(md.Profile ?? "-")} serving=[{ladder}] select={select}");
                 }

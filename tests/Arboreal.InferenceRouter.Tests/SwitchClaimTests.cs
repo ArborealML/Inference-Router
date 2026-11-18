@@ -20,7 +20,7 @@ public sealed class SwitchClaimTests
         /// <summary>When set, the launch fails on its own with this reason — no shutdown involved — so the
         /// control can tell a broken engine from a stopping one.</summary>
         public string? FailLaunchWith { get; set; }
-        public string Kind => "gated";
+        public string Kind => "docker";
 
         public ValueTask<LifecycleResult> PreflightAsync(LifecycleTarget target, CancellationToken ct)
             => ValueTask.FromResult(LifecycleResult.Ok("fake"));
@@ -88,6 +88,8 @@ public sealed class SwitchClaimTests
             Name = "fake",
             Kind = EngineKind.OpenAiCompatible,
             Endpoint = new Uri("http://127.0.0.1:9/v1"),
+            Lifecycle = EngineLifecycleKind.Docker,
+            Docker = new DockerLifecycleConfig { Image = "fixture", RouterId = "test" },
             Catalog = new Dictionary<string, EngineModelDefinition>
             {
                 ["m"] = new() { Name = "m" },
