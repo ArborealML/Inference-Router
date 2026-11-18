@@ -546,6 +546,11 @@ public sealed class RouterCore : IInferenceRouter
                 var switchResult = targetProfile is null
                     ? await engine.WaitForModelAsync(ticket.Model, switchWait, execCts.Token).ConfigureAwait(false)
                     : await engine.WaitForProfileAsync(ticket.Model, targetProfile, switchWait, execCts.Token).ConfigureAwait(false);
+                if (switchResult.Outcome == EngineRuntime.SwitchOutcome.RouterStopped)
+                {
+                    Fail(ticket, "cancelled", "cancelled");
+                    return;
+                }
                 if (!switchResult.IsReady)
                 {
                     var what = targetProfile is null

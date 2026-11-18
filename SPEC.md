@@ -1,6 +1,6 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.49)
+Status: draft, continuously revised (v0.12.50)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
@@ -352,6 +352,11 @@ daemon transaction per engine. 137 tests green.
   that answers no `upload_url`, an upload that dies or answers no asset id, an asset name listed twice on
   the release, and a tag that moves after the first resolve. No tag has run the gate: still configured,
   not proven.
+- v0.12.50 — shutdown and switch completion share one transition gate (§5.5, TASK-98). The first published
+  outcome is permanent. Shutdown records `RouterStopped` before waking waiters or cancelling the switch token,
+  and a caller that reaches the claim gate after that decision is refused. `ShutdownStopCauseTests` pins both
+  boundaries and covers readiness proofs on either side of shutdown. The request path maps the typed outcome to
+  the shipped `cancelled` (499) response. TASK-81 owns the wire and lifecycle reporting changes.
 - v0.12.49 — a feed subscriber's exception cannot reach the code that emitted the event (§6.1, TASK-103 #4).
   `EventRing.Append` invoked every subscriber inside the append with no isolation, so an SSE handler whose client had
   hung up threw inside a capability publication, a switch ending, or a terminal settle — a stranger's bug answering a
@@ -1654,12 +1659,9 @@ engine forks land; the scheduler interface will not change shape.
   sides of a window comparison. A caller's **own** identifiers may come back to them — the model they asked for, the
   profile they named, the engine that refused, their own ceiling in milliseconds — because those are already theirs.
   Another request's identifiers never do: the ceiling sentence and the shutdown sentence used to name the model the
-  in-flight switch was loading, which put one caller's request into another caller's error body. A stopped switch is
-  answered as **cancellation**, not as a broken engine: the resume path throws cancellation and the request path's
-  `OperationCanceledException` arm answers `cancelled` (499) naming no model; the outer `catch` that reports
-  `engine_unreachable` is a different arm, and an exception reaching it from inside the router is a bug at the producer,
-  not a shape a caller codes against. Reporting a router that is
-  stopping as an unreachable engine is a separate wrong, recorded as one in §5.5 and not settled by closing the leak.
+  in-flight switch was loading, which put one caller's request into another caller's error body. Engine shutdown
+  returns the typed switch outcome `RouterStopped`. The request path maps it to the shipped `cancelled` (499) response
+  without naming a model. A caller's own cancellation token still cancels its wait.
   Exception text — a failed attempt's, and a health probe's own on `engine.health` — is bounded where it is written (§10).
   **A phase is not a cause, and a wait is not an attempt.** Two exits used to answer in prose, and both answer with a
   name now. The router holds no loading authority over an engine whose models it does not start: such a request
@@ -1789,29 +1791,17 @@ engine forks land; the scheduler interface will not change shape.
   poll interval, not the switch. Two failure edges settle the same way: a synchronous failure at the scheduling
   boundary undoes its claim (settle, clear the marker, engine claimable again), and so does a claim hook that
   throws, with the undo taken **after** leaving the gate because the gate is reentrant and undoing inside it would
-  run the settle and the nudge while every later claim queues behind it. Shutdown releases the two waits by
-  **cancellation**: the switch lock is deliberately never disposed, since a waiter released by `ObjectDisposedException`
-  can only be reported as `engine_unreachable` — a router shutting down described as a broken engine — so the waits
-  carry a token linked to the engine's switch token, and the shutdown outcome on the wire is `cancelled`. The order is
-  part of the rule: shutdown **settles the in-flight switch's waiters before it cancels anything**, so a waiter parked
-  on a switch cannot be released two different ways with two different meanings, and the marker and switch state are
-  left alone because the lifecycle transaction is still running — the scheduler keeps seeing this engine mid-switch
-  until that transaction ends it. Nothing the shutdown disposes may be held by a transaction still running, which is
-  also why the lifecycle coordinator's gate is never disposed: a switch that was mid-flight answered
-  `ObjectDisposedException` from the release in its own `finally` and put that on the feed as its failure reason.
-  A switch the router itself stopped is told to its waiters as cancellation, not as a failed model load. The provider
-  sees the engine's own token, so a load interrupted by a shutdown comes back as a lifecycle failure
-  (`cancelled_during_launch`) and the switch settles false — which handed its own caller `switch_failed`, a stopping
-  router described as a broken engine for the second time. So the end of a switch records, **before** it settles the
-  readiness task, whether the engine's switch token was already cancelled, and a waiter whose switch settled false
-  under that mark answers cancellation; a wake-up that came from the token instead of the switch is folded into the
-  same decision, so the answer does not depend on which of the two arrives. A switch that fails with the token
-  untouched is still a failed switch: the exec's reason stays on the feed and the caller still reads `switch_failed`.
-  `SwitchClaimTests` pins both directions, and its shutdown pins also require the provider's own cancellation event on
-  the feed, so they cannot pass on a switch that never reached the exec; the seam
-  `AfterReadyWaitForTests(wokeByCancellation)` lets a test park a waiter between its readiness wake-up and the snapshot
-  read that decides its answer, which makes the ordering a fact the test observes rather than one it hopes the
-  scheduler produces. The claim edges are pinned in `SwitchClaimTests`; the retired claim, in
+  run the settle and the nudge while every later claim queues behind it. **The first published switch outcome wins.**
+  Shutdown latches once under the same transition gate that admits a claim or commits its outcome. The gate checks
+  the latch before joining or claiming a switch. Shutdown records `RouterStopped` for the installed attempt under that
+  gate, then settles readiness and cancels the engine's switch token after releasing the gate. The linked tokens
+  release callers waiting for the switch lock as well as for readiness. Either wake-up yields the same recorded
+  switch outcome. The transaction keeps its marker until it unwinds and clears the marker itself. A proof that has
+  not committed when shutdown wins is withdrawn before the marker clears. If readiness or failure committed first,
+  that outcome remains available to its waiter under the ordinary resume rules. The runtime keeps one switch token
+  for its lifetime. `ShutdownStopCauseTests` parks a caller past its initial stop check to test the gate, holds a
+  waiter across a late provider failure to test the frozen cause, and exercises both orderings of readiness and
+  shutdown. The claim edges are pinned in `SwitchClaimTests`; the retired claim, in
   `CapabilityPublicationTests`. The sequence the withdrawn rule broke is pinned there as well: two callers wanting
   different models on one engine take **one lifecycle transaction each, in arrival order**, asserted as a launch
   sequence while the successor's load is still held (`TwoCallersWantingDifferentModelsTakeOneSwitchEach`).

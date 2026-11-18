@@ -202,18 +202,10 @@ public sealed class SwitchClaimTests
         await engine.DisposeAsync();                          // cancels the switch token; the lock stays alive
         go.TrySetResult();
 
-        // TaskCanceledException from the semaphore wait — an OperationCanceledException, which the request path
-        // reports as "cancelled". The point of the assertion is the type it is *not*: ObjectDisposedException,
-        // which a disposed switch lock produced and the request path could only call engine_unreachable.
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => newcomer);
+        Assert.Equal(EngineRuntime.SwitchOutcome.RouterStopped, (await newcomer).Outcome);
 
-        // The caller whose switch was already in flight is released the same way. Its switch settled *false* —
-        // the provider saw the engine's token cancelled and reported a lifecycle failure — and reporting that to
-        // the caller as a failed model load would describe a router that stopped as an engine that broke. So the
-        // switch records, before it settles the waiters, that the stop came from shutdown, and the waiter answers
-        // cancellation. The transaction also settles and clears its marker: a marker left up tells the scheduler
-        // this engine is busy forever, and an unsettled readiness task parks every other waiter out its ceiling.
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => inFlight);
+        // Shutdown releases the in-flight caller with the same cause. The transaction still clears its marker.
+        Assert.Equal(EngineRuntime.SwitchOutcome.RouterStopped, (await inFlight).Outcome);
         await WaitUntil(() => engine.SwitchingToward is null);
         Assert.Null(engine.SwitchingToward);
 
@@ -222,11 +214,8 @@ public sealed class SwitchClaimTests
         Assert.Contains("engine.switch_failed", await WaitUntilFeed(feed, "cancelled_during_launch"));
     }
 
-    /// <summary>The waiter that is inside the readiness wait when the router stops. Shutdown settles that
-    /// switch's waiters **before** it cancels anything, so this waiter wakes on a switch that has ended and the
-    /// seam records that it woke on the ending, not on a token: the ordering the answer depends on is a fact the
-    /// test observes, not one it hopes the scheduler produces. The answer is cancellation — a router that stopped
-    /// in the middle of a load, described as cancellation — and the transaction still ends and clears its marker.</summary>
+    /// <summary>Shutdown releases the readiness waiter with the recorded stop cause, regardless of which
+    /// wake-up wins. The transaction still ends and clears its marker.</summary>
     [Fact(Timeout = 30_000)]
     public async Task AWaiterInsideTheReadinessWaitIsToldTheRouterStopped()
     {
@@ -234,30 +223,14 @@ public sealed class SwitchClaimTests
         var feed = new EventRing();
         var engine = Engine(provider, feed);
 
-        var parked = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var go = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        string? wake = null;
-        engine.AfterReadyWaitForTests = byCancellation =>
-        {
-            wake = byCancellation ? "cancelled" : "settled";
-            parked.TrySetResult();
-            go.Task.GetAwaiter().GetResult();
-        };
-
         var waiting = engine.WaitForModelAsync("extra", TimeSpan.FromSeconds(30), CancellationToken.None);
         await WaitUntil(() => provider.GateCount == 1);      // the load is in flight, the caller is parked
 
         await engine.DisposeAsync();
-        await parked.Task;                                       // parked at the decision point
 
-        // Woken by a switch that had ended, not by a token: settling a waiter is not ending a transaction, so
-        // the provider's own end is what clears the marker, and that happens after this point.
-        Assert.Equal("settled", wake);
-        go.TrySetResult();
-
-        var stopped = await Assert.ThrowsAnyAsync<OperationCanceledException>(() => waiting);
-        Assert.Contains("the router stopped", stopped.Message);
-        Assert.DoesNotContain("extra", stopped.Message);   // no target named: the message reaches a caller's body
+        var stopped = await waiting;
+        Assert.Equal(EngineRuntime.SwitchOutcome.RouterStopped, stopped.Outcome);
+        Assert.Null(stopped.Detail);                         // the response names no target
         Assert.Contains("engine.switch_failed", await WaitUntilFeed(feed, "cancelled_during_launch"));
         await WaitUntil(() => engine.SwitchingToward is null);
         Assert.Null(engine.SwitchingToward);

@@ -25,7 +25,7 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
     /// which publish a whole snapshot through a CAS loop, so a reader never gets a state no writer ever
     /// wrote and never sees data change without its version moving with it.</summary>
     private EngineCapability _cap = EngineCapability.Initial;
-    private SwitchState _switchState = new();   // accessed via Volatile.Read/Write
+    private SwitchState _switchState = new();   // guarded by the transition gate
 
     // Test seam for switch-start ordering: invoked inside the transition gate immediately after the switch
     // state is installed, so a test can read what the shared snapshot said at the exact moment the engine was
@@ -51,8 +51,8 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
     /// rather than a fact it hopes the scheduler produces. Null outside tests.</summary>
     internal Action<bool>? AfterReadyWaitForTests;
 
-    /// <summary>Pairs a switch-state change with its marker change and nothing else. The two are read by
-    /// different consumers — the scheduler's view takes "switching" from the capability marker
+    /// <summary>Orders claims, switch outcomes and shutdown. It also pairs each switch-state change with its
+    /// marker change. The two are read by different consumers — the scheduler's view takes "switching" from the capability marker
     /// (RouterCore.BuildEngineInfos), the switch machinery from <c>_switchState</c> — so they have to move
     /// together: state-installed-but-marker-absent lets a dispatch pass into an engine whose switch has
     /// already been claimed, and marker-cleared-but-state-live tells a dispatcher the engine is free while
@@ -60,6 +60,10 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
     /// and always acquired *after* <c>_switchLock</c>, never the other way round: EnsureLoadedAsync calls
     /// EndSwitch while holding the switch lock, so the reverse order would deadlock it.</summary>
     private readonly object _transitionGate = new();
+    // Written once under the transition gate and acquired on the fast path and at the two waits.
+    private bool _stopped;
+    // Runs outside the gate after publishing the stop, before waking any waiters.
+    internal Action? AfterStopDecisionForTests;
 
     /// <summary>Optional nudge to reconsider dispatch once a capability transition commits. The switch
     /// outcome events are emitted *before* the transition commits, so a dispatcher woken by them sees the
@@ -87,18 +91,24 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
     public int ActiveSlots => Volatile.Read(ref _activeSlots);
     public string? ActiveProfile => Volatile.Read(ref _activeProfileName);
 
+    private enum SwitchEnd { Pending, Ready, Failed, RouterStopped }
+
     private sealed class SwitchState
     {
         public string? Model;
         /// <summary>Set when the switch targets a serving profile (context-window escalation)
         /// rather than a model load; carries "profile:<name>" for observability.</summary>
         public string? Profile;
-        public TaskCompletionSource<bool> Ready = new(TaskCreationOptions.None);
+        public TaskCompletionSource Ready { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public DateTimeOffset StartedAt;
-        /// <summary>True when the switch settled while the engine's own switch token was already cancelled,
-        /// i.e. the router stopped under it. Written by <see cref="EndSwitch"/> **before** the readiness task
-        /// is settled, so a waiter woken by that task always sees the value it was settled with.</summary>
-        public bool CancelledByShutdown;
+        private int _end;
+        /// <summary>Written under the transition gate before releasing waiters. A waiter can acquire this
+        /// decision even if cancellation won the race to wake it.</summary>
+        public SwitchEnd End
+        {
+            get => (SwitchEnd)Volatile.Read(ref _end);
+            set => Volatile.Write(ref _end, (int)value);
+        }
         /// <summary>The reason category this attempt ended with, written by <see cref="RunSwitchAsync"/> at the
         /// same place it emits the feed event — **before** the readiness task settles, so a waiter always reads
         /// the reason of the attempt it joined. Deliberately not the operator's sentence: that carries provider
@@ -580,7 +590,7 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
     /// <summary>How a switch attempt ended for the requests waiting on it. Failed and TimedOut are
     /// different answers: a failed switch will not get better if you wait, and a switch that is still
     /// running usually will, which is exactly the retry decision a caller has to make.</summary>
-    public enum SwitchOutcome { Ready, Failed, TimedOut }
+    public enum SwitchOutcome { Ready, Failed, TimedOut, RouterStopped }
 
     /// <summary>A switch outcome plus what the caller was waiting on, phrased for an error body. The
     /// switch's own one-line reason goes to the event feed as `engine.switch_failed`, where an operator
@@ -588,6 +598,7 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
     public sealed record SwitchResult(SwitchOutcome Outcome, string? Detail)
     {
         public bool IsReady => Outcome == SwitchOutcome.Ready;
+        internal static SwitchResult RouterStopped { get; } = new(SwitchOutcome.RouterStopped, null);
 
         /// <summary>The only door a failed switch answer leaves the engine by: the caller is told one name from
         /// <see cref="SwitchReason.All"/> and nothing else from the attempt. A category outside that set is a
@@ -608,7 +619,7 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
 
         /// <summary>The one place an attempt's <i>recorded</i> reason becomes a caller-facing answer: the recorded
         /// name goes through the door above exactly as written, and an attempt that ended false before it recorded
-        /// anything — the <c>finally</c> path, a shutdown cancellation folded into a false end — takes the catch-all
+        /// anything, such as the <c>finally</c> path, takes the catch-all
         /// name rather than a bare sentence. Exactly one arm of one expression applies that fallback, and the
         /// source audit says so (§5.5).</summary>
         internal static SwitchResult FailedFromRecord(string? recorded) =>
@@ -617,7 +628,8 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
 
     /// <summary>Ensure the model is loaded on this engine: no-op when loaded; otherwise performs
     /// (or waits for) the configured switch. Resolves Ready when loaded, Failed when the switch
-    /// itself failed, TimedOut when `timeout` ran out while the switch was still going.</summary>
+    /// itself failed, TimedOut when `timeout` ran out while the switch was still going, or RouterStopped
+    /// when shutdown refused or ended the attempt.</summary>
     public Task<SwitchResult> WaitForModelAsync(string model, TimeSpan timeout, CancellationToken ct)
         => EnsureLoadedAsync(model, null, timeout, ct);
 
@@ -693,8 +705,10 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
 
     private async Task<SwitchResult> EnsureLoadedAsync(string model, ServingProfile? profileOverride, TimeSpan timeout, CancellationToken ct)
     {
+        if (Volatile.Read(ref _stopped)) return SwitchResult.RouterStopped;
         var canonical = CanonicalModel(model) ?? model;
-        if (IsReadyFor(canonical, profileOverride)) return new SwitchResult(SwitchOutcome.Ready, null);
+        if (IsReadyFor(canonical, profileOverride))
+            return Volatile.Read(ref _stopped) ? SwitchResult.RouterStopped : new SwitchResult(SwitchOutcome.Ready, null);
         // No lifecycle owner. Today the single `remote` flag is the whole predicate; the *name* states the
         // relation, so the wire token does not have to change again when reach and ownership split into two
         // config keys. Nothing was attempted and nothing was mutated, so the engine keeps its last proof, and no
@@ -744,11 +758,17 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
             EngineModelDefinition? claimEntry = null;
             var entryMiss = EntryGuard.Ok;
             BeforeSwitchWaitForTests?.Invoke();
-            // IDISP013 is a false positive at both waits on `waiter`: this source is disposed when the method
-            // returns, and every wait on its token is awaited inline before that — nothing here is detached.
+            try
+            {
+                // The linked source outlives this await.
 #pragma warning disable IDISP013 // await-in-using not applicable: the wait is awaited, not detached
-            await _switchLock.WaitAsync(waiter).ConfigureAwait(false);
+                await _switchLock.WaitAsync(waiter).ConfigureAwait(false);
 #pragma warning restore IDISP013
+            }
+            catch (OperationCanceledException) when (!ct.IsCancellationRequested && Volatile.Read(ref _stopped))
+            {
+                return SwitchResult.RouterStopped;
+            }
             try
             {
                 SwitchState? mine = null;
@@ -760,7 +780,8 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
                 // and return "ready" for a model nobody loaded.
                 lock (_transitionGate)
                 {
-                    state = Volatile.Read(ref _switchState);
+                    if (_stopped) return SwitchResult.RouterStopped;
+                    state = _switchState;
                     if (state.Model is null)
                     {
                         // Decide and claim from **one** snapshot: readiness is read off `cap`, and the marker goes up
@@ -785,7 +806,6 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
                             claimEntry = entry;
 
                             var candidate = new SwitchState { Model = canonical, Profile = profileOverride?.Name, StartedAt = DateTimeOffset.UtcNow };
-                            candidate.Ready = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
                             if (!TryPublishSwitchStarted(canonical, cap.Version)) continue;
 
                             // Marker before state, both inside the gate: the scheduler reads "switching" from the
@@ -797,7 +817,7 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
                             // `Ready` with no finally to settle it, leaving waiters out their ceiling on a switch
                             // that never ran.
                             switchToken = _switchCts.Token;
-                            Volatile.Write(ref _switchState, candidate);
+                            _switchState = candidate;
                             try { AfterClaimForTests?.Invoke(); }
                             catch (Exception ex) { claimFault = ex; }   // the claim is undone below, outside the gate
                             mine = candidate;
@@ -816,7 +836,7 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
                         // Undo the claim **after** leaving the gate: EndSwitch settles the waiters and nudges dispatch,
                         // and Monitor is reentrant, so undoing it inside the lock would run both of those while every
                         // later claim queues behind the gate. Then let the hook's failure reach the caller.
-                        EndSwitch(claim, false);
+                        if (EndSwitch(claim, false) == SwitchEnd.RouterStopped) return SwitchResult.RouterStopped;
                         ExceptionDispatchInfo.Capture(fault).Throw();
                     }
                     try
@@ -848,7 +868,8 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
                         // be able to leave the engine latched mid-switch (that isolation is a change of its own).
                         try { Emit("engine.switch_failed", model: model, reason: FeedReason.SwitchNotStarted); }
                         finally { EndSwitch(claim, false); }
-                        return SwitchResult.Failed(SwitchReason.SwitchError);
+                        return claim.End == SwitchEnd.RouterStopped
+                            ? SwitchResult.RouterStopped : SwitchResult.Failed(SwitchReason.SwitchError);
                     }
                     state = claim;
                 }
@@ -878,61 +899,32 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
             var remaining = deadline == DateTimeOffset.MaxValue
                 ? Timeout.InfiniteTimeSpan
                 : deadline - DateTimeOffset.UtcNow;
-            // InfiniteTimeSpan is -1 ms, so the sentinel must never reach the comparison below: a
-            // request with no ceiling would otherwise be "timed out" before it ever waited.
             if (deadline != DateTimeOffset.MaxValue && remaining <= TimeSpan.Zero)
-            {
-                // Nothing of this caller's own attempt ended, so nothing is quoted back: what was in front of them
-                // belongs to another request, and the caller's ceiling is already in the sentence the request path
-                // writes around this outcome (§5.5).
-                return IsReadyFor(canonical, profileOverride)
-                    ? new SwitchResult(SwitchOutcome.Ready, null)
-                    : new SwitchResult(SwitchOutcome.TimedOut, null);
-            }
+                return AnswerExpiredSwitchWait(state, canonical, profileOverride, null);
 
-            bool ready;
-            bool wokeByCancellation;
+            var wokeByCancellation = false;
             try
             {
 #pragma warning disable IDISP013 // await-in-using not applicable: the wait is awaited, not detached
-                ready = await state.Ready.Task.WaitAsync(remaining, waiter).ConfigureAwait(false);
+                await state.Ready.Task.WaitAsync(remaining, waiter).ConfigureAwait(false);
 #pragma warning restore IDISP013
-                wokeByCancellation = false;
             }
             catch (TimeoutException)
             {
-                // The switch may have finished and loaded the model in the instant before the wait gave
-                // up, so re-check rather than trusting the timeout alone. The sentence is the caller's own ceiling
-                // and the engine's own state — never the target of the switch they were parked behind (§5.5).
-                return IsReadyFor(canonical, profileOverride)
-                    ? new SwitchResult(SwitchOutcome.Ready, null)
-                    : new SwitchResult(SwitchOutcome.TimedOut,
-                        $"still switching after {FormatWait(timeout)}; a switch for another request is in flight");
+                return AnswerExpiredSwitchWait(state, canonical, profileOverride, timeout);
             }
-            catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+            catch (OperationCanceledException) when (!ct.IsCancellationRequested && Volatile.Read(ref _stopped))
             {
-                // Not the caller hanging up: the engine's switch token. Fold it into the same decision as a
-                // switch that settled false, so the answer does not depend on which of the two reaches the
-                // waiter first (the caller's own cancellation still propagates, filter above).
+                // Shutdown records the attempt's outcome before cancelling this token. Read that outcome
+                // for either wake-up. The caller's own cancellation still propagates.
                 wokeByCancellation = true;
-                ready = false;
             }
 
             AfterReadyWaitForTests?.Invoke(wokeByCancellation);
 
-            // A switch the router itself stopped is not a model load that failed. The provider sees the
-            // engine's switch token, so a shutdown mid-load comes back as a lifecycle failure
-            // ("cancelled_during_launch") and the switch settles false: told to this caller as a failed
-            // switch, a shutting-down router is described as a broken engine — the same wrong answer a
-            // disposed switch lock used to give. Both wake-ups say the same thing: the flag is written before
-            // the readiness task settles, and a token-cancelled wake-up is folded into the same branch above.
-            if (!ready && (wokeByCancellation || state.CancelledByShutdown))
-            {
-                // No target is named. This is the switch this caller was waiting behind, which is not
-                // necessarily the switch this caller asked for, and the message reaches that caller's error
-                // body — another request's model id must not travel in it (§5.5).
-                throw new OperationCanceledException("the router stopped while the model was being loaded");
-            }
+            var end = state.End;
+            if (end == SwitchEnd.RouterStopped) return SwitchResult.RouterStopped;
+            var ready = end == SwitchEnd.Ready;
 
             if (IsReadyFor(canonical, profileOverride)) return new SwitchResult(SwitchOutcome.Ready, null);
             // Four answers at resume, in this order (§5.5). The snapshot still authorises the target: Ready. A caller
@@ -959,16 +951,27 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
                 // named and left the caller's half shaped like prose at the exit that matters most; the door takes
                 // the recorded name, so a tenth exit that records something outside the set fails here, at the
                 // answer, rather than only in the source audit. An attempt that ended false before recording
-                // anything — the `finally` path, a shutdown cancellation folded into a false end — takes the
+                // anything, such as the `finally` path, takes the
                 // catch-all name, the same answer the never-started attempt gives (§5.5).
                 // No retry happens here: the caller who gave no ceiling would otherwise relaunch a switch that is
                 // not going to get better.
                 return SwitchResult.FailedFromRecord(state.FailureReason);
             }
-            // A switch that belonged to another request's target ended: this caller takes its own turn through
-            // the claim path. Nothing is remembered for the caller — an expired wait is answered by the ceiling
-            // sentence alone, which names this caller's own target and their own ceiling (§5.5).
+            // A switch that belonged to another request's target ended: this caller takes its own turn.
         }
+    }
+
+    private SwitchResult AnswerExpiredSwitchWait(SwitchState state, string canonical, ServingProfile? profile, TimeSpan? wait)
+    {
+        // A stop or proof can commit as the caller's ceiling expires. Read the outcome and capability after
+        // that transition, including its marker change.
+        lock (_transitionGate)
+        {
+            if (state.End == SwitchEnd.RouterStopped) return SwitchResult.RouterStopped;
+            if (IsReadyFor(canonical, profile)) return new SwitchResult(SwitchOutcome.Ready, null);
+        }
+        return new SwitchResult(SwitchOutcome.TimedOut, wait is { } elapsed ?
+            $"still switching after {FormatWait(elapsed)}; a switch for another request is in flight" : null);
     }
 
     // Bounds for what a refusal puts in front of an operator: the feed record is built from values the engine or
@@ -1025,19 +1028,22 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
     /// ends, instead of rejoining a readiness task that is already resolved. The feed event is always
     /// emitted before this call, so the outcome is on the feed before the request that failed on it
     /// resumes.</summary>
-    private void EndSwitch(SwitchState state, bool ready)
+    private SwitchEnd EndSwitch(SwitchState state, bool ready)
     {
         var committed = false;
+        SwitchEnd end;
         lock (_transitionGate)
         {
-            if (ReferenceEquals(Volatile.Read(ref _switchState), state))
+            if (state.End == SwitchEnd.Pending) state.End = ready ? SwitchEnd.Ready : SwitchEnd.Failed;
+            end = state.End;
+            if (ReferenceEquals(_switchState, state))
             {
-                Volatile.Write(ref _switchState, new SwitchState());
-                if (Volatile.Read(ref _switchState) is { Model: null, Profile: null })
-                {
-                    PublishSwitchMarker(null);
-                    committed = true;
-                }
+                // A proof observed after shutdown may describe the provider's result, but it cannot authorize
+                // dispatch. Withdraw it before clearing the marker.
+                if (end == SwitchEnd.RouterStopped) PublishUnknown();
+                _switchState = new SwitchState();
+                PublishSwitchMarker(null);
+                committed = true;
             }
             // The reference guard runs inside the gate for a reason: without it, the switch that just
             // finished can clear the marker a successor published in the gap between this switch writing
@@ -1049,16 +1055,14 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
         // callback that throws. Every Emit has already happened before EndSwitch, so the feed still precedes the
         // wake (decision 7); the hint's own failure costs at most one poll interval, because the next dispatch
         // pass is woken by the next event instead.
-        // Recorded before the waiters are woken: a waiter has to be able to tell "the switch failed" from
-        // "the router stopped in the middle of it" without racing the shutdown against its own wake-up.
-        state.CancelledByShutdown = _switchCts.IsCancellationRequested;
-        state.Ready.TrySetResult(ready);
+        state.Ready.TrySetResult();
         if (committed)
         {
             try { _dispatchHint?.Invoke(); }
             catch (Exception) { /* a lost nudge is a late dispatch, not a lost switch */ }
             AfterEndCommitForTests?.Invoke(Monitor.IsEntered(_transitionGate));
         }
+        return end;
     }
 
     /// <summary>Why the prove-health loop ended without readiness, as its last poll saw it: the category the
@@ -1076,6 +1080,8 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
         // dictionary, which is the mistake v0.12.44 removed the definition re-read for (§5.5).
         try
         {
+            if (state.End == SwitchEnd.RouterStopped) return;
+
             // The entry exists but names no usable selector: that is refused **before** the claim, off this same
             // predicate, so the caller is told `no_select_command` and the engine keeps its last proof. There is
             // deliberately no second ask here. With the refusal in front of the claim and one predicate on both
@@ -1357,19 +1363,19 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
 
     public async ValueTask DisposeAsync()
     {
-        // Settle the waiters of an in-flight switch *before* cancelling anything. A waiter parked on the
-        // readiness task can be released two ways — the switch settling, or the switch token cancelling its
-        // wait — and while both now answer the same thing, letting a shutdown choose between them is what made
-        // the outcome depend on thread scheduling. Settling the readiness task first fixes the order: the wait
-        // is already resolved when the cancellation fan-out runs. Only the waiters are settled here; the switch
-        // marker and the switch state stay exactly as they are, because a lifecycle transaction is still
-        // running and the scheduler must keep seeing this engine as mid-switch until that transaction ends.
-        var stopping = Volatile.Read(ref _switchState);
-        if (stopping.Model is not null)
+        SwitchState stopping;
+        lock (_transitionGate)
         {
-            stopping.CancelledByShutdown = true;
-            stopping.Ready.TrySetResult(false);
+            if (_stopped) return;
+            stopping = _switchState;
+            if (stopping.Model is not null) stopping.End = SwitchEnd.RouterStopped;
+            Volatile.Write(ref _stopped, true);
         }
+        AfterStopDecisionForTests?.Invoke();
+
+        // The cause is already visible whether readiness or cancellation wakes the waiter. The transaction
+        // still owns the marker until it unwinds.
+        if (stopping.Model is not null) stopping.Ready.TrySetResult();
         // Stop the switch before its engine goes away: cancelling the switch token is the only way an
         // in-flight model load learns the router is shutting down.
         _switchCts.Cancel();
