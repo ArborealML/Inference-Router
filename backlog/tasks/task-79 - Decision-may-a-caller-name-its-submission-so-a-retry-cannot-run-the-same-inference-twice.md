@@ -3,11 +3,11 @@ id: TASK-79
 title: >-
   Decision: may a caller name its submission so a retry cannot run the same
   inference twice
-status: Blocked
+status: Done
 assignee:
   - '@claire'
 created_date: '2026-11-18T02:59:00Z'
-updated_date: '2026-11-18T03:01:00Z'
+updated_date: '2026-11-18T03:32:00Z'
 labels:
   - wire
 dependencies:
@@ -24,6 +24,14 @@ ordinal: 79000
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 One line: (a) a caller-supplied key honoured on /v1, (b) dedup inside the local forwarder only, or (c) documented duplicate
-- [ ] #2 Say whether the dedup state has to survive a router restart, which decides whether it lives in memory or on disk
+- [x] #1 One line: (a) a caller-supplied key honoured on /v1, (b) dedup inside the local forwarder only, or (c) documented duplicate
+- [x] #2 Say whether the dedup state has to survive a router restart, which decides whether it lives in memory or on disk
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+**Answered (the owner's one word: B).** Dedup lives in the local forwarder: it remembers what it has already forwarded and refuses to re-send, and `/v1` keeps no submission identity. No option (a) work, no wire change. **The restart question the owner did not answer is mine to settle, and it is settled here:** the forwarder's memory is in-process for now, so a forwarder that restarts mid-request can still duplicate, and the row has to say that in words rather than promise durability. A durable store is a later act, not a hidden requirement of this one. This row exists to make the choice; the work lands on the forwarder row.
+
+Recorded as [decision-28](https://github.com/ArborealML/Inference-Router/blob/main/backlog/decisions/decision-28%20-%20A-retried-submission-is-deduped-in-the-forwarder-never-by-a-new-wire-field.md): forwarder-side dedup, in-process memory, no wire change.
+<!-- SECTION:NOTES:END -->

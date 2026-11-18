@@ -1,11 +1,11 @@
 ---
 id: TASK-46
 title: Render the final social preview card and verify it from outside the form
-status: Blocked
+status: Done
 assignee:
   - '@claire'
 created_date: '2026-11-17T10:52:00Z'
-updated_date: '2026-11-18T03:07:00Z'
+updated_date: '2026-11-18T03:23:00Z'
 labels:
   - docs
 dependencies: []
@@ -55,17 +55,13 @@ two minutes. The avatar is live and already verified from outside the form; see 
 - [x] #2 The smallest text line's measured cap height is at least 40 px in the 1280x640 raster, from pixel ink bands not the SVG; otherwise the card is redrawn with larger type or less text
 - [x] #3 At a real 640x320 downscale every text line still separates as its own ink band, and ink ends at least 60 px from the right edge
 - [x] #4 docs/images/README.md records the renderer, the font that actually resolved, and the byte size and sha256 of the committed PNG, quoted where the upload is tracked so the upload is checkable
-- [ ] #5 after a person presses Save, the public check is run and reported: curl -s https://github.com/ArborealML/Inference-Router | grep og:image
+- [x] #5 The public readback is run and reported: the repository page og:image resolves to a byte-identical copy of the committed card
 <!-- AC:END -->
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-**Wake:** the owner presses Save in the repository's social-preview form; the public check below is then run and reported from outside GitHub's own UI.
-
-Whether the mark competes with the wordmark is judged by the person at the upload moment: that judgement is a criterion on the upload task, not here. The card's renderer, the font that resolved, and the byte size and sha256 of the committed PNG are recorded in docs/images/README.md and re-read from the file before any upload claim is repeated.
-
-Superseded log entries for this task: [board trim, 2026-11-17](https://github.com/ArborealML/Inference-Router/blob/main/backlog/archive/board-trim-2026-11-17.md).
+**AC #5 ran, and the premise it was written on was wrong.** GitHub applies a social-preview upload as soon as the file is accepted: there is no Save control in that pane, and re-uploading is not what makes it take effect. Measured at 03:16Z: the repository page's og:image resolves to a repository-images address; fetched and hashed here it is 38,150 bytes, 1280x640, sha256 `cee3237b7f98…98f09` — byte-identical to `docs/images/air-social-1280x640.png` as committed at b214ce6. The card was already live; what the criterion asked for was a step that does not exist, so it now names the readback instead.
 <!-- SECTION:NOTES:END -->
 
 ## Comments
