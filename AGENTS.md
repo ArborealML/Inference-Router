@@ -30,6 +30,11 @@ contract), or a diagnosis, where a failure has to be seen to be intermittent rat
 CI supersedes an in-flight run when a newer push lands, so read the newest run on the branch, not the
 one named after your commit; a `cancelled` run there is not a failure.
 
+**A measurement series that names a host condition holds the machine.** While it runs, no other seat runs
+`dotnet` — build, test or publish — because that load is what the criterion is measuring and a poisoned run is
+invisible in the count; git, `gh` and the board checker stay fine. Counts taken inside another seat's activity
+are void for that criterion, and the series is re-started rather than patched (decision-55).
+
 `--no-build` judges whatever the last build **in the configuration you named** contained: plain
 `dotnet test` means Debug, `dotnet test --no-build -c Release` means Release, and whichever one you pick
 is silently stale if that configuration was not rebuilt after your edit. CI is safe only because it builds
