@@ -23,6 +23,6 @@ Implement shared admission and delivery claims for the fleet milestone, TASK-78.
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [ ] #1 Send concurrent requests through two ingress routers. Each accepted request has one queue entry, at most one active delivery claim and one terminal result.
-- [ ] #2 Exercise disconnection during claim handoff. A successor cannot send a duplicate inference for a request the previous host may already have forwarded.
+- [ ] #2 Exercise disconnection during claim handoff. After uncertain upstream acceptance, a successor records one indeterminate terminal result and sends zero additional inference requests.
 - [ ] #3 Test fleet capacity, cancellation and the no-option deadline through both ingress endpoints, including an unreachable host.
 <!-- AC:END -->

@@ -25,7 +25,7 @@ Qualified a forwarding-only deployed router with real pi inference and a long, c
 <!-- AC:BEGIN -->
 - [x] #1 The router serves a completion on a loopback address on this machine, one model resident, inside the configured 4-lane strata ceiling.
 - [x] #2 A live stream completes within the 30-second stall bound. Its reconstructed payload contains every requested integer in order, with one terminal stop and one [DONE] sentinel.
-- [x] #3 One static pi turn completes end-to-end through the router from a real pi session; nothing beyond Authorization and Content-Type reaches the backend.
+- [x] #3 One static pi turn completes end-to-end through the router from a real pi session; only Authorization and Content-Type are forwarded from the client; the outbound HTTP transport generates its own Host and Content-Length.
 - [x] #4 The bring-up config names auto_switch and explicitly documents the wait_health posture. For a forwarding-only engine with no lifecycle provider, state that wait_health is inapplicable.
 - [x] #5 No engine is started, stopped or reconfigured on this box without the owner's go-ahead recorded in this row.
 <!-- AC:END -->

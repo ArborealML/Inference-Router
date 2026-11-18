@@ -23,5 +23,5 @@ Exercise the assembled TASK-78 cluster path on a qualified pair of hosts. Route 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [ ] #1 Through either ingress, request a model initially absent from the selected peer. Record host identity, exclusive residency change, verified target readiness and completed inference.
-- [ ] #2 Fail one target activation while another request waits. Observe a terminal result for the affected ticket and successful alternate inference under a fresh claim, with zero launches into unknown occupancy.
+- [ ] #2 Fail one target activation while another request waits. Through the other ingress, observe successful alternate inference under a distinct fleet claim. A host reporting unknown occupancy rejects activation and receives zero launches.
 <!-- AC:END -->

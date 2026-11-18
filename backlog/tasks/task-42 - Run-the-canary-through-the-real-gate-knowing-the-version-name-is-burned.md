@@ -5,7 +5,7 @@ status: Waiting
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T09:53:00Z'
-updated_date: '2026-11-18T19:18:00Z'
+updated_date: '2026-11-18T20:57:00Z'
 labels:
   - release
   - ci
@@ -64,6 +64,8 @@ name. So the ruleset is the tag ref's one measured protection, and asset integri
 the post-publish readback — TASK-48, now load-bearing.
 
 Superseded log entries: [board trim, 2026-11-17](https://github.com/ArborealML/Inference-Router/blob/main/backlog/archive/board-trim-2026-11-17.md).
+
+At the tagged 9910c0f, the diagnostic fixes in 806d10d were already ancestors. [Original attempt](https://github.com/ArborealML/Inference-Router/actions/runs/44145829591/attempts/1) passed preflight, Linux and Windows smoke, and publish. The second attempt failed preflight and skipped build and publish. TASK-44 now tracks a fixture weakness, independent of the observed publication.
 <!-- SECTION:NOTES:END -->
 
 ## Comments

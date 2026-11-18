@@ -5,7 +5,7 @@ status: Waiting
 assignee:
   - '@claire'
 created_date: '2026-11-17T19:47:00Z'
-updated_date: '2026-11-18T19:18:00Z'
+updated_date: '2026-11-18T20:57:00Z'
 labels:
   - release
 milestone: m-9
@@ -29,4 +29,6 @@ The laboratory repository the release-gate battery ran in (created under the use
 
 <!-- SECTION:NOTES:BEGIN -->
 The owner's call, recorded: keep the laboratory until the first real release tag run lands, then delete it. So this row is parked, not blocked — wake condition: only after that tag run does the delete become due, and it stays a two-minute browser act. The token route is still open for whoever wants it: a refresh with the delete scope, then the API call.
+
+Before deletion, preserve redacted raw status, object IDs and digest evidence from the lab in a tracked record, with its provenance. The first production release remains the wake condition.
 <!-- SECTION:NOTES:END -->

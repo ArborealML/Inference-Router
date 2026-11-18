@@ -5,7 +5,7 @@ status: To Do
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-18T02:37:00Z'
-updated_date: '2026-11-18T20:47:00Z'
+updated_date: '2026-11-18T20:55:00Z'
 labels:
   - scheduling
 milestone: m-6
@@ -39,4 +39,6 @@ decision-25 parked a fleet-wide queue and cross-host model residence as later wo
 TASK-122 owns shared admission and ticket claims. TASK-123 owns measured placement and service for aged requests. TASK-124 qualifies managed activation and recovery through both ingress endpoints. SPEC sections 12 and 14 must identify this milestone and its implementation rows. TASK-77 controls lifecycle authority and TASK-110 controls physical host occupancy.
 
 At 31179e3 one live ingress served turns on resident Qwen and a remote resident Bonsai model in the same pi session. The tests for shared admission, either-ingress placement, peer activation and recovery remain open.
+
+Before implementation, SPEC must define shared ticket identity and claim epochs, global capacity, restart and partition handling, cancellation, terminal-result ownership and the host veto. Closure requires TASK-122 through TASK-124, including real two-ingress qualification.
 <!-- SECTION:NOTES:END -->

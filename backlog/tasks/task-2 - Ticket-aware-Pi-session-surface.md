@@ -5,10 +5,12 @@ status: To Do
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-16T20:40:00Z'
-updated_date: '2026-11-18T20:30:00Z'
+updated_date: '2026-11-18T20:55:00Z'
 labels: []
 milestone: m-7
-dependencies: []
+dependencies:
+  - TASK-110
+  - TASK-118
 priority: medium
 ordinal: 2000
 ---
@@ -49,7 +51,7 @@ Out of scope: per-subscriber drop accounting and `stream.gap` — a new event ki
 **Shipped and pinned:** `GET /admin/tickets/{id}/events?since=<seq>` and `ticket=` on `/admin/events` filter replay **and** live tail — routes in `ServerApp.cs`. `EventSurfaceTests` proves isolation with two concurrent tickets and pins the admin feed's PascalCase names; `AgentSurfaceTests` pins the tool manifest and `X-Inference-Ticket`, which rides every admitted response, including handled failures. Fixing it surfaced two subscriber defects, both since fixed. SSE headers flush before the first frame, so an unknown ticket is a quiet 200.
 
 **Open, and why:**
-- AC #2 has no identity to validate against; validating against today's mutable per-target flag would pass the test and still mis-attribute a switch.
+- AC #2 awaits TASK-110’s fenced host epoch and TASK-118’s instance-bound reservation; validating against today's mutable per-target flag would pass the test and still mis-attribute a switch.
 - `/v1/models` has no AIR metadata (context window, slots, availability); the Pi-side session extension is another repo.
 - The `POST` cancel alias is still owed to SPEC §13.3.
 - AC #3 is partly met — replay additions and the OpenAI surface are covered — and stays open for additions that do not exist yet.

@@ -5,7 +5,7 @@ status: Waiting
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T10:52:00Z'
-updated_date: '2026-11-18T19:18:00Z'
+updated_date: '2026-11-18T20:57:00Z'
 labels:
   - ci
   - release
@@ -59,24 +59,12 @@ assets or the tag ref. **Wake:** that SPEC wording pass, which belongs to the co
 **Org-level boundary, measured at 8f78a73:** `GET orgs/ArborealML/settings/immutable-releases` and `GET orgs/ArborealML/rulesets` need the `admin:org` scope, so organisation-wide immutability is a person's act. Nothing waits on it; the repository-level setting answers `admin: true`.
 
 Superseded log entries for this task: [board trim, 2026-11-17](https://github.com/ArborealML/Inference-Router/blob/main/backlog/archive/board-trim-2026-11-17.md).
+
+SPEC release acceptance at 4dd1e0e documents the asset replacement, tag ref, draft and metadata measurements. Verify the remaining prerelease/latest flag wording against recorded evidence before closing criterion 2.
 <!-- SECTION:NOTES:END -->
 
 ## Comments
 
 <!-- COMMENTS:BEGIN -->
-created: 2026-11-17T13:56:00Z
-
----
-
-Blocked on TASK-49 (a): enabling immutable releases makes a canary permanent-by-name, so the canary answer comes first. The enable itself is two API calls and measured readable today (`enabled: false`).
-
----
-
-created: 2026-11-17T15:01:00Z
-
----
-
-**Waiting, not Blocked:** the enable is two `gh api` calls and the assignee is an agent. **Wake:** TASK-49's answer about where the destructive tests run, because enabling immutability before that answer makes a burned version name likely.
-
----
+Historical sequencing: the laboratory disposition preceded enabling immutable releases.
 <!-- COMMENTS:END -->
