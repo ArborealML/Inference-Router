@@ -1,6 +1,6 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.54)
+Status: draft, continuously revised (v0.12.55)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
@@ -352,6 +352,9 @@ daemon transaction per engine. 137 tests green.
   that answers no `upload_url`, an upload that dies or answers no asset id, an asset name listed twice on
   the release, and a tag that moves after the first resolve. No tag has run the gate: still configured,
   not proven.
+- v0.12.55 — `air chat` and `air complete` exit unsuccessfully on orderly stream EOF before
+  `[DONE]`, keeping partial stdout and reporting early EOF once when the stream supplied no error
+  (§11, TASK-108). Process tests cover both verbs and both output modes.
 - v0.12.54 — the managed switch walkthrough uses the native Docker provider (§5.3, §5.3.1,
   §7 and §7.6). It documents the shipped ownership and readiness checks, the legacy exec
   path, and the target rules for host exclusivity, failure quarantine and alternate recovery.
@@ -2323,6 +2326,19 @@ air threads --id id [--priority high:200] [--server url]
 air tickets id [--server url]
 air config [--config f.toml]
 ```
+
+`air chat` and its alias `air complete` send `POST /v1/chat/completions` and stream by default.
+A streamed response exits 0 after `data: [DONE]` if it carried no error (§6).
+In text mode stdout contains the concatenated text deltas and a trailing newline. Stderr prints
+status changes from router keepalive comments and any in-band error payload. With `--json`, stdout
+contains the consecutive non-sentinel data payloads, including any in-band error, with no added
+separators or newline. JSON mode ignores progress comments.
+
+An in-band error exits 1 even when the sentinel follows. Orderly HTTP EOF before the sentinel also
+exits 1 and keeps all partial stdout. The CLI writes `error: completion stream ended before [DONE]`
+once to stderr if the stream supplied no in-band error. A non-success HTTP status exits 1 with
+`error STATUS: BODY` on stderr. With `--no-stream`, a successful reply is printed as extracted text
+or the original JSON body and exits 0.
 
 `config` is the dry run: parse + validate + print the resolved engine / model /
 serving-ladder plan, with no sockets and no lifecycle commands (safe on a machine

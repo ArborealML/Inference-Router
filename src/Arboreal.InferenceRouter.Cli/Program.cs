@@ -190,6 +190,7 @@ public static class Program
         using var reader = new StreamReader(await res.Content.ReadAsStreamAsync().ConfigureAwait(false));
         string? lastStatus = null;
         var exitCode = 0;
+        var sawDone = false;
         while (await reader.ReadLineAsync().ConfigureAwait(false) is { } line)
         {
             if (line.StartsWith(':'))
@@ -204,7 +205,11 @@ public static class Program
             }
             if (!line.StartsWith("data: ", StringComparison.Ordinal)) continue;
             var payload = line["data: ".Length..];
-            if (payload == "[DONE]") break;
+            if (payload == "[DONE]")
+            {
+                sawDone = true;
+                break;
+            }
             if (json) Console.Write(payload);
             try
             {
@@ -229,6 +234,11 @@ public static class Program
             catch (JsonException) { } // Human mode only renders completion chunks and errors.
         }
         if (!json) Console.WriteLine();
+        if (!sawDone && exitCode == 0)
+        {
+            Console.Error.WriteLine("error: completion stream ended before [DONE]");
+            return 1;
+        }
         return exitCode;
     }
 
