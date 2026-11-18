@@ -35,3 +35,6 @@ has no switch path at all, and that is the posture every remote sample and the b
 lifecycle posture) are the capability work; TASK-33 documents the fakes-only verification posture. The owner parked live engine lifecycle on this host at 17:55Z. TASK-112 owns the later authorized swap proof. `select = "exec"` stays supported as the default route, but is legacy: SPEC and the samples
 must say so rather than leave a sample pointing at an external script. decision-50's read-only-after-boot
 premise is bounded by TASK-107.
+
+The working contract covers both providers when directing routine smoke tests to the remote-only
+sample. Managed configurations can be validated offline with the config verb.

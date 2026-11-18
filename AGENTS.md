@@ -4,10 +4,9 @@ Conventions for humans and coding agents working here. [`SPEC.md`](SPEC.md) is t
 behaviour and the wire, and carries the revision log: read the relevant section before changing
 behaviour, and update it in the same commit as the change.
 
-**Before you run anything:** a config with lifecycle commands (`select = { exec = … }`) starts and stops
-inference backends, so smoke-testing one of those configs acts on the machine — use
-`samples/router.safe-smoke.toml` (see Safety below). And run the tool preflight first: `backlog task list`,
-`backlog decision list`, and `groma agent-instructions` before any architecture work.
+Use `samples/router.safe-smoke.toml` for smoke tests. Both the native Docker provider and legacy
+selector commands can start or stop real inference backends. Before architecture work, run
+`backlog task list`, `backlog decision list`, and `groma agent-instructions`.
 
 ## Checks
 
@@ -104,10 +103,14 @@ warning rather than suppressing it, and add a suppression only with a comment sa
 
 ## Safety on a real machine
 
-Lifecycle commands (`select = { exec = … }`) **start and stop inference backends**. Never smoke-test a
-config that has them on a machine you care about: use `samples/router.safe-smoke.toml`, whose engines
-are `remote = true` with no lifecycle commands. If you do run a real lifecycle program, treat it as a
-mutation of shared infrastructure and say so in your report.
+Use the native provider (`lifecycle = "docker"`) for managed model switches. The external selection
+script documents the expected behavior. Existing `select = { exec = … }` configurations invoke the
+legacy provider. Either provider can change shared infrastructure.
+
+For routine smoke tests, use `samples/router.safe-smoke.toml`. Its engines are remote and expose
+no lifecycle operations. Use the `config` verb to validate a managed configuration offline.
+Exercise lifecycle behavior against fakes while live mutation is parked. Record any authorized
+live switch and its observed effects in the handoff.
 
 ## Repo hygiene
 
