@@ -61,7 +61,8 @@ warning rather than suppressing it, and add a suppression only with a comment sa
 
 ## Workflow
 
-1. **Review a plan before executing it.** Every plan gets an external pass before the code exists: the
+1. **Review a plan before executing it.** The manager seat writes the plan into the task and dispatches it; every
+   plan gets an external pass before the code exists: the
    top-tier reasoning model for plans that are complex (new subsystems, concurrency, lifecycle,
    anything touching the wire contract or a live machine), the deep tier for the rest. A plan review
    attacks the design — missing failure modes, ordering mistakes, a plan that is really two plans,
@@ -70,8 +71,9 @@ warning rather than suppressing it, and add a suppression only with a comment sa
 2. **Commit one feature at a time**: SPEC section, code, tests and a revision-log line in the same
    commit. Before pushing, run the checks that cover your change — build, and the focused tests for the
    area you touched; CI runs the whole suite. Never report a check you did not run as passing.
-3. **Every commit gets an external deep-review pass** — the operator's own model-review runs, through the
-   same external service as plan reviews — dispatched as soon as the commit lands, covering the
+3. **Every commit gets an external deep-review pass**, dispatched by the manager as soon as the implementer's sha
+   lands — the operator's own model-review runs, through the
+   same external service as plan reviews — covering the
    diff or a bounded range of commits; never the whole repo. Reviews are asynchronous: dispatch, keep
    working, ingest when it lands. A dispatched review is recorded in the task body; it changes neither
    the task's status nor its assignee.
@@ -163,12 +165,27 @@ Move the board at each work boundary — any commit or push that changes what th
 of day. Anything sitting `Waiting` for a week without being woken gets re-triaged: dispatched, descoped,
 or parked out loud. A column that never changes is a bug in the board, not a fact about the work.
 
-## One writer for the board
+## Two seats: who writes what ([decision-23](backlog/decisions/))
 
-The board session (assignee `@qwen3.8-flash-next-board`) is the only session that edits `backlog/`, and it
-commits `board:`-prefixed changes that touch nothing else. The coding session never writes under `backlog/`:
-it sends the board findings it can prove — the file, the line, the command that shows the defect — and the
-board makes the edit. Code and SPEC stay the coding session's, and the board records what landed.
+Two sessions work this repository and they share one checkout, so every commit names its pathspecs
+(`git commit … -- backlog/`); **never `git add -A`** — the other seat's files are staged there.
+
+- **Manager seat** (assignee `@qwen3.8-flash-next-board`) is the only writer of `backlog/` and of `AGENTS.md`. It
+  owns task content, criteria, the implementation plans, plan-review dispatch, review ingestion and dispositions,
+  and owner-facing decisions. It commits `board:` for `backlog/`-only changes, and `contract:` when a commit
+  changes `AGENTS.md` together with its decision entry. It writes no `src/`, no `tests/`, no `SPEC.md`, nothing
+  under `tools/` or `.github/`.
+- **Implementer seat** (assignee `@qwen3.8-flash-next`) is the only writer of `src/`, `tests/`, `SPEC.md`, `tools/`,
+  `.github/` and `.gitignore`. Its commits carry `feat:`/`fix:`/`docs:`/`tools:`/`ci:`/`release:`, with the SPEC
+  version in the subject for a behaviour change, and land SPEC section + code + tests + revision-log line together.
+  It works the plan the manager wrote and never edits `backlog/`: it reports the findings it can prove — the file,
+  the line, the command that shows the defect — and the manager turns them into a criterion, an accepted §15 gap,
+  or a new row.
+- **`tools/board-check.py` splits by kind**: the *standard* it enforces is the manager's, and changing it starts as
+  a manager task with acceptance criteria; the *code* of it, and `tools/relgate.py` and
+  `.github/workflows/ci.yml`, are the implementer's edits.
+- **Only the manager dispatches external reviews** — the plan review before the code exists, the commit review as
+  soon as the implementer's sha lands. The implementer reports the sha and dispatches nothing.
 
 ## Task content that survives the tools
 
