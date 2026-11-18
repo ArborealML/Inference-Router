@@ -1,10 +1,11 @@
 ---
 id: TASK-88
 title: Let a client see the context window each model would actually be served in
-status: To Do
+status: Preparing
 assignee:
-  - '@qwen3.8-flash-next'
+  - '@gpt-6.2-sol'
 created_date: '2026-11-18T07:15:00Z'
+updated_date: '2026-11-18T18:46:00Z'
 labels:
   - wire
   - serve
@@ -26,3 +27,9 @@ Owner goal: pi swaps models with /model. A picker needs, per model, the window i
 - [ ] #3 A stale or unknown window never authorises a profile the engine cannot serve (pairs with TASK-68 AC #1).
 - [ ] #4 The plan for any change to a /v1 body goes to a top-tier review before code exists.
 <!-- AC:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Verify the window and loaded model belong to one capability generation. Specify the per-model field on /v1/models, unknown and stale handling, and a compatibility pin for older responses. Review the wire plan before implementation.
+<!-- SECTION:PLAN:END -->
