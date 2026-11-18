@@ -7,7 +7,7 @@ status: Done
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T23:07:00Z'
-updated_date: '2026-11-18T09:07:00Z'
+updated_date: '2026-11-18T09:22:00Z'
 labels:
   - concurrency
   - scheduling
@@ -48,4 +48,6 @@ Shipped at [d6cfb38](https://github.com/ArborealML/Inference-Router/commit/d6cfb
 AC #7 and #8 closed at [d6cfb38](https://github.com/ArborealML/Inference-Router/commit/d6cfb38362ac64ead69d4db96216549043803126), parent `e3e4f35`, and this seat confirmed the commit resolves, is `origin/main`, carries the implementation identity, and contains both pins by name — `AFailedProbeBetweenProofAndClaimWithdrawsTheWaitersOwnProof` in the switch-claim class and `TheClaimThatWithdrewHealthIsTheOnlyAuthorOfUnknownHealth` in the publication class. The pairing is the point: a marker alone still grants Ready to a waiter holding its own proof, and a probe failure between that proof and a later claim withdraws it. The probe is driven by the health loop, with the test seam removed. The coding seat reports 199 passed / 0 failed locally at that tree and two mutation probes each failing the intended pins; this seat did not run them. CI run 44272047987 was in flight when the row closed, so the gate is the last word, not the report. The accepted §15 gap — admission authority across the handoff, carried by [TASK-25](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-25%20-%20Reserve-the-switchs-own-ticket-before-a-lifecycle-transaction-drains-an-engine.md) AC #5, TASK-64 AC #3 and TASK-72 — stays open on those rows and is not this row's to close.
 
 Gate closed: CI run 44272047987 on that commit completed green at 09:03Z, 194-plus tests, the shutdown pin not recurring in that run.
+
+Commit review of e3e4f35..d6cfb38 landed: no blocker in the shipped bit — the reviewer found the CAS publication coherent and the bit absent from every wire body, and this seat confirmed both by reading the projection and the serializer. Two P2 follow-ons, each re-measured here by reading, are carried forward rather than reopening this row: [TASK-76](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-76%20-%20Withdraw-health-only-when-the-models-fetch-failed-and-never-over-a-switchs-own-proof.md) AC #4 and #5, and [TASK-96](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-96%20-%20Name-the-observation-that-withdrew-health-when-a-probe-answer-cannot-land-during-a-claim.md).
 <!-- SECTION:NOTES:END -->
