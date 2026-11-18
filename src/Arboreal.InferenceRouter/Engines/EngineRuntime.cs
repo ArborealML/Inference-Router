@@ -32,6 +32,9 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
     // claimed. Null everywhere else; one null check on a path that runs once per switch.
     internal Action? AfterClaimForTests;
 
+    // Runs inside the transition gate after the capability marker is raised, before private state is installed.
+    internal Action? AfterSwitchMarkerRaisedForTests;
+
     /// <summary>More ordering seams, null everywhere outside tests (one null check each, on a once-per-switch
     /// path). <see cref="BeforeSwitchWaitForTests"/> runs on the way to waiting for the claim, which is where a
     /// second caller has to be parked for single-flight claiming to be testable without a sleep. The argument to
@@ -819,9 +822,19 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
                             // `Ready` with no finally to settle it, leaving waiters out their ceiling on a switch
                             // that never ran.
                             switchToken = _switchCts.Token;
-                            _switchState = candidate;
-                            try { AfterClaimForTests?.Invoke(); }
-                            catch (Exception ex) { claimFault = ex; }   // the claim is undone below, outside the gate
+                            try
+                            {
+                                AfterSwitchMarkerRaisedForTests?.Invoke();
+                                _switchState = candidate;
+                                AfterClaimForTests?.Invoke();
+                            }
+                            catch (Exception ex)
+                            {
+                                // Rollback outside the gate must find the installed candidate even if the
+                                // first hook threw before the state write.
+                                _switchState = candidate;
+                                claimFault = ex;
+                            }
                             mine = candidate;
                             break;
                         }

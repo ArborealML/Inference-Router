@@ -5,7 +5,72 @@ namespace Arboreal.InferenceRouter.Tests;
 public sealed class ShutdownStopCauseTests
 {
     private static readonly TimeSpan Limit = TimeSpan.FromSeconds(10);
+    private static readonly TimeSpan HoldLimit = TimeSpan.FromSeconds(30);
     private const string Model = "extra";
+
+    [Fact(Timeout = 60_000)]
+    public async Task SwitchingReportsThePublishedMarkerBeforePrivateStateIsInstalled()
+    {
+        var provider = new HeldProvider();
+        provider.Release(LifecycleResult.Fail("cleanup", "the test released the fake launch"));
+        using var handler = new FakeEngineHandler();
+        await using var engine = Engine(provider, handler);
+        var markerRaised = new Pause();
+        engine.AfterSwitchMarkerRaisedForTests = markerRaised.Enter;
+        var attempt = Task.Run(() => engine.WaitForModelAsync(Model, HoldLimit, CancellationToken.None));
+        (bool Switching, string? Target) observed;
+
+        try
+        {
+            await markerRaised.Entered.WaitAsync(Limit);
+            observed = await Task.Run(() => (engine.Switching, engine.SwitchingToward)).WaitAsync(Limit);
+        }
+        finally
+        {
+            markerRaised.Release();
+        }
+
+        await attempt.WaitAsync(Limit);
+        Assert.Equal(Model, observed.Target);
+        Assert.True(observed.Switching);
+    }
+
+    [Fact(Timeout = 60_000)]
+    public async Task AStoppedAnswerArrivesWhileTheProviderIsStillHeld()
+    {
+        var cancelling = new Pause();
+        var provider = new HeldProvider(cancelling.Enter);
+        using var handler = new FakeEngineHandler();
+        var ended = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await using var engine = Engine(provider, handler, dispatchHint: () => ended.TrySetResult());
+        var waiter = engine.WaitForModelAsync(Model, HoldLimit, CancellationToken.None);
+        Task? shutdown = null;
+        EngineRuntime.SwitchResult stopped;
+        string? markerWhileHeld;
+
+        try
+        {
+            await provider.Launched.WaitAsync(Limit);
+            shutdown = Task.Run(async () => await engine.DisposeAsync());
+            // The provider has observed cancellation and still owns the launch. Keep cancellation
+            // paused too, so a readiness wake before publication cannot race the stop write.
+            await cancelling.Entered.WaitAsync(Limit);
+            stopped = await waiter.WaitAsync(Limit);
+            markerWhileHeld = engine.SwitchingToward;
+        }
+        finally
+        {
+            cancelling.Release();
+            provider.Release(LifecycleResult.Fail("cancelled_during_launch", "the held launch observed cancellation"));
+            if (shutdown is not null) await shutdown.WaitAsync(Limit);
+        }
+
+        await ended.Task.WaitAsync(Limit);
+        Assert.Equal(EngineRuntime.SwitchOutcome.RouterStopped, stopped.Outcome);
+        Assert.Null(stopped.Detail);
+        Assert.Equal(Model, markerWhileHeld);
+        Assert.Null(engine.SwitchingToward);
+    }
 
     [Fact(Timeout = 60_000)]
     public async Task AProviderFailureCannotOverwriteThePublishedStop()
@@ -17,11 +82,12 @@ public sealed class ShutdownStopCauseTests
         var resume = new Pause();
         engine.AfterReadyWaitForTests = _ => resume.Enter();
         var waiter = engine.WaitForModelAsync(Model, Limit, CancellationToken.None);
+        Task? shutdown = null;
 
         try
         {
             await provider.Launched.WaitAsync(Limit);
-            await engine.DisposeAsync();
+            shutdown = Task.Run(async () => await engine.DisposeAsync());
             await resume.Entered.WaitAsync(Limit);
             await provider.CancellationObserved.WaitAsync(Limit);
             provider.Release(LifecycleResult.Fail("late_failure", "the fake launch failed after the stop"));
@@ -31,11 +97,57 @@ public sealed class ShutdownStopCauseTests
         {
             provider.Release(LifecycleResult.Fail("cleanup", "the test released the fake launch"));
             resume.Release();
+            if (shutdown is not null) await shutdown.WaitAsync(Limit);
         }
 
         var result = await waiter.WaitAsync(Limit);
         Assert.Equal(EngineRuntime.SwitchOutcome.RouterStopped, result.Outcome);
         Assert.Null(result.Detail);
+        Assert.Null(engine.SwitchingToward);
+    }
+
+    [Fact(Timeout = 60_000)]
+    public async Task WaiterCancelledAtSwitchLockIsReportedRouterStopped()
+    {
+        var provider = new HeldProvider();
+        provider.Release(LifecycleResult.Fail("cleanup", "the test released the fake launch"));
+        using var handler = new FakeEngineHandler();
+        var ended = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await using var engine = Engine(provider, handler, dispatchHint: () => ended.TrySetResult());
+        var scheduling = new Pause();
+        engine.BeforeScheduleSwitchForTests = scheduling.Enter;
+        var readinessWakes = 0;
+        engine.AfterReadyWaitForTests = _ => Interlocked.Increment(ref readinessWakes);
+        var owner = Task.Run(() => engine.WaitForModelAsync(Model, HoldLimit, CancellationToken.None));
+        Task? shutdown = null;
+        EngineRuntime.SwitchResult stopped;
+        bool wasWaiting;
+        int wakesWhileLocked;
+
+        try
+        {
+            await scheduling.Entered.WaitAsync(Limit);
+            // The owner holds the lock at the scheduling seam. Calling directly leaves this
+            // waiter suspended at the contended lock before shutdown can run.
+            var waiter = engine.WaitForModelAsync(Model, HoldLimit, CancellationToken.None);
+            wasWaiting = !waiter.IsCompleted;
+            shutdown = Task.Run(async () => await engine.DisposeAsync());
+            await shutdown.WaitAsync(Limit);
+            stopped = await waiter.WaitAsync(Limit);
+            wakesWhileLocked = Volatile.Read(ref readinessWakes);
+        }
+        finally
+        {
+            scheduling.Release();
+            if (shutdown is not null) await shutdown.WaitAsync(Limit);
+            await owner.WaitAsync(Limit);
+        }
+
+        await ended.Task.WaitAsync(Limit);
+        Assert.True(wasWaiting);
+        Assert.Equal(EngineRuntime.SwitchOutcome.RouterStopped, stopped.Outcome);
+        Assert.Null(stopped.Detail);
+        Assert.Equal(0, wakesWhileLocked);
         Assert.Null(engine.SwitchingToward);
     }
 
@@ -256,11 +368,11 @@ public sealed class ShutdownStopCauseTests
         public void Enter()
         {
             _entered.TrySetResult();
-            _release.Task.WaitAsync(Limit).GetAwaiter().GetResult();
+            _release.Task.WaitAsync(HoldLimit).GetAwaiter().GetResult();
         }
     }
 
-    private sealed class HeldProvider : IEngineLifecycleProvider
+    private sealed class HeldProvider(Action? duringCancellation = null) : IEngineLifecycleProvider
     {
         private readonly TaskCompletionSource<LifecycleResult> _release = new(TaskCreationOptions.RunContinuationsAsynchronously);
         private readonly TaskCompletionSource _launched = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -282,9 +394,13 @@ public sealed class ShutdownStopCauseTests
 
         public async ValueTask<LifecycleResult> LaunchAsync(LifecycleTarget target, CancellationToken ct)
         {
-            using var registration = ct.Register(() => _cancellationObserved.TrySetResult());
+            using var registration = ct.Register(() =>
+            {
+                _cancellationObserved.TrySetResult();
+                duringCancellation?.Invoke();
+            });
             _launched.TrySetResult();
-            return await _release.Task.WaitAsync(Limit, CancellationToken.None).ConfigureAwait(false);
+            return await _release.Task.WaitAsync(HoldLimit, CancellationToken.None).ConfigureAwait(false);
         }
 
         public ReadinessPolicy Readiness(LifecycleTarget target) => new(false, Limit);
