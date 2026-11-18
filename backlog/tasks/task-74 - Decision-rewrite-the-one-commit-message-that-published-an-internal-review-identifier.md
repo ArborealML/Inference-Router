@@ -3,11 +3,11 @@ id: TASK-74
 title: >-
   Decision: rewrite the one commit message that published an internal review
   identifier?
-status: Blocked
+status: Done
 assignee:
   - '@claire'
 created_date: '2026-11-18T01:38:00Z'
-updated_date: '2026-11-18T01:38:00Z'
+updated_date: '2026-11-18T01:50:00Z'
 labels: []
 dependencies: []
 priority: medium
@@ -26,7 +26,12 @@ Option A, leave it: nothing rewrites published history, and a bare identifier is
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 one line choosing A or B, with the reason if it is not A
-- [ ] #2 if B: the amended message carries no identifier, and every citation of the sha still resolves
-- [ ] #3 if A: the accepted exposure is recorded here, and the prevention rule is stated in the contract
+- [x] #1 one line choosing A or B, with the reason if it is not A
+- [x] #2 if A: the accepted exposure is recorded here, and the prevention rule is stated in the contract
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+The owner answered, verbatim: **"leave it"** — option A. Commit 37e1e23 keeps its message and is recorded as an accepted exposure: a bare internal identifier names no service, reaches nothing, and force-pushing published history to fix embarrassment sets the precedent the identity ruling exists to prevent. The option-B criterion was removed rather than checked, because B was not chosen. Prevention is now written into the working contract: a commit message obeys the same hygiene rule as commit content, and it is written with one statement per command — never a message heredoc chained to another heredoc or command. The row committed inside that commit was correct throughout, and the board checker has been at zero defects across it.
+<!-- SECTION:NOTES:END -->

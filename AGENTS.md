@@ -112,10 +112,17 @@ the full range being pushed: deleting a file later does not un-publish it. One o
 `air config` prints engine endpoints, key-file locations and lifecycle argv, so never paste its raw
 output into a task, review or commit message.
 
-Commits carry **the repository's configured git identity**. Never set a per-commit author or committer for a
-session, and never rewrite or force-push published history without the owner's explicit word: the five published
-outliers stay as they are, and prevention is the CI check over the whole push range rather than a remembered rule
-(decision-24).
+Commits carry a **sanctioned identity**: the owner's, or a per-agent linkable identity configured once in the tooling
+that starts a session — never an ad-hoc per-commit author, and never a model name in an assignee handle used as one.
+Never rewrite or force-push published history without the owner's explicit word: the published outliers stay as they
+are, below a recorded floor, and prevention is the CI check over the whole push range rather than a remembered rule
+(decision-24 and decision-26).
+
+Commit **messages** obey the same hygiene rule as commit content: no internal identifiers, no endpoints, no key-file
+paths. A shell message must be one statement per command — never chain a `-F -` message heredoc with another heredoc
+or command in the same call, because a misread delimiter publishes the wrong body under a real commit. One such
+message is already on `main` (`37e1e23`): the owner's ruling was to leave it, so it is an accepted exposure and a
+lesson, not something to rewrite.
 
 <!-- backlog:start -->
 ## Backlog

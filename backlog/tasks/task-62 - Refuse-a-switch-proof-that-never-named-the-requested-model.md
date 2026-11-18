@@ -1,11 +1,11 @@
 ---
 id: TASK-62
 title: Refuse a switch proof that never named the requested model
-status: Waiting
+status: To Do
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T23:07:00Z'
-updated_date: '2026-11-18T01:35:00Z'
+updated_date: '2026-11-18T01:52:00Z'
 labels:
   - concurrency
   - wire
@@ -46,4 +46,6 @@ Second of the set-1 commits. At :794, **before** any proof is published: if the 
 
 <!-- SECTION:NOTES:BEGIN -->
 **Landed at [ab54d27](https://github.com/ArborealML/Inference-Router/commit/ab54d27) (v0.12.30): AC #1, #3 and #4.** Verified at the board rather than taken on report: the commit carries the repository's configured identity and only `SPEC.md`, one engine file and the test file under its pathspecs; the failed-refresh test named above is byte-identical across the commit (zero deleted lines mention it), so the posture stays the owner's; CI is green on the run for that sha. The omission check sits before `PublishProof` and the reason names what the engine actually reported, capped at eight names with a counted tail so a large `/models` answer cannot put an unbounded line on the feed. Wake condition: TASK-66's answer, which is the only thing that can close AC #2.
+
+TASK-66 is answered ("refuse", decision-27), so criterion #2 is now actionable rather than conditional: the refusal wording on the wire and the feed event move in the same commit as the refusal itself.
 <!-- SECTION:NOTES:END -->

@@ -24,7 +24,9 @@ rewrite, no force-push, and none ever without the owner's explicit word; the rul
 instead, which is that commits carry the repository's configured git identity and no session sets a per-commit
 author for itself; and a check over the range being pushed enforces it in CI, naming any commit whose author or
 committer differs from the configured identity. Option C — deliberate, linkable per-agent identities of the
-agit-style kind — is accepted as a later act, not part of this one, and nothing in the current work assumes it.
+agit-style kind — was framed as a later act, and the owner has since moved it to now: decision-26 supersedes this
+ruling on the identity question only. What still stands here is the no-rewrite half: published history stays as it
+is, and prevention is a check over the push range.
 
 ## Consequences
 
