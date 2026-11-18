@@ -191,7 +191,12 @@ or parked out loud. A column that never changes is a bug in the board, not a fac
 ## Two seats: who writes what ([decision-23](backlog/decisions/))
 
 Two sessions work this repository and they share one checkout, so every commit names its pathspecs
-(`git commit … -- backlog/`); **never `git add -A`** — the other seat's files are staged there.
+(`git commit … -- backlog/`); **never `git add -A`** — the other seat's files are staged there. **No `git stash`**
+in this checkout either: a `stash -u` sweeps the other seat's uncommitted files out from under it, so work in
+progress parks under `.local/wip` and a clean tree is measured in another worktree. Identity flags go in the
+command (`git -c user.name=… -c user.email=… commit …`), never in shared config; a commit that lands with the
+machine identity is reported and tracked, never repaired by rewriting pushed history
+([decision-47](backlog/decisions/)).
 
 - **Manager seat** (assignee `@qwen3.8-flash-next-board`) is the only writer of `backlog/` and of `AGENTS.md`. It
   owns task content, criteria, the implementation plans, plan-review dispatch, review ingestion and dispositions,
