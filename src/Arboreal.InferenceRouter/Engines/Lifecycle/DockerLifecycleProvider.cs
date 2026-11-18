@@ -29,19 +29,28 @@ public sealed class DockerLifecycleProvider : IEngineLifecycleProvider, IDisposa
     public const string LabelEngine = "arboreal.engine";
     public const string LabelModel = "arboreal.model";
 
+    private readonly record struct DaemonTransport(Uri BaseAddress, string? UnixPath)
+    {
+        public bool Matches(DaemonTransport other) => UnixPath is not null || other.UnixPath is not null
+            ? string.Equals(UnixPath, other.UnixPath, StringComparison.Ordinal)
+            : string.Equals(BaseAddress.AbsoluteUri, other.BaseAddress.AbsoluteUri, StringComparison.Ordinal);
+    }
+
+    private readonly record struct NativeScope(string EngineName, string RouterId, DaemonTransport Daemon);
+
     private readonly DockerLifecycleConfig _cfg;
     private readonly string[] _command;
     private readonly string[] _env;
-    private readonly string _engineName;
+    private readonly NativeScope _scope;
     private readonly HttpClient _http;
     private readonly HttpMessageHandler? _ownedHandler;
 
     public DockerLifecycleProvider(DockerLifecycleConfig cfg, string engineName, HttpMessageHandler? handler = null)
     {
+        _scope = new NativeScope(engineName, cfg.RouterId, ResolveDaemon(cfg.Socket, engineName));
         _cfg = cfg;
         _command = cfg.Command.ToArray();
         _env = cfg.Env.ToArray();
-        _engineName = engineName;
         if (handler is null)
         {
             var sockets = new SocketsHttpHandler
@@ -51,7 +60,7 @@ public sealed class DockerLifecycleProvider : IEngineLifecycleProvider, IDisposa
                 UseProxy = false,
                 AllowAutoRedirect = false,
             };
-            if (TryParseUnixSocket(cfg.Socket, out var socketPath))
+            if (_scope.Daemon.UnixPath is { } socketPath)
                 sockets.ConnectCallback = (_, ct) => ConnectUnixAsync(socketPath, ct);
             _ownedHandler = sockets;
             _http = new HttpClient(_ownedHandler, disposeHandler: false);
@@ -60,11 +69,24 @@ public sealed class DockerLifecycleProvider : IEngineLifecycleProvider, IDisposa
         {
             _http = new HttpClient(handler, disposeHandler: false);
         }
-        _http.BaseAddress = new Uri(BaseAddressFor(cfg.Socket));
+        _http.BaseAddress = _scope.Daemon.BaseAddress;
         _http.Timeout = Timeout.InfiniteTimeSpan;      // every call carries its own token
     }
 
     public string Kind => ProviderKind;
+
+    internal void ValidateScope(string engineName, DockerLifecycleConfig expected)
+    {
+        if (!string.Equals(_scope.EngineName, engineName, StringComparison.Ordinal))
+            throw ScopeMismatch(engineName, "engine name");
+        if (!string.Equals(_scope.RouterId, expected.RouterId, StringComparison.Ordinal))
+            throw ScopeMismatch(engineName, "docker.router_id");
+        if (!_scope.Daemon.Matches(ResolveDaemon(expected.Socket, engineName)))
+            throw ScopeMismatch(engineName, "docker.socket");
+    }
+
+    private static RouterConfigException ScopeMismatch(string engineName, string field) => new(
+        $"engine.{WireText.Ident(engineName)}: injected Docker lifecycle provider {field} does not match");
 
     public void Dispose()
     {
@@ -157,7 +179,7 @@ public sealed class DockerLifecycleProvider : IEngineLifecycleProvider, IDisposa
             {
                 if (container is null || container.State is not ("running" or "restarting" or "paused")) continue;
                 var labels = container.Labels;
-                if (labels is null || !labels.TryGetValue(LabelRouter, out var router) || router != _cfg.RouterId ||
+                if (labels is null || !labels.TryGetValue(LabelRouter, out var router) || router != _scope.RouterId ||
                     !labels.TryGetValue(LabelEngine, out var engine) || !managedEngines.Contains(engine))
                     return new HostOccupancy(queryId, HostOccupancyKind.Foreign);
             }
@@ -179,7 +201,7 @@ public sealed class DockerLifecycleProvider : IEngineLifecycleProvider, IDisposa
         // and pasting them into JSON would let a quote or a brace change which containers are listed.
         var filterBody = new DockerListFilter
         {
-            Label = [$"{LabelRouter}={_cfg.RouterId}", $"{LabelEngine}={_engineName}"],
+            Label = [$"{LabelRouter}={_scope.RouterId}", $"{LabelEngine}={_scope.EngineName}"],
         };
         var filter = System.Text.Json.JsonSerializer.Serialize(filterBody, DockerJsonContext.Default.DockerListFilter);
         var (ok, bodies, failure) = await CallAsync(
@@ -203,8 +225,8 @@ public sealed class DockerLifecycleProvider : IEngineLifecycleProvider, IDisposa
         foreach (var c in list)
         {
             var ours = c.Labels is not null
-                && c.Labels.TryGetValue(LabelRouter, out var router) && router == _cfg.RouterId
-                && c.Labels.TryGetValue(LabelEngine, out var engine) && engine == _engineName;
+                && c.Labels.TryGetValue(LabelRouter, out var router) && router == _scope.RouterId
+                && c.Labels.TryGetValue(LabelEngine, out var engine) && engine == _scope.EngineName;
             var model = c.Labels is not null && c.Labels.TryGetValue(LabelModel, out var m) ? m : null;
             peers.Add(new EnginePeer(c.Id ?? "", c.Image ?? "", model, ours));
         }
@@ -249,8 +271,8 @@ public sealed class DockerLifecycleProvider : IEngineLifecycleProvider, IDisposa
 
         var labels = new Dictionary<string, string>(StringComparer.Ordinal)
         {
-            [LabelRouter] = _cfg.RouterId,
-            [LabelEngine] = _engineName,
+            [LabelRouter] = _scope.RouterId,
+            [LabelEngine] = _scope.EngineName,
             [LabelModel] = target.Model,
         };
         var body = new DockerCreateRequest
@@ -312,7 +334,7 @@ public sealed class DockerLifecycleProvider : IEngineLifecycleProvider, IDisposa
             outValues[i] = template[i]
                 .Replace("{{model}}", target.Model, StringComparison.Ordinal)
                 .Replace("{{profile}}", target.Profile?.Name ?? target.Definition.Profile ?? "", StringComparison.Ordinal)
-                .Replace("{{endpoint}}", _engineName, StringComparison.Ordinal);
+                .Replace("{{endpoint}}", _scope.EngineName, StringComparison.Ordinal);
         }
         return outValues;
     }
@@ -335,14 +357,21 @@ public sealed class DockerLifecycleProvider : IEngineLifecycleProvider, IDisposa
         return path.Length > 0;
     }
 
-    private static string BaseAddressFor(string socket)
+    private static DaemonTransport ResolveDaemon(string socket, string engineName)
     {
-        if (TryParseUnixSocket(socket, out _)) return "http://docker.engine/";
-        if (socket.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
-            socket.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
-            return socket.EndsWith('/', StringComparison.Ordinal) ? socket : socket + "/";
-        // A bare path is a socket path, not a host name: it must not be sent to the HTTP base below.
-        return "http://docker.engine/";
+        if (!string.IsNullOrWhiteSpace(socket))
+        {
+            if (TryParseUnixSocket(socket, out var path))
+            {
+                if (!string.IsNullOrWhiteSpace(path) && !path.Contains('\0', StringComparison.Ordinal))
+                    return new DaemonTransport(new Uri("http://docker.engine/"), path);
+            }
+            else if (Uri.TryCreate(socket.EndsWith('/', StringComparison.Ordinal) ? socket : socket + "/",
+                UriKind.Absolute, out var address) &&
+                (address.Scheme == Uri.UriSchemeHttp || address.Scheme == Uri.UriSchemeHttps))
+                return new DaemonTransport(address, UnixPath: null);
+        }
+        throw new RouterConfigException($"engine.{WireText.Ident(engineName)}: docker.socket must name a Unix socket or an absolute HTTP(S) daemon base");
     }
 
     // The socket is not disposed on the success path because its ownership moves to the NetworkStream

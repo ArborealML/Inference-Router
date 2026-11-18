@@ -198,6 +198,8 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
             if (!string.Equals(actualKind, providerKind, StringComparison.Ordinal))
                 throw new RouterConfigException(
                     $"engine.{WireText.Ident(def.Name)}: injected lifecycle provider kind '{WireText.Ident(actualKind ?? "<null>")}' does not match configured kind '{providerKind}'");
+            if (provider is DockerLifecycleProvider docker)
+                docker.ValidateScope(def.Name, def.Docker!);
         }
 
         return new LifecycleBinding(owner, providerKind, def.Name);

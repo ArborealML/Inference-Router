@@ -46,18 +46,22 @@ public sealed class DockerLifecycleProviderTests
     private const string DifferentId = "sha256:3333333333333333333333333333333333333333333333333333333333333333";
     private const string Manifest = "sha256:2222222222222222222222222222222222222222222222222222222222222222";
     private const string RepoDigest = "registry.local/strata@" + Manifest;
+    private const string LocalSocket = "unix:///run/docker.sock";
+    private const string RemoteBase = "https://daemon.invalid:2376/docker/";
 
-    private static DockerLifecycleConfig Cfg(string api = "v1.44", bool pinned = true, string platform = "linux/amd64") => new()
+    private static DockerLifecycleConfig Cfg(string api = "v1.44", bool pinned = true, string platform = "linux/amd64",
+        string socket = LocalSocket, string routerId = "r1", bool waitHealth = true) => new()
     {
         Image = Locator,
         ImageIdentity = pinned ? new DockerImageIdentity(ImageId, RepoDigest, platform) : null,
-        Socket = "unix:///run/docker.sock",
+        Socket = socket,
         ApiVersion = api,
-        RouterId = "r1",
+        RouterId = routerId,
         Command = ["--model", "{{model}}", "--ctx", "{{profile}}"],
         Env = ["AIR_ENGINE={{endpoint}}"],
         HostPort = 18021,
         ContainerPort = 8080,
+        WaitHealth = waitHealth,
     };
 
     private static LifecycleTarget Target() => new(
@@ -73,6 +77,216 @@ public sealed class DockerLifecycleProviderTests
 
     private static (HttpStatusCode, string) OwnedIncumbent() => (HttpStatusCode.OK,
         $$$"""[{"Id":"{{{Ours}}}","Labels":{"arboreal.router":"r1","arboreal.engine":"strata","arboreal.model":"incumbent"}}]""");
+
+    private static RouterConfig BindingConfig(string socket, bool external = false)
+    {
+        var mode = external ? "remote = true" : "";
+        return RouterConfigLoader.Load($$"""
+            [engine.strata]
+            kind = "openai-compatible"
+            endpoint = "http://localhost:18021/v1"
+            {{mode}}
+
+            [engine.strata.docker]
+            image = "{{Locator}}"
+            image_id = "{{ImageId}}"
+            image_repo_digest = "{{RepoDigest}}"
+            image_platform = "linux/amd64"
+            socket = "{{socket}}"
+            router_id = "r1"
+            wait_health = false
+
+            [engine.strata.catalog."strata-8b"]
+            """);
+    }
+
+    [Theory]
+    [InlineData("engine name", "other", "r1", LocalSocket, LocalSocket)]
+    [InlineData("docker.router_id", "strata", "R1", LocalSocket, LocalSocket)]
+    [InlineData("docker.socket", "strata", "r1", LocalSocket, "unix:///run/Docker.sock")]
+    [InlineData("docker.socket", "strata", "r1", LocalSocket, "http://docker.engine/")]
+    [InlineData("docker.socket", "strata", "r1", RemoteBase, "http://daemon.invalid:2376/docker/")]
+    [InlineData("docker.socket", "strata", "r1", RemoteBase, "https://other.invalid:2376/docker/")]
+    [InlineData("docker.socket", "strata", "r1", RemoteBase, "https://daemon.invalid:2377/docker/")]
+    [InlineData("docker.socket", "strata", "r1", RemoteBase, "https://daemon.invalid:2376/other/")]
+    [InlineData("docker.socket", "strata", "r1", RemoteBase + "#first", RemoteBase + "#second")]
+    public async Task RuntimeRejectsMismatchedConcreteDockerScopeBeforeIo(string field, string providerEngine,
+        string routerId, string expectedSocket, string providerSocket)
+    {
+        var config = BindingConfig(expectedSocket);
+        var def = config.Engines["strata"];
+        Assert.Equal(EngineLifecycleOwner.Router, def.LifecycleOwner);
+        Assert.True(def.LegacyLifecycleConfiguration);
+        using var daemon = new FakeDockerDaemonHandler { TransportFails = true };
+        using var inference = new FakeDockerDaemonHandler { TransportFails = true };
+        using var provider = new DockerLifecycleProvider(Cfg(socket: providerSocket, routerId: routerId), providerEngine, daemon);
+        var feed = new EventRing();
+
+        var error = await Assert.ThrowsAsync<RouterConfigException>(async () =>
+        {
+            await using var engine = new EngineRuntime(def, config, feed, inference, lifecycle: provider);
+        });
+
+        Assert.Equal($"engine.strata: injected Docker lifecycle provider {field} does not match", error.Message);
+        Assert.Empty(daemon.Requests);
+        Assert.Empty(inference.Requests);
+        Assert.Empty(feed.Replay(0));
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("unix://")]
+    public async Task RuntimeRejectsEqualInvalidDockerScopesBeforeIo(string socket)
+    {
+        var config = BindingConfig(socket);
+        var def = config.Engines["strata"];
+        Assert.Equal(socket, def.Docker?.Socket);
+        using var daemon = new FakeDockerDaemonHandler { TransportFails = true };
+        using var inference = new FakeDockerDaemonHandler { TransportFails = true };
+
+        var error = await Assert.ThrowsAsync<RouterConfigException>(async () =>
+        {
+            using var provider = new DockerLifecycleProvider(Cfg(socket: socket), def.Name, daemon);
+            await using var engine = new EngineRuntime(def, config, new EventRing(), inference, lifecycle: provider);
+        });
+
+        Assert.Equal("engine.strata: docker.socket must name a Unix socket or an absolute HTTP(S) daemon base", error.Message);
+        Assert.Empty(daemon.Requests);
+        Assert.Empty(inference.Requests);
+    }
+
+    [Fact(Timeout = 20_000)]
+    public async Task RuntimeSwitchesWithMatchingUnixScopeUsingTheSameOwnershipLabels()
+    {
+        var config = BindingConfig(LocalSocket);
+        var def = config.Engines["strata"];
+        using var inference = new FakeEngineHandler { LoadedModels = ["incumbent"] };
+        using var daemon = new FakeDockerDaemonHandler
+        {
+            Responder = path =>
+            {
+                if (path.Contains("/containers/json", StringComparison.Ordinal))
+                    return (HttpStatusCode.OK, """
+                        [
+                          {"Id":"abc123def456","Labels":{"arboreal.router":"r1","arboreal.engine":"strata","arboreal.model":"incumbent"}},
+                          {"Id":"foreign","Labels":{"arboreal.router":"r1","arboreal.engine":"other","arboreal.model":"other"}}
+                        ]
+                        """);
+                if (path.EndsWith("/version", StringComparison.Ordinal))
+                    return (HttpStatusCode.OK, """{"ApiVersion":"1.44"}""");
+                if (path.Contains("/images/", StringComparison.Ordinal)) return (HttpStatusCode.OK, Inspect());
+                if (path.EndsWith("/containers/create", StringComparison.Ordinal))
+                    return (HttpStatusCode.Created, """{"Id":"replacement"}""");
+                if (path.EndsWith("/containers/replacement/start", StringComparison.Ordinal))
+                    inference.LoadedModels = ["strata-8b"];
+                return (HttpStatusCode.NoContent, "");
+            },
+        };
+        using var provider = new DockerLifecycleProvider(Cfg(socket: "/run/docker.sock", waitHealth: false), def.Name, daemon);
+        await using var engine = new EngineRuntime(def, config, new EventRing(), inference, lifecycle: provider);
+
+        Assert.True((await engine.WaitForModelAsync("strata-8b", TimeSpan.FromSeconds(10), CancellationToken.None)).IsReady);
+        Assert.Contains("/models", inference.SeenRoutes);
+        const string listPrefix = "GET /v1.44/containers/json?all=true&filters=";
+        Assert.StartsWith(listPrefix, daemon.Requests[0]);
+        using var filters = JsonDocument.Parse(WebUtility.UrlDecode(daemon.Requests[0][listPrefix.Length..]));
+        Assert.Equal(["arboreal.router=r1", "arboreal.engine=strata"],
+            filters.RootElement.GetProperty("label").EnumerateArray().Select(label => label.GetString()));
+        Assert.Equal([
+            "GET /v1.44/version",
+            $"GET /v1.44/images/{Uri.EscapeDataString(Locator)}/json",
+            $"POST /v1.44/containers/{Ours}/stop?t=30",
+            $"DELETE /v1.44/containers/{Ours}?force=true",
+            "POST /v1.44/containers/create",
+            "POST /v1.44/containers/replacement/start",
+        ], daemon.Requests.Skip(1));
+        using var create = JsonDocument.Parse(Assert.Single(daemon.Bodies, body => body.Length != 0));
+        Assert.Equal(ImageId, create.RootElement.GetProperty("Image").GetString());
+        var labels = create.RootElement.GetProperty("Labels");
+        Assert.Equal("r1", labels.GetProperty("arboreal.router").GetString());
+        Assert.Equal("strata", labels.GetProperty("arboreal.engine").GetString());
+        Assert.Equal("strata-8b", labels.GetProperty("arboreal.model").GetString());
+    }
+
+    [Theory]
+    [InlineData("https://DAEMON.invalid:2376/docker", false)]
+    [InlineData(RemoteBase, true)]
+    public async Task RuntimeAcceptsEquivalentLegacyHttpScopeIndependentlyOfReadiness(string socket, bool providerWaitHealth)
+    {
+        var config = BindingConfig(RemoteBase);
+        var def = config.Engines["strata"];
+        Assert.True(def.LegacyLifecycleConfiguration);
+        Assert.False(Assert.IsType<DockerLifecycleConfig>(def.Docker).WaitHealth);
+        using var daemon = new FakeDockerDaemonHandler { TransportFails = true };
+        using var inference = new FakeDockerDaemonHandler { TransportFails = true };
+        using var provider = new DockerLifecycleProvider(Cfg(socket: socket, waitHealth: providerWaitHealth), def.Name, daemon);
+        Assert.Equal(providerWaitHealth, provider.Readiness(Target()).ProveHealth);
+        await using var engine = new EngineRuntime(def, config, new EventRing(), inference, lifecycle: provider);
+
+        Assert.Equal("docker", engine.LifecycleProvider);
+        Assert.Empty(daemon.Requests);
+        Assert.Empty(inference.Requests);
+    }
+
+    [Fact(Timeout = 20_000)]
+    public async Task ExternalRuntimeIgnoresMismatchedConcreteDockerScope()
+    {
+        var config = BindingConfig(LocalSocket, external: true);
+        var def = config.Engines["strata"];
+        using var daemon = new FakeDockerDaemonHandler { TransportFails = true };
+        using var inference = new FakeEngineHandler { LoadedModels = ["incumbent"] };
+        using var provider = new DockerLifecycleProvider(Cfg(socket: RemoteBase, routerId: "other-router"), "other", daemon);
+        var feed = new EventRing();
+        await using var engine = new EngineRuntime(def, config, feed, inference, lifecycle: provider);
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        engine.StartHealthLoop(deadline.Token);
+        try
+        {
+            while (!engine.Healthy) await Task.Delay(10, deadline.Token);
+            var proof = engine.Capability;
+
+            Assert.True((await engine.WaitForModelAsync("incumbent", TimeSpan.FromSeconds(5), deadline.Token)).IsReady);
+            Assert.Equal("no_lifecycle_owner", (await engine.WaitForModelAsync("strata-8b", TimeSpan.FromSeconds(5), deadline.Token)).Detail);
+            Assert.Equal("none", engine.LifecycleProvider);
+            Assert.Same(proof, engine.Capability);
+            Assert.DoesNotContain(feed.Replay(0), item => item.Kind == "engine.switch_started");
+            Assert.Empty(daemon.Requests);
+        }
+        finally
+        {
+            await deadline.CancelAsync();
+        }
+    }
+
+    [Theory(Timeout = 20_000)]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task RuntimeLeavesTheInjectedDockerProviderCallerOwned(bool rejected)
+    {
+        var config = BindingConfig(LocalSocket);
+        var def = config.Engines["strata"];
+        using var daemon = new FakeDockerDaemonHandler { Responder = _ => (HttpStatusCode.OK, "[]") };
+        using var inference = new FakeDockerDaemonHandler { TransportFails = true };
+        using var provider = new DockerLifecycleProvider(Cfg(), rejected ? "other" : def.Name, daemon);
+
+        if (rejected)
+        {
+            await Assert.ThrowsAsync<RouterConfigException>(async () =>
+            {
+                await using var engine = new EngineRuntime(def, config, new EventRing(), inference, lifecycle: provider);
+            });
+        }
+        else
+        {
+            await using var engine = new EngineRuntime(def, config, new EventRing(), inference, lifecycle: provider);
+        }
+        Assert.Empty(daemon.Requests);
+        Assert.Empty(inference.Requests);
+
+        // The caller can still use the provider after either constructor refusal or runtime disposal.
+        Assert.Empty(await provider.OwnedPeersAsync(Target(), CancellationToken.None));
+        Assert.Single(daemon.Requests);
+    }
 
     public static TheoryData<string, string> RejectedImages => new()
     {
