@@ -21,16 +21,30 @@ A successful run ends with `SMOKE OK`. It checks model discovery, ordinary and s
 
 ## Connect an inference engine
 
-Copy the [remote-only sample](samples/router.safe-smoke.toml) to `router.local.toml`. Set the engine endpoint and catalog model ID to match a running OpenAI-compatible backend. Quote TOML table keys containing dots. Keep `remote = true` when another service owns the backend’s lifecycle.
+Save this one-engine configuration as `router.local.toml`. Replace the example endpoint and both occurrences of `example-model` with your backend’s base URL and model ID. Set `models_endpoint` to its model-list path. A leading slash resolves from the backend’s root, so an OpenAI-compatible engine mounted at `/v1` typically uses `/v1/models`.
+
+```toml
+listen = "http://127.0.0.1:8399"
+default_model = "example-model"
+auto_switch = false
+
+[engine.local]
+kind = "openai-compatible"
+endpoint = "http://127.0.0.1:8000/v1"
+models_endpoint = "/v1/models"
+remote = true
+
+[engine.local.catalog."example-model"]
+```
+
+Here another service owns the backend’s lifecycle. For multiple engines and serving profiles, see the [remote-only sample](samples/router.safe-smoke.toml). Keep the router on loopback unless a proxy authenticates callers and terminates TLS.
 
 ```bash
-cp samples/router.safe-smoke.toml router.local.toml
-# Edit router.local.toml for your backend before continuing.
 dotnet run --project src/Arboreal.InferenceRouter.Cli -- config -c "$PWD/router.local.toml"
 dotnet run --project src/Arboreal.InferenceRouter.Cli -- serve -c "$PWD/router.local.toml"
 ```
 
-The first command after the edit validates the configuration offline. Its output includes resolved endpoints, key-file paths and lifecycle arguments, so keep it local. The second command starts AIR. The sample listens on port **8399**. From another terminal, check the listener and see which models the engines currently report.
+The first command validates the configuration offline. Its output includes resolved endpoints, key-file paths and lifecycle arguments, so keep it local. The second command starts AIR. From another terminal, check the listener and see which models the engines currently report.
 
 ```bash
 curl -fsS http://127.0.0.1:8399/healthz
@@ -65,7 +79,7 @@ The [reference configuration](samples/router.toml) also illustrates the legacy e
 | Why is a request waiting? | `GET /admin/tickets/{id}/events?since=0`, using the response’s `X-Inference-Ticket` |
 | What is changing across engines and queues? | `GET /admin/events` for the replayable SSE feed |
 
-Keep the listener on loopback or behind a proxy that authenticates callers and terminates TLS. Anyone who can reach AIR can call the admin endpoints and claim a thread priority. Engine credentials are configured separately for each backend. Router events omit prompt text, but upstream error bodies can expose backend details to clients.
+Anyone who can reach AIR can call the admin endpoints and claim a thread priority. Engine credentials are configured separately for each backend. Router events omit prompt text, but upstream error bodies can expose backend details to clients.
 
 ## Builds and releases
 
