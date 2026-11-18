@@ -7,7 +7,7 @@ status: To Do
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T22:49:00Z'
-updated_date: '2026-11-18T19:29:00Z'
+updated_date: '2026-11-18T19:43:00Z'
 labels:
   - concurrency
   - testing
@@ -30,10 +30,13 @@ fd5e0cd made the claim/coalesce decision read switch state inside the transition
 - [ ] #2 the test fails when the state read is moved back outside the gate, shown as mutation evidence
 - [ ] #3 the dropped test is either restored or withdrawn out loud in SPEC 15 with this task cited
 - [ ] #4 the marker clause of the readiness rule is pinned at its own seam, or recorded as unreachable with the reason
+- [ ] #5 A throwing pre-install marker hook propagates its exception, clears the marker outside the transition gate, makes zero provider launches, and permits the next claim to succeed.
 <!-- AC:END -->
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
 **The seam is owned by TASK-67, so nobody builds it twice.** TASK-67 adds the deterministic hooks — `AfterEndCommit` past the end commit and before the readiness settle, a pre-wait hook between the fast-path miss and the lock, and an injected launcher at the scheduling boundary — and makes the claim decision and the marker come from one snapshot. #1 and #2 close on that commit with its mutation evidence; this row keeps #3 (the withdrawn test) and #4 (the marker clause at its own seam).
+
+Review of [07408e2](https://github.com/ArborealML/Inference-Router/commit/07408e2) verified rollback installs the candidate when the pre-install hook throws. The existing throwing-hook test injects after private state installation. Add the earlier-hook variant after TASK-87 measurements.
 <!-- SECTION:NOTES:END -->
