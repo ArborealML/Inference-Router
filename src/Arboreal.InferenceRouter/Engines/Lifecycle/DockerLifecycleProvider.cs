@@ -363,7 +363,7 @@ public sealed class DockerLifecycleProvider : IEngineLifecycleProvider, IDisposa
         {
             if (TryParseUnixSocket(socket, out var path))
             {
-                if (!string.IsNullOrWhiteSpace(path) && !path.Contains('\0'))
+                if (!string.IsNullOrWhiteSpace(path) && !path.Contains('\0', StringComparison.Ordinal))
                     return new DaemonTransport(new Uri("http://docker.engine/"), path);
             }
             else if (Uri.TryCreate(socket.EndsWith('/', StringComparison.Ordinal) ? socket : socket + "/",
