@@ -180,10 +180,11 @@ it without asking a follow-up question.
 
 ## Kanban columns
 
-`To Do → In Progress → Waiting → Blocked → Done`, set in `backlog/config.yml`.
+`To Do → Preparing → In Progress → Waiting → Blocked → Done`, set in `backlog/config.yml`.
 
 - **To Do** — not started. An assignee means claimed, not moving.
-- **In Progress** — repo state is being changed for this right now. One at a time.
+- **Preparing** — the assignee is investigating, gathering evidence, or writing the implementation plan. Name the work underway in the task. Several tasks can be prepared concurrently.
+- **In Progress** — the assignee is implementing the change. One at a time.
 - **Waiting** — started, and parked on an event that will wake it: a review, a CI run, a pull request
   gate, a predecessor task. The task body names the wake condition.
 - **Blocked** — no event will wake it; a person has to decide or grant something (an approval, a scope
