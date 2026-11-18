@@ -5,9 +5,9 @@ title: >-
   new feed event kind
 status: To Do
 assignee:
-  - '@qwen3.8-flash-next'
+  - '@claire'
 created_date: '2026-11-17T02:18:00Z'
-updated_date: '2026-11-17T17:07:00Z'
+updated_date: '2026-11-18T10:56:00Z'
 labels:
   - ui
   - wire

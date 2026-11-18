@@ -1,11 +1,11 @@
 ---
 id: TASK-93
 title: Bound every feed field at the funnel, and make SPEC true of it
-status: In Progress
+status: Done
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-18T08:30:00Z'
-updated_date: '2026-11-18T10:11:00Z'
+updated_date: '2026-11-18T10:56:00Z'
 labels:
   - wire
   - events
@@ -23,12 +23,12 @@ The v0.12.37 cap sat on the event Model field and inside the engine emitter, so 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [x] #1 Every producer that appends to the feed has its reason text held to the stated budget: a pin posts a 405-character model id through the request path failure producer and reads the stored reason at reporting length.
-- [ ] #2 SPEC 10 is true of every producer as written, or SPEC narrows the claim to the producers that honour it — either way, in the same commit.
+- [x] #2 SPEC 10 is true of every producer as written, or SPEC narrows the claim to the producers that honour it — either way, in the same commit.
 - [x] #3 Engine and profile names reaching a feed field or a caller error body sit at reporting length, matching the number SPEC states.
 - [x] #4 A cut cannot split a surrogate pair, and the marker plus dropped-count text fits inside the reserve the cap claims.
 - [x] #5 Two ids that become identical once cut stay distinguishable in a feed record — a bounded fingerprint or the ticket id — pinned by a two-id test.
-- [ ] #6 A terminal error is bounded where the ticket becomes terminal and again at the HTTP writer, pinned by the /v1 status, the one lowercase shape, the message length, and a ceiling in serialized bytes.
-- [ ] #7 SPEC 10 and 6.1 name the marker a diagnostic distinguisher, collisions and literal-marker aliases possible, and the thread and engine filters excerpt matching; the ticket filter stays exact.
+- [x] #6 A terminal error is bounded where the ticket becomes terminal and again at the HTTP writer, pinned by the /v1 status, the one lowercase shape, the message length, and a ceiling in serialized bytes.
+- [x] #7 SPEC 10 and 6.1 name the marker a diagnostic distinguisher, collisions and literal-marker aliases possible, and the thread and engine filters excerpt matching; the ticket filter stays exact.
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -40,5 +40,5 @@ Shipped at [64b9f94](https://github.com/ArborealML/Inference-Router/commit/64b9f
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Read at 64b9f94: the distinguisher is FNV-1a folded to 32 bits — same-head values collide for roughly one pair in four billion — and a filter value written literally as another id head-plus-marker matches that record. Hence AC #2 back, AC #5 met, since the criterion allowed a bounded fingerprint. An exception-message pin will not do for AC #6: escaping makes body bytes exceed the character count, so assert the shape and a byte ceiling. One HTTP harness serves this and [TASK-62](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-62%20-%20Refuse-a-switch-proof-that-never-named-the-requested-model.md) AC #9 — first to land builds it, the other reuses it. Pins assert at most IdentifierChars, the reserve sitting inside 128; the request-path pair becomes equal length with a shared 96 head; an alias case and an exact-ticket control are added. [decision-45](https://github.com/ArborealML/Inference-Router/blob/main/backlog/decisions/decision-45%20-%20A-cut-marker-is-a-diagnostic-distinguisher-not-an-identity-correlation-uses-the-ticket-id.md) settles identity: the marker is diagnostic, correlation is the ticket id, no new wire identity field without the owner.
+Closed at 8e6867d (SPEC v0.12.40), verified by read: one ceiling in `Fail` (`RouterCore.cs:833`) feeding `ticket.Error`, the caller exception and a stream's error frame; `WriteErrorAsync` caps what it serialises; the queue sentence cuts its id before interpolation; `TryGetTicket` keeps identities whole on purpose, with a comment saying why. The implementer reports 212 passed / 0 failed (206 at 64b9f94 plus 6 pins), no failing test in that run, and five mutation controls each red exactly one intended pin — their report, not my run. CI 44287567275 green on attempt 1, confirmed by `gh run list`. Cost read and not measured: over-budget values are hashed while the ring lock is held and a filter re-hashes per replayed event — a TASK-85 baseline question. The snapshot's unstated bound became TASK-97.
 <!-- SECTION:NOTES:END -->

@@ -30,10 +30,10 @@ This row owns the shape of the refusal the owner ordered (decision-27): a reason
 - [x] #5 The refusal reason is bounded in length as well as in name count, keeping the count of what was omitted
 - [x] #6 One request-side test walks the refusal: an aliased model gets switch_failed with no inference dispatch, the feed names the near miss, and the capability reads unknown
 - [ ] #7 The caller-facing reason is one of a named finite set of categories, with no model name or window number in it; the parameters stay on the feed, pinned to exact strings
-- [ ] #8 Every identifier interpolated into a feed reason is bounded before the string is built, and the docs call the feed text a bounded excerpt
+- [x] #8 Every identifier interpolated into a feed reason is bounded before the string is built, and the docs call the feed text a bounded excerpt
 - [ ] #9 The request-side pin asserts the HTTP response — status, the one lowercase error shape, and the category — not only the in-process exception
 - [ ] #10 One fairness case still runs the trust path with an answering /models refresh
-- [ ] #11 A caller-supplied model id is capped in length before it reaches a feed reason or an event payload, and SPEC names the cap
+- [x] #11 A caller-supplied model id is capped in length before it reaches a feed reason or an event payload, and SPEC names the cap
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -45,5 +45,7 @@ Two commits; sites re-measured at `6ea83ca`. **A — src, tests, SPEC.** `state.
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Landed [610f0d8](https://github.com/ArborealML/Inference-Router/commit/610f0d86d9990e933e676a49e7215dd39f08049e) (v0.12.37): one token from a closed set of seven at the switch exits, the caller sentence built from what the asking caller holds, and WireText budgets with Model stored at reporting length. **AC #7, #8 and #11 went back** after a high-tier commit review, re-measured at that commit: RouterCore.Fail (:644-647, :828-850) interpolated the raw ticket.Model into a request.failed reason and the funnel capped Model but not Reason; and two exits still hand a caller free-form text outside the seven — EngineRuntime.cs:620 (a remote engine loads its own models) and :728-729 (a switch that never started), the second naming the target. Caps are [TASK-93](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-93%20-%20Bound-every-feed-field-at-the-funnel-and-make-SPEC-true-of-it.md), taxonomy [TASK-94](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-94%20-%20Name-every-refusal-category-and-stop-a-fixed-mismatch-reading-as-a-timeout.md). AC #9 shares its HTTP error-shape harness with the terminal-error bound open on TASK-93: whoever lands first builds it, the other reuses it, and the ceiling is asserted in serialized bytes.
+Landed [610f0d8](https://github.com/ArborealML/Inference-Router/commit/610f0d86d9990e933e676a49e7215dd39f08049e) (v0.12.37): one token from a closed set of seven at the switch exits, the caller sentence built from what the asking caller holds, `WireText` budgets with `Model` stored at reporting length. A high-tier commit review returned AC #7, #8 and #11: `RouterCore.Fail` interpolated the raw `ticket.Model` into a `request.failed` reason, the funnel capped `Model` but not `Reason`, and two exits still hand over free-form prose — `EngineRuntime.cs:620` (a remote engine loads its own models) and `:728-729` (a switch that never started, naming the target). Caps [TASK-93](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-93%20-%20Bound-every-feed-field-at-the-funnel-and-make-SPEC-true-of-it.md), taxonomy [TASK-94](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-94%20-%20Name-every-refusal-category-and-stop-a-fixed-mismatch-reading-as-a-timeout.md).
+
+8e6867d meets `#8` and `#11`: the queue refusal cuts the model id before interpolating, and the funnel caps every producer's identifiers and reason at store. AC #9's harness exists — reuse `ErrorContractTests`' `StartAsync` + `AssertShape`.
 <!-- SECTION:NOTES:END -->
