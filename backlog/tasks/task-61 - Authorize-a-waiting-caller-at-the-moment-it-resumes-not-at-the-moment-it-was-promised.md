@@ -3,11 +3,11 @@ id: TASK-61
 title: >-
   Authorize a waiting caller at the moment it resumes, not at the moment it was
   promised
-status: In Progress
+status: Done
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-17T23:07:00Z'
-updated_date: '2026-11-18T06:53:00Z'
+updated_date: '2026-11-18T09:05:00Z'
 labels:
   - concurrency
   - scheduling
@@ -32,24 +32,18 @@ The owner's posture: a switch the engine cannot confirm is **refused** (decision
 - [x] #4 The resume check is pinned by a gate between the readiness await and the snapshot read, so the pin cannot pass on thread scheduling
 - [x] #5 A marker raised by a LATER claim never withdraws the proof a waiter's own switch published: that caller is not sent behind another caller's transaction
 - [x] #6 Two callers wanting different models on a one-model engine produce no alternating launch sequence — pinned as a launch sequence, not as the absence of a timeout
-- [ ] #7 A waiter's own proof survives a later claim but not a probe's failure: with a probe failure published between proof and claim the waiter is not answered Ready, and without it it is
-- [ ] #8 Claim provenance reads true only while the current claim authored the health withdrawal; every other health author clears it, and a provenance-only publication still advances the capability version
+- [x] #7 A waiter's own proof survives a later claim but not a probe's failure: with a probe failure published between proof and claim the waiter is not answered Ready, and without it it is
+- [x] #8 Claim provenance reads true only while the current claim authored the health withdrawal; every other health author clears it, and a provenance-only publication still advances the capability version
 <!-- AC:END -->
 
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Commits 1 (`f89fead`) and 2 (`6ea83ca`) landed: the four resume answers, then AC #6's sequence pin with arrivals counted at `BeforeSwitchWaitForTests`.
-
-**3, AC #7-#8 — design settled by the plan review, re-checked at `6ea83ca`.** One internal, non-positional `EngineCapability` member meaning "the claim that raised the current marker changed `Healthy` from true to false, and no later non-claim author superseded it". Rules: true only at claim start when health was true; false at a positive probe, a switch proof, an allowed probe negative, a marker clear, and at `PublishUnknown` (`:280`) — which returns early when health is already false, so a provenance-only change must still bump `Version`. `ReadyIn` (`:590-598`) stays strict; only the own-proof branch reads the bit. Pinned as a pair beside `SwitchClaimTests.cs:397` on the existing seams: a probe failure published between proof and claim must deny Ready, and the current pin must still grant it. Mutation control: the predicate arm alone. No new member on `EngineStats` (decision-41). Then TASK-76, then TASK-68 carries the bit without redeciding it.
-
-The resume check is not the entitlement: authority across the handoff is TASK-25's criterion.
+Shipped at [d6cfb38](https://github.com/ArborealML/Inference-Router/commit/d6cfb38362ac64ead69d4db96216549043803126) (SPEC v0.12.38). One internal, non-positional bit on the capability snapshot: *the claim that raised the current marker authored the withdrawal, until another author supersedes it*. Set only when a claim starts from a healthy engine; cleared by a positive probe, a switch proof, a probe negative allowed to publish, a switch exit, or a marker clear. `PublishUnknown` no longer early-returns on already-false health: it publishes a provenance-only change and advances `Version`, because the scan reads `Version` as its "nothing moved" test. `ReadyIn` stays strict; only the own-proof branch reads the bit. [TASK-76](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-76%20-%20Withdraw-health-only-when-the-models-fetch-failed-and-never-over-a-switchs-own-proof.md) and [TASK-68](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-68%20-%20Bind-the-serving-gauges-to-a-capability-epoch-so-a-stale-window-cannot-authorise-a-profile-the-engine-cannot-serve.md) preserve this shape; they do not redecide it.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-**Green through `6ea83ca` (v0.12.36)**, run 44250245947 success. AC #3-#6 verified at HEAD: `OwnProofStillStands` (`EngineRuntime.cs:615-618`) and its pin (`SwitchClaimTests.cs:397`), the sequence pin (`:454`, `extra, m` twice), both pins on the seam.
-
-**Both reviews ingested; every claim re-checked in code.** F1 is this row's, now AC #7-#8: one bit cannot say who withdrew health — `PublishProbeFailure` (`:235-245`) and `TryPublishSwitchStarted` (`:302`) publish the same `Healthy = false`. A claim preserving the health it displaced was rejected: `PublishUnknown` (`:280`) returns early when health is already false, so stale provenance survives it. F3 (unprotected handoff after a Ready answer) stays parked in SPEC 15, proof check on TASK-25; F2 (unversioned gauge) and F4 (re-decide under two locks) are TASK-68's. `EngineCapability` reaches no wire surface (`AirServerJson.cs:11-16`; decision-41). Do not revert `042e212`; TASK-62's category work follows this row.
+AC #7 and #8 closed at [d6cfb38](https://github.com/ArborealML/Inference-Router/commit/d6cfb38362ac64ead69d4db96216549043803126), parent `e3e4f35`, and this seat confirmed the commit resolves, is `origin/main`, carries the implementation identity, and contains both pins by name — `AFailedProbeBetweenProofAndClaimWithdrawsTheWaitersOwnProof` in the switch-claim class and `TheClaimThatWithdrewHealthIsTheOnlyAuthorOfUnknownHealth` in the publication class. The pairing is the point: a marker alone still grants Ready to a waiter holding its own proof, and a probe failure between that proof and a later claim withdraws it. The probe is driven by the health loop, with the test seam removed. The coding seat reports 199 passed / 0 failed locally at that tree and two mutation probes each failing the intended pins; this seat did not run them. CI run 44272047987 was in flight when the row closed, so the gate is the last word, not the report. The accepted §15 gap — admission authority across the handoff, carried by [TASK-25](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-25%20-%20Reserve-the-switchs-own-ticket-before-a-lifecycle-transaction-drains-an-engine.md) AC #5, TASK-64 AC #3 and TASK-72 — stays open on those rows and is not this row's to close.
 <!-- SECTION:NOTES:END -->

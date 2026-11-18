@@ -1,10 +1,11 @@
 ---
 id: TASK-93
 title: Bound every feed field at the funnel, and make SPEC true of it
-status: To Do
+status: In Progress
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-18T08:30:00Z'
+updated_date: '2026-11-18T09:06:00Z'
 labels:
   - wire
   - events
@@ -27,3 +28,9 @@ From a high-tier commit review of 610f0d8, every claim re-measured by this seat.
 - [ ] #4 A cut cannot split a surrogate pair, and the marker plus dropped-count text fits inside the reserve the cap claims.
 - [ ] #5 Two ids that become identical once cut stay distinguishable in a feed record — a bounded fingerprint or the ticket id — pinned by a two-id test.
 <!-- AC:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Bound at the producers, verified at the funnel. RouterCore.Fail builds its reason from the request model id and the engine name before anything is capped: route both through the existing identifier budget (128) and let the funnel cap Reason as well as Model, so no producer has to remember. Budgets stay 128 and 1600 unless the pin shows a number SPEC cannot state honestly. Pins: POST chat completions and the thread-completion verb with attacker-length identifiers, asserting the error body stays bounded and well-formed, plus two ids that cut to the same head staying distinguishable in a feed record. SPEC is corrected in the same commit, whichever way the sentence goes.
+<!-- SECTION:PLAN:END -->
