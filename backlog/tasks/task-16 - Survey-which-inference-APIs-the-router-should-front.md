@@ -5,7 +5,7 @@ status: Waiting
 assignee:
   - '@qwen3.8-flash-next-board'
 created_date: '2026-11-16T23:02:00Z'
-updated_date: '2026-11-18T19:29:00Z'
+updated_date: '2026-11-18T20:47:00Z'
 labels: []
 milestone: m-12
 dependencies:
@@ -27,6 +27,7 @@ Wake when TASK-14 lands. Then dispatch the upstream adapter comparison for Strat
 - [ ] #3 A decision recorded in SPEC: which adapters are in for v0.2, which are explicitly out, and the engine 'kind' taxonomy that supports both
 - [ ] #4 Any new kind gets a fake-handler wire test before real engine wiring
 - [ ] #5 Any proposed Responses route must pass typed sync and SSE fixtures plus a real Codex tool round with matching call IDs. Unsupported response history, hidden reasoning and cache counts are refused or reported unavailable.
+- [ ] #6 Qualify Responses tool calls through completion and cancellation with matching IDs and exactly one terminal outcome. Replay the existing Chat fixtures against the same build.
 <!-- AC:END -->
 
 ## Implementation Notes

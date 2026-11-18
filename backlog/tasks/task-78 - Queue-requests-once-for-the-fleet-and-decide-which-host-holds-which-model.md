@@ -5,7 +5,7 @@ status: To Do
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-18T02:37:00Z'
-updated_date: '2026-11-18T20:33:00Z'
+updated_date: '2026-11-18T20:47:00Z'
 labels:
   - scheduling
 milestone: m-6
@@ -30,6 +30,7 @@ decision-25 parked a fleet-wide queue and cross-host model residence as later wo
 - [ ] #4 SPEC carries acceptance criteria a fleet scheduler has to meet before any implementation row starts
 - [ ] #5 A request arriving at any cluster ingress can reach an eligible host selected from the global request queue. A managed peer can automatically switch models under its proven lifecycle authority.
 - [ ] #6 Fleet placement selects host, model and batch. The host authority controls stop, ownership and admission. A missed heartbeat cannot prove vacancy or override a local refusal.
+- [ ] #7 When an eligible host loses its warm copy, recompute placement using measured reload time or an explicit unknown. A lower predicted cost elsewhere cannot override that host’s admission refusal.
 <!-- AC:END -->
 
 ## Implementation Notes

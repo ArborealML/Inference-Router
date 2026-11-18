@@ -7,7 +7,7 @@ status: To Do
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-18T01:22:00Z'
-updated_date: '2026-11-18T20:43:00Z'
+updated_date: '2026-11-18T20:47:00Z'
 labels: []
 milestone: m-7
 dependencies:
@@ -30,6 +30,7 @@ The `air` CLI gains a proxy mode: a local server that receives client requests a
 - [ ] #4 the proxy never starts, stops or reconfigures a backend
 - [ ] #5 Retry a connection failure before forwarding. After possible upstream acceptance, the running proxy never resends the inference, even when the response stream breaks. Document the process-restart limitation.
 - [ ] #6 During a router outage, queued bytes, request count and wait time stay within documented bounds. Cancellation releases capacity and no cancelled request is forwarded after recovery.
+- [ ] #7 Recover while concurrent wakeups target the same queued request. Count one upstream submission per queued operation using process-local state and the existing wire format.
 <!-- AC:END -->
 
 ## Implementation Notes

@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@gpt-6.2-sol-scheduling'
 created_date: '2026-11-18T01:22:00Z'
-updated_date: '2026-11-18T20:32:00Z'
+updated_date: '2026-11-18T20:47:00Z'
 labels: []
 milestone: m-5
 dependencies:
@@ -29,6 +29,7 @@ Switch cost stops being an assumption. Per model per engine, the router already 
 - [ ] #3 Under bounded offered load, stale estimates or a single sample cannot postpone an eligible aged model past the documented scheduling bound. A deterministic test observes its successful dispatch.
 - [ ] #4 SPEC 5.5 or 7 says what the numbers mean and what they never decide alone
 - [ ] #5 5 Each stage is recorded as its own value, an unobserved stage is distinguishable from a zero, and a failed or cancelled attempt is still recorded with its outcome
+- [ ] #6 After a known eviction, discard the warm estimate. Report measured reload time for a matching cold profile, or report unknown when no matching observation exists. A fixture covers both outcomes.
 <!-- AC:END -->
 
 ## Implementation Plan
