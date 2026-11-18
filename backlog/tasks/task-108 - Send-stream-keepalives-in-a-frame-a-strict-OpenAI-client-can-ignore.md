@@ -1,17 +1,21 @@
 ---
 id: TASK-108
 title: Send stream keepalives in a frame a strict OpenAI client can ignore
-status: Preparing
+status: In Progress
 assignee:
   - '@gpt-6.2-sol'
 created_date: '2026-11-18T17:43:00Z'
-updated_date: '2026-11-18T18:26:00Z'
+updated_date: '2026-11-18T18:34:00Z'
 labels:
   - wire
   - stream
   - serve
 dependencies: []
 references:
+  - src/Arboreal.InferenceRouter.Server/ServerApp.cs
+modified_files:
+  - tests/Arboreal.InferenceRouter.Tests/StreamFrameIdentityTests.cs
+  - src/Arboreal.InferenceRouter.Server/AirServerJson.cs
   - src/Arboreal.InferenceRouter.Server/ServerApp.cs
 priority: high
 ordinal: 106000
@@ -20,7 +24,7 @@ ordinal: 106000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Prepare the reviewed stream change for implementation. The external wire review returned and the plan incorporates its corrections.
+The implementer is changing the stream writer and CLI under the reviewed plan. The external review and fixed legacy-parser control are complete.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

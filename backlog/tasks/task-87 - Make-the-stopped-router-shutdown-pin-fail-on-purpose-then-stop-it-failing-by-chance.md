@@ -3,11 +3,11 @@ id: TASK-87
 title: >-
   Make the stopped-router shutdown pin fail on purpose, then stop it failing by
   chance
-status: Waiting
+status: Preparing
 assignee:
-  - '@qwen3.8-flash-next'
+  - '@gpt-6.2-sol'
 created_date: '2026-11-18T06:27:00Z'
-updated_date: '2026-11-18T18:18:00Z'
+updated_date: '2026-11-18T18:31:00Z'
 labels:
   - flake
   - tests
@@ -20,7 +20,7 @@ ordinal: 86000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Wake when TASK-98 lands the production stop decision. The readiness-wait test has failed both at its 30-second ceiling and when cancellation wins its assertion. Resume the deterministic fixture and quiet-host measurements against the corrected shutdown path.
+The stop decision landed in 380a2a4. Prepare the deterministic fixture and mutation controls against that revision, then run the quiet-host series in a dedicated measurement window.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

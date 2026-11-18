@@ -5,7 +5,7 @@ status: Done
 assignee:
   - '@gpt-6.2-sol'
 created_date: '2026-11-18T18:24:00Z'
-updated_date: '2026-11-18T18:28:00Z'
+updated_date: '2026-11-18T18:31:00Z'
 labels: []
 dependencies: []
 ordinal: 113000
@@ -33,4 +33,6 @@ Add Preparing to the existing checker allowlist. Exercise a valid Preparing row 
 
 <!-- SECTION:NOTES:BEGIN -->
 Column and contract landed in 40e9395, checker and fixtures in ab99552. CLI readback confirmed the configured order. The self-test accepts Preparing, rejects Prepairing and excludes Done from the open count.
+
+The manager dispatched the bounded commit review through e0d3f02 on 2026-11-18, including the checker change ab99552.
 <!-- SECTION:NOTES:END -->
