@@ -28,7 +28,7 @@ RENDERED = {
     "Implementation Notes",
     "Comments",
 }
-STATUSES = {"To Do", "In Progress", "Waiting", "Blocked", "Done"}
+STATUSES = {"To Do", "Preparing", "In Progress", "Waiting", "Blocked", "Done"}
 BODY_LIMIT = 600
 SECTION_LIMIT = 300
 DESC_LIMIT = 300
@@ -209,6 +209,17 @@ def self_test() -> int:
     if code != 0:
         failures.append(f"clean fixture should pass, exit {code}: {out.strip()[:400]}")
 
+    preparing = clean["task-1 - A.md"].replace("status: To Do", "status: Preparing")
+    done = FIXTURE.format(n=2, title="Finished task", body="Recorded in SPEC.md.").replace(
+        "status: To Do", "status: Done").replace("- [ ]", "- [x]")
+    code, out = run({"task-1 - A.md": preparing, "task-2 - B.md": done})
+    if code != 0 or "corpus: 1 open task(s)" not in out or "(TASK-1)" not in out:
+        failures.append(f"Preparing should count as open and Done should be excluded: exit {code}: {out.strip()[:400]}")
+
+    code, out = run({"task-1 - A.md": preparing.replace("status: Preparing", "status: Prepairing")})
+    if code != 1 or "TASK-1: STATUS: unknown status 'Prepairing'" not in out:
+        failures.append(f"misspelled Preparing status should be reported: exit {code}: {out.strip()[:400]}")
+
     folded = {
         "task-1 - A.md": FIXTURE.format(n=1, title="Cut the release tag", body="Build the thing."),
         "task-2 - B.md": FIXTURE.format(n=2, title="Cut the release tag", body="Build the other thing."),
@@ -254,7 +265,7 @@ def self_test() -> int:
         print(f"self-test FAILED: {f}")
     print(f"board-check self-test: {'FAILED' if failures else 'ok'} "
           f"(folded titles, duplicate titles, unpublished paths, link paths, doubled labels, "
-          f"wake-sentence cycles, clean fixture)")
+          f"wake-sentence cycles, clean fixture, preparing and closed statuses)")
     return 1 if failures else 0
 
 
