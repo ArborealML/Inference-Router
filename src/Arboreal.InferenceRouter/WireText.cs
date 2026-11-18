@@ -123,14 +123,20 @@ internal static class SwitchReason
     internal const string NoLifecycleOwner = "no_lifecycle_owner";
 
     /// <summary>The set, in one place, with nothing outside it. A caller can be told one of these tokens and no
-    /// other text from the attempt; every failed switch answer is built through the door that checks this array,
-    /// and the test walk of the exits asserts equality against it in both directions (§5.5). Internal, and never
-    /// handed out to anything that could edit it.</summary>
-    internal static readonly string[] All =
+    /// other text from the attempt; every failed switch answer is built through the door that checks this set, and
+    /// the test walk of the exits asserts equality against it in both directions (§5.5). A span rather than an
+    /// array: an array's reference can be readonly while its elements are still rewritten by anything in this
+    /// assembly, which would make the closed set whatever the last writer chose.</summary>
+    private static readonly string[] s_all =
     [
         NoSelectCommand, LaunchFailed, HealthTimeout, RefreshOmits, RefreshUnanswered,
         WindowTooSmall, SwitchError, NoLifecycleOwner,
     ];
+
+    /// <summary>The set as readers see it: a span, so nothing outside this type can rewrite an element. An array
+    /// handed out as `readonly` still has writable elements, which would make the closed set whatever the last
+    /// writer chose (§5.5).</summary>
+    internal static ReadOnlySpan<string> All => s_all;
 }
 
 /// <summary>Feed-only reason names: a phase an operator greps for that the caller's decision does not branch

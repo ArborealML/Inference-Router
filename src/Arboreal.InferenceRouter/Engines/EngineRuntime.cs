@@ -598,9 +598,10 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
         /// (§5.5).</summary>
         internal static SwitchResult Failed(string category)
         {
-            if (!SwitchReason.All.Contains(category, StringComparer.Ordinal))
+            if (!SwitchReason.All.Contains(category))
                 throw new ArgumentException(
-                    $"refusal category \"{WireText.Head(category, 64)}\" is not one of the named categories (§5.5)",
+                    "a switch refusal named something outside the closed set of categories (§5.5); the name is " +
+                    "not quoted here, because the point of this check is that such a name never reaches a caller",
                     nameof(category));
             return new SwitchResult(SwitchOutcome.Failed, category);
         }
@@ -1020,18 +1021,11 @@ public sealed class EngineRuntime : IAsyncDisposable, ICapabilitySource
                 // readiness task that is already resolved false and never start a switch of its own.
                 return;
             }
-            // The entry exists but names no selector the delegated provider can run. Left to the provider, that
-            // comes back from preflight as a refusal and the coordinator hands it back as a failed launch — a fixed
-            // configuration gap read as a launch failure. EnsureLoadedAsync answers the same predicate before the
-            // switch is claimed; this is the backstop for a claim that started while the catalog said otherwise,
-            // and it costs the marker up and down rather than a wrong name (§5.5).
-            if (_lifecycle.Kind == DelegatedExecProvider.ProviderKind && !DelegatedExecProvider.HasUsableSelector(md))
-            {
-                state.FailureReason = SwitchReason.NoSelectCommand;
-                Emit("engine.switch_failed", model: model, reason: SwitchReason.NoSelectCommand);
-                EndSwitch(state, false);
-                return;
-            }
+            // The entry exists but names no usable selector: that is refused **before** the claim, off this same
+            // predicate, so the caller is told `no_select_command` and the engine keeps its last proof. There is
+            // deliberately no second ask here. With the refusal in front of the transaction and one predicate on
+            // both sides of it, a branch at this point could only be reached by a catalog changing under a running
+            // switch — and a guard no configuration can reach is a claim about the code the code does not support (§5.5).
             var profileName = profileOverride?.Name ?? md.Profile;
             Emit("engine.switch_started", model: model,
                 reason: profileName is null ? null : $"profile={WireText.Ident(profileName)}");

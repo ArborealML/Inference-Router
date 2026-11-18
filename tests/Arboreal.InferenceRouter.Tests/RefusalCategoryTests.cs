@@ -236,7 +236,7 @@ public class RefusalCategoryTests
         // exit answering a name this test does not know, fails here.
         Assert.Equal(
             WireSet.Select(entry => entry.Name).OrderBy(n => n, StringComparer.Ordinal),
-            SwitchReason.All.OrderBy(n => n, StringComparer.Ordinal));
+            SwitchReason.All.ToArray().OrderBy(n => n, StringComparer.Ordinal));
         Assert.All(WireSet, entry => Assert.Contains(entry.Action, CallerActions));
         // The pair a caller acts on: a fixed mismatch points at the configuration and an expired window points at
         // patience. Swapping the two tokens between exits leaves this green and the per-exit walk above red.
@@ -338,8 +338,11 @@ public class RefusalCategoryTests
 
         var ex = Assert.Throws<ArgumentException>(
             () => EngineRuntime.SwitchResult.Failed("still switching after 30000 ms"));
-        Assert.Contains("not one of the named categories", ex.Message);
-        Assert.Contains("still switching", ex.Message);           // the developer sees what was wrong
+        Assert.Contains("outside the closed set", ex.Message);
+        // The rejected name is not echoed: this message can reach a caller through the request path's outer catch,
+        // and the point of the check is that a name outside the set never reaches anyone. A developer finds it in
+        // the source, where the audit test is already red.
+        Assert.DoesNotContain("still switching", ex.Message);
 
         // …and the recorded-reason arm keeps the name it was given, falling back to the catch-all only when the
         // attempt recorded nothing at all.
@@ -348,7 +351,7 @@ public class RefusalCategoryTests
         Assert.Equal("switch_error", EngineRuntime.SwitchResult.FailedFromRecord("").Detail);
         var recorded = Assert.Throws<ArgumentException>(
             () => EngineRuntime.SwitchResult.FailedFromRecord("the engine on 127.0.0.1:8080 said no"));
-        Assert.Contains("not one of the named categories", recorded.Message);
+        Assert.Contains("outside the closed set", recorded.Message);
     }
 
     /// <summary>The audit AC #1 asks for: every failed switch answer in the engine leaves through the door with a
@@ -442,19 +445,53 @@ public class RefusalCategoryTests
         Assert.Null(engine.SwitchingToward);
     }
 
+    /// <summary>The predicate is "names a selector that can be run", not "names a selector block". An entry whose
+    /// <c>select.exec</c> is blank is the same fixed configuration gap, and it is answered in the same place — before
+    /// the claim, by name, with the engine's proof left alone. A check narrowed to "the entry has a select block"
+    /// would hand this to the provider and answer <c>launch_failed</c> (or <c>refresh_omits</c>) for whitespace in a
+    /// catalog, which is the drift the single predicate exists to prevent (§5.5).</summary>
+    [Fact(Timeout = 120_000)]
+    public async Task ABlankSelectorExecIsRefusedBeforeTheClaimToo()
+    {
+        using var handler = new EngineAnswers("m");
+        var feed = new EventRing();
+        // A catalog entry that names a `select` block whose exec is whitespace: the block exists, the selector does
+        // not. `Def` builds it that way rather than mutating one, because the catalog is read-only by design.
+        var def = Def(
+            new HealthProbeDefinition { Path = "/props", IntervalMs = 50, TimeoutMs = 5_000 },
+            extraSelect: new LifecycleCommand { Exec = "   " });
+        var provider = new Scripted
+        {
+            Kind = "exec",                                     // the delegated identity the check keys on
+            LaunchOutcome = LifecycleResult.Ok("the fake launched it"),   // it would say yes to anything
+        };
+        await using var engine = Engine(def, handler, lifecycle: provider, feed: feed);
+        Assert.Equal("exec", engine.LifecycleProvider);
+
+        using var loopCts = new CancellationTokenSource();
+        engine.StartHealthLoop(loopCts.Token);
+        await WaitUntil(() => engine.Capability.Healthy);
+
+        var failed = await engine.WaitForModelAsync("extra", TimeSpan.FromSeconds(10), CancellationToken.None);
+        Assert.Equal("no_select_command", Expect("no_select_command", failed));
+        Assert.Equal(0, provider.LaunchCalls);                    // the transaction never began
+        Assert.Null(engine.SwitchingToward);                       // and no marker went up
+        Assert.DoesNotContain("engine.switch_started", feed.Replay(0).Select(e => e.Kind));
+        Assert.True(engine.Capability.Healthy);
+    }
+
     // ── harness ───────────────────────────────────────────────────────────────
 
-    /// <summary>The caller's name is the tail of the sentence the request path builds around it, so the message is
-    /// their own identifiers plus this and nothing else. Asserting against a literal written in this file — rather
-    /// than against a production constant — is what makes the walk evidence.</summary>
+    /// <summary>The caller's half of a refusal is the whole <c>Detail</c>: one name, no sentence around it. Written
+    /// against a literal in this file — not a production constant — is what makes the walk evidence (§5.5).</summary>
     private static string Expect(string literal, EngineRuntime.SwitchResult result)
     {
         Assert.False(result.IsReady);
         Assert.NotNull(result.Detail);
-        var cut = result.Detail!.LastIndexOf(": ", StringComparison.Ordinal);
-        var observed = cut < 0 ? result.Detail! : result.Detail![(cut + 2)..];
-        Assert.Equal(literal, observed);
-        return observed;
+        // The whole value, not the tail after the last "text: ": a refusal carrying `anything: refresh_omits` fails
+        // here, where reading a suffix out of the message would have passed it.
+        Assert.Equal(literal, result.Detail);
+        return result.Detail!;
     }
 
     private static EngineRuntime Engine(
@@ -462,7 +499,8 @@ public class RefusalCategoryTests
         => new(def, new RouterConfig { Engines = new Dictionary<string, EngineDefinition> { ["fake"] = def } },
             feed ?? new EventRing(), handler, lifecycle: lifecycle);
 
-    private static EngineDefinition Def(HealthProbeDefinition? health = null, bool remote = false) => new()
+    private static EngineDefinition Def(
+        HealthProbeDefinition? health = null, bool remote = false, LifecycleCommand? extraSelect = null) => new()
     {
         Name = "fake",
         Kind = EngineKind.OpenAiCompatible,
@@ -472,7 +510,7 @@ public class RefusalCategoryTests
         Catalog = new Dictionary<string, EngineModelDefinition>
         {
             ["m"] = new() { Name = "m" },
-            ["extra"] = new() { Name = "extra" },
+            ["extra"] = new() { Name = "extra", Select = extraSelect },
             ["second"] = new() { Name = "second" },
         },
     };
@@ -534,7 +572,10 @@ public class RefusalCategoryTests
     /// says whether health has to be proved and for how long.</summary>
     private sealed class Scripted : IEngineLifecycleProvider
     {
-        public string Kind => "scripted";
+        /// <summary>Overridable so a pin can put a provider under the runtime's delegated-exec identity — the
+        /// identity the selector check and the lifecycle coordinator both key on.</summary>
+        public string Kind { get; init; } = "scripted";
+        public int LaunchCalls { get; private set; }
         public LifecycleResult LaunchOutcome { get; set; } = LifecycleResult.Ok();
         public bool ProveHealth { get; set; } = true;
         public int ReadinessMs { get; set; } = 10_000;
@@ -553,6 +594,7 @@ public class RefusalCategoryTests
 
         public async ValueTask<LifecycleResult> LaunchAsync(LifecycleTarget target, CancellationToken ct)
         {
+            LaunchCalls++;
             if (ThrowOnLaunch is { } boom) throw new InvalidOperationException(boom);
             if (LaunchGate is { } gate) await gate.Task.ConfigureAwait(false);
             return LaunchOutcome;
