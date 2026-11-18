@@ -31,6 +31,7 @@ public sealed class DockerLifecycleConfig
     /// <summary>Local image lookup reference used for preflight. Launch uses the pinned image ID.</summary>
     public required string Image { get; init; }
     public DockerImageIdentity? ImageIdentity { get; init; }
+    internal DockerLaunchResources? Resources { get; init; }
     /// <summary><c>unix:///path/to/sock</c> or <c>http(s)://host:port</c>.</summary>
     public string Socket { get; init; } = "unix:///var/run/docker.sock";
     /// <summary>Pinned so a daemon update cannot change the API under a running router.</summary>

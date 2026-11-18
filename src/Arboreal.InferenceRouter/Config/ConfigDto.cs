@@ -95,6 +95,7 @@ public sealed class DockerDto
     [JsonPropertyName("socket")][TomlPropertyName("socket")] public string? Socket { get; set; }
     [JsonPropertyName("api_version")][TomlPropertyName("api_version")] public string? ApiVersion { get; set; }
     [JsonPropertyName("router_id")][TomlPropertyName("router_id")] public string? RouterId { get; set; }
+    [JsonPropertyName("resources")][TomlPropertyName("resources")] public DockerResourcesDto? Resources { get; set; }
     [JsonPropertyName("command")][TomlPropertyName("command")] public string[]? Command { get; set; }
     [JsonPropertyName("env")][TomlPropertyName("env")] public string[]? Env { get; set; }
     [JsonPropertyName("stop_timeout_ms")][TomlPropertyName("stop_timeout_ms")] public int? StopTimeoutMs { get; set; }

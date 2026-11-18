@@ -30,6 +30,7 @@ public static class RouterConfigLoader
                     CommentHandling = JsonCommentHandling.Skip,
                     AllowTrailingCommas = true,
                 });
+                DockerLaunchResources.CheckJson(doc.RootElement);
                 dto = JsonSerializer.Deserialize<ConfigDto>(doc, ConfigJsonContext.Default.ConfigDto)
                       ?? throw new RouterConfigException("config: empty document");
             }
@@ -237,6 +238,7 @@ public static class RouterConfigLoader
             {
                 Image = d.Image!,
                 ImageIdentity = ParseDockerImageIdentity(d, name),
+                Resources = d.Resources is { } resources ? DockerLaunchResources.Parse(resources, name) : null,
                 Socket = d.Socket ?? "unix:///var/run/docker.sock",
                 ApiVersion = d.ApiVersion ?? "v1.44",
                 RouterId = d.RouterId ?? throw new RouterConfigException(

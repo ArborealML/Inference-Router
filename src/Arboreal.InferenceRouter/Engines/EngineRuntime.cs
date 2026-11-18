@@ -152,6 +152,8 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
             (!def.HasExplicitRouterLifecycle || enrollment.Engine != def.Name || enrollment.RouterId != def.Docker?.RouterId ||
              lifecycle is not null))
             throw new RouterConfigException($"engine.{def.Name}: host enrollment does not match the bound lifecycle owner");
+        if (hostEnrollment is not null && def.Docker?.Resources is not null)
+            throw new RouterConfigException($"engine.{def.Name}: Docker resources require host qualification before enrollment");
         _hostEnrollment = hostEnrollment;
         _def = def;
         _catalog = def.Catalog.ToDictionary(entry => entry.Key, entry => CopyCatalogEntry(entry.Value), StringComparer.Ordinal);
@@ -194,6 +196,9 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
             ? DockerLifecycleProvider.ProviderKind : DelegatedExecProvider.ProviderKind;
         if (provider is not null)
         {
+            if (def.Docker?.Resources is not null)
+                throw new RouterConfigException($"engine.{WireText.Ident(def.Name)}: Docker resources require host qualification before activation");
+
             var actualKind = provider.Kind;
             if (!string.Equals(actualKind, providerKind, StringComparison.Ordinal))
                 throw new RouterConfigException(

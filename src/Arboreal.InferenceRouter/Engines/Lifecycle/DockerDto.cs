@@ -45,7 +45,37 @@ public sealed class DockerHostConfig
 {
     [JsonPropertyName("PortBindings")] public Dictionary<string, DockerPortBinding[]>? PortBindings { get; set; }
     [JsonPropertyName("NetworkMode")] public string? NetworkMode { get; set; }
+    [JsonPropertyName("Devices")] public DockerDeviceMapping[]? Devices { get; set; }
+    [JsonPropertyName("DeviceRequests")] public DockerDeviceRequest[]? DeviceRequests { get; set; }
+    [JsonPropertyName("Mounts")] public DockerMount[]? Mounts { get; set; }
+    [JsonPropertyName("NanoCpus")] public long? NanoCpus { get; set; }
+    [JsonPropertyName("Memory")] public long? Memory { get; set; }
+    [JsonPropertyName("MemorySwap")] public long? MemorySwap { get; set; }
+    [JsonPropertyName("ShmSize")] public long? ShmSize { get; set; }
+    [JsonPropertyName("Ulimits")] public DockerLimit[]? Ulimits { get; set; }
 }
+
+public sealed record DockerDeviceMapping(
+    [property: JsonPropertyName("PathOnHost")] string HostPath,
+    [property: JsonPropertyName("PathInContainer")] string ContainerPath,
+    [property: JsonPropertyName("CgroupPermissions")] string Permissions);
+
+public sealed record DockerDeviceRequest(
+    [property: JsonPropertyName("Driver")] string Driver,
+    [property: JsonPropertyName("Count")] int Count,
+    [property: JsonPropertyName("DeviceIDs")] string[]? DeviceIds,
+    [property: JsonPropertyName("Capabilities")] string[][] Capabilities);
+
+public sealed record DockerMount(
+    [property: JsonPropertyName("Type")] string Type,
+    [property: JsonPropertyName("Source")] string Source,
+    [property: JsonPropertyName("Target")] string Target,
+    [property: JsonPropertyName("ReadOnly")] bool ReadOnly);
+
+public sealed record DockerLimit(
+    [property: JsonPropertyName("Name")] string Name,
+    [property: JsonPropertyName("Soft")] long Soft,
+    [property: JsonPropertyName("Hard")] long Hard);
 
 public sealed class DockerPortBinding
 {

@@ -99,6 +99,7 @@ public sealed class DockerLifecycleProvider : IEngineLifecycleProvider, IDisposa
 
     public async ValueTask<LifecycleResult> PreflightAsync(LifecycleTarget target, CancellationToken ct)
     {
+        if (_cfg.Resources is not null) return ResourcesNotQualified();
         if (_cfg.ImageIdentity is not { } identity) return MissingImageIdentity();
 
         // Reachability first: every later failure is ambiguous if the daemon is not answering at all.
@@ -127,6 +128,10 @@ public sealed class DockerLifecycleProvider : IEngineLifecycleProvider, IDisposa
         var image = TryRead(imageBody, DockerJsonContext.Default.DockerImageInspectResponse);
         return ImageIdentityFailure(image, identity) ?? LifecycleResult.Ok($"daemon_ok image={imageRef}");
     }
+
+    private static LifecycleResult ResourcesNotQualified() => LifecycleResult.Fail(
+        "docker_resources_not_qualified",
+        "native Docker resources are available for offline configuration checks only; leave this target under external management until host qualification is available");
 
     private static LifecycleResult MissingImageIdentity() => LifecycleResult.Fail(
         "image_identity_required", "set docker.image_id, docker.image_repo_digest and docker.image_platform before switching");
@@ -236,6 +241,8 @@ public sealed class DockerLifecycleProvider : IEngineLifecycleProvider, IDisposa
     public async ValueTask<LifecycleResult> StopAsync(
         LifecycleTarget target, IReadOnlyList<EnginePeer> peers, CancellationToken ct)
     {
+        if (_cfg.Resources is not null) return ResourcesNotQualified();
+
         foreach (var peer in peers)
         {
             if (!peer.OwnedByUs)
@@ -267,44 +274,10 @@ public sealed class DockerLifecycleProvider : IEngineLifecycleProvider, IDisposa
 
     public async ValueTask<LifecycleResult> LaunchAsync(LifecycleTarget target, CancellationToken ct)
     {
+        if (_cfg.Resources is not null) return ResourcesNotQualified();
         if (_cfg.ImageIdentity is not { } identity) return MissingImageIdentity();
 
-        var labels = new Dictionary<string, string>(StringComparer.Ordinal)
-        {
-            [LabelRouter] = _scope.RouterId,
-            [LabelEngine] = _scope.EngineName,
-            [LabelModel] = target.Model,
-        };
-        var body = new DockerCreateRequest
-        {
-            Image = identity.Id,
-            Labels = labels,
-            StopTimeoutSeconds = Math.Max(1, _cfg.StopTimeoutMs / 1000),
-        };
-        if (_command.Length > 0) body.Cmd = Expand(_command, target);
-        if (_env.Length > 0) body.Env = Expand(_env, target);
-        if (_cfg.HostPort is not null)
-        {
-            body.HostConfig = new DockerHostConfig
-            {
-                NetworkMode = _cfg.NetworkMode,
-                PortBindings = new Dictionary<string, DockerPortBinding[]>(StringComparer.Ordinal)
-                {
-                    [$"{_cfg.ContainerPort}/tcp"] = [new DockerPortBinding
-                    {
-                        // Always name the interface: an empty HostIp is Docker's shorthand for every
-                        // interface, and an unauthenticated backend on 0.0.0.0 is a public port.
-                        HostIp = _cfg.HostIp,
-                        HostPort = _cfg.HostPort.Value.ToString(CultureInfo.InvariantCulture),
-                    }],
-                },
-            };
-        }
-        else if (_cfg.NetworkMode is not null)
-        {
-            body.HostConfig = new DockerHostConfig { NetworkMode = _cfg.NetworkMode };
-        }
-
+        var body = BuildCreateRequest(target, identity);
         var json = System.Text.Json.JsonSerializer.Serialize(body, DockerJsonContext.Default.DockerCreateRequest);
         using var payload = new StringContent(json, Encoding.UTF8, "application/json");
         var (created, bodies, failure) = await CallAsync(
@@ -324,6 +297,58 @@ public sealed class DockerLifecycleProvider : IEngineLifecycleProvider, IDisposa
         if (!started) return startFailure!;
 
         return LifecycleResult.Ok($"container={id[..Math.Min(12, id.Length)]}");
+    }
+
+    internal DockerCreateRequest BuildCreateRequest(LifecycleTarget target, DockerImageIdentity image)
+    {
+        var body = new DockerCreateRequest
+        {
+            Image = image.Id,
+            Labels = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                [LabelRouter] = _scope.RouterId,
+                [LabelEngine] = _scope.EngineName,
+                [LabelModel] = target.Model,
+            },
+            StopTimeoutSeconds = Math.Max(1, _cfg.StopTimeoutMs / 1000),
+        };
+        if (_command.Length > 0) body.Cmd = Expand(_command, target);
+        if (_env.Length > 0) body.Env = Expand(_env, target);
+
+        var resources = _cfg.Resources;
+        if (_cfg.HostPort is null && _cfg.NetworkMode is null && resources is null) return body;
+
+        var host = new DockerHostConfig { NetworkMode = _cfg.NetworkMode };
+        body.HostConfig = host;
+        if (_cfg.HostPort is { } port)
+        {
+            host.PortBindings = new Dictionary<string, DockerPortBinding[]>(StringComparer.Ordinal)
+            {
+                [$"{_cfg.ContainerPort}/tcp"] = [new DockerPortBinding
+                {
+                    // Docker interprets an empty HostIp as every interface.
+                    HostIp = _cfg.HostIp,
+                    HostPort = port.ToString(CultureInfo.InvariantCulture),
+                }],
+            };
+        }
+        if (resources is null) return body;
+
+        if (resources.Gpu is { } gpu)
+            host.DeviceRequests = [new DockerDeviceRequest("", gpu.All ? -1 : 0,
+                gpu.All ? null : gpu.DeviceIds.ToArray(), [["gpu"]])];
+        if (!resources.DevicePaths.IsEmpty)
+            host.Devices = [.. resources.DevicePaths.Select(path => new DockerDeviceMapping(path, path, "rwm"))];
+        if (!resources.BindMounts.IsEmpty)
+            host.Mounts = [.. resources.BindMounts.Select(bind => new DockerMount("bind", bind.Source, bind.Target, bind.ReadOnly))];
+        host.NanoCpus = resources.NanoCpus;
+        host.Memory = resources.MemoryBytes;
+        host.MemorySwap = resources.MemorySwapBytes;
+        host.ShmSize = resources.ShmSizeBytes;
+        if (!resources.Ulimits.IsEmpty)
+            host.Ulimits = [.. resources.Ulimits.Select(limit => new DockerLimit(limit.Name, limit.Soft, limit.Hard))];
+
+        return body;
     }
 
     private string[] Expand(string[] template, LifecycleTarget target)

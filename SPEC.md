@@ -1,6 +1,6 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.64)
+Status: draft, continuously revised (v0.12.65)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
@@ -352,6 +352,9 @@ daemon transaction per engine. 137 tests green.
   that answers no `upload_url`, an upload that dies or answers no asset id, an asset name listed twice on
   the release, and a tag that moves after the first resolve. No tag has run the gate: still configured,
   not proven.
+- v0.12.65 — load typed native Docker resources and verify the exact create payload offline.
+  Docker resource settings share `HostConfig` with networking. Resource-bearing lifecycle
+  mutations remain gated on host and serving-instance qualification (§5.3.1, §7).
 - v0.12.64 — `EngineRuntime` rejects a supplied Docker provider whose engine name, router ID,
   or configured daemon differs from the engine definition. The provider uses the same captured
   scope for its client and container labels. External engines leave supplied providers unused
@@ -1511,6 +1514,24 @@ Create uses the configured full image ID. If that ID disappears after preflight,
 without trying the lookup reference. A direct provider launch also requires the pins and uses the
 full ID. The coordinator supplies repository and platform verification by running preflight.
 
+**Resource projection.** When configured, the checked resource settings in §7 populate
+`HostConfig` in the same create request as `PortBindings` and `NetworkMode`. The pinned image,
+command, environment, labels and stop timeout keep their existing meanings. HIP uses exact
+same-path Docker `Devices` mappings with `rwm`. NVIDIA uses one `DeviceRequests` entry for
+all GPUs or ordered device IDs. Structured bind mounts request the existing daemon-host
+source and its explicit access mode. CPU, memory, total memory plus swap, shared memory
+and ulimits reach their typed Docker fields.
+
+Resource-bearing requests are available for offline validation and projection. Provider
+preflight and direct mutators refuse with `docker_resources_not_qualified` before any
+Docker write. Enrolled and injected lifecycle activation also refuse resource-bearing configs.
+Omitting resources preserves the previous switch and create behavior. The measured HIP Qwen
+archive and the unqualified Bonsai Q8 script supply distinct offline fixtures. A passing
+projection establishes the requested Docker fields. Activation requires host-bound authority,
+effective resource inspection, artifact and live instance identity, and reconciliation of
+an uncertain create while the host reservation is held. It also requires verification of
+read-only bind enforcement for nested mounts.
+
 A preflight refusal leaves existing containers untouched and can retain a still-valid incumbent
 discovery proof (§5.5). The provider refuses unavailable or unauthorized daemon access without
 escalating. Once stop begins, a failure can leave some peers stopped or
@@ -1556,8 +1577,10 @@ version negotiation, logs and daemon events. Docker exec output would be demulti
 
 **Target ownership and launch checks.** Host-wide occupancy and ownership reconciliation remain
 target design. The per-engine image check above verifies the daemon's local image mapping.
-Registry trust, host vacancy and serving-instance identity require separate proof. Mounts, GPU
-requests and resource limits remain part of the target launch configuration.
+Registry trust, host vacancy and serving-instance identity require separate proof. Effective
+resource enforcement requires daemon inspection under the host authority. A create warning
+or a mismatch in inspected resources must prevent start and keep the fence through exact-ID
+cleanup. A lost create response requires reconciliation before a successor can mutate.
 
 **Target error handling.** `404` from inspect means *absent* and nothing else. `ENOENT`,
 `ECONNREFUSED`, `EACCES`, TLS and timeout failures mean *daemon unavailable* — never
@@ -2201,6 +2224,24 @@ aliases = ["code"]
 default_profile = "32k-2"
 serving = [{ name = "32k-2", max_context = 32768, max_slots = 2 }]
 ```
+
+**Optional Docker resources.** Use `[engine.<name>.docker.resources]` or the
+equivalent JSON object to validate a resource request offline. Keep the table omitted in
+an active native Docker configuration while resource-bearing activation is gated.
+
+| Field | Accepted input |
+| --- | --- |
+| `gpu` | `{ all = true }` or `{ device_ids = ["1", "0"] }`. IDs are distinct canonical numeric strings. The request retains their order. |
+| `device_paths` | HIP requires `/dev/kfd` and at least one distinct `/dev/dri/renderD<N>`. Paths map to the same container paths. Choose either raw HIP devices or an NVIDIA request. |
+| `bind_mounts` | A nonempty list of `{ source, target, read_only }` entries. Both paths are clean absolute Linux paths outside control directories. Container destinations must be distinct and may not overlap. Set `read_only` explicitly. |
+| `nano_cpus` | A positive integer in billionths of a CPU. |
+| `memory_bytes`, `memory_swap_bytes` | Memory is at least 6 MiB when set. The positive swap-inclusive total requires memory and is at least that value. Equal values permit no extra swap. |
+| `shm_size_bytes` | A positive byte count. Omission leaves Docker's shared-memory default. |
+| `ulimits` | A nonempty list of distinct `core` or `memlock` entries with `name`, `soft` and `hard`. Limits are nonnegative or `-1` for unlimited, and soft must not exceed hard. |
+
+An explicit resource object must contain a setting. The loader refuses unknown or
+duplicated resource fields and explicit JSON nulls. Bind sources are literal paths
+on the Docker host. The create request uses structured binds with source creation disabled.
 
 Requirements: comments preserved for round-tripping is **not** required;
 schema errors fail fast at boot with path-precise messages; unknown engine
