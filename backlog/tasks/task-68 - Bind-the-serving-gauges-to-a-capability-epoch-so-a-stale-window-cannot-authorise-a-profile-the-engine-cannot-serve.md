@@ -7,7 +7,7 @@ status: Ready for Review
 assignee:
   - '@gpt-6.2-sol-config'
 created_date: '2026-11-18T01:11:00Z'
-updated_date: '2026-11-18T22:58:00Z'
+updated_date: '2026-11-18T23:11:00Z'
 labels:
   - concurrency
   - scheduling
@@ -36,6 +36,7 @@ Three serving gauges — window, slots, inferred profile — are live fields out
 - [ ] #9 A committed gauge change nudges dispatch outside the compare-exchange, no new event kind
 - [ ] #10 Profile-name inference is model-scoped, null on ambiguity, and never authorizes readiness
 - [ ] #11 Three deterministic pins, no new production seam: a stale wide /props response released after a narrow settle; a claim against a superseded version; a post-launch response reporting none
+- [ ] #12 After switching, a fresh model window below the explicit minimum prevents any write despite an unchanged tier label.
 <!-- AC:END -->
 
 ## Implementation Plan

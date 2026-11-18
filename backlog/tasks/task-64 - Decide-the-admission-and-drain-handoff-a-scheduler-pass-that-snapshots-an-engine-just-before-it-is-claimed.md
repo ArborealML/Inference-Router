@@ -7,7 +7,7 @@ status: Preparing
 assignee:
   - '@gpt-6.2-sol-release'
 created_date: '2026-11-17T23:07:00Z'
-updated_date: '2026-11-18T23:10:00Z'
+updated_date: '2026-11-18T23:11:00Z'
 labels:
   - scheduling
   - architecture
@@ -31,6 +31,7 @@ Recorded as an accepted gap in SPEC 15 by the fix set for fd5e0cd; this row is t
 - [ ] #4 Consume completion and profile wakes while the route is closed. The same ticket stays queued with zero grants or bytes. Opening the matching generation wakes dispatch outside locks and sends that ticket once without another external event.
 - [ ] #5 Hold the queue expiry callback behind the router lock past the original monotonic deadline. The final admission check refuses the expired ticket with zero upstream writes.
 - [ ] #6 Close the ranked winner after scanning the first eligible ticket beyond its group. That ticket dispatches exactly once in baseline order; repeated wakes neither spin nor restart the closed preparation.
+- [ ] #7 On a model-only route, use identical prompts and equal derived requirements. Withdrawing the measured window before exact take blocks only the explicit floor. Losing the final permit blocks either ticket. Refused tickets write zero bytes.
 <!-- AC:END -->
 
 ## Implementation Plan
