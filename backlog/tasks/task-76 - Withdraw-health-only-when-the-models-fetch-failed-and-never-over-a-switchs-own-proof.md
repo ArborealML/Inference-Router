@@ -7,7 +7,7 @@ status: To Do
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-18T02:36:00Z'
-updated_date: '2026-11-18T09:21:00Z'
+updated_date: '2026-11-18T09:45:00Z'
 labels:
   - concurrency
 dependencies:
@@ -41,4 +41,6 @@ Wake condition met at 3dce284: the suite is green there and TASK-67's shutdown p
 This row goes **first** in the serving-gauge sequence: AC #2 is the marker guard on a probe's negative publication, re-verified at `EngineRuntime.cs:235-247`, and the gauge row's plan says not to duplicate that half.
 
 Two more findings from the commit review of the range e3e4f35..d6cfb38, both re-measured by this seat at d6cfb38 by reading, not running. The exit pin (the publication-class pin naming the sole author of unknown health) asserts the provenance only after the marker clear, and its version test is at-or-above claimVersion+2, so a mutation that bumps the version but leaves the bit set at PublishUnknown passes — while a waiter reading between those two publications sees a claim-authored unknown and is answered Ready. That is AC #4. And PublishProbeFailure early-returns on already-unknown health, re-read at line 247, so a probe cannot record the engine dying during a claim: carried as its own row rather than folded in here.
+
+AC #4 target moved at 64b9f94: the last sub-case of the publication-class pin now waits on the gated launch (launchesBefore / Launches.Count > launchesBefore / SwitchingToward == "second") instead of waiting to read the claim marker, which was a window that could close. Work from that shape, not the one this row was written against.
 <!-- SECTION:NOTES:END -->
