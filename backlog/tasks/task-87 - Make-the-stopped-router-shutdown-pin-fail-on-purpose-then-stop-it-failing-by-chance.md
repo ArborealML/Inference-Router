@@ -24,8 +24,8 @@ The pin SwitchClaimTests.cs:230 AWaiterInsideTheReadinessWaitIsToldTheRouterStop
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 A construction fails the pin in 10 or more of 20 focused Release runs against 64b9f94 — not the fixed tree — with the SHA, command, environment and counts in this row.
-- [ ] #2 The mechanism is named here and explains that reproduction, not a hypothesis.
+- [x] #1 A construction fails the pin in 10 or more of 20 focused Release runs against 64b9f94 — not the fixed tree — with the SHA, command, environment and counts in this row.
+- [ ] #2 The mechanism is named here and explains both observed shapes — the 30 s ceiling under load and the settled/cancelled assertion in CI — not a hypothesis
 - [ ] #3 Afterwards: 50 focused Release runs and 3 full Release suite runs with no failure, plus the same construction run against the fix.
 - [ ] #4 Two named mutation controls fail pins: removing shutdown's settlement of the readiness task, and letting a stop read as a broken engine so a later write overwrites the cause.
 - [ ] #5 The route assertion is gone, and a provider that records cancellation but stays held pins liveness: the stopped answer arrives while held, and the marker clears after release.
@@ -40,8 +40,10 @@ Dispositioned by the top-tier plan review and corrected: dropping Assert.Equal("
 
 ## Implementation Notes
 
+<!-- SECTION:NOTES:BEGIN -->
+Five CI occurrences, all Expected settled / Actual cancelled: 44264855629 b7ab43d, 44275637518 e0dcd0e, 44277482601 64b9f94 (rerun green), 44280833645 board-only push, 44308059362 14a01e2 (rerun requested). Five of the last seven pushes, so the gate is not a gate and this row goes first.
 
+Criterion #1 is met on the coding seat's report, which came with sha, command and per-run logs: a detached worktree at `64b9f94`, `dotnet test --no-build -c Release`. The pin alone on a quiet machine: **0 of 20 red**. The whole `SwitchClaimTests` class with 40 busy loops on a 24-core host: **9 of 20**, repeated at **11 of 20**, 20 of 40 overall, and every red run named that test — zero unnamed reds. Their own caveat is the next question: under load the failure is the **30 s Fact ceiling**, not the settled/cancelled assertion, and CI shows the assertion. Criterion #2 has to answer both, which is why its wording changed.
 
-Five CI occurrences, all Expected settled / Actual cancelled: 44264855629 at b7ab43d, 44275637518 at e0dcd0e, 44277482601 at 64b9f94 (rerun green), 44280833645 on a board-only push, 44308059362 at 14a01e2 (rerun requested by this seat). Five of the last seven pushes: the gate cannot be trusted until this is fixed, so this row goes first. Coding seat, two sightings — at `8e6867d` plus the taxonomy patch, 2 red / 1 green, this pin in its 30 s timeout shape and `RequestPhaseTimeoutTests.ACallerThatHangsUpIsCancelledEvenIfTheEngineIgnoresTheCancellation`; at `14a01e2`, Failed 1 / Passed 221 with the **test name lost to a pipe**, unreproduced in four Debug, three Release and six switch-class runs. Their report; that untitled sighting is the failure mode criterion #6 ends. Mechanism and mutation controls live in the implementation plan, from the top-tier review; nothing here is measured by this seat beyond the CI logs it pulled. Standing rule while open: no new pins in the switch-claim or capability-publication classes — amendments are allowed, and the taxonomy commit's census is on TASK-94.
-**Started by the coding seat.** Reproduction for criterion #1: 20 focused Release runs of the pin at `64b9f94` — a sha before the taxonomy commit, which separates this flake from that change — in a detached worktree off the main tree, one log per run, counts reported with sha and command. Two follow-ups for whoever lands this row: tightening `CapabilityPublicationTests.CategoryOf` to assert the caller's text whole is a new assertion in a closed class, so it waits for this row to close; and the selector backstop's pin must land in a class this rule does not close.
+Their earlier untitled sighting (`Failed 1 / Passed 221`, name lost to a pipe, clean in 13 further runs) is the failure mode criterion #6 ends. Their load hogs poisoned two local suite runs on this machine until killed; any local count from inside that window, mine included, is unusable. Standing rule while open: no new pins in the switch-claim or capability-publication classes — amendments are allowed, and the taxonomy commit's census is on TASK-94. The selector-backstop follow-up resolved at 2f7e3e6: the in-switch check was deleted as unreachable, and the blank-selector pin sits in the taxonomy class, which this rule does not close.
 <!-- SECTION:NOTES:END -->
