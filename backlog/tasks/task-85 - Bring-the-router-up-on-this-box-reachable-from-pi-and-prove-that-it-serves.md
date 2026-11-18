@@ -5,7 +5,7 @@ status: Waiting
 assignee:
   - '@qwen3.8-flash-next-board'
 created_date: '2026-11-18T06:06:00Z'
-updated_date: '2026-11-18T18:47:00Z'
+updated_date: '2026-11-18T18:48:00Z'
 labels:
   - serve
 dependencies:
@@ -37,4 +37,6 @@ The owner parked engine startup, shutdown and reconfiguration on this host at 17
 **Measured 07:52Z on a front-only probe** (auto_switch off, no lifecycle block, loopback only, an already-running OpenAI-shaped fake upstream): the router listed the model, passed one completion, relayed a stream to the sentinel, and answered an unknown model in the single lowercase error shape. This measures the early probe configuration.
 
 **Measured by this seat at 17:33Z on the running instance** (a build of `d0240c2`, not current main): `/healthz` 200; `/v1/models` lists exactly one model, `owned_by` the engine it fronts; one non-streamed completion returned 200 in 2.3 s with usage counts; an unknown model name answered 503 `model_unavailable` in the single lowercase shape. The config's own read names `max_inflight_per_engine = 2` under a 4-slot ceiling and no lifecycle block, so #1 and #5 are met on this seat's reads. #2, #3, #4 stay open — #4 because the config names `auto_switch` but not `wait_health`. One defect measured here belongs to TASK-51: a request naming the catalog name the engine does not report loaded answered nothing in 90 s, past `switch_wait_timeout_ms = 60000`.
+
+At 5c5e18a, ConfigDto.cs defines wait_health on DockerDto and SelectDto only. For a remote front-only engine with neither block, document that readiness waiting is inapplicable in the local config alongside auto_switch=false. Do not add a lifecycle provider solely to carry this setting. Verify the actual configuration at deployment before checking #4.
 <!-- SECTION:NOTES:END -->
