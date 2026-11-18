@@ -7,7 +7,7 @@ status: To Do
 assignee:
   - '@qwen3.8-flash-next'
 created_date: '2026-11-18T06:27:00Z'
-updated_date: '2026-11-18T09:28:00Z'
+updated_date: '2026-11-18T09:44:00Z'
 labels:
   - flake
   - tests
@@ -38,4 +38,6 @@ Live on main, 08:12Z: CI run 44264855629, building a commit that changed no code
 The commit review of 610f0d8, re-checked by this seat: an assertion failure inside that test's hook leaves the hook parked, so a red run there can hang rather than fail — one more reason the pin has to be deterministic before anything else builds on it.
 
 Second CI occurrence, 09:26Z: run 44275637518 on e0dcd0e — a push touching only backlog/, AGENTS.md and the architecture map — failed 1 of 199 on the same pin with the same Expected settled, Actual cancelled. Two of the last three board-only pushes to main went red here, which is the cost this row names: the gate is ambiguous until the pin is deterministic.
+
+Third CI occurrence, 09:37Z: rerun-less attempt 1 of run 44277482601 (the v0.12.39 feed-bounds push) failed the same pin, 1 of 206, same Expected settled / Actual cancelled; the rerun of that same commit was green, which is the clearest evidence yet that the pin, not the tree, is the variable. Three of the last four pushes to main. Standing rule for the queue: no new pins land in the switch-claim or capability-publication classes until this one is deterministic.
 <!-- SECTION:NOTES:END -->
