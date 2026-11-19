@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@gpt-6.2-sol-scheduling'
 created_date: '2026-11-18T18:56:00Z'
-updated_date: '2026-11-19T09:02:00Z'
+updated_date: '2026-11-19T09:03:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -23,7 +23,7 @@ ordinal: 116000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Prepare the reviewed offline dispatch candidate for integration with the current provider and SPEC. Production enrollment remains disabled.
+Correct verified transport cleanup accounting and fault reporting before offline dispatch lands.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -48,5 +48,5 @@ Publish one immutable sender with the ready preparation. Its exact invocation bo
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Plan reviews released offline exact-ticket dispatch with typed retirement and event-driven rearm. At 43b64d5 non-loopback fixture setup prevented 35 cases from reaching assertions. At 1bd351d the fixture and four earlier binding findings are addressed: raw selection, allowed headers, trusted projection/endpoint and resident identity. Focused Release passed 63 cases and another 55 distinct compatibility/integration cases, zero skips; Linux x64 Native AOT passed without trim warnings. Runtime and correction reviews dispatched. Landing preview conflicts only in SPEC; verify provider auto-merge before promotion.
+At 1bd351d the four envelope/target binding corrections passed 118 distinct Release cases and Linux x64 Native AOT. Binding correction review dispatched. Runtime review of 43b64d5 found two defects still present on 1bd351d. A response-disposal fault with confirmed issuer retirement and successful preparation cleanup must release capacity once and independently report one redacted fault. Preserve concurrent stream-close and permit-retirement exceptions for standalone callers. Unknown issuer retirement or failed preparation cleanup retains the charge. Hold landing for both focused controls.
 <!-- SECTION:NOTES:END -->
