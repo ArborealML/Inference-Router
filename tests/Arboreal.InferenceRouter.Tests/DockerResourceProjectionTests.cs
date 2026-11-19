@@ -4,7 +4,7 @@ using Arboreal.InferenceRouter.Lifecycle;
 
 namespace Arboreal.InferenceRouter.Tests;
 
-public sealed class DockerResourceProjectionTests
+public sealed partial class DockerResourceProjectionTests
 {
     private const string PinnedId = "sha256:1111111111111111111111111111111111111111111111111111111111111111";
     private const string Manifest = "example/hip@sha256:2222222222222222222222222222222222222222222222222222222222222222";
@@ -124,38 +124,46 @@ public sealed class DockerResourceProjectionTests
     public void OmittedResourcesPreserveTheOriginalHostConfig(string dockerFields, string? expected)
     {
         using var actual = Project(LoadToml(resources: null, dockerFields: dockerFields));
+        Assert.False(actual.RootElement.TryGetProperty("Entrypoint", out _));
         var hasHostConfig = actual.RootElement.TryGetProperty("HostConfig", out var host);
         Assert.Equal(expected is not null, hasHostConfig);
         if (expected is not null) JsonEqual(expected, host);
     }
 
-    [Fact]
-    public async Task UnqualifiedResourcePlanRefusesDirectAndCoordinatedMutation()
+    [Theory]
+    [InlineData("", true, "docker_resources_not_qualified")]
+    [InlineData(EntrypointField + LaunchOptionCatalog, false, "docker_launch_options_not_qualified")]
+    [InlineData(HostIpcField + LaunchOptionCatalog, false, "docker_launch_options_not_qualified")]
+    [InlineData(HostIpcField + LaunchOptionCatalog, true, "docker_launch_options_not_qualified")]
+    [InlineData(HostIpcField + TargetCatalog, true, "docker_target_not_qualified")]
+    public async Task UnqualifiedPlanRefusesDirectAndCoordinatedMutation(string fields, bool resources, string reason)
     {
         using var daemon = new FakeDockerDaemonHandler
         {
             Responder = _ => (HttpStatusCode.OK,
                 """[{"Id":"incumbent","Labels":{"arboreal.router":"fixture-router","arboreal.engine":"fixture","arboreal.model":"old"}}]"""),
         };
-        using var provider = new DockerLifecycleProvider(LoadToml(HipResources), "fixture", daemon);
+        using var provider = new DockerLifecycleProvider(
+            LoadToml(resources ? HipResources : null, fields + "\n[engine.fixture.catalog.model]"), "fixture", daemon);
         using var coordinator = new EngineLifecycleCoordinator(provider, ownsProvider: false);
         var target = Target();
 
         var preflight = await provider.PreflightAsync(target, CancellationToken.None);
         var launch = await provider.LaunchAsync(target, CancellationToken.None);
-        var stop = await provider.StopAsync(target, [new EnginePeer("incumbent", "example/hip:1", "old", OwnedByUs: true)],
-            CancellationToken.None);
+        var stop = await provider.StopWithObservationsAsync(
+            [new EnginePeer("incumbent", "example/hip:1", "old", OwnedByUs: true)],
+            _ => throw new InvalidOperationException("an unqualified engine attempted a stop"), CancellationToken.None);
         foreach (var result in new[] { preflight, launch, stop })
         {
             Assert.False(result.Succeeded);
-            Assert.Equal("docker_resources_not_qualified", result.Reason);
+            Assert.Equal(reason, result.Reason);
             Assert.False(string.IsNullOrWhiteSpace(result.Action));
         }
         Assert.Empty(daemon.Requests);
 
         var report = await coordinator.SwitchWithReportAsync(target, CancellationToken.None);
         Assert.True(report.RefusedBeforeMutation);
-        Assert.Equal("docker_resources_not_qualified", report.Result.Reason);
+        Assert.Equal(reason, report.Result.Reason);
         Assert.StartsWith("GET /v1.44/containers/json?", Assert.Single(daemon.Requests), StringComparison.Ordinal);
     }
 
@@ -283,11 +291,12 @@ public sealed class DockerResourceProjectionTests
         return RouterConfigLoader.Load(config, isJson: true).Engines["fixture"].Docker!;
     }
 
-    private static JsonDocument Project(DockerLifecycleConfig cfg)
+    private static JsonDocument Project(DockerLifecycleConfig cfg, LifecycleTarget? target = null)
     {
         using var daemon = new FakeDockerDaemonHandler();
-        using var provider = new DockerLifecycleProvider(cfg, "fixture", daemon);
-        var request = provider.BuildCreateRequest(Target(), cfg.ImageIdentity!);
+        target ??= Target();
+        using var provider = new DockerLifecycleProvider(cfg, target.EngineName, daemon);
+        var request = provider.BuildCreateRequest(target, cfg.ImageIdentity!);
         Assert.Empty(daemon.Requests);
         return JsonSerializer.SerializeToDocument(request, DockerJsonContext.Default.DockerCreateRequest);
     }

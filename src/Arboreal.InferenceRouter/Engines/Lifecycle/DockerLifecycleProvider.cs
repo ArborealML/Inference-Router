@@ -135,6 +135,9 @@ public sealed class DockerLifecycleProvider : IEngineLifecycleProvider, IDisposa
         if (_cfg.HasUnqualifiedTargetDocker)
             return LifecycleResult.Fail("docker_target_not_qualified",
                 "serving-tier Docker targets are available for offline configuration checks only; use an externally managed engine until target qualification is available");
+        if (_cfg.HasUnqualifiedLaunchOptions)
+            return LifecycleResult.Fail("docker_launch_options_not_qualified",
+                "remove docker.entrypoint and docker.ipc_mode for native startup or use an externally managed engine until launch options are qualified");
         return _cfg.Resources is null ? null : LifecycleResult.Fail("docker_resources_not_qualified",
             "native Docker resources are available for offline configuration checks only; leave this target under external management until host qualification is available");
     }
@@ -358,6 +361,7 @@ public sealed class DockerLifecycleProvider : IEngineLifecycleProvider, IDisposa
         var body = new DockerCreateRequest
         {
             Image = image.Id,
+            Entrypoint = _cfg.Entrypoint is { } executable ? [executable] : null,
             Labels = new Dictionary<string, string>(StringComparer.Ordinal)
             {
                 [LabelRouter] = _scope.RouterId,
@@ -382,10 +386,16 @@ public sealed class DockerLifecycleProvider : IEngineLifecycleProvider, IDisposa
         var binds = launch?.Binds ?? resources?.BindMounts ?? [];
         var memory = launch is null ? resources?.MemoryBytes : launch.MemoryBytes;
         var memorySwap = launch is null ? resources?.MemorySwapBytes : launch.MemorySwapBytes;
-        if (_cfg.HostPort is null && _cfg.NetworkMode is null && resources is null && binds.IsEmpty &&
+        if (_cfg.HostPort is null && _cfg.NetworkMode is null && _cfg.IpcMode is null && resources is null && binds.IsEmpty &&
             memory is null && memorySwap is null) return body;
 
-        var host = new DockerHostConfig { NetworkMode = _cfg.NetworkMode, Memory = memory, MemorySwap = memorySwap };
+        var host = new DockerHostConfig
+        {
+            NetworkMode = _cfg.NetworkMode,
+            IpcMode = _cfg.IpcMode,
+            Memory = memory,
+            MemorySwap = memorySwap,
+        };
         body.HostConfig = host;
         if (_cfg.HostPort is { } port)
         {

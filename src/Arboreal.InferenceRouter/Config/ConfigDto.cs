@@ -70,6 +70,8 @@ public sealed class DockerDto
     private string? _imageId;
     private string? _imageRepoDigest;
     private string? _imagePlatform;
+    private string? _entrypoint;
+    private string? _ipcMode;
     // JSON null is an explicit value, so it must not take the legacy all-omitted path.
     internal bool HasImageIdentity { get; private set; }
 
@@ -96,6 +98,26 @@ public sealed class DockerDto
     [JsonPropertyName("api_version")][TomlPropertyName("api_version")] public string? ApiVersion { get; set; }
     [JsonPropertyName("router_id")][TomlPropertyName("router_id")] public string? RouterId { get; set; }
     [JsonPropertyName("resources")][TomlPropertyName("resources")] public DockerResourcesDto? Resources { get; set; }
+    [JsonPropertyName("entrypoint")][TomlPropertyName("entrypoint")]
+    public string? Entrypoint
+    {
+        get => _entrypoint;
+        set
+        {
+            if (_entrypoint is not null) throw new RouterConfigException("duplicate docker.entrypoint");
+            _entrypoint = value ?? throw new RouterConfigException("docker.entrypoint cannot be null");
+        }
+    }
+    [JsonPropertyName("ipc_mode")][TomlPropertyName("ipc_mode")]
+    public string? IpcMode
+    {
+        get => _ipcMode;
+        set
+        {
+            if (_ipcMode is not null) throw new RouterConfigException("duplicate docker.ipc_mode");
+            _ipcMode = value ?? throw new RouterConfigException("docker.ipc_mode cannot be null");
+        }
+    }
     [JsonPropertyName("command")][TomlPropertyName("command")] public string[]? Command { get; set; }
     [JsonPropertyName("env")][TomlPropertyName("env")] public string[]? Env { get; set; }
     [JsonPropertyName("stop_timeout_ms")][TomlPropertyName("stop_timeout_ms")] public int? StopTimeoutMs { get; set; }
