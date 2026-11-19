@@ -1,6 +1,6 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.93)
+Status: draft, continuously revised (v0.12.94)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
@@ -352,6 +352,8 @@ daemon transaction per engine. 137 tests green.
   that answers no `upload_url`, an upload that dies or answers no asset id, an asset name listed twice on
   the release, and a tag that moves after the first resolve. No tag has run the gate: still configured,
   not proven.
+- v0.12.94 — keep named option operands out of the `air chat` and `air complete` user message,
+  read stdin when no positional arguments remain, and document the direct HTTP client (§11).
 - v0.12.93 — project matching TCP exposure for published ports on engines with per-tier Docker
   plans or engine-wide offline launch options (§7).
 - v0.12.92 — project tier-specific Docker shared memory for twelve default HyperQwen parking
@@ -3045,8 +3047,8 @@ admin schema and casing (§15.1) is a prerequisite, not a follow-up.
 
 ```
 air serve [--config f.toml] [--listen url]
-air chat [--server url] [--thread id] [--priority high:200] [--model name] [prompt]
-air complete [--server url] [--thread id] [--priority high:200] [--model name] [prompt]
+air chat [--server url] [--thread id] [--priority high:200] [--model name] [--system text] [--no-stream] [--json] [prompt ...]
+air complete [--server url] [--thread id] [--priority high:200] [--model name] [--system text] [--no-stream] [--json] [prompt ...]
 air models [--server url]
 air switch --engine e --model m [--server url]
 air status [--server url]
@@ -3056,7 +3058,22 @@ air tickets id [--server url]
 air config [--config f.toml]
 ```
 
-`air chat` and its alias `air complete` send `POST /v1/chat/completions` and stream by default.
+`air serve` starts the router host in the CLI process. Client verbs construct HTTP requests and
+read the router's responses directly.
+
+`air chat` and its alias `air complete` send `POST /v1/chat/completions`. Use `-s` or `--server`
+for the base URL. `-m` or `--model` supplies the JSON `model` when nonempty. `-t` or `--thread`
+sets `X-Inference-Thread`, which defaults to `anon`. `-p` or `--priority` sets the optional
+`X-Inference-Priority` header. The request streams by default. `--no-stream` sets `stream` to
+`false`, and `--json` controls output rendering.
+
+Options can appear before, between or after positional words. Value options take a separate
+following argument with no leading dash. The first eligible value supplies each option, and
+the parser consumes every eligible operand, including repeated ones. The CLI joins the remaining
+positional arguments with single spaces. If none remain, it reads stdin to EOF and trims leading
+and trailing whitespace. The resulting prompt fills one `user` message. A nonempty `--system`
+value fills a separate `system` message before it.
+
 A streamed response exits 0 after `data: [DONE]` if it carried no error (§6).
 In text mode stdout contains the concatenated text deltas and a trailing newline. Stderr prints
 status changes from router keepalive comments and any in-band error payload. With `--json`, stdout
@@ -3074,9 +3091,6 @@ or the original JSON body and exits 0.
 serving profiles. It opens no sockets and runs no lifecycle commands. `status` reports each
 engine's active profile, context window and slot count alongside health, loaded models and
 in-flight count.
-
-Library-first: every CLI verb is a thin wrapper over `IInferenceRouter` or
-`RouterHttpClient`; no logic lives in the CLI layer.
 
 ## 12. Future architecture commitments
 
