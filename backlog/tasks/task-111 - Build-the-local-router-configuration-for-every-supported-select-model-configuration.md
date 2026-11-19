@@ -7,7 +7,7 @@ status: Preparing
 assignee:
   - '@gpt-6.2-sol-config'
 created_date: '2026-11-18T18:15:00Z'
-updated_date: '2026-11-19T08:36:00Z'
+updated_date: '2026-11-19T08:37:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -19,7 +19,7 @@ ordinal: 109000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Prepare offline Docker health-check projection for three GLM launch targets while MiniMax completes CI and review. Compare full launch payloads against the selector. Production activation is separate.
+Prepare offline Docker health-check projection for three GLM launch targets on the landed MiniMax base. Compare full launch payloads against the selector. Production activation is separate.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -43,4 +43,6 @@ The installed selector has 169 valid and 337 invalid spellings across 75 distinc
 [PR #7](https://github.com/ArborealML/Inference-Router/pull/7) landed offline per-target environment and mounts, strict ownership checks and single-pass substitution. [PR #12](https://github.com/ArborealML/Inference-Router/pull/12) landed per-tier RAM and swap for the Qwen profiles. [PR #16](https://github.com/ArborealML/Inference-Router/pull/16) at ee6e0f5 adds the MiniMax executable entrypoint and host IPC. Its 96 focused Release cases passed, the pinned MiniMax config loaded, and linux-x64 server Native AOT published. Independent code review dispatched. Remaining coverage includes profile aliases, GPU ordering, shared memory, runtime policy, nested mounts and health settings. Bind receipts and labels to canonical model, tier and serving instance before activation.
 
 Single-device profiles require one explicit index and paired profiles two distinct indices. Utilization is 0.50–0.95 (default 0.90), parking 1–48 GiB (default 32), variable lanes 1–8. The selector has no supported suffix-cache launch.
+
+PR #16 merged at 0418440 after hosted CI and independent PASS on ee6e0f5. The review confirmed the resource-free IPC payload, separate entrypoint and command, legacy omission, and refusal before mutation.
 <!-- SECTION:NOTES:END -->
