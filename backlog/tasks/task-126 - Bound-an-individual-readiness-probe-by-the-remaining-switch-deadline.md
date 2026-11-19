@@ -1,11 +1,11 @@
 ---
 id: TASK-126
 title: Bound an individual readiness probe by the remaining switch deadline
-status: Waiting
+status: Done
 assignee:
-  - '@chatswarm'
+  - '@gpt-6.2-astra'
 created_date: '2026-11-18T20:43:00Z'
-updated_date: '2026-11-19T11:32:00Z'
+updated_date: '2026-11-19T11:40:00Z'
 labels: []
 milestone: m-4
 dependencies: []
@@ -16,17 +16,17 @@ ordinal: 124000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-The synchronization review on 40e483b wakes the coordinator for landing. Typed-stop passed 1/1 after awaiting retired-read cleanup before final assertions. Parent 0a71565 passed 7/7. PR #23 covers explicit named success; locking accessors verify both gates. Slot inputs exercise fixture normalization.
+Readiness probes honor the remaining switch budget. A healthy alternate served while the retired read was held. The synchronization review of 40e483b confirmed final assertions await that read’s cleanup. The corrected case passed 1/1 after seven controls passed on 0a71565. Hosted Release tests, Native AOT and smoke passed. Enrolled observations used the offline fixture. [PR #25](https://github.com/ArborealML/Inference-Router/pull/25) landed at a2a3dc0.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [x] #1 Hold a state probe and then a models probe separately past the remaining switch budget. Each attempt settles within the named bound and produces one terminal result.
-- [ ] #2 A delayed successful reply after timeout cannot publish readiness or revive a retired attempt. A healthy alternate can still make progress.
-- [ ] #3 Return an enrolled refusal through RunSwitchAsync after expiry or shutdown has won. The caller retains the original terminal cause and the feed records one terminal event, with no second capability change, completion, or dispatch wake.
-- [ ] #4 Exercise successful guarded publication with hooks that verify both short locks are released. A joined waiter woken by shutdown or expiry receives its committed result only after the outcome event is delivered.
+- [x] #2 A delayed successful reply after timeout cannot publish readiness or revive a retired attempt. A healthy alternate can still make progress.
+- [x] #3 Return an enrolled refusal through RunSwitchAsync after expiry or shutdown has won. The caller retains the original terminal cause and the feed records one terminal event, with no second capability change, completion, or dispatch wake.
+- [x] #4 Exercise successful guarded publication with hooks that verify both short locks are released. A joined waiter woken by shutdown or expiry receives its committed result only after the outcome event is delivered.
 - [x] #5 Hold the committed outcome event and stop the engine with two joined waiters on the same tier. After event delivery only the waiter whose minimum fits the committed measured window receives Ready. Neither waiter can dispatch.
-- [ ] #6 For explicit named and resolved-default enrolled tiers, test a fitting window on the verified instance and route in budget. Omitted or zero measured total slots refuse publication; positive measured total slots on that binding permit readiness.
+- [x] #6 For explicit named and resolved-default enrolled tiers, test a fitting window on the verified instance and route in budget. Omitted or zero measured total slots refuse publication; positive measured total slots on that binding permit readiness.
 - [x] #7 At absolute deadline equality, present otherwise qualifying window and positive slot evidence. The guard refuses publication, completion and permits. In the in-budget success control the hook receives the committed proof outside both short locks under the retained reservation.
 <!-- AC:END -->
 
