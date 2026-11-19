@@ -267,9 +267,20 @@ zero evidence about any current host image association.
 | --- | --- |
 | `Labels` | AIR adds canonical router/engine/model/profile labels. Selector launch and signature labels are absent. HyperQwen's selector signature varies with the vector and active artifacts. |
 | `Env`, `HostConfig.Mounts` (Strata) | Expected AIR order is common then tier. The selector's order differs. The protected `/run` credential target is refused. The projected substitute path and its environment value require pinned-image verification. |
-| `ExposedPorts` (Strata, Maya) | The selector CLI publishes the TCP port and emits root exposure. AIR projects the matching `PortBindings` with root exposure absent. Any inherited exposure needs pinned-image evidence. |
+| `ExposedPorts` (Strata, Maya) | AIR projects `8080/tcp` with an empty object value alongside the existing loopback `PortBindings`, matching the archived CLI publish intent in the derived reference. |
 | `HostConfig.RestartPolicy` (Strata, Maya) | AIR omits the Docker default. The selector passes explicit `--restart no`. |
 | `HostConfig.LogConfig` (HyperQwen) | AIR leaves the driver empty and requests both rotation options. Effective driver identity and support still require verification. |
+
+The published-port correction adds this root field to 36 Strata and 13 Maya derived
+create expectations. The reference uses the archived Strata and DeepSeek `--publish`
+and MiniMax and GLM `-p` arguments. Those arguments establish publish intent. The
+corrected documents are offline projection expectations. The original daemon
+observations and prior measured receipts stay tied to their original runs.
+
+For plans that hash the serialized create request, root exposure changes the frozen
+launch settings digest. Subsequent launch proof must match the new envelope. Exact pinned-image evidence
+is still required to establish inherited exposure, and effective binding must be
+observed on the host.
 
 Host checks still include exact image, checkpoint and instance binding, physical device
 and toolkit fit, effective mounts and SHM, available RAM after stop, restart and logging,

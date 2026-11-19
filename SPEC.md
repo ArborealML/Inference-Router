@@ -1,6 +1,6 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.92)
+Status: draft, continuously revised (v0.12.93)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
@@ -352,6 +352,8 @@ daemon transaction per engine. 137 tests green.
   that answers no `upload_url`, an upload that dies or answers no asset id, an asset name listed twice on
   the release, and a tag that moves after the first resolve. No tag has run the gate: still configured,
   not proven.
+- v0.12.93 — project matching TCP exposure for published ports on engines with per-tier Docker
+  plans or engine-wide offline launch options (§7).
 - v0.12.92 — project tier-specific Docker shared memory for twelve default HyperQwen parking
   targets offline, with common shared memory inherited on omission (§7).
 - v0.12.91 — project an explicit single-device NVIDIA request per offline serving tier for
@@ -2621,13 +2623,20 @@ value must match the form above. Omitted options leave their fields absent from 
 These keys belong in the engine's Docker block. A model-level Docker table containing any of
 them is invalid.
 
-On this offline policy path, a configured `host_port` adds the corresponding container TCP
-port to the root `ExposedPorts` object with an empty object value. The existing port binding
-supplies the host address and port. Each option gates startup and mutation across the engine,
-with the existing serving-tier, launch-option, then resource refusal order. Docker policy
-describes create intent. Before activation, verify that the effective daemon log driver supports
-both `max-size` and `max-file`. Refuse activation if the driver or its support for either option
-is unknown or incompatible. Restart authority, image association and authenticated serving-instance
+For an engine that declares per-tier Docker plans or engine-wide offline launch options,
+`host_port` adds the corresponding container TCP key to root `ExposedPorts` with an empty
+object value. The same key in `HostConfig.PortBindings` supplies the configured host address
+and port. This applies to every model on the opted-in engine, including siblings that use
+only common settings. A bare port binding or one with only common resources omits the root
+field. Omitting `host_port` also omits root exposure.
+
+Where a launch plan freezes the serialized create request, the added exposure changes the
+launch settings digest and requires evidence for the new envelope. The existing Docker
+declarations gate startup and mutation across the engine, in serving-tier, launch-option,
+then resource refusal order. Docker policy describes create intent. Before
+activation, verify that the effective daemon log driver supports both `max-size` and
+`max-file`. Refuse activation if the driver or its support for either option is unknown
+or incompatible. Restart authority, image association and authenticated serving-instance
 admission also require host verification.
 
 **Optional Docker resources.** Use `[engine.<name>.docker.resources]` or the

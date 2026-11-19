@@ -59,6 +59,7 @@ public sealed partial class DockerTargetProjectionTests
                 "arboreal.profile": "{{tier}}"
               },
               "StopTimeout": 120,
+              "ExposedPorts": {"8080/tcp": {} },
               "HostConfig": {
                 "IpcMode": "host",
                 "PortBindings": {"8080/tcp": [{"HostIp": "127.0.0.1", "HostPort": "18060"}]},

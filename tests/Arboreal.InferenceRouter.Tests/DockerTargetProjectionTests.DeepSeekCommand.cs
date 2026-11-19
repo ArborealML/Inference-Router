@@ -26,6 +26,7 @@ public sealed partial class DockerTargetProjectionTests
           "Labels":{"arboreal.router":"test-router","arboreal.engine":"strata",
             "arboreal.model":"deepseek-v4.1-flash-1017-iq2-xxs","arboreal.profile":"max"},
           "StopTimeout":120,
+          "ExposedPorts":{"8080/tcp":{}},
           "HostConfig":{
             "IpcMode":"host",
             "PortBindings":{"8080/tcp":[{"HostIp":"127.0.0.1","HostPort":"18060"}]},

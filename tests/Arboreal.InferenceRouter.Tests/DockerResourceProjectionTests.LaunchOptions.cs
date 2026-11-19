@@ -28,6 +28,7 @@ public sealed partial class DockerResourceProjectionTests
             "arboreal.profile": "32k"
           },
           "StopTimeout": 120,
+          "ExposedPorts":{"8080/tcp":{}},
           "HostConfig": {
             "IpcMode": "host",
             "PortBindings": {"8080/tcp": [{"HostIp": "127.0.0.1", "HostPort": "18123"}]},
@@ -74,9 +75,14 @@ public sealed partial class DockerResourceProjectionTests
     }
 
     [Theory]
-    [InlineData(HostIpcField, null, """{"IpcMode":"host"}""")]
-    [InlineData("""entrypoint = "/run/{{model}}/image-program" """, "/run/{{model}}/image-program", null)]
-    public void IsolatedLaunchOptionsProjectWithoutAddingOtherFields(string fields, string? entrypoint, string? host)
+    [InlineData(HostIpcField, null, """{"IpcMode":"host"}""", false)]
+    [InlineData("""entrypoint = "/run/{{model}}/image-program" """, "/run/{{model}}/image-program", null, false)]
+    [InlineData(HostIpcField + "\nhost_port = 18066", null,
+        """{"IpcMode":"host","PortBindings":{"8080/tcp":[{"HostIp":"127.0.0.1","HostPort":"18066"}]}}""", true)]
+    [InlineData(EntrypointField + "\nhost_port = 18066", "/opt/maya-python/bin/python",
+        """{"PortBindings":{"8080/tcp":[{"HostIp":"127.0.0.1","HostPort":"18066"}]}}""", true)]
+    public void IsolatedLaunchOptionsProjectWithoutAddingOtherFields(string fields, string? entrypoint, string? host,
+        bool published)
     {
         using var actual = Project(LoadToml(resources: null, dockerFields: fields));
         var root = actual.RootElement;
@@ -89,6 +95,8 @@ public sealed partial class DockerResourceProjectionTests
         }
         Assert.Equal(host is not null, root.TryGetProperty("HostConfig", out var projectedHost));
         if (host is not null) JsonEqual(host, projectedHost);
+        Assert.Equal(published, root.TryGetProperty("ExposedPorts", out var exposure));
+        if (published) JsonEqual("""{"8080/tcp":{}}""", exposure);
     }
 
     [Theory]
