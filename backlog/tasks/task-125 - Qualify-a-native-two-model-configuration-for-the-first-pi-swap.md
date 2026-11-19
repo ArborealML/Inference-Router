@@ -1,11 +1,11 @@
 ---
 id: TASK-125
 title: Qualify a native two-model configuration for the first pi swap
-status: In Progress
+status: Waiting
 assignee:
   - '@gpt-6.2-sol-config'
 created_date: '2026-11-18T20:36:00Z'
-updated_date: '2026-11-19T09:52:00Z'
+updated_date: '2026-11-19T09:55:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -18,7 +18,7 @@ ordinal: 123000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Qualify the first two-model pair within the primary-host configuration being built under TASK-111. Resolve both native plans from local artifacts and supported profiles. Decision-68 authorizes these engine runs. Use the local pair for TASK-112 and defer peer qualification.
+An authenticated applied-launch record and issuer-bound readiness observation wake live qualification of the first native pair. Both are engineering dependencies.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -31,5 +31,5 @@ Qualify the first two-model pair within the primary-host configuration being bui
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Both local models served Pi turns through AIR across selector transitions. The last saved reverse transition recorded Qwen 256k-4 at 256,000 tokens and four total slots; current residency is unverified. For one existing resident, identify the issuer/controller evidence producer for the applied launch and canonical full plan, exact container, independently attested serving process and connected peer, and roster/window/slots observed over that binding while inference stays closed. Missing provenance or a changed peer leaves authority unproven. Keep the selector receipt as historical evidence. TASK-112 retains the native client-driven swap proof.
+Both models served Pi turns through AIR during operator selector transitions. The last saved Qwen 256k-4 observation reported 256,000 context and four slots. Current residency remains unverified. Config and the resolver supply native intent, the selector supplies historical logs and artifact receipts, Docker supplied historical container/image identity, and Strata supplied direct roster and capacity. None binds the applied operation, epoch and full plan to the current serving process. Look up an original authenticated record by immutable container ID and return unavailable if absent. An observation-only issuer must attest the connected peer and bind both replies to the same serving process while inference admission is closed. TASK-112 retains the native client-driven swap proof.
 <!-- SECTION:NOTES:END -->
