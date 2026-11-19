@@ -5,7 +5,7 @@ status: Waiting
 assignee:
   - '@chatswarm'
 created_date: '2026-11-18T21:09:00Z'
-updated_date: '2026-11-19T11:56:00Z'
+updated_date: '2026-11-19T11:58:00Z'
 labels: []
 milestone: m-2
 dependencies: []
@@ -16,7 +16,7 @@ ordinal: 127000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-The independent idle-withdrawal commit verdict and the immediate host arbitration plan verdict wake the coordinator. Both reviews were dispatched November 19. The idle-disposal Release control passed 1/1 at bed5864 with zero skips.
+Hosted checks on [PR #26](https://github.com/ArborealML/Inference-Router/pull/26) and the verdict on the immediate host arbitration plan dispatched November 19 wake the coordinator. Idle withdrawal passed its bounded review and the named Release control passed 1/1 at bed5864. The reviewed diff matches the published commit.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -37,4 +37,6 @@ For the older injected host path, review exact claim and proof revalidation afte
 
 <!-- SECTION:NOTES:BEGIN -->
 The independent plan review on dd44ca5 passed the idle fix. Historical waiter results use the committed window and delivery barrier independently of current health. Existing PRs #4, #8, #23 and #25 cover the legacy and staged winner orderings. Criterion 2 remains open for the older injected host path: it publishes proof while pending, then can emit completion after stop seals cancellation. Shutdown owns the separate follow-up plan for arbitration and a deterministic held-proof test. Ordinary RouterCore supplies no enrollment.
+
+Idle review confirmed the unconditional stop publication fences older snapshots and leaves claim-owned terminal results intact. The single idle case discriminates the stale model-only answer. Broader disposal race coverage was outside this change. The immediate host plan also accounts for cleanup exceptions converted to ordinary failed results after terminal selection.
 <!-- SECTION:NOTES:END -->
