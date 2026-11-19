@@ -3,11 +3,11 @@ id: TASK-111
 title: >-
   Build the local router configuration for every supported select-model
   configuration
-status: Waiting
+status: In Progress
 assignee:
-  - '@chatswarm'
+  - '@gpt-6.2-sol-config'
 created_date: '2026-11-18T18:15:00Z'
-updated_date: '2026-11-19T10:33:00Z'
+updated_date: '2026-11-19T10:42:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -19,7 +19,7 @@ ordinal: 109000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Independent plan review dispatched on 0abdbf5. Its verdict wakes Config for the eight general DeepSeek targets.
+Config owns implementation of literal per-tier commands for eight general DeepSeek targets.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -32,7 +32,7 @@ Independent plan review dispatched on 0abdbf5. Its verdict wakes Config for the 
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Review the optional literal command on a Docker serving tier. A supplied nonempty argument array replaces the common command; omission preserves template expansion. Freeze the resulting arguments in the existing target and include them in the existing create-payload digest. Guard duplicate, malformed and misplaced declarations in JSON, TOML and direct DTO input. Verify eight numeric selector commands and matching probes in one dual-format ladder with max as default. Check a command-only digest difference and the existing zero-write gate. Run focused Release, config load and Native AOT on the candidate. Offline coverage would rise from 41 to 49 of 75 after landing.
+Plan review passed on 0abdbf5. An optional literal tier command replaces the whole argument array; omission inherits the validated common template. Preserve empty arguments, whitespace and token-shaped literals. Reject nulls, NULs, empty arrays, misplaced row keys, duplicates and casing shadows through raw parsing and direct DTO validation. Freeze the command, copy each projection, and include command-only tiers in alias and zero-write gates. Compare all eight commands, probes and common settings using one independent golden across formats. Select max explicitly when returning from a resident tier. Change only the command for the digest refusal. Qualify focused Release, private config and Native AOT. Reserve v0.12.87.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
