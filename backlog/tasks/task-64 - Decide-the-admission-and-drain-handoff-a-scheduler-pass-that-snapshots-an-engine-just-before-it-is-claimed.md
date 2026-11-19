@@ -3,11 +3,11 @@ id: TASK-64
 title: >-
   Decide the admission and drain handoff: a scheduler pass that snapshots an
   engine just before it is claimed
-status: In Progress
+status: Ready for Review
 assignee:
-  - '@gpt-6.2-sol-release'
+  - '@gpt-6.2-astra'
 created_date: '2026-11-17T23:07:00Z'
-updated_date: '2026-11-19T02:33:00Z'
+updated_date: '2026-11-19T04:05:00Z'
 labels:
   - scheduling
   - architecture
@@ -43,5 +43,5 @@ Carry the final ranked ticket and its route generation through preparation. Rele
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-The reviewed admission slice is cleared for implementation on the ranked dispatch path. Preserve first-admissible order within each model queue. Bound concurrent preparations and retirement, arm then recheck the wake revision, and arbitrate cancellation against submission atomically. Verify progress in another queue and retain the exact winning ticket at commitment. TASK-25 owns switch-owner first opportunity at reopen and physical late cleanup. Use an independent sink to measure actual writes.
+The combined injected admission implementation passed 71 focused Release cases on 3ea5a79. Six failure cases cover null and throwing preparation before, during and after the joiner registers for a wake. Two generation-replacement cases verify that late cleanup preserves the successor reservation. Review the combined change before integration. Preserve queue order, bounded preparation and retirement, cancellation arbitration and exact-ticket commitment. TASK-25 owns production switch-owner admission and physical late cleanup.
 <!-- SECTION:NOTES:END -->
