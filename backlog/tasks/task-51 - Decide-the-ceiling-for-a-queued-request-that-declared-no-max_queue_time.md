@@ -1,11 +1,11 @@
 ---
 id: TASK-51
 title: Bound queue admission when a caller supplies no deadline
-status: Preparing
+status: Waiting
 assignee:
   - '@gpt-6.2-sol-scheduling'
 created_date: '2026-11-17T19:15:00Z'
-updated_date: '2026-11-19T20:09:00Z'
+updated_date: '2026-11-19T23:21:09Z'
 labels:
   - scheduling
   - wire
@@ -18,7 +18,7 @@ ordinal: 51000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Decision-25 requires every request to leave the queue within a finite time. Use measured switch and admission timings to specify a default bound when the caller supplies none. Cover both a declared engine that stays unhealthy and a healthy forwarding-only engine that never reports the requested model. Define the refusal and test the bound with a controlled clock.
+Waiting for the lead to release a finite queue deadline after the current native swap priorities. The next lead priority review after the pair plan handoff wakes this item. The bounded preparation is preserved. Decision-25 requires every request to leave the queue within a finite time. Use measured switch and admission timings to specify a default bound when the caller supplies none. Cover both a declared engine that stays unhealthy and a healthy forwarding-only engine that never reports the requested model. Define the refusal and test the bound with a controlled clock.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

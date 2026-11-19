@@ -1,11 +1,11 @@
 ---
 id: TASK-110
 title: Coordinate model engines that share one host with exclusive residency
-status: Waiting
+status: Preparing
 assignee:
   - '@gpt-6.2-sol-lifecycle'
 created_date: '2026-11-18T18:13:00Z'
-updated_date: '2026-11-19T20:07:00Z'
+updated_date: '2026-11-19T23:21:09Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -21,7 +21,7 @@ ordinal: 108000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-The independent verdict on the receipt-only coordinator plan will wake Lifecycle. Review dispatched November 19 on 2f7b9c1. It covers partial enrolled dispatch bypassing legacy settlement, immutable captured intent on reopen, and [decision 71](../decisions/decision-71%20-%20Dedicate%20initial%20deployment%20resources%20to%20inference.md) in full. Public enrollment stays disabled.
+Lifecycle is amending the closed initial launch plan after independent review of the plan on 2f7b9c1. Make enrolled state durable before granting the operation, and fence both existing switch entry points across partial installs and saved Applied receipts. A mismatched later request cannot clear the original receipt or start a successor. Reuse the coordinator-assigned operation and epoch in the ledger. Return the revised plan for independent review before implementation.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

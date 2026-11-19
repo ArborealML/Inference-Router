@@ -1,11 +1,11 @@
 ---
 id: TASK-62
 title: Refuse a switch proof that never named the requested model
-status: Preparing
+status: Waiting
 assignee:
   - '@gpt-6.2-sol-config'
 created_date: '2026-11-17T23:07:00Z'
-updated_date: '2026-11-19T20:09:00Z'
+updated_date: '2026-11-19T23:21:09Z'
 labels:
   - concurrency
   - wire
@@ -19,7 +19,7 @@ ordinal: 62000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-This row owns the shape of the refusal the owner ordered (decision-27): a reason a client can branch on from a closed set, a feed record the engine cannot lengthen, and proof at the HTTP surface.
+Waiting for the lead to release the HTTP refusal after the current native swap priorities. The next lead priority review after the pair plan handoff wakes this item. The bounded preparation is preserved. This row owns the shape of the refusal the owner ordered (decision-27): a reason a client can branch on from a closed set, a feed record the engine cannot lengthen, and proof at the HTTP surface.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

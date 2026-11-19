@@ -19,7 +19,7 @@ python3 tools/board-check.py       # backlog/ against the task-content rules bel
 ```
 
 **Local verification.** Implementers identify the smallest filtered tests that exercise the changed behavior
-and its failure paths. The coordinator executes them in the assigned worktree and returns the results. At integration, rerun the affected tests when resolving conflicts changes the
+and its failure paths. The coordinator or its assigned delivery manager executes them in the assigned worktree and returns the results. At integration, rerun the affected tests when resolving conflicts changes the
 tested code. CI runs the full Release suite on main pushes and pull requests. Run a full suite locally only
 when a named acceptance measurement explicitly requires it or a documented failure occurs only in
 the complete suite. Record that reason in the task. Keep one integration candidate per deliverable. Reuse a saved result when its commit and filter cover the request. Widen a local run only for a named failure, changed dependency, integration conflict or acceptance criterion. The receipt is the handoff; workers report again when a fix, finding or assignment changes the next action.
@@ -242,6 +242,8 @@ and commit reviews. Use ChatSwarm when available. If that service is unavailable
 and continue independent work. The coordinator verifies reviewer findings against the diff and tests,
 integrates accepted work using the appropriate seat identity, checks CI and records the disposition.
 
+For a milestone released under decision 72, one Sol delivery manager owns the approved items through independent review, focused qualification, correction, hosted CI and routine offline merge. The lead retains priority, acceptance criteria, scope changes, live-host decisions and the shared board. Escalate unresolved findings. Keep one primary deliverable and at most one independent companion in implementation. Use the durable inbox to batch routine wakes at declared work boundaries. Pause and stop instructions have priority.
+
 Run each implementer as a long-lived GPT-6.2 Sol agent with high reasoning in its own named tmux session.
 The coordinator gives it one task and an isolated Git worktree with a single writer. The implementer owns
 preparation, implementation, test design, fixes and the evidence handoff described above. It reports each
@@ -292,7 +294,7 @@ machine identity is reported and tracked, never repaired by rewriting pushed his
   result — today the manager, under the `map:` prefix for a commit that touches only `groma/`. Nobody hand-edits a
   Groma-owned file, and an untracked element a scan leaves behind is a loose end, not a draft: describe it through
   `groma edit` and commit it, or remove it, in the turn that finds it.
-- **Only the manager dispatches external reviews** — the plan review before the code exists, the commit review as
+- **Only the coordinator or its assigned delivery manager dispatches external reviews** — the plan review before the code exists, the commit review as
   soon as the implementer's sha lands. The implementer reports the sha and dispatches nothing.
 
 ## Task content that survives the tools
