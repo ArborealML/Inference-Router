@@ -3,11 +3,11 @@ id: TASK-111
 title: >-
   Build the local router configuration for every supported select-model
   configuration
-status: Waiting
+status: In Progress
 assignee:
-  - '@chatswarm'
+  - '@gpt-6.2-sol-config'
 created_date: '2026-11-18T18:15:00Z'
-updated_date: '2026-11-19T11:50:00Z'
+updated_date: '2026-11-19T12:04:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -19,7 +19,7 @@ ordinal: 109000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-The independent HyperQwen feature review dispatched November 19 wakes the coordinator. Eight paired-GPU targets passed 63 focused Release cases with zero skips, the pinned config-only load, and warning-free Linux x64 Native AOT on 6ea04f8. The create projection uses a synthetic local image ID. Landed offline coverage is 49/75, including the eight DeepSeek tiers from [PR #24](https://github.com/ArborealML/Inference-Router/pull/24). Landing the paired policies would bring it to 57/75. Current daemon image association and live restart, logging and peer authority remain unqualified.
+Config is correcting a misplaced model-level Docker policy accepted by both TOML and JSON. Coordinator config-only probes on 6ea04f8 reproduced both accepts; serving-tier Docker resources already refuse in both formats. Keep the selector’s daemon-default logger and require compatible rotation options before future activation. The paired candidate passed 63/63 focused Release, pinned config load and warning-free Native AOT. Its eight targets remain pending. Landed offline coverage is 49/75 after [PR #24](https://github.com/ArborealML/Inference-Router/pull/24).
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
