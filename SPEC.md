@@ -1,6 +1,6 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.78)
+Status: draft, continuously revised (v0.12.79)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
@@ -352,6 +352,9 @@ daemon transaction per engine. 137 tests green.
   that answers no `upload_url`, an upload that dies or answers no asset id, an asset name listed twice on
   the release, and a tag that moves after the first resolve. No tag has run the gate: still configured,
   not proven.
+- v0.12.79 — Exercise closed-generation physical retirement across controller death in the
+  offline host fixture. The exact backend terminal and successful write seal both precede a
+  successor stop (§5.3.1, TASK-110).
 - v0.12.78 — offline Docker create projection resolves memory and total memory plus swap per
   serving tier. The two values inherit or replace as a pair, and target-enabled mutation remains
   gated (§5.3.1, §7).
@@ -1771,6 +1774,17 @@ it withholds. In the substitution fixture, the issuer explicitly revokes and clo
 original grant, and the peer observes EOF with zero bytes. Production enrollment still requires
 frozen request body and authorization binding, durable issuance and authoritative physical
 retirement.
+
+The offline causal-drain fixture uses the verified transport and a surviving issuer with one
+generation. The issuer orders closure and first-write authorization under one gate and revokes
+prepared grants. An authorized write paused before backend delivery remains a physical use after
+the synthetic caller timeout. Closing the channel alone supplies no retirement. A successful
+no-more-write seal and the exact backend terminal together retire the use once. A fresh controller
+queries the surviving issuer after its predecessor dies. Unresolved retirement leaves the exact
+stop prepared and issues nothing. Before dispatch and at daemon entry the fixture checks the
+installed closed-frontier witness and independent owner evidence. After the stop it still needs
+fresh vacancy to create the frozen successor. The replacement route remains closed. This does
+not qualify enrolled admission, issuer crash recovery or live host authority.
 
 **Production evidence.** The raw Docker inventory can report known foreign containers. Even an
 empty inventory leaves vacancy unproven, and raw Docker supplies no terminal receipt for an
