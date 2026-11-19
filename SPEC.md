@@ -352,6 +352,9 @@ daemon transaction per engine. 137 tests green.
   that answers no `upload_url`, an upload that dies or answers no asset id, an asset name listed twice on
   the release, and a tag that moves after the first resolve. No tag has run the gate: still configured,
   not proven.
+- Pending revision — Qualify independent partition vacancy and owner evidence for the offline
+  successor fixture. Prepared operations requery after restart and uncertain dispatch stays fenced
+  (§5.3.1, TASK-110).
 - v0.12.73 — Add the standalone offline host successor checkpoint and effect ledger.
   The checkpoint retains exact launch, stop and frozen successor evidence across process death.
   The fake ledger verifies residency and separates send, acceptance, attempt and applied records
@@ -1712,6 +1715,19 @@ non-foreign resident. Stops compare the exact incumbent and creates recheck vaca
 entry. Records stage in unique temporary files and publish atomically. Reopen ignores unpublished
 records and holds on corrupt installed evidence. These controls exercise subprocess death in trusted
 fixture storage. They supply no production authority or inference permit evidence.
+
+The successor vacancy fixture models one enrolled partition with a separate source of partition
+facts. Exact incumbent ownership and causal retirement permit the prepared stop to progress. Before
+a successor submission, a new query must prove complete coverage and vacancy for the enrolled
+partition. The query binds the enrollment, controller and worker generations, exact predecessor,
+transition epoch and frozen successor plan. Under the same fence as every modeled writer, the
+worker compares current coverage and owner generations before daemon entry. A change and restore
+invalidates the old observation. Missing preflight proof leaves `StopApplied` without a successor
+submission. Refusal at daemon entry can leave a durable submission and acceptance, with no attempt
+or applied effect. Prepared stop and launch requery on reopen and keep their recorded identity.
+Reopened dispatch reconciles only the exact operation. A recovered stop requires a new vacancy
+query. A recovered launch uses its exact terminal and effect. The retirement and partition evidence
+are synthetic. Production enrollment remains disabled.
 
 **Production evidence.** The raw Docker inventory can report known foreign containers. Even an
 empty inventory leaves vacancy unproven, and raw Docker supplies no terminal receipt for an
