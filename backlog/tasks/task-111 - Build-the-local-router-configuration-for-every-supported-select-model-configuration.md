@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@gpt-6.2-sol-config'
 created_date: '2026-11-18T18:15:00Z'
-updated_date: '2026-11-19T06:47:00Z'
+updated_date: '2026-11-19T06:48:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -38,15 +38,7 @@ Inventory the selector and each delegated validator from a fixed source fingerpr
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-The local selector has model-specific validators and launch resource settings that the current native provider cannot represent. TASK-26 covers GPU devices, mounts and resource limits. Use the compatibility inventory to distinguish additional provider work from invalid selector combinations.
+Static enumeration at selector fingerprint 8af827d3c375efda08cad8a5b9b7fd862b44a2f5a7482042c5255623a891a030 covered 506 explicit spellings: 169 valid, 337 refused, 75 distinct targets, 12 requiring an explicit GPU. All 22 omitted-profile cases matched their defaults. Parking exposed 1,248 RAM and parallelism combinations. Single-device profiles require one explicit index and paired profiles two distinct indices. GPU utilization accepts 0.50–0.95, default 0.90. Parking accepts 1–48 GiB, default 32, and 1–8 variable lanes. Suffix-cache launch has no supported mechanism. TASK-26 covers resources, TASK-114 cold starts and TASK-125 the first live pair.
 
-Static inventory is underway. The reference exposes nine canonical models, thirteen model aliases and twenty-three profile spellings. Context and slot counts alone cannot identify every launch preset. The scheduler currently skips an inactive engine before considering launch eligibility. TASK-114 records the cold-start gap. Validate enumerated counts independently before accepting the inventory criterion.
-
-Independent static enumeration at selector source fingerprint 8af827d3c375efda08cad8a5b9b7fd862b44a2f5a7482042c5255623a891a030 covered 506 explicit spellings: 169 pass structural validation and 337 fail. The 75 distinct targets include 12 accepted spelling combinations requiring an explicit GPU. All 22 omitted-profile cases matched their defaults. Parking exposes 1,248 RAM and parallelism combinations. No runtime trial was part of this inventory.
-
-Target-proof plan dispatched on 2026-11-18. Static controls: single-device profiles require one explicit index; paired profiles require two distinct indices. GPU utilization accepts 0.50–0.95 inclusive, default 0.90. Parking RAM accepts 1–48 GiB, default 32; variable lanes accept 1–8. This revision has no supported suffix-cache launch mechanism. Controls cover malformed, out-of-range and unsupported options.
-
-TASK-125 qualifies one pair for the first live proof. This row retains full selector parity and every unsupported combination remains visible.
-
-Review of [PR #7](https://github.com/ArborealML/Inference-Router/pull/7) at f7ff610 found two loader gaps still present on green head 552b1f6. Reject shadowed ownership and selector fields and noncanonical common Docker keys for opted-in JSON. Preserve legacy parsing. Before activation, require launch receipts and labels to share the canonical model and tier for alias and implicit tiers. Current provider gates block mutation.
+Reviews of [PR #7](https://github.com/ArborealML/Inference-Router/pull/7) at f7ff610 and 04cc28a found three offline defects. Refuse shadowed ownership and selector fields and noncanonical common Docker keys when target projection is enabled. Expand original template tokens once so inserted model identifiers remain literal. Preserve legacy parsing. Keep live mutation disabled until receipts and labels share a canonical model and tier, including aliases and implicit tiers.
 <!-- SECTION:NOTES:END -->
