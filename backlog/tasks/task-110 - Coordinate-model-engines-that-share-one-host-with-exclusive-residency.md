@@ -1,11 +1,11 @@
 ---
 id: TASK-110
 title: Coordinate model engines that share one host with exclusive residency
-status: Waiting
+status: In Progress
 assignee:
-  - '@gpt-6.2-astra'
+  - '@gpt-6.2-sol-lifecycle'
 created_date: '2026-11-18T18:13:00Z'
-updated_date: '2026-11-19T19:22:00Z'
+updated_date: '2026-11-19T19:32:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -20,7 +20,7 @@ ordinal: 108000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Hosted CI and the independent review wake [PR #35](https://github.com/ArborealML/Inference-Router/pull/35). Exact b37b0ca passed nine focused offline initial-launch and reopen cases with zero skips. Review of the three-file candidate was dispatched November 19. The live incumbent remains foreign to enrollment. Shared Docker access, unverified host exclusion and journal freshness keep production gated.
+Lifecycle owns one offline correction to [draft PR #35](https://github.com/ArborealML/Inference-Router/pull/35). Review of b37b0ca found that crossed plan and create bytes could pass, and the grant denial ignored reopened ingress policy. Nine focused and [1,474 hosted tests](https://github.com/ArborealML/Inference-Router/actions/runs/44597565139) passed on that head. Production enrollment remains gated.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -37,7 +37,7 @@ Hosted CI and the independent review wake [PR #35](https://github.com/ArborealML
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Freeze the exact serialized create bytes using the landed projection. Bind a single operation and epoch to anchored dispatch, worker acceptance and an exclusive may-have-issued decision before fake daemon mutation. An independent fake observer must corroborate create and start, immutable ID, settings, complete pair coverage and closed ingress. Reopen all stores against a separate head and recover the original receipt bytes with one effect and zero resend, competing issue or grants. Reuse checkpoint, ledger and readiness coverage. Add only missing authority, observer mismatch, valid-old restore, split-head and delayed-issue controls. Host enforcement, directory durability and authenticated anchoring remain production obligations.
+Compare proposed bytes with a separately approved projection before dispatch. Exercise reopened ingress policy at eligibility with an otherwise-eligible open control. Independently source effective settings and start evidence. At both Applied completion splits require quarantine on reopen with no successful lookup, resend or competing launch. Keep policy evidence journal-backed. Limit counters and competition claims to sequential fake calls. Preserve qualified pre-I/O and stale-delivery coverage; run only the differential filter on the corrective child.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
