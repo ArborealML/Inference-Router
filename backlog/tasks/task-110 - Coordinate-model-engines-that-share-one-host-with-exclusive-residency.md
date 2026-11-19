@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@gpt-6.2-sol-lifecycle'
 created_date: '2026-11-18T18:13:00Z'
-updated_date: '2026-11-18T23:15:00Z'
+updated_date: '2026-11-19T02:34:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -42,5 +42,5 @@ Configure an explicit physical host group and share one host-local arbiter acros
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Record operation identity and immutable target before mutation. Unknown effects fence successor epochs. Detect foreign occupancy across the host; independent hosts can progress. External writers need separate enforcement. Injected runtime passed 133 focused and 475 Release tests plus server Native AOT. Offline restart integration passed 563 Release tests and Native AOT; diagnostic correction passed 57 focused tests. Corrected offline receipt fixtures passed 38 host coordinator tests, including independent create-attempt counting and mismatched applied receipts. Restart after publication but before acknowledgment requested a stop of the exact incumbent; the fake refused before any stop effect. Production must preserve exact-instance evidence through refusal and lost acknowledgment and recover without repeating mutation. Fixture review, launch-plan binding, storage durability, missing-instance recovery and physical permits remain open. Live operations remain parked.
+Injected host coordination passed 133 focused and 475 Release tests plus server Native AOT. Offline restart integration passed 563 Release tests and Native AOT. The separate diagnostic correction passed 57 focused tests. The reviewed receipt fixtures passed 38 host tests. After publication and a lost acknowledgment, re-entry requested a stop of the exact incumbent; the fake refused before issuing it. The active offline slice installs a single authoritative checkpoint under a stable lock. It retains the incumbent, exact stop operation and frozen successor across restart. An ambiguous install fences the current handle. Reopen validates the installed record. Retaining the incumbent after a certified pre-issue abort grants no serving authority. Production still requires independent effect identity, causal upstream retirement, enforced occupancy and incarnation-bound admission. Live operations remain parked.
 <!-- SECTION:NOTES:END -->
