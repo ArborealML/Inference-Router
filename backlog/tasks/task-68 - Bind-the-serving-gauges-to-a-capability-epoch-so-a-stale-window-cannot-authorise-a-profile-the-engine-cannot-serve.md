@@ -7,7 +7,7 @@ status: Waiting
 assignee:
   - '@gpt-6.2-astra'
 created_date: '2026-11-18T01:11:00Z'
-updated_date: '2026-11-19T06:43:00Z'
+updated_date: '2026-11-19T06:57:00Z'
 labels:
   - concurrency
   - scheduling
@@ -48,5 +48,5 @@ Publish the immutable serving tuple with EngineCapability. Convert scheduler, en
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-The original serving publication and restoration landed in PRs #2 and #3. [PR #8](https://github.com/ArborealML/Inference-Router/pull/8) carries the winning ticket minimum and bounded claim retries. At 29cb7d5 all 96 focused Release cases passed without skips. Hosted CI and the dispatched independent feature review wake integration. The joint two-ticket shutdown and send witness follows separately.
+Serving publication and restoration landed in PRs #2 and #3. [PR #8](https://github.com/ArborealML/Inference-Router/pull/8) contains the context floor and bounded claim retries at 29cb7d5 (96 focused Release passes) and the accepted two-ticket fixture at 780eb0f (two Release passes on the identical tree). Parent feature review and updated hosted CI wake integration.
 <!-- SECTION:NOTES:END -->

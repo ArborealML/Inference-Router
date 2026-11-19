@@ -1,11 +1,11 @@
 ---
 id: TASK-110
 title: Coordinate model engines that share one host with exclusive residency
-status: In Progress
+status: Waiting
 assignee:
-  - '@gpt-6.2-sol-lifecycle'
+  - '@gpt-6.2-astra'
 created_date: '2026-11-18T18:13:00Z'
-updated_date: '2026-11-19T06:41:00Z'
+updated_date: '2026-11-19T06:50:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -43,4 +43,6 @@ Implement the reviewed offline partition observer. Require exact incumbent owner
 
 <!-- SECTION:NOTES:BEGIN -->
 The checkpoint and synthetic ledger landed in [PR #6](https://github.com/ArborealML/Inference-Router/pull/6). At 508547f submission is recorded before the issue fence and daemon attempts after it. Plan review confirmed both prepared and dispatching phases exist for stop and launch. Lifecycle owns the implementation and targeted contradictory-observer and unresolved-retirement controls. Reuse existing occupancy and terminal tests. Production activation still requires enforceable partition coverage, causal physical retirement and verified instance-bound admission.
+
+At 8302cf8 all 15 offline vacancy cases passed with the rebuilt subprocess probe. Independent commit review wakes integration. The assigned SPEC revision is v0.12.76.
 <!-- SECTION:NOTES:END -->
