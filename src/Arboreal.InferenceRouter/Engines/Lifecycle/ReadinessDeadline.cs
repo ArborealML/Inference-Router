@@ -46,7 +46,8 @@ internal sealed class ReadinessDeadline : IDisposable
     /// <summary>Race the whole observation, including any synchronous processing before its first
     /// await. An in-budget observer exception is propagated unchanged.</summary>
     internal async ValueTask<ReadinessStep<T>> ObserveAsync<T>(
-        Func<CancellationToken, Task<T>> read, TimeSpan? upperBound = null)
+        Func<CancellationToken, Task<T>> read, TimeSpan? upperBound = null,
+        Action<Task>? captureCleanupForTests = null)
     {
         var stepStarted = _clock.GetTimestamp();
         var status = ObserveOutcome(stepStarted, upperBound);
@@ -78,7 +79,8 @@ internal sealed class ReadinessDeadline : IDisposable
         {
             capLifetime?.Cancel();
             retire.TrySetResult();
-            _ = ObserveRetiredAsync(observation);
+            var cleanup = ObserveRetiredAsync(observation);
+            captureCleanupForTests?.Invoke(cleanup);
         }
     }
 

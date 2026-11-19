@@ -166,6 +166,7 @@ public sealed partial class HostClosedRouteStagingTests
         HostStagedSwitchResult? hostResult = null;
         EngineCapability? atEnd = null;
         SwitchAttemptRecord? stoppedTerminal = null;
+        Task? readinessCleanup = null;
         staging.BeforeOpenForTests = (_, _) => opens++;
 
         var fixture = new HostStagedRuntimeFixture(
@@ -180,7 +181,8 @@ public sealed partial class HostClosedRouteStagingTests
             AfterProof: _ => proofs++,
             AfterComplete: () => completions++,
             AfterRun: () => ended.TrySetResult(),
-            AfterHostResult: result => hostResult = result);
+            AfterHostResult: result => hostResult = result,
+            CaptureReadinessCleanup: cleanup => readinessCleanup = cleanup);
         using var unused = new UnusedSharedReadiness();
         var enrollment = new HostEngineEnrollment("test", definition.Name,
             new HostLifecycleCoordinator(ReservationPath, host, staging), fixture);
@@ -203,6 +205,8 @@ public sealed partial class HostClosedRouteStagingTests
             var answer = await waiter.WaitAsync(ct);
             await ended.Task.WaitAsync(ct);
             Assert.False(release.Task.IsCompleted);
+            var cleanup = Assert.IsAssignableFrom<Task>(readinessCleanup);
+            Assert.False(cleanup.IsCompleted);
             Assert.False(ct.IsCancellationRequested);
             Assert.Equal(EngineRuntime.SwitchOutcome.RouterStopped, answer.Outcome);
             var staged = Assert.IsType<HostStagedSwitchResult>(hostResult);
@@ -225,6 +229,7 @@ public sealed partial class HostClosedRouteStagingTests
 
             // The observer still accepts a fitting late result with the original exact binding.
             release.SetResult(new(stage, target.Model, new ServingCapacity(target.Model, tier.MaxContext, 2, tier.Name)));
+            await cleanup.WaitAsync(ct);
             await AssertDeniedAsync(issuer, Invocation(stage.Route), SuccessorBody, ct);
             Assert.Same(stopped, runtime.Capability);
             Assert.Equal(events, feed.Replay(0).ToArray());

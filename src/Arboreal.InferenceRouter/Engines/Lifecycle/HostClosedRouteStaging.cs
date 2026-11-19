@@ -38,7 +38,8 @@ internal sealed record HostStagedDeadlinePublication(
     Action<HostStagedDecision> Deliver,
     Func<HostClosedRouteStage, SwitchServingProof, Func<bool>, bool> TryOpen,
     Action Opened,
-    Action<HostClosedRouteStage>? AfterStageInstalledForTests = null)
+    Action<HostClosedRouteStage>? AfterStageInstalledForTests = null,
+    Action<Task>? CaptureReadinessCleanupForTests = null)
 {
     public bool MatchesLaunch(HostCheckpointPlan plan) =>
         ExpectedAttempt.RuntimeEpoch != Guid.Empty && ExpectedAttempt.Sequence > 0 &&
@@ -144,7 +145,8 @@ internal sealed class HostClosedRouteStaging(
                 return LifecycleResult.Fail("host_occupancy_unproven", "the saved instance is no longer verified");
 
             var read = publication.ReadAsync;
-            var readiness = await deadline.ObserveAsync(token => read(stage, token)).ConfigureAwait(false);
+            var readiness = await deadline.ObserveAsync(token => read(stage, token),
+                captureCleanupForTests: publication.CaptureReadinessCleanupForTests).ConfigureAwait(false);
             if (readiness.Outcome != ReadinessStepOutcome.Completed)
                 return SettleDeadline(publication, stage, null, deadline);
             if (readiness.Observation is not { } evidence || evidence.Binding != stage ||
