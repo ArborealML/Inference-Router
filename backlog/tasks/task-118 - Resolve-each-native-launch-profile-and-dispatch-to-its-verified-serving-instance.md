@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@gpt-6.2-sol-scheduling'
 created_date: '2026-11-18T18:56:00Z'
-updated_date: '2026-11-19T08:32:00Z'
+updated_date: '2026-11-19T08:41:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -48,5 +48,5 @@ Publish one immutable sender with the ready preparation. Its exact invocation bo
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Review of fe005df required exact sender transfer, permanent generation retirement, strict body/auth/target binding and independent terminal evidence. Config confirmed offline create intent. Resident, first-write authorization and resource boundaries accepted. Retirement corrections adopted: establish terminal classification before checkout, preserve separate close and permit errors, and rearm transient preparation only on a fresh availability revision with a wake. Verify timerless progress and stale refusal. Compare media type and reject duplicate or case-shadowed model before normalization. Full offline implementation released.
+Review on fe005df required exact sender transfer, generation retirement, strict raw/rewritten model and auth validation, and terminal classification before checkout. Accepted all four. Transient preparation rearms only on a fresh availability revision. Config confirmed offline create intent. Full offline implementation released. At 614cd52 Release built; 34 passed, 13 target cases failed at fixture load because a router-owned endpoint was non-loopback. Correct fixture only and rerun affected class. Independent four-file review dispatched.
 <!-- SECTION:NOTES:END -->
