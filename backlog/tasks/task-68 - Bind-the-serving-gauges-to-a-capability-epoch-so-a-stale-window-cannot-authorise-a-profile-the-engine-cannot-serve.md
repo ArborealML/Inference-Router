@@ -7,7 +7,7 @@ status: Waiting
 assignee:
   - '@gpt-6.2-astra'
 created_date: '2026-11-18T01:11:00Z'
-updated_date: '2026-11-19T07:54:00Z'
+updated_date: '2026-11-19T07:59:00Z'
 labels:
   - concurrency
   - scheduling
@@ -20,7 +20,7 @@ ordinal: 68000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-The owner-preparation CI repair (TASK-135), a green hosted run and integration review wake landing. Publish model-bound window, slots and inferred profile in one versioned capability snapshot. Each routing decision uses evidence for the selected model and claim.
+The corrected PR #8 CI run and fixture review for TASK-135 wake landing. Publish model-bound window, slots and inferred profile in one versioned capability snapshot.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -48,5 +48,5 @@ Publish the immutable serving tuple with EngineCapability. Convert scheduler, en
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Publication and restoration landed in PRs #2 and #3. [PR #8](https://github.com/ArborealML/Inference-Router/pull/8) at 2266cb5 passed both deadline rows. Review accepted the under-gate stop, cancellation and deadline checks before first observation; immediate Ready, joined delivery and semaphore release remain intact. Additional stop/cancel permutations are deferred unless those paths change. Revisit the one-second acquisition margin if CI shows a stall. Reconciled head bfc9767 passed 14 focused admission, floor and delivery rows plus the new ordinary exact-take expiry row. Review is scoped to integration changes.
+Publication and restoration landed in PRs #2 and #3. [PR #8](https://github.com/ArborealML/Inference-Router/pull/8) at 2266cb5 passed both deadline rows. Review accepted the guard before first claim observation; immediate Ready and existing joined delivery remain intact. Merge review of bfc9767 accepted winner-specific context minimum, stamped admission generation, live occupancy and capability, and expiry on both exact-take paths. All 16 requested focused cases passed. An independent CI fixture correction at 819535e passed all six affected cases. Hosted qualification remains open.
 <!-- SECTION:NOTES:END -->
