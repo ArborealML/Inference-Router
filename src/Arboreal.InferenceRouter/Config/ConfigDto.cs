@@ -1,4 +1,6 @@
 using System.Text.Json.Serialization;
+using Tomlyn;
+using Tomlyn.Model;
 using Tomlyn.Serialization;
 
 namespace Arboreal.InferenceRouter;
@@ -65,7 +67,7 @@ public sealed class EngineDto
     [JsonPropertyName("docker")][TomlPropertyName("docker")] public DockerDto? Docker { get; set; }
 }
 
-public sealed class DockerDto
+public sealed class DockerDto : ITomlOnDeserialized
 {
     private string? _imageId;
     private string? _imageRepoDigest;
@@ -129,6 +131,18 @@ public sealed class DockerDto
     [JsonPropertyName("wait_health")][TomlPropertyName("wait_health")] public bool? WaitHealth { get; set; }
     [JsonPropertyName("wait_timeout_ms")][TomlPropertyName("wait_timeout_ms")] public int? WaitTimeoutMs { get; set; }
     [JsonPropertyName("call_timeout_ms")][TomlPropertyName("call_timeout_ms")] public int? CallTimeoutMs { get; set; }
+
+    [JsonIgnore, TomlIgnore(Condition = TomlIgnoreCondition.Never), TomlExtensionData]
+    public TomlTable? UnmappedToml { get; set; }
+
+    // Inspect each decoded Docker table before a case variant could replace it on the engine DTO.
+    void ITomlOnDeserialized.OnTomlDeserialized() => RejectMisplacedHealthcheck("docker");
+
+    internal void RejectMisplacedHealthcheck(string path)
+    {
+        if (UnmappedToml?.Keys.Any(key => key.Equals("healthcheck", StringComparison.OrdinalIgnoreCase)) == true)
+            throw new RouterConfigException($"{path}.healthcheck is only supported inside a serving-tier docker block");
+    }
 }
 
 public sealed class HealthProbeDto
