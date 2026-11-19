@@ -1,6 +1,6 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.85)
+Status: draft, continuously revised (v0.12.86)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
@@ -352,6 +352,8 @@ daemon transaction per engine. 137 tests green.
   that answers no `upload_url`, an upload that dies or answers no asset id, an asset name listed twice on
   the release, and a tag that moves after the first resolve. No tag has run the gate: still configured,
   not proven.
+- v0.12.86 — qualify original-launch deadline equality, exact proof binding and guarded Open in
+  the offline enrolled host fixture (§5.3.1, TASK-110, TASK-126).
 - v0.12.85 — offline Docker serving tiers support explicit read-only nested binds and checked
   health probe timeout and retries. The Maya-XS 32k projection remains behind the tier gate (§7).
 - v0.12.84 — offline Docker serving tiers accept profile aliases that resolve to the same
@@ -1824,6 +1826,21 @@ can reverify that launch and stage a fresh generation without another stop or cr
 explicit Open of the still-current completed generation enables the test issuer to grant a permit
 and send. The applied record remains after success. Enrolled runtime, deadline enforcement and
 production activation remain outside this qualification.
+
+The internal deadline fixture bridge takes the timeout from the validated applied launch plan.
+One attempt starts before the exact post-drain identity check and reserves its closed route
+before reading instance-bound evidence. The bridge stages that route before calling the runtime
+guard. A committed decision must return the same proof stored for the closed route under the
+guard. Its runtime attempt and full target must match the claim's captured identities before delivery.
+The guard may use the closed-route and Open callbacks once, during their synchronous calls.
+A valid decision survives completion, cleanup or notification faults, and the final result
+records whether the route opened. Completion notifications can arrive while minting is closed.
+After cleanup, only an accepted exact Open sends the definitive dispatch wake. A recovery request
+cannot keep a superseded route open by naming a different target. The recovered-launch fixture uses the
+runtime waiter and terminal path with injected bound evidence. It exercises an in-budget
+commit, one timeout at equality without timer delivery, and fresh verification of the same
+applied launch. Ordinary enrolled intake retains its capacity guard and production activation
+remains gated.
 
 **Offline verified dispatch (TASK-118).** An injected resident proof binds the committed
 route generation, exact instance and serving incarnation, launch epoch, captured configuration

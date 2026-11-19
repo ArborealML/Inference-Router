@@ -416,7 +416,7 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
         return true;
     }
 
-    // Both callers hold the transition gate and have checked that this claim is current and pending.
+    // Callers hold the transition gate and have checked that this claim is current and pending.
     private bool TryPublishClaimProof(SwitchState state, ModelsObservation observation, ServingCapacity serving,
         ReadinessDeadline? deadline, out ReadinessStepOutcome settlement)
     {
@@ -1108,7 +1108,7 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
                         else
                         {
                             entryMiss = ResolveClaimTarget(canonical, profileOverride, out var target);
-                            if (entryMiss == EntryGuard.Ok && _hostEnrollment is not null &&
+                            if (entryMiss == EntryGuard.Ok && _hostEnrollment is { StagedForTests: null } &&
                                 (requiredWindow > 0 || GetProfile(canonical, target!.EffectiveProfile) is not null))
                                 entryMiss = EntryGuard.MissingHostCapacity;
                             if (entryMiss != EntryGuard.Ok)
@@ -1524,10 +1524,22 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
             // One transaction through the provider seam: prove ownership, validate, stop what is ours,
             // launch the exact target. What "launch" means is the provider's business; the ordering is
             // the router's, and it is what keeps a refusal from costing the engine anything it had.
-            var report = _hostEnrollment is { } enrollment
-                ? await SwitchEnrolledHostAsync(enrollment, state, target, ct).ConfigureAwait(false)
-                : await lifecycle.SwitchWithReportAsync(target, timing, state.IncumbentProof?.SwitchProof, ct)
+            EngineLifecycleCoordinator.SwitchReport report;
+            if (_hostEnrollment is { StagedForTests: { } fixture } stagedEnrollment)
+            {
+                var staged = await SwitchStagedHostAsync(stagedEnrollment.Controller, fixture, state, target, ct)
                     .ConfigureAwait(false);
+                // The guarded verdict owns the outcome even when delivery, cleanup or Open refuses.
+                if (staged.Decision.Verdict != HostStagedVerdict.Refused || Volatile.Read(ref _stopped)) return;
+                report = new(staged.Result, RefusedBeforeMutation: false);
+            }
+            else
+            {
+                report = _hostEnrollment is { } enrollment
+                    ? await SwitchEnrolledHostAsync(enrollment, state, target, ct).ConfigureAwait(false)
+                    : await lifecycle.SwitchWithReportAsync(target, timing, state.IncumbentProof?.SwitchProof, ct)
+                        .ConfigureAwait(false);
+            }
             var launched = report.Result;
             if (!launched.Succeeded)
             {
@@ -1583,7 +1595,8 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
             // would leave `Ready` unresolved forever and the engine latched mid-switch, so the state
             // machine closes itself here: resolve the waiters, and put the engine back to "not switching"
             // if this attempt is still the current one.
-            EndSwitch(state, false);
+            try { EndSwitch(state, false); }
+            finally { _hostEnrollment?.StagedForTests?.AfterRun?.Invoke(); }
         }
     }
 

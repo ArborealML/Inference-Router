@@ -97,6 +97,7 @@ internal sealed class SwitchAttempt
             _stages[(int)SwitchStage.Queue] = new(wait.EnqueuedAt, wait.SelectedAt, SwitchStageOutcome.Completed);
     }
 
+    internal SwitchAttemptId Id => _id;
     internal SwitchSampleKey Target => _target;
     internal long StartedAt => _startedAt;
 
