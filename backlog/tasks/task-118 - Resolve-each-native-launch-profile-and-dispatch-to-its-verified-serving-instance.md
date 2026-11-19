@@ -7,7 +7,7 @@ status: Preparing
 assignee:
   - '@gpt-6.2-sol-scheduling'
 created_date: '2026-11-18T18:56:00Z'
-updated_date: '2026-11-19T09:49:00Z'
+updated_date: '2026-11-19T09:51:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -28,7 +28,7 @@ Prepare the active-claim joiner check across two captured configurations. Review
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Aliases and omitted defaults resolve to the same effective target. Two profiles differing in an effective option remain distinct even when their model, context and slot counts match.
+- [x] #1 Aliases and omitted defaults resolve to the same effective target. Two profiles differing in an effective option remain distinct even when their model, context and slot counts match.
 - [ ] #2 A joiner interprets its selection in the active claim’s captured configuration. A changed default or changed profile options in a newer configuration cannot silently retarget that claim.
 - [ ] #3 For each supported engine family, fixtures verify all profile-distinguishing settings against one serving instance. Missing, conflicting or stale observations withhold readiness and prevent dispatch.
 - [ ] #4 After an instance restart or port rebind between proof and dispatch, a paused waiter rechecks its reservation. Neither a stale pooled connection nor the replacement listener receives the request under the old proof.
@@ -46,5 +46,5 @@ Hold a claim under configuration A. Offer a joiner under B with a different defa
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-[PR #20](https://github.com/ArborealML/Inference-Router/pull/20) merged at 4537b1a after focused qualification, AOT and hosted CI. Its offline exact-ticket fixture verifies explicit launch, omitted default and ordinary resident reuse, exact rewritten bytes and credential, and mismatch refusal with zero checkout. AC5 and AC7 are satisfied at the injected issuer. AC1 has model alias/default and settings-digest evidence; [PR #21](https://github.com/ArborealML/Inference-Router/pull/21) carries the profile-alias witness. AC3 still requires same-instance evidence across families. AC4 and AC6 retain standalone rebind and exact-ticket first-write evidence; the real enrolled paused waiter remains open. Production activation requires host authority.
+[PR #20](https://github.com/ArborealML/Inference-Router/pull/20) merged at 4537b1a after focused qualification, AOT and hosted CI. Its offline exact-ticket fixture verifies explicit launch, omitted default and ordinary resident reuse, exact rewritten bytes and credential, and mismatch refusal with zero checkout. AC5 and AC7 are satisfied at the injected issuer. AC1 has model alias/default and settings-digest evidence; [PR #21](https://github.com/ArborealML/Inference-Router/pull/21) landed the profile-alias witness at 5643b27. AC3 still requires same-instance evidence across families. AC4 and AC6 retain standalone rebind and exact-ticket first-write evidence; the real enrolled paused waiter remains open. Production activation requires host authority.
 <!-- SECTION:NOTES:END -->

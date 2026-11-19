@@ -3,11 +3,11 @@ id: TASK-111
 title: >-
   Build the local router configuration for every supported select-model
   configuration
-status: Waiting
+status: Preparing
 assignee:
-  - '@gpt-6.2-astra'
+  - '@gpt-6.2-sol-config'
 created_date: '2026-11-18T18:15:00Z'
-updated_date: '2026-11-19T09:46:00Z'
+updated_date: '2026-11-19T09:51:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -19,7 +19,7 @@ ordinal: 109000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Hosted CI and feature review on PR #21 wake the coordinator for the alias landing.
+Identify the smallest remaining Defiant selector gap and count newly representable targets.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -48,5 +48,5 @@ PR #16 merged at 0418440 after hosted CI and independent review.
 
 [PR #18](https://github.com/ArborealML/Inference-Router/pull/18) projects the GLM health check offline. Review passed the supplied b422d61 production diff. The fixture correction 0b02a4e passed 51 focused Release cases. Parent config load and zero-trim Linux x64 Native AOT cover unchanged production. The fixture review confirmed distinct TOML keys. All hosted checks passed and PR #18 merged at 989ae12. Before live qualification verify the image shell and router readiness budget independently of Docker’s start period.
 
-[PR #21](https://github.com/ArborealML/Inference-Router/pull/21) at 6892695 passed 52 focused Release cases, the pinned Strata config load and zero-warning Linux x64 Native AOT. Its dispatch predecessor landed without a resolver change. Feature review dispatched.
+[PR #21](https://github.com/ArborealML/Inference-Router/pull/21) at 6892695 passed 52 focused Release cases, the pinned Strata config load and zero-warning Linux x64 Native AOT. Merged at 5643b27 after hosted CI and static review passed. The hosted tree matched qualification; optional spelling permutations remain covered by general unknown-tier refusal.
 <!-- SECTION:NOTES:END -->
