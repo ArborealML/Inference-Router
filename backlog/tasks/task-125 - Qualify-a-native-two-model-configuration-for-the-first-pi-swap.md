@@ -18,7 +18,7 @@ ordinal: 123000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-An authenticated applied-launch record and issuer-bound readiness observation wake live qualification of the first native pair. Both are engineering dependencies.
+The selector launch operator’s lookup result wakes this task. The original operation, epoch, frozen plan and immutable instance must come from an authenticated launch-time record. If unavailable, this Qwen instance cannot qualify. A matching record still requires both readiness reads on the same attested process.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
