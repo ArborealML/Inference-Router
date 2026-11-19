@@ -1,11 +1,11 @@
 ---
 id: TASK-125
 title: Qualify a native two-model configuration for the first pi swap
-status: Preparing
+status: In Progress
 assignee:
   - '@gpt-6.2-sol-config'
 created_date: '2026-11-18T20:36:00Z'
-updated_date: '2026-11-19T23:38:00Z'
+updated_date: '2026-11-19T23:53:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -18,7 +18,7 @@ ordinal: 123000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Config is amending the offline pair proof after review on 98db2b2. The selected profiles remain DeepSeek V4.1 Flash 1017 IQ2-XXS 32k (32768 context, one slot) and Qwen 3.8 Flash Next IQ3_S 256k-4 (256000 context, four slots). Separate dedicated configs are valid test inputs. ValidateLifecycleTopology refuses explicit router ownership with multiple engines. Live qualification still depends on enrolled topology, host fencing and verified serving dispatch.
+Config is implementing the independently approved offline pair plan on 0977a26 (SPEC .97). DeepSeek V4.1 Flash 1017 IQ2-XXS uses 32k (32768 context, one slot); Qwen 3.8 Flash Next IQ3_S uses 256k-4 (256000 context, four slots). The revised plan passed review on 98db2b2. In the stale checkout control, the earlier transfer counts, while only the current issuer authorizes first write and its stream receives the payload. Six fake cases and two dedicated config loads await qualification. A live Pi swap still requires enrolled multi-engine topology, host fencing and verified dispatch.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
