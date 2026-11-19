@@ -5,7 +5,7 @@ status: Waiting
 assignee:
   - '@gpt-6.2-astra'
 created_date: '2026-11-18T18:13:00Z'
-updated_date: '2026-11-19T09:42:00Z'
+updated_date: '2026-11-19T09:44:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -19,7 +19,7 @@ ordinal: 108000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-The independent deadline-plan verdict and Shutdown’s source readback wake the coordinator to release the offline equality fixture.
+Shutdown completed its source readback. The independent deadline-plan verdict wakes the coordinator for disposition.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -36,13 +36,13 @@ The independent deadline-plan verdict and Shutdown’s source readback wake the 
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Plan review dispatched on 6177f17. Resolve the timeout from the exact retained launch. Start one monotonic attempt before the post-drain identity check and carry it through observation, durable staging and final publication. Acquire host admission then transition lock. Check stop and deadline equality immediately before the capability CAS and exact closed-authority commit; recheck on CAS retry using the original budget. State changes under the guards must be callback-free. Settle once, with hooks and completion outside both locks. With qualifying evidence at 99 ms and timer delivery withheld, reach 100 ms after staging: refuse proof, Complete, Open and writes, retain applied B, then recover the same ID on a fresh authorized attempt and send once without repeating effects. Keep activation closed.
+On 6177f17 the enrolled writer receives no deadline. Reserve the exact closed route generation before bound reads. Start the validated launch-owned budget before post-drain identity observation; include complete reads, staging and retries. Changing caller fallback preserves the recorded digest. After installation, under host admission then transition, settle once immediately before proof CAS and closed-authority commit. A typed witness carries handled stop, expiry or committed outcome past generic failure. Never decline after successful CAS. Preserve synthetic acceptance separately. Deliver hooks and Complete outside both locks while retaining reservation/drain. After cleanup, Open checks live engine stop and exact committed generation without resampling expiry. Fence early wakes and signal outside locks after Open. Use a fixture-only entry to the real terminal core; retain production capacity guards. Drive qualifying evidence at 99 ms, then equality after staging with timers withheld. Require zero proof, Complete, permits and bytes, retained launch, and fresh same-ID recovery without repeated effects. Independent review dispatched; implementation awaits disposition.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-[PR #6](https://github.com/ArborealML/Inference-Router/pull/6) landed the checkpoint and synthetic ledger; [PR #9](https://github.com/ArborealML/Inference-Router/pull/9) landed predecessor, exact stop-effect and fresh vacancy checks. Review of 47ab322 confirmed restart fencing and identified two weak observations. [PR #14](https://github.com/ArborealML/Inference-Router/pull/14) at c2db0ee passed all four affected Release cases with the probe rebuilt. The open control sends exact bytes with one use; closure denies an otherwise eligible grant. An independently backend-authored wrong grant retains the use after seal and blocks mutation. Matching acknowledgment permits retirement. Serving-process authenticity remains fixture-local. Independent correction review dispatched. Production enforcement and runtime admission remain separate.
+[PR #6](https://github.com/ArborealML/Inference-Router/pull/6) landed the checkpoint and synthetic ledger; [PR #9](https://github.com/ArborealML/Inference-Router/pull/9) landed predecessor, exact stop-effect and fresh vacancy checks. Review of 47ab322 confirmed restart fencing and identified two weak observations. [PR #14](https://github.com/ArborealML/Inference-Router/pull/14) at c2db0ee passed all four affected Release cases with the probe rebuilt. The open control sends exact bytes with one use; closure denies an otherwise eligible grant. An independently backend-authored wrong grant retains the use after seal and blocks mutation. Matching acknowledgment permits retirement. Serving-process authenticity remains fixture-local. Production enforcement remains separate.
 
 [PR #14](https://github.com/ArborealML/Inference-Router/pull/14) merged at 3160a11 after the reconciled df6174e passed hosted CI. This qualifies offline causal retirement with a surviving issuer and independent backend acknowledgment.
 
