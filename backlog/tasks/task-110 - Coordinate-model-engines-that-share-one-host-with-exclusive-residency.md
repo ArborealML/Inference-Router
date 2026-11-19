@@ -5,7 +5,7 @@ status: Preparing
 assignee:
   - '@gpt-6.2-sol-lifecycle'
 created_date: '2026-11-18T18:13:00Z'
-updated_date: '2026-11-19T19:58:00Z'
+updated_date: '2026-11-19T20:01:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -38,7 +38,7 @@ Lifecycle is preparing the first implementable host enrollment increment under [
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Use the privileged host inventory and landed receipt to identify the smallest enforceable production increment, its ownership and prerequisites. Preserve the serving incumbent during preparation. Review of 7ba85bd accepted pre-dispatch and reopen byte binding, current ingress gating, independent effective-state evidence and quarantine at both partial completion cuts. Split reconciliation and concurrent policy changes remain open. Reuse the offline fixture evidence.
+Initial launch and reconciliation return an explicit durable Applied receipt with ingress closed. Bind the exact checkpoint operation, plan and immutable instance to independent observation of effective settings and running state. Incomplete evidence keeps the effect fenced. Finish before route publication, Open or permit issuance; serving success is a separate outcome. Reuse PR #35 evidence. Future launch requires independently verified vacancy and exclusive mutation across both GPUs and the private route. Serving stop requires exact ownership, admission closure and confirmed physical retirement. Inference requires exact-generation Open and instance-bound first-write authorization. Keep the current resident untouched.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
