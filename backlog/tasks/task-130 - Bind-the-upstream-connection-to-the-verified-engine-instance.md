@@ -5,7 +5,7 @@ status: Waiting
 assignee:
   - '@gpt-6.2-sol-release'
 created_date: '2026-11-18T22:19:00Z'
-updated_date: '2026-11-19T02:33:00Z'
+updated_date: '2026-11-19T03:39:00Z'
 labels: []
 milestone: m-4
 dependencies: []
@@ -26,6 +26,7 @@ Bind the first upstream write to the verified engine instance. The [internal hos
 - [ ] #1 A controlled original instance receives the expected bytes through its verified route. A replacement bound to the same public address after verification receives zero bytes under the original proof.
 - [ ] #2 Retiring an instance invalidates its route and connection pool. A request with retired proof cannot write through a pooled connection, redirect, retry or endpoint fallback.
 - [ ] #3 The transport binds the immutable instance and launch epoch. Mismatching either rejects the write even when the model and public address match.
+- [ ] #4 Race two independent transport callers against the same grant. The issuer authorizes at most one submission. Substituting another grant at first write sends zero bytes under the original authorization.
 <!-- AC:END -->
 
 ## Implementation Plan
