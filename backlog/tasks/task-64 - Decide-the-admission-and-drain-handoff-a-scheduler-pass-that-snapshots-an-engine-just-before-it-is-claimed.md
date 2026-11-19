@@ -7,7 +7,7 @@ status: Waiting
 assignee:
   - '@gpt-6.2-astra'
 created_date: '2026-11-17T23:07:00Z'
-updated_date: '2026-11-19T07:06:00Z'
+updated_date: '2026-11-19T07:31:00Z'
 labels:
   - scheduling
   - architecture
@@ -20,7 +20,7 @@ ordinal: 64000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Recorded as an accepted gap in SPEC 15 by the fix set for fd5e0cd; this row is the work that gap names. A scheduler pass snapshots an engine as healthy and idle; a switch then claims that engine under the transition gate; the pass dispatches a no-switch ticket to it without WaitForModel, so the request runs against an engine about to be stopped. Nothing here can patch it: correctness needs the admission/drain design EngineLifecycleCoordinator.cs:8-12 already describes and defers, where a drain marks the engine unavailable at admission and re-queues what already arrived. The same shape is documented there for the no-capacity case, so this row exists so the gap has a home rather than a comment. Acceptance is a shape, not a patch: what an in-flight pass is told when an engine is claimed under it, and what happens to a ticket already snapshot-approved.
+The injected admission path landed in PR #5. The release implementer’s transport handoff wakes preparation of the remaining completion/open check. Use injected callbacks to consume completion and profile wakes while closed, retain the exact queued ticket, then authorize one send after matching open. Production host integration consumes this evidence separately.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -45,5 +45,5 @@ Carry the final ranked ticket and its route generation through preparation. Rele
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Review accepted ac8b118 on [PR #5](https://github.com/ArborealML/Inference-Router/pull/5). The 149 focused checks cover retained ordinary cleanup, cross-route final-slot reservation, two-slot progress and exact take under close, expiry and floor changes. The guarded release removes overlap once in either order. Public teardown guarantees captured-token safety. Optional additional profile and release-order cases are deferred until the accounting changes. CI on reconciled head 7477063 wakes landing. Enrolled completion/open and physical retirement require host integration.
+At ac8b118, 149 focused checks covered retained cleanup, engine-wide final-slot reservation, two-slot progress and exact take after close, expiry or window changes. [PR #5](https://github.com/ArborealML/Inference-Router/pull/5) merged at 1061d70 after green hosted CI. Review of 374af08 verified inline selection precedes execution scheduling and the held backend registers cancellation before signalling entry. Both orderings produce one terminal and return engine inflight to zero. Release cardinality, thread count at quiescence and every pre-send window are outside those assertions. Revisit when the release ordering or event delivery changes.
 <!-- SECTION:NOTES:END -->

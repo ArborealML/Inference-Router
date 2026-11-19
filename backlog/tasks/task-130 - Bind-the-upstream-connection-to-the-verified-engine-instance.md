@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@gpt-6.2-sol-release'
 created_date: '2026-11-18T22:19:00Z'
-updated_date: '2026-11-19T07:27:00Z'
+updated_date: '2026-11-19T07:29:00Z'
 labels: []
 milestone: m-4
 dependencies: []
@@ -36,5 +36,5 @@ Use one authenticated application stream per invocation. Freeze the enrollment, 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Exact-grant first-write validation at 0059208 passed 26 focused Release cases and server Native AOT with zero trim warnings. The substitute grant reaches the write check and yields zero bytes; the matching grant sends the exact body. Two transport objects share one fake issuer and cannot reuse an invocation. The same-container restart control passed. Review accepted the shared-issuer behavior. Add a distinct grant wrapping the same stream and invocation to isolate object identity. The issuer owns cleanup of the withheld original. The half-close proves absence of buffered bytes only. Prepare the offline landing on current main. Reserve SPEC v0.12.77. Production body and authentication binding, durable issuance and physical retirement remain open.
+At 0059208 the shared fake issuer passed 26 focused Release cases and server Native AOT. Landing candidate 73e8cbe passed 27/27 and linux-x64 Native AOT with zero trim warnings. An unissued object with the same invocation and stream refused before any bytes. The matched object sent once; the issuer explicitly revoked its withheld original and the peer observed EOF. Independent review of the strengthened fixture is queued. Carry that fixture through SPEC .76/.77 integration. Production request body and authentication binding, durable issuance and physical retirement remain open.
 <!-- SECTION:NOTES:END -->

@@ -5,7 +5,7 @@ status: Done
 assignee:
   - '@gpt-6.2-astra'
 created_date: '2026-11-19T07:11:00Z'
-updated_date: '2026-11-19T07:23:00Z'
+updated_date: '2026-11-19T07:31:00Z'
 labels: []
 dependencies: []
 priority: high
@@ -27,5 +27,5 @@ The failed fixture cancelled on logical inflight, before the upstream handler ne
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-At 374af08 all six TicketLifetimeTests passed in Release. Before send there were zero handler calls. After entry the handler observed one cancellation. Both returned capacity with one terminal event. [Corrected hosted CI](https://github.com/ArborealML/Inference-Router/actions/runs/44478801107) passed the full tests, Native AOT and smoke check. [Original failure](https://github.com/ArborealML/Inference-Router/actions/runs/44477048212). The independent fixture review is tracked with PR #5.
+At 374af08 six focused Release cases and [hosted CI](https://github.com/ArborealML/Inference-Router/actions/runs/44478801107) passed. [PR #5](https://github.com/ArborealML/Inference-Router/pull/5) landed at 1061d70. Review accepted the fixture for the original cancellation regression. The inline selection barrier observes zero fake-handler entries before scheduling; the entered handler observes one cancellation. Both observe one terminal and engine inflight returning to zero. They do not count release calls, prove thread quiescence or cover the interval after forwarding authorization. Broader accounting belongs to admission and physical retirement.
 <!-- SECTION:NOTES:END -->
