@@ -3,11 +3,11 @@ id: TASK-111
 title: >-
   Build the local router configuration for every supported select-model
   configuration
-status: In Progress
+status: Waiting
 assignee:
-  - '@gpt-6.2-sol-config'
+  - '@gpt-6.2-astra'
 created_date: '2026-11-18T18:15:00Z'
-updated_date: '2026-11-19T14:39:00Z'
+updated_date: '2026-11-19T14:45:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -19,7 +19,7 @@ ordinal: 109000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Config owns one verifier correction on [PR #31](https://github.com/ArborealML/Inference-Router/pull/31). Review of 63ea6db confirmed that the wrong-SHM control bypasses the positive comparison assertion and a standalone sweep skips fixture hash checks. The 10,150-vector receipt stays attributed to 80febe5; its wording passed at bb8d4ac. Unified topology, per-option reconfiguration, protected credential bind, published ports and host authority remain open.
+Hosted CI and the bounded correction review on [PR #31](https://github.com/ArborealML/Inference-Router/pull/31) wake the coordinator. Both focused Release checks passed on 70e71f2 with zero skips. The corrected sweep compared 10,150 distinct positive vectors in 8.364 seconds, verified the manifest, rejected the wrong SHM through the real comparison and counted five AIR refusals. Its two parser spelling checks are separate from 78 format comparisons. The earlier receipt remains on 80febe5. Unified topology, alternate configuration, protected credential bind, published ports and host authority remain open.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
