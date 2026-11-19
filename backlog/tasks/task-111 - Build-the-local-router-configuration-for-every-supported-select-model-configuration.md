@@ -3,11 +3,11 @@ id: TASK-111
 title: >-
   Build the local router configuration for every supported select-model
   configuration
-status: Preparing
+status: Waiting
 assignee:
-  - '@gpt-6.2-sol-config'
+  - '@chatswarm'
 created_date: '2026-11-18T18:15:00Z'
-updated_date: '2026-11-19T14:55:00Z'
+updated_date: '2026-11-19T14:59:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -19,7 +19,7 @@ ordinal: 109000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Config is mapping the remaining configuration differences to existing dependencies after [PR #31](https://github.com/ArborealML/Inference-Router/pull/31) merged at ae0d530. The 70e71f2 review accepted all six verifier dispositions. Both focused Release tests and hosted CI passed; the corrected opt-in run compared 10,150 distinct positive vectors in 8.364 seconds. It used six dedicated native inputs and redacted selector-derived expectations. Independent original-source authentication and effective host behavior remain open.
+The published-port plan review dispatched November 19 on ae0d530 wakes the coordinator. [PR #31](https://github.com/ArborealML/Inference-Router/pull/31) landed the offline verifier. Its measured 10,150 comparisons used redacted selector-derived expectations. Native ownership still requires six dedicated inputs; alternate configuration, the credential bind, original source authentication and host authority remain open.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -32,7 +32,7 @@ Config is mapping the remaining configuration differences to existing dependenci
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Identify the smallest remaining representability correction from the landed coverage report, starting with Strata and Maya published-port declarations. Check existing dependency ownership, distinguish projection differences from host evidence, and return a bounded recommendation before implementation. Keep unified configuration, alternate-vector reconfiguration, the protected credential bind and activation dependencies explicit. Reuse the landed measurements.
+In the existing host_port branch, derive root ExposedPorts and HostConfig.PortBindings from the same container TCP key for engines declaring tier Docker plans or offline launch options. Preserve the existing policy case, legacy and resources-only output, no-port omission and write refusals. Review engine-wide eligibility for mixed catalogs and changed frozen digests. Compare the 36 Strata and 13 Maya default projections, keep selector provenance distinct from AIR expectations, and reuse the opt-in sweep once. Effective bind and image exposure require separate host evidence.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
