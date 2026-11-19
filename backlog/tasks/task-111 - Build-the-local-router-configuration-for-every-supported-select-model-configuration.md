@@ -3,11 +3,11 @@ id: TASK-111
 title: >-
   Build the local router configuration for every supported select-model
   configuration
-status: Waiting
+status: In Progress
 assignee:
-  - '@chatswarm'
+  - '@gpt-6.2-sol-config'
 created_date: '2026-11-18T18:15:00Z'
-updated_date: '2026-11-19T13:59:00Z'
+updated_date: '2026-11-19T14:10:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -19,7 +19,7 @@ ordinal: 109000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-The bounded rereview dispatched November 19 wakes the coordinator. All 75 normalized defaults landed in [PR #30](https://github.com/ArborealML/Inference-Router/pull/30). Six dedicated native inputs preserve explicit ownership. Unified configuration and selector-option parity remain open. Public shared-memory inputs and the tier DTO reject explicit null; the older common DTO treats direct null assignment as omission.
+Config owns implementation of the reviewed opt-in offline comparison on 316899c. [PR #30](https://github.com/ArborealML/Inference-Router/pull/30) landed 75 normalized defaults. Keep six dedicated native inputs. Unified ownership, alternate-vector reconfiguration, the protected credential mount, published-port discrepancies and host authority remain open. Public shared-memory inputs and the tier DTO reject explicit null; the older common DTO treats direct null assignment as omission.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -32,7 +32,7 @@ The bounded rereview dispatched November 19 wakes the coordinator. All 75 normal
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Review one reproducible offline batch against independent selector expectations. The proposed 10,150 positive vectors include two utilization neighbors. The 1,436-vector alternative requires evidence that both implementations preserve independence at mixed corners. Count spelling, parser and invalid controls separately. Assess recurring CI cost separately from qualification. Compare complete create fields and catalog capacity; record protected binds, published ports, reconfiguration and outstanding host evidence.
+Use one opt-in direct sweep targeting 10,150 distinct positive keys. Keep recurring CI to a cheap fixture check. Verify device choices and key uniqueness. Track redacted selector-derived expectations, reviewable rule provenance, permitted substitutions and hashes. Distinguish clone reproducibility from original source authentication. Canonicalize MiniMax model spelling, read its configured 32k profile, look up that named tier and project omitted and explicit forms against the independent reference. Label selector invalids by source, original receipt or execution; count AIR probes separately. Compare complete payloads and capacity, pin a wrong-SHM control, and report measured counts, elapsed time and exact discrepancies on the qualified revision.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
