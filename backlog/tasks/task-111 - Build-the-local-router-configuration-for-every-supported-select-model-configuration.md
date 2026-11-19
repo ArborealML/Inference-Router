@@ -3,11 +3,11 @@ id: TASK-111
 title: >-
   Build the local router configuration for every supported select-model
   configuration
-status: In Progress
+status: Waiting
 assignee:
-  - '@gpt-6.2-sol-config'
+  - '@gpt-6.2-astra'
 created_date: '2026-11-18T18:15:00Z'
-updated_date: '2026-11-19T08:10:00Z'
+updated_date: '2026-11-19T08:26:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -19,7 +19,7 @@ ordinal: 109000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Implement the reviewed offline MiniMax 32k entrypoint and IPC projection. Qualify each selector target against its actual serving launch. TASK-125 carries the first live pair; other families remain separate.
+Hosted CI and independent review of the MiniMax 32k launch options wake integration. Per-target Docker settings and tier memory have landed. Complete native configuration parity spans 75 selector targets.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -38,13 +38,9 @@ Add engine-wide entrypoint and ipc_mode. Encode one literal clean absolute in-im
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Selector inventory at fingerprint 8af827d3c375efda08cad8a5b9b7fd862b44a2f5a7482042c5255623a891a030 found 169 valid and 337 invalid spellings, 75 distinct targets, 12 spellings requiring one explicit GPU, 22 omitted defaults, and 1,248 parking combinations. Single-device profiles require one explicit index; paired profiles require two distinct indices. GPU utilization accepts 0.50–0.95, default 0.90. Parking accepts 1–48 GiB, default 32, and 1–8 variable lanes. Suffix-cache launch has no supported mechanism. TASK-26 covers resources, TASK-114 cold starts and TASK-125 the first live pair.
+The installed selector has 169 valid and 337 invalid spellings across 75 distinct targets (36 Strata, 26 HyperQwen, 13 Maya). Twelve spellings require one GPU; 22 defaults and 1,248 parking combinations were inventoried. Preserve GPU index, utilization, parking and suffix-cache limits in the tracked coverage report. TASK-26 covers resources, TASK-114 cold starts and TASK-125 the first live pair.
 
-[PR #7](https://github.com/ArborealML/Inference-Router/pull/7) corrects shadowed ownership and selector fields, common Docker key casing and template substitution. Review of 7eda8ad accepted the correction subject to verification. At 6505ea1 all 108 focused tests, the pinned pair config and server Native AOT passed. The CLI separately refused a sibling select/Select pair and a duplicate common env key at the expected paths. Integration head 3af5f10 preserves both SPEC revisions. Continue offline comparison for remaining targets. Before activation, bind receipts and labels to the same canonical model, tier and serving instance.
+[PR #7](https://github.com/ArborealML/Inference-Router/pull/7) landed offline per-target environment and mounts, strict ownership checks and single-pass substitution. [PR #12](https://github.com/ArborealML/Inference-Router/pull/12) landed per-tier RAM and swap for the Qwen profiles. [PR #16](https://github.com/ArborealML/Inference-Router/pull/16) at ee6e0f5 adds the MiniMax executable entrypoint and host IPC. Its 96 focused Release cases passed, the pinned MiniMax config loaded, and linux-x64 server Native AOT published. Independent code review dispatched. Remaining coverage includes profile aliases, GPU ordering, shared memory, runtime policy, nested mounts and health settings. Bind receipts and labels to canonical model, tier and serving instance before activation.
 
-Offline comparison covered 36 Strata, 26 HyperQwen and 13 Maya targets. MiniMax 32k requires host IPC and an entrypoint override. Qwen 768k and 1m require profile-specific memory and total swap. At 606961f all 127 focused Docker target/resource tests passed. The pinned Defiant config loaded and the linux-x64 server Native AOT publish had zero trim warnings.  Other gaps include profile aliases, GPU ordering, shared memory, runtime policy, nested mounts and health settings.
-
-[PR #12](https://github.com/ArborealML/Inference-Router/pull/12) landed at 5992c4e with SPEC v0.12.78 after hosted Release, Native AOT and smoke passed on 7133401. Review accepted supplied-profile projection. Config-only controls accepted either common RAM key spelling alone and refused both together as duplicate. Automatic profile selection and live activation remain separate.
-
-Review at 5992c4e accepted the offline scope with explicit parser, resource-free payload and refusal-precedence controls.
+Single-device profiles require one explicit index and paired profiles two distinct indices. Utilization is 0.50–0.95 (default 0.90), parking 1–48 GiB (default 32), variable lanes 1–8. The selector has no supported suffix-cache launch.
 <!-- SECTION:NOTES:END -->
