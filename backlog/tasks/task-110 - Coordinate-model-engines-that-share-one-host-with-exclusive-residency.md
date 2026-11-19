@@ -5,7 +5,7 @@ status: Preparing
 assignee:
   - '@gpt-6.2-sol-lifecycle'
 created_date: '2026-11-18T18:13:00Z'
-updated_date: '2026-11-19T18:45:00Z'
+updated_date: '2026-11-19T18:53:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -20,7 +20,7 @@ ordinal: 108000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-The selector-owned Qwen resident occupies both GPUs and lacks original launch provenance. Shared daemon access bypasses the proposed boundary. The effective device-policy query was denied. The inventory found no evidence of an enrolled supervisor, independent partition observer or protected journal head. Lifecycle is preparing the privileged read-only policy export and a minimal enrollment proposal for missing mechanisms. A future launch requires a separately authorized vacant window.
+Lifecycle is designing the unconfigured case offline while TASK-139 requests a privileged effective-policy export. Selector-owned Qwen occupies both GPUs and lacks original launch provenance. Shared daemon access bypasses the proposed boundary. No enrolled supervisor, independent partition observer or protected journal head was evidenced. The design must mediate competing writers. A future launch requires a separately authorized vacant window.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
