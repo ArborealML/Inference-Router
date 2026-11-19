@@ -352,8 +352,8 @@ daemon transaction per engine. 137 tests green.
   that answers no `upload_url`, an upload that dies or answers no asset id, an asset name listed twice on
   the release, and a tag that moves after the first resolve. No tag has run the gate: still configured,
   not proven.
-- v0.12.95 — recover one synthetic initial launch receipt from exact Docker create bytes and a
-  separately modeled journal head, with ingress closed (§5.3.1).
+- v0.12.95 — recover one synthetic initial launch receipt bound to an independently approved
+  Docker create payload and a modeled journal head, and verify closed ingress and completion cuts (§5.3.1).
 - v0.12.94 — keep named option operands out of the `air chat` and `air complete` user message,
   read stdin when no positional arguments remain, and document the direct HTTP client (§11).
 - v0.12.93 — project matching TCP exposure for published ports on engines with per-tier Docker
@@ -1779,17 +1779,24 @@ Its caller must obtain an independent effect or rejection fence from the authori
 The checkpoint contains no evidence provenance for physical authority or takeover audit. Worker I/O,
 runtime routing and admission remain on their existing paths. Production enrollment is disabled.
 
-The initial-launch fixture freezes the exact serialized Docker create request for the selected
-native target. Its local history binds those bytes and the checkpoint operation to anchored dispatch,
-worker acceptance and an exclusive may-have-issued decision before fake daemon I/O. The issue fence
-compares current partition policy, owner and closed-ingress evidence through daemon entry. Separate
-fake create and start records support the observer's exact instance, settings and full-device-pair
-checks before the fixture records Applied. A new opener compares local ancestry with a separate
-modeled monotonic head and reads the original receipt bytes for the exact operation and instance.
-An older restore, a split install or delayed stale delivery grants no issue. An unresolved effect
-bars repeat and competing dispatch. The instance remains closed to permits after receipt recovery.
-The fixture models the head and observer with local evidence roles. Host exclusion, administrator
-credential isolation, directory durability and an authenticated production head require separate proof.
+The initial-launch fixture compares the selected plan's exact serialized Docker create request with
+an independently projected approved payload before dispatch and when reopening. Its local history
+binds the submitted bytes and the checkpoint operation to anchored dispatch, worker acceptance and
+an exclusive may-have-issued decision before fake daemon I/O. The issue fence compares current
+partition policy, owner and closed-ingress evidence through daemon entry. The observer reads
+separately seeded fake daemon effective settings, assigned devices and running-instance evidence.
+It verifies exact settings, both devices and matching create and start IDs before recording Applied.
+
+A new opener compares local ancestry with a separate modeled monotonic head and reads the original
+receipt bytes for the exact operation and instance. The journal and fresh ingress evidence feed an
+otherwise-eligible fixture issuer. Closed or stale authority refuses minting and writes. A separate
+current open observation permits the matching control send. An older restore, an unheaded issue
+decision or delayed stale delivery grants no issue. If completion stops after applying the checkpoint
+or after appending the journal and before advancing the head, the fixture quarantines the installed
+evidence and refuses receipt lookup and ingress. Sequential repeat and competing requests add zero
+fake create or start calls in these refusal cases. The fixture models the head and observer with local evidence roles.
+Host exclusion, administrator credential isolation, directory durability, split reconciliation and
+an authenticated production head require separate proof.
 
 The successor ledger fixture records submissions, worker acceptances, daemon attempts and applied
 records in separate journals. These are synthetic evidence roles and can share a fixture process.

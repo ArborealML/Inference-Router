@@ -8,11 +8,13 @@ namespace Arboreal.InferenceRouter;
 
 internal sealed partial class HostEffectLedgerProbe
 {
-    public InitialLaunchLedger InitialLaunch(string authorityRoot) => new(this, authorityRoot);
+    public InitialLaunchLedger InitialLaunch(string authorityRoot, IReadOnlyDictionary<HostCheckpointPlan, byte[]> approvedCreate) =>
+        new(this, authorityRoot, approvedCreate);
 
     // The modeled head and observer facts are outside the journal restore boundary. The fixture's
     // shared worker fence orders policy changes, decisions and daemon entry. All roles are synthetic.
-    internal sealed class InitialLaunchLedger(HostEffectLedgerProbe storage, string authorityRoot)
+    internal sealed class InitialLaunchLedger(HostEffectLedgerProbe storage, string authorityRoot,
+        IReadOnlyDictionary<HostCheckpointPlan, byte[]> approvedCreate)
     {
         private const string Mode = "initial-launch";
         private const string PairDevices = "0,1";
@@ -20,9 +22,10 @@ internal sealed partial class HostEffectLedgerProbe
         private readonly InitialLaunchAnchor _anchor = new(authorityRoot);
         private readonly string _policyPath = Path.Combine(authorityRoot, "policy.json");
         private string Journal => Path.Combine(storage._root, "initial-journal");
+        private string DaemonSeedPath => Path.Combine(storage._root, "initial-daemon-seed.json");
         public InitialLaunchObserver Observer => _observer;
 
-        public void Provision()
+        public void Provision(InitialLaunchDaemonSeed daemon)
         {
             HostEffectCheckpoint.ProvisionNew(storage._checkpointPath);
             _ = storage.RunCommand("initialize", "");
@@ -30,6 +33,7 @@ internal sealed partial class HostEffectLedgerProbe
             var record = new InitialLaunchRecord(0, "", InitialLaunchPhase.Genesis, 0);
             var head = AppendRecord(record);
             _anchor.Provision(head);
+            Publish(DaemonSeedPath, daemon, Json.InitialLaunchDaemonSeed, "daemon-seed", Mode);
             InstallAuthority(new(EnrolledScope, 1, 1, PartitionCoverage.Complete, PairDevices,
                 ExclusiveWriter: true, ForeignResident: false, IngressClosed: true));
         }
@@ -49,7 +53,8 @@ internal sealed partial class HostEffectLedgerProbe
             using var fence = storage.OpenFence();
             using var checkpoint = HostEffectCheckpoint.Open(storage._checkpointPath);
             var (head, record) = ReadCurrent(checkpoint.State);
-            if (record.Phase != InitialLaunchPhase.Genesis || !CurrentVacancy(witness)) return null;
+            if (record.Phase != InitialLaunchPhase.Genesis || !MatchesApprovedCreate(plan, bytes) || !CurrentVacancy(witness))
+                return null;
 
             var operation = checkpoint.PrepareInitialLaunch(plan);
             checkpoint.MarkLaunchDispatching(operation);
@@ -83,12 +88,14 @@ internal sealed partial class HostEffectLedgerProbe
             var payload = Convert.FromBase64String(stored.CreateBytes);
             Advance(head, record with { Phase = InitialLaunchPhase.MayHaveIssued }, interruptBeforeHead);
             // The same fence is still held. No different authority, effect or dispatch can enter here.
-            var instance = FakeCreate(command.Operation, payload);
-            FakeStart(command.Operation, instance);
+            var daemon = Read(DaemonSeedPath, Json.InitialLaunchDaemonSeed) ?? throw new IOException("Missing fake daemon state.");
+            var instance = FakeCreate(command.Operation, payload, daemon);
+            FakeStart(command.Operation, instance, daemon);
             return instance;
         }
 
-        public byte[]? Complete(InitialLaunchCommand command, string workerInstance)
+        public byte[]? Complete(InitialLaunchCommand command, string workerInstance,
+            InitialLaunchCompletionCut cut = InitialLaunchCompletionCut.None)
         {
             using var fence = storage.OpenFence();
             using var checkpoint = HostEffectCheckpoint.Open(storage._checkpointPath);
@@ -99,14 +106,17 @@ internal sealed partial class HostEffectLedgerProbe
                 observed.Create is not { } created || observed.Start is not { } started ||
                 created.Operation != command.Operation || started.Operation != command.Operation ||
                 created.InstanceId != workerInstance || started.InstanceId != workerInstance ||
-                created.CreateBytes != command.CreateBytes || created.Devices != PairDevices) return null;
+                !MatchesApprovedCreate(command.Plan, Convert.FromBase64String(created.EffectiveCreate)) ||
+                created.Devices != PairDevices) return null;
 
             var applied = new HostCheckpointLaunchEffect(command.Operation, command.Plan, created.InstanceId);
             var bytes = JsonSerializer.SerializeToUtf8Bytes(
                 new InitialLaunchReceipt(command.Authority.Scope, applied, command.CreateDigest), Json.InitialLaunchReceipt);
             checkpoint.RecordAppliedLaunch(new HostMutationOutcome(command.Operation, HostMutationStatus.Applied, created.InstanceId), applied);
+            if (cut == InitialLaunchCompletionCut.AfterCheckpoint)
+                throw new IOException("The applied checkpoint was installed without its journal record.");
             Advance(head, record with { Phase = InitialLaunchPhase.Applied, CheckpointRevision = checkpoint.State.Revision,
-                ReceiptBytes = Convert.ToBase64String(bytes) });
+                ReceiptBytes = Convert.ToBase64String(bytes) }, cut == InitialLaunchCompletionCut.AfterJournal);
             return bytes;
         }
 
@@ -114,47 +124,76 @@ internal sealed partial class HostEffectLedgerProbe
         {
             using var fence = storage.OpenFence();
             using var checkpoint = HostEffectCheckpoint.Open(storage._checkpointPath);
-            var (_, record) = ReadCurrent(checkpoint.State);
-            return record.Phase == InitialLaunchPhase.Applied && checkpoint.State.AppliedLaunch is { } applied &&
-                applied.Operation == exactOperation &&
-                applied.InstanceId == exactInstance ? Convert.FromBase64String(record.ReceiptBytes!) : null;
+            var record = ReadApplied(checkpoint.State, exactOperation, exactInstance);
+            return record?.ReceiptBytes is { } bytes ? Convert.FromBase64String(bytes) : null;
         }
 
+        public InitialLaunchIngress? ReadIngress(HostMutation exactOperation, string exactInstance)
+        {
+            try
+            {
+                using var fence = storage.OpenFence();
+                using var checkpoint = HostEffectCheckpoint.Open(storage._checkpointPath);
+                var state = checkpoint.State;
+                if (ReadApplied(state, exactOperation, exactInstance)?.Command is not { } command) return null;
+
+                var policy = _observer.ReadAuthority();
+                if (!CoversPair(policy) || policy.Scope != command.Authority.Scope ||
+                    policy.OwnerGeneration != command.Authority.OwnerGeneration ||
+                    policy.PolicyGeneration < command.Authority.PolicyGeneration) return null;
+                return new InitialLaunchIngress(state.AppliedLaunch!, policy);
+            }
+            catch (Exception error) when (error is IOException or JsonException or FormatException)
+            {
+                // An unverified or split store has no fixture ingress authority.
+                return null;
+            }
+        }
+
+        private InitialLaunchRecord? ReadApplied(HostEffectCheckpointState checkpoint, HostMutation exactOperation, string exactInstance)
+        {
+            var (_, record) = ReadCurrent(checkpoint);
+            return record.Phase == InitialLaunchPhase.Applied && checkpoint.AppliedLaunch is { } applied &&
+                applied.Operation == exactOperation && applied.InstanceId == exactInstance ? record : null;
+        }
+
+        private bool MatchesApprovedCreate(HostCheckpointPlan plan, ReadOnlySpan<byte> bytes) =>
+            approvedCreate.TryGetValue(plan, out var approved) && bytes.SequenceEqual(approved);
+
         private bool CurrentVacancy(InitialLaunchAuthority? observed) =>
-            observed is { Scope: var scope, Coverage: PartitionCoverage.Complete, Devices: PairDevices,
-                ExclusiveWriter: true, ForeignResident: false, IngressClosed: true, PolicyGeneration: > 0, OwnerGeneration: > 0 } &&
-            scope == EnrolledScope && _observer.Observe() == new InitialLaunchObservation(observed, null, null);
+            observed is { IngressClosed: true } && CoversPair(observed) &&
+            _observer.Observe() == new InitialLaunchObservation(observed, null, null);
+
+        private static bool CoversPair(InitialLaunchAuthority authority) =>
+            authority is { Coverage: PartitionCoverage.Complete, Devices: PairDevices, ExclusiveWriter: true,
+                ForeignResident: false, PolicyGeneration: > 0, OwnerGeneration: > 0 } && authority.Scope == EnrolledScope;
 
         private void InstallAuthority(InitialLaunchAuthority authority) =>
             Publish(_policyPath, authority, Json.InitialLaunchAuthority, "policy", Mode, replace: true);
 
-        private string FakeCreate(HostMutation operation, byte[] bytes)
+        private string FakeCreate(HostMutation operation, byte[] bytes, InitialLaunchDaemonSeed daemon)
         {
-            CountAttempt("initial-create-attempts", operation);
-            var request = JsonSerializer.Deserialize(bytes, DockerJsonContext.Default.DockerCreateRequest)
-                ?? throw new IOException("The fake Docker create request is absent.");
-            var devices = request.HostConfig?.DeviceRequests?.SingleOrDefault();
-            // The landed recipes ask for all GPUs. The fake daemon independently has two devices.
-            var effectiveDevices = devices is { Count: -1 } ? PairDevices : string.Join(',', devices?.DeviceIds ?? []);
-            var created = new InitialLaunchCreate(operation, new string('A', 64),
-                Convert.ToBase64String(bytes), effectiveDevices);
+            var attempt = new InitialLaunchCreateAttempt(operation, Convert.ToBase64String(bytes));
+            Publish(AttemptPath("initial-create-attempts", operation), attempt, Json.InitialLaunchCreateAttempt, "attempt", Mode);
+            // The daemon's installed settings and GPU assignment come from a separate fixture seed.
+            var created = new InitialLaunchCreate(operation, daemon.CreatedInstance, daemon.EffectiveCreate, daemon.Devices);
             Publish(Path.Combine(storage._root, "initial-created.json"), created, Json.InitialLaunchCreate, "create", Mode);
             return created.InstanceId;
         }
 
-        private void FakeStart(HostMutation operation, string instance)
+        private void FakeStart(HostMutation operation, string instance, InitialLaunchDaemonSeed daemon)
         {
-            CountAttempt("initial-start-attempts", operation);
+            Publish(AttemptPath("initial-start-attempts", operation), operation, Json.HostMutation, "attempt", Mode);
             var created = Read(Path.Combine(storage._root, "initial-created.json"), Json.InitialLaunchCreate);
             if (created is null || created.Operation != operation || created.InstanceId != instance)
                 throw new IOException("The fake daemon can start only the created instance.");
-            Publish(Path.Combine(storage._root, "initial-started.json"), new InitialLaunchStart(operation, instance),
-                Json.InitialLaunchStart, "start", Mode);
+            if (daemon.RunningInstance is { } runningInstance)
+                Publish(Path.Combine(storage._root, "initial-started.json"), new InitialLaunchStart(operation, runningInstance),
+                    Json.InitialLaunchStart, "start", Mode);
         }
 
-        private void CountAttempt(string journal, HostMutation operation) =>
-            Publish(Path.Combine(storage._root, journal, $"{operation.Id:N}.{Guid.NewGuid():N}.json"),
-                operation, Json.HostMutation, "attempt", Mode);
+        private string AttemptPath(string journal, HostMutation operation) =>
+            Path.Combine(storage._root, journal, $"{operation.Id:N}.{Guid.NewGuid():N}.json");
 
         private void Advance(InitialLaunchHead predecessor, InitialLaunchRecord record, bool interruptBeforeHead = false)
         {
@@ -195,12 +234,13 @@ internal sealed partial class HostEffectLedgerProbe
             return (head, record);
         }
 
-        private static bool MatchesCheckpoint(InitialLaunchRecord record, HostEffectCheckpointState checkpoint)
+        private bool MatchesCheckpoint(InitialLaunchRecord record, HostEffectCheckpointState checkpoint)
         {
             if (checkpoint.Revision != record.CheckpointRevision) return false;
             if (record.Phase == InitialLaunchPhase.Genesis) return checkpoint == HostEffectCheckpointState.Genesis;
-            if (record.Command is not { } command || !command.Plan.Matches(command.Operation, checkpoint.Epoch) ||
-                Digest(Convert.FromBase64String(command.CreateBytes)) != command.CreateDigest) return false;
+            if (record.Command is not { } command || !command.Plan.Matches(command.Operation, checkpoint.Epoch)) return false;
+            var createBytes = Convert.FromBase64String(command.CreateBytes);
+            if (!MatchesApprovedCreate(command.Plan, createBytes) || Digest(createBytes) != command.CreateDigest) return false;
             if (record.Phase != InitialLaunchPhase.Applied)
                 return checkpoint.Phase == HostCheckpointPhase.LaunchDispatching &&
                     checkpoint.Transition is { } transition && transition.Launch == command.Operation && transition.Plan == command.Plan;
@@ -246,19 +286,25 @@ internal sealed partial class HostEffectLedgerProbe
 }
 
 internal enum InitialLaunchPhase { Genesis, Dispatched, Accepted, MayHaveIssued, Applied }
+internal enum InitialLaunchCompletionCut { None, AfterCheckpoint, AfterJournal }
 internal sealed record InitialLaunchAuthority(PartitionScope Scope, long PolicyGeneration, long OwnerGeneration,
     PartitionCoverage Coverage, string Devices, bool ExclusiveWriter, bool ForeignResident, bool IngressClosed);
 internal sealed record InitialLaunchCommand(InitialLaunchAuthority Authority, HostMutation Operation, HostCheckpointPlan Plan,
     string CreateBytes, string CreateDigest);
-internal sealed record InitialLaunchCreate(HostMutation Operation, string InstanceId, string CreateBytes, string Devices);
+internal sealed record InitialLaunchDaemonSeed(string CreatedInstance, string? RunningInstance, string EffectiveCreate, string Devices);
+internal sealed record InitialLaunchCreateAttempt(HostMutation Operation, string CreateBytes);
+internal sealed record InitialLaunchCreate(HostMutation Operation, string InstanceId, string EffectiveCreate, string Devices);
 internal sealed record InitialLaunchStart(HostMutation Operation, string InstanceId);
 internal sealed record InitialLaunchObservation(InitialLaunchAuthority Authority, InitialLaunchCreate? Create, InitialLaunchStart? Start);
 internal sealed record InitialLaunchReceipt(PartitionScope Scope, HostCheckpointLaunchEffect Launch, string CreateDigest);
+internal sealed record InitialLaunchIngress(HostCheckpointLaunchEffect Launch, InitialLaunchAuthority Authority);
 internal sealed record InitialLaunchRecord(int Revision, string Predecessor, InitialLaunchPhase Phase, long CheckpointRevision,
     InitialLaunchCommand? Command = null, string? ReceiptBytes = null);
 internal sealed record InitialLaunchHead(PartitionScope Scope, int Revision, string Predecessor, string Digest);
 
 [JsonSerializable(typeof(InitialLaunchAuthority))]
+[JsonSerializable(typeof(InitialLaunchDaemonSeed))]
+[JsonSerializable(typeof(InitialLaunchCreateAttempt))]
 [JsonSerializable(typeof(InitialLaunchCreate))]
 [JsonSerializable(typeof(InitialLaunchStart))]
 [JsonSerializable(typeof(InitialLaunchReceipt))]

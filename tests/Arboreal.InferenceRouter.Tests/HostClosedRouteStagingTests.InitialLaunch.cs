@@ -14,14 +14,15 @@ public sealed partial class HostClosedRouteStagingTests
     private string InitialHeadPath => Path.Combine(InitialAuthorityRoot, "head.json");
 
     [Fact(Timeout = 30_000)]
-    public async Task SyntheticInitialLaunchRecoversOriginalReceiptWithoutReissueOrGrant()
+    public async Task SyntheticInitialLaunchRecoversOriginalReceiptAndKeepsIngressGated()
     {
         var (qwen, swift) = ProjectInitialPair();
-        var ledger = ProvisionInitialLaunch();
+        var ledger = ProvisionInitialLaunch(qwen, swift);
         var witness = ledger.Observer.ReadAuthority();
         var command = Assert.IsType<InitialLaunchCommand>(ledger.Dispatch(qwen.Plan, qwen.Bytes, witness));
         Assert.Equal(1, command.Operation.Epoch);
         Assert.Equal(qwen.Bytes, Convert.FromBase64String(command.CreateBytes));
+        Assert.NotEqual(command.Plan.LaunchSettingsDigest, command.CreateDigest);
         Assert.True(ledger.Accept(command, InitialWorkerGeneration));
         Assert.Null(ledger.Dispatch(swift.Plan, swift.Bytes, witness));
         var instance = Assert.IsType<string>(ledger.Issue(command, InitialWorkerGeneration));
@@ -30,13 +31,13 @@ public sealed partial class HostClosedRouteStagingTests
         Assert.Null(ledger.Dispatch(swift.Plan, swift.Bytes, witness));
         var observations = ledger.Observer.Observe();
         var created = Assert.IsType<InitialLaunchCreate>(observations.Create);
-        Assert.Equal(qwen.Bytes, Convert.FromBase64String(created.CreateBytes));
+        Assert.Equal(qwen.ApprovedBytes, Convert.FromBase64String(created.EffectiveCreate));
         Assert.Equal("0,1", created.Devices);
         Assert.Equal(new InitialLaunchStart(command.Operation, instance), observations.Start);
         var originalReceipt = Assert.IsType<byte[]>(ledger.Complete(command, instance));
 
         // A new ledger and observer reopen the checkpoint, local history and separately stored head.
-        var reopened = OpenInitialLaunch();
+        var reopened = OpenInitialLaunch(qwen, swift);
         var readback = Assert.IsType<byte[]>(reopened.Lookup(command.Operation, instance));
         Assert.Equal(originalReceipt, readback);
         Assert.Equal(readback, reopened.Lookup(command.Operation, instance));
@@ -53,25 +54,24 @@ public sealed partial class HostClosedRouteStagingTests
         Assert.Equal(InitialLaunchPhase.Applied, ReadInitialHead().Phase);
         Assert.Equal(Enum.GetValues<InitialLaunchPhase>(), ReadInitialHistory().Select(record => record.Phase));
         Assert.All(ReadInitialHistory().Skip(1), record => Assert.Equal(command, record.Command));
-        AssertInitialAttempts(command.Operation);
+        AssertInitialAttempts(command);
 
-        var staging = new HostClosedRouteStaging(operation => operation == receipt.Launch.Operation ? receipt.Launch : null,
-            (launch, generation) => PairRoute(launch.Operation, launch.InstanceId, generation));
-        var issuer = new FixtureIssuer(staging);
-        var invocation = Invocation(PairRoute(receipt.Launch.Operation, receipt.Launch.InstanceId, 1));
-        Assert.True(observations.Authority.IngressClosed);
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
-        await AssertDeniedAsync(issuer, invocation, "{}"u8.ToArray(), timeout.Token);
-        Assert.Equal(0, issuer.Grants);
-        Assert.Equal(0, issuer.Permits);
+        await CheckInitialIngressAsync(reopened, receipt, timeout.Token);
+        Assert.Equal(originalReceipt, reopened.Lookup(command.Operation, instance));
     }
 
     [Fact]
     public void SyntheticInitialLaunchRequiresCompleteAuthorityAndExactAcceptedBinding()
     {
         var (qwen, swift) = ProjectInitialPair();
-        var ledger = ProvisionInitialLaunch();
+        var ledger = ProvisionInitialLaunch(qwen, swift);
         var witness = ledger.Observer.ReadAuthority();
+        Assert.Null(ledger.Dispatch(qwen.Plan, swift.Bytes, witness));
+        Assert.Equal(InitialLaunchPhase.Genesis, Assert.Single(ReadInitialHistory()).Phase);
+        using (var checkpoint = HostEffectCheckpoint.Open(ReservationPath))
+            Assert.Equal(HostEffectCheckpointState.Genesis, checkpoint.State);
+        AssertNoInitialEffects(ledger);
         Assert.Null(ledger.Dispatch(qwen.Plan, qwen.Bytes, witness: null));
         var partial = witness with { Devices = "0", PolicyGeneration = witness.PolicyGeneration + 1 };
         ledger.ChangeAuthority(partial);
@@ -96,59 +96,57 @@ public sealed partial class HostClosedRouteStagingTests
         AssertNoInitialEffects(ledger);
     }
 
-    public enum InitialObservationFault { MissingStart, WrongStartId, WrongCreateBytes, PartialPair }
+    public enum InitialObservationFault { MissingStart, WrongStartId, WrongEffectiveImage, PartialPair }
 
     [Theory]
     [InlineData(InitialObservationFault.MissingStart)]
     [InlineData(InitialObservationFault.WrongStartId)]
-    [InlineData(InitialObservationFault.WrongCreateBytes)]
+    [InlineData(InitialObservationFault.WrongEffectiveImage)]
     [InlineData(InitialObservationFault.PartialPair)]
     public void SyntheticInitialLaunchLeavesContradictoryObserverEvidencePending(InitialObservationFault fault)
     {
         var (qwen, swift) = ProjectInitialPair();
-        var ledger = ProvisionInitialLaunch();
+        var ledger = ProvisionInitialLaunch(qwen, swift, fault);
         var command = DispatchAndAcceptInitial(ledger, qwen);
         var instance = Assert.IsType<string>(ledger.Issue(command, InitialWorkerGeneration));
-        var observation = ledger.Observer.Observe();
-        var created = Assert.IsType<InitialLaunchCreate>(observation.Create);
-        var started = Assert.IsType<InitialLaunchStart>(observation.Start);
-        var startPath = Path.Combine(_directory.FullName, "initial-started.json");
-        // Change only the independent fake observation source. Completion reads this source itself.
+        Assert.Equal(new string('A', 64), instance);
+        var observed = ledger.Observer.Observe();
+        var created = Assert.IsType<InitialLaunchCreate>(observed.Create);
+        Assert.Equal(instance, created.InstanceId);
+        // Issue returns the ordinary success ID. Only the independently seeded effective state differs.
         switch (fault)
         {
             case InitialObservationFault.MissingStart:
-                File.Delete(startPath);
+                Assert.Null(observed.Start);
                 break;
             case InitialObservationFault.WrongStartId:
-                File.WriteAllBytes(startPath,
-                    JsonSerializer.SerializeToUtf8Bytes(started with { InstanceId = new string('F', 64) }, InitialJson.InitialLaunchStart));
+                Assert.Equal(new InitialLaunchStart(command.Operation, new string('F', 64)), observed.Start);
                 break;
-            case InitialObservationFault.WrongCreateBytes:
-                File.WriteAllBytes(Path.Combine(_directory.FullName, "initial-created.json"),
-                    JsonSerializer.SerializeToUtf8Bytes(created with { CreateBytes = Convert.ToBase64String(swift.Bytes) },
-                        InitialJson.InitialLaunchCreate));
+            case InitialObservationFault.WrongEffectiveImage:
+                Assert.Equal(OtherPairImageId,
+                    JsonSerializer.Deserialize(Convert.FromBase64String(created.EffectiveCreate), DockerJsonContext.Default.DockerCreateRequest)?.Image);
+                Assert.Equal(new InitialLaunchStart(command.Operation, instance), observed.Start);
                 break;
             case InitialObservationFault.PartialPair:
-                File.WriteAllBytes(Path.Combine(_directory.FullName, "initial-created.json"),
-                    JsonSerializer.SerializeToUtf8Bytes(created with { Devices = "0" }, InitialJson.InitialLaunchCreate));
+                Assert.Equal("0", created.Devices);
                 break;
         }
 
-        var reopened = OpenInitialLaunch();
+        var reopened = OpenInitialLaunch(qwen, swift);
         Assert.Null(reopened.Complete(command, instance));
         Assert.Null(reopened.Lookup(command.Operation, instance));
         Assert.Null(reopened.Issue(command, InitialWorkerGeneration));
         Assert.Null(reopened.Dispatch(swift.Plan, swift.Bytes, reopened.Observer.ReadAuthority()));
         Assert.Equal(InitialLaunchPhase.MayHaveIssued, ReadInitialHead().Phase);
         AssertLaunchDispatching(command.Operation);
-        AssertInitialAttempts(command.Operation);
+        AssertInitialAttempts(command);
     }
 
     [Fact]
     public void SyntheticInitialLaunchFencesValidOldRestoreAgainstAdvancedHead()
     {
         var (qwen, swift) = ProjectInitialPair();
-        var ledger = ProvisionInitialLaunch();
+        var ledger = ProvisionInitialLaunch(qwen, swift);
         var command = DispatchAndAcceptInitial(ledger, qwen);
         var checkpointFile = ReservationPath + ".checkpoint";
         var oldCheckpoint = File.ReadAllBytes(checkpointFile);
@@ -164,25 +162,25 @@ public sealed partial class HostClosedRouteStagingTests
         File.Delete(InitialRecordPath(InitialLaunchPhase.Applied));
         Assert.Equal(oldAccepted, File.ReadAllBytes(acceptedPath));
         AssertLaunchDispatching(command.Operation);
-        var reopened = OpenInitialLaunch();
+        var reopened = OpenInitialLaunch(qwen, swift);
         Assert.Throws<IOException>(() => reopened.Lookup(command.Operation, instance));
         Assert.Throws<IOException>(() => reopened.Issue(command, InitialWorkerGeneration));
         Assert.Throws<IOException>(() => reopened.Dispatch(swift.Plan, swift.Bytes, reopened.Observer.ReadAuthority()));
         Assert.Equal(advancedHead, File.ReadAllBytes(InitialHeadPath));
-        AssertInitialAttempts(command.Operation);
+        AssertInitialAttempts(command);
     }
 
     [Fact]
     public void SyntheticInitialLaunchSplitHeadCannotAuthorizeFirstDaemonEntry()
     {
         var (qwen, swift) = ProjectInitialPair();
-        var ledger = ProvisionInitialLaunch();
+        var ledger = ProvisionInitialLaunch(qwen, swift);
         var command = DispatchAndAcceptInitial(ledger, qwen);
         Assert.Throws<IOException>(() => ledger.Issue(command, InitialWorkerGeneration, interruptBeforeHead: true));
         Assert.Equal(InitialLaunchPhase.Accepted, ReadInitialHead().Phase);
         Assert.True(File.Exists(InitialRecordPath(InitialLaunchPhase.MayHaveIssued)));
 
-        var reopened = OpenInitialLaunch();
+        var reopened = OpenInitialLaunch(qwen, swift);
         Assert.Throws<IOException>(() => reopened.Issue(command, InitialWorkerGeneration));
         Assert.Throws<IOException>(() => reopened.Dispatch(swift.Plan, swift.Bytes, reopened.Observer.ReadAuthority()));
         AssertLaunchDispatching(command.Operation);
@@ -193,13 +191,13 @@ public sealed partial class HostClosedRouteStagingTests
     public void SyntheticInitialLaunchRejectsDelayedDeliveryAfterAuthorityChangesAndRestores()
     {
         var (qwen, swift) = ProjectInitialPair();
-        var ledger = ProvisionInitialLaunch();
+        var ledger = ProvisionInitialLaunch(qwen, swift);
         var command = DispatchAndAcceptInitial(ledger, qwen);
         var saved = command.Authority;
         ledger.ChangeAuthority(saved with { ExclusiveWriter = false, PolicyGeneration = saved.PolicyGeneration + 1 });
         ledger.ChangeAuthority(saved with { PolicyGeneration = saved.PolicyGeneration + 2, OwnerGeneration = saved.OwnerGeneration + 1 });
 
-        var reopened = OpenInitialLaunch();
+        var reopened = OpenInitialLaunch(qwen, swift);
         var current = reopened.Observer.ReadAuthority();
         Assert.True(current.ExclusiveWriter);
         Assert.Equal(saved.Coverage, current.Coverage);
@@ -213,7 +211,102 @@ public sealed partial class HostClosedRouteStagingTests
         AssertNoInitialEffects(reopened);
     }
 
-    private sealed record InitialPairPlan(HostCheckpointPlan Plan, byte[] Bytes);
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void SyntheticInitialLaunchQuarantinesUnanchoredCompletion(bool journalApplied)
+    {
+        var (qwen, swift) = ProjectInitialPair();
+        var ledger = ProvisionInitialLaunch(qwen, swift);
+        var command = DispatchAndAcceptInitial(ledger, qwen);
+        var instance = Assert.IsType<string>(ledger.Issue(command, InitialWorkerGeneration));
+        var observation = ledger.Observer.Observe();
+        Assert.Equal(new InitialLaunchStart(command.Operation, instance), observation.Start);
+        var head = File.ReadAllBytes(InitialHeadPath);
+
+        var cut = journalApplied ? InitialLaunchCompletionCut.AfterJournal : InitialLaunchCompletionCut.AfterCheckpoint;
+        Assert.Throws<IOException>(() => ledger.Complete(command, instance, cut));
+        var checkpointPath = ReservationPath + ".checkpoint";
+        var installed = File.ReadAllBytes(checkpointPath);
+        using (var checkpoint = HostEffectCheckpoint.Open(ReservationPath))
+        {
+            Assert.Equal(HostCheckpointPhase.Resident, checkpoint.State.Phase);
+            Assert.Equal(new HostCheckpointLaunchEffect(command.Operation, command.Plan, instance), checkpoint.State.AppliedLaunch);
+        }
+        var appliedPath = InitialRecordPath(InitialLaunchPhase.Applied);
+        Assert.Equal(journalApplied, File.Exists(appliedPath));
+        var appliedRecord = journalApplied ? File.ReadAllBytes(appliedPath) : null;
+        if (appliedRecord is not null)
+        {
+            var record = Assert.IsType<InitialLaunchRecord>(JsonSerializer.Deserialize(appliedRecord, InitialJson.InitialLaunchRecord));
+            var receipt = JsonSerializer.Deserialize(Convert.FromBase64String(Assert.IsType<string>(record.ReceiptBytes)),
+                InitialJson.InitialLaunchReceipt);
+            Assert.Equal(new HostCheckpointLaunchEffect(command.Operation, command.Plan, instance), receipt?.Launch);
+        }
+
+        var reopened = OpenInitialLaunch(qwen, swift);
+        Assert.Throws<IOException>(() => reopened.Lookup(command.Operation, instance));
+        Assert.Null(reopened.ReadIngress(command.Operation, instance));
+        Assert.Throws<IOException>(() => reopened.Complete(command, instance));
+        Assert.Throws<IOException>(() => reopened.Issue(command, InitialWorkerGeneration));
+        Assert.Throws<IOException>(() => reopened.Dispatch(swift.Plan, swift.Bytes, reopened.Observer.ReadAuthority()));
+        Assert.Equal(InitialLaunchPhase.MayHaveIssued, ReadInitialHead().Phase);
+        Assert.Equal(head, File.ReadAllBytes(InitialHeadPath));
+        Assert.Equal(installed, File.ReadAllBytes(checkpointPath));
+        if (appliedRecord is not null) Assert.Equal(appliedRecord, File.ReadAllBytes(appliedPath));
+        else Assert.False(File.Exists(appliedPath));
+        Assert.Equal(observation, reopened.Observer.Observe());
+        AssertInitialAttempts(command);
+    }
+
+    private static async Task CheckInitialIngressAsync(HostEffectLedgerProbe.InitialLaunchLedger reopened, InitialLaunchReceipt receipt,
+        CancellationToken ct)
+    {
+        var launch = receipt.Launch;
+        var route = new VerifiedInstanceRoute(receipt.Scope.Group, receipt.Scope.EnrollmentGeneration, launch.Operation.Engine,
+            launch.Plan.Digest(), launch.InstanceId, launch.InstanceId + "-serving", launch.Operation.Epoch, RouteIncarnation: 1);
+        var staging = new HostClosedRouteStaging(_ => null, (_, _) => route, route);
+        Assert.True(staging.CanMint(route));
+        var closed = Assert.IsType<InitialLaunchIngress>(reopened.ReadIngress(launch.Operation, launch.InstanceId));
+        var current = closed;
+        Assert.Equal(launch, closed.Launch);
+        Assert.True(closed.Authority.IngressClosed);
+        var body = "{}"u8.ToArray();
+        var closedIssuer = Issuer(closed);
+        await AssertDeniedAsync(closedIssuer, Invocation(route), body, ct);
+        Assert.Equal(0, closedIssuer.Grants);
+        Assert.Equal(0, closedIssuer.Permits);
+
+        // A separate explicit fixture observation supplies open authority. Lookup never grants it.
+        reopened.ChangeAuthority(closed.Authority with { IngressClosed = false, PolicyGeneration = closed.Authority.PolicyGeneration + 1 });
+        var open = Assert.IsType<InitialLaunchIngress>(reopened.ReadIngress(launch.Operation, launch.InstanceId));
+        current = open;
+        Assert.Equal(launch, open.Launch);
+        Assert.False(open.Authority.IngressClosed);
+        var invocation = Invocation(route);
+        var openIssuer = Issuer(open);
+        await SendAsync(openIssuer, invocation, body, ct);
+        AssertBody(body, openIssuer.Bytes(invocation));
+        Assert.Equal(1, openIssuer.Grants);
+        Assert.Equal(1, openIssuer.Permits);
+
+        // Change only the policy generation. A stale open observation cannot authorize this still-eligible route.
+        reopened.ChangeAuthority(open.Authority with { PolicyGeneration = open.Authority.PolicyGeneration + 1 });
+        current = Assert.IsType<InitialLaunchIngress>(reopened.ReadIngress(launch.Operation, launch.InstanceId));
+        Assert.False(current.Authority.IngressClosed);
+        var staleIssuer = Issuer(open);
+        await AssertDeniedAsync(staleIssuer, Invocation(route), body, ct);
+        Assert.Equal(0, staleIssuer.Grants);
+        Assert.Equal(0, staleIssuer.Permits);
+
+        // The sequential fixture refreshes its verified witness outside the issuer's short gate.
+        FixtureIssuer Issuer(InitialLaunchIngress witness) => new(staging)
+        {
+            AllowsRoute = candidate => candidate == route && current == witness && !witness.Authority.IngressClosed,
+        };
+    }
+
+    private sealed record InitialPairPlan(HostCheckpointPlan Plan, byte[] Bytes, byte[] ApprovedBytes);
 
     private static (InitialPairPlan Qwen, InitialPairPlan Swift) ProjectInitialPair()
     {
@@ -232,17 +325,37 @@ public sealed partial class HostClosedRouteStagingTests
         Assert.Empty(daemon.Requests);
         return (first, second);
 
-        InitialPairPlan Serialize(FrozenPairTarget target) => new(target.ExpectedPlan, JsonSerializer.SerializeToUtf8Bytes(
-            provider.BuildCreateRequest(target.Launch, engine.Docker!.ImageIdentity!), DockerJsonContext.Default.DockerCreateRequest));
+        InitialPairPlan Serialize(FrozenPairTarget target) => new(target.ExpectedPlan,
+            JsonSerializer.SerializeToUtf8Bytes(provider.BuildCreateRequest(target.Launch, engine.Docker!.ImageIdentity!),
+                DockerJsonContext.Default.DockerCreateRequest),
+            JsonSerializer.SerializeToUtf8Bytes(ReadPairCreate(target.ReferenceCreate), DockerJsonContext.Default.DockerCreateRequest));
     }
 
-    private HostEffectLedgerProbe.InitialLaunchLedger OpenInitialLaunch() =>
-        new HostEffectLedgerProbe(ReservationPath).InitialLaunch(InitialAuthorityRoot);
+    private HostEffectLedgerProbe.InitialLaunchLedger OpenInitialLaunch(InitialPairPlan qwen, InitialPairPlan swift) =>
+        new HostEffectLedgerProbe(ReservationPath).InitialLaunch(InitialAuthorityRoot,
+            new Dictionary<HostCheckpointPlan, byte[]> { [qwen.Plan] = qwen.ApprovedBytes, [swift.Plan] = swift.ApprovedBytes });
 
-    private HostEffectLedgerProbe.InitialLaunchLedger ProvisionInitialLaunch()
+    private HostEffectLedgerProbe.InitialLaunchLedger ProvisionInitialLaunch(InitialPairPlan qwen, InitialPairPlan swift,
+        InitialObservationFault? fault = null)
     {
-        var ledger = OpenInitialLaunch();
-        ledger.Provision();
+        var ledger = OpenInitialLaunch(qwen, swift);
+        var effectiveCreate = qwen.ApprovedBytes;
+        if (fault == InitialObservationFault.WrongEffectiveImage)
+        {
+            var settings = Assert.IsType<DockerCreateRequest>(
+                JsonSerializer.Deserialize(effectiveCreate, DockerJsonContext.Default.DockerCreateRequest));
+            settings.Image = OtherPairImageId;
+            effectiveCreate = JsonSerializer.SerializeToUtf8Bytes(settings, DockerJsonContext.Default.DockerCreateRequest);
+        }
+        var instance = new string('A', 64);
+        var running = fault switch
+        {
+            InitialObservationFault.MissingStart => null,
+            InitialObservationFault.WrongStartId => new string('F', 64),
+            _ => instance,
+        };
+        ledger.Provision(new InitialLaunchDaemonSeed(instance, running, Convert.ToBase64String(effectiveCreate),
+            fault == InitialObservationFault.PartialPair ? "0" : "0,1"));
         return ledger;
     }
 
@@ -274,14 +387,16 @@ public sealed partial class HostClosedRouteStagingTests
         Assert.Null(checkpoint.State.AppliedLaunch);
     }
 
-    private void AssertInitialAttempts(HostMutation operation)
+    private void AssertInitialAttempts(InitialLaunchCommand command)
     {
-        Assert.Equal(operation, ReadSingleAttempt("initial-create-attempts"));
-        Assert.Equal(operation, ReadSingleAttempt("initial-start-attempts"));
+        var create = Assert.IsType<InitialLaunchCreateAttempt>(JsonSerializer.Deserialize(
+            ReadSingleAttempt("initial-create-attempts"), InitialJson.InitialLaunchCreateAttempt));
+        Assert.Equal(new InitialLaunchCreateAttempt(command.Operation, command.CreateBytes), create);
+        Assert.Equal(command.Operation, JsonSerializer.Deserialize(ReadSingleAttempt("initial-start-attempts"), InitialJson.HostMutation));
     }
 
-    private HostMutation? ReadSingleAttempt(string journal) => JsonSerializer.Deserialize(
-        File.ReadAllBytes(Assert.Single(Directory.GetFiles(Path.Combine(_directory.FullName, journal)))), InitialJson.HostMutation);
+    private byte[] ReadSingleAttempt(string journal) =>
+        File.ReadAllBytes(Assert.Single(Directory.GetFiles(Path.Combine(_directory.FullName, journal))));
 
     private void AssertNoInitialEffects(HostEffectLedgerProbe.InitialLaunchLedger ledger)
     {
