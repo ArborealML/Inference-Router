@@ -5,9 +5,9 @@ title: >-
   configuration
 status: Waiting
 assignee:
-  - '@chatswarm'
+  - '@gpt-6.2-astra'
 created_date: '2026-11-18T18:15:00Z'
-updated_date: '2026-11-19T12:09:00Z'
+updated_date: '2026-11-19T12:12:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -19,7 +19,7 @@ ordinal: 109000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-The independent parser correction review dispatched November 19 wakes the coordinator. At 6ea04f8 eight misplaced or shadowed model-level Docker policy inputs unexpectedly loaded and two valid controls passed. At 0d76e2d all ten passed, zero skips, and the pinned paired config loaded. Parent qualification was 63/63 plus warning-free Native AOT. Future activation requires a known daemon driver supporting both rotation options. Landed offline coverage remains 49/75 after [PR #24](https://github.com/ArborealML/Inference-Router/pull/24).
+Hosted checks on [PR #27](https://github.com/ArborealML/Inference-Router/pull/27) wake the coordinator for landing. The parser correction review passed. Eight invalid inputs failed to raise errors on the parent; the corrected parser passed all ten differential controls and loaded the pinned config. The landing preserves both qualified runtime changes and the idle shutdown fixture. Offline coverage is 49/75 on main and reaches 57/75 on merge. The single-GPU plan follows that landing.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
