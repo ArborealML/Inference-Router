@@ -15,7 +15,7 @@ public class TicketLifetimeTests
     private static readonly string[] AllowedRaceCodes = ["cancelled", "engine_error", "engine_unreachable"];
 
     private (RouterCore Router, FakeEngineHandler Fake, EventRing Events) CreateRouter(
-        bool holdCompletions, int maxInflight = 1, int maxQueue = 8)
+        bool holdCompletions, int maxInflight = 1, int maxQueue = 8, bool start = true)
     {
         var fake = new FakeEngineHandler { HoldCompletions = holdCompletions };
         var events = new EventRing();
@@ -41,7 +41,7 @@ public class TicketLifetimeTests
         var router = new RouterCore(cfg, events: events);
         _observedRouter = router;
         _observedEvents = events;
-        router.Start();
+        if (start) router.Start();
         return (router, fake, events);
     }
 
@@ -134,21 +134,72 @@ public class TicketLifetimeTests
         var (router, fake, events) = CreateRouter(holdCompletions: true, maxInflight: 1);
         try
         {
+            using var limit = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+            var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var cancelled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            fake.AfterHeldCompletionEnteredForTests = () => entered.TrySetResult();
+            fake.AfterHeldCompletionCancellationForTests = () => cancelled.TrySetResult();
             using var caller = new CancellationTokenSource();
             var ticket = await router.EnqueueAsync("thread-inflight", Request("in-flight"), caller.Token);
-            await WaitUntilAsync(() => Inflight(router) == 1);
+            await entered.Task.WaitAsync(limit.Token);
+            Assert.Equal(1, Inflight(router));
+            Assert.Equal(1, fake.CompletionCalls);
 
             caller.Cancel();
 
-            var ex = await FailureOfAsync(ticket);
+            await cancelled.Task.WaitAsync(limit.Token);
+            var ex = await FailureOfAsync(ticket).WaitAsync(limit.Token);
             Assert.NotNull(ex);
-            Assert.Equal("cancelled", ex!.Code);
+            Assert.Equal("cancelled", ex.Code);
             await WaitUntilAsync(() => Inflight(router) == 0);
-            Assert.Equal(1, fake.CancelledCompletions);          // the engine request was cancelled
-            Assert.Equal(1, events.Replay(0)
-                .Count(e => e.TicketId == ticket.Id && TerminalKinds.Contains(e.Kind)));
+            Assert.Equal(1, fake.CancelledCompletions);
+            Assert.Equal(1, fake.CompletionCalls);
+            var terminal = Assert.Single(events.Replay(0),
+                e => e.TicketId == ticket.Id && TerminalKinds.Contains(e.Kind));
+            Assert.Equal("request.cancelled", terminal.Kind);
         }
         finally { await router.DisposeAsync(); }
+    }
+
+    [Fact]
+    public async Task AbortingAfterSelectionBeforeExecutionReleasesCapacityWithoutSending()
+    {
+        var (router, fake, events) = CreateRouter(holdCompletions: true, start: false);
+        await using var ownedRouter = router;
+        using var limit = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        using var selected = new AdmissionFixtureBarrier();
+        using var caller = new CancellationTokenSource();
+        Assert.True(await router.Engines["fake"].ProbeHealthOnceAsync(limit.Token));
+        var ticket = await router.EnqueueAsync("thread-before-send", Request("no-send"), caller.Token);
+        events.Subscribe(evt =>
+        {
+            if (evt.Kind == "request.selected" && evt.TicketId == ticket.Id)
+                selected.HoldAsync(limit.Token).GetAwaiter().GetResult();
+        });
+
+        var dispatch = Task.Run(router.TryDispatchOnce, limit.Token);
+        try
+        {
+            await selected.Reached.WaitAsync(limit.Token);
+            Assert.Equal(1, Inflight(router));
+            Assert.Equal(0, fake.CompletionCalls);
+            caller.Cancel();
+        }
+        finally
+        {
+            selected.Release();
+        }
+
+        Assert.True(await dispatch.WaitAsync(limit.Token));
+        var error = await FailureOfAsync(ticket).WaitAsync(limit.Token);
+        Assert.NotNull(error);
+        Assert.Equal("cancelled", error.Code);
+        await WaitUntilAsync(() => Inflight(router) == 0);
+        Assert.Equal(0, fake.CompletionCalls);
+        Assert.Equal(0, fake.CancelledCompletions);
+        var terminal = Assert.Single(events.Replay(0),
+            e => e.TicketId == ticket.Id && TerminalKinds.Contains(e.Kind));
+        Assert.Equal("request.cancelled", terminal.Kind);
     }
 
     /// <summary>Racing an explicit cancel against a caller abort and a normal completion must still
