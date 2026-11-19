@@ -5,7 +5,7 @@ The inspected reference selector accepted 169 of 506 explicit model/profile spel
 | Backend family | Normalized targets | Launch settings that still need representation or verification |
 | --- | ---: | --- |
 | Strata | 36 | Offline projection supports per-tier environment and data/model binds, memory plus swap for capped Qwen profiles, and the `max-4` alias for `256k-4`. |
-| HyperQwen | 26 | Eight ordinary paired-GPU targets have offline launch projections. Six single-GPU targets need tier-specific device IDs, and twelve parking targets need tier-specific shared memory. Shared wire IDs need exact checkpoint and serving-instance proof. |
+| HyperQwen | 26 | Eight paired-GPU and six single-GPU targets have offline launch projections. Twelve parking targets need tier-specific shared memory. Shared wire IDs need exact checkpoint and serving-instance proof. |
 | Maya | 13 | MiniMax `32k`, the three GLM tiers and Maya-XS `32k` have qualified offline projections. Per-tier literal commands express the eight general DeepSeek launch payloads. |
 
 The environment and bind projection merged in [PR #7](https://github.com/ArborealML/Inference-Router/pull/7). It composes settings for offline validation and keeps target-enabled startup and native Docker writes gated. [Configuration and lifecycle contract](../SPEC.md#7-configuration-toml)
@@ -83,5 +83,20 @@ identity or option support is unknown or incompatible. Defiant's current image a
 and peer ownership require host verification. Swift and Classic share a wire model ID, so
 activation also requires exact checkpoint and serving-instance binding.
 
-This slice would bring qualified offline coverage to 57 of 75 targets on landing. The first
+The paired policy brought landed offline coverage to 57 of 75 targets.
+
+## HyperQwen single-GPU tiers
+
+Swift and Classic each have `single-64k`, `single-128k-2` and `single-max`. The selector
+requires one explicit local device index, either 0 or 1 in the recorded inventory. The
+tier overrides the entire common NVIDIA device request while the default `max` tier keeps
+the ordered pair. Device choices and aliases do not increase the normalized target count.
+
+All six single-GPU profiles pass the one-device tensor-parallel settings and retain 2 GiB
+of shared memory. The `single-64k` profile sets `CTX=fast` and four draft tokens. The
+other two use `CTX=long` and three draft tokens. Configured sequence counts describe
+launch intent. Device-index mapping, toolkit compatibility, serving fit and host authority
+require independent verification before activation.
+
+Qualification and landing would bring offline coverage to 63 of 75 targets. The first
 native swap pair remains Qwen and Swift on one host.

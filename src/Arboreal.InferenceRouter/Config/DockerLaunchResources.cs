@@ -174,7 +174,7 @@ internal sealed record DockerLaunchResources(
         return limits.MoveToImmutable();
     }
 
-    private static bool IsCanonicalIndex(ReadOnlySpan<char> index) =>
+    internal static bool IsCanonicalIndex(ReadOnlySpan<char> index) =>
         !index.IsEmpty && (index.Length == 1 || index[0] != '0') && index.IndexOfAnyExceptInRange('0', '9') < 0;
 
     private static void CheckUnknown(TomlTable? keys, string path)

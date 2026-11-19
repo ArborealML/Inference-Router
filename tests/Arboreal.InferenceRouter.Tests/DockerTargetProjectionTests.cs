@@ -302,6 +302,7 @@ public sealed partial class DockerTargetProjectionTests
     [InlineData("""healthcheck = { command = "probe" }""", false, false, false, false)]
     [InlineData("""env = ["FAMILY=qwen"]""", false, false, true, false)]
     [InlineData("""command = ["serve", "32768"]""", false, false, true, false)]
+    [InlineData("""gpu = { device_ids = ["1"] }""", false, false, true, false)]
     [InlineData("""bind_mounts = [{ source = "/srv/root", target = "/work", read_only = true }, { source = "/srv/model", target = "/work/models", read_only = true, nested_under = "/work" }], healthcheck = { command = "probe", timeout_ms = 10000, retries = 3 }""", false, false, false, true)]
     public async Task TargetDeclarationRefusesEveryLivePathEvenForAnotherModel(
         string fields, bool hasMount, bool hasMemory, bool hasAlias, bool hasNested)
@@ -323,7 +324,9 @@ public sealed partial class DockerTargetProjectionTests
         if (hasAlias) selected = selected with { Profile = selected.Profile! with { Name = "max-4" } };
         var projection = provider.BuildCreateRequest(selected, engine.Docker!.ImageIdentity!);
         Assert.Equal("tier", projection.Labels[DockerLifecycleProvider.LabelProfile]);
-        Assert.Equal(hasMount || hasMemory || hasNested, projection.HostConfig is not null);
+        var hasGpu = fields.StartsWith("gpu", StringComparison.Ordinal);
+        Assert.Equal(hasMount || hasMemory || hasNested || hasGpu, projection.HostConfig is not null);
+        if (hasGpu) Assert.Equal("1", Assert.Single(Assert.Single(projection.HostConfig!.DeviceRequests!).DeviceIds!));
         if (hasMount) Assert.Equal("/models", Assert.Single(projection.HostConfig!.Mounts!).Target);
         if (hasNested)
             Assert.Collection(projection.HostConfig!.Mounts!, parent => Assert.Equal("/work", parent.Target),

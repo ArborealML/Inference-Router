@@ -7,7 +7,7 @@ namespace Arboreal.InferenceRouter;
 
 internal sealed record DockerTargetLaunch(string Model, string Profile, ImmutableArray<string> Command,
     ImmutableArray<string> Env, ImmutableArray<DockerBind> Binds, long? MemoryBytes, long? MemorySwapBytes,
-    DockerTargetHealthcheck? Healthcheck);
+    DockerTargetHealthcheck? Healthcheck, DockerGpu? Gpu);
 
 internal sealed record DockerTargetHealthcheck(string Command, long? IntervalNs, long? StartPeriodNs,
     long? TimeoutNs, int? Retries);
@@ -122,7 +122,7 @@ internal sealed partial class DockerTargetPlans
     }
 
     private static bool HasLaunchSettings(DockerTargetDto target) =>
-        target.Command is not null || target.MemoryBytes is not null || target.MemorySwapBytes is not null ||
+        target.Gpu is not null || target.Command is not null || target.MemoryBytes is not null || target.MemorySwapBytes is not null ||
         target.Env is { Length: > 0 } || target.BindMounts is { Length: > 0 } || target.Healthcheck is not null;
 
     private static DockerTargetLaunch Compose(string engine, string model, string profile, DockerDto docker,
@@ -131,7 +131,7 @@ internal sealed partial class DockerTargetPlans
         if (tier?.Unknown is { Count: > 0 } unknown)
             throw new RouterConfigException($"{path}.docker.{unknown.Keys.First()} is not a target setting");
         if (tier is not null && !HasLaunchSettings(tier))
-            throw new RouterConfigException($"{path}.docker must contain a command, environment assignments, bind mounts, memory settings or a health check");
+            throw new RouterConfigException($"{path}.docker must contain a command, environment assignments, bind mounts, memory settings, a health check or a GPU request");
 
         ImmutableArray<string> command = tier?.Command is { } literal
             ? FreezeTierCommand(literal, $"{path}.docker.command")
@@ -148,8 +148,9 @@ internal sealed partial class DockerTargetPlans
         var binds = DockerLaunchResources.CombineTargetBinds(common?.BindMounts ?? [], additions, bindPath);
         var (memory, memorySwap) = ResolveMemory(tier, common, $"{path}.docker");
         var healthcheck = tier?.Healthcheck is { } probe ? ParseHealthcheck(probe, $"{path}.docker.healthcheck") : null;
+        var gpu = tier?.Gpu is { } device ? ParseTierGpu(device, common, $"{path}.docker.gpu") : common?.Gpu;
         return new DockerTargetLaunch(model, profile, command, env.ToImmutable(), binds, memory, memorySwap,
-            healthcheck);
+            healthcheck, gpu);
 
         void AddEnv(string? value)
         {
@@ -255,6 +256,7 @@ internal sealed partial class DockerTargetPlans
             var enginePath = $"engine.{engine.Name}";
             var modelPath = $"{enginePath}.catalog.{model.Name}";
             RejectMisplacedContainerPolicyJson(serving.Value, $"{modelPath}.serving");
+            RejectMisplacedGpuJson(serving.Value, $"{modelPath}.serving");
             if (serving.Value.ValueKind == JsonValueKind.Object &&
                 (HasTierDeclaration(serving.Value) || Members(serving.Value, "command").Any()))
                 throw new RouterConfigException($"{modelPath}.serving must be an array of serving tiers");
@@ -264,6 +266,7 @@ internal sealed partial class DockerTargetPlans
             {
                 var tierPath = $"{modelPath}.serving[{index}]";
                 RejectMisplacedContainerPolicyJson(tier, tierPath);
+                RejectMisplacedGpuJson(tier, tierPath);
                 foreach (var tierDocker in Members(tier, "docker"))
                     RejectMisplacedContainerPolicyJson(tierDocker.Value, $"{tierPath}.docker");
                 if (Members(tier, "command").Any())
@@ -293,10 +296,15 @@ internal sealed partial class DockerTargetPlans
                     CheckCommandJson(target, $"{tierPath}.docker.command", requireArguments: true);
                     CheckHealthcheckJson(target, $"{tierPath}.docker.healthcheck");
                     CheckTierBindsJson(target, $"{tierPath}.docker.bind_mounts");
+                    CheckTierGpuJson(target, $"{tierPath}.docker.gpu");
                     DockerLaunchResources.CheckJsonTree(tier, tierPath);
                     CheckCommonDocker(engine.Value, enginePath);
                     if (engine.Value.TryGetProperty("docker", out var common))
+                    {
                         CheckCommandJson(common, $"{enginePath}.docker.command", requireArguments: false);
+                        if (target.TryGetProperty("gpu", out _) && common.TryGetProperty("resources", out var resources))
+                            CheckCommonGpuJson(resources, $"{enginePath}.docker.resources");
+                    }
                 }
                 index++;
             }
@@ -328,18 +336,24 @@ internal sealed partial class DockerTargetPlans
         {
             var path = $"engine.{engine.Name}";
             RejectMisplacedContainerPolicyJson(engine.Value, path);
+            RejectMisplacedGpuJson(engine.Value, path);
             foreach (var catalogOccurrence in Members(engine.Value, "catalog"))
             foreach (var model in Properties(catalogOccurrence.Value))
             {
                 var modelPath = $"{path}.catalog.{model.Name}";
                 RejectMisplacedContainerPolicyJson(model.Value, modelPath);
+                RejectMisplacedGpuJson(model.Value, modelPath);
                 foreach (var modelDocker in Members(model.Value, "docker"))
+                {
                     RejectMisplacedContainerPolicyJson(modelDocker.Value, $"{modelPath}.docker");
+                    RejectMisplacedGpuJson(modelDocker.Value, $"{modelPath}.docker");
+                }
             }
             foreach (var docker in Members(engine.Value, "docker"))
             {
                 var dockerPath = $"{path}.docker";
                 RejectMisplacedTargetOptionsJson(docker.Value, dockerPath);
+                RejectMisplacedGpuJson(docker.Value, dockerPath);
                 foreach (var resources in Members(docker.Value, "resources"))
                 {
                     RejectMisplacedTargetOptionsJson(resources.Value, $"{dockerPath}.resources");
