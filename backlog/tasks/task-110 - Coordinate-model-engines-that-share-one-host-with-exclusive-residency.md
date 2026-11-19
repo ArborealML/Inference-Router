@@ -1,11 +1,11 @@
 ---
 id: TASK-110
 title: Coordinate model engines that share one host with exclusive residency
-status: Preparing
+status: Waiting
 assignee:
   - '@gpt-6.2-sol-lifecycle'
 created_date: '2026-11-18T18:13:00Z'
-updated_date: '2026-11-19T20:01:00Z'
+updated_date: '2026-11-19T20:07:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -21,7 +21,7 @@ ordinal: 108000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Lifecycle is preparing the first implementable host enrollment increment under [decision 71](../decisions/decision-71%20-%20Dedicate%20initial%20deployment%20resources%20to%20inference.md). Assume dedicated inference resources and one coordinated switch path for router-managed models. Document the initial deployment assumption in SPEC §5.3. The reviewed first step is offline; actual host enforcement remains unverified.
+The independent verdict on the receipt-only coordinator plan will wake Lifecycle. Review dispatched November 19 on 2f7b9c1. It covers partial enrolled dispatch bypassing legacy settlement, immutable captured intent on reopen, and [decision 71](../decisions/decision-71%20-%20Dedicate%20initial%20deployment%20resources%20to%20inference.md) in full. Public enrollment stays disabled.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
