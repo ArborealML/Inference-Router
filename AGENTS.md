@@ -205,6 +205,8 @@ This project uses Groma. Before you scan, inspect, or curate architecture, or ch
 
 ## When a human has the next move
 
+Whenever the owner needs to act, the coordinator sends the actionable request directly to the owner’s Slack DM. Check the existing DM thread and recorded decisions first. Include the specific request and any packet needed to answer it. Keep delivery confirmation and the thread link in the private handoff so a resumed session can follow up in place. Worker escalations reach the coordinator through the communications manager.
+
 Open a task **for that person** — assign them, title it `Review:` or `Decision:` — naming exactly what
 they have to decide or approve, what changes under each option, and what it unblocks. Then mark the
 dependent task **Blocked** and name the task it waits on. A question asked in chat, or a paragraph
