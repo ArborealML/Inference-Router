@@ -3,11 +3,11 @@ id: TASK-111
 title: >-
   Build the local router configuration for every supported select-model
   configuration
-status: Preparing
+status: Waiting
 assignee:
-  - '@gpt-6.2-sol-config'
+  - '@gpt-6.2-astra'
 created_date: '2026-11-18T18:15:00Z'
-updated_date: '2026-11-19T08:37:00Z'
+updated_date: '2026-11-19T08:43:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -19,7 +19,7 @@ ordinal: 109000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Prepare offline Docker health-check projection for three GLM launch targets on the landed MiniMax base. Compare full launch payloads against the selector. Production activation is separate.
+Independent review of the GLM Docker health-check plan wakes implementation. Qualify offline payloads for 32k, 256k and the 1m default on the landed MiniMax base.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -32,7 +32,7 @@ Prepare offline Docker health-check projection for three GLM launch targets on t
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-After MiniMax, qualify the top-level Docker Healthcheck for GLM 32k, 256k and 1m. Verify the exact test command form, 3600-second start period, 30-second interval, omitted options, restart behavior and unchanged resource projection. Preserve startup and mutation guards. Submit the bounded plan before implementation. DeepSeek additionally needs nested binds; the Strata max-4 alias adds six accepted spellings across three existing targets.
+Project the literal per-tier command as a top-level Docker CMD-SHELL health check, with a 30-second interval and one-hour start period. Omit unset fields, check millisecond conversion for overflow, and preserve legacy omission. Reject malformed, misplaced and shadowed declarations. Keep health-only tiers behind the existing engine-wide startup and mutation guards. Compare all three complete GLM payloads across TOML and JSON, then run focused parser/refusal checks, config-only load and server Native AOT. Independent plan review dispatched on 0418440. DeepSeek timeout, retries and nested binds and the separate Strata profile alias stay outside.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
