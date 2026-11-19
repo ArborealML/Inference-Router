@@ -9,6 +9,8 @@ public sealed class QueuedRequest
     public required RouterThread Thread { get; init; }
     public required long EnqueuedSeq { get; init; }
     internal long EnqueuedAtTimestamp { get; init; }
+    internal bool QueueExpired(TimeProvider clock) => Request.Options?.MaxQueueTime is { } window &&
+        clock.GetElapsedTime(EnqueuedAtTimestamp) > window;
     public required long PromptChars { get; init; }
     /// <summary>Context demand for tier selection, from the client minimum or the prompt estimate (§7.6).</summary>
     public long RequiredContextTokens { get; init; }
@@ -32,6 +34,10 @@ public sealed class ModelQueue
         _capacity = capacity;
         _onReject = onReject;
     }
+
+    // Router dispatch holds this only after the router lock (and admission, when injected).
+    // The outer hold keeps exact removal and physical accounting in one critical section.
+    internal object Gate => _lock;
 
     public string Model { get; }
     public int Depth { get { lock (_lock) return _heap.Count; } }
@@ -74,14 +80,12 @@ public sealed class ModelQueue
     }
 
     /// <summary>Take only the request the scheduler evaluated, while it is still first admissible.</summary>
-    internal bool TryTakeExact(QueueDispatchCandidate candidate, Func<RouterThread, bool> admission,
-                               Func<bool>? observationIsCurrent = null)
+    internal bool TryTakeExact(QueueDispatchCandidate candidate, Func<RouterThread, bool> admission)
     {
         lock (_lock)
         {
             var index = FirstAdmissibleIndex(admission);
             if (index < 0 || !ReferenceEquals(_heap[index], candidate.Request)) return false;
-            if (observationIsCurrent is not null && !observationIsCurrent()) return false;
             _heap.RemoveAt(index);
             return true;
         }

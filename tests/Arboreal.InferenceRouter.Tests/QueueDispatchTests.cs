@@ -221,6 +221,25 @@ public sealed class QueueDispatchTests
         Assert.Equal(1, handler.CompletionCalls);
     }
 
+    [Fact(Timeout = 20_000)]
+    public async Task OrdinaryExactTakeRejectsExpiryDuringSelection()
+    {
+        using var handler = new FakeEngineHandler();
+        var scheduler = new RecordingScheduler();
+        var clock = new ManualClock();
+        await using var router = CreateRouter(handler, scheduler, clock);
+        await PublishServingWindowAsync(router, handler, "a", 32);
+        var ticket = await router.EnqueueAsync("context", Request("a", context: 32, maxQueueTime: TimeSpan.FromHours(1)));
+        scheduler.OnSelect = _ => clock.Timestamp = TimeSpan.FromHours(2).Ticks;
+
+        Assert.False(router.TryDispatchOnce());
+
+        var error = await Assert.ThrowsAsync<RouterRequestException>(() => ticket.CompletionTask);
+        Assert.Equal("deadline_exceeded", error.Code);
+        Assert.DoesNotContain(router.Events.Replay(0), entry => entry.Kind == "request.selected");
+        Assert.Equal(0, handler.CompletionCalls);
+    }
+
     [Fact]
     public async Task DispatchDeadlineUsesElapsedTimeWhenTheWallClockMoves()
     {

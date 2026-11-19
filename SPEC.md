@@ -1,6 +1,6 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.75)
+Status: draft, continuously revised (v0.12.77)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
@@ -352,6 +352,13 @@ daemon transaction per engine. 137 tests green.
   that answers no `upload_url`, an upload that dies or answers no asset id, an asset name listed twice on
   the release, and a tag that moves after the first resolve. No tag has run the gate: still configured,
   not proven.
+- v0.12.77 — qualify offline one-shot transport over a host-issued, preauthenticated serving
+  stream. First write requires the exact issued grant and its verified route and invocation.
+  The single-host issuer refuses reuse, and the exchange retains its permit through
+  issuer-confirmed cleanup (§5.3.1, TASK-130).
+- v0.12.76 — Qualify independent partition vacancy and owner evidence for the offline
+  successor fixture. Prepared operations requery after restart and uncertain dispatch stays fenced
+  (§5.3.1, TASK-110).
 - v0.12.75 — preserve the exact ticket's explicit context minimum through dispatch and
   post-launch model readiness. Joined waiters apply their own minimum to the observed
   window. Bound an idle switch claim to eight superseded capability observations and
@@ -360,11 +367,16 @@ daemon transaction per engine. 137 tests green.
 - v0.12.74 — native Docker configuration resolves per-serving-profile environment and mounts for
   offline create projection (§5.3.1, §7). Canonical model and profile select immutable launch
   inputs. Engines with these declarations require separate host qualification before activation.
-
 - v0.12.73 — Add the standalone offline host successor checkpoint and effect ledger.
   The checkpoint retains exact launch, stop and frozen successor evidence across process death.
   The fake ledger verifies residency and separates send, acceptance, attempt and applied records
   across restart without granting production host authority (§5.3.1, TASK-110).
+- v0.12.72 — qualify exact-ticket admission with an offline sender and bounded preparation.
+  A retirement wake revisits deferred staged preparation before an ordinary route can reserve
+  the freed slot. Model and profile routes share the engine's physical permit budget. Repeated
+  aborts share retirement completion, and a submitted use stays counted if disposal fails.
+  A dispatcher entering its wait during teardown uses the router's captured shutdown token
+  (§5.5, TASK-64).
 - v0.12.71 — order local inference sends and each health read against engine shutdown.
   A timed-out send retains its client through late response cleanup. Shutdown attempts
   lifecycle cleanup even if local HTTP close faults. Switch readiness delivery and timing
@@ -1729,6 +1741,32 @@ entry. Records stage in unique temporary files and publish atomically. Reopen ig
 records and holds on corrupt installed evidence. These controls exercise subprocess death in trusted
 fixture storage. They supply no production authority or inference permit evidence.
 
+The successor vacancy fixture models one enrolled partition with a separate source of partition
+facts. Exact incumbent ownership and causal retirement permit the prepared stop to progress. Before
+a successor submission, a new query must prove complete coverage and vacancy for the enrolled
+partition. The query binds the enrollment, controller and worker generations, the incumbent's full
+immutable launch operation and plan, the exact checkpoint stop effect, the transition epoch and the
+frozen successor plan. The owner and retirement evidence bind that same launch. Under the same fence
+as every modeled writer, the worker compares the installed stop effect and current coverage and owner
+generations before daemon entry. A change and restore invalidates the old observation. Missing
+preflight proof leaves `StopApplied` without a successor
+submission. Refusal at daemon entry can leave a durable submission and acceptance, with no attempt
+or applied effect. Prepared stop and launch requery on reopen and keep their recorded identity.
+Reopened dispatch reconciles only the exact operation. A recovered stop requires a new vacancy
+query. A recovered launch uses its exact terminal and effect. The retirement and partition evidence
+are synthetic. Production enrollment remains disabled.
+
+**Offline first write (TASK-130).** The issuer transfers an authenticated application stream
+bound to one invocation. The transport validates the route and invocation before connecting its
+HTTP/1.1 serializer. The first nonempty application write presents the exact grant for that stream.
+The single-host issuer fixture permits one checkout per invocation and consumes the issued grant
+once. It rejects an unissued grant even when the invocation and stream match. The exchange closes
+the grant it receives and awaits terminal permit cleanup. The issuer owns the cleanup of a grant
+it withholds. In the substitution fixture, the issuer explicitly revokes and closes the withheld
+original grant, and the peer observes EOF with zero bytes. Production enrollment still requires
+frozen request body and authorization binding, durable issuance and authoritative physical
+retirement.
+
 **Production evidence.** The raw Docker inventory can report known foreign containers. Even an
 empty inventory leaves vacancy unproven, and raw Docker supplies no terminal receipt for an
 unacknowledged router operation ID. Positive authority requires independently verified enrollment,
@@ -1801,6 +1839,39 @@ engine forks land; the scheduler interface will not change shape.
   first ticket in that queue whose thread has capacity. Commit takes that exact ticket only
   while it is still first admissible. If the candidate is removed or displaced before commit,
   dispatch restarts the queue scan.
+- **Offline exact-ticket admission.** The injected sender qualifies the queue handshake.
+  Schedule outside the router lock. The host admission gate, router lock and model queue lock
+  order the live check and exact removal. Validate the ranked route generation, model-bound
+  window for an explicit minimum, free slots, thread room and original elapsed queue deadline.
+  Preparation owns no physical slot. A preparing head preserves its queue order and another
+  queue may progress. Each ticket may start one preparation per binding and route generation
+  and have only one outstanding attempt, including retirement. The scoped preparation limit is
+  the greater of two and the engine count at construction, shared by preparing, ready and
+  retiring work. Cancellation, expiry, supersession and shutdown signal retirement. Work
+  that ignores cancellation still occupies its preparation slot until it settles. A parked
+  scan wakes on published state and checks its revision after arming. Its wait uses the
+  captured shutdown token even if teardown has already disposed the source. Public `Start`
+  schedules its loop without retaining the task. The offline fixture joins the loop it starts.
+  Closing the route fences authorization. An authorized invocation counts before its first
+  byte. Cancellation can release it early only by atomically preventing submission. The
+  injected invocation owns the response through consumption and disposal, then finishes
+  prepared-resource cleanup before releasing the permit. Each engine shares one physical
+  budget across its routes and charges an ordinary use once while it occupies both the
+  logical and physical counts. A cleanup fault leaves a submitted use counted after its
+  logical request ends and emits `request.cleanup_failed` independently of the ticket result.
+  An abort that claims an unstarted invocation prevents submission, and further
+  abort calls wait on the same cleanup result. Execution that arrives after that abort waits
+  for cleanup and ends as cancellation. The injected sender is under fixture
+  control and does not exercise the production response timeout. An engine has at most one
+  staged owner. An eligible owner has first opportunity for its final free permit when the
+  owner's route opens in the same generation. Cancellation, expiry or failed preparation hands
+  the slot to an ordinary joiner. The staged owner holds no counted use while closed.
+  When a prior attempt or a full preparation table blocks an exact staged owner,
+  a dispatcher wake reconsiders that request. An eligible owner waiting for capacity gets the
+  first available preparation slot ahead of ordinary routes. An ordinary preparation rechecks
+  that priority under the admission gate, including when a slot opens after the scan starts.
+  Production admission still needs the enrolled host and verified transport. Production owner
+  promotion and late cleanup remain TASK-25.
 - **Engine-local send permission.** A historical switch result may still be delivered after
   engine shutdown. Entry to the upstream HTTP sender requires a separate claim under the
   transition gate that records the stop. If stop wins, the request settles as cancelled
@@ -2707,6 +2778,8 @@ the feed excerpt and error prose, and a size policy for admin responses generall
 - `request.streaming_first_token {ticket, engine, msFromEnqueue}`
 - `request.completed {ticket, engine, tokens, msFromEnqueue, msFromFirstToken}`
 - `request.failed/cancelled/deadline_exceeded {ticket, reason}`
+- `request.cleanup_failed {ticket, thread, engine, model, reason}` — offline admission cleanup fault,
+  reported independently of the ticket's terminal result
 - `engine.health {engine, healthy, loadedModels}`
 - `engine.switch_started/completed/failed {engine, model, profile, ms}`
 - `queue.rejected {thread, model, reason}` — refused before joining a queue; `reason` is `queue_overflow` or

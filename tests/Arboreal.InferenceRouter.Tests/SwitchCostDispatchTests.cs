@@ -150,6 +150,56 @@ public sealed class SwitchCostDispatchTests
     }
 
     [Fact(Timeout = 20_000)]
+    public async Task AClosedRankedWinnerLeavesTheFirstRouteBeyondTheCohortAvailable()
+    {
+        var sink = new AdmissionFixtureSink();
+        var admission = new ExactTicketAdmission(
+            static (_, _) => ValueTask.FromResult<IAsyncDisposable?>(new PreparedRoute()),
+            (request, _) => sink.AcceptAsync(request));
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        await using var rig = new SwitchRig(aLoadMs: 80, bLoadMs: 20, admission: admission);
+        await rig.TrainAsync(proveIncumbentWindow: true);
+        rig.Clock.Set(TimeSpan.FromMinutes(1));
+        var a = await rig.EnqueueAsync("a", marker: "stale winner");
+        var c = await rig.EnqueueAsync("c", requiredContext: 1_024, marker: "outside cohort");
+        var aRoute = new ExactTicketAdmission.Route("fixture", "a", "p");
+        var cRoute = new ExactTicketAdmission.Route("fixture", "c", null);
+        admission.Publish(aRoute, generation: 1, open: true, window: 1_024);
+        admission.Publish(cRoute, generation: 1, open: true);
+        var prepared = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var count = 0;
+        admission.AfterPreparationForTests = (_, ready) =>
+        {
+            if (ready && Interlocked.Increment(ref count) == 2) prepared.TrySetResult();
+        };
+        Assert.False(rig.Router.TryDispatchOnce());
+        await prepared.Task.WaitAsync(deadline.Token);
+
+        var winnerReachedCommit = false;
+        rig.Router.BeforeAdmissionCommitForTests = ticket =>
+        {
+            if (!ReferenceEquals(ticket, a)) return;
+            winnerReachedCommit = true;
+            admission.Publish(aRoute, generation: 1, open: false);
+        };
+        Assert.True(rig.Router.TryDispatchOnce());
+        Assert.True(winnerReachedCommit);
+        Assert.Equal(TicketState.Queued, a.State);
+        await c.CompletionTask.WaitAsync(deadline.Token);
+        var selected = Assert.Single(rig.Router.Events.Replay(0), evt => evt.Kind == "request.selected");
+        Assert.Equal(c.Id, selected.TicketId);
+        Assert.False(rig.Router.TryDispatchOnce());
+        Assert.Equal(1, sink.Calls);
+        byte[] expected = """{"messages":[{"role":"user","content":"outside cohort"}],"model":"c"}"""u8.ToArray();
+        Assert.Equal(expected, Assert.Single(sink.ReceivedBodies));
+    }
+
+    private sealed class PreparedRoute : IAsyncDisposable
+    {
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    [Fact(Timeout = 20_000)]
     public async Task ANewIncumbentInvalidatesTheCostPickBeforeTheExactTicketIsTaken()
     {
         await using var rig = new SwitchRig(aLoadMs: 80, bLoadMs: 20);
@@ -371,13 +421,14 @@ public sealed class SwitchCostDispatchTests
 
         internal TestClock Clock { get; } = new();
         internal EngineRuntime Engine => _router.Engines["fixture"];
+        internal RouterCore Router => _router;
         internal HttpStatusCode StopStatus { get; set; } = HttpStatusCode.NoContent;
         internal HttpStatusCode RemovalStatus { get; set; } = HttpStatusCode.NoContent;
         internal bool MultiplePeers { get; set; }
         internal bool RefusePreflight { get; set; }
         internal Func<string, string?>? MutatePeerProfile { get; set; }
 
-        internal SwitchRig(int aLoadMs, int bLoadMs, bool servingLadder = true)
+        internal SwitchRig(int aLoadMs, int bLoadMs, bool servingLadder = true, ExactTicketAdmission? admission = null)
         {
             _activationMs = new Dictionary<string, int>(StringComparer.Ordinal)
             {
@@ -412,7 +463,7 @@ public sealed class SwitchCostDispatchTests
             };
             _provider = new DockerLifecycleProvider(docker, engine.Name, _daemon);
             _router = new RouterCore(config, scheduler: null, events: null, clock: Clock,
-                                     lifecycleFactory: _ => _provider);
+                                     lifecycleFactory: _ => _provider, admission: admission);
         }
 
         private static EngineModelDefinition MeasuredModel(string name, bool servingLadder) => new()
@@ -453,11 +504,11 @@ public sealed class SwitchCostDispatchTests
             }
         }
 
-        internal ValueTask<RouterTicket> EnqueueAsync(string model, long? requiredContext = null) =>
+        internal ValueTask<RouterTicket> EnqueueAsync(string model, long? requiredContext = null, string marker = "dispatch") =>
             _router.EnqueueAsync(model, new InferenceRequest
             {
                 Model = model,
-                Body = """{"messages":[{"role":"user","content":"dispatch"}]}"""u8.ToArray(),
+                Body = System.Text.Encoding.UTF8.GetBytes($$"""{"messages":[{"role":"user","content":"{{marker}}"}]}"""),
                 Options = new RouterRequestOptions { RequiredContext = requiredContext },
             });
 

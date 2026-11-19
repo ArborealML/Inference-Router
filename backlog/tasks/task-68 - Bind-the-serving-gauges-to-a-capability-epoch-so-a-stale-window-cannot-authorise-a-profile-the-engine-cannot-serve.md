@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@gpt-6.2-sol-scheduling'
 created_date: '2026-11-18T01:11:00Z'
-updated_date: '2026-11-19T07:04:00Z'
+updated_date: '2026-11-19T07:35:00Z'
 labels:
   - concurrency
   - scheduling
@@ -20,7 +20,7 @@ ordinal: 68000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Three serving gauges — window, slots, inferred profile — are live fields outside the capability snapshot, written by the health round with no version bump, while every other readiness answer comes from a versioned snapshot. So a switch can authorise a profile on a window measured for the model loaded before this one. TASK-32 proved they are live from more than one place at once; this row puts them in the snapshot.
+Publish model-bound window, slots and inferred profile in one versioned capability snapshot. Each routing and readiness decision must use capacity evidence for the selected model and claim.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -48,5 +48,5 @@ Publish the immutable serving tuple with EngineCapability. Convert scheduler, en
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Serving publication and restoration landed in PRs #2 and #3. [PR #8](https://github.com/ArborealML/Inference-Router/pull/8) passed 96 focused checks, both joint rows and hosted CI. Review of 29cb7d5 confirmed winner and joined-waiter floor checks. Bound first semaphore acquisition and new idle claims by the original deadline. Until enrolled readiness supplies bound capacity, refuse positive-window switches before mutation. Test different floors on the scan head and ranked winner.
+Serving publication and restoration landed in PRs #2 and #3. [PR #8](https://github.com/ArborealML/Inference-Router/pull/8) passed 96 focused checks and both joint rows. At 1dbd4d0 all 13 correction cases passed. Review identified an active-claim join after the unclaimed deadline. At 2266cb5 both deadline cases passed: expiry before first observation refuses attachment; committed delivery stays ordered for an existing waiter. Independent review dispatched. Scheduling is reconciling PR #5 conflicts in router dispatch, switch-cost tests and SPEC. Qualify the merged ticket-floor and admission paths before landing.
 <!-- SECTION:NOTES:END -->

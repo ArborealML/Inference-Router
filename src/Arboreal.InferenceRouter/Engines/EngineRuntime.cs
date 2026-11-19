@@ -608,23 +608,29 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
         using var timer = new PeriodicTimer(interval);
         while (!ticks.IsCancellationRequested)
         {
-            // Capture the version before either read. The poll may publish only against that evidence.
-            var capBefore = Capability;
-            try
-            {
-                BeforeModelsFetchForTests?.Invoke();
-                if (!await ProbeHealthAsync(capBefore, ct).ConfigureAwait(false)) break;
-            }
-            catch (Exception ex)
-            {
-                if (Volatile.Read(ref _stopped)) break;
-                Emit("engine.health", reason: WireText.Bound(ex.Message, ProviderReasonChars), value: 0);
-            }
+            if (!await ProbeHealthOnceAsync(ct).ConfigureAwait(false)) break;
             try
             {
                 if (!await timer.WaitForNextTickAsync(ticks.Token).ConfigureAwait(false)) break;
             }
             catch (OperationCanceledException) { break; }
+        }
+    }
+
+    internal async Task<bool> ProbeHealthOnceAsync(CancellationToken ct)
+    {
+        // Capture the version before either read. The poll may publish only against that evidence.
+        var capBefore = Capability;
+        try
+        {
+            BeforeModelsFetchForTests?.Invoke();
+            return await ProbeHealthAsync(capBefore, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            if (Volatile.Read(ref _stopped)) return false;
+            Emit("engine.health", reason: WireText.Bound(ex.Message, ProviderReasonChars), value: 0);
+            return true;
         }
     }
 

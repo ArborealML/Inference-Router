@@ -1,11 +1,11 @@
 ---
 id: TASK-110
 title: Coordinate model engines that share one host with exclusive residency
-status: In Progress
+status: Waiting
 assignee:
-  - '@gpt-6.2-sol-lifecycle'
+  - '@chatswarm'
 created_date: '2026-11-18T18:13:00Z'
-updated_date: '2026-11-19T07:05:00Z'
+updated_date: '2026-11-19T07:38:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -19,7 +19,7 @@ ordinal: 108000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Implement exclusive residency for cooperating managed engines sharing a physical host group. The host mutation path retains authority through readiness and reconciles every uncertain provider operation after restart.
+Independent review of the causal-drain fixture plan wakes implementation. Establish exclusive residency for cooperating engines sharing one host and reconcile uncertain mutations after restart.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -36,11 +36,11 @@ Implement exclusive residency for cooperating managed engines sharing a physical
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Implement the reviewed offline partition observer. Require exact incumbent ownership and generation-bound retirement before stop. Bind each fresh observation to the full resource partition, owner and enrollment revisions, query, epoch, predecessor and frozen successor. Fence every modeled writer through create entry. Test a revision change followed by restoration of the original visible state. Missing preflight proof leaves zero successor sends, acceptances, attempts or effects. Refusal after submission may retain a send and acceptance but leaves zero attempts, effects or applied result. Reopen prepared stops and launches with fresh evidence and the original identities. Reconcile dispatching operations only by exact evidence. A recovered stop requires fresh vacancy before successor submission. A recovered launch requires its exact receipt and effect.
+Use combined base 7ec1c20 for one offline handoff. Hold an authorized application write before backend delivery. Close submission and capture the full use set under the same ordering. A logical timeout and an expired drain leave one physical use and zero stop or create. Restart only the controller. Query the surviving issuer and backend; reject mismatched generation, local close and incomplete cleanup. Bind terminal evidence to the invocation, full predecessor, process, route generation and closed set. Retire once after exact terminal and cleanup. A newly authorized drain may then issue the exact stop and frozen successor create through existing ledgers. Keep successor ingress closed. Dispatch and production authority have separate prerequisites.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-The offline checkpoint and ledger landed in [PR #6](https://github.com/ArborealML/Inference-Router/pull/6). [PR #9](https://github.com/ArborealML/Inference-Router/pull/9) passed 15 focused vacancy cases at 8302cf8 and hosted CI at bd0c1a4. Review found the independent predecessor comparison omits the launch operation and plan identity. Bind the full launch and stored stop effect. Test a different launch ID with the same instance and epoch, and an old owner observation. Existing generation-change tests exercise revalidation. Demonstrate writer exclusion at daemon entry with a competing process and a successful write after release. Verify unchanged daemon residency and absent issue decision on fenced refusal. Production authority remains unqualified.
+The checkpoint and synthetic ledger landed in [PR #6](https://github.com/ArborealML/Inference-Router/pull/6). [PR #9](https://github.com/ArborealML/Inference-Router/pull/9) at b7a9ac9 passed 18 offline vacancy cases with the subprocess probe rebuilt. Review corrections bind the full predecessor and checkpoint stop effect, detect mismatched operation identity and stale owner evidence, and hold a competing facts writer through daemon entry. Merged at 47eaced after green hosted CI and independent review. Early owner refusals prove zero submission; downstream decision and terminal counts are separately pinned at the daemon-entry guard. Prepare the causal-drain and physical-retirement plan for the single host. Enforced host coverage, physical retirement and instance-bound admission remain prerequisites for production activation.
 <!-- SECTION:NOTES:END -->

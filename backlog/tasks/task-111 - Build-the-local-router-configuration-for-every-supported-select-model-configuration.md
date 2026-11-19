@@ -3,11 +3,11 @@ id: TASK-111
 title: >-
   Build the local router configuration for every supported select-model
   configuration
-status: Preparing
+status: In Progress
 assignee:
   - '@gpt-6.2-sol-config'
 created_date: '2026-11-18T18:15:00Z'
-updated_date: '2026-11-19T07:08:00Z'
+updated_date: '2026-11-19T07:24:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -32,7 +32,7 @@ Build a usable machine-local router configuration from the installed primary-hos
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Inventory the selector and each delegated validator from a fixed source fingerprint. Enumerate model and profile aliases, defaults, option ranges and cross-family refusals. Compare the resolved settings with the native launch request before writing local TOML. Validate the private configuration by dry-run, then compare exact payloads and refusal cases against fake providers.
+Implement the reviewed offline tier-memory projection on the landed target table. At serving[].docker accept memory_bytes and memory_swap_bytes as exact 64-bit byte counts. If both fields are omitted, inherit the entire engine pair. If both are supplied, replace it. RAM alone is valid only without common swap. Swap alone refuses. Share the 6 MiB minimum and total-at-least-RAM validation. Omitted swap leaves Docker defaults. Freeze the resolved pair per named target and serialize absent fields by omission, including when common resources are absent. Preserve other resources, legacy parsing and configuration-wide activation refusal. Reject duplicate, null, shadowed or unknown opted-in fields. Compare repeated named 512k and 768k projections through one provider against exact selector bytes, check inheritance and invalid boundaries, mutation isolation and memory-only zero writes. Reuse existing controls for unchanged behavior. Include the redacted selector coverage report.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
@@ -42,5 +42,5 @@ Selector inventory at fingerprint 8af827d3c375efda08cad8a5b9b7fd862b44a2f5a74820
 
 [PR #7](https://github.com/ArborealML/Inference-Router/pull/7) corrects shadowed ownership and selector fields, common Docker key casing and template substitution. Review of 7eda8ad accepted the correction subject to verification. At 6505ea1 all 108 focused tests, the pinned pair config and server Native AOT passed. The CLI separately refused a sibling select/Select pair and a duplicate common env key at the expected paths. Integration head 3af5f10 preserves both SPEC revisions. Continue offline comparison for remaining targets. Before activation, bind receipts and labels to the same canonical model, tier and serving instance.
 
-Offline comparison covered 36 Strata, 26 HyperQwen and 13 Maya targets. MiniMax 32k requires host IPC and an entrypoint override. Qwen 768k and 1m require profile-specific memory and total swap. Plan review dispatched for 512k→768k→512k projection; prepare redacted coverage evidence. Other gaps include profile aliases, GPU ordering, shared memory, runtime policy, nested mounts and health settings.
+Offline comparison covered 36 Strata, 26 HyperQwen and 13 Maya targets. MiniMax 32k requires host IPC and an entrypoint override. Qwen 768k and 1m require profile-specific memory and total swap. Plan review found two create-builder early returns and ambiguous partial overrides. The revised plan resolves both before implementation. Other gaps include profile aliases, GPU ordering, shared memory, runtime policy, nested mounts and health settings.
 <!-- SECTION:NOTES:END -->
