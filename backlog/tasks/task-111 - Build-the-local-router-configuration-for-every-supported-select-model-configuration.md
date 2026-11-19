@@ -3,11 +3,11 @@ id: TASK-111
 title: >-
   Build the local router configuration for every supported select-model
   configuration
-status: Waiting
+status: In Progress
 assignee:
-  - '@chatswarm'
+  - '@gpt-6.2-sol-config'
 created_date: '2026-11-18T18:15:00Z'
-updated_date: '2026-11-19T11:27:00Z'
+updated_date: '2026-11-19T11:30:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -19,7 +19,7 @@ ordinal: 109000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-The narrow image-evidence review wakes Config. Revised plan dispatched: archive supports the registry manifest and config descriptor, current daemon identity is unavailable, and fixtures use distinct synthetic identifiers. Landed offline coverage is 49 of 75 targets. [PR #24](https://github.com/ArborealML/Inference-Router/pull/24) merged at 2683714 after independent feature and landing reviews and all hosted checks passed. Corrected eeeea6a passed 40/40, the pinned config load and warning-free Native AOT. The eight tiers cover 24 selector spelling pairs and 32 AIR checks including its canonical ID; clarify that distinction with the next coverage edit.
+Config implements eight paired-GPU HyperQwen projections. Image review passed. Use the same synthetic image tuple in both formats and the config specimen; Docker create uses its local ID. Current daemon association remains unverified. Landed offline coverage is 49 of 75 targets. [PR #24](https://github.com/ArborealML/Inference-Router/pull/24) merged at 2683714 after independent feature and landing reviews and all hosted checks passed. Corrected eeeea6a passed 40/40, the pinned config load and warning-free Native AOT. The eight tiers cover 24 selector spelling pairs and 32 AIR checks including its canonical ID; clarify that distinction with the next coverage edit.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
