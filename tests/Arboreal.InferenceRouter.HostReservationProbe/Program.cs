@@ -1,6 +1,12 @@
 using Arboreal.InferenceRouter;
 using Arboreal.InferenceRouter.Lifecycle;
 
+if (args is ["--successor-vacancy", var vacancyPath, var vacancyMode, var vacancyTarget])
+{
+    Console.WriteLine(new HostEffectLedgerProbe(vacancyPath, requirePartitionProof: true).Run(vacancyMode, vacancyTarget));
+    return 0;
+}
+
 if (args is ["--effect-ledger", var ledgerPath, var ledgerMode, var ledgerTarget])
 {
     Console.WriteLine(new HostEffectLedgerProbe(ledgerPath).Run(ledgerMode, ledgerTarget));
