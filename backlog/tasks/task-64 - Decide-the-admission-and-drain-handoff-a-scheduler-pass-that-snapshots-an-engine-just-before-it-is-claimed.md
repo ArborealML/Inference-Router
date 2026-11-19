@@ -7,7 +7,7 @@ status: Waiting
 assignee:
   - '@gpt-6.2-astra'
 created_date: '2026-11-17T23:07:00Z'
-updated_date: '2026-11-19T06:49:00Z'
+updated_date: '2026-11-19T07:06:00Z'
 labels:
   - scheduling
   - architecture
@@ -27,13 +27,13 @@ Recorded as an accepted gap in SPEC 15 by the fix set for fd5e0cd; this row is t
 <!-- AC:BEGIN -->
 - [ ] #1 SPEC 15 carries the accepted gap with this task named and the fd5e0cd review as its source
 - [x] #2 the admission/drain shape is written as a decision with the in-flight-pass rule stated
-- [ ] #3 a test shows a ticket approved by an earlier pass is not dispatched to an engine claimed after that pass
+- [x] #3 a test shows a ticket approved by an earlier pass is not dispatched to an engine claimed after that pass
 - [ ] #4 Consume completion and profile wakes while the route is closed. The same ticket stays queued with zero grants or bytes. Opening the matching generation wakes dispatch outside locks and sends that ticket once without another external event.
-- [ ] #5 Hold the queue expiry callback behind the router lock past the original monotonic deadline. The final admission check refuses the expired ticket with zero upstream writes.
-- [ ] #6 Close the ranked winner after scanning the first eligible ticket beyond its group. That ticket dispatches exactly once in baseline order; repeated wakes neither spin nor restart the closed preparation.
-- [ ] #7 On a model-only route, use identical prompts and equal derived requirements. Withdrawing the measured window before exact take blocks only the explicit floor. Losing the final permit blocks either ticket. Refused tickets write zero bytes.
-- [ ] #8 A submitted ordinary request with failed cleanup still consumes its physical slot after logical completion. A successor cannot write on that slot, and the cleanup fault remains observable.
-- [ ] #9 Two routes sharing a single engine slot honor the eligible reopening owner. Competing owners or ordinary requests cannot acquire that slot simultaneously. Confirmed release permits progress.
+- [x] #5 Hold the queue expiry callback behind the router lock past the original monotonic deadline. The final admission check refuses the expired ticket with zero upstream writes.
+- [x] #6 Close the ranked winner after scanning the first eligible ticket beyond its group. That ticket dispatches exactly once in baseline order; repeated wakes neither spin nor restart the closed preparation.
+- [x] #7 On a model-only route, use identical prompts and equal derived requirements. Withdrawing the measured window before exact take blocks only the explicit floor. Losing the final permit blocks either ticket. Refused tickets write zero bytes.
+- [x] #8 A submitted ordinary request with failed cleanup still consumes its physical slot after logical completion. A successor cannot write on that slot, and the cleanup fault remains observable.
+- [x] #9 Two routes sharing a single engine slot honor the eligible reopening owner. Competing owners or ordinary requests cannot acquire that slot simultaneously. Confirmed release permits progress.
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -45,5 +45,5 @@ Carry the final ranked ticket and its route generation through preparation. Rele
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-The shared-engine capacity correction at ac8b118 passed 149 focused Release checks. A submitted request with failed cleanup fences the successor after logical completion, an ordinary invocation consumes one of two permits, and staged owners share the final permit across routes. Public teardown guarantees safe captured-token access. Hosted CI and the dispatched correction review on [PR #5](https://github.com/ArborealML/Inference-Router/pull/5) wake integration. Production host admission remains separate.
+Review accepted ac8b118 on [PR #5](https://github.com/ArborealML/Inference-Router/pull/5). The 149 focused checks cover retained ordinary cleanup, cross-route final-slot reservation, two-slot progress and exact take under close, expiry and floor changes. The guarded release removes overlap once in either order. Public teardown guarantees captured-token safety. Optional additional profile and release-order cases are deferred until the accounting changes. CI on reconciled head 7477063 wakes landing. Enrolled completion/open and physical retirement require host integration.
 <!-- SECTION:NOTES:END -->
