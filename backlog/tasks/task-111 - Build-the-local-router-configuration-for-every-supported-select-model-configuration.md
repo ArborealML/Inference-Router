@@ -3,11 +3,11 @@ id: TASK-111
 title: >-
   Build the local router configuration for every supported select-model
   configuration
-status: Waiting
+status: Preparing
 assignee:
-  - '@gpt-6.2-astra'
+  - '@gpt-6.2-sol-config'
 created_date: '2026-11-18T18:15:00Z'
-updated_date: '2026-11-19T08:26:00Z'
+updated_date: '2026-11-19T08:36:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -19,7 +19,7 @@ ordinal: 109000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Hosted CI and independent review of the MiniMax 32k launch options wake integration. Per-target Docker settings and tier memory have landed. Complete native configuration parity spans 75 selector targets.
+Prepare offline Docker health-check projection for three GLM launch targets while MiniMax completes CI and review. Compare full launch payloads against the selector. Production activation is separate.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -32,7 +32,7 @@ Hosted CI and independent review of the MiniMax 32k launch options wake integrat
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Add engine-wide entrypoint and ipc_mode. Encode one literal clean absolute in-image Linux executable in Docker Entrypoint; preserve Cmd separately. Validate path segments, controls, slashes and whitespace without host lookup or template expansion. Only exact host IPC qualifies for offline projection. IPC alone creates HostConfig; entrypoint alone does not. Omit both for legacy payloads. Detect either option before deserialization, including shadowed ancestors, casing, null and ownership/selector conflicts. Validate direct DTO input. Limit strictness to opted engines. Refuse startup before binding any default, injected or enrolled provider. For provider mutation preserve target refusal first, then launch-options refusal, resources, then image/daemon checks. Test each option alone across the engine. Reuse fake payload and refusal fixtures, the redacted MiniMax payload, a private config-only load and one server Native AOT check.
+After MiniMax, qualify the top-level Docker Healthcheck for GLM 32k, 256k and 1m. Verify the exact test command form, 3600-second start period, 30-second interval, omitted options, restart behavior and unchanged resource projection. Preserve startup and mutation guards. Submit the bounded plan before implementation. DeepSeek additionally needs nested binds; the Strata max-4 alias adds six accepted spellings across three existing targets.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
