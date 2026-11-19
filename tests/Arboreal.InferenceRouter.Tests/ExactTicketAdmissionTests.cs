@@ -193,7 +193,7 @@ public sealed class ExactTicketAdmissionTests
         var owner = await rig.StageOwnerAsync();
         rig.Publish("a", generation: 2, open: true);
         var invocation = Assert.IsType<ExactTicketAdmission.Invocation>(
-            rig.Admission.AuthorizeOpeningOwnerForTests(owner, availableSlots: 1, window: 1_024));
+            rig.AdmitStagedOwner(owner));
         Assert.Equal(1, rig.Admission.PhysicalUses);
         var firstAbort = invocation.AbortAsync().AsTask();
         try
@@ -335,6 +335,110 @@ public sealed class ExactTicketAdmissionTests
         Assert.Same(disposeError, failure.InnerException);
         Assert.Equal(1, rig.Admission.PhysicalUses);
         Assert.Equal(0, rig.Admission.Releases);
+    }
+
+    [Fact(Timeout = 20_000)]
+    public async Task OrdinaryCleanupFaultFencesTheSuccessorAfterTheTicketSucceeds()
+    {
+        using var cleanup = new AdmissionFixtureBarrier();
+        using var lifetime = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        var failure = new InvalidOperationException("The submitted preparation did not retire.");
+        await using var rig = new Rig(singleModel: true, prepare: (claim, _) =>
+            ValueTask.FromResult<IAsyncDisposable?>(claim.Ticket.ThreadId == "faulted-cleanup"
+                ? new HeldResource(cleanup, lifetime.Token, () => throw failure)
+                : new Resource()));
+        await rig.ProbeAsync();
+        var first = await rig.EnqueueAsync("a", "faulted-cleanup");
+        await rig.PrepareAsync(first);
+        Assert.True(rig.Router.TryDispatchOnce());
+        try
+        {
+            await cleanup.Reached.WaitAsync(rig.Token);
+            Assert.NotEmpty(await first.CompletionTask.WaitAsync(rig.Token));
+            Assert.Equal(TicketState.Completed, first.State);
+            Assert.Equal(1, rig.Admission.PhysicalUses);
+            var successor = await rig.EnqueueAsync("a", "must-remain-queued");
+            rig.Publish("a", generation: 2, open: true);
+
+            var attempted = 0;
+            var parked = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            rig.Router.BeforeAdmissionCommitForTests = ticket =>
+            {
+                if (ReferenceEquals(ticket, successor)) Interlocked.Exchange(ref attempted, 1);
+            };
+            rig.Router.AfterDispatchParkForTests = _ =>
+            {
+                if (Volatile.Read(ref attempted) == 1) parked.TrySetResult(true);
+            };
+            rig.Router.Events.Subscribe(evt =>
+            {
+                if (evt.Kind == "request.selected" && evt.TicketId == successor.Id) parked.TrySetResult(false);
+            });
+
+            rig.StartDispatcher();
+            cleanup.Release();
+            Assert.True(await parked.Task.WaitAsync(rig.Token), "Uncertain ordinary retirement must fence the successor.");
+            Assert.Equal(0, rig.Router.Engines["fixture"].Inflight);
+            Assert.Equal(1, rig.Admission.PhysicalUses);
+            Assert.Equal(0, rig.Admission.Releases);
+            Assert.Equal(TicketState.Queued, successor.State);
+            Assert.Equal(2L, rig.Claims[successor.Id].Generation);
+            Assert.Equal(first.Id, Assert.Single(rig.Selected).TicketId);
+            Assert.Equal(1, rig.Sink.Calls);
+            Assert.Equal(Payload("a", "faulted-cleanup"), Assert.Single(rig.Sink.ReceivedBodies));
+
+            var entry = Assert.Single(rig.Router.Events.Replay(0), evt => evt.Kind == "request.cleanup_failed");
+            Assert.Equal(first.Id, entry.TicketId);
+            Assert.Equal("fixture", entry.Engine);
+            Assert.Equal(failure.Message, entry.Reason);
+            var terminal = Assert.Single(TerminalEvents(rig, first));
+            Assert.Equal("request.completed", terminal.Kind);
+            Assert.True(entry.Seq > terminal.Seq);
+        }
+        finally
+        {
+            cleanup.Release();
+        }
+    }
+
+    [Fact(Timeout = 20_000)]
+    public async Task LiveOrdinaryInvocationConsumesOnlyOneOfTwoEnginePermits()
+    {
+        using var firstResponse = new AdmissionFixtureBarrier();
+        using var lifetime = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        var responseCount = 0;
+        await using var rig = new Rig(slots: 2, respond: async () =>
+        {
+            if (Interlocked.Increment(ref responseCount) == 1)
+                await firstResponse.HoldAsync(lifetime.Token);
+            return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}") };
+        });
+        await rig.ProbeAsync();
+        var first = await rig.EnqueueAsync("a", "held-live-use");
+        await rig.PrepareAsync(first);
+        Assert.True(rig.Router.TryDispatchOnce());
+        try
+        {
+            await firstResponse.Reached.WaitAsync(rig.Token);
+            Assert.Equal(1, rig.Router.Engines["fixture"].Inflight);
+            Assert.Equal(1, rig.Admission.PhysicalUses);
+            var second = await rig.EnqueueAsync("b", "second-live-use");
+            await rig.PrepareAsync(second);
+            var released = rig.ArmRelease();
+            Assert.True(rig.Router.TryDispatchOnce());
+            await second.CompletionTask.WaitAsync(rig.Token);
+            await released.WaitAsync(rig.Token);
+            Assert.Equal(1, rig.Admission.PhysicalUses);
+            Assert.Equal(1, rig.Admission.Releases);
+            Assert.Collection(rig.Sink.ReceivedBodies,
+                body => Assert.Equal(Payload("a", "held-live-use"), body),
+                body => Assert.Equal(Payload("b", "second-live-use"), body));
+        }
+        finally
+        {
+            firstResponse.Release();
+        }
+        await first.CompletionTask.WaitAsync(rig.Token);
     }
 
     [Fact(Timeout = 20_000)]
@@ -537,6 +641,64 @@ public sealed class ExactTicketAdmissionTests
     }
 
     [Fact(Timeout = 20_000)]
+    public async Task StagedOwnersAndJoinersShareOneEnginePermitAcrossRoutes()
+    {
+        using var ownerResponse = new AdmissionFixtureBarrier();
+        await using var rig = new Rig(slots: 1);
+        await rig.ProbeAsync();
+        var joiner = await rig.EnqueueAsync("c", "cross-route-joiner");
+        await rig.PrepareAsync(joiner);
+        rig.Publish("a", generation: 1, open: false);
+        var owner = await rig.StageOwnerAsync();
+        // Replacing another route must preserve this engine's exact owner.
+        rig.Publish("b", generation: 2, open: false);
+        var competitor = rig.CaptureOwner("b", "competing-owner");
+        Assert.False(rig.Admission.StageOpeningOwnerForTests(competitor));
+        await rig.AssertOwnerCannotAuthorizeAsync(owner);
+
+        rig.Publish("a", generation: 1, open: true);
+        Assert.False(rig.CanJoinerTake(joiner));
+        Assert.False(rig.Router.TryDispatchOnce());
+        Assert.Equal(0, rig.Sink.Calls);
+        var ownerSend = rig.SendStagedOwnerAsync(owner, ownerResponse);
+        try
+        {
+            await ownerResponse.Reached.WaitAsync(rig.Token);
+            Assert.Equal(1, rig.Admission.PhysicalUses);
+            Assert.True(rig.Admission.StageOpeningOwnerForTests(competitor));
+            rig.Admission.Prepare(competitor);
+            Assert.True(await rig.Prepared[competitor.Ticket.Id].Task.WaitAsync(rig.Token));
+            rig.Publish("b", generation: 2, open: true);
+            await rig.AssertOwnerCannotAuthorizeAsync(competitor);
+            Assert.False(rig.Router.TryDispatchOnce());
+            Assert.Empty(rig.Selected);
+            Assert.Equal(1, rig.Sink.Calls);
+            Assert.Equal(owner.Request.Request.Body.ToArray(), Assert.Single(rig.Sink.ReceivedBodies));
+        }
+        finally
+        {
+            ownerResponse.Release();
+        }
+
+        Assert.True(await ownerSend.WaitAsync(rig.Token));
+        Assert.Equal(0, rig.Admission.PhysicalUses);
+        Assert.Equal(1, rig.Admission.Releases);
+        Assert.False(rig.Router.TryDispatchOnce());
+        Assert.True(await rig.SendStagedOwnerAsync(competitor).WaitAsync(rig.Token));
+        var joinerRelease = rig.ArmRelease();
+        Assert.True(rig.Router.TryDispatchOnce());
+        await joiner.CompletionTask.WaitAsync(rig.Token);
+        await joinerRelease.WaitAsync(rig.Token);
+        Assert.Equal(0, rig.Admission.PhysicalUses);
+        Assert.Equal(3, rig.Admission.Releases);
+        Assert.Equal(joiner.Id, Assert.Single(rig.Selected).TicketId);
+        Assert.Collection(rig.Sink.ReceivedBodies,
+            body => Assert.Equal(owner.Request.Request.Body.ToArray(), body),
+            body => Assert.Equal(competitor.Request.Request.Body.ToArray(), body),
+            body => Assert.Equal(Payload("c", "cross-route-joiner"), body));
+    }
+
+    [Fact(Timeout = 20_000)]
     public async Task MatchingOpenGivesEligibleOwnerTheLastSlotEvenWhenTheJoinerTriesFirst()
     {
         await using var rig = new Rig(singleModel: true);
@@ -545,7 +707,7 @@ public sealed class ExactTicketAdmissionTests
         await rig.PrepareAsync(joiner);
         rig.Publish("a", generation: 1, open: false);
         var owner = await rig.StageOwnerAsync();
-        await rig.AssertClosedOwnerCannotAuthorizeAsync(owner);
+        await rig.AssertOwnerCannotAuthorizeAsync(owner);
         Assert.False(rig.Router.TryDispatchOnce());
         Assert.Equal(0, rig.Admission.PhysicalUses);
         Assert.Empty(rig.Sink.ReceivedBodies);
@@ -612,7 +774,7 @@ public sealed class ExactTicketAdmissionTests
         await rig.PrepareAsync(joiner);
         rig.Publish("a", generation: 1, open: false);
         var owner = await rig.StageOwnerAsync();
-        await rig.AssertClosedOwnerCannotAuthorizeAsync(owner);
+        await rig.AssertOwnerCannotAuthorizeAsync(owner);
         Assert.False(rig.Router.TryDispatchOnce());
         Assert.Equal(0, rig.Sink.Calls);
         Assert.Equal(0, rig.Admission.PhysicalUses);
@@ -971,7 +1133,7 @@ public sealed class ExactTicketAdmissionTests
             Assert.False(await rig.SendStagedOwnerAsync(original).WaitAsync(rig.Token));
             if (!openBeforeRetirement)
             {
-                await rig.AssertClosedOwnerCannotAuthorizeAsync(replacement);
+                await rig.AssertOwnerCannotAuthorizeAsync(replacement);
                 var parkedOpen = rig.ArmJoinerAttempt(joiner);
                 rig.Publish("a", generation: 2, open: true);
                 await parkedOpen.WaitAsync(rig.Token);
@@ -1014,11 +1176,12 @@ public sealed class ExactTicketAdmissionTests
         private readonly FakeEngineHandler _discovery;
 
         internal Rig(Func<ExactTicketAdmission.Claim, CancellationToken, ValueTask<IAsyncDisposable?>>? prepare = null,
-                     Func<Task<HttpResponseMessage>>? respond = null, bool singleModel = false)
+                     Func<Task<HttpResponseMessage>>? respond = null, bool singleModel = false, int? slots = null)
         {
             _discovery = singleModel
                 ? new FakeEngineHandler { LoadedModels = ["a"], NCtx = 1_024, TotalSlots = 1 }
                 : new FakeEngineHandler { LoadedModels = ["a", "b", "c"] };
+            if (slots is { } limit) _discovery.TotalSlots = limit;
             Sink = new AdmissionFixtureSink(respond);
             Admission = new ExactTicketAdmission(Prepare, (request, _) => Sink.AcceptAsync(request));
             Admission.AfterPreparationForTests = (claim, ready) => Prepared[claim.Ticket.Id].TrySetResult(ready);
@@ -1069,7 +1232,7 @@ public sealed class ExactTicketAdmissionTests
         {
             var engine = Router.Engines["fixture"];
             var before = engine.Capability;
-            await engine.ProbeHealthOnceAsync(Token).WaitAsync(Token);
+            Assert.True(await engine.ProbeHealthOnceAsync(Token).WaitAsync(Token));
             var after = engine.Capability;
             Assert.Equal(before.Version + 1, after.Version);
             Assert.True(after.Healthy);
@@ -1109,9 +1272,16 @@ public sealed class ExactTicketAdmissionTests
 
         internal ExactTicketAdmission.Claim StartOwnerPreparation()
         {
-            const string id = "staged-owner";
+            var owner = CaptureOwner("a", "staged-owner");
+            Assert.True(Admission.StageOpeningOwnerForTests(owner));
+            Admission.Prepare(owner);
+            return owner;
+        }
+
+        internal ExactTicketAdmission.Claim CaptureOwner(string model, string id)
+        {
             var thread = Router.RegisterThread(id, ThreadPriority.High());
-            var ticket = new RouterTicket(id, thread.ThreadId, "a", Clock.GetUtcNow());
+            var ticket = new RouterTicket(id, thread.ThreadId, model, Clock.GetUtcNow());
             var request = new QueuedRequest
             {
                 Ticket = ticket,
@@ -1122,40 +1292,38 @@ public sealed class ExactTicketAdmissionTests
                 PromptChars = 5,
                 Request = new InferenceRequest
                 {
-                    Model = "a",
-                    Body = """{"model":"a","prompt":"owner"}"""u8.ToArray(),
+                    Model = model,
+                    Body = Payload(model, "owner"),
                     Options = new RouterRequestOptions { MaxQueueTime = TimeSpan.FromHours(1) },
                 },
             };
             Started[ticket.Id] = new(TaskCreationOptions.RunContinuationsAsynchronously);
             Prepared[ticket.Id] = new(TaskCreationOptions.RunContinuationsAsynchronously);
-            var owner = Assert.IsType<ExactTicketAdmission.Claim>(
-                Admission.Capture(request, new ExactTicketAdmission.Route("fixture", "a", null),
+            return Assert.IsType<ExactTicketAdmission.Claim>(
+                Admission.Capture(request, new ExactTicketAdmission.Route("fixture", model, null),
                     switchRequired: false, explicitContext: 0));
-            Assert.True(Admission.StageOpeningOwnerForTests(owner));
-            Admission.Prepare(owner);
-            return owner;
         }
 
-        internal async Task AssertClosedOwnerCannotAuthorizeAsync(ExactTicketAdmission.Claim owner)
+        internal ExactTicketAdmission.Invocation? AdmitStagedOwner(ExactTicketAdmission.Claim owner) =>
+            Admission.AuthorizeOpeningOwnerForTests(owner, Router.Engines[owner.Target.Engine]);
+
+        internal async Task AssertOwnerCannotAuthorizeAsync(ExactTicketAdmission.Claim owner)
         {
-            var closedGrant = Admission.AuthorizeOpeningOwnerForTests(owner, availableSlots: 1, window: 1_024);
+            var deniedGrant = AdmitStagedOwner(owner);
             try
             {
-                Assert.Null(closedGrant);
+                Assert.Null(deniedGrant);
             }
             finally
             {
-                if (closedGrant is not null) await closedGrant.AbortAsync();
+                if (deniedGrant is not null) await deniedGrant.AbortAsync();
             }
         }
 
         internal async Task<bool> SendStagedOwnerAsync(ExactTicketAdmission.Claim owner,
                                                        AdmissionFixtureBarrier? responseHeld = null)
         {
-            var current = Router.Engines["fixture"].ReadDispatchObservation();
-            var invocation = Admission.AuthorizeOpeningOwnerForTests(owner, current.SlotLimit - current.Inflight,
-                current.Capability.Serving.WindowFor(owner.Target.Model));
+            var invocation = AdmitStagedOwner(owner);
             if (invocation is null) return false;
             try
             {
@@ -1191,7 +1359,7 @@ public sealed class ExactTicketAdmissionTests
         internal bool CanJoinerTake(RouterTicket ticket)
         {
             lock (Admission.Gate)
-                return Admission.CanTake(Claims[ticket.Id], availableSlots: 1, window: 1_024);
+                return Admission.CanTake(Claims[ticket.Id], Router.Engines["fixture"].ReadDispatchObservation());
         }
 
         internal void Hold(AdmissionFixtureBarrier barrier) => barrier.HoldAsync(Token).GetAwaiter().GetResult();

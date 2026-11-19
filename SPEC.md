@@ -1,6 +1,6 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.72)
+Status: draft, continuously revised (v0.12.73)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
@@ -352,11 +352,25 @@ daemon transaction per engine. 137 tests green.
   that answers no `upload_url`, an upload that dies or answers no asset id, an asset name listed twice on
   the release, and a tag that moves after the first resolve. No tag has run the gate: still configured,
   not proven.
+- v0.12.73 — Add the standalone offline host successor checkpoint and effect ledger.
+  The checkpoint retains exact launch, stop and frozen successor evidence across process death.
+  The fake ledger verifies residency and separates send, acceptance, attempt and applied records
+  across restart without granting production host authority (§5.3.1, TASK-110).
 - v0.12.72 — qualify exact-ticket admission with an offline sender and bounded preparation.
   A retirement wake revisits deferred staged preparation before an ordinary route can reserve
-  the freed slot. Repeated aborts share retirement completion, and a submitted use stays counted
-  if disposal fails. A dispatcher entering its wait during teardown uses the router's already
-  captured shutdown token (§5.5, TASK-64).
+  the freed slot. Model and profile routes share the engine's physical permit budget. Repeated
+  aborts share retirement completion, and a submitted use stays counted if disposal fails.
+  A dispatcher entering its wait during teardown uses the router's captured shutdown token
+  (§5.5, TASK-64).
+- v0.12.71 — order local inference sends and each health read against engine shutdown.
+  A timed-out send retains its client through late response cleanup. Shutdown attempts
+  lifecycle cleanup even if local HTTP close faults. Switch readiness delivery and timing
+  proof remain separate from local send permission (§5.5).
+- v0.12.70 — both non-enrolled switch paths use one monotonic post-launch deadline through
+  complete observations and guarded settlement. Expired or retired reads release their I/O
+  without publishing. The terminal decision retains a completed in-budget failure diagnosis.
+  A joined caller sees its committed outcome after event delivery, including when the caller's
+  wait expires or engine shutdown wakes it (§5.5, TASK-126).
 - v0.12.69 — read-only switch refusal restores an incumbent's serving tuple only while its exact
   claim has no serving contradiction. Late evidence from that claim can first withdraw serving
   capacity and then withdraw roster health on a model contradiction (§5.5, TASK-68).
@@ -1473,9 +1487,12 @@ serializes switches per engine and uses the selector's exit status before checki
   from blocking the selector. A nonzero exit fails the switch.
 - `select.wait_timeout_ms` defaults to 7,200,000 ms. A selector timeout kills the process tree
   (`Kill(entireProcessTree: true)`) and reports `timeout_after_<ms>ms` on `engine.switch_failed`.
-- After a successful exit, readiness follows `select.wait_health` and its wait timeout. Even with
-  `wait_health = false`, the model-list refresh must report the requested model. The runtime
-  clears the switching state when the attempt ends (§5.5).
+  The value `-1` gives the selector process an unlimited exit wait.
+- After a successful exit, the router starts a separate readiness budget from
+  `select.wait_timeout_ms`. A value of `-1` expires this budget before its first read.
+  Use a positive value to allow post-exit readiness. Even with `select.wait_health = false`,
+  a fresh model-list response must report the requested model. The runtime clears the
+  switching state when the attempt ends (§5.5).
 
 #### 5.3.1 Container-native lifecycle (partly implemented)
 
@@ -1558,15 +1575,17 @@ removed. A create, start or readiness failure can leave the target container beh
 path has no rollback and no persistent target quarantine. The scheduler considers only healthy
 engines for an automatic switch, so `auto_switch` alone cannot load the first model on a cold engine.
 
-With `wait_health = true` (the Docker default), readiness requires a passing health probe and a
-model list containing the canonical target. For an explicit profile target, a known context window
-must meet the profile minimum. A missing context value can pass because an unknown gauge is accepted,
-and a previous gauge may survive a probe that omits the field (TASK-68). The runtime does not match
-the reported slot count to the profile. The probes reach the configured endpoint and carry no proof
-that its responder is the container ID returned by Docker (TASK-118). With `wait_health = false`,
-the runtime still refreshes the model list and requires the target. The native provider's verification
-uses fake providers and fake Docker HTTP responses. A live model swap has its own acceptance work
-(TASK-112).
+On the non-enrolled Docker path, the post-launch readiness budget comes from
+`docker.wait_timeout_ms` (default 600,000 ms). A value of `-1`, zero, or any negative value
+expires before the first readiness read. Use a positive value to give the new process
+time to prove readiness. With `wait_health = true` (the default), readiness requires a
+passing health probe and a model list containing the canonical target. With
+`wait_health = false`, the runtime still refreshes the model list and requires the target.
+A named profile requires a fresh measured window bound to that model and large enough
+for the profile. The non-enrolled runtime does not match reported total slots to the
+profile. Its probes reach the configured endpoint without an exact-container binding
+(TASK-118). The native provider's verification uses fake providers and fake Docker HTTP
+responses. A live model swap has its own acceptance work (TASK-112).
 
 **Target container-runtime interface.** The remaining design adds a fakeable, cancellable
 `IContainerRuntime` below the provider seam:
@@ -1667,6 +1686,39 @@ publication. Foreign or unknown occupancy refuses the switch without a provider 
 Public configuration and the request dispatcher do not construct this binding. The dedicated
 single-engine restriction for explicit native ownership still applies.
 
+**Offline successor checkpoint (TASK-110).** The standalone store uses a separate stable lock and a
+versioned, bounded effect checkpoint. Only explicit provisioning creates genesis. Reopen requires a
+valid installed checkpoint. Old applied snapshots, route stages and temporary files cannot reseed it.
+Each transition checks the installed predecessor under the lock, flushes a complete replacement and
+installs it atomically. A failed or ambiguous write fences that handle. A new holder reads the actual
+installed version. These guarantees cover cooperating processes and trusted local storage through
+process death.
+
+One checkpoint retains the incumbent's exact launch and binds the next epoch, exact stop and frozen
+successor plan before dispatch. Prepared stop may abort before dispatch. A dispatched stop can retain
+the incumbent only with a matching before-issue rejection and an independently supplied fence against
+delayed delivery. An applied stop needs the exact receipt and independent stopped-instance evidence.
+Only that phase can prepare the recorded successor, and its applied launch needs the matching receipt
+and independent operation-to-instance binding. Unknown effects preserve the same dispatch intent.
+A settled resident's launch epoch equals the checkpoint epoch. A retained or transitioning incumbent
+can come from an earlier launch epoch. Every applied launch after the initial one retains its matching
+predecessor stop. The standalone store checks evidence identity and records the validated disposition.
+Its caller must obtain an independent effect or rejection fence from the authority that can prove it.
+The checkpoint contains no evidence provenance for physical authority or takeover audit. Worker I/O,
+runtime routing and admission remain on their existing paths. Production enrollment is disabled.
+
+The successor ledger fixture records submissions, worker acceptances, daemon attempts and applied
+records in separate journals. These are synthetic evidence roles and can share a fixture process.
+The fake worker holds one fence through the issue decision and daemon entry. A durable never-issue
+record bars delayed delivery and lets the worker finish a missing canonical rejection terminal under
+that fence. A contradictory terminal remains installed. An issue decision with no terminal reply blocks
+retain-A and further dispatch. Applied recovery matches the terminal and fake daemon effect. Launch
+recovery also reads installed residency and checks the complete launch, group and enrollment of the
+non-foreign resident. Stops compare the exact incumbent and creates recheck vacancy at fake daemon
+entry. Records stage in unique temporary files and publish atomically. Reopen ignores unpublished
+records and holds on corrupt installed evidence. These controls exercise subprocess death in trusted
+fixture storage. They supply no production authority or inference permit evidence.
+
 **Production evidence.** The raw Docker inventory can report known foreign containers. Even an
 empty inventory leaves vacancy unproven, and raw Docker supplies no terminal receipt for an
 unacknowledged router operation ID. Positive authority requires independently verified enrollment,
@@ -1750,23 +1802,43 @@ engine forks land; the scheduler interface will not change shape.
   retiring work. Cancellation, expiry, supersession and shutdown signal retirement. Work
   that ignores cancellation still occupies its preparation slot until it settles. A parked
   scan wakes on published state and checks its revision after arming. Its wait uses the
-  captured shutdown token even if teardown has already disposed the source.
+  captured shutdown token even if teardown has already disposed the source. Public `Start`
+  schedules its loop without retaining the task. The offline fixture joins the loop it starts.
   Closing the route fences authorization. An authorized invocation counts before its first
   byte. Cancellation can release it early only by atomically preventing submission. The
   injected invocation owns the response through consumption and disposal, then finishes
-  prepared-resource cleanup before releasing the permit. A cleanup fault leaves a submitted
-  use counted. An abort that claims an unstarted invocation prevents submission, and further
+  prepared-resource cleanup before releasing the permit. Each engine shares one physical
+  budget across its routes and charges an ordinary use once while it occupies both the
+  logical and physical counts. A cleanup fault leaves a submitted use counted after its
+  logical request ends and emits `request.cleanup_failed` independently of the ticket result.
+  An abort that claims an unstarted invocation prevents submission, and further
   abort calls wait on the same cleanup result. Execution that arrives after that abort waits
   for cleanup and ends as cancellation. The injected sender is under fixture
-  control and does not exercise the production response timeout. In the one-slot fixture an
-  exact staged owner has first opportunity when its generation opens. Cancellation, expiry or
-  failed preparation hands the slot to the ordinary joiner. The staged owner holds no counted use
-  while closed. When a prior attempt or a full preparation table blocks an exact staged owner,
+  control and does not exercise the production response timeout. An engine has at most one
+  staged owner. An eligible owner has first opportunity for its final free permit when the
+  owner's route opens in the same generation. Cancellation, expiry or failed preparation hands
+  the slot to an ordinary joiner. The staged owner holds no counted use while closed.
+  When a prior attempt or a full preparation table blocks an exact staged owner,
   a dispatcher wake reconsiders that request. An eligible owner waiting for capacity gets the
   first available preparation slot ahead of ordinary routes. An ordinary preparation rechecks
   that priority under the admission gate, including when a slot opens after the scan starts.
   Production admission still needs the enrolled host and verified transport. Production owner
   promotion and late cleanup remain TASK-25.
+- **Engine-local send permission.** A historical switch result may still be delivered after
+  engine shutdown. Entry to the upstream HTTP sender requires a separate claim under the
+  transition gate that records the stop. If stop wins, the request settles as cancelled
+  before reaching the sender. If the send claim wins, its local client remains owned through
+  response disposal or a late send fault after a caller-facing timeout. An ordinary health
+  round claims each GET under the same stop gate and stops when admission is refused, even
+  if an earlier request keeps the client open. Cancellation of the poll loop bars a new
+  round. An admitted round keeps its poll timeout and publication fences. Client disposal
+  follows the last counted inference send or ordinary health GET. Switch readiness
+  observations retain their separate deadline and cancellation rules. Shutdown still
+  attempts lifecycle cleanup if HTTP close faults. Deferred cleanup cannot
+  change a ticket's terminal response. Model-only forwarding uses the same check with
+  an optional timing proof. Verified host admission and physical backend retirement
+  retain their separate authority and evidence requirements.
+
 - **Measured switch ordering.** The built-in scheduler can compare consecutive eligible switch candidates
   of equal queue depth and request priority on one configured native Docker engine. It needs an idle engine
   with a current proof for a single incumbent. The comparison ends at the first eligible route outside the
@@ -1923,6 +1995,25 @@ engine forks land; the scheduler interface will not change shape.
   still running, so a set that says why an attempt *stopped* does not reach it, and the caller is quoted their own
   ceiling and the engine's state and never the other request's target. The request-side wait ceiling of §5.4 sits
   inside that scoping; it is not a ninth name.
+  **Post-launch readiness has one monotonic deadline.** On the non-enrolled switch path,
+  the provider's readiness timeout starts after a successful launch. It covers the complete
+  models and state observations, including response bodies and parsing, any poll delay, and the
+  guarded proof decision. At equality the attempt is expired. A zero or negative readiness
+  timeout expires before the first read, including `-1`. The delegated selector's process-exit wait
+  and the request's own switch wait keep their existing meanings. With `wait_health = false`,
+  model-only readiness still requires a fresh roster naming the target. A named tier also needs
+  a fresh bound window. If its shorter state cap expires first, the attempt refuses
+  `window_too_small` while late I/O retires. At the guard, stop or absolute expiry can
+  supersede an earlier step-cap result until the terminal outcome commits. A fresh attempt
+  may observe independently while the retired read disposes. At overall expiry, the guard keeps the
+  last completed in-budget diagnosis, including an omission, failed model-list refresh, or measured
+  window mismatch on the trust path. Evidence first returned at or after the deadline cannot supply
+  the diagnosis. Late reads cannot publish proof, change serving capacity in either attempt, or
+  change the terminal outcome.
+  A stop under the claim guard wins while readiness is pending.
+  An already committed readiness outcome is delivered to its own joined waiter after the outcome
+  event, even if engine shutdown or the waiter's timeout wakes it first. Caller cancellation
+  can still leave that wait, and shutdown closes dispatch.
   **The readiness window names what its last poll saw.** A `wait_health = true` switch ends unsatisfied three ways,
   and they are three refusals rather than one timeout: an engine that never answered the probe is `health_timeout`
   (**retry later** — it may answer next time); an engine that stayed up and never reported the target is
@@ -2585,6 +2676,8 @@ the feed excerpt and error prose, and a size policy for admin responses generall
 - `request.streaming_first_token {ticket, engine, msFromEnqueue}`
 - `request.completed {ticket, engine, tokens, msFromEnqueue, msFromFirstToken}`
 - `request.failed/cancelled/deadline_exceeded {ticket, reason}`
+- `request.cleanup_failed {ticket, thread, engine, model, reason}` — offline admission cleanup fault,
+  reported independently of the ticket's terminal result
 - `engine.health {engine, healthy, loadedModels}`
 - `engine.switch_started/completed/failed {engine, model, profile, ms}`
 - `queue.rejected {thread, model, reason}` — refused before joining a queue; `reason` is `queue_overflow` or

@@ -42,6 +42,7 @@ public sealed class RouterCore : IInferenceRouter
     internal Action<RouterTicket>? BeforeAdmissionPreparationForTests;
     internal Action<bool>? BeforeDispatchParkForTests;
     internal Action<Task>? AfterDispatchParkForTests;
+    internal TimeProvider ResponseTimeoutClockForTests = TimeProvider.System;
 
     public RouterCore(RouterConfig config, IRequestScheduler? scheduler = null, EventRing? events = null)
         : this(config, scheduler, events, TimeProvider.System)
@@ -69,7 +70,7 @@ public sealed class RouterCore : IInferenceRouter
             _threads[id] = new RouterThread(id, td.Priority, td.Weight, td.ModelAffinity);
         _capabilitySources = [.. _engines.Values];
         _admission = admission;
-        admission?.Attach(_engines.Count, _clock, SignalDispatch);
+        admission?.Attach(_engines.Count, _clock, SignalDispatch, ReportAdmissionCleanupFailure);
     }
 
     public EventRing Events => _events;
@@ -550,8 +551,7 @@ public sealed class RouterCore : IInferenceRouter
                         return new(TakeResult.Ineligible);
                     window = observation.Capability.Serving.WindowFor(candidate.Ticket.Model);
                 }
-                var availableSlots = observation.SlotLimit - observation.Inflight;
-                if (window < stamped.ExplicitContext || !admission.CanTake(stamped, availableSlots, window))
+                if (window < stamped.ExplicitContext || !admission.CanTake(stamped, observation))
                     return new(TakeResult.Ineligible);
             }
 
@@ -614,12 +614,21 @@ public sealed class RouterCore : IInferenceRouter
         }
         finally
         {
-            engine.EndRequest(candidate.PromptChars);
+            EndEngineRequest(candidate, engine, invocation);
             candidate.Thread.DecrementInflight();
             Fail(candidate.Ticket, "cancelled", "router is shutting down");
             ReleaseExecutionCancellation(candidate.Ticket);
             SignalDispatch();
         }
+    }
+
+    private static void EndEngineRequest(QueuedRequest candidate, EngineRuntime engine,
+                                         ExactTicketAdmission.Invocation? invocation)
+    {
+        if (invocation is null)
+            engine.EndRequest(candidate.PromptChars);
+        else
+            invocation.EndOrdinaryUse(engine, candidate.PromptChars);
     }
 
     // The router creates this source before enqueue. Detaching it transfers the router's
@@ -755,7 +764,7 @@ public sealed class RouterCore : IInferenceRouter
         {
             if (ended) return;
             ended = true;
-            engine.EndRequest(candidate.PromptChars);
+            EndEngineRequest(candidate, engine, invocation);
         }
         try
         {
@@ -805,18 +814,13 @@ public sealed class RouterCore : IInferenceRouter
                 ticket.StreamChannel ??= Channel.CreateUnbounded<ReadOnlyMemory<byte>>(
                     new UnboundedChannelOptions { SingleReader = true, SingleWriter = true });
             }
+            var ownsForward = false;
             try
             {
                 using var cts = CancellationTokenSource.CreateLinkedTokenSource(_shutdownToken, execCts.Token);
                 var body = ModelRewriter.Rewrite(candidate.Request.Body, engine.CanonicalModel(ticket.Model) ?? ticket.Model);
                 var suffix = LooksLikeCompletion(candidate.Request.Body) ? "completions" : "chat/completions";
 
-                // The cap bounds the wait for the engine to *answer*: the whole response body for a
-                // non-stream call, the first byte of the body for a stream. Response headers are not an
-                // answer — an engine may send 200 and then go quiet, and holding a slot, a ticket and a
-                // caller through that is what this cap exists to prevent. Once the owed bytes are in hand
-                // the gate is disarmed and a long generation runs to its end: one gate per request, not
-                // per token.
                 if (invocation is not null)
                 {
                     using var request = MakeUpstreamRequest(engine, body, suffix);
@@ -828,6 +832,21 @@ public sealed class RouterCore : IInferenceRouter
                     return;
                 }
 
+                if (!engine.TryBeginForward(cts.Token))
+                {
+                    Fail(ticket, "cancelled", "cancelled");
+                    return;
+                }
+                ownsForward = true;
+                if (engine.AfterForwardAdmissionForTests is { } afterAdmission)
+                    await afterAdmission().ConfigureAwait(false);
+
+                // The cap bounds the wait for the engine to *answer*: the whole response body for a
+                // non-stream call, the first byte of the body for a stream. Response headers are not an
+                // answer — an engine may send 200 and then go quiet, and holding a slot, a ticket and a
+                // caller through that is what this cap exists to prevent. Once the owed bytes are in hand
+                // the gate is disarmed and a long generation runs to its end: one gate per request, not
+                // per token.
                 var responseTimeout = engine.ResponseTimeout;
                 if (responseTimeout is null)
                 {
@@ -841,7 +860,7 @@ public sealed class RouterCore : IInferenceRouter
                     // delay, Task.WhenAny would report the delay as the winner, and a caller who hung up
                     // would be answered `engine_timeout` instead of `cancelled`. It runs on its own source,
                     // which is disarmed when the request ends or when the engine delivers what it owed.
-                    using var gate = new ResponseGate(responseTimeout.Value);
+                    using var gate = new ResponseGate(responseTimeout.Value, ResponseTimeoutClockForTests);
                     var delay = Task.Delay(Timeout.Infinite, gate.Token);
                     var send = SendAsync(engine, body, suffix, ticket.Model, servingProof, cts.Token);
                     HttpResponseMessage? res = null;
@@ -877,11 +896,8 @@ public sealed class RouterCore : IInferenceRouter
                         res?.Dispose();
                         if (res is null)
                         {
-                            _ = send.ContinueWith(static t =>
-                            {
-                                if (t.Status == TaskStatus.RanToCompletion) { t.Result.Dispose(); }
-                                else { _ = t.Exception; }
-                            }, TaskScheduler.Default);
+                            ownsForward = false;
+                            _ = DisposeLateForwardAsync(engine, send);
                         }
                     }
 
@@ -906,6 +922,7 @@ public sealed class RouterCore : IInferenceRouter
             }
             finally
             {
+                if (ownsForward) engine.EndForward();
                 engine.RecordPrefix(candidate.Messages());
             }
         }
@@ -937,6 +954,34 @@ public sealed class RouterCore : IInferenceRouter
             ReleaseExecutionCancellation(ticket);
             DecrementOnce();
             SignalDispatch();          // wake dispatch AFTER both capacity counts are released
+        }
+    }
+
+    private void ReportAdmissionCleanupFailure(ExactTicketAdmission.Claim claim, Exception error) =>
+        _events.Append(new RouterEvent
+        {
+            Kind = "request.cleanup_failed",
+            ThreadId = claim.Ticket.ThreadId,
+            TicketId = claim.Ticket.Id,
+            Engine = claim.Target.Engine,
+            Model = claim.Target.Model,
+            Reason = error.Message,
+        });
+
+    private static async Task DisposeLateForwardAsync(EngineRuntime engine, Task<HttpResponseMessage> send)
+    {
+        try
+        {
+            using var response = await send.ConfigureAwait(false);
+        }
+        catch (Exception)
+        {
+            // The logical ticket already owns the timeout/error outcome. Observe this late
+            // send and retain the local client through response disposal.
+        }
+        finally
+        {
+            engine.EndForward();
         }
     }
 
@@ -1010,7 +1055,7 @@ public sealed class RouterCore : IInferenceRouter
         private readonly CancellationTokenSource _cts;
         private int _passed;
 
-        public ResponseGate(TimeSpan dueIn) => _cts = new CancellationTokenSource(dueIn);
+        public ResponseGate(TimeSpan dueIn, TimeProvider clock) => _cts = new CancellationTokenSource(dueIn, clock);
         public CancellationToken Token => _cts.Token;
         public void Pass() { Interlocked.Exchange(ref _passed, 1); _cts.Cancel(); }
         public bool Tripped => Volatile.Read(ref _passed) == 0 && _cts.IsCancellationRequested;

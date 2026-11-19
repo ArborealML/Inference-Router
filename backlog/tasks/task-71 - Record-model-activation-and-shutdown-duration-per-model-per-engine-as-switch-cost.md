@@ -3,11 +3,11 @@ id: TASK-71
 title: >-
   Record model activation and shutdown duration per model per engine as switch
   cost
-status: Ready for Review
+status: Done
 assignee:
-  - '@gpt-6.2-sol-scheduling'
+  - '@gpt-6.2-astra'
 created_date: '2026-11-18T01:22:00Z'
-updated_date: '2026-11-18T23:23:00Z'
+updated_date: '2026-11-19T06:09:00Z'
 labels: []
 milestone: m-5
 dependencies:
@@ -24,12 +24,12 @@ Switch cost stops being an assumption. Per model per engine, the router already 
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Activation and shutdown durations are measured per model per engine from a switch's own timings, not read from config
-- [ ] #2 The same arrivals pick a different model once the measured cost changes, pinned, so the number is an input to the choice and not a report
-- [ ] #3 Under bounded offered load, stale estimates or a single sample cannot postpone an eligible aged model past the documented scheduling bound. A deterministic test observes its successful dispatch.
-- [ ] #4 SPEC 5.5 or 7 says what the numbers mean and what they never decide alone
-- [ ] #5 5 Each stage is recorded as its own value, an unobserved stage is distinguishable from a zero, and a failed or cancelled attempt is still recorded with its outcome
-- [ ] #6 After a known eviction, discard the warm estimate. Report measured reload time for a matching cold profile, or report unknown when no matching observation exists. A fixture covers both outcomes.
+- [x] #1 Activation and shutdown durations are measured per model per engine from a switch's own timings, not read from config
+- [x] #2 The same arrivals pick a different model once the measured cost changes, pinned, so the number is an input to the choice and not a report
+- [x] #3 Under bounded offered load, stale estimates or a single sample cannot postpone an eligible aged model past the documented scheduling bound. A deterministic test observes its successful dispatch.
+- [x] #4 SPEC 5.5 or 7 says what the numbers mean and what they never decide alone
+- [x] #5 5 Each stage is recorded as its own value, an unobserved stage is distinguishable from a zero, and a failed or cancelled attempt is still recorded with its outcome
+- [x] #6 After a known eviction, discard the warm estimate. Report measured reload time for a matching cold profile, or report unknown when no matching observation exists. A fixture covers both outcomes.
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -43,5 +43,5 @@ Implement attempt-scoped monotonic stage observations with missing and failed ou
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-The [integrated scheduler](https://github.com/ArborealML/Inference-Router/commit/a77d50a) commits the exact thread-admissible ticket selected. The combined scheduling and capacity candidate passed 241 Release cases. Its review follow-up passed 250 with zero skips. In the single-eligible-engine fixture, reducing token load from 8192 to zero at equal inflight count preserved the winning ticket and native launch. A shutdown sample now requires the prior launch to match both the stopped peer and the incumbent sample key. A mismatched model and stop statuses 304, 404 and 409 produced no comparable duration. First forwarding records a send attempt. Independent review precedes integration. TASK-26 owns native conflict policy. Compare observed durations against real handoffs by host, engine version, digest and effective config. Evaluate retention against workloads. Physical admission, verified routing, deadline enforcement and live swaps retain separate gates.
+Landed in [PR #3](https://github.com/ArborealML/Inference-Router/pull/3) after independent review and green hosted CI. Single-engine cost dispatch changes the winning ticket when only measured activation changes. The inclusive thirty-second age boundary protects eligible work. Stage records distinguish absent, zero, incomplete and failed measurements; reload after eviction uses matching fresh samples or reports unknown. Multi-engine placement and production host authority retain their separate tasks.
 <!-- SECTION:NOTES:END -->
