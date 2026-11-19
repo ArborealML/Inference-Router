@@ -7,7 +7,7 @@ status: Waiting
 assignee:
   - '@gpt-6.2-astra'
 created_date: '2026-11-18T18:15:00Z'
-updated_date: '2026-11-19T14:35:00Z'
+updated_date: '2026-11-19T14:37:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -19,7 +19,7 @@ ordinal: 109000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Hosted checks and pending verifier and wording reviews on [PR #31](https://github.com/ArborealML/Inference-Router/pull/31) wake the coordinator. Docs-only head bb8d4ac resolves the attribution finding on 11e5677: three lane assertions and one raw zero-SHM refusal expectation changed. The sweep at 80febe5 measured 10,150 distinct vectors, and the smoke passed at fb16200. Parent CI passed. Disposal, fixed-lane and raw refusal reviews passed. [PR #30](https://github.com/ArborealML/Inference-Router/pull/30) landed 75 normalized defaults. Unified configuration, alternate reconfiguration, protected credential bind, published ports and host authority remain open.
+The verifier review and hosted build and test job on [PR #31](https://github.com/ArborealML/Inference-Router/pull/31) wake the coordinator. Independent review accepted the docs-only wording on bb8d4ac: three lane assertions and one raw zero-SHM refusal expectation changed. Its board and release-gate checks passed. The sweep at 80febe5 measured 10,150 distinct vectors, and the smoke passed at fb16200. Disposal, fixed-lane and raw refusal reviews passed. [PR #30](https://github.com/ArborealML/Inference-Router/pull/30) landed 75 normalized defaults. Unified configuration, alternate reconfiguration, protected credential bind, published ports and host authority remain open.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
