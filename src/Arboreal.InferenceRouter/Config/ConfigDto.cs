@@ -178,4 +178,5 @@ internal sealed partial class ConfigTomlContext : TomlSerializerContext;
 /// <summary>JSON twin parser (same DTOs, STJ source generation).</summary>
 [JsonSourceGenerationOptions(GenerationMode = JsonSourceGenerationMode.Metadata)]
 [JsonSerializable(typeof(ConfigDto))]
+[JsonSerializable(typeof(DockerDto))]
 internal sealed partial class ConfigJsonContext : JsonSerializerContext;

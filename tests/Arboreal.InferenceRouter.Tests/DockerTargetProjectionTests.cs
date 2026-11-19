@@ -12,6 +12,7 @@ public sealed class DockerTargetProjectionTests
     private const string SwiftOptions = "resident-budget-gib=40 conversation-cache-slots=4  rope-scaling=none";
     private const string QwenTier = """{ name = "256k-4", max_context = 256000, max_slots = 4, docker = { env = ["FAMILY=qwen"] } }""";
     private const string TargetJson = """{"name":"256k-4","max_context":256000,"max_slots":4,"docker":{"env":["FAMILY=qwen"]}}""";
+    private const string OptedCatalogJson = "\"qwen\":{\"serving\":[" + TargetJson + "]}";
 
     private static readonly string[] ConcurrentEnv =
         ["COMMON=qwen:concurrent:strata", "STRATA_SET=conversation-cache-slots=4", "LITERAL={{profile}}", "EMPTY="];
@@ -316,6 +317,76 @@ public sealed class DockerTargetProjectionTests
         Assert.StartsWith("engine", error.Message, StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData(""" "lifecycle_owner":"external", """, "lifecycle_owner")]
+    [InlineData(""" "Lifecycle_Owner":"external", """, "lifecycle_owner")]
+    [InlineData(""" "remote":true,"remote":null, """, "remote")]
+    [InlineData(""" "Remote":true, """, "remote")]
+    [InlineData(""" "lifecycle":"exec","lifecycle":"docker", """, "lifecycle")]
+    [InlineData(""" "Lifecycle":"exec", """, "lifecycle")]
+    public void OptedJsonRefusesShadowedLifecycleAuthority(string authority, string field)
+    {
+        var error = Assert.Throws<RouterConfigException>(() => LoadJson(OptedCatalogJson, authority: authority));
+        Assert.StartsWith($"engine.strata.{field} ", error.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("qwen")]
+    [InlineData("other")]
+    public void OptedJsonRefusesASelectErasedFromAnyCatalogModel(string model)
+    {
+        const string shadowed = """ "select":{"exec":"/usr/bin/fixture-selector"},"select":null """;
+        var catalog = model == "qwen"
+            ? $$$""" "qwen":{ {{{shadowed}}},"serving":[{{{TargetJson}}}]} """
+            : OptedCatalogJson + $$""","other":{ {{shadowed}} }""";
+        var error = Assert.Throws<RouterConfigException>(() => LoadJson(catalog));
+        Assert.StartsWith($"engine.strata.catalog.{model}.select ", error.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(""","Env":["COMMON=ignored"]""", "env")]
+    [InlineData(""","env":["COMMON=valid"],"Env":["COMMON=twin"]""", "env")]
+    [InlineData(""","Host_Port":18021""", "host_port")]
+    public void OptedJsonRefusesNoncanonicalCommonDockerMembers(string common, string field)
+    {
+        var error = Assert.Throws<RouterConfigException>(() => LoadJson(OptedCatalogJson, common));
+        Assert.StartsWith($"engine.strata.docker.{field} ", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void LegacyJsonKeepsExistingAuthorityAndCommonDockerParsing()
+    {
+        var engine = LoadJson(""" "qwen":{"select":{"exec":"/usr/bin/fixture-selector"},"select":null} """,
+            ""","env":["COMMON=retained"],"Env":["COMMON=ignored"]""",
+            """ "lifecycle_owner":"external","remote":true,"remote":null,"lifecycle":"exec","lifecycle":"docker", """);
+        Assert.Equal(EngineLifecycleOwner.Router, engine.LifecycleOwner);
+        Assert.Null(engine.Catalog["qwen"].Select);
+        using var daemon = new FakeDockerDaemonHandler();
+        using var provider = new DockerLifecycleProvider(engine.Docker!, "strata", daemon);
+        var request = provider.BuildCreateRequest(Selection(engine, "qwen"), engine.Docker!.ImageIdentity!);
+        Assert.Equal("COMMON=retained", Assert.Single(request.Env!));
+        Assert.Empty(daemon.Requests);
+    }
+
+    [Theory]
+    [InlineData("x{{profile}}", "tier")]
+    [InlineData("qwen{{profile}}", "tier{{endpoint}}")]
+    public void OptedCommonTemplatesKeepPlaceholderSyntaxInResolvedIdentifiers(string model, string profile)
+    {
+        var engine = LoadJson($$$""" "{{{model}}}":{"serving":[{"name":"{{{profile}}}","max_context":100,"docker":{"env":["TARGET={{profile}}"]}}]} """,
+            ""","command":["{{model}}","{{profile}}","{{endpoint}}","{{unknown}}"],"env":["MODEL={{model}}"]""");
+        using var daemon = new FakeDockerDaemonHandler();
+        using var provider = new DockerLifecycleProvider(engine.Docker!, "strata", daemon);
+        var request = provider.BuildCreateRequest(Selection(engine, model), engine.Docker!.ImageIdentity!);
+        Assert.Equal(model, request.Labels[DockerLifecycleProvider.LabelModel]);
+        Assert.Equal(profile, request.Labels[DockerLifecycleProvider.LabelProfile]);
+        Assert.Collection(request.Cmd!, item => Assert.Equal(model, item), item => Assert.Equal(profile, item),
+            item => Assert.Equal("strata", item), item => Assert.Equal("{{unknown}}", item));
+        Assert.Collection(request.Env!, item => Assert.Equal($"MODEL={model}", item),
+            item => Assert.Equal("TARGET={{profile}}", item));
+        Assert.Empty(daemon.Requests);
+    }
+
     [Fact]
     public void ATargetRequiresAUsableEngineDockerDeclaration()
     {
@@ -357,10 +428,10 @@ public sealed class DockerTargetProjectionTests
             {{{catalog}}}
             """).Engines["strata"];
 
-    private static EngineDefinition LoadJson(string catalog, string common = "") =>
+    private static EngineDefinition LoadJson(string catalog, string common = "", string authority = "") =>
         RouterConfigLoader.Load($$$$"""
             {"engine":{"strata":{
-              "kind":"openai-compatible","endpoint":"http://127.0.0.1:18021","lifecycle_owner":"router",
+              "kind":"openai-compatible","endpoint":"http://127.0.0.1:18021",{{{{authority}}}}"lifecycle_owner":"router",
               "docker":{"image":"{{{{ImageId}}}}","image_id":"{{{{ImageId}}}}","image_repo_digest":"{{{{RepoDigest}}}}",
                         "image_platform":"linux/amd64","router_id":"test-router"{{{{common}}}} },
               "catalog":{ {{{{catalog}}}} }

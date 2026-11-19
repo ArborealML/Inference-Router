@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Arboreal.InferenceRouter.Lifecycle;
 
 namespace Arboreal.InferenceRouter;
@@ -8,7 +9,7 @@ internal sealed record DockerTargetLaunch(string Model, string Profile, Immutabl
     ImmutableArray<string> Env, ImmutableArray<DockerBind> Binds);
 
 /// <summary>Immutable Docker create inputs. They describe launch intent, not a verified serving instance.</summary>
-internal sealed class DockerTargetPlans
+internal sealed partial class DockerTargetPlans
 {
     private sealed record ModelPlans(string Canonical, string? DefaultProfile,
         ImmutableDictionary<string, DockerTargetLaunch> Profiles);
@@ -96,12 +97,12 @@ internal sealed class DockerTargetPlans
 
         var command = ImmutableArray.CreateBuilder<string>();
         foreach (var value in docker.Command ?? [])
-            command.Add(Expand(value ?? throw new RouterConfigException("Docker command entries must be strings"),
+            command.Add(ExpandTargetTemplate(value ?? throw new RouterConfigException("Docker command entries must be strings"),
                 model, profile, engine));
         var env = ImmutableArray.CreateBuilder<string>();
         var names = new HashSet<string>(StringComparer.Ordinal);
         foreach (var value in docker.Env ?? [])
-            AddEnv(value is null ? null : Expand(value, model, profile, engine));
+            AddEnv(value is null ? null : ExpandTargetTemplate(value, model, profile, engine));
         foreach (var value in tier?.Env ?? [])
             AddEnv(value);
 
@@ -135,6 +136,19 @@ internal sealed class DockerTargetPlans
              .Replace("{{profile}}", profile, StringComparison.Ordinal)
              .Replace("{{endpoint}}", engine, StringComparison.Ordinal);
 
+    // Expand only placeholders in the original common template. An identifier may itself contain
+    // placeholder syntax, and its exact spelling is also used in the resolved create labels.
+    private static string ExpandTargetTemplate(string value, string model, string profile, string engine) =>
+        TargetPlaceholders().Replace(value, match => match.Value switch
+        {
+            "{{model}}" => model,
+            "{{profile}}" => profile,
+            _ => engine,
+        });
+
+    [GeneratedRegex(@"\{\{(?:model|profile|endpoint)\}\}", RegexOptions.CultureInvariant)]
+    private static partial Regex TargetPlaceholders();
+
     // Walk each occurrence before STJ can discard a shadowed opt-in. Only ancestors of an
     // actual tier block receive the new strictness. JSON structural names use schema casing.
     internal static void CheckJson(JsonElement root)
@@ -158,6 +172,7 @@ internal sealed class DockerTargetPlans
                     CheckMember(root, "engine", "engine");
                     CheckMember(engines.Value, engine.Name, enginePath, exactKey: true);
                     CheckMember(engine.Value, "catalog", $"{enginePath}.catalog");
+                    CheckAuthority(engine.Value, catalog.Value, enginePath);
                     CheckMember(catalog.Value, model.Name, modelPath, exactKey: true);
                     CheckMember(model.Value, "serving", $"{modelPath}.serving");
                     CheckMember(model.Value, "aliases", $"{modelPath}.aliases");
@@ -179,6 +194,21 @@ internal sealed class DockerTargetPlans
         }
     }
 
+    private static void CheckAuthority(JsonElement engine, JsonElement catalog, string enginePath)
+    {
+        CheckMember(engine, "lifecycle_owner", $"{enginePath}.lifecycle_owner");
+        CheckMember(engine, "remote", $"{enginePath}.remote");
+        CheckMember(engine, "lifecycle", $"{enginePath}.lifecycle");
+        // A delegated select on any model conflicts with native ownership of this engine.
+        foreach (var model in Properties(catalog))
+        {
+            if (!Members(model.Value, "select").Any()) continue;
+            var path = $"{enginePath}.catalog.{model.Name}";
+            CheckMember(catalog, model.Name, path, exactKey: true);
+            CheckMember(model.Value, "select", $"{path}.select");
+        }
+    }
+
     private static void CheckCommonDocker(JsonElement engine, string path)
     {
         CheckMember(engine, "docker", $"{path}.docker");
@@ -186,6 +216,8 @@ internal sealed class DockerTargetPlans
         {
             if (docker.ValueKind != JsonValueKind.Object)
                 throw new RouterConfigException($"{path}.docker must be an object");
+            foreach (var field in ConfigJsonContext.Default.DockerDto.Properties)
+                CheckMember(docker, field.Name, $"{path}.docker.{field.Name}");
             DockerLaunchResources.CheckJsonTree(docker, $"{path}.docker");
         }
     }

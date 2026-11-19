@@ -2388,18 +2388,21 @@ comparison. Its omitted selection uses its declared default or its sole tier. Mu
 require a default, and `profile` and `default_profile` must agree if both are present.
 
 The loader freezes the effective inputs for each tier of an opted-in model. Only engine-wide
-`command` and `env` expand `{{model}}`, `{{profile}}` and `{{endpoint}}`. Tier assignments
-are literal and follow common assignments in the payload. Assignments use a portable
+`command` and `env` expand `{{model}}`, `{{profile}}` and `{{endpoint}}` in the original
+template. Replacements are literal identifiers. Tier assignments are literal and follow
+common assignments in the payload. Assignments use a portable
 `KEY=value` name and permit empty values. Duplicate names after common expansion are refused.
 Common mounts precede target mounts. Destinations in the combined list must be distinct and
 may not overlap. Effective sources and destinations cannot cover protected control directories.
 These checks are lexical. Host qualification verifies the actual mounted paths and access modes.
 Device requests, image pins, network bindings and limits remain engine-wide.
 
-JSON requires canonical schema casing and rejects shadowed ancestry, duplicate target members,
-unknown target settings and explicit null values in a target tier. TOML uses the parser's existing
-case-insensitive property matching and rejects duplicate target members. Existing configurations
-without tier Docker declarations retain their previous behavior.
+For engines using tier Docker declarations, JSON requires canonical casing for recognized
+common Docker fields and rejects shadowed ownership settings, delegated selectors and target
+ancestry. It also rejects duplicate or unknown target members and explicit null values in a
+target tier. TOML uses the parser's existing case-insensitive property matching and rejects
+duplicate target members. Existing configurations without tier Docker declarations retain
+their previous behavior.
 
 Requirements: comments preserved for round-tripping is **not** required;
 schema errors fail fast at boot with path-precise messages; unknown engine
