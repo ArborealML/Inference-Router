@@ -91,6 +91,8 @@ public partial class RefusalCategoryTests
         "SwitchResult.Failed(SwitchReason.SwitchError));")]
     [InlineData(RecordedExit, ": new ObservedSwitchResult(woke ? SwitchResult.FailedFromRecord(state.FailureReason) : " +
         "SwitchResult.FailedFromRecord(state.FailureReason));")]
+    [InlineData(RecordedDefault, "Failed( /* fallback */ recorded is { Length: > 0 } why ? why : SwitchReason.SwitchError )")]
+    [InlineData(ReadinessWrite, "state.FailureReason  =  /* mapped category */ failure.Reason;")]
     public void SourceAuditAcceptsBenignSyntax(string before, string after)
     {
         var (source, _) = MutateEngineRuntime(before, after);
@@ -153,7 +155,8 @@ public partial class RefusalCategoryTests
             switch (node)
             {
                 case InvocationExpressionSyntax call when call.Span == fallback?.Span:
-                    if (!call.IsEquivalentTo(RecordedFallback)) Reject(ViolationKind.RecordedDefault, call);
+                    if (!SyntaxFactory.AreEquivalent(call, RecordedFallback, topLevel: false))
+                        Reject(ViolationKind.RecordedDefault, call);
                     break;
                 case InvocationExpressionSyntax call:
                     var violation = CheckFactoryCall(call);
@@ -165,7 +168,7 @@ public partial class RefusalCategoryTests
                     Reject(ViolationKind.CloneWrite, assignment);
                     break;
                 case AssignmentExpressionSyntax assignment when WritesRecordedReason(assignment.Left):
-                    if (assignment.IsEquivalentTo(MappedWrite) &&
+                    if (SyntaxFactory.AreEquivalent(assignment, MappedWrite, topLevel: false) &&
                         assignment.Ancestors().OfType<MethodDeclarationSyntax>().FirstOrDefault()?.Span == finishReadiness?.Span &&
                         finishReadiness is not null)
                     {
@@ -178,7 +181,7 @@ public partial class RefusalCategoryTests
                     }
                     break;
                 case BaseObjectCreationExpressionSyntax creation when ConstructsFailedResult(creation):
-                    if (creation.IsEquivalentTo(FailedConstruction) &&
+                    if (SyntaxFactory.AreEquivalent(creation, FailedConstruction, topLevel: false) &&
                         creation.Parent is ReturnStatementSyntax { Parent: BlockSyntax { Parent: MethodDeclarationSyntax method } } &&
                         method.Span == failed?.Span)
                     {
@@ -223,7 +226,8 @@ public partial class RefusalCategoryTests
             return call.Expression is MemberAccessExpressionSyntax { Name: IdentifierNameSyntax } && IsNamedReason(argument)
                 ? null : ViolationKind.DirectCall;
         return (call.Expression is IdentifierNameSyntax or MemberAccessExpressionSyntax { Name: IdentifierNameSyntax }) &&
-            argument?.IsEquivalentTo(RecordedReason) == true ? null : ViolationKind.RecordedCall;
+            argument is not null && SyntaxFactory.AreEquivalent(argument, RecordedReason, topLevel: false)
+            ? null : ViolationKind.RecordedCall;
     }
 
     private static bool ConstructsFailedResult(BaseObjectCreationExpressionSyntax creation)
