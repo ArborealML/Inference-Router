@@ -1,6 +1,6 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.73)
+Status: draft, continuously revised (v0.12.94)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
@@ -352,10 +352,71 @@ daemon transaction per engine. 137 tests green.
   that answers no `upload_url`, an upload that dies or answers no asset id, an asset name listed twice on
   the release, and a tag that moves after the first resolve. No tag has run the gate: still configured,
   not proven.
+- v0.12.94 — keep named option operands out of the `air chat` and `air complete` user message,
+  read stdin when no positional arguments remain, and document the direct HTTP client (§11).
+- v0.12.93 — project matching TCP exposure for published ports on engines with per-tier Docker
+  plans or engine-wide offline launch options (§7).
+- v0.12.92 — project tier-specific Docker shared memory for twelve default HyperQwen parking
+  targets offline, with common shared memory inherited on omission (§7).
+- v0.12.91 — project an explicit single-device NVIDIA request per offline serving tier for
+  six HyperQwen targets, with ordered common GPU selection inherited on omission (§7).
+- v0.12.90 — the offline immediate-host callback orders host acceptance, completion and
+  returned refusal with shutdown (§5.3.1).
+- v0.12.89 — engine shutdown withdraws current health and readiness even when idle and retains
+  the last observed model roster (§5.5).
+- v0.12.88 — project Docker init, unless-stopped restart, daemon-default log rotation and matching
+  exposed ports offline for eight paired-GPU HyperQwen targets (§7).
+- v0.12.87 — offline Docker serving tiers can replace the common container command with literal
+  arguments. General DeepSeek projects eight numeric context arguments without changing tier names (§7).
+- v0.12.86 — qualify original-launch deadline equality, exact proof binding and guarded Open in
+  the offline enrolled host fixture (§5.3.1, TASK-110, TASK-126).
+- v0.12.85 — offline Docker serving tiers support explicit read-only nested binds and checked
+  health probe timeout and retries. The Maya-XS 32k projection remains behind the tier gate (§7).
+- v0.12.84 — offline Docker serving tiers accept profile aliases that resolve to the same
+  canonical launch plan. Default tiers and activation gates retain their existing rules (§7).
+- v0.12.83 — bind an offline admitted ticket's effective launch intent, final JSON and upstream
+  credential policy to its verified resident and single-use stream. Separate logical outcome
+  from issuer retirement, keep unsettled physical use counted and report independent
+  cleanup faults. Caller cancellation interrupts the pending header read (§5.3.1, §5.5, §7.6).
+- v0.12.82 — qualify closed-route staging through verified publication refusal, drain disposal
+  and explicit fresh-generation open in the offline host coordinator fixture (§5.3.1, TASK-110).
+- v0.12.81 — offline Docker create projection supports literal serving-tier health checks and
+  checked Docker timing fields. Health-only tiers keep the native startup and mutation gate (§5.3.1, §7).
+- v0.12.80 — offline Docker create projection supports a literal image entrypoint and host IPC
+  for a native engine. Either declaration gates engine startup and Docker mutations (§5.3.1, §7).
+
+- v0.12.79 — Exercise closed-generation physical retirement across controller death in the
+  offline host fixture. The exact backend terminal and successful write seal both precede a
+  successor stop (§5.3.1, TASK-110).
+- v0.12.78 — offline Docker create projection resolves memory and total memory plus swap per
+  serving tier. The two values inherit or replace as a pair, and target-enabled mutation remains
+  gated (§5.3.1, §7).
+
+- v0.12.77 — qualify offline one-shot transport over a host-issued, preauthenticated serving
+  stream. First write requires the exact issued grant and its verified route and invocation.
+  The single-host issuer refuses reuse, and the exchange retains its permit through
+  issuer-confirmed cleanup (§5.3.1, TASK-130).
+- v0.12.76 — Qualify independent partition vacancy and owner evidence for the offline
+  successor fixture. Prepared operations requery after restart and uncertain dispatch stays fenced
+  (§5.3.1, TASK-110).
+- v0.12.75 — preserve the exact ticket's explicit context minimum through dispatch and
+  post-launch model readiness. Joined waiters apply their own minimum to the observed
+  window. Bound an idle switch claim to eight superseded capability observations and
+  the caller's original wait budget, including initial lock acquisition. An injected
+  host switch requiring measured capacity refuses before host effects (§5.5, §7.6, TASK-68).
+- v0.12.74 — native Docker configuration resolves per-serving-profile environment and mounts for
+  offline create projection (§5.3.1, §7). Canonical model and profile select immutable launch
+  inputs. Engines with these declarations require separate host qualification before activation.
 - v0.12.73 — Add the standalone offline host successor checkpoint and effect ledger.
   The checkpoint retains exact launch, stop and frozen successor evidence across process death.
   The fake ledger verifies residency and separates send, acceptance, attempt and applied records
   across restart without granting production host authority (§5.3.1, TASK-110).
+- v0.12.72 — qualify exact-ticket admission with an offline sender and bounded preparation.
+  A retirement wake revisits deferred staged preparation before an ordinary route can reserve
+  the freed slot. Model and profile routes share the engine's physical permit budget. Repeated
+  aborts share retirement completion, and a submitted use stays counted if disposal fails.
+  A dispatcher entering its wait during teardown uses the router's captured shutdown token
+  (§5.5, TASK-64).
 - v0.12.71 — order local inference sends and each health read against engine shutdown.
   A timed-out send retains its client through late response cleanup. Shutdown attempts
   lifecycle cleanup even if local HTTP close faults. Switch readiness delivery and timing
@@ -1562,6 +1623,21 @@ effective resource inspection, artifact and live instance identity, and reconcil
 an uncertain create while the host reservation is held. It also requires verification of
 read-only bind enforcement for nested mounts.
 
+Native serving tiers can declare literal commands, environment, mounts, memory limits, a single
+NVIDIA device, shared memory and Docker health checks for offline create projection. Each of
+these settings gates engine activation and native mutations across the engine's catalog. The Docker provider refuses with
+`docker_target_not_qualified` before any write.
+A coordinated switch may first read ownership.
+The resolved payload describes launch intent. Serving readiness, host authority and exact-instance
+request delivery require separate proof. Docker health check metadata and status grant no AIR
+readiness, capacity or admission authority.
+
+An engine-wide entrypoint override or host IPC declaration also requires offline-only validation.
+Either one prevents runtime startup before provider binding or enrollment. The provider checks
+unqualified serving tiers first, then launch options with `docker_launch_options_not_qualified`,
+then unqualified resources. All three refusals precede Docker writes. A coordinated switch may
+first read ownership.
+
 A preflight refusal leaves existing containers untouched and can retain a still-valid incumbent
 discovery proof (§5.5). The provider refuses unavailable or unauthorized daemon access without
 escalating. Once stop begins, a failure can leave some peers stopped or
@@ -1713,6 +1789,115 @@ entry. Records stage in unique temporary files and publish atomically. Reopen ig
 records and holds on corrupt installed evidence. These controls exercise subprocess death in trusted
 fixture storage. They supply no production authority or inference permit evidence.
 
+The successor vacancy fixture models one enrolled partition with a separate source of partition
+facts. Exact incumbent ownership and causal retirement permit the prepared stop to progress. Before
+a successor submission, a new query must prove complete coverage and vacancy for the enrolled
+partition. The query binds the enrollment, controller and worker generations, the incumbent's full
+immutable launch operation and plan, the exact checkpoint stop effect, the transition epoch and the
+frozen successor plan. The owner and retirement evidence bind that same launch. Under the same fence
+as every modeled writer, the worker compares the installed stop effect and current coverage and owner
+generations before daemon entry. A change and restore invalidates the old observation. Missing
+preflight proof leaves `StopApplied` without a successor
+submission. Refusal at daemon entry can leave a durable submission and acceptance, with no attempt
+or applied effect. Prepared stop and launch requery on reopen and keep their recorded identity.
+Reopened dispatch reconciles only the exact operation. A recovered stop requires a new vacancy
+query. A recovered launch uses its exact terminal and effect. The retirement and partition evidence
+are synthetic. Production enrollment remains disabled.
+
+**Offline first write (TASK-130).** The issuer transfers an authenticated application stream
+bound to one invocation. The transport validates the route and invocation before connecting its
+HTTP/1.1 serializer. The first nonempty application write presents the exact grant for that stream.
+The single-host issuer fixture permits one checkout per invocation and consumes the issued grant
+once. It rejects an unissued grant even when the invocation and stream match. The exchange closes
+the grant it receives and awaits terminal permit cleanup. The issuer owns the cleanup of a grant
+it withholds. In the substitution fixture, the issuer explicitly revokes and closes the withheld
+original grant, and the peer observes EOF with zero bytes. Production enrollment still requires
+frozen request body and authorization binding, durable issuance and authoritative physical
+retirement.
+
+The offline causal-drain fixture uses the verified transport and a surviving issuer with one
+generation. The issuer orders closure and first-write authorization under one gate and revokes
+an otherwise authorizable prepared grant. The open control sends its exact bytes with one permit.
+Closing first sends zero bytes, acquires no permit and seals the granted channel. An authorized
+write paused before backend delivery remains a physical use after the synthetic caller timeout.
+The fake backend authors terminal evidence from the delivered request and its independently seeded
+channel identity. A backend-authored grant mismatch cannot release the permit. The successful
+no-more-write seal and matching terminal retire the use once. A fresh controller
+queries the surviving issuer after its predecessor dies. Unresolved retirement leaves the exact
+stop prepared and issues nothing. Before dispatch and at daemon entry the fixture checks the
+installed closed-frontier witness and independent owner evidence. After the stop it still needs
+fresh vacancy to create the frozen successor. The replacement route remains closed. Serving process
+identity is checked for consistency within the issuer's fixture binding. Independent process
+attestation remains a production host and verified-dispatch requirement. Enrolled admission, issuer
+crash recovery and live host authority remain outside this qualification.
+
+The offline host coordinator fixture can start a fresh switch or recover a matching applied
+launch. A fresh switch preserves the old route through untouched preflight. Exact applied-launch
+recovery closes the old route before the first occupancy query, including when that query cannot
+prove the replacement. The fixture stages a closed route against the applied launch and its
+original plan. The guarded state decision runs with minting closed, and completion runs outside
+the short guard. Publication refusal, cancellation, staging I/O failure, failed completion or
+failed drain disposal leaves the routes closed and retains the applied launch. A new coordinator
+can reverify that launch and stage a fresh generation without another stop or create. Only
+explicit Open of the still-current completed generation enables the test issuer to grant a permit
+and send. The applied record remains after success. Enrolled runtime, deadline enforcement and
+production activation remain outside this qualification.
+
+The internal deadline fixture bridge takes the timeout from the validated applied launch plan.
+One attempt starts before the exact post-drain identity check and reserves its closed route
+before reading instance-bound evidence. The bridge stages that route before calling the runtime
+guard. A committed decision must return the same proof stored for the closed route under the
+guard. Its runtime attempt and full target must match the claim's captured identities before delivery.
+The guard may use the closed-route and Open callbacks once, during their synchronous calls.
+A valid decision survives completion, cleanup or notification faults, and the final result
+records whether the route opened. Completion notifications can arrive while minting is closed.
+After cleanup, only an accepted exact Open sends the definitive dispatch wake. A recovery request
+cannot keep a superseded route open by naming a different target. The recovered-launch fixture uses the
+runtime waiter and terminal path with injected bound evidence. It exercises an in-budget
+commit, one timeout at equality without timer delivery, and fresh verification of the same
+applied launch. Ordinary enrolled intake retains its capacity guard and production activation
+remains gated.
+
+In the older injected immediate-host fixture, proof publication remains provisional while the
+switch marker is raised. The host records acceptance with a synchronous store under the runtime
+transition lock. A stop before that store vetoes acceptance. A stop after it can still win the
+runtime terminal decision. Completion or a returned refusal
+selects the terminal outcome under the same transition lock as stop. The selected outcome
+is notified outside that lock, and a later cleanup failure cannot replace it. A stopped runtime
+refuses first-send admission even if the fake host already recorded acceptance.
+
+**Offline verified dispatch (TASK-118).** An injected resident proof binds the committed
+route generation, exact instance and serving incarnation, launch epoch, captured configuration
+and effective Docker plan, canonical model and tier, measured window and slots. Parsed Docker
+create settings and the image manifest/platform pin describe launch intent. Projection uses
+the captured config and binds its effective endpoint. The independently verified fixture resident
+supplies matching instance evidence and measured capacity. Resident reuse requires the same
+engine and canonical model as well as the resident's exact tier. A retired
+generation stays closed. Only a fresh verified availability publication can rearm a spent
+transient preparation and wake dispatch. The issuer orders closure against authorization for the
+first nonempty application write. An authorization that wins remains counted through retirement.
+
+The exact ticket's preparation freezes the method, effective URI, JSON media type, rewritten
+UTF-8 body and upstream credential policy including its epoch. Validation rejects malformed,
+duplicate and case-shadowed model fields before rewriting. A present raw model must match the
+captured requested spelling under the catalog's case-insensitive comparison. An omitted model
+uses the captured resolution. The rewritten object must name the exact canonical model once.
+The offer admits only the bound Authorization and optional matching Host request headers and
+the exact application/json content type. A disagreement refuses before checkout. Only the
+frozen request values reach the verified serializer. The same transport worker exposes the
+primary result and typed terminal evidence. Caller cancellation reaches the pending header
+read on the borrowed channel. The worker retains responsibility for grant and permit cleanup.
+A submitted use releases once after conclusive no-transfer, confirmed grant return or
+issuer-confirmed retirement, together with successful preparation cleanup. Ambiguous checkout,
+unconfirmed issuer retirement and failed preparation cleanup preserve the count even after
+logical failure. Stream close and permit retirement independently contribute issuer evidence.
+A response-disposal failure is reported even when issuer retirement is confirmed. When
+preparation cleanup succeeds, the use still releases.
+The verified path reports one redacted cleanup event for faults or unconfirmed retirement
+and preserves the original logical result. Standalone exchanges preserve each observed
+cleanup exception alongside any primary send failure. Engine-local stop authority has no
+issuer bridge in this fixture.
+
 **Production evidence.** The raw Docker inventory can report known foreign containers. Even an
 empty inventory leaves vacancy unproven, and raw Docker supplies no terminal receipt for an
 unacknowledged router operation ID. Positive authority requires independently verified enrollment,
@@ -1780,11 +1965,48 @@ engine forks land; the scheduler interface will not change shape.
 
 ### 5.5 Queue semantics
 
+The offline verified binding revalidates the still-current exact preparation and route generation
+before removing a ticket on a strict binding refusal. A stale result cannot settle its replacement.
+Temporary capacity loss parks the ticket. A definitive refusal settles once without a queue timer.
+
 - One global priority queue per (model-alias). Dispatch scans model queues by increasing
   observed depth, retaining queue order at equal depths. Each scheduler call evaluates the
   first ticket in that queue whose thread has capacity. Commit takes that exact ticket only
   while it is still first admissible. If the candidate is removed or displaced before commit,
   dispatch restarts the queue scan.
+- **Offline exact-ticket admission.** The injected sender qualifies the queue handshake.
+  Schedule outside the router lock. The host admission gate, router lock and model queue lock
+  order the live check and exact removal. Validate the ranked route generation, model-bound
+  window for an explicit minimum, free slots, thread room and original elapsed queue deadline.
+  Preparation owns no physical slot. A preparing head preserves its queue order and another
+  queue may progress. Each ticket may start one preparation per binding and route generation
+  and have only one outstanding attempt, including retirement. The scoped preparation limit is
+  the greater of two and the engine count at construction, shared by preparing, ready and
+  retiring work. Cancellation, expiry, supersession and shutdown signal retirement. Work
+  that ignores cancellation still occupies its preparation slot until it settles. A parked
+  scan wakes on published state and checks its revision after arming. Its wait uses the
+  captured shutdown token even if teardown has already disposed the source. Public `Start`
+  schedules its loop without retaining the task. The offline fixture joins the loop it starts.
+  Closing the route fences authorization. An authorized invocation counts before its first
+  byte. Cancellation can release it early only by atomically preventing submission. The
+  injected invocation owns the response through consumption and disposal, then finishes
+  prepared-resource cleanup before releasing the permit. Each engine shares one physical
+  budget across its routes and charges an ordinary use once while it occupies both the
+  logical and physical counts. A cleanup fault leaves a submitted use counted after its
+  logical request ends and emits `request.cleanup_failed` independently of the ticket result.
+  An abort that claims an unstarted invocation prevents submission, and further
+  abort calls wait on the same cleanup result. Execution that arrives after that abort waits
+  for cleanup and ends as cancellation. The injected sender is under fixture
+  control and does not exercise the production response timeout. An engine has at most one
+  staged owner. An eligible owner has first opportunity for its final free permit when the
+  owner's route opens in the same generation. Cancellation, expiry or failed preparation hands
+  the slot to an ordinary joiner. The staged owner holds no counted use while closed.
+  When a prior attempt or a full preparation table blocks an exact staged owner,
+  a dispatcher wake reconsiders that request. An eligible owner waiting for capacity gets the
+  first available preparation slot ahead of ordinary routes. An ordinary preparation rechecks
+  that priority under the admission gate, including when a slot opens after the scan starts.
+  Production admission still needs the enrolled host and verified transport. Production owner
+  promotion and late cleanup remain TASK-25.
 - **Engine-local send permission.** A historical switch result may still be delivered after
   engine shutdown. Entry to the upstream HTTP sender requires a separate claim under the
   transition gate that records the stop. If stop wins, the request settles as cancelled
@@ -1964,8 +2186,8 @@ engine forks land; the scheduler interface will not change shape.
   guarded proof decision. At equality the attempt is expired. A zero or negative readiness
   timeout expires before the first read, including `-1`. The delegated selector's process-exit wait
   and the request's own switch wait keep their existing meanings. With `wait_health = false`,
-  model-only readiness still requires a fresh roster naming the target. A named tier also needs
-  a fresh bound window. If its shorter state cap expires first, the attempt refuses
+  readiness requires a fresh roster naming the target. A selected tier or positive explicit context
+  minimum also needs a fresh bound window. If the shorter state cap expires first, the attempt refuses
   `window_too_small` while late I/O retires. At the guard, stop or absolute expiry can
   supersede an earlier step-cap result until the terminal outcome commits. A fresh attempt
   may observe independently while the retired read disposes. At overall expiry, the guard keeps the
@@ -1984,8 +2206,8 @@ engine forks land; the scheduler interface will not change shape.
   and they are three refusals rather than one timeout: an engine that never answered the probe is `health_timeout`
   (**retry later** — it may answer next time); an engine that stayed up and never reported the target is
   `refresh_omits` (**fix the configuration** — the catalog key has to match what the engine reports, and an alias is
-  the router's spelling, not the engine's); an engine serving the target in a window too small for the profile asked
-  for is `window_too_small` (**fix the configuration** — a ladder tier that fits, or a smaller profile). Under v0.12.41
+  the router's spelling, not the engine's); an engine serving the target below the required context window
+  is `window_too_small` (**fix the configuration** — supply a window that fits the request). Under v0.12.41
   all three were `health_timeout`: a permanent mismatch and a transient wait wearing one name, which is the exact
   distinction a retry decision exists to make. The expired window and its milliseconds stay on the feed at all three
   exits beside the names the engine reported and both sides of the comparison, so the grep key for an expired
@@ -2046,12 +2268,16 @@ engine forks land; the scheduler interface will not change shape.
   outcome events are emitted *before* the commit, so a dispatcher woken by them sees the marker still up and would
   otherwise not look at the queue again until the next health poll.
 - **The claim is decided and published from one snapshot, and a switch's end settles before it nudges.** The
-  readiness answer and the marker come from the **same** capability snapshot: the claim is an expected-version
-  compare-exchange on the version that decision read, and a lost exchange means something published while this
-  caller was deciding — so it re-decides on the newer snapshot, and a poll that proved the requested model
-  retires the claim instead of buying a second launch of a model already served. **A waiter is authorised at the
-  moment it resumes, not at the moment it was promised** — and what authorises it is the evidence this router has
-  about the engine, not a snapshot that has merely moved on. The readiness task settling and the switch state
+  readiness answer and the marker use the same capability snapshot. An idle offer captures it before
+  acquiring the switch and transition locks. If the compare-exchange loses or the idle answer is stale,
+  release both locks before re-deciding. A poll that proves the requested model can retire the offer.
+  After eight lost idle offers, return `switch_failed` with `switch_error` without starting a lifecycle
+  operation. The caller's original finite budget bounds every acquisition of the switch lock
+  and the subsequent decision to join an active claim or start an idle one. An immediately ready caller can
+  still use its current proof, and an already joined caller retains its committed outcome under the
+  delivery rules above. Caller cancellation and shutdown retain precedence.
+  **A waiter is authorised at the moment it resumes, not at the moment it was promised**. It uses the
+  evidence this router has about the engine at that point. The readiness task settling and the switch state
   clearing happen before a waiter is scheduled, so a successor can claim the engine in that window. A claim is one
   publication that takes health down, raises the marker, and says nothing at all about what the engine serves: it is
   somebody else's transaction starting. Withdrawing a proof this router published **itself** on that snapshot is
@@ -2096,8 +2322,10 @@ engine forks land; the scheduler interface will not change shape.
   the latch before joining or claiming a switch. Shutdown records `RouterStopped` for the installed attempt under that
   gate, then settles readiness and cancels the engine's switch token after releasing the gate. The linked tokens
   release callers waiting for the switch lock as well as for readiness. Either wake-up yields the same recorded
-  switch outcome. The transaction keeps its marker until it unwinds and clears the marker itself. A proof that has
-  not committed when shutdown wins is withdrawn before the marker clears. If readiness or failure committed first,
+  switch outcome. Shutdown also publishes a newer capability snapshot with health, health provenance,
+  windows, serving capacity and proof withdrawn. It retains the last reported model roster as history.
+  An idle engine stops answering model-only readiness as soon as this snapshot is published.
+  The transaction keeps its marker until it unwinds and clears the marker itself. If readiness or failure committed first,
   that outcome remains available to its waiter under the ordinary resume rules. At expiry the same gate answers from
   those rules first. A caller that would still need another claim then receives `RouterStopped` if shutdown has
   latched, even if the foreign attempt it waited on has already finished. The public switching flag is derived
@@ -2232,8 +2460,8 @@ by the whole poll interval — the benchmark harness measured exactly that befor
 `X-Inference-Thread: agent-42`, `X-Inference-Priority: high:200`
 (`class[:sub]`), `X-Inference-Affinity: <normalized-prefix-hash>` (optional,
 server-side prefix normalization is authoritative anyway (§7.6),
-`X-Inference-Required-Context: <tokens>` (declares the context the request must
-be served under; absent ⇒ the router estimates from prompt chars, §7.6). Every admitted request
+`X-Inference-Required-Context: <tokens>` declares a positive measured context minimum for the
+request. With the header absent, the prompt estimate informs serving-tier selection (§7.6). Every admitted request
 carries its ticket id back on the response as `X-Inference-Ticket`, which is how a client reaches
 `GET|DELETE /admin/tickets/{id}` (watch / cancel) without scraping the event stream. Body-only
 callers (default thread `anon`, priority Normal) work unchanged.
@@ -2380,6 +2608,44 @@ default_profile = "32k-2"
 serving = [{ name = "32k-2", max_context = 32768, max_slots = 2 }]
 ```
 
+**Optional offline Docker launch options.** In `[engine.<name>.docker]`, set `entrypoint` to one
+literal, clean absolute Linux executable path inside the image. AIR sends it as a one-element
+Docker `Entrypoint` array. `command` still supplies the separate Docker `Cmd` argument array.
+The executable path keeps its literal spelling and receives no host path lookup or template
+substitution. Set `ipc_mode = "host"` to project only Docker `HostConfig.IpcMode`. Other explicit
+IPC modes are invalid. Omission of either option leaves its Docker defaults in effect.
+
+JSON and TOML reject explicit nulls or duplicate launch options. JSON also rejects shadowed
+opt-in ancestry and ownership fields, and requires canonical field casing for opted-in engines.
+These options are available for offline projection only, even when the engine has no resources
+or per-tier launch declarations.
+
+For the paired-GPU HyperQwen launch options, set engine-wide Docker `init = true`,
+`restart = "unless-stopped"` and `log_rotation = { max_size = "20m", max_files = 3 }`
+independently. The create payload uses `HostConfig.Init`, `RestartPolicy` with a zero retry
+count, and `LogConfig` with an empty driver type. The daemon selects its default driver.
+The rotation size is a canonical positive Int32 decimal followed by lowercase `m`. The
+file count is a positive Int32. Both rotation fields are required. A supplied init or restart
+value must match the form above. Omitted options leave their fields absent from the payload.
+These keys belong in the engine's Docker block. A model-level Docker table containing any of
+them is invalid.
+
+For an engine that declares per-tier Docker plans or engine-wide offline launch options,
+`host_port` adds the corresponding container TCP key to root `ExposedPorts` with an empty
+object value. The same key in `HostConfig.PortBindings` supplies the configured host address
+and port. This applies to every model on the opted-in engine, including siblings that use
+only common settings. A bare port binding or one with only common resources omits the root
+field. Omitting `host_port` also omits root exposure.
+
+Where a launch plan freezes the serialized create request, the added exposure changes the
+launch settings digest and requires evidence for the new envelope. The existing Docker
+declarations gate startup and mutation across the engine, in serving-tier, launch-option,
+then resource refusal order. Docker policy describes create intent. Before
+activation, verify that the effective daemon log driver supports both `max-size` and
+`max-file`. Refuse activation if the driver or its support for either option is unknown
+or incompatible. Restart authority, image association and authenticated serving-instance
+admission also require host verification.
+
 **Optional Docker resources.** Use `[engine.<name>.docker.resources]` or the
 equivalent JSON object to validate a resource request offline. Keep the table omitted in
 an active native Docker configuration while resource-bearing activation is gated.
@@ -2397,6 +2663,107 @@ an active native Docker configuration while resource-bearing activation is gated
 An explicit resource object must contain a setting. The loader refuses unknown or
 duplicated resource fields and explicit JSON nulls. Bind sources are literal paths
 on the Docker host. The create request uses structured binds with source creation disabled.
+
+**Offline Docker settings per serving tier.** A structured serving entry on a native Docker engine
+can declare a command, environment assignments, binds, memory limits, a single NVIDIA device,
+shared memory or a Docker health check.
+TOML inline and nested tables and JSON objects use the same fields.
+
+```toml
+[[engine.strata.catalog."example.chat-v1".serving]]
+name = "64k-2"
+max_context = 65536
+max_slots = 2
+
+[engine.strata.catalog."example.chat-v1".serving.docker]
+env = ["CONTEXT=65536", "PARALLEL=2"]
+bind_mounts = [{ source = "/srv/example/weights", target = "/models", read_only = true }]
+```
+
+A tier's `docker.healthcheck` accepts a nonblank, control-free `command`. The optional
+`interval_ms`, `start_period_ms` and `timeout_ms` fields are integers in 1 through
+9,223,372,036,854. Each supplied duration becomes a signed 64-bit nanosecond value.
+Optional `retries` accepts a positive signed 32-bit integer. The top-level Docker `Healthcheck.Test` is
+`["CMD-SHELL", command]`, with the decoded command preserved literally. An absent probe or
+optional field is omitted from the create request to preserve Docker inheritance and defaults.
+The start period controls when failures count toward an unhealthy status. The health check is
+available only on a serving tier, and any declaration keeps the whole engine offline for projection.
+
+For an engine using this feature, model IDs and aliases match case-insensitively and must
+identify one canonical model. An opted-in model's serving names must be distinct under ordinal
+comparison. Its omitted selection uses its declared default or its sole tier. Multiple tiers
+require a default, and `profile` and `default_profile` must agree if both are present.
+
+A serving row with its own nonempty native Docker target may list explicit profile spellings
+in `aliases`, such as `aliases = ["max-4"]` on the `256k-4` row. Match aliases by ordinal
+comparison. Each alias must be nonblank and contain neither control characters nor edge whitespace.
+Within one model an alias must be unique among aliases and canonical tier names. The loader
+rejects null, empty or malformed lists and shadowed declarations in JSON and TOML.
+`profile` and `default_profile` use canonical names only. An unknown explicit spelling
+refuses resolution. Aliases share the canonical launch plan, template inputs and labels.
+The serving ladder and offline-only activation gate continue to use canonical tiers.
+
+The loader freezes the effective inputs for each tier of an opted-in model. A tier's
+`docker.command` replaces the common Docker `Cmd` in full. Supply a nonempty array of strings
+without NUL characters. Each argument preserves its literal text, including whitespace, empty
+strings and placeholder spellings. An omitted tier command inherits the common command. The
+loader validates common command arguments on an opted-in engine even when tiers override them.
+Only engine-wide `command` and `env` expand `{{model}}`, `{{profile}}` and `{{endpoint}}`
+in the original template. Replacements are literal identifiers. The entrypoint remains a
+separate engine-wide value. Tier environment assignments are literal and follow common
+assignments in the payload. Assignments use a portable
+`KEY=value` name and permit empty values. Duplicate names after common expansion are refused.
+Common mounts precede target mounts. Destinations in the combined list must be distinct.
+A tier bind may declare `nested_under` naming an exact, earlier bind destination that is a
+strict path-component ancestor. Both binds must be read-only, and the parent cannot itself be
+nested. Every other overlap is refused. Common bind entries have no `nested_under` field.
+The annotation is used during validation and omitted from Docker JSON. Effective sources
+and destinations must be outside protected control paths and their ancestors.
+These checks are lexical. Host qualification verifies actual mounted paths and effective read-only
+enforcement, including any recursive mounts.
+Image pins, network bindings and resource limits without tier fields remain engine-wide.
+
+A tier's `docker.gpu = { device_ids = ["1"] }` replaces the entire common NVIDIA request.
+Supply exactly one canonical numeric device ID as a string. Omission inherits the exact
+common selection, including device order or the all-GPU request. The loader validates the
+common request even when a tier replaces it. A tier NVIDIA request cannot coexist with
+common HIP `device_paths`. Use `gpu` only inside serving-tier `docker` or engine-wide
+`docker.resources`. A GPU-only tier opts the whole engine into the offline mutation gate.
+Before activation, verify the actual device mapping, toolkit and driver support, allocation
+and serving fit on the daemon host.
+
+A tier's `docker.shm_size_bytes` replaces Docker's common `ShmSize` with a positive Int64
+byte count. Omission inherits the common value or leaves the field absent. Common values
+remain validated even when overridden. JSON and TOML check the legal tier and common
+resource locations before binding and reject shadowed or misplaced declarations. An
+explicit tier null is invalid. A SHM-only tier opts the engine into the same offline gate.
+
+The HyperQwen selector's default 32-GiB application cache projects to 36 GiB of Docker
+shared memory. The selector's 1- and 48-GiB cache endpoints project to 5 and 52 GiB.
+Changing cache or sequence choices requires resolving and configuring another launch vector.
+Docker SHM describes the container limit. Before activation, verify the effective size
+and check available host RAM for the selected cache plus a 10-GiB reserve after the
+predecessor stops. Device mapping, effective logging, readiness and host authority remain
+independent qualifications.
+
+A tier's `docker.memory_bytes` and `docker.memory_swap_bytes` are exact 64-bit byte counts.
+Memory must be at least 6 MiB. `memory_swap_bytes` is total memory plus swap, at least the memory
+limit. Equal values permit no additional swap. The loader resolves the pair as follows.
+
+- With neither field, inherit the engine's entire memory pair.
+- With both fields, replace the entire engine pair.
+- With memory alone, set that memory limit and omit Docker's total only if the engine has no total.
+- A tier with only a total is invalid.
+
+Omitted values are absent from the Docker create request. Leave engine memory limits absent when
+some tiers need no explicit cap. Docker applies its defaults to omitted values.
+
+For engines using tier Docker declarations, JSON requires canonical casing for recognized
+common Docker fields and rejects shadowed ownership settings, delegated selectors and target
+ancestry. It also rejects duplicate or unknown target members and explicit null values in a
+target tier. TOML uses the parser's existing case-insensitive property matching and rejects
+duplicate target members. Existing configurations without tier Docker declarations retain
+their previous behavior.
 
 Requirements: comments preserved for round-tripping is **not** required;
 schema errors fail fast at boot with path-precise messages; unknown engine
@@ -2446,9 +2813,25 @@ and `health_probe.slots_path` to read those gauges. The probe checks described i
 
 Semantics:
 
-- **Demand estimate**: a request's required context is `options.required_context` when the
-  client declares it (the Pi extension can compute it exactly), else
-  `ceil(prompt_chars / scheduler.chars_per_token_estimate)` (default 4.0).
+- **Tier selection demand**: use a positive `options.required_context` when the client declares
+  it. Otherwise use `ceil(prompt_chars / scheduler.chars_per_token_estimate)` (default 4.0).
+- **Explicit context minimum**: a positive declaration stays with the exact selected ticket.
+  A loaded route needs a current measured window for that model at least as large as this
+  minimum, even without a named tier. Exact take revalidates the capability and slot
+  observation used for an explicit minimum or tier decision. A switch must prove a fresh
+  model-bound window that fits both the request's explicit minimum and any selected tier.
+  Trust mode reads fresh state for either requirement. Each joined waiter applies its own
+  minimum to the measured result, including when it receives a committed verdict after
+  shutdown. A same-target waiter whose minimum exceeds the committed window cannot use
+  that proof to forward. A tier label, static configuration and prompt estimates alone
+  supply no measured capacity. Offline verified dispatch requires a fitting positive measured
+  window and positive reported slots on an explicitly selected, resolved-default or reused
+  named resident profile. Public gauges and roster can veto eligibility. They supply no
+  additional authority. An ordinary request can reuse a fitting verified resident tier
+  independently of the catalog's launch default. The injected host path can attest to exact-instance roster
+  readiness today. A switch with an explicit minimum, selected named tier or a resolved
+  named default requires bound capacity evidence and refuses before entering the host
+  transaction until that evidence is supported.
 - **Admission**: an engine's live capacity is the *tighter* of
   `scheduler.max_inflight_per_engine` and the slots it reports (`total_slots`);
   until the gauge is known the configured ceiling alone applies. A profile
@@ -2457,7 +2840,8 @@ Semantics:
   A loaded model needs an observed window that meets that tier. A smaller reported window can
   trigger a switch when `auto_switch = true`. An unknown window on a loaded model leaves a
   capacity-dependent request waiting for evidence. A healthy loaded model can still serve a
-  request with no required profile. An engine whose ladder has no fitting tier is skipped.
+  request with neither an explicit minimum nor a required profile. An engine whose ladder has
+  no fitting tier is skipped.
   A failed switch returns `switch_failed` (§5.5, §6).
 - **Binding**: an engine-wide context window binds to a single non-alias, loaded roster row
   that matches a canonical catalog key case-insensitively. An additional upstream row with a
@@ -2642,6 +3026,8 @@ the feed excerpt and error prose, and a size policy for admin responses generall
 - `request.streaming_first_token {ticket, engine, msFromEnqueue}`
 - `request.completed {ticket, engine, tokens, msFromEnqueue, msFromFirstToken}`
 - `request.failed/cancelled/deadline_exceeded {ticket, reason}`
+- `request.cleanup_failed {ticket, thread, engine, model, reason}` — offline admission cleanup fault,
+  reported independently of the ticket's terminal result
 - `engine.health {engine, healthy, loadedModels}`
 - `engine.switch_started/completed/failed {engine, model, profile, ms}`
 - `queue.rejected {thread, model, reason}` — refused before joining a queue; `reason` is `queue_overflow` or
@@ -2666,8 +3052,8 @@ admin schema and casing (§15.1) is a prerequisite, not a follow-up.
 
 ```
 air serve [--config f.toml] [--listen url]
-air chat [--server url] [--thread id] [--priority high:200] [--model name] [prompt]
-air complete [--server url] [--thread id] [--priority high:200] [--model name] [prompt]
+air chat [--server url] [--thread id] [--priority high:200] [--model name] [--system text] [--no-stream] [--json] [prompt ...]
+air complete [--server url] [--thread id] [--priority high:200] [--model name] [--system text] [--no-stream] [--json] [prompt ...]
 air models [--server url]
 air switch --engine e --model m [--server url]
 air status [--server url]
@@ -2677,7 +3063,22 @@ air tickets id [--server url]
 air config [--config f.toml]
 ```
 
-`air chat` and its alias `air complete` send `POST /v1/chat/completions` and stream by default.
+`air serve` starts the router host in the CLI process. Client verbs construct HTTP requests and
+read the router's responses directly.
+
+`air chat` and its alias `air complete` send `POST /v1/chat/completions`. Use `-s` or `--server`
+for the base URL. `-m` or `--model` supplies the JSON `model` when nonempty. `-t` or `--thread`
+sets `X-Inference-Thread`, which defaults to `anon`. `-p` or `--priority` sets the optional
+`X-Inference-Priority` header. The request streams by default. `--no-stream` sets `stream` to
+`false`, and `--json` controls output rendering.
+
+Options can appear before, between or after positional words. Value options take a separate
+following argument with no leading dash. The first eligible value supplies each option, and
+the parser consumes every eligible operand, including repeated ones. The CLI joins the remaining
+positional arguments with single spaces. If none remain, it reads stdin to EOF and trims leading
+and trailing whitespace. The resulting prompt fills one `user` message. A nonempty `--system`
+value fills a separate `system` message before it.
+
 A streamed response exits 0 after `data: [DONE]` if it carried no error (§6).
 In text mode stdout contains the concatenated text deltas and a trailing newline. Stderr prints
 status changes from router keepalive comments and any in-band error payload. With `--json`, stdout
@@ -2695,9 +3096,6 @@ or the original JSON body and exits 0.
 serving profiles. It opens no sockets and runs no lifecycle commands. `status` reports each
 engine's active profile, context window and slot count alongside health, loaded models and
 in-flight count.
-
-Library-first: every CLI verb is a thin wrapper over `IInferenceRouter` or
-`RouterHttpClient`; no logic lives in the CLI layer.
 
 ## 12. Future architecture commitments
 
@@ -3092,7 +3490,7 @@ router robust until rows 2, 4 and 6 close.
 | Deep review of v0.12.9–v0.12.11 (release gate: artifact forgeries, cleanup ownership, the gh CLI contract) | **completed, dispositioned in v0.12.10–v0.12.12**: four artifact forgeries (an artifact named for two legs, a regex dot standing in for `air.exe`, an extra archive member, a symlink or directory wearing an expected name) are each reproduced as a forgery that passed the shipped gate and then fixed, and are standing cases in the local gate harness; cleanup ownership moved off `github.run_started_at` (not a documented Actions context property, so read as empty it protects nothing) to the release id this run captured; and the publish path moved to REST because `gh release create` has no `--json`/`--jq` (gh 2.46.0 fails at argument parsing) and `gh release view`/`edit` resolve their operand as a tag name, not a release id. The harness's stub `gh` was what let the contract error survive two reviews: it now enforces the documented flag set. **Accepted gap, and this is the row §14's published-surface bullet points at**: the gate compares each remote asset's name, `uploaded` state, byte size and GitHub's reported stored-bytes `digest` against the staged file, but never downloads the served bytes and hashes them itself — it proves what GitHub says it stored, not what a downloader receives. Closing that fully means a post-publish download-and-hash leg or a signing/attestation story, which is runner minutes plus a trust-anchor decision rather than a constant; the published per-archive sidecars and `SHA256SUMS` remain what a downloader verifies. **Deliberately not closed**: workspace-internal link tricks above the leg folder, PAX extension handling and decompression bounds in the archive inspection, and the window between re-resolving the tag and creating the release — `concurrency: release-${{ github.ref }}` serializes this repo's own runs, but no workflow line excludes an external actor with write access, so release-tag protection and who may publish are repository-settings decisions for the operator. |
 
 | Plan review of the publication-honesty fix set (TASK-61/62/63), before the code existed | **completed; the forced-CAS-retry pin is an accepted gap.** The claim's readiness answer and its switch marker come from one snapshot, and the marker goes up by a version compare-exchange on the version that answer read, so the raced second launch — a poll proving the model between the decision and the claim — is closed: the exchange loses, the caller re-decides on the newer snapshot, and the already-proved model is taken rather than launched again. **It is not pinned by a test.** Forcing the loser between its read and its exchange needs a seam in the middle of the claim's await-free gate region, which is more production surface than a race the code already excludes structurally is worth; the orderings that the same mechanism protects *are* pinned (marker-before-claim, a stale end cannot clear a successor's marker, a newcomer that arrives after the commit decides against an idle snapshot). Stated here rather than tested, so a reader knows which guarantee has a case and which has only the shape of the code. |
-| v0.12.34's resume rule, red on `main`, and the half v0.12.35 deliberately does not close | **the rule was wrong, not the test; fixed forward in v0.12.35, not reverted.** v0.12.34 sent a caller whose own switch *succeeded* back through the claim path whenever `IsReadyFor` read false, and `IsReadyFor` reads false while `SwitchingToward` is set — so the marker of a **later** claim withdrew a proof this router had itself published. Measured: CI on that commit 191/192, the one failure `SwitchFairnessTests.AWaiterBehindAnotherProfilesSwitchTakesItsOwnTurn` at that caller's own ceiling; the commit's own new pin reproduced failing with launches `extra, m, extra, m`, two callers wanting different models on one engine alternating lifecycle transactions. v0.12.35 keeps the Failed-once rule and the caller-facing category wording, and narrows the re-decide to an observation that actually contradicts the target (§5.5). **Accepted gap, and it is not closeable at the resume read:** a waiter answered `Ready` off its own proof holds an answer that can outlive the model — after the wait returns, the request is enqueued with no revalidation, so a re-read at resume could be stale before the engine ever sees the request. Closing it means the switch's own reservation ticket and admission closure (**TASK-25 AC #5**: a request authorised at admission cannot lose that authority between the wait returning `Ready` and the engine receiving it) together with **TASK-64 AC #3** (a ticket approved by an earlier scheduler pass is not dispatched to an engine claimed after that pass), and the policy that decides whose switch runs when callers want different models is the age-weighted drain (**TASK-72**). None of the three exists; closing the gap here with a fall-through trades a red build for a ping-pong. TASK-61 carries TASK-25 and TASK-72 as dependencies. |
+| v0.12.34's resume rule, red on `main`, and the half v0.12.35 deliberately does not close | **the rule was wrong, not the test; fixed forward in v0.12.35, not reverted.** v0.12.34 sent a caller whose own switch *succeeded* back through the claim path whenever `IsReadyFor` read false, and `IsReadyFor` reads false while `SwitchingToward` is set — so the marker of a **later** claim withdrew a proof this router had itself published. Measured: CI on that commit 191/192, the one failure `SwitchFairnessTests.AWaiterBehindAnotherProfilesSwitchTakesItsOwnTurn` at that caller's own ceiling; the commit's own new pin reproduced failing with launches `extra, m, extra, m`, two callers wanting different models on one engine alternating lifecycle transactions. v0.12.35 keeps the Failed-once rule and the caller-facing category wording, and narrows the re-decide to an observation that actually contradicts the target (§5.5). **Accepted admission/drain gap (TASK-64).** A waiter answered `Ready` from its own proof can resume after a later claim displaces the model. A fresh read at resume can itself go stale before the request reaches the engine. The admission/drain review of `fd5e0cd` called for exact-ticket commit ordered against admission closure. The injected scheduler witness (§5.5, `1061d70`) shows that when closure wins, an earlier pass leaves its exact ticket queued with zero upstream writes. The completion and profile witness (`e7586a3`) keeps the same preparation across both synthetic wakes while closed and sends the ticket's exact body once to the injected sink on matching Open. **Production admission remains open.** TASK-25 covers switch-ticket reservation, admission to the verified instance after `Ready`, and draining physical uses through late cleanup. Production activation requires the host fence (TASK-110) and instance-bound dispatch (TASK-118). TASK-72 owns the age-weighted policy for whose switch runs. TASK-61 carries TASK-25 and TASK-72 as dependencies. |
 | Commit review of v0.12.42 (`14a01e2`: the refusal set, the door, the feed ordering) | **completed, verdict REVISE, dispositioned in v0.12.43.** A static review: it reran nothing, so the build, suite and mutation numbers on the v0.12.42 row stay this seat's. **Fixed in v0.12.43.** §5.5 said the shutdown answer reaches the caller through the outer catch as `engine_unreachable`; measured, the resume path throws cancellation and the request path's `OperationCanceledException` arm answers `cancelled` / 499 naming no model — the prose named the wrong arm, and a caller acting on it would have coded against a status the router does not send. `SwitchReason.All` was a `readonly` **array**, so its elements were rewritable by anything in the assembly, which is precisely what "closed set" forbids: it is a `ReadOnlySpan` now. The refusal walk recovered the caller's token by cutting the message at the last `": "`, which would have passed a detail of `anything: refresh_omits`; it asserts `Detail` whole. The door's rejection message quoted the offending value, which is text that can reach a caller through the same outer catch, so it names nothing. And the switch path's second ask of the selector predicate was unreachable — one predicate on both sides, the refusal in front of the claim — so it is deleted rather than kept as a guard no configuration can exercise, with a pin on the case that could actually have drifted: an entry with a **blank** `select.exec`, which a null-only check lets through to the provider. **Routed, not fixed here.** Subscriber isolation and emitting outside the switch lock go to **TASK-103**; the confirmed specifics are that a throwing subscriber at the never-started exit skips the caller's answer and the *observer's* text reaches the caller as `engine_unreachable`, and a subscriber that blocks on anything needing the switch lock blocks inside the append with the lock held. Gauge freshness — an unreported window counts as fitting, and an old positive gauge survives a probe that omits the field — is **TASK-68**. A structured reason field, so a caller stops parsing a parenthesised token out of a sentence, is **TASK-104**. **Accepted and now stated in §5.5:** the eight names describe what a completed attempt **observed**, not what the engine will do next; a timed-out wait is not an attempt and carries no name; `switch_error` also covers a refresh that cannot be read at all during a `wait_health = true` wait, because the attempt itself threw. |
 | Commit review of v0.12.43 (`2f7e3e6`: the set cannot be edited, the whole-answer pins) | **completed, verdict REVISE; one finding was a real regression, fixed in v0.12.44.** The deletion of the selector ask inside `RunSwitchAsync` rested on "no configuration can reach it", which is false: the pre-claim check reads `_def.Catalog` and the switch reads `_config.Engines[_def.Name]`. Two sources, so a same-name definition through the public constructor — or an entry swapped after the check — reached the unguarded lookup and answered `launch_failed` with the engine's proof discarded. Fixed by resolving **one** definition before the claim and passing it to the switch; `ADivergentDefinitionIsRefusedFromTheSnapshotTheSwitchWouldUse` pins both provider shapes and was run red on `main` first. **Wording narrowed:** §5.5 and the v0.12.43 row asserted the deleted branch was unreachable, and both now say what is actually true. `SwitchReason.All` is a span over a private static array — not editable through anything the type advertises, still writable by code inside this assembly — so the claim is "no caller-facing route to editing the set", not "the set cannot be written"; structural enforcement (a switch expression over the members) is a board call, not a code requirement of this commit. **Withstood review:** the whole-`Detail` pins and the cancelled/499 correction. |
 | Plan review of the switch-refusal taxonomy (TASK-94), before the code existed | **completed, verdict REVISE, adopted in v0.12.42.** Three provisions the review added, each checked against this code first: the pin states its expected **literals** rather than reading them out of the production constants (a set read from the source proves only that the source agrees with itself, so a token swap between two exits stayed green); the set has **one owner** (`SwitchReason.All`) and the audit accounts for every failed `return` in the engine, so a tenth exit cannot pass silently; and the added `engine.switch_failed` record goes out **once, before waiters settle, with the end in a `finally`**. That last one is not theoretical — `EventRing.Append` calls every subscriber inside the lock, in the emitter's own thread, with no isolation, so an observer that throws reaches the code that emitted the event, next to a switch marker and a claim. The guard at this emit site ships here; the rule for every producer is **TASK-103**. **Two names decided here rather than copied from the review.** `remote_engine` is refused: the token names the relation (`no_lifecycle_owner`), not the config flag that answers it, so the reach/ownership split (**TASK-77**) will not cost a second wire break — and a remote engine stays a switch candidate, because its probes still publish proofs and `IsReadyFor` still answers from them. The request-side wait ceiling does **not** join the set: the set says why an attempt *stopped*, an expired wait's whole message is that nothing stopped, so §5.5 scopes the set to completed attempts and the ceiling keeps its milliseconds (AC #5's second arm). **Accepted gaps, each a name deferred rather than a name invented:** `launch_failed` still absorbs a failed stop or a failed ownership check inside one transaction — a `stop_failed` name is deferred, because today the caller's action (retry later) is the same for all three and a fourth token is only worth its wire cost alongside the reach/ownership split (**TASK-77**); `POST /admin/switch` still answers `202` plus a feed account and no category, since it starts a switch it never waits for, so the category belongs to whoever makes that surface report an outcome; and the rejection the door throws for an unlisted category reaches the caller through the request path's outer catch as `engine_unreachable`, which the door and the audit exist to make unreachable rather than to specify. |

@@ -1,0 +1,357 @@
+listen = "http://127.0.0.1:28321"
+default_model = "qwen3.8-flash-next-iq3_s"
+auto_switch = false
+
+[scheduler]
+max_inflight_per_engine = 4
+
+[engine.strata]
+kind = "openai-compatible"
+endpoint = "http://127.0.0.1:28021/v1"
+lifecycle_owner = "router"
+lifecycle = "docker"
+models_endpoint = "/v1/models"
+loaded_requires_status_loaded = true
+models_context_window_path = "meta.n_ctx"
+
+[engine.strata.health_probe]
+path = "/props"
+expect = "total_slots>0"
+context_path = "default_generation_settings.n_ctx"
+slots_path = "total_slots"
+interval_ms = 5000
+timeout_ms = 10000
+
+[engine.strata.docker]
+image = "registry.invalid/selector-fixture/strata:offline"
+image_id = "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+image_repo_digest = "registry.invalid/selector-fixture/strata@sha256:4444444444444444444444444444444444444444444444444444444444444444"
+image_platform = "linux/amd64"
+router_id = "selector-fixture"
+socket = "unix:///fixture/no-daemon.sock"
+api_version = "v1.44"
+host_ip = "127.0.0.1"
+host_port = 28021
+container_port = 8080
+stop_timeout_ms = 120000
+wait_health = true
+wait_timeout_ms = 7200000
+remove_stopped = true
+env = ["MODEL_PATH=/models", "GPUS=0,1", "VISION=cpu", "KV=int8", "TUNE=skip", "STRATA_ROUTE_TAIL_SKIP=0", "API_KEY_FILE=/opt/strata/fixture-token"]
+
+[engine.strata.docker.resources]
+gpu = { all = true }
+shm_size_bytes = 2147483648
+ulimits = [{ name = "memlock", soft = -1, hard = -1 }]
+bind_mounts = [
+  { source = "/fixture/install/run-fixture/strata-token", target = "/opt/strata/fixture-token", read_only = true },
+  { source = "/fixture/install/strata_profiles.py", target = "/profile-check.py", read_only = true },
+  { source = "/fixture/install/adapter/runner.py", target = "/opt/strata/terminal/strata_cli/launch/runner.py", read_only = true },
+]
+
+[engine.strata.catalog."swift-1.5-iq3_s"]
+aliases = ["swift-1.5-flash-next", "swift-flash-next"]
+default_profile = "max"
+
+[[engine.strata.catalog."swift-1.5-iq3_s".serving]]
+name = "max"
+max_context = 262144
+max_slots = 1
+[engine.strata.catalog."swift-1.5-iq3_s".serving.docker]
+env = ["FAMILY=swift", "CONTEXT=256k", "PARALLEL=1", "PRESET=defiant-swift-max", "STRATA_SET=resident-budget-gib=40 vram-reserve-mib=1536 vram-reserve-later-mib=2048 conversation-cache-mib=17408 conversation-cache-slots=4 conversation-cache-min-free-mib=6144  rope-scaling=none rope-scale=none yarn-orig-ctx=none rope-freq-base=none rope-freq-scale=none yarn-ext-factor=none yarn-attn-factor=none yarn-beta-fast=none yarn-beta-slow=none", "MODEL=IQ3_S"]
+bind_mounts = [{ source = "/fixture/install/strata/data-swift", target = "/data", read_only = false }, { source = "/fixture/install/strata/models/swift-IQ3_S", target = "/models", read_only = true }]
+
+[[engine.strata.catalog."swift-1.5-iq3_s".serving]]
+name = "max-2"
+max_context = 262144
+max_slots = 2
+[engine.strata.catalog."swift-1.5-iq3_s".serving.docker]
+env = ["FAMILY=swift", "CONTEXT=256k", "PARALLEL=2", "PRESET=defiant-swift-max-2", "STRATA_SET=resident-budget-gib=40 vram-reserve-mib=1536 vram-reserve-later-mib=2048 conversation-cache-mib=17408 conversation-cache-slots=8 conversation-cache-min-free-mib=6144  rope-scaling=none rope-scale=none yarn-orig-ctx=none rope-freq-base=none rope-freq-scale=none yarn-ext-factor=none yarn-attn-factor=none yarn-beta-fast=none yarn-beta-slow=none", "STRATA_BATCH_MTP=0", "STRATA_BATCH_GROUPS_NV_SERIAL=0", "MODEL=IQ3_S"]
+bind_mounts = [{ source = "/fixture/install/strata/data-swift", target = "/data", read_only = false }, { source = "/fixture/install/strata/models/swift-IQ3_S", target = "/models", read_only = true }]
+
+[[engine.strata.catalog."swift-1.5-iq3_s".serving]]
+name = "128k-4"
+max_context = 131072
+max_slots = 4
+[engine.strata.catalog."swift-1.5-iq3_s".serving.docker]
+env = ["FAMILY=swift", "CONTEXT=131072", "PARALLEL=4", "PRESET=defiant-swift-128k-4", "STRATA_SET=resident-budget-gib=40 vram-reserve-mib=1536 vram-reserve-later-mib=2048 conversation-cache-mib=17408 conversation-cache-slots=8 conversation-cache-min-free-mib=6144  rope-scaling=none rope-scale=none yarn-orig-ctx=none rope-freq-base=none rope-freq-scale=none yarn-ext-factor=none yarn-attn-factor=none yarn-beta-fast=none yarn-beta-slow=none", "MODEL=IQ3_S"]
+bind_mounts = [{ source = "/fixture/install/strata/data-swift", target = "/data", read_only = false }, { source = "/fixture/install/strata/models/swift-IQ3_S", target = "/models", read_only = true }]
+
+[[engine.strata.catalog."swift-1.5-iq3_s".serving]]
+name = "32k"
+max_context = 32768
+max_slots = 1
+[engine.strata.catalog."swift-1.5-iq3_s".serving.docker]
+env = ["FAMILY=swift", "CONTEXT=32k", "PARALLEL=1", "PRESET=defiant-swift-32k", "STRATA_SET=resident-budget-gib=40 vram-reserve-mib=1536 vram-reserve-later-mib=2048 conversation-cache-mib=17408 conversation-cache-slots=4 conversation-cache-min-free-mib=6144  rope-scaling=none rope-scale=none yarn-orig-ctx=none rope-freq-base=none rope-freq-scale=none yarn-ext-factor=none yarn-attn-factor=none yarn-beta-fast=none yarn-beta-slow=none", "MODEL=IQ3_S"]
+bind_mounts = [{ source = "/fixture/install/strata/data-swift", target = "/data", read_only = false }, { source = "/fixture/install/strata/models/swift-IQ3_S", target = "/models", read_only = true }]
+
+[[engine.strata.catalog."swift-1.5-iq3_s".serving]]
+name = "pilot"
+max_context = 65536
+max_slots = 1
+[engine.strata.catalog."swift-1.5-iq3_s".serving.docker]
+env = ["FAMILY=swift", "CONTEXT=64k", "PARALLEL=1", "PRESET=defiant-swift-pilot", "STRATA_SET=resident-budget-gib=40 vram-reserve-mib=1536 vram-reserve-later-mib=2048 conversation-cache-mib=17408 conversation-cache-slots=4 conversation-cache-min-free-mib=6144  rope-scaling=none rope-scale=none yarn-orig-ctx=none rope-freq-base=none rope-freq-scale=none yarn-ext-factor=none yarn-attn-factor=none yarn-beta-fast=none yarn-beta-slow=none", "MODEL=IQ3_S"]
+bind_mounts = [{ source = "/fixture/install/strata/data-swift", target = "/data", read_only = false }, { source = "/fixture/install/strata/models/swift-IQ3_S", target = "/models", read_only = true }]
+
+[[engine.strata.catalog."swift-1.5-iq3_s".serving]]
+name = "concurrent"
+max_context = 65536
+max_slots = 4
+[engine.strata.catalog."swift-1.5-iq3_s".serving.docker]
+env = ["FAMILY=swift", "CONTEXT=64k", "PARALLEL=4", "PRESET=defiant-swift-concurrent", "STRATA_SET=resident-budget-gib=40 vram-reserve-mib=1536 vram-reserve-later-mib=2048 conversation-cache-mib=17408 conversation-cache-slots=4 conversation-cache-min-free-mib=6144  rope-scaling=none rope-scale=none yarn-orig-ctx=none rope-freq-base=none rope-freq-scale=none yarn-ext-factor=none yarn-attn-factor=none yarn-beta-fast=none yarn-beta-slow=none", "MODEL=IQ3_S"]
+bind_mounts = [{ source = "/fixture/install/strata/data-swift", target = "/data", read_only = false }, { source = "/fixture/install/strata/models/swift-IQ3_S", target = "/models", read_only = true }]
+
+[[engine.strata.catalog."swift-1.5-iq3_s".serving]]
+name = "64k-4"
+max_context = 65536
+max_slots = 4
+[engine.strata.catalog."swift-1.5-iq3_s".serving.docker]
+env = ["FAMILY=swift", "CONTEXT=64k", "PARALLEL=4", "PRESET=defiant-swift-64k-4", "STRATA_SET=resident-budget-gib=40 vram-reserve-mib=1536 vram-reserve-later-mib=2048 conversation-cache-mib=17408 conversation-cache-slots=8 conversation-cache-min-free-mib=6144  rope-scaling=none rope-scale=none yarn-orig-ctx=none rope-freq-base=none rope-freq-scale=none yarn-ext-factor=none yarn-attn-factor=none yarn-beta-fast=none yarn-beta-slow=none", "MODEL=IQ3_S"]
+bind_mounts = [{ source = "/fixture/install/strata/data-swift", target = "/data", read_only = false }, { source = "/fixture/install/strata/models/swift-IQ3_S", target = "/models", read_only = true }]
+
+[[engine.strata.catalog."swift-1.5-iq3_s".serving]]
+name = "64k-6"
+max_context = 65536
+max_slots = 6
+[engine.strata.catalog."swift-1.5-iq3_s".serving.docker]
+env = ["FAMILY=swift", "CONTEXT=64k", "PARALLEL=6", "PRESET=defiant-swift-64k-6", "STRATA_SET=resident-budget-gib=40 vram-reserve-mib=1536 vram-reserve-later-mib=2048 conversation-cache-mib=17408 conversation-cache-slots=8 conversation-cache-min-free-mib=6144  rope-scaling=none rope-scale=none yarn-orig-ctx=none rope-freq-base=none rope-freq-scale=none yarn-ext-factor=none yarn-attn-factor=none yarn-beta-fast=none yarn-beta-slow=none", "MODEL=IQ3_S"]
+bind_mounts = [{ source = "/fixture/install/strata/data-swift", target = "/data", read_only = false }, { source = "/fixture/install/strata/models/swift-IQ3_S", target = "/models", read_only = true }]
+
+[[engine.strata.catalog."swift-1.5-iq3_s".serving]]
+name = "64k-8"
+max_context = 65536
+max_slots = 8
+[engine.strata.catalog."swift-1.5-iq3_s".serving.docker]
+env = ["FAMILY=swift", "CONTEXT=64k", "PARALLEL=8", "PRESET=defiant-swift-64k-8", "STRATA_SET=resident-budget-gib=40 vram-reserve-mib=1536 vram-reserve-later-mib=2048 conversation-cache-mib=17408 conversation-cache-slots=8 conversation-cache-min-free-mib=6144  rope-scaling=none rope-scale=none yarn-orig-ctx=none rope-freq-base=none rope-freq-scale=none yarn-ext-factor=none yarn-attn-factor=none yarn-beta-fast=none yarn-beta-slow=none", "MODEL=IQ3_S"]
+bind_mounts = [{ source = "/fixture/install/strata/data-swift", target = "/data", read_only = false }, { source = "/fixture/install/strata/models/swift-IQ3_S", target = "/models", read_only = true }]
+
+[[engine.strata.catalog."swift-1.5-iq3_s".serving]]
+name = "96k-4"
+max_context = 98304
+max_slots = 4
+[engine.strata.catalog."swift-1.5-iq3_s".serving.docker]
+env = ["FAMILY=swift", "CONTEXT=98304", "PARALLEL=4", "PRESET=defiant-swift-96k-4", "STRATA_SET=resident-budget-gib=40 vram-reserve-mib=1536 vram-reserve-later-mib=2048 conversation-cache-mib=17408 conversation-cache-slots=8 conversation-cache-min-free-mib=6144  rope-scaling=none rope-scale=none yarn-orig-ctx=none rope-freq-base=none rope-freq-scale=none yarn-ext-factor=none yarn-attn-factor=none yarn-beta-fast=none yarn-beta-slow=none", "MODEL=IQ3_S"]
+bind_mounts = [{ source = "/fixture/install/strata/data-swift", target = "/data", read_only = false }, { source = "/fixture/install/strata/models/swift-IQ3_S", target = "/models", read_only = true }]
+
+[[engine.strata.catalog."swift-1.5-iq3_s".serving]]
+name = "256k-4"
+max_context = 256000
+max_slots = 4
+aliases = ["max-4"]
+[engine.strata.catalog."swift-1.5-iq3_s".serving.docker]
+env = ["FAMILY=swift", "CONTEXT=256000", "PARALLEL=4", "PRESET=defiant-swift-256k-4", "STRATA_SET=resident-budget-gib=36 vram-reserve-mib=1536 vram-reserve-later-mib=2048 conversation-cache-mib=17408 conversation-cache-slots=8 conversation-cache-min-free-mib=6144  rope-scaling=none rope-scale=none yarn-orig-ctx=none rope-freq-base=none rope-freq-scale=none yarn-ext-factor=none yarn-attn-factor=none yarn-beta-fast=none yarn-beta-slow=none", "MODEL=IQ3_S"]
+bind_mounts = [{ source = "/fixture/install/strata/data-swift", target = "/data", read_only = false }, { source = "/fixture/install/strata/models/swift-IQ3_S", target = "/models", read_only = true }]
+
+[engine.strata.catalog."qwen3.8-flash-next-iq3_s"]
+aliases = ["qwen-3.8-flash-next", "flash-next"]
+default_profile = "512k"
+
+[[engine.strata.catalog."qwen3.8-flash-next-iq3_s".serving]]
+name = "max"
+max_context = 262144
+max_slots = 1
+[engine.strata.catalog."qwen3.8-flash-next-iq3_s".serving.docker]
+env = ["FAMILY=qwen", "CONTEXT=256k", "PARALLEL=1", "PRESET=defiant-qwen-max", "STRATA_SET=resident-budget-gib=40 vram-reserve-mib=1536 vram-reserve-later-mib=2048 conversation-cache-mib=17408 conversation-cache-slots=4 conversation-cache-min-free-mib=6144  rope-scaling=none rope-scale=none yarn-orig-ctx=none rope-freq-base=none rope-freq-scale=none yarn-ext-factor=none yarn-attn-factor=none yarn-beta-fast=none yarn-beta-slow=none", "MODEL=IQ3_S"]
+bind_mounts = [{ source = "/fixture/install/strata/data", target = "/data", read_only = false }, { source = "/fixture/install/strata/models/IQ3_S", target = "/models", read_only = true }]
+
+[[engine.strata.catalog."qwen3.8-flash-next-iq3_s".serving]]
+name = "max-2"
+max_context = 262144
+max_slots = 2
+[engine.strata.catalog."qwen3.8-flash-next-iq3_s".serving.docker]
+env = ["FAMILY=qwen", "CONTEXT=256k", "PARALLEL=2", "PRESET=defiant-qwen-max-2", "STRATA_SET=resident-budget-gib=40 vram-reserve-mib=1536 vram-reserve-later-mib=2048 conversation-cache-mib=17408 conversation-cache-slots=8 conversation-cache-min-free-mib=6144  rope-scaling=none rope-scale=none yarn-orig-ctx=none rope-freq-base=none rope-freq-scale=none yarn-ext-factor=none yarn-attn-factor=none yarn-beta-fast=none yarn-beta-slow=none", "STRATA_BATCH_MTP=0", "STRATA_BATCH_GROUPS_NV_SERIAL=0", "MODEL=IQ3_S"]
+bind_mounts = [{ source = "/fixture/install/strata/data", target = "/data", read_only = false }, { source = "/fixture/install/strata/models/IQ3_S", target = "/models", read_only = true }]
+
+[[engine.strata.catalog."qwen3.8-flash-next-iq3_s".serving]]
+name = "128k-4"
+max_context = 131072
+max_slots = 4
+[engine.strata.catalog."qwen3.8-flash-next-iq3_s".serving.docker]
+env = ["FAMILY=qwen", "CONTEXT=131072", "PARALLEL=4", "PRESET=defiant-qwen-128k-4", "STRATA_SET=resident-budget-gib=40 vram-reserve-mib=1536 vram-reserve-later-mib=2048 conversation-cache-mib=17408 conversation-cache-slots=8 conversation-cache-min-free-mib=6144  rope-scaling=none rope-scale=none yarn-orig-ctx=none rope-freq-base=none rope-freq-scale=none yarn-ext-factor=none yarn-attn-factor=none yarn-beta-fast=none yarn-beta-slow=none", "MODEL=IQ3_S"]
+bind_mounts = [{ source = "/fixture/install/strata/data", target = "/data", read_only = false }, { source = "/fixture/install/strata/models/IQ3_S", target = "/models", read_only = true }]
+
+[[engine.strata.catalog."qwen3.8-flash-next-iq3_s".serving]]
+name = "32k"
+max_context = 32768
+max_slots = 1
+[engine.strata.catalog."qwen3.8-flash-next-iq3_s".serving.docker]
+env = ["FAMILY=qwen", "CONTEXT=32k", "PARALLEL=1", "PRESET=defiant-qwen-32k", "STRATA_SET=resident-budget-gib=40 vram-reserve-mib=1536 vram-reserve-later-mib=2048 conversation-cache-mib=17408 conversation-cache-slots=4 conversation-cache-min-free-mib=6144  rope-scaling=none rope-scale=none yarn-orig-ctx=none rope-freq-base=none rope-freq-scale=none yarn-ext-factor=none yarn-attn-factor=none yarn-beta-fast=none yarn-beta-slow=none", "MODEL=IQ3_S"]
+bind_mounts = [{ source = "/fixture/install/strata/data", target = "/data", read_only = false }, { source = "/fixture/install/strata/models/IQ3_S", target = "/models", read_only = true }]
+
+[[engine.strata.catalog."qwen3.8-flash-next-iq3_s".serving]]
+name = "pilot"
+max_context = 65536
+max_slots = 1
+[engine.strata.catalog."qwen3.8-flash-next-iq3_s".serving.docker]
+env = ["FAMILY=qwen", "CONTEXT=64k", "PARALLEL=1", "PRESET=defiant-qwen-pilot", "STRATA_SET=resident-budget-gib=40 vram-reserve-mib=1536 vram-reserve-later-mib=2048 conversation-cache-mib=17408 conversation-cache-slots=4 conversation-cache-min-free-mib=6144  rope-scaling=none rope-scale=none yarn-orig-ctx=none rope-freq-base=none rope-freq-scale=none yarn-ext-factor=none yarn-attn-factor=none yarn-beta-fast=none yarn-beta-slow=none", "MODEL=IQ3_S"]
+bind_mounts = [{ source = "/fixture/install/strata/data", target = "/data", read_only = false }, { source = "/fixture/install/strata/models/IQ3_S", target = "/models", read_only = true }]
+
+[[engine.strata.catalog."qwen3.8-flash-next-iq3_s".serving]]
+name = "concurrent"
+max_context = 65536
+max_slots = 4
+[engine.strata.catalog."qwen3.8-flash-next-iq3_s".serving.docker]
+env = ["FAMILY=qwen", "CONTEXT=64k", "PARALLEL=4", "PRESET=defiant-qwen-concurrent", "STRATA_SET=resident-budget-gib=40 vram-reserve-mib=1536 vram-reserve-later-mib=2048 conversation-cache-mib=17408 conversation-cache-slots=4 conversation-cache-min-free-mib=6144  rope-scaling=none rope-scale=none yarn-orig-ctx=none rope-freq-base=none rope-freq-scale=none yarn-ext-factor=none yarn-attn-factor=none yarn-beta-fast=none yarn-beta-slow=none", "MODEL=IQ3_S"]
+bind_mounts = [{ source = "/fixture/install/strata/data", target = "/data", read_only = false }, { source = "/fixture/install/strata/models/IQ3_S", target = "/models", read_only = true }]
+
+[[engine.strata.catalog."qwen3.8-flash-next-iq3_s".serving]]
+name = "512k"
+max_context = 524288
+max_slots = 1
+[engine.strata.catalog."qwen3.8-flash-next-iq3_s".serving.docker]
+env = ["FAMILY=qwen", "CONTEXT=524288", "PARALLEL=1", "PRESET=defiant-qwen-512k", "STRATA_SET=resident-budget-gib=40 vram-reserve-mib=1536 vram-reserve-later-mib=2048 conversation-cache-mib=17408 conversation-cache-slots=4 conversation-cache-min-free-mib=6144  rope-scaling=yarn rope-scale=2 yarn-orig-ctx=262144 rope-freq-base=none rope-freq-scale=none yarn-ext-factor=none yarn-attn-factor=none yarn-beta-fast=none yarn-beta-slow=none", "MODEL=IQ3_S"]
+bind_mounts = [{ source = "/fixture/install/strata/data", target = "/data", read_only = false }, { source = "/fixture/install/strata/models/IQ3_S", target = "/models", read_only = true }]
+
+[[engine.strata.catalog."qwen3.8-flash-next-iq3_s".serving]]
+name = "768k"
+max_context = 786432
+max_slots = 1
+[engine.strata.catalog."qwen3.8-flash-next-iq3_s".serving.docker]
+env = ["FAMILY=qwen", "CONTEXT=786432", "PARALLEL=1", "PRESET=defiant-qwen-768k", "STRATA_SET=resident-budget-gib=40 vram-reserve-mib=1536 vram-reserve-later-mib=2048 conversation-cache-mib=17408 conversation-cache-slots=4 conversation-cache-min-free-mib=6144  rope-scaling=yarn rope-scale=3 yarn-orig-ctx=262144 rope-freq-base=none rope-freq-scale=none yarn-ext-factor=none yarn-attn-factor=none yarn-beta-fast=none yarn-beta-slow=none", "MODEL=IQ3_S"]
+bind_mounts = [{ source = "/fixture/install/strata/data", target = "/data", read_only = false }, { source = "/fixture/install/strata/models/IQ3_S", target = "/models", read_only = true }]
+memory_bytes = 57982058496
+memory_swap_bytes = 62277025792
+
+[[engine.strata.catalog."qwen3.8-flash-next-iq3_s".serving]]
+name = "1m"
+max_context = 1048576
+max_slots = 1
+[engine.strata.catalog."qwen3.8-flash-next-iq3_s".serving.docker]
+env = ["FAMILY=qwen", "CONTEXT=1048576", "PARALLEL=1", "PRESET=defiant-qwen-1m", "STRATA_SET=resident-budget-gib=40 vram-reserve-mib=1536 vram-reserve-later-mib=2048 conversation-cache-mib=17408 conversation-cache-slots=4 conversation-cache-min-free-mib=6144  rope-scaling=yarn rope-scale=4 yarn-orig-ctx=262144 rope-freq-base=none rope-freq-scale=none yarn-ext-factor=none yarn-attn-factor=none yarn-beta-fast=none yarn-beta-slow=none", "MODEL=IQ3_S"]
+bind_mounts = [{ source = "/fixture/install/strata/data", target = "/data", read_only = false }, { source = "/fixture/install/strata/models/IQ3_S", target = "/models", read_only = true }]
+memory_bytes = 57982058496
+memory_swap_bytes = 62277025792
+
+[[engine.strata.catalog."qwen3.8-flash-next-iq3_s".serving]]
+name = "64k-4"
+max_context = 65536
+max_slots = 4
+[engine.strata.catalog."qwen3.8-flash-next-iq3_s".serving.docker]
+env = ["FAMILY=qwen", "CONTEXT=64k", "PARALLEL=4", "PRESET=defiant-qwen-64k-4", "STRATA_SET=resident-budget-gib=40 vram-reserve-mib=1536 vram-reserve-later-mib=2048 conversation-cache-mib=17408 conversation-cache-slots=8 conversation-cache-min-free-mib=6144  rope-scaling=none rope-scale=none yarn-orig-ctx=none rope-freq-base=none rope-freq-scale=none yarn-ext-factor=none yarn-attn-factor=none yarn-beta-fast=none yarn-beta-slow=none", "MODEL=IQ3_S"]
+bind_mounts = [{ source = "/fixture/install/strata/data", target = "/data", read_only = false }, { source = "/fixture/install/strata/models/IQ3_S", target = "/models", read_only = true }]
+
+[[engine.strata.catalog."qwen3.8-flash-next-iq3_s".serving]]
+name = "64k-6"
+max_context = 65536
+max_slots = 6
+[engine.strata.catalog."qwen3.8-flash-next-iq3_s".serving.docker]
+env = ["FAMILY=qwen", "CONTEXT=64k", "PARALLEL=6", "PRESET=defiant-qwen-64k-6", "STRATA_SET=resident-budget-gib=40 vram-reserve-mib=1536 vram-reserve-later-mib=2048 conversation-cache-mib=17408 conversation-cache-slots=8 conversation-cache-min-free-mib=6144  rope-scaling=none rope-scale=none yarn-orig-ctx=none rope-freq-base=none rope-freq-scale=none yarn-ext-factor=none yarn-attn-factor=none yarn-beta-fast=none yarn-beta-slow=none", "MODEL=IQ3_S"]
+bind_mounts = [{ source = "/fixture/install/strata/data", target = "/data", read_only = false }, { source = "/fixture/install/strata/models/IQ3_S", target = "/models", read_only = true }]
+
+[[engine.strata.catalog."qwen3.8-flash-next-iq3_s".serving]]
+name = "64k-8"
+max_context = 65536
+max_slots = 8
+[engine.strata.catalog."qwen3.8-flash-next-iq3_s".serving.docker]
+env = ["FAMILY=qwen", "CONTEXT=64k", "PARALLEL=8", "PRESET=defiant-qwen-64k-8", "STRATA_SET=resident-budget-gib=40 vram-reserve-mib=1536 vram-reserve-later-mib=2048 conversation-cache-mib=17408 conversation-cache-slots=8 conversation-cache-min-free-mib=6144  rope-scaling=none rope-scale=none yarn-orig-ctx=none rope-freq-base=none rope-freq-scale=none yarn-ext-factor=none yarn-attn-factor=none yarn-beta-fast=none yarn-beta-slow=none", "MODEL=IQ3_S"]
+bind_mounts = [{ source = "/fixture/install/strata/data", target = "/data", read_only = false }, { source = "/fixture/install/strata/models/IQ3_S", target = "/models", read_only = true }]
+
+[[engine.strata.catalog."qwen3.8-flash-next-iq3_s".serving]]
+name = "96k-4"
+max_context = 98304
+max_slots = 4
+[engine.strata.catalog."qwen3.8-flash-next-iq3_s".serving.docker]
+env = ["FAMILY=qwen", "CONTEXT=98304", "PARALLEL=4", "PRESET=defiant-qwen-96k-4", "STRATA_SET=resident-budget-gib=40 vram-reserve-mib=1536 vram-reserve-later-mib=2048 conversation-cache-mib=17408 conversation-cache-slots=8 conversation-cache-min-free-mib=6144  rope-scaling=none rope-scale=none yarn-orig-ctx=none rope-freq-base=none rope-freq-scale=none yarn-ext-factor=none yarn-attn-factor=none yarn-beta-fast=none yarn-beta-slow=none", "MODEL=IQ3_S"]
+bind_mounts = [{ source = "/fixture/install/strata/data", target = "/data", read_only = false }, { source = "/fixture/install/strata/models/IQ3_S", target = "/models", read_only = true }]
+
+[[engine.strata.catalog."qwen3.8-flash-next-iq3_s".serving]]
+name = "256k-4"
+max_context = 256000
+max_slots = 4
+aliases = ["max-4"]
+[engine.strata.catalog."qwen3.8-flash-next-iq3_s".serving.docker]
+env = ["FAMILY=qwen", "CONTEXT=256000", "PARALLEL=4", "PRESET=defiant-qwen-256k-4", "STRATA_SET=resident-budget-gib=36 vram-reserve-mib=1536 vram-reserve-later-mib=2048 conversation-cache-mib=17408 conversation-cache-slots=8 conversation-cache-min-free-mib=6144  rope-scaling=none rope-scale=none yarn-orig-ctx=none rope-freq-base=none rope-freq-scale=none yarn-ext-factor=none yarn-attn-factor=none yarn-beta-fast=none yarn-beta-slow=none", "MODEL=IQ3_S"]
+bind_mounts = [{ source = "/fixture/install/strata/data", target = "/data", read_only = false }, { source = "/fixture/install/strata/models/IQ3_S", target = "/models", read_only = true }]
+
+[engine.strata.catalog."qwen3.8-flash-next-coder-iq1_m"]
+aliases = ["qwen-3.8-flash-next-coder", "flash-next-coder"]
+default_profile = "max"
+
+[[engine.strata.catalog."qwen3.8-flash-next-coder-iq1_m".serving]]
+name = "max"
+max_context = 262144
+max_slots = 1
+[engine.strata.catalog."qwen3.8-flash-next-coder-iq1_m".serving.docker]
+env = ["FAMILY=coder", "CONTEXT=256k", "PARALLEL=1", "PRESET=defiant-coder-max", "STRATA_SET=resident-budget-gib=40 vram-reserve-mib=1536 vram-reserve-later-mib=2048 conversation-cache-mib=17408 conversation-cache-slots=4 conversation-cache-min-free-mib=6144  rope-scaling=none rope-scale=none yarn-orig-ctx=none rope-freq-base=none rope-freq-scale=none yarn-ext-factor=none yarn-attn-factor=none yarn-beta-fast=none yarn-beta-slow=none", "MODEL=IQ1_M"]
+bind_mounts = [{ source = "/fixture/install/strata/data-coder", target = "/data", read_only = false }, { source = "/fixture/install/strata/models/coder-IQ1_M", target = "/models", read_only = true }]
+
+[[engine.strata.catalog."qwen3.8-flash-next-coder-iq1_m".serving]]
+name = "max-2"
+max_context = 262144
+max_slots = 2
+[engine.strata.catalog."qwen3.8-flash-next-coder-iq1_m".serving.docker]
+env = ["FAMILY=coder", "CONTEXT=256k", "PARALLEL=2", "PRESET=defiant-coder-max-2", "STRATA_SET=resident-budget-gib=40 vram-reserve-mib=1536 vram-reserve-later-mib=2048 conversation-cache-mib=17408 conversation-cache-slots=8 conversation-cache-min-free-mib=6144  rope-scaling=none rope-scale=none yarn-orig-ctx=none rope-freq-base=none rope-freq-scale=none yarn-ext-factor=none yarn-attn-factor=none yarn-beta-fast=none yarn-beta-slow=none", "STRATA_BATCH_MTP=0", "STRATA_BATCH_GROUPS_NV_SERIAL=0", "MODEL=IQ1_M"]
+bind_mounts = [{ source = "/fixture/install/strata/data-coder", target = "/data", read_only = false }, { source = "/fixture/install/strata/models/coder-IQ1_M", target = "/models", read_only = true }]
+
+[[engine.strata.catalog."qwen3.8-flash-next-coder-iq1_m".serving]]
+name = "128k-4"
+max_context = 131072
+max_slots = 4
+[engine.strata.catalog."qwen3.8-flash-next-coder-iq1_m".serving.docker]
+env = ["FAMILY=coder", "CONTEXT=131072", "PARALLEL=4", "PRESET=defiant-coder-128k-4", "STRATA_SET=resident-budget-gib=40 vram-reserve-mib=1536 vram-reserve-later-mib=2048 conversation-cache-mib=17408 conversation-cache-slots=8 conversation-cache-min-free-mib=6144  rope-scaling=none rope-scale=none yarn-orig-ctx=none rope-freq-base=none rope-freq-scale=none yarn-ext-factor=none yarn-attn-factor=none yarn-beta-fast=none yarn-beta-slow=none", "MODEL=IQ1_M"]
+bind_mounts = [{ source = "/fixture/install/strata/data-coder", target = "/data", read_only = false }, { source = "/fixture/install/strata/models/coder-IQ1_M", target = "/models", read_only = true }]
+
+[[engine.strata.catalog."qwen3.8-flash-next-coder-iq1_m".serving]]
+name = "32k"
+max_context = 32768
+max_slots = 1
+[engine.strata.catalog."qwen3.8-flash-next-coder-iq1_m".serving.docker]
+env = ["FAMILY=coder", "CONTEXT=32k", "PARALLEL=1", "PRESET=defiant-coder-32k", "STRATA_SET=resident-budget-gib=40 vram-reserve-mib=1536 vram-reserve-later-mib=2048 conversation-cache-mib=17408 conversation-cache-slots=4 conversation-cache-min-free-mib=6144  rope-scaling=none rope-scale=none yarn-orig-ctx=none rope-freq-base=none rope-freq-scale=none yarn-ext-factor=none yarn-attn-factor=none yarn-beta-fast=none yarn-beta-slow=none", "MODEL=IQ1_M"]
+bind_mounts = [{ source = "/fixture/install/strata/data-coder", target = "/data", read_only = false }, { source = "/fixture/install/strata/models/coder-IQ1_M", target = "/models", read_only = true }]
+
+[[engine.strata.catalog."qwen3.8-flash-next-coder-iq1_m".serving]]
+name = "pilot"
+max_context = 65536
+max_slots = 1
+[engine.strata.catalog."qwen3.8-flash-next-coder-iq1_m".serving.docker]
+env = ["FAMILY=coder", "CONTEXT=64k", "PARALLEL=1", "PRESET=defiant-coder-pilot", "STRATA_SET=resident-budget-gib=40 vram-reserve-mib=1536 vram-reserve-later-mib=2048 conversation-cache-mib=17408 conversation-cache-slots=4 conversation-cache-min-free-mib=6144  rope-scaling=none rope-scale=none yarn-orig-ctx=none rope-freq-base=none rope-freq-scale=none yarn-ext-factor=none yarn-attn-factor=none yarn-beta-fast=none yarn-beta-slow=none", "MODEL=IQ1_M"]
+bind_mounts = [{ source = "/fixture/install/strata/data-coder", target = "/data", read_only = false }, { source = "/fixture/install/strata/models/coder-IQ1_M", target = "/models", read_only = true }]
+
+[[engine.strata.catalog."qwen3.8-flash-next-coder-iq1_m".serving]]
+name = "concurrent"
+max_context = 65536
+max_slots = 4
+[engine.strata.catalog."qwen3.8-flash-next-coder-iq1_m".serving.docker]
+env = ["FAMILY=coder", "CONTEXT=64k", "PARALLEL=4", "PRESET=defiant-coder-concurrent", "STRATA_SET=resident-budget-gib=40 vram-reserve-mib=1536 vram-reserve-later-mib=2048 conversation-cache-mib=17408 conversation-cache-slots=4 conversation-cache-min-free-mib=6144  rope-scaling=none rope-scale=none yarn-orig-ctx=none rope-freq-base=none rope-freq-scale=none yarn-ext-factor=none yarn-attn-factor=none yarn-beta-fast=none yarn-beta-slow=none", "MODEL=IQ1_M"]
+bind_mounts = [{ source = "/fixture/install/strata/data-coder", target = "/data", read_only = false }, { source = "/fixture/install/strata/models/coder-IQ1_M", target = "/models", read_only = true }]
+
+[[engine.strata.catalog."qwen3.8-flash-next-coder-iq1_m".serving]]
+name = "64k-4"
+max_context = 65536
+max_slots = 4
+[engine.strata.catalog."qwen3.8-flash-next-coder-iq1_m".serving.docker]
+env = ["FAMILY=coder", "CONTEXT=64k", "PARALLEL=4", "PRESET=defiant-coder-64k-4", "STRATA_SET=resident-budget-gib=40 vram-reserve-mib=1536 vram-reserve-later-mib=2048 conversation-cache-mib=17408 conversation-cache-slots=8 conversation-cache-min-free-mib=6144  rope-scaling=none rope-scale=none yarn-orig-ctx=none rope-freq-base=none rope-freq-scale=none yarn-ext-factor=none yarn-attn-factor=none yarn-beta-fast=none yarn-beta-slow=none", "MODEL=IQ1_M"]
+bind_mounts = [{ source = "/fixture/install/strata/data-coder", target = "/data", read_only = false }, { source = "/fixture/install/strata/models/coder-IQ1_M", target = "/models", read_only = true }]
+
+[[engine.strata.catalog."qwen3.8-flash-next-coder-iq1_m".serving]]
+name = "64k-6"
+max_context = 65536
+max_slots = 6
+[engine.strata.catalog."qwen3.8-flash-next-coder-iq1_m".serving.docker]
+env = ["FAMILY=coder", "CONTEXT=64k", "PARALLEL=6", "PRESET=defiant-coder-64k-6", "STRATA_SET=resident-budget-gib=40 vram-reserve-mib=1536 vram-reserve-later-mib=2048 conversation-cache-mib=17408 conversation-cache-slots=8 conversation-cache-min-free-mib=6144  rope-scaling=none rope-scale=none yarn-orig-ctx=none rope-freq-base=none rope-freq-scale=none yarn-ext-factor=none yarn-attn-factor=none yarn-beta-fast=none yarn-beta-slow=none", "MODEL=IQ1_M"]
+bind_mounts = [{ source = "/fixture/install/strata/data-coder", target = "/data", read_only = false }, { source = "/fixture/install/strata/models/coder-IQ1_M", target = "/models", read_only = true }]
+
+[[engine.strata.catalog."qwen3.8-flash-next-coder-iq1_m".serving]]
+name = "64k-8"
+max_context = 65536
+max_slots = 8
+[engine.strata.catalog."qwen3.8-flash-next-coder-iq1_m".serving.docker]
+env = ["FAMILY=coder", "CONTEXT=64k", "PARALLEL=8", "PRESET=defiant-coder-64k-8", "STRATA_SET=resident-budget-gib=40 vram-reserve-mib=1536 vram-reserve-later-mib=2048 conversation-cache-mib=17408 conversation-cache-slots=8 conversation-cache-min-free-mib=6144  rope-scaling=none rope-scale=none yarn-orig-ctx=none rope-freq-base=none rope-freq-scale=none yarn-ext-factor=none yarn-attn-factor=none yarn-beta-fast=none yarn-beta-slow=none", "MODEL=IQ1_M"]
+bind_mounts = [{ source = "/fixture/install/strata/data-coder", target = "/data", read_only = false }, { source = "/fixture/install/strata/models/coder-IQ1_M", target = "/models", read_only = true }]
+
+[[engine.strata.catalog."qwen3.8-flash-next-coder-iq1_m".serving]]
+name = "96k-4"
+max_context = 98304
+max_slots = 4
+[engine.strata.catalog."qwen3.8-flash-next-coder-iq1_m".serving.docker]
+env = ["FAMILY=coder", "CONTEXT=98304", "PARALLEL=4", "PRESET=defiant-coder-96k-4", "STRATA_SET=resident-budget-gib=40 vram-reserve-mib=1536 vram-reserve-later-mib=2048 conversation-cache-mib=17408 conversation-cache-slots=8 conversation-cache-min-free-mib=6144  rope-scaling=none rope-scale=none yarn-orig-ctx=none rope-freq-base=none rope-freq-scale=none yarn-ext-factor=none yarn-attn-factor=none yarn-beta-fast=none yarn-beta-slow=none", "MODEL=IQ1_M"]
+bind_mounts = [{ source = "/fixture/install/strata/data-coder", target = "/data", read_only = false }, { source = "/fixture/install/strata/models/coder-IQ1_M", target = "/models", read_only = true }]
+
+[[engine.strata.catalog."qwen3.8-flash-next-coder-iq1_m".serving]]
+name = "256k-4"
+max_context = 256000
+max_slots = 4
+aliases = ["max-4"]
+[engine.strata.catalog."qwen3.8-flash-next-coder-iq1_m".serving.docker]
+env = ["FAMILY=coder", "CONTEXT=256000", "PARALLEL=4", "PRESET=defiant-coder-256k-4", "STRATA_SET=resident-budget-gib=36 vram-reserve-mib=1536 vram-reserve-later-mib=2048 conversation-cache-mib=17408 conversation-cache-slots=8 conversation-cache-min-free-mib=6144  rope-scaling=none rope-scale=none yarn-orig-ctx=none rope-freq-base=none rope-freq-scale=none yarn-ext-factor=none yarn-attn-factor=none yarn-beta-fast=none yarn-beta-slow=none", "MODEL=IQ1_M"]
+bind_mounts = [{ source = "/fixture/install/strata/data-coder", target = "/data", read_only = false }, { source = "/fixture/install/strata/models/coder-IQ1_M", target = "/models", read_only = true }]

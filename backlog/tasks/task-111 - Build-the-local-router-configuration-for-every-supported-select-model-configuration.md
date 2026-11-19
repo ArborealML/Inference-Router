@@ -3,11 +3,11 @@ id: TASK-111
 title: >-
   Build the local router configuration for every supported select-model
   configuration
-status: In Progress
+status: Waiting
 assignee:
-  - '@gpt-6.2-sol-config'
+  - '@gpt-6.2-astra'
 created_date: '2026-11-18T18:15:00Z'
-updated_date: '2026-11-19T06:47:00Z'
+updated_date: '2026-11-19T15:41:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -19,7 +19,7 @@ ordinal: 109000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Build a usable machine-local router configuration from the installed primary-host selector. Cover each valid model, alias, profile, default and supported option combination. Validate against the installed selector and router loader, and identify any missing router representation explicitly. Decision-68 authorizes local engine qualification. TASK-125 supplies the first pair while full parity proceeds.
+Shared-host fencing in TASK-110 and host/provider and instance evidence in TASK-26 and TASK-118 wake the remaining qualification. [PR #32](https://github.com/ArborealML/Inference-Router/pull/32) qualified 75 normalized defaults across six dedicated inputs and 10,150 offline differential cases. One unified native input requires shared-host and port fencing; alternate choices require separate immutable configuration resolution. TASK-125 qualifies the chosen pair and TASK-112 owns the client-driven swap.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -32,21 +32,21 @@ Build a usable machine-local router configuration from the installed primary-hos
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Inventory the selector and each delegated validator from a fixed source fingerprint. Enumerate model and profile aliases, defaults, option ranges and cross-family refusals. Compare the resolved settings with the native launch request before writing local TOML. Validate the private configuration by dry-run, then compare exact payloads and refusal cases against fake providers.
+Retain both open criteria. Revisit unified configuration after fenced ownership and record the disposition of alternate-vector reconfiguration. Use independent image, bind, resource and recovery evidence from TASK-26 and exact serving proof from TASK-118. The manual Qwen launch lacks a controller journal.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-The local selector has model-specific validators and launch resource settings that the current native provider cannot represent. TASK-26 covers GPU devices, mounts and resource limits. Use the compatibility inventory to distinguish additional provider work from invalid selector combinations.
+The installed selector has 169 valid and 337 invalid spellings across 75 distinct targets (36 Strata, 26 HyperQwen, 13 Maya). Twelve spellings require one GPU; 22 defaults and 1,248 parking combinations were inventoried. Preserve GPU index, utilization, parking and suffix-cache limits in the tracked coverage report. TASK-26 covers resources, TASK-114 cold starts and TASK-125 the first live pair.
 
-Static inventory is underway. The reference exposes nine canonical models, thirteen model aliases and twenty-three profile spellings. Context and slot counts alone cannot identify every launch preset. The scheduler currently skips an inactive engine before considering launch eligibility. TASK-114 records the cold-start gap. Validate enumerated counts independently before accepting the inventory criterion.
+[PR #7](https://github.com/ArborealML/Inference-Router/pull/7) landed offline per-target environment and mounts, strict ownership checks and single-pass substitution. [PR #12](https://github.com/ArborealML/Inference-Router/pull/12) landed per-tier RAM and swap for the Qwen profiles. [PR #16](https://github.com/ArborealML/Inference-Router/pull/16) at ee6e0f5 adds the MiniMax executable entrypoint and host IPC. Its 96 focused cases, config load and Native AOT passed. Bind receipts and labels to canonical model, tier and serving instance before activation.
 
-Independent static enumeration at selector source fingerprint 8af827d3c375efda08cad8a5b9b7fd862b44a2f5a7482042c5255623a891a030 covered 506 explicit spellings: 169 pass structural validation and 337 fail. The 75 distinct targets include 12 accepted spelling combinations requiring an explicit GPU. All 22 omitted-profile cases matched their defaults. Parking exposes 1,248 RAM and parallelism combinations. No runtime trial was part of this inventory.
+Single-device profiles require one explicit index and paired profiles two distinct indices. Utilization is 0.50–0.95 (default 0.90), parking 1–48 GiB (default 32), variable lanes 1–8. The selector has no supported suffix-cache launch.
 
-Target-proof plan dispatched on 2026-11-18. Static controls: single-device profiles require one explicit index; paired profiles require two distinct indices. GPU utilization accepts 0.50–0.95 inclusive, default 0.90. Parking RAM accepts 1–48 GiB, default 32; variable lanes accept 1–8. This revision has no supported suffix-cache launch mechanism. Controls cover malformed, out-of-range and unsupported options.
+[PR #18](https://github.com/ArborealML/Inference-Router/pull/18) projects the GLM health check offline. Review passed the supplied b422d61 production diff. The corrected fixture passed 51 Release cases; config and Native AOT passed. All hosted checks passed and PR #18 merged at 989ae12. Before live qualification verify the image shell and router readiness budget independently of Docker’s start period.
 
-TASK-125 qualifies one pair for the first live proof. This row retains full selector parity and every unsupported combination remains visible.
+[PR #21](https://github.com/ArborealML/Inference-Router/pull/21) at 6892695 passed 52 focused Release cases, the pinned Strata config load and zero-warning Linux x64 Native AOT. Merged at 5643b27 after hosted CI and static review passed. The hosted tree matched qualification; optional spelling permutations remain covered by general unknown-tier refusal.
 
-Review of [PR #7](https://github.com/ArborealML/Inference-Router/pull/7) at f7ff610 found two loader gaps still present on green head 552b1f6. Reject shadowed ownership and selector fields and noncanonical common Docker keys for opted-in JSON. Preserve legacy parsing. Before activation, require launch receipts and labels to share the canonical model and tier for alias and implicit tiers. Current provider gates block mutation.
+[PR #22](https://github.com/ArborealML/Inference-Router/pull/22) at edc8b1a passed 69 focused Release cases, pinned config-only load and warning-free Linux x64 Native AOT. Hosted CI passed. Review counterexample disproved: CLI accepted a clean second tier and rejected both misplaced annotation casings before launch. Merged at 0abdbf5; offline coverage reached 41/75 at that landing.
 <!-- SECTION:NOTES:END -->

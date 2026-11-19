@@ -15,6 +15,8 @@ public class FakeEngineHandler : HttpMessageHandler
     public string[] LoadedModels { get; set; } = ["test-model", "other-model"];
     /// <summary>Block every completion until <see cref="ReleaseGate"/> (for ordering tests).</summary>
     public bool HoldCompletions { get; set; }
+    internal Action? AfterHeldCompletionEnteredForTests { get; set; }
+    internal Action? AfterHeldCompletionCancellationForTests { get; set; }
     /// <summary>A wedged backend: the connection is accepted and then nothing is ever written. The only
     /// way out for either side is cancellation, which is what the per-engine response cap provides.</summary>
     public bool NeverAnswersCompletions { get; set; }
@@ -143,10 +145,16 @@ public class FakeEngineHandler : HttpMessageHandler
             }
             if (HoldCompletions)
             {
-                try { await _gate.Task.WaitAsync(cancellationToken); }
+                try
+                {
+                    var pending = _gate.Task.WaitAsync(cancellationToken);
+                    AfterHeldCompletionEnteredForTests?.Invoke();
+                    await pending;
+                }
                 catch (OperationCanceledException)
                 {
                     Interlocked.Increment(ref _cancelledCompletions);
+                    AfterHeldCompletionCancellationForTests?.Invoke();
                     if (AnswerAfterCancellationMs > 0)
                     {
                         // Deliberately uncancellable: the router has already hung up, and this handler

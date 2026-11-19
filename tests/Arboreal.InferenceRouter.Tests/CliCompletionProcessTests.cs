@@ -59,6 +59,70 @@ public sealed class CliCompletionProcessTests
     public async Task CompletionExitAndOutputMatchTheResponse(string verb, bool json, ResponseCase response)
     {
         var scenario = ScenarioFor(response);
+        var (request, result) = await RunCompletionAsync(verb, scenario, url =>
+        {
+            var args = new List<string> { "--server", url };
+            if (json) args.Add("--json");
+            if (!scenario.Stream) args.Add("--no-stream");
+            args.Add("a prompt");
+            return args.ToArray();
+        });
+
+        Assert.Equal("POST", request.Method);
+        Assert.Equal("/v1/chat/completions", request.Path);
+        Assert.Equal(scenario.Stream, request.Body.GetProperty("stream").GetBoolean());
+        Assert.Equal("anon", request.Thread);
+        Assert.Null(request.Priority);
+        Assert.False(request.Body.TryGetProperty("model", out _));
+        Assert.Equal("user", Assert.Single(request.Body.GetProperty("messages").EnumerateArray()).GetProperty("role").GetString());
+        Assert.Equal(Encoding.UTF8.GetBytes(json ? scenario.JsonOut : scenario.TextOut), result.Stdout);
+        Assert.Equal(scenario.ExitCode, result.ExitCode);
+        Assert.Equal(Encoding.UTF8.GetBytes(json ? scenario.JsonError : scenario.TextError), result.Stderr);
+    }
+
+    [Theory(Timeout = 30_000)]
+    [InlineData("chat", false)]
+    [InlineData("chat", true)]
+    [InlineData("complete", false)]
+    [InlineData("complete", true)]
+    public async Task CompletionPromptContainsOnlyPositionalsOrStdin(string verb, bool fromStdin)
+    {
+        const string model = "fixture-model";
+        const string thread = "fixture-thread";
+        const string priority = "high:200";
+        const string system = "system instructions only";
+        const string stdin = " \tfirst line\nsecond line \n";
+        var scenario = ScenarioFor(ResponseCase.NonStreamingCompletion);
+        var (request, result) = await RunCompletionAsync(verb, scenario, url => fromStdin
+            ? ["-m", "--system", system, "-s", url, "--model", model,
+                "--thread", thread, "-p", priority, "--json", "--no-stream"]
+            : ["café", "--server", url, "middle", "-m", model, "--model", "ignored-model",
+                "--system", system, "雪", "-t", thread, "--priority", priority,
+                "--since", "123", "--no-stream", "--json"], stdin);
+
+        Assert.Equal("POST", request.Method);
+        Assert.Equal("/v1/chat/completions", request.Path);
+        Assert.Equal(model, request.Body.GetProperty("model").GetString());
+        Assert.False(request.Body.GetProperty("stream").GetBoolean());
+        Assert.Equal(thread, request.Thread);
+        Assert.Equal(priority, request.Priority);
+        Assert.Collection(request.Body.GetProperty("messages").EnumerateArray(),
+            message => AssertMessage(message, "system", system),
+            message => AssertMessage(message, "user", fromStdin ? "first line\nsecond line" : "café middle 雪"));
+        Assert.Equal(0, result.ExitCode);
+        Assert.Equal(Encoding.UTF8.GetBytes(Completion), result.Stdout);
+        Assert.Empty(result.Stderr);
+    }
+
+    private static void AssertMessage(JsonElement message, string role, string text)
+    {
+        Assert.Equal(role, message.GetProperty("role").GetString());
+        Assert.Equal(text, message.GetProperty("content").GetString());
+    }
+
+    private static async Task<(ObservedRequest Request, ProcessResult Result)> RunCompletionAsync(
+        string verb, Scenario scenario, Func<string, string[]> arguments, string? stdin = null)
+    {
         using var deadline = new CancellationTokenSource(RunLimit);
         var received = new TaskCompletionSource<ObservedRequest>(TaskCreationOptions.RunContinuationsAsynchronously);
         var builder = WebApplication.CreateSlimBuilder();
@@ -70,7 +134,9 @@ public sealed class CliCompletionProcessTests
         {
             using var request = await JsonDocument.ParseAsync(context.Request.Body, cancellationToken: deadline.Token);
             received.TrySetResult(new ObservedRequest(context.Request.Method, context.Request.Path.Value,
-                request.RootElement.GetProperty("stream").GetBoolean()));
+                context.Request.Headers["X-Inference-Thread"].ToString(),
+                context.Request.Headers.TryGetValue("X-Inference-Priority", out var priority) ? priority.ToString() : null,
+                request.RootElement.Clone()));
             context.Response.StatusCode = scenario.Status;
             context.Response.ContentType = scenario.Stream && scenario.Status == 200 ? "text/event-stream" : "application/json";
             // Every response has complete HTTP framing, even when it lacks an SSE sentinel.
@@ -81,12 +147,9 @@ public sealed class CliCompletionProcessTests
         await app.StartAsync(deadline.Token);
         try
         {
-            var result = await RunCliAsync(app.Urls.Single(), verb, json, scenario.Stream, deadline.Token);
+            var result = await RunCliAsync(verb, arguments(app.Urls.Single()), stdin, deadline.Token);
             var request = await received.Task.WaitAsync(deadline.Token);
-            Assert.Equal(new ObservedRequest("POST", "/v1/chat/completions", scenario.Stream), request);
-            Assert.Equal(Encoding.UTF8.GetBytes(json ? scenario.JsonOut : scenario.TextOut), result.Stdout);
-            Assert.Equal(scenario.ExitCode, result.ExitCode);
-            Assert.Equal(Encoding.UTF8.GetBytes(json ? scenario.JsonError : scenario.TextError), result.Stderr);
+            return (request, result);
         }
         finally
         {
@@ -95,29 +158,28 @@ public sealed class CliCompletionProcessTests
         }
     }
 
-    private static async Task<ProcessResult> RunCliAsync(string url, string verb, bool json, bool stream, CancellationToken ct)
+    private static async Task<ProcessResult> RunCliAsync(string verb, string[] args, string? stdin, CancellationToken ct)
     {
         var dll = Path.Combine(AppContext.BaseDirectory, "air.dll");
         Assert.True(File.Exists(dll), $"CLI project output missing from test directory: {dll}");
         var start = new ProcessStartInfo(Environment.GetEnvironmentVariable("DOTNET_HOST_PATH") ?? "dotnet")
         {
             UseShellExecute = false,
+            RedirectStandardInput = true,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
         };
         start.ArgumentList.Add(dll);
         start.ArgumentList.Add(verb);
-        start.ArgumentList.Add("--server");
-        start.ArgumentList.Add(url);
-        if (json) start.ArgumentList.Add("--json");
-        if (!stream) start.ArgumentList.Add("--no-stream");
-        start.ArgumentList.Add("a prompt");
+        foreach (var arg in args) start.ArgumentList.Add(arg);
 
         using var child = Process.Start(start) ?? throw new InvalidOperationException("Could not start the CLI.");
         try
         {
             var stdout = ReadBytesAsync(child.StandardOutput.BaseStream, ct);
             var stderr = ReadBytesAsync(child.StandardError.BaseStream, ct);
+            if (stdin is not null) await child.StandardInput.WriteAsync(stdin.AsMemory(), ct);
+            child.StandardInput.Close();
             await Task.WhenAll(child.WaitForExitAsync(ct), stdout, stderr);
             return new ProcessResult(child.ExitCode, await stdout, await stderr);
         }
@@ -169,6 +231,6 @@ public sealed class CliCompletionProcessTests
 
     private sealed record Scenario(int Status, bool Stream, string Body, int ExitCode, string TextOut, string JsonOut,
         string TextError, string JsonError);
-    private sealed record ObservedRequest(string Method, string? Path, bool Stream);
+    private sealed record ObservedRequest(string Method, string? Path, string Thread, string? Priority, JsonElement Body);
     private sealed record ProcessResult(int ExitCode, byte[] Stdout, byte[] Stderr);
 }

@@ -19,6 +19,11 @@
 
   <ItemGroup>
     <Using Include="Xunit" />
+    <EmbeddedResource Include="SelectorFixtures/deepseek.toml;SelectorFixtures/glm.toml;
+                               SelectorFixtures/hyperqwen.toml;SelectorFixtures/maya_xs.toml;
+                               SelectorFixtures/minimax.toml;SelectorFixtures/strata.toml;
+                               SelectorFixtures/manifest.json;SelectorFixtures/selector-reference.json"
+                      LogicalName="SelectorFixtures/%(Filename)%(Extension)" />
   </ItemGroup>
 
   <ItemGroup>

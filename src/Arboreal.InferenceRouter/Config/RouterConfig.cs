@@ -32,6 +32,10 @@ public sealed class DockerLifecycleConfig
     public required string Image { get; init; }
     public DockerImageIdentity? ImageIdentity { get; init; }
     internal DockerLaunchResources? Resources { get; init; }
+    internal DockerTargetPlans? TargetPlans { get; init; }
+    internal bool HasUnqualifiedTargetDocker => TargetPlans is not null;
+    internal DockerContainerPolicy? ContainerPolicy { get; init; }
+    internal bool HasUnqualifiedLaunchOptions => Entrypoint is not null || IpcMode is not null || ContainerPolicy is not null;
     /// <summary><c>unix:///path/to/sock</c> or <c>http(s)://host:port</c>.</summary>
     public string Socket { get; init; } = "unix:///var/run/docker.sock";
     /// <summary>Pinned so a daemon update cannot change the API under a running router.</summary>
@@ -41,6 +45,8 @@ public sealed class DockerLifecycleConfig
     /// entitled to stop the other's containers.</summary>
     public required string RouterId { get; init; }
     public string[] Command { get; init; } = [];
+    public string? Entrypoint { get; init; }
+    public string? IpcMode { get; init; }
     public string[] Env { get; init; } = [];
     public int StopTimeoutMs { get; init; } = 30_000;
     public int? HostPort { get; init; }

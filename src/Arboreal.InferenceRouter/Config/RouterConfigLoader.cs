@@ -31,11 +31,14 @@ public static class RouterConfigLoader
                     AllowTrailingCommas = true,
                 });
                 DockerLaunchResources.CheckJson(doc.RootElement);
+                DockerTargetPlans.CheckJson(doc.RootElement);
                 dto = JsonSerializer.Deserialize<ConfigDto>(doc, ConfigJsonContext.Default.ConfigDto)
                       ?? throw new RouterConfigException("config: empty document");
             }
             else
             {
+                if (TomlSerializer.Deserialize(text, ConfigTomlDocumentContext.Default.TomlTable) is { } document)
+                    DockerTargetPlans.CheckTargetDeclarationsToml(document);
                 dto = TomlSerializer.Deserialize(text, ConfigTomlContext.Default.ConfigDto)
                       ?? throw new RouterConfigException("config: empty document");
             }
@@ -178,7 +181,11 @@ public static class RouterConfigLoader
                     var ladder = new ServingProfile[serving.Count];
                     for (var i = 0; i < serving.Count; i++)
                     {
-                        var s = serving[i];
+                        var s = serving[i] ??
+                            throw new RouterConfigException($"engine.{name}.catalog.{modelName}.serving[{i}] must be an object");
+                        if (s.Aliases is { } profileAliases)
+                            DockerTargetPlans.ValidateProfileAliases(profileAliases, s.Docker,
+                                $"engine.{name}.catalog.{modelName}.serving[{i}]");
                         if (s.Name is not { Length: > 0 } sname)
                             throw new RouterConfigException($"engine.{name}.catalog.{modelName}.serving[{i}].name is required");
                         if (s.MaxContext is not { } mc || mc <= 0)
@@ -215,6 +222,18 @@ public static class RouterConfigLoader
             }
         }
 
+        var hasTargetDocker = DockerTargetPlans.IsDeclared(e);
+        var hasContainerPolicy = e.Docker?.HasContainerPolicy == true;
+        var hasLaunchOptions = hasContainerPolicy || e.Docker is { Entrypoint: not null } or { IpcMode: not null };
+        if ((hasTargetDocker || hasLaunchOptions) && (e.Docker is null || e.Remote == true ||
+            e.LifecycleOwner is not (null or "router") ||
+            e.Lifecycle is { } targetLifecycle && !targetLifecycle.Trim().Equals("docker", StringComparison.OrdinalIgnoreCase)))
+        {
+            var fields = hasTargetDocker ? "serving-tier Docker" : hasContainerPolicy
+                ? "docker.init, docker.restart or docker.log_rotation" : "docker.entrypoint or docker.ipc_mode";
+            throw new RouterConfigException($"engine.{name}: {fields} requires a native Docker engine");
+        }
+
         var lifecycle = EngineLifecycleKind.Delegated;
         DockerLifecycleConfig? docker = null;
         if (e.Lifecycle is { Length: > 0 } lcText)
@@ -227,6 +246,7 @@ public static class RouterConfigLoader
         }
         if (e.Docker is { } d)
         {
+            d.RejectMisplacedHealthcheck($"engine.{name}.docker");
             lifecycle = EngineLifecycleKind.Docker;
             if (d.CallTimeoutMs is { } callMs && callMs < 100)
                 throw new RouterConfigException(
@@ -234,16 +254,23 @@ public static class RouterConfigLoader
             if (string.IsNullOrWhiteSpace(d.Image))
                 throw new RouterConfigException(
                     $"engine.{name}.docker.image is required: the router starts an image that is already on the host and never pulls one itself");
+            if (d.IpcMode is not (null or "host"))
+                throw new RouterConfigException($"engine.{name}.docker.ipc_mode must be host when supplied");
+            var commonResources = d.Resources is { } resources ? DockerLaunchResources.Parse(resources, name) : null;
             docker = new DockerLifecycleConfig
             {
                 Image = d.Image!,
                 ImageIdentity = ParseDockerImageIdentity(d, name),
-                Resources = d.Resources is { } resources ? DockerLaunchResources.Parse(resources, name) : null,
+                Resources = commonResources,
+                TargetPlans = hasTargetDocker ? DockerTargetPlans.Parse(name, e.Catalog!, d, commonResources) : null,
                 Socket = d.Socket ?? "unix:///var/run/docker.sock",
                 ApiVersion = d.ApiVersion ?? "v1.44",
                 RouterId = d.RouterId ?? throw new RouterConfigException(
                     $"engine.{name}.docker.router_id is required: it is the label that says which router owns a container, and a shared default would let two routers stop each other's work"),
                 Command = d.Command ?? [],
+                Entrypoint = ParseDockerEntrypoint(d.Entrypoint, name),
+                IpcMode = d.IpcMode,
+                ContainerPolicy = hasContainerPolicy ? DockerContainerPolicy.Parse(d, $"engine.{name}.docker") : null,
                 Env = d.Env ?? [],
                 StopTimeoutMs = d.StopTimeoutMs ?? 30_000,
                 HostPort = d.HostPort,
@@ -322,6 +349,16 @@ public static class RouterConfigLoader
         };
         _ = definition.ResolveLifecycleOwner();
         return definition;
+    }
+
+    private static string? ParseDockerEntrypoint(string? value, string engine)
+    {
+        if (value is null) return null;
+        if (value.Length <= 1 || value[0] != '/' || value != value.Trim() ||
+            value.Contains('\\', StringComparison.Ordinal) || value.Any(char.IsControl) ||
+            value[1..].Split('/').Any(segment => segment is "" or "." or ".."))
+            throw new RouterConfigException($"engine.{engine}.docker.entrypoint must be a clean absolute Linux executable path inside the image");
+        return value;
     }
 
     private static DockerImageIdentity? ParseDockerImageIdentity(DockerDto docker, string engineName)

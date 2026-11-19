@@ -50,6 +50,8 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
     /// claim queues behind. <see cref="BeforeScheduleSwitchForTests"/> runs at the scheduling boundary, so a
     /// synchronous failure there is testable; a real thread-pool rejection is not, and is not claimed.</summary>
     internal Action? BeforeSwitchWaitForTests;
+    // Runs with the switch semaphore held, before observing the claim under the transition gate.
+    internal Action<DateTimeOffset>? AfterSwitchLockAcquiredForTests;
     internal Action<bool>? AfterEndCommitForTests;
     internal Action? BeforeScheduleSwitchForTests;
     // Observes the published proof before the switch clears the marker, outside the transition gate.
@@ -112,6 +114,8 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
     public int ActiveSlots => Capability.Serving.TotalSlots;
     public string? ActiveProfile => Capability.Serving.Profile;
 
+    private const int MaxClaimLosses = 8;
+
     private enum SwitchEnd { Pending, Ready, Failed, RouterStopped }
 
     private sealed class SwitchState
@@ -120,6 +124,8 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
         /// <summary>Set when the switch targets a serving profile (context-window escalation)
         /// rather than a model load; carries "profile:<name>" for observability.</summary>
         public string? Profile;
+        public long RequiredWindow;
+        public long CommittedWindow;
         public EngineCapability? IncumbentProof;
         // Read and written under the transition gate. In-flight probes cannot publish a new proof.
         public bool IncumbentContradicted;
@@ -158,6 +164,14 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
                            TimeProvider? clock = null)
     {
         config.ValidateLifecycleTopology(def);
+        if (def.Docker?.HasUnqualifiedTargetDocker == true)
+            throw new RouterConfigException($"engine.{WireText.Ident(def.Name)}: serving-tier Docker targets require host qualification before activation");
+        if (def.Docker?.HasUnqualifiedLaunchOptions == true)
+        {
+            var fields = def.Docker.ContainerPolicy is null
+                ? "docker.entrypoint and docker.ipc_mode" : "Docker container policy options";
+            throw new RouterConfigException($"engine.{WireText.Ident(def.Name)}: {fields} require host qualification before activation");
+        }
         _lifecycleBinding = BindLifecycle(def, lifecycle);
         if (hostEnrollment is { } enrollment &&
             (!def.HasExplicitRouterLifecycle || enrollment.Engine != def.Name || enrollment.RouterId != def.Docker?.RouterId ||
@@ -387,26 +401,7 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
     private static bool ContradictsIncumbent(EngineCapability incumbent, ModelsObservation? observation) =>
         observation is not { } answered || CompareModelsObservation(incumbent, answered) != (true, true);
 
-    /// <summary>Publish a switch's readiness proof: the reported list and the health that came with it, in
-    /// one snapshot, while the switch marker is still up. Health is part of the proof, not a fact for the
-    /// next poll to supply: a switch that proved an engine healthy and left it reading unhealthy would be
-    /// skipped by the scheduler anyway, and the whole point of the proof is to remove that skip. The marker
-    /// is cleared only after this, so no snapshot ever reads "not switching and does not have it" for a
-    /// model that was in fact being loaded (§5.5).</summary>
-    private bool TryPublishProof(SwitchState state, ModelsObservation observation, ServingCapacity serving = default)
-    {
-        lock (_transitionGate)
-        {
-            if (_stopped || !ReferenceEquals(_switchState, state) || state.End != SwitchEnd.Pending)
-                return false;
-            if (state.Profile is not null && serving.WindowFor(state.Model!) <= 0) return false;
-            if (!TryPublishClaimProof(state, observation, serving, deadline: null, out _)) return false;
-        }
-        AfterSwitchProofForTests?.Invoke();
-        return true;
-    }
-
-    // Both callers hold the transition gate and have checked that this claim is current and pending.
+    // Callers hold the transition gate and have checked that this claim is current and pending.
     private bool TryPublishClaimProof(SwitchState state, ModelsObservation observation, ServingCapacity serving,
         ReadinessDeadline? deadline, out ReadinessStepOutcome settlement)
     {
@@ -421,6 +416,7 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
             !ReferenceEquals(Interlocked.CompareExchange(ref _cap, next, current), current)) return false;
 
         state.Proof = proof;
+        state.CommittedWindow = serving.WindowFor(state.Model!);
         timing.TryCompleteStage(SwitchStage.Readiness, succeeded: true);
         return true;
     }
@@ -499,33 +495,25 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
 
     private void WithdrawDiscoveryOnStop()
     {
-        // A committed switch can still owe its waiter Ready. Retire discovery and fence in-flight
-        // polls here while keeping the health evidence needed to deliver that outcome.
+        // Fence in-flight polls even if the snapshot is already unknown. The retained roster
+        // is historical, and a committed switch delivers its own outcome from the claim.
         while (true)
         {
             var cur = Capability;
-            var retired = cur with
-            {
-                Version = cur.Version + 1,
-                ModelContextWindows = EngineCapability.NoModelContextWindows,
-                Serving = default,
-                SwitchProof = null,
-            };
+            var retired = WithoutProbeProof(cur);
             if (Interlocked.CompareExchange(ref _cap, retired, cur) == cur) return;
         }
     }
 
     /// <summary>Open a switch in the snapshot — marker up and health unknown in one publication — but only while
-    /// nothing has published since <paramref name="expectedVersion"/>, the version of the snapshot the readiness
+    /// the exact <paramref name="expected"/> snapshot still holds the evidence the readiness
     /// question was just answered on. What follows is a mutation of the engine, so its previous answer has to stop
     /// being claimed at the moment the mutation is <i>decided</i>, not after it turns out to have failed. Returns
-    /// false when it did not claim, and the caller re-decides against the newer snapshot: the health loop and every
-    /// switch exit publish <i>outside</i> the transition gate, so a poll that proves the requested model a moment
-    /// before the claim has to retire the switch rather than buy a second launch of a model already served (§5.5).</summary>
-    private bool TryPublishSwitchStarted(string model, long expectedVersion)
+    /// false when it did not claim. Ordinary probes can publish without the transition gate. If a poll proves
+    /// the requested model before the claim, the caller can use that proof on its next attempt (§5.5).</summary>
+    private bool TryPublishSwitchStarted(string model, EngineCapability expected)
     {
-        var cur = Volatile.Read(ref _cap);
-        if (cur.Version != expectedVersion) return false;   // someone published: their answer is the one to decide on
+        var cur = expected;
         // `Healthy` was true in the snapshot this claim is decided on, so this publication is the author of the
         // withdrawal it makes; starting from an already-unknown engine authors nothing (AC #8).
         var next = cur with
@@ -601,23 +589,29 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
         using var timer = new PeriodicTimer(interval);
         while (!ticks.IsCancellationRequested)
         {
-            // Capture the version before either read. The poll may publish only against that evidence.
-            var capBefore = Capability;
-            try
-            {
-                BeforeModelsFetchForTests?.Invoke();
-                if (!await ProbeHealthAsync(capBefore, ct).ConfigureAwait(false)) break;
-            }
-            catch (Exception ex)
-            {
-                if (Volatile.Read(ref _stopped)) break;
-                Emit("engine.health", reason: WireText.Bound(ex.Message, ProviderReasonChars), value: 0);
-            }
+            if (!await ProbeHealthOnceAsync(ct).ConfigureAwait(false)) break;
             try
             {
                 if (!await timer.WaitForNextTickAsync(ticks.Token).ConfigureAwait(false)) break;
             }
             catch (OperationCanceledException) { break; }
+        }
+    }
+
+    internal async Task<bool> ProbeHealthOnceAsync(CancellationToken ct)
+    {
+        // Capture the version before either read. The poll may publish only against that evidence.
+        var capBefore = Capability;
+        try
+        {
+            BeforeModelsFetchForTests?.Invoke();
+            return await ProbeHealthAsync(capBefore, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            if (Volatile.Read(ref _stopped)) return false;
+            Emit("engine.health", reason: WireText.Bound(ex.Message, ProviderReasonChars), value: 0);
+            return true;
         }
     }
 
@@ -907,43 +901,46 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
     /// The answer comes from one current, verified snapshot, not from the reported list alone: a list is
     /// history once a switch has started, and health unknown means the router does not know what is running
     /// now, so neither can license a dispatch (§5.5).</summary>
-    public bool IsReadyFor(string canonical, ServingProfile? profile) => ReadyIn(Capability, canonical, profile);
+    public bool IsReadyFor(string canonical, ServingProfile? profile) =>
+        ReadyIn(Capability, canonical, RequiredWindow(profile, explicitContextMinimum: 0));
 
     /// <summary>The same predicate against a snapshot the caller already holds. The claim path needs that form:
     /// the readiness decision and the switch marker have to come from one snapshot, or a poll that proves the
     /// model in between buys a second launch (§5.5).</summary>
-    private static bool ReadyIn(EngineCapability cap, string canonical, ServingProfile? profile)
+    private static bool ReadyIn(EngineCapability cap, string canonical, long requiredWindow)
     {
         if (!cap.Healthy || cap.SwitchingToward is not null) return false;
         foreach (var name in cap.ModelRoster)
         {
             if (string.Equals(name, canonical, StringComparison.OrdinalIgnoreCase))
-                return WindowFits(cap.Serving.WindowFor(canonical), profile);
+                return WindowFits(cap.Serving.WindowFor(canonical), requiredWindow);
         }
         return false;
     }
 
-    private static bool WindowFits(long window, ServingProfile? profile) =>
-        profile is null || (window > 0 && window >= profile.MaxContext);
+    internal static long RequiredWindow(ServingProfile? profile, long explicitContextMinimum) =>
+        Math.Max(profile is null ? 0L : Math.Max(1L, profile.MaxContext), explicitContextMinimum);
 
-    private bool OwnProofStillStands(EngineCapability cap, string canonical, ServingProfile? profile)
+    private static bool WindowFits(long window, long requiredWindow) => window >= requiredWindow;
+
+    private bool OwnProofStillStands(EngineCapability cap, string canonical, long requiredWindow)
     {
         if (cap.Healthy)
             return cap.ModelRoster.Contains(canonical, StringComparer.OrdinalIgnoreCase) &&
-                WindowFits(cap.Serving.WindowFor(canonical), profile);
+                WindowFits(cap.Serving.WindowFor(canonical), requiredWindow);
         lock (_transitionGate)
         {
             var state = _switchState;
             return ReferenceEquals(cap, Capability) && IsIncumbentClaim(cap) &&
                 state.End == SwitchEnd.Pending && !state.IncumbentContradicted &&
-                (profile is null || !state.IncumbentServingContradicted) &&
+                (requiredWindow == 0 || !state.IncumbentServingContradicted) &&
                 cap.SwitchingToward == state.Model && state.IncumbentProof is { } incumbent &&
-                incumbent.Version + 1 == cap.Version && ReadyIn(incumbent, canonical, profile);
+                incumbent.Version + 1 == cap.Version && ReadyIn(incumbent, canonical, requiredWindow);
         }
     }
 
     /// <summary>Authority and catalog checks for an idle acquisition.</summary>
-    private enum EntryGuard { Ok, NoLifecycleOwner, Absent, NoUsableSelector }
+    private enum EntryGuard { Ok, NoLifecycleOwner, Absent, NoUsableSelector, MissingHostCapacity }
 
     /// <summary>Resolve and validate, once for this acquisition attempt, the catalog entry a new claim would run
     /// on. Nothing is published or mutated here, and the predicate for "can this selector be run" is the provider's
@@ -1012,12 +1009,14 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
     }
 
     internal async Task<ObservedSwitchResult> EnsureLoadedAsync(
-        string model, ServingProfile? profileOverride, TimeSpan timeout, SwitchQueueTiming? queue, CancellationToken ct)
+        string model, ServingProfile? profileOverride, TimeSpan timeout, SwitchQueueTiming? queue, CancellationToken ct,
+        long explicitContextMinimum = 0)
     {
         if (Volatile.Read(ref _stopped)) return new(SwitchResult.RouterStopped);
         var canonical = CanonicalModel(model) ?? model;
+        var requiredWindow = RequiredWindow(profileOverride, explicitContextMinimum);
         var initial = Capability;
-        if (ReadyIn(initial, canonical, profileOverride))
+        if (ReadyIn(initial, canonical, requiredWindow))
             return Volatile.Read(ref _stopped) ? new(SwitchResult.RouterStopped) : ReadyFrom(initial.SwitchProof, canonical, profileOverride);
         // `timeout` bounds the *waiting*, never the switch: the transaction belongs to the engine and
         // runs on _switchCts, so a caller that gives up leaves the engine switching rather than
@@ -1032,6 +1031,7 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
         // engine's switch token instead. This source is disposed with the call; the engine's own is not.
         using var waiterCts = CancellationTokenSource.CreateLinkedTokenSource(ct, _switchCts.Token);
         var waiter = waiterCts.Token;
+        var claimLosses = 0;
         while (true)
         {
             SwitchState state;
@@ -1041,12 +1041,15 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
             // isolation — so the refusal is chosen inside the gate and spoken outside it.
             LifecycleTarget? claimTarget = null;
             var entryMiss = EntryGuard.Ok;
+            var retryClaim = false;
+            var offered = Capability;
             BeforeSwitchWaitForTests?.Invoke();
             try
             {
                 // The linked source outlives this await.
 #pragma warning disable IDISP013 // await-in-using not applicable: the wait is awaited, not detached
-                await _switchLock.WaitAsync(waiter).ConfigureAwait(false);
+                if (!await TryWaitForSwitchLockAsync(deadline, waiter).ConfigureAwait(false))
+                    return UnclaimedWaitExpired(ct);
 #pragma warning restore IDISP013
             }
             catch (OperationCanceledException) when (!ct.IsCancellationRequested && Volatile.Read(ref _stopped))
@@ -1055,6 +1058,7 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
             }
             try
             {
+                AfterSwitchLockAcquiredForTests?.Invoke(deadline);
                 SwitchState? mine = null;
                 Exception? claimFault = null;
                 CancellationToken switchToken = default;
@@ -1065,62 +1069,67 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
                 lock (_transitionGate)
                 {
                     if (_stopped) return new(SwitchResult.RouterStopped);
+                    ct.ThrowIfCancellationRequested();
+                    if (deadline != DateTimeOffset.MaxValue && DateTimeOffset.UtcNow >= deadline)
+                        return UnclaimedWaitExpired(ct);
+
                     state = _switchState;
                     if (state.Model is null)
                     {
-                        // Decide and claim from **one** snapshot: readiness is read off `cap`, and the marker goes up
-                        // by CAS on `cap.Version`. The health loop and every switch exit publish outside this gate,
-                        // so the exchange can lose — and losing means something published while this caller was
-                        // deciding, which is re-decided on rather than launched over. A poll that proved *this*
-                        // caller's model retires the switch outright: that is the race that used to buy a second
-                        // launch of a model that was already served (§5.5).
-                        while (true)
+                        // An active claim takes precedence over the optimistic offer. An idle attempt can publish
+                        // only from the exact snapshot it evaluated, and retries release both locks.
+                        if (ReadyIn(offered, canonical, requiredWindow))
                         {
-                            var cap = Capability;
-                            if (ReadyIn(cap, canonical, profileOverride))
-                                return ReadyFrom(cap.SwitchProof, canonical, profileOverride);
-
-                            // A joiner observes the running switch before prospective validation.
-                            // Recheck readiness and target eligibility if the capability exchange loses.
+                            if (ReferenceEquals(Capability, offered))
+                                return ReadyFrom(offered.SwitchProof, canonical, profileOverride);
+                            retryClaim = true;
+                        }
+                        else
+                        {
                             entryMiss = ResolveClaimTarget(canonical, profileOverride, out var target);
-                            if (entryMiss != EntryGuard.Ok) break;
-                            claimTarget = target;
-                            var costKey = CostKey(target!);
-
-                            var candidate = new SwitchState
+                            if (entryMiss == EntryGuard.Ok && _hostEnrollment is { StagedForTests: null } &&
+                                (requiredWindow > 0 || GetProfile(canonical, target!.EffectiveProfile) is not null))
+                                entryMiss = EntryGuard.MissingHostCapacity;
+                            if (entryMiss != EntryGuard.Ok)
                             {
-                                Model = canonical,
-                                Profile = profileOverride?.Name,
-                                IncumbentProof = cap.Healthy ? cap : null,
-                            };
-                            if (!TryPublishSwitchStarted(canonical, cap.Version)) continue;
-                            candidate.Timing = new SwitchAttempt(_clock,
-                                new SwitchAttemptId(_runtimeEpoch, ++_switchSequence), costKey, queue);
-
-                            // Marker before state, both inside the gate: the scheduler reads "switching" from the
-                            // capability snapshot, so installing the switch state before the marker goes up leaves a
-                            // window in which a dispatch pass sees an engine whose switch has already been claimed as
-                            // idle and sends a request into the engine this switch is about to stop (§5.5). The switch
-                            // token is read *before* scheduling: reading it inside the task body races DisposeAsync,
-                            // and an ObjectDisposedException thrown before RunSwitchAsync is entered would strand
-                            // `Ready` with no finally to settle it, leaving waiters out their ceiling on a switch
-                            // that never ran.
-                            switchToken = _switchCts.Token;
-                            try
-                            {
-                                AfterSwitchMarkerRaisedForTests?.Invoke();
-                                _switchState = candidate;
-                                AfterClaimForTests?.Invoke();
+                                retryClaim = !ReferenceEquals(Capability, offered);
                             }
-                            catch (Exception ex)
+                            else
                             {
-                                // Rollback outside the gate must find the installed candidate even if the
-                                // first hook threw before the state write.
-                                _switchState = candidate;
-                                claimFault = ex;
+                                claimTarget = target;
+                                var costKey = CostKey(target!);
+                                var candidate = new SwitchState
+                                {
+                                    Model = canonical,
+                                    Profile = profileOverride?.Name,
+                                    RequiredWindow = requiredWindow,
+                                    IncumbentProof = offered.Healthy ? offered : null,
+                                };
+                                ct.ThrowIfCancellationRequested();
+                                if (deadline != DateTimeOffset.MaxValue && DateTimeOffset.UtcNow >= deadline)
+                                    return UnclaimedWaitExpired(ct);
+                                retryClaim = !TryPublishSwitchStarted(canonical, offered);
+                                if (!retryClaim)
+                                {
+                                    candidate.Timing = new SwitchAttempt(_clock,
+                                        new SwitchAttemptId(_runtimeEpoch, ++_switchSequence), costKey, queue);
+                                    switchToken = _switchCts.Token;
+                                    try
+                                    {
+                                        AfterSwitchMarkerRaisedForTests?.Invoke();
+                                        _switchState = candidate;
+                                        AfterClaimForTests?.Invoke();
+                                    }
+                                    catch (Exception ex)
+                                    {
+                                        // Rollback outside the gate must find the installed claim even
+                                        // when the marker hook threw before the state write.
+                                        _switchState = candidate;
+                                        claimFault = ex;
+                                    }
+                                    mine = candidate;
+                                }
                             }
-                            mine = candidate;
-                            break;
                         }
                         // A refused attempt claims nothing, so there is no state to adopt: `state` stays the idle
                         // value read above and the refusal is spoken below, after the lock is released.
@@ -1178,12 +1187,31 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
                 _switchLock.Release();
             }
 
+            if (retryClaim)
+            {
+                ct.ThrowIfCancellationRequested();
+                if (Volatile.Read(ref _stopped)) return new(SwitchResult.RouterStopped);
+                if (deadline != DateTimeOffset.MaxValue && RemainingSwitchWait(deadline) <= TimeSpan.Zero)
+                    return UnclaimedWaitExpired(ct);
+                if (++claimLosses < MaxClaimLosses) continue;
+
+                Emit("engine.switch_failed", model: canonical,
+                    reason: "switch_error: serving observations changed during every claim attempt");
+                return new(SwitchResult.Failed(SwitchReason.SwitchError));
+            }
+
             // Spoken outside both the switch lock and the transition gate: the refusal was selected under the gate
             // and is emitted after release, so a feed subscriber runs with no engine lock held (TASK-103 #4). One
             // `engine.switch_failed` per refused attempt, and nothing else: no marker went up, so there is no
             // switch to end and the engine keeps the proof it had (§5.5).
             if (entryMiss == EntryGuard.NoLifecycleOwner)
                 return new(SwitchResult.Failed(SwitchReason.NoLifecycleOwner));
+            if (entryMiss == EntryGuard.MissingHostCapacity)
+            {
+                Emit("engine.switch_failed", model: canonical,
+                    reason: "window_too_small: enrolled switch requires an exact-instance serving window");
+                return new(SwitchResult.Failed(SwitchReason.WindowTooSmall));
+            }
             if (entryMiss != EntryGuard.Ok)
             {
                 Emit("engine.switch_failed", model: canonical,
@@ -1197,11 +1225,9 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
                 return new(SwitchResult.Failed(SwitchReason.NoSelectCommand));
             }
 
-            var remaining = deadline == DateTimeOffset.MaxValue
-                ? Timeout.InfiniteTimeSpan
-                : deadline - (SwitchWaitTimeForTests?.Invoke(deadline) ?? DateTimeOffset.UtcNow);
+            var remaining = RemainingSwitchWait(deadline);
             if (deadline != DateTimeOffset.MaxValue && remaining <= TimeSpan.Zero)
-                return await AnswerExpiredSwitchWaitAsync(state, canonical, profileOverride, null, ct).ConfigureAwait(false);
+                return await AnswerExpiredSwitchWaitAsync(state, canonical, profileOverride, requiredWindow, null, ct).ConfigureAwait(false);
 
             var wokeByCancellation = false;
             try
@@ -1212,7 +1238,7 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
             }
             catch (TimeoutException)
             {
-                return await AnswerExpiredSwitchWaitAsync(state, canonical, profileOverride, timeout, ct).ConfigureAwait(false);
+                return await AnswerExpiredSwitchWaitAsync(state, canonical, profileOverride, requiredWindow, timeout, ct).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (!ct.IsCancellationRequested && Volatile.Read(ref _stopped))
             {
@@ -1225,12 +1251,44 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
             if (wokeByCancellation && FindReadinessDelivery(state, canonical, profileOverride) is { } delivery)
                 await WaitForOutcomeDeliveryAsync(delivery.Task, ct).ConfigureAwait(false);
 
-            if (ReadSwitchAnswer(state, canonical, profileOverride, woke: true) is { } answer) return answer;
+            if (ReadSwitchAnswer(state, canonical, profileOverride, requiredWindow, woke: true) is { } answer) return answer;
             // A contradicted proof or an unrelated outcome sends the caller back through the claim gate.
         }
     }
 
-    private ObservedSwitchResult? ReadSwitchAnswer(SwitchState state, string canonical, ServingProfile? profile, bool woke)
+    private async Task<bool> TryWaitForSwitchLockAsync(DateTimeOffset deadline, CancellationToken ct)
+    {
+        if (deadline == DateTimeOffset.MaxValue)
+        {
+            await _switchLock.WaitAsync(ct).ConfigureAwait(false);
+            return true;
+        }
+
+        // A single semaphore wait takes integer milliseconds. Keep the deadline for callers with longer waits.
+        var remaining = deadline - DateTimeOffset.UtcNow;
+        while (remaining > TimeSpan.Zero)
+        {
+            var waitMs = (int)Math.Min(int.MaxValue, Math.Ceiling(remaining.TotalMilliseconds));
+            if (await _switchLock.WaitAsync(waitMs, ct).ConfigureAwait(false)) return true;
+            if (waitMs < int.MaxValue) break;
+            remaining = deadline - DateTimeOffset.UtcNow;
+        }
+        return false;
+    }
+
+    private TimeSpan RemainingSwitchWait(DateTimeOffset deadline) => deadline == DateTimeOffset.MaxValue
+        ? Timeout.InfiniteTimeSpan
+        : deadline - (SwitchWaitTimeForTests?.Invoke(deadline) ?? DateTimeOffset.UtcNow);
+
+    private ObservedSwitchResult UnclaimedWaitExpired(CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+        return new(Volatile.Read(ref _stopped)
+            ? SwitchResult.RouterStopped : new SwitchResult(SwitchOutcome.TimedOut, null));
+    }
+
+    private ObservedSwitchResult? ReadSwitchAnswer(SwitchState state, string canonical, ServingProfile? profile,
+                                                   long requiredWindow, bool woke)
     {
         var end = state.End;
         if (end == SwitchEnd.RouterStopped) return new ObservedSwitchResult(SwitchResult.RouterStopped);
@@ -1241,19 +1299,28 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
         {
             if (!own) return new ObservedSwitchResult(SwitchResult.RouterStopped);
             // The historical verdict survives shutdown independently of the withdrawn dispatch proof.
-            return end == SwitchEnd.Ready
-                ? new ObservedSwitchResult(new SwitchResult(SwitchOutcome.Ready, null))
-                : new ObservedSwitchResult(SwitchResult.FailedFromRecord(state.FailureReason));
+            if (end == SwitchEnd.Failed)
+                return new ObservedSwitchResult(SwitchResult.FailedFromRecord(state.FailureReason));
+            return new ObservedSwitchResult(WindowFits(state.CommittedWindow, requiredWindow)
+                ? new SwitchResult(SwitchOutcome.Ready, null)
+                : SwitchResult.RouterStopped);
         }
 
         var cap = Capability;
-        if (ReadyIn(cap, canonical, profile)) return ReadyFrom(cap.SwitchProof, canonical, profile);
+        if (ReadyIn(cap, canonical, requiredWindow)) return ReadyFrom(cap.SwitchProof, canonical, profile);
         if (!own) return null;
 
-        // An own proof still authorises the caller while a successor's claim alone has withdrawn health.
+        // Same target and tier can have waiters with different explicit minima.
         if (end == SwitchEnd.Ready)
-            return Volatile.Read(ref _stopped) || OwnProofStillStands(cap, canonical, profile)
+        {
+            if (!WindowFits(state.CommittedWindow, requiredWindow))
+                return new ObservedSwitchResult(Volatile.Read(ref _stopped)
+                    ? SwitchResult.RouterStopped
+                    : SwitchResult.Failed(SwitchReason.WindowTooSmall));
+            // An own proof still authorises this waiter while a successor's claim alone has withdrawn health.
+            return Volatile.Read(ref _stopped) || OwnProofStillStands(cap, canonical, requiredWindow)
                 ? ReadyFrom(state.Proof, canonical, profile) : null;
+        }
 
         // A real wake requires a terminal state. If that invariant is broken, fail with the same
         // bounded category used by a failed switch with no recorded reason.
@@ -1273,25 +1340,27 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
     }
 
     private async ValueTask<ObservedSwitchResult> AnswerExpiredSwitchWaitAsync(
-        SwitchState state, string canonical, ServingProfile? profile, TimeSpan? wait, CancellationToken caller)
+        SwitchState state, string canonical, ServingProfile? profile, long requiredWindow, TimeSpan? wait,
+        CancellationToken caller)
     {
         TaskCompletionSource? delivery;
         lock (_transitionGate)
         {
             delivery = FindReadinessDelivery(state, canonical, profile);
             if (delivery is null)
-                return ExpiredSwitchAnswer(state, canonical, profile, wait);
+                return ExpiredSwitchAnswer(state, canonical, profile, requiredWindow, wait);
         }
 
         await WaitForOutcomeDeliveryAsync(delivery.Task, caller).ConfigureAwait(false);
         lock (_transitionGate)
-            return ExpiredSwitchAnswer(state, canonical, profile, wait);
+            return ExpiredSwitchAnswer(state, canonical, profile, requiredWindow, wait);
     }
 
-    private ObservedSwitchResult ExpiredSwitchAnswer(SwitchState state, string canonical, ServingProfile? profile, TimeSpan? wait) =>
+    private ObservedSwitchResult ExpiredSwitchAnswer(SwitchState state, string canonical, ServingProfile? profile,
+                                                     long requiredWindow, TimeSpan? wait) =>
         // A foreign terminal outcome leaves this caller owing another claim. The stop latch can
         // refuse that claim even after the foreign attempt has left the runtime idle.
-        ReadSwitchAnswer(state, canonical, profile, woke: false) ??
+        ReadSwitchAnswer(state, canonical, profile, requiredWindow, woke: false) ??
         new ObservedSwitchResult(_stopped ? SwitchResult.RouterStopped :
             new SwitchResult(SwitchOutcome.TimedOut, wait is { } elapsed ?
             $"still switching after {FormatWait(elapsed)}; a switch for another request is in flight" : null));
@@ -1434,22 +1503,30 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
             // One transaction through the provider seam: prove ownership, validate, stop what is ours,
             // launch the exact target. What "launch" means is the provider's business; the ordering is
             // the router's, and it is what keeps a refusal from costing the engine anything it had.
-            var report = _hostEnrollment is { } enrollment
-                ? await SwitchEnrolledHostAsync(enrollment, state, target, ct).ConfigureAwait(false)
-                : await lifecycle.SwitchWithReportAsync(target, timing, state.IncumbentProof?.SwitchProof, ct)
+            EngineLifecycleCoordinator.SwitchReport report;
+            if (_hostEnrollment is { StagedForTests: { } fixture } stagedEnrollment)
+            {
+                var staged = await SwitchStagedHostAsync(stagedEnrollment.Controller, fixture, state, target, ct)
                     .ConfigureAwait(false);
+                fixture.AfterHostResult?.Invoke(staged);
+                // The guarded verdict owns the outcome even when delivery, cleanup or Open refuses.
+                if (staged.Decision.Verdict != HostStagedVerdict.Refused || Volatile.Read(ref _stopped)) return;
+                report = new(staged.Result, RefusedBeforeMutation: false);
+            }
+            else if (_hostEnrollment is { } enrollment)
+            {
+                await RunImmediateHostSwitchAsync(enrollment, state, target, ct).ConfigureAwait(false);
+                return;
+            }
+            else
+            {
+                report = await lifecycle.SwitchWithReportAsync(target, timing, state.IncumbentProof?.SwitchProof, ct)
+                    .ConfigureAwait(false);
+            }
             var launched = report.Result;
             if (!launched.Succeeded)
             {
-                // The short reason goes on the feed for grepping; the provider's one actionable sentence
-                // rides along so the operator reading /admin/events does not have to go find a log.
-                // Both halves are bounded before they reach the feed: the ring caps entries, not characters,
-                // and a provider is free to answer with a sentence of any length.
-                var why = WireText.Bound(launched.Reason ?? "lifecycle_failed", ProviderReasonChars);
-                var detail = launched.Action is { Length: > 0 } action
-                    ? $"{why} — {WireText.Bound(action, ProviderActionChars)}"
-                    : why;
-                Emit("engine.switch_failed", model: model, reason: detail);
+                Emit("engine.switch_failed", model: model, reason: DescribeLaunchFailure(launched));
                 // The provider's own words stay on the feed; the caller is told only the category.
                 state.FailureReason = SwitchReason.LaunchFailed;
                 // An attempted stop or launch can invalidate the earlier proof even when it returns failure.
@@ -1493,10 +1570,21 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
             // would leave `Ready` unresolved forever and the engine latched mid-switch, so the state
             // machine closes itself here: resolve the waiters, and put the engine back to "not switching"
             // if this attempt is still the current one.
-            EndSwitch(state, false);
+            try { EndSwitch(state, false); }
+            finally
+            {
+                if (_hostEnrollment?.StagedForTests is { } stagedFixture) stagedFixture.AfterRun?.Invoke();
+                else _hostEnrollment?.ImmediateForTests?.AfterRun?.Invoke();
+            }
         }
     }
 
+    private static string DescribeLaunchFailure(LifecycleResult result)
+    {
+        // Bound the reason and the operator's action independently before they reach the feed.
+        var why = WireText.Bound(result.Reason ?? "lifecycle_failed", ProviderReasonChars);
+        return result.Action is { Length: > 0 } action ? $"{why} — {WireText.Bound(action, ProviderActionChars)}" : why;
+    }
 
     private readonly record struct ReadinessFailure(
         ReadinessMiss Miss = ReadinessMiss.NeverHealthy, IReadOnlyList<string>? Reported = null,
@@ -1525,7 +1613,7 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
         {
             if (!readiness.ProveHealth)
             {
-                result = await ReadTrustedLaunchAsync(target, deadline).ConfigureAwait(false);
+                result = await ReadTrustedLaunchAsync(target, state.RequiredWindow, deadline).ConfigureAwait(false);
                 // A retired or out-of-budget read returns no diagnosis.
                 lastMiss = result.Failure;
             }
@@ -1547,7 +1635,7 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
                         lastMiss = new(ReadinessMiss.NeverHealthy);
                     else if (!models.LoadedModels.Contains(target.Model, StringComparer.OrdinalIgnoreCase))
                         lastMiss = new(ReadinessMiss.ModelNotReported, models.LoadedModels);
-                    else if (!WindowFits(window, target.Profile))
+                    else if (!WindowFits(window, state.RequiredWindow))
                         lastMiss = new(ReadinessMiss.WindowTooSmall, Window: window);
                     else
                     {
@@ -1574,7 +1662,8 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
     private Task<ServingProbe> ReadReadinessStateAsync(CancellationToken ct) =>
         ReadServingProbeAsync(ct, HttpCompletionOption.ResponseHeadersRead);
 
-    private async Task<LegacyReadinessObservation> ReadTrustedLaunchAsync(LifecycleTarget target, ReadinessDeadline deadline)
+    private async Task<LegacyReadinessObservation> ReadTrustedLaunchAsync(
+        LifecycleTarget target, long requiredWindow, ReadinessDeadline deadline)
     {
         ReadinessStep<ModelsObservation> modelsStep;
         try { modelsStep = await deadline.ObserveAsync(ReadReadinessModelsAsync).ConfigureAwait(false); }
@@ -1585,7 +1674,7 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
         if (!models.LoadedModels.Contains(target.Model, StringComparer.OrdinalIgnoreCase))
             return new(Failure: new(ReadinessMiss.ModelNotReported, models.LoadedModels));
 
-        if (target.Profile is not { } profile) return new(models);
+        if (requiredWindow == 0) return new(models);
 
         var probeMs = _def.Health?.TimeoutMs ?? TrustStateReadCapMs;
         var stepCap = TimeSpan.FromMilliseconds(probeMs == Timeout.Infinite
@@ -1595,7 +1684,7 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
 
         var serving = BindServing(models, stateStep.Observation);
         var window = serving.WindowFor(target.Model);
-        return WindowFits(window, profile)
+        return WindowFits(window, requiredWindow)
             ? new(models, serving)
             : new(Failure: new(ReadinessMiss.WindowTooSmall, Window: window));
     }
@@ -1612,9 +1701,10 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
         {
             if (_stopped || !ReferenceEquals(_switchState, state) || state.End != SwitchEnd.Pending) return;
 
+            var window = result.Serving.WindowFor(target.Model);
             while (true)
             {
-                if (result.Models is { } models)
+                if (result.Models is { } models && WindowFits(window, state.RequiredWindow))
                 {
                     // The shared writer rechecks the deadline after preparing the snapshot, before its CAS.
                     ready = TryPublishClaimProof(state, models, result.Serving, deadline, out settlement);
@@ -1624,6 +1714,7 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
                 {
                     ready = false;
                     settlement = deadline.OutcomeForSettlement;
+                    if (result.Models is not null) failure = new(ReadinessMiss.WindowTooSmall, Window: window);
                 }
 
                 if (settlement == ReadinessStepOutcome.Stopped) return;
@@ -1661,7 +1752,7 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
             else
             {
                 Emit("engine.switch_failed", model: target.Model,
-                    reason: DescribeReadinessFailure(target, readiness, providerKind, failure));
+                    reason: DescribeReadinessFailure(target, state.RequiredWindow, readiness, providerKind, failure));
             }
         }
         finally
@@ -1671,7 +1762,7 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
         }
     }
 
-    private string DescribeReadinessFailure(LifecycleTarget target, ReadinessPolicy readiness,
+    private string DescribeReadinessFailure(LifecycleTarget target, long requiredWindow, ReadinessPolicy readiness,
         string providerKind, ReadinessFailure failure)
     {
         var askedFor = WireText.Ident(target.Model);
@@ -1691,12 +1782,12 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
                 "has to match what the engine reports (an alias is the router's spelling, not the engine's); " +
                 "the router does not retry or fall back to another engine",
             ReadinessMiss.WindowTooSmall when readiness.ProveHealth =>
-                $"{timeout} — {DescribeWindowMiss(failure.Window, target.Profile!)}: engine {engine} " +
-                $"serves {askedFor} in a context window too small for the profile the caller asked for: " +
+                $"{timeout} — {DescribeWindowMiss(failure.Window, requiredWindow)}: engine {engine} " +
+                $"serves {askedFor} in a context window too small for this request: " +
                 "give the engine a ladder tier that fits or ask a smaller profile; " +
                 "the router does not retry or fall back to another engine",
             ReadinessMiss.WindowTooSmall =>
-                $"{DescribeWindowMiss(failure.Window, target.Profile!)} (the caller is told window_too_small)",
+                $"{DescribeWindowMiss(failure.Window, requiredWindow)} (the caller is told window_too_small)",
             ReadinessMiss.RefreshUnanswered =>
                 $"refresh_unanswered_{askedFor}: engine {engine} did not answer /models after the launch, " +
                 $"so nothing confirms it serves {askedFor}: with wait_health = false the exec's exit status is " +
@@ -1710,9 +1801,9 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
         };
     }
 
-    private static string DescribeWindowMiss(long window, ServingProfile profile) => window > 0
-        ? $"window_{window}_lt_{profile.MaxContext}"
-        : $"window_unreported_for_{profile.MaxContext}";
+    private static string DescribeWindowMiss(long window, long requiredWindow) => window > 0
+        ? $"window_{window}_lt_{requiredWindow}"
+        : $"window_unreported_for_{requiredWindow}";
 
     public string? CanonicalModel(string requested)
     {

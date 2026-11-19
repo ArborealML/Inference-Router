@@ -1,0 +1,59 @@
+default_model = "glm-5.3-flash"
+[engine.glm]
+kind = "openai-compatible"
+endpoint = "http://127.0.0.1:28060"
+lifecycle_owner = "router"
+[engine.glm.docker]
+image = "registry.invalid/selector-fixture/maya:offline"
+image_id = "sha256:5555555555555555555555555555555555555555555555555555555555555555"
+image_repo_digest = "registry.invalid/selector-fixture/maya@sha256:6666666666666666666666666666666666666666666666666666666666666666"
+image_platform = "linux/amd64"
+router_id = "selector-fixture"
+entrypoint = "/opt/maya-python/bin/python"
+ipc_mode = "host"
+command = ["/selector.py", "serve", "{{profile}}"]
+env = ["PYTHONPATH=/work:/work/tools:/policy", "MAYA_UPDATE_CHECK=0"]
+stop_timeout_ms = 120000
+host_ip = "127.0.0.1"
+host_port = 28060
+container_port = 8080
+[engine.glm.docker.resources]
+gpu = { all = true }
+nano_cpus = 20000000000
+memory_bytes = 57982058496
+memory_swap_bytes = 60129542144
+bind_mounts = [
+  { source = "/fixture/install/prepared/maya-1.1.66", target = "/work", read_only = true },
+  { source = "/fixture/install/hosts/defiant/maya-qualification", target = "/qualification", read_only = true },
+  { source = "/fixture/install/run-fixture/maya-token", target = "/fixture-token", read_only = true },
+  { source = "/fixture/install/glm_selector.py", target = "/selector.py", read_only = true },
+  { source = "/fixture/install/prepared/serve-candidate.py", target = "/policy/serve_candidate.py", read_only = true },
+  { source = "/fixture/install/run-fixture/glm-serving", target = "/serving", read_only = false },
+]
+[engine.glm.catalog."glm-5.3-flash"]
+aliases = ["glm", "glm-flash"]
+default_profile = "1m"
+[[engine.glm.catalog."glm-5.3-flash".serving]]
+name = "32k"
+max_context = 32768
+max_slots = 1
+[engine.glm.catalog."glm-5.3-flash".serving.docker.healthcheck]
+command = "/opt/maya-python/bin/python /selector.py health 32k"
+interval_ms = 30000
+start_period_ms = 3600000
+[[engine.glm.catalog."glm-5.3-flash".serving]]
+name = "256k"
+max_context = 262144
+max_slots = 1
+[engine.glm.catalog."glm-5.3-flash".serving.docker.healthcheck]
+command = "/opt/maya-python/bin/python /selector.py health 256k"
+interval_ms = 30000
+start_period_ms = 3600000
+[[engine.glm.catalog."glm-5.3-flash".serving]]
+name = "1m"
+max_context = 1048576
+max_slots = 1
+[engine.glm.catalog."glm-5.3-flash".serving.docker.healthcheck]
+command = "/opt/maya-python/bin/python /selector.py health 1m"
+interval_ms = 30000
+start_period_ms = 3600000

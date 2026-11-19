@@ -2,6 +2,12 @@
 
 The first milestone requires a completed pi turn on the deployed router. An isolated pi session has already completed turns on two resident models. The native swap milestone requires observing a host change its resident model between turns. The cluster milestone adds shared admission and activation from either ingress.
 
+## Delivery evidence as of November 19
+
+**Pi on a running router is complete (6/6).** The deployed router served streamed Qwen and Swift turns in the same Pi session across an operator-managed selector change. Model discovery and the pinned client agreed on Qwen’s 256,000-token window. [PR #8](https://github.com/ArborealML/Inference-Router/pull/8) qualified the remaining admission check when a serving window shrinks during selection. [PR #33](https://github.com/ArborealML/Inference-Router/pull/33) completed CLI prompt parsing for both verbs, including stdin when only options are supplied.
+
+**Native model swap through Pi has twelve of twenty-one tasks complete.** [PR #31](https://github.com/ArborealML/Inference-Router/pull/31) qualified offline launch projections across 75 model and tier targets. The native swap still requires an enrolled host with an authenticated launch record and an observed router-managed transition between real Pi turns.
+
 ## Delivery path
 
 Stream integrity, switch safety and bounded admission can advance in parallel. Each later milestone depends on the specific tasks listed below.

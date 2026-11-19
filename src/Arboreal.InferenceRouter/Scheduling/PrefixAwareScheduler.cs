@@ -22,11 +22,11 @@ public sealed class EngineRuntimeInfo
     public required bool Switching { get; init; }
     /// <summary>Matched-prefix extent (normalized chars) this engine holds for the candidate request.</summary>
     public required long MatchedPrefixChars { get; init; }
-    /// <summary>Context window the engine currently serves (tokens). 0 = unreported → no window constraint.</summary>
+    /// <summary>Measured serving window for this model in tokens. Zero means unknown.</summary>
     public long ActiveContextWindow { get; init; }
     /// <summary>Serving-profile ladder declared for the candidate request's model (empty = no ladder).</summary>
     public IReadOnlyList<ServingProfile> ServingProfiles { get; init; } = Array.Empty<ServingProfile>();
-    internal SwitchServingProof? SwitchProof { get; init; }
+    internal EngineRuntime.DispatchObservation DispatchObservation { get; init; }
 }
 
 /// <summary>Decision: engine name (null = wait) or rejection.</summary>
@@ -66,6 +66,7 @@ public sealed class PrefixAwareScheduler : IRequestScheduler
 
         var scored = new List<(EngineRuntimeInfo E, double Score, bool Loaded)>();
         var loadable = new List<(EngineRuntimeInfo E, double Score, ServingProfile? Profile)>();
+        var explicitMinimum = request.ExplicitContextMinimum;
         foreach (var e in view.Engines)
         {
             if (!e.Healthy || e.Switching) continue;
@@ -84,6 +85,7 @@ public sealed class PrefixAwareScheduler : IRequestScheduler
                 if (target is null) continue;   // ladder exists but nothing fits: wrong engine
             }
             if (loaded && target is not null && e.ActiveContextWindow <= 0) continue;
+            if (loaded && target is null && explicitMinimum > 0 && e.ActiveContextWindow < explicitMinimum) continue;
             var needsEscalation = target is not null && e.ActiveContextWindow < target.MaxContext;
 
             var affinity = AffinityScore(e);

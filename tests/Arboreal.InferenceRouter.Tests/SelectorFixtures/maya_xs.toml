@@ -1,0 +1,54 @@
+default_model = "deepseek-v4.1-flash-1017-maya-xs-v2"
+[engine.maya_xs]
+kind = "openai-compatible"
+endpoint = "http://127.0.0.1:28060"
+lifecycle_owner = "router"
+[engine.maya_xs.docker]
+image = "registry.invalid/selector-fixture/maya:offline"
+image_id = "sha256:5555555555555555555555555555555555555555555555555555555555555555"
+image_repo_digest = "registry.invalid/selector-fixture/maya@sha256:6666666666666666666666666666666666666666666666666666666666666666"
+image_platform = "linux/amd64"
+router_id = "selector-fixture"
+entrypoint = "/opt/maya-python/bin/python"
+ipc_mode = "host"
+command = ["/selector.py", "serve", "32768"]
+env = ["STRATA_NO_ACQUIRE=1", "PYTHONPATH=/source:/source/tools:/policy"]
+host_ip = "127.0.0.1"
+host_port = 28060
+container_port = 8080
+stop_timeout_ms = 120000
+[engine.maya_xs.docker.resources]
+gpu = { all = true }
+nano_cpus = 20000000000
+memory_bytes = 57982058496
+memory_swap_bytes = 60129542144
+bind_mounts = [
+  { source = "/fixture/install/prepared/deepseek-vision/weights", target = "/vision", read_only = true },
+  { source = "/fixture/install/experiments/deepseek-flash", target = "/legacy", read_only = true },
+  { source = "/fixture/install/prepared/maya-1.1.66", target = "/work", read_only = true },
+  { source = "/fixture/install/prepared/maya-1.1.66", target = "/source", read_only = true },
+]
+[engine.maya_xs.catalog."deepseek-v4.1-flash-1017-maya-xs-v2"]
+aliases = ["deepseek-maya-xs", "deepseek-xs"]
+default_profile = "32k"
+[[engine.maya_xs.catalog."deepseek-v4.1-flash-1017-maya-xs-v2".serving]]
+name = "32k"
+max_context = 32768
+max_slots = 1
+[engine.maya_xs.catalog."deepseek-v4.1-flash-1017-maya-xs-v2".serving.docker]
+env = ["DEFIANT_DEEPSEEK_XS=1", "DEFIANT_DEEPSEEK_XS_ASSETS=/fixture/install/prepared/deepseek-maya-xs-v2"]
+bind_mounts = [
+  { source = "/fixture/install/experiments/deepseek-flash/models", target = "/work/models", read_only = true, nested_under = "/work" },
+  { source = "/fixture/install/prepared/deepseek-vision/pack", target = "/work/data/pack", read_only = true, nested_under = "/work" },
+  { source = "/fixture/install/prepared/serve-candidate.py", target = "/policy/serve_candidate.py", read_only = true },
+  { source = "/fixture/install/deepseek_selector.py", target = "/selector.py", read_only = true },
+  { source = "/fixture/install/prepared/deepseek-vision/weights", target = "/fixture/install/prepared/deepseek-vision/weights", read_only = true },
+  { source = "/fixture/install/prepared/deepseek-maya-xs-v2", target = "/fixture/install/prepared/deepseek-maya-xs-v2", read_only = true },
+  { source = "/fixture/install/experiments/deepseek-flash/results/serving", target = "/serving-logs", read_only = false },
+]
+[engine.maya_xs.catalog."deepseek-v4.1-flash-1017-maya-xs-v2".serving.docker.healthcheck]
+command = "/opt/maya-python/bin/python /selector.py health 32768"
+interval_ms = 30000
+start_period_ms = 3600000
+timeout_ms = 10000
+retries = 3

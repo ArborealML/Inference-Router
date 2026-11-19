@@ -143,7 +143,8 @@ public static class Program
         var since = GetOpt(args, ["--since"]);
         bool stream = !HasFlag(args, "--no-stream");
         bool json = HasFlag(args, "--json");
-        var promptArgs = args.Where(a => !a.StartsWith('-')).ToArray();
+        var promptArgs = args.Where((arg, i) => !arg.StartsWith('-') &&
+            (i == 0 || !IsChatValueOption(args[i - 1]))).ToArray();
         string prompt = promptArgs.Length > 0
             ? string.Join(' ', promptArgs)
             : Console.In.ReadToEnd().Trim();
@@ -248,6 +249,10 @@ public static class Program
         }
         return exitCode;
     }
+
+    private static bool IsChatValueOption(string arg) => arg is
+        "-m" or "--model" or "-t" or "--thread" or "-p" or "--priority" or
+        "--system" or "-s" or "--server" or "--since";
 
     private static string? ReadKeepaliveStatus(string line)
     {

@@ -1,11 +1,11 @@
 ---
 id: TASK-110
 title: Coordinate model engines that share one host with exclusive residency
-status: In Progress
+status: Preparing
 assignee:
   - '@gpt-6.2-sol-lifecycle'
 created_date: '2026-11-18T18:13:00Z'
-updated_date: '2026-11-19T06:41:00Z'
+updated_date: '2026-11-19T18:33:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -13,13 +13,14 @@ dependencies:
   - TASK-25
   - TASK-64
   - TASK-118
+  - TASK-137
 ordinal: 108000
 ---
 
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Implement exclusive residency for cooperating managed engines sharing a physical host group. The host mutation path retains authority through readiness and reconciles every uncertain provider operation after restart.
+Lifecycle is collecting the read-only Docker and host inventory under the coordinator’s existing authorization. Identify the actual writer and observer, partition coverage, protected endpoints and durable evidence. Verify what exists and name the first missing implementation for the native pair.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -30,17 +31,23 @@ Implement exclusive residency for cooperating managed engines sharing a physical
 - [ ] #4 A stable physical host group has a fenced reservation through preflight, drain, verified release, launch and readiness. Stale owners cannot act after restart or lease expiry.
 - [ ] #5 A foreign or undiscoverable resident, failed ownership query or uncertain stop blocks launch. Missing-image preflight preserves the incumbent. Fake tests cover restart and stale discovery before launch.
 - [ ] #6 Fleet placement cannot override a host refusal. State the exclusivity guarantee for cooperating launchers and the host enforcement required to extend it to outside processes.
-- [ ] #7 After publication refusal or deadline expiry, dispose the drain guard and attempt admission. Neither the old nor the staged route can issue a permit. The exact applied launch remains recoverable.
+- [x] #7 After publication refusal or deadline expiry, dispose the drain guard and attempt admission. Neither the old nor the staged route can issue a permit. The exact applied launch remains recoverable.
 <!-- AC:END -->
 
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Implement the reviewed offline partition observer. Require exact incumbent ownership and generation-bound retirement before stop. Bind each fresh observation to the full resource partition, owner and enrollment revisions, query, epoch, predecessor and frozen successor. Fence every modeled writer through create entry. Test a revision change followed by restoration of the original visible state. Missing preflight proof leaves zero successor sends, acceptances, attempts or effects. Refusal after submission may retain a send and acceptance but leaves zero attempts, effects or applied result. Reopen prepared stops and launches with fresh evidence and the original identities. Reconcile dispatching operations only by exact evidence. A recovered stop requires fresh vacancy before successor submission. A recovered launch requires its exact receipt and effect.
+Review on 955436b requires a real supervised writer, protected daemon channel and independent whole-partition observer. Identify owners and enrollment evidence. Persist reproducible effective settings or verified immutable bytes; share one operation and epoch. Dispatch and worker acceptance precede I/O. Independently verify exact create/start and settings before durable effect and acknowledgment. Serialize authenticated ID lookup; require crash-durable installation and monotonic evidence against valid-old rollback. Unknown effects bar resend and successors until authoritative reconciliation or certified pre-issue rejection. Later, attest the connected process on both closed reads; preserve an interrupted budget origin or expire. Stay closed after observation. No launch or provisioning authorized.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-The checkpoint and synthetic ledger landed in [PR #6](https://github.com/ArborealML/Inference-Router/pull/6). At 508547f submission is recorded before the issue fence and daemon attempts after it. Plan review confirmed both prepared and dispatching phases exist for stop and launch. Lifecycle owns the implementation and targeted contradictory-observer and unresolved-retirement controls. Reuse existing occupancy and terminal tests. Production activation still requires enforceable partition coverage, causal physical retirement and verified instance-bound admission.
+[PR #6](https://github.com/ArborealML/Inference-Router/pull/6) landed the checkpoint and synthetic ledger; [PR #9](https://github.com/ArborealML/Inference-Router/pull/9) landed predecessor, exact stop-effect and fresh vacancy checks. Review of 47ab322 identified two weak observations. [PR #14](https://github.com/ArborealML/Inference-Router/pull/14) merged at 3160a11 after the reconciled df6174e passed hosted CI. This qualifies offline causal retirement with a surviving issuer and independent backend acknowledgment.
+
+Review on 3160a11 required wrong-target recovery fencing and old-grant/fresh-open controls.
+
+[PR #19](https://github.com/ArborealML/Inference-Router/pull/19) preserves the paired 1/1 receipt at 6ef4723. Review identified stale incumbent authority during applied-launch recovery and missing failure controls. Published e7b951c closes after the exact match and before the first occupancy await. Six focused Release cases passed, covering denial during and after a held probe, untouched preflight, both cancellation cuts, completion, installation and drain-disposal faults, and fresh retry without duplicate effects. Both findings cleared review, all hosted checks passed, and PR #19 merged at 0b84766. Deadline equality in the enrolled path remains separate from fixture cancellation.
+
+[PR #23](https://github.com/ArborealML/Inference-Router/pull/23) binds the exact stored proof to the installed runtime attempt and full target before delivery. Review of 0f6245a found foreign proofs could pass on model/tier alone. Correction a99b91c passed independent review and 5/5 focused cases, including substitutions and a notification fault after Open. The deadline fixture passed at 8af4cdd and all seven guard/deadline cases at 8b6a919. Merged at 5d66c8d after all hosted checks passed. Production issuance still requires independently attested live authority.
 <!-- SECTION:NOTES:END -->

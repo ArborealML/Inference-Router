@@ -1,4 +1,6 @@
 using System.Text.Json.Serialization;
+using Tomlyn;
+using Tomlyn.Model;
 using Tomlyn.Serialization;
 
 namespace Arboreal.InferenceRouter;
@@ -65,11 +67,17 @@ public sealed class EngineDto
     [JsonPropertyName("docker")][TomlPropertyName("docker")] public DockerDto? Docker { get; set; }
 }
 
-public sealed class DockerDto
+public sealed class DockerDto : ITomlOnDeserialized
 {
     private string? _imageId;
     private string? _imageRepoDigest;
     private string? _imagePlatform;
+    private string? _entrypoint;
+    private string? _ipcMode;
+    private bool? _init;
+    private string? _restart;
+    private DockerLogRotationDto? _logRotation;
+    internal bool HasContainerPolicy => Init is not null || Restart is not null || LogRotation is not null;
     // JSON null is an explicit value, so it must not take the legacy all-omitted path.
     internal bool HasImageIdentity { get; private set; }
 
@@ -96,6 +104,56 @@ public sealed class DockerDto
     [JsonPropertyName("api_version")][TomlPropertyName("api_version")] public string? ApiVersion { get; set; }
     [JsonPropertyName("router_id")][TomlPropertyName("router_id")] public string? RouterId { get; set; }
     [JsonPropertyName("resources")][TomlPropertyName("resources")] public DockerResourcesDto? Resources { get; set; }
+    [JsonPropertyName("entrypoint")][TomlPropertyName("entrypoint")]
+    public string? Entrypoint
+    {
+        get => _entrypoint;
+        set
+        {
+            if (_entrypoint is not null) throw new RouterConfigException("duplicate docker.entrypoint");
+            _entrypoint = value ?? throw new RouterConfigException("docker.entrypoint cannot be null");
+        }
+    }
+    [JsonPropertyName("ipc_mode")][TomlPropertyName("ipc_mode")]
+    public string? IpcMode
+    {
+        get => _ipcMode;
+        set
+        {
+            if (_ipcMode is not null) throw new RouterConfigException("duplicate docker.ipc_mode");
+            _ipcMode = value ?? throw new RouterConfigException("docker.ipc_mode cannot be null");
+        }
+    }
+    [JsonPropertyName("init")][TomlPropertyName("init")]
+    public bool? Init
+    {
+        get => _init;
+        set
+        {
+            if (_init is not null) throw new RouterConfigException("duplicate docker.init");
+            _init = value ?? throw new RouterConfigException("docker.init cannot be null");
+        }
+    }
+    [JsonPropertyName("restart")][TomlPropertyName("restart")]
+    public string? Restart
+    {
+        get => _restart;
+        set
+        {
+            if (_restart is not null) throw new RouterConfigException("duplicate docker.restart");
+            _restart = value ?? throw new RouterConfigException("docker.restart cannot be null");
+        }
+    }
+    [JsonPropertyName("log_rotation")][TomlPropertyName("log_rotation")]
+    public DockerLogRotationDto? LogRotation
+    {
+        get => _logRotation;
+        set
+        {
+            if (_logRotation is not null) throw new RouterConfigException("duplicate docker.log_rotation");
+            _logRotation = value ?? throw new RouterConfigException("docker.log_rotation cannot be null");
+        }
+    }
     [JsonPropertyName("command")][TomlPropertyName("command")] public string[]? Command { get; set; }
     [JsonPropertyName("env")][TomlPropertyName("env")] public string[]? Env { get; set; }
     [JsonPropertyName("stop_timeout_ms")][TomlPropertyName("stop_timeout_ms")] public int? StopTimeoutMs { get; set; }
@@ -107,6 +165,24 @@ public sealed class DockerDto
     [JsonPropertyName("wait_health")][TomlPropertyName("wait_health")] public bool? WaitHealth { get; set; }
     [JsonPropertyName("wait_timeout_ms")][TomlPropertyName("wait_timeout_ms")] public int? WaitTimeoutMs { get; set; }
     [JsonPropertyName("call_timeout_ms")][TomlPropertyName("call_timeout_ms")] public int? CallTimeoutMs { get; set; }
+
+    [JsonIgnore, TomlIgnore(Condition = TomlIgnoreCondition.Never), TomlExtensionData]
+    public TomlTable? UnmappedToml { get; set; }
+
+    // Inspect each decoded Docker table before a case variant could replace it on the engine DTO.
+    void ITomlOnDeserialized.OnTomlDeserialized() => RejectMisplacedHealthcheck("docker");
+
+    internal void RejectMisplacedHealthcheck(string path)
+    {
+        if (UnmappedToml?.Keys.Any(key => key.Equals("healthcheck", StringComparison.OrdinalIgnoreCase)) == true)
+            throw new RouterConfigException($"{path}.healthcheck is only supported inside a serving-tier docker block");
+    }
+}
+
+public sealed class DockerLogRotationDto
+{
+    [JsonPropertyName("max_size")][TomlPropertyName("max_size")] public string? MaxSize { get; set; }
+    [JsonPropertyName("max_files")][TomlPropertyName("max_files")] public int? MaxFiles { get; set; }
 }
 
 public sealed class HealthProbeDto
@@ -141,9 +217,33 @@ public sealed class ModelDto
 /// Small windows buy more slots; a request needing more context queues behind a profile switch.</summary>
 public sealed class ServingDto
 {
+    private DockerTargetDto? _docker;
+    private string[]? _aliases;
+
     [JsonPropertyName("name")][TomlPropertyName("name")] public string? Name { get; set; }
     [JsonPropertyName("max_context")][TomlPropertyName("max_context")] public long? MaxContext { get; set; }
     [JsonPropertyName("max_slots")][TomlPropertyName("max_slots")] public int? MaxSlots { get; set; }
+    [JsonPropertyName("aliases")][TomlPropertyName("aliases")]
+    public string[]? Aliases
+    {
+        get => _aliases;
+        set
+        {
+            if (_aliases is not null) throw new RouterConfigException("duplicate serving-tier aliases");
+            _aliases = value ?? throw new RouterConfigException("serving-tier aliases cannot be null");
+        }
+    }
+
+    [JsonPropertyName("docker")][TomlPropertyName("docker")]
+    public DockerTargetDto? Docker
+    {
+        get => _docker;
+        set
+        {
+            if (_docker is not null) throw new RouterConfigException("duplicate serving-tier docker");
+            _docker = value ?? throw new RouterConfigException("serving-tier docker cannot be null");
+        }
+    }
 }
 
 public sealed class SelectDto
@@ -163,7 +263,11 @@ public sealed class SelectDto
 [TomlSerializable(typeof(ServingDto))]
 internal sealed partial class ConfigTomlContext : TomlSerializerContext;
 
+[TomlSerializable(typeof(TomlTable))]
+internal sealed partial class ConfigTomlDocumentContext : TomlSerializerContext;
+
 /// <summary>JSON twin parser (same DTOs, STJ source generation).</summary>
 [JsonSourceGenerationOptions(GenerationMode = JsonSourceGenerationMode.Metadata)]
 [JsonSerializable(typeof(ConfigDto))]
+[JsonSerializable(typeof(DockerDto))]
 internal sealed partial class ConfigJsonContext : JsonSerializerContext;

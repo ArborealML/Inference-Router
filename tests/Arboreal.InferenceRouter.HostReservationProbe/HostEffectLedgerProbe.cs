@@ -7,7 +7,8 @@ namespace Arboreal.InferenceRouter;
 
 // Separate journal roles in a cooperative fixture, which can all run in one process. The worker
 // issue fence spans the decision and daemon entry, including the exact owner/vacancy comparison.
-internal sealed class HostEffectLedgerProbe(string checkpointPath)
+internal sealed partial class HostEffectLedgerProbe(string checkpointPath, bool requirePartitionProof = false,
+    bool requireCausalDrain = false)
 {
     private const string Group = "fixture-group";
     private const string Enrollment = "fixture-enrollment";
@@ -15,6 +16,8 @@ internal sealed class HostEffectLedgerProbe(string checkpointPath)
     private static readonly HostEffectLedgerJsonContext Json = HostEffectLedgerJsonContext.Default;
     private readonly string _checkpointPath = checkpointPath;
     private readonly string _root = Path.GetDirectoryName(checkpointPath)!;
+    private readonly bool _requirePartitionProof = requirePartitionProof;
+    private readonly bool _requireCausalDrain = requireCausalDrain;
     private string FencePath => Path.Combine(_root, "worker.fence");
     private string DaemonPath => Path.Combine(_root, "daemon-residency.json");
 
@@ -29,6 +32,17 @@ internal sealed class HostEffectLedgerProbe(string checkpointPath)
 
     private string RunCommand(string mode, string target)
     {
+        if (_requirePartitionProof)
+        {
+            if (mode == "prepare-initial")
+            {
+                using var checkpoint = HostEffectCheckpoint.Open(_checkpointPath);
+                return checkpoint.PrepareInitialLaunch(Plan(target)).Id.ToString("D");
+            }
+            if (mode == "partition-seed") return InstallPartitionSeed(Guid.Parse(target));
+            if (mode == "poison-stopped-launch") return PoisonStoppedLaunch(Guid.Parse(target));
+            if (mode is "partition" or "pause-writer-blocked") return WriteObservationFacts(mode, target);
+        }
         switch (mode)
         {
             case "initialize":
@@ -65,7 +79,8 @@ internal sealed class HostEffectLedgerProbe(string checkpointPath)
             return checkpoint.State.Phase == HostCheckpointPhase.StopApplied
                 ? StartLaunch(checkpoint, mode) : Describe(checkpoint.State);
         }
-        if (state.Phase == HostCheckpointPhase.StopApplied) return StartLaunch(checkpoint, mode);
+        if (state.Phase is HostCheckpointPhase.StopApplied or HostCheckpointPhase.LaunchPrepared) return StartLaunch(checkpoint, mode);
+        if (state.Phase == HostCheckpointPhase.StopPrepared) return StartStop(checkpoint, mode);
         if (state.Phase == HostCheckpointPhase.Genesis)
         {
             checkpoint.PrepareInitialLaunch(Plan(engine));
@@ -75,7 +90,19 @@ internal sealed class HostEffectLedgerProbe(string checkpointPath)
         var incumbent = state.AppliedLaunch ?? throw new InvalidOperationException("No resident to switch.");
         if (incumbent.Plan == Plan(engine)) return Describe(state);
         if (!MatchesResident(ReadResidency(), Group, Enrollment, incumbent)) return "pending";
-        var stop = checkpoint.PrepareSuccessor(Plan(engine));
+        checkpoint.PrepareSuccessor(Plan(engine));
+        return StartStop(checkpoint, mode);
+    }
+
+    private string StartStop(HostEffectCheckpoint checkpoint, string mode)
+    {
+        var state = checkpoint.State;
+        var stop = state.Transition!.Stop!;
+        var drain = _requireCausalDrain ? RequestCausalDrain(state) : null;
+        if (_requireCausalDrain && drain is null) return "pending";
+        var proof = _requirePartitionProof ? ObservePartition(state, vacant: false, mode, drain) : null;
+        if (_requirePartitionProof && proof is null) return "pending";
+        Park(mode, "stop-prepared");
         checkpoint.MarkStopDispatching(stop);
         if (mode == "changed-owner")
         {
@@ -83,7 +110,7 @@ internal sealed class HostEffectLedgerProbe(string checkpointPath)
             var actual = ReadResidency();
             ReplaceResidency(actual with { Resident = actual.Resident! with { Enrollment = "other-owner" } }, mode);
         }
-        var reply = Submit(Command(checkpoint.State), mode).Outcome;
+        var reply = Submit(Command(checkpoint.State), mode, proof).Outcome;
         if (!Reconcile(checkpoint, reply)) return "pending";
         return checkpoint.State.Phase == HostCheckpointPhase.StopApplied
             ? StartLaunch(checkpoint, mode) : Describe(checkpoint.State);
@@ -93,15 +120,20 @@ internal sealed class HostEffectLedgerProbe(string checkpointPath)
     {
         if (ReadResidency() is not { Resident: null, Foreign: false }) return "pending";
         var state = checkpoint.State;
+        var needsProof = _requirePartitionProof && state.Transition?.Stop is not null;
+        var proof = needsProof ? ObservePartition(state, vacant: true, mode) : null;
+        if (needsProof && proof is null) return "pending";
+        Park(mode, "vacancy-observed");
         var launch = state.Phase == HostCheckpointPhase.StopApplied
             ? checkpoint.PrepareSuccessorLaunch(state.Transition!.Plan) : state.Transition!.Launch!;
+        Park(mode, "launch-prepared");
         checkpoint.MarkLaunchDispatching(launch);
         if (mode == "changed-vacancy")
         {
             using var fence = OpenFence();
             ReplaceResidency(new LedgerResidency(Foreign: true), mode);
         }
-        var reply = Submit(Command(checkpoint.State), mode).Outcome;
+        var reply = Submit(Command(checkpoint.State), mode, proof).Outcome;
         return Reconcile(checkpoint, reply) ? Describe(checkpoint.State) : "pending";
     }
 
@@ -142,7 +174,7 @@ internal sealed class HostEffectLedgerProbe(string checkpointPath)
         return true;
     }
 
-    private LedgerSubmission Submit(LedgerCommand command, string mode)
+    private LedgerSubmission Submit(LedgerCommand command, string mode, PartitionProof? proof = null)
     {
         var id = command.Operation.Id;
         Publish(Path.Combine(_root, "sends", $"{id:N}.{Guid.NewGuid():N}.json"), command, Json.LedgerCommand, "sends", mode);
@@ -152,6 +184,7 @@ internal sealed class HostEffectLedgerProbe(string checkpointPath)
             if (!Accept(command, mode)) return new LedgerSubmission("binding-conflict");
         }
         Park(mode, "accepted");
+        if (proof?.Query.Vacant == true) RotatePartitionBeforeIssue(mode);
 
         LedgerEffect effect;
         using (var fence = TryOpenFence())
@@ -164,6 +197,8 @@ internal sealed class HostEffectLedgerProbe(string checkpointPath)
                 return new LedgerSubmission(decided.NeverIssue ? "barred" : "already-issued", remembered?.Outcome);
             }
             var actual = ReadResidency();
+            if (_requirePartitionProof && (command.Operation.Kind == HostMutationKind.Stop || command.Operation.Epoch > 1) &&
+                !PartitionProofStillCurrent(command, proof)) return new LedgerSubmission("authority-refused");
             if (!CanIssue(command, actual)) return new LedgerSubmission("authority-refused");
             WriteOperation("decisions", id, new LedgerDecision(command, NeverIssue: false), Json.LedgerDecision, mode);
             Park(mode, "authorized");
@@ -260,7 +295,8 @@ internal sealed class HostEffectLedgerProbe(string checkpointPath)
         LedgerEffect effect;
         if (operation.Kind == HostMutationKind.Launch)
         {
-            var launched = new HostCheckpointLaunchEffect(operation, command.Plan, $"daemon-{Guid.NewGuid():N}");
+            var instance = _requirePartitionProof ? $"partition-{operation.Engine}-{operation.Epoch}" : $"daemon-{Guid.NewGuid():N}";
+            var launched = new HostCheckpointLaunchEffect(operation, command.Plan, instance);
             ReplaceResidency(new LedgerResidency(new LedgerResident(command.Group, command.Enrollment, launched)), mode);
             effect = new LedgerEffect(command, Launch: launched);
         }
@@ -369,4 +405,12 @@ internal readonly record struct LedgerSubmission(string Disposition, HostMutatio
 [JsonSerializable(typeof(LedgerTerminal))]
 [JsonSerializable(typeof(LedgerEffect))]
 [JsonSerializable(typeof(LedgerResidency))]
+[JsonSerializable(typeof(PartitionFacts))]
+[JsonSerializable(typeof(PartitionQuery))]
+[JsonSerializable(typeof(PartitionProof))]
+[JsonSerializable(typeof(HostCheckpointLaunchEffect))]
+[JsonSerializable(typeof(CausalDrainRequest))]
+[JsonSerializable(typeof(CausalDrainReply))]
+[JsonSerializable(typeof(CausalRouteBinding))]
+[JsonSerializable(typeof(CausalRetirementWitness))]
 internal sealed partial class HostEffectLedgerJsonContext : JsonSerializerContext;

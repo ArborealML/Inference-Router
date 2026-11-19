@@ -1,10 +1,11 @@
 ---
 id: TASK-129
 title: Withdraw idle readiness on shutdown and report the winning switch outcome
-status: To Do
+status: Done
 assignee:
-  - '@gpt-6.2-sol'
+  - '@gpt-6.2-astra'
 created_date: '2026-11-18T21:09:00Z'
+updated_date: '2026-11-19T12:48:00Z'
 labels: []
 milestone: m-2
 dependencies: []
@@ -15,11 +16,23 @@ ordinal: 127000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Idle disposal can preserve a healthy roster after withdrawing windows. Shutdown can also win settlement after readiness proof and before the completion event. Keep historical model listings independent from serving authority.
+Idle disposal withdraws current readiness while retaining the roster ([PR #26](https://github.com/ArborealML/Inference-Router/pull/26)). The injected immediate host orders its acceptance store against shutdown and arbitrates readiness separately ([PR #28](https://github.com/ArborealML/Inference-Router/pull/28), merge 66a506b). All four focused Release cases and hosted checks passed. The negative control reproduced a late host acceptance after stop. Production enrollment remains a separate host obligation.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Dispose a healthy idle runtime. Its previous model can remain listed, but IsReadyFor returns false and the runtime cannot issue a serving grant.
-- [ ] #2 Pause after proof publication, let shutdown win settlement and resume. Observe one stopped outcome, zero switch-completed events and no admitted request under the retired proof.
+- [x] #1 Dispose a healthy idle runtime. Its previous model can remain listed, but IsReadyFor returns false and the runtime cannot issue a serving grant.
+- [x] #2 Pause after proof publication, let shutdown win settlement and resume. Observe one stopped outcome, zero switch-completed events and no admitted request under the retired proof.
 <!-- AC:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+After the provisional proof hook, revalidate the exact pending claim and proof under transition. After host acceptance, select Ready and install its delivery signal together under transition. Deliver outside the lock; release waiters through cleanup even on exceptions. Serialize selection of Failed on a still-pending immediate-host refusal with stop. Preserve any selected stop or Ready when host I/O errors become failed return values. Exercise stop before acceptance, stop after acceptance before Complete, and converted cleanup failure after Ready. Await full unwind before final assertions.
+<!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Use one synchronous acceptance decision ordered with stop, keeping host I/O and notifications outside the transition lock. Stop after acceptance can still win before Complete. Add a deterministic control at the last handoff before the acceptance store; check that stop wins, no host commit or send occurs, guard and reservation are released, and one Cancelled attempt survives full unwind. Retain the existing postaccept and converted cleanup-refusal evidence. This finding was verified by source inspection on the injected path.
+<!-- SECTION:NOTES:END -->

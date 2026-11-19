@@ -76,6 +76,9 @@ public sealed class DockerLifecycleProvider : IEngineLifecycleProvider, IDisposa
 
     public string Kind => ProviderKind;
 
+    internal bool ProjectsCapturedConfig(string engineName, DockerLifecycleConfig configuration) =>
+        ReferenceEquals(_cfg, configuration) && string.Equals(_scope.EngineName, engineName, StringComparison.Ordinal);
+
     internal void ValidateScope(string engineName, DockerLifecycleConfig expected)
     {
         if (!string.Equals(_scope.EngineName, engineName, StringComparison.Ordinal))
@@ -100,7 +103,7 @@ public sealed class DockerLifecycleProvider : IEngineLifecycleProvider, IDisposa
 
     public async ValueTask<LifecycleResult> PreflightAsync(LifecycleTarget target, CancellationToken ct)
     {
-        if (_cfg.Resources is not null) return ResourcesNotQualified();
+        if (UnqualifiedLaunch() is { } refusal) return refusal;
         if (_cfg.ImageIdentity is not { } identity) return MissingImageIdentity();
 
         // Reachability first: every later failure is ambiguous if the daemon is not answering at all.
@@ -130,9 +133,19 @@ public sealed class DockerLifecycleProvider : IEngineLifecycleProvider, IDisposa
         return ImageIdentityFailure(image, identity) ?? LifecycleResult.Ok($"daemon_ok image={imageRef}");
     }
 
-    private static LifecycleResult ResourcesNotQualified() => LifecycleResult.Fail(
-        "docker_resources_not_qualified",
-        "native Docker resources are available for offline configuration checks only; leave this target under external management until host qualification is available");
+    private LifecycleResult? UnqualifiedLaunch()
+    {
+        if (_cfg.HasUnqualifiedTargetDocker)
+            return LifecycleResult.Fail("docker_target_not_qualified",
+                "serving-tier Docker targets are available for offline configuration checks only; use an externally managed engine until target qualification is available");
+        if (_cfg.HasUnqualifiedLaunchOptions)
+            return LifecycleResult.Fail("docker_launch_options_not_qualified",
+                _cfg.ContainerPolicy is null
+                    ? "remove docker.entrypoint and docker.ipc_mode for native startup or use an externally managed engine until launch options are qualified"
+                    : "Docker container policy options are available for offline configuration checks only");
+        return _cfg.Resources is null ? null : LifecycleResult.Fail("docker_resources_not_qualified",
+            "native Docker resources are available for offline configuration checks only; leave this target under external management until host qualification is available");
+    }
 
     private static LifecycleResult MissingImageIdentity() => LifecycleResult.Fail(
         "image_identity_required", "set docker.image_id, docker.image_repo_digest and docker.image_platform before switching");
@@ -251,7 +264,7 @@ public sealed class DockerLifecycleProvider : IEngineLifecycleProvider, IDisposa
     internal async ValueTask<LifecycleResult> StopWithObservationsAsync(
         IReadOnlyList<EnginePeer> peers, Action<NativePeerStop>? observe, CancellationToken ct)
     {
-        if (_cfg.Resources is not null) return ResourcesNotQualified();
+        if (UnqualifiedLaunch() is { } refusal) return refusal;
 
         var observations = new List<NativePeerStop>(peers.Count);
         foreach (var peer in peers)
@@ -315,7 +328,7 @@ public sealed class DockerLifecycleProvider : IEngineLifecycleProvider, IDisposa
 
     public async ValueTask<LifecycleResult> LaunchAsync(LifecycleTarget target, CancellationToken ct)
     {
-        if (_cfg.Resources is not null) return ResourcesNotQualified();
+        if (UnqualifiedLaunch() is { } refusal) return refusal;
         if (_cfg.ImageIdentity is not { } identity) return MissingImageIdentity();
 
         var body = BuildCreateRequest(target, identity);
@@ -349,31 +362,76 @@ public sealed class DockerLifecycleProvider : IEngineLifecycleProvider, IDisposa
 
     internal DockerCreateRequest BuildCreateRequest(LifecycleTarget target, DockerImageIdentity image)
     {
+        var launch = _cfg.TargetPlans?.Resolve(target);
         var body = new DockerCreateRequest
         {
             Image = image.Id,
+            Entrypoint = _cfg.Entrypoint is { } executable ? [executable] : null,
+            Healthcheck = launch?.Healthcheck is { } probe ? new DockerCreateHealthcheck
+            {
+                Test = ["CMD-SHELL", probe.Command],
+                Interval = probe.IntervalNs,
+                StartPeriod = probe.StartPeriodNs,
+                Timeout = probe.TimeoutNs,
+                Retries = probe.Retries,
+            } : null,
             Labels = new Dictionary<string, string>(StringComparer.Ordinal)
             {
                 [LabelRouter] = _scope.RouterId,
                 [LabelEngine] = _scope.EngineName,
-                [LabelModel] = target.Model,
-                [LabelProfile] = target.EffectiveProfile,
+                [LabelModel] = launch?.Model ?? target.Model,
+                [LabelProfile] = launch?.Profile ?? target.EffectiveProfile,
             },
             StopTimeoutSeconds = Math.Max(1, _cfg.StopTimeoutMs / 1000),
         };
-        if (_command.Length > 0) body.Cmd = Expand(_command, target);
-        if (_env.Length > 0) body.Env = Expand(_env, target);
+        if (launch is not null)
+        {
+            if (!launch.Command.IsEmpty) body.Cmd = launch.Command.ToArray();
+            if (!launch.Env.IsEmpty) body.Env = launch.Env.ToArray();
+        }
+        else
+        {
+            if (_command.Length > 0) body.Cmd = Expand(_command, target);
+            if (_env.Length > 0) body.Env = Expand(_env, target);
+        }
 
         var resources = _cfg.Resources;
-        if (_cfg.HostPort is null && _cfg.NetworkMode is null && resources is null) return body;
+        var binds = launch?.Binds ?? resources?.BindMounts ?? [];
+        var memory = launch is null ? resources?.MemoryBytes : launch.MemoryBytes;
+        var memorySwap = launch is null ? resources?.MemorySwapBytes : launch.MemorySwapBytes;
+        var gpu = launch is null ? resources?.Gpu : launch.Gpu;
+        var shm = launch is null ? resources?.ShmSizeBytes : launch.ShmSizeBytes;
+        var policy = _cfg.ContainerPolicy;
+        if (_cfg.HostPort is null && _cfg.NetworkMode is null && _cfg.IpcMode is null && policy is null &&
+            resources is null && binds.IsEmpty && memory is null && memorySwap is null && gpu is null && shm is null) return body;
 
-        var host = new DockerHostConfig { NetworkMode = _cfg.NetworkMode };
+        var host = new DockerHostConfig
+        {
+            NetworkMode = _cfg.NetworkMode,
+            IpcMode = _cfg.IpcMode,
+            Init = policy?.Init,
+            RestartPolicy = policy?.Restart is { } restart ? new DockerRestartPolicy(restart, 0) : null,
+            LogConfig = policy?.LogRotation is { } rotation ? new DockerLogConfig("", new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["max-size"] = rotation.MaxSize,
+                ["max-file"] = rotation.MaxFiles.ToString(CultureInfo.InvariantCulture),
+            }) : null,
+            Memory = memory,
+            MemorySwap = memorySwap,
+            ShmSize = shm,
+        };
         body.HostConfig = host;
         if (_cfg.HostPort is { } port)
         {
+            var containerPort = $"{_cfg.ContainerPort}/tcp";
+            if (_cfg.HasUnqualifiedTargetDocker || _cfg.HasUnqualifiedLaunchOptions)
+                body.ExposedPorts = new Dictionary<string, DockerExposedPort>(StringComparer.Ordinal)
+                {
+                    [containerPort] = new DockerExposedPort(),
+                };
             host.PortBindings = new Dictionary<string, DockerPortBinding[]>(StringComparer.Ordinal)
             {
-                [$"{_cfg.ContainerPort}/tcp"] = [new DockerPortBinding
+                [containerPort] = [new DockerPortBinding
                 {
                     // Docker interprets an empty HostIp as every interface.
                     HostIp = _cfg.HostIp,
@@ -381,19 +439,16 @@ public sealed class DockerLifecycleProvider : IEngineLifecycleProvider, IDisposa
                 }],
             };
         }
-        if (resources is null) return body;
-
-        if (resources.Gpu is { } gpu)
+        if (!binds.IsEmpty)
+            host.Mounts = [.. binds.Select(bind => new DockerMount("bind", bind.Source, bind.Target, bind.ReadOnly))];
+        if (gpu is not null)
             host.DeviceRequests = [new DockerDeviceRequest("", gpu.All ? -1 : 0,
                 gpu.All ? null : gpu.DeviceIds.ToArray(), [["gpu"]])];
+        if (resources is null) return body;
+
         if (!resources.DevicePaths.IsEmpty)
             host.Devices = [.. resources.DevicePaths.Select(path => new DockerDeviceMapping(path, path, "rwm"))];
-        if (!resources.BindMounts.IsEmpty)
-            host.Mounts = [.. resources.BindMounts.Select(bind => new DockerMount("bind", bind.Source, bind.Target, bind.ReadOnly))];
         host.NanoCpus = resources.NanoCpus;
-        host.Memory = resources.MemoryBytes;
-        host.MemorySwap = resources.MemorySwapBytes;
-        host.ShmSize = resources.ShmSizeBytes;
         if (!resources.Ulimits.IsEmpty)
             host.Ulimits = [.. resources.Ulimits.Select(limit => new DockerLimit(limit.Name, limit.Soft, limit.Hard))];
 
@@ -405,10 +460,8 @@ public sealed class DockerLifecycleProvider : IEngineLifecycleProvider, IDisposa
         var outValues = new string[template.Length];
         for (var i = 0; i < template.Length; i++)
         {
-            outValues[i] = template[i]
-                .Replace("{{model}}", target.Model, StringComparison.Ordinal)
-                .Replace("{{profile}}", target.Profile?.Name ?? target.Definition.Profile ?? "", StringComparison.Ordinal)
-                .Replace("{{endpoint}}", _scope.EngineName, StringComparison.Ordinal);
+            outValues[i] = DockerTargetPlans.Expand(template[i], target.Model,
+                target.Profile?.Name ?? target.Definition.Profile ?? "", _scope.EngineName);
         }
         return outValues;
     }

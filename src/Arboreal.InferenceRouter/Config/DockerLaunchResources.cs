@@ -5,7 +5,7 @@ using Tomlyn.Model;
 namespace Arboreal.InferenceRouter;
 
 internal sealed record DockerGpu(bool All, ImmutableArray<string> DeviceIds);
-internal sealed record DockerBind(string Source, string Target, bool ReadOnly);
+internal sealed record DockerBind(string Source, string Target, bool ReadOnly, string? NestedUnder);
 internal sealed record DockerUlimit(string Name, long Soft, long Hard);
 
 /// <summary>A checked container request. Resolving paths, identifying character
@@ -34,11 +34,8 @@ internal sealed record DockerLaunchResources(
         if (dto.Gpu is not null && dto.DevicePaths is not null)
             throw new RouterConfigException($"{path}.gpu cannot be combined with device_paths");
         if (dto.NanoCpus is <= 0) throw new RouterConfigException($"{path}.nano_cpus must be positive");
-        if (dto.MemoryBytes is < 6 * 1024 * 1024L)
-            throw new RouterConfigException($"{path}.memory_bytes must be at least 6 MiB");
-        if (dto.MemorySwapBytes is { } total && (dto.MemoryBytes is not { } memory || total < memory))
-            throw new RouterConfigException($"{path}.memory_swap_bytes requires memory_bytes and must be at least that value");
-        if (dto.ShmSizeBytes is <= 0) throw new RouterConfigException($"{path}.shm_size_bytes must be positive");
+        ValidateMemory(dto.MemoryBytes, dto.MemorySwapBytes, path);
+        ValidateSharedMemory(dto.ShmSizeBytes, $"{path}.shm_size_bytes");
 
         return new DockerLaunchResources(
             dto.Gpu is { } gpu ? ParseGpu(gpu, $"{path}.gpu") : null,
@@ -46,6 +43,20 @@ internal sealed record DockerLaunchResources(
             ParseBinds(dto.BindMounts, $"{path}.bind_mounts"),
             dto.NanoCpus, dto.MemoryBytes, dto.MemorySwapBytes, dto.ShmSizeBytes,
             ParseUlimits(dto.Ulimits, $"{path}.ulimits"));
+    }
+
+    internal static void ValidateSharedMemory(long? bytes, string path)
+    {
+        if (bytes is <= 0)
+            throw new RouterConfigException($"{path} must be positive");
+    }
+
+    internal static void ValidateMemory(long? memory, long? memorySwap, string path)
+    {
+        if (memory is < 6 * 1024 * 1024L)
+            throw new RouterConfigException($"{path}.memory_bytes must be at least 6 MiB");
+        if (memorySwap is { } total && (memory is not { } ram || total < ram))
+            throw new RouterConfigException($"{path}.memory_swap_bytes requires memory_bytes and must be at least that value");
     }
 
     private static DockerGpu ParseGpu(DockerGpuDto dto, string path)
@@ -80,7 +91,7 @@ internal sealed record DockerLaunchResources(
         return [.. values];
     }
 
-    private static ImmutableArray<DockerBind> ParseBinds(DockerBindDto[]? values, string path)
+    internal static ImmutableArray<DockerBind> ParseBinds(DockerBindDto[]? values, string path, bool isTier = false)
     {
         if (values is null) return [];
         if (values.Length == 0) throw new RouterConfigException($"{path} must be nonempty");
@@ -94,15 +105,43 @@ internal sealed record DockerLaunchResources(
             var target = CheckBindPath(item.Target, $"{itemPath}.target");
             if (item.ReadOnly is not { } readOnly)
                 throw new RouterConfigException($"{itemPath}.read_only must explicitly specify true or false");
-            foreach (var prior in binds)
-            {
-                if (Within(target, prior.Target) || Within(prior.Target, target))
-                    throw new RouterConfigException($"{itemPath}.target overlaps another bind target");
-            }
-            binds.Add(new DockerBind(source, target, readOnly));
+            if (!isTier && item.NestedUnder is not null)
+                throw new RouterConfigException($"{itemPath}.nested_under is only supported on serving-tier bind mounts");
+            var parent = item.NestedUnder is { } nestedUnder ? CheckBindPath(nestedUnder, $"{itemPath}.nested_under") : null;
+            if (!isTier && binds.Any(prior => Overlaps(target, prior.Target)))
+                throw new RouterConfigException($"{itemPath}.target overlaps another bind target");
+            binds.Add(new DockerBind(source, target, readOnly, parent));
         }
         return binds.MoveToImmutable();
     }
+
+    internal static ImmutableArray<DockerBind> CombineTargetBinds(ImmutableArray<DockerBind> common,
+        ImmutableArray<DockerBind> additions, string path)
+    {
+        var combined = common.AddRange(additions);
+        for (var i = 0; i < combined.Length; i++)
+        {
+            var bind = combined[i];
+            if (ControlPaths.Any(control => Within(control, bind.Source) || Within(control, bind.Target)))
+                throw new RouterConfigException($"{path} cannot mount a parent of a control directory");
+
+            var allowedParentFound = false;
+            for (var j = 0; j < i; j++)
+            {
+                var prior = combined[j];
+                if (!Overlaps(bind.Target, prior.Target)) continue;
+                if (prior.Target != bind.NestedUnder || bind.Target == prior.Target ||
+                    !Within(bind.Target, prior.Target) || !bind.ReadOnly || !prior.ReadOnly || prior.NestedUnder is not null)
+                    throw new RouterConfigException($"{path} overlaps another bind target without an allowed read-only parent");
+                allowedParentFound = true;
+            }
+            if (bind.NestedUnder is not null && !allowedParentFound)
+                throw new RouterConfigException($"{path}.nested_under must name an earlier read-only ancestor bind target");
+        }
+        return combined;
+    }
+
+    private static bool Overlaps(string left, string right) => Within(left, right) || Within(right, left);
 
     private static string CheckBindPath(string? value, string path)
     {
@@ -141,7 +180,7 @@ internal sealed record DockerLaunchResources(
         return limits.MoveToImmutable();
     }
 
-    private static bool IsCanonicalIndex(ReadOnlySpan<char> index) =>
+    internal static bool IsCanonicalIndex(ReadOnlySpan<char> index) =>
         !index.IsEmpty && (index.Length == 1 || index[0] != '0') && index.IndexOfAnyExceptInRange('0', '9') < 0;
 
     private static void CheckUnknown(TomlTable? keys, string path)
@@ -186,7 +225,7 @@ internal sealed record DockerLaunchResources(
             throw new RouterConfigException($"{path} appears more than once");
     }
 
-    private static void CheckJsonTree(JsonElement value, string path)
+    internal static void CheckJsonTree(JsonElement value, string path)
     {
         if (value.ValueKind == JsonValueKind.Null)
             throw new RouterConfigException($"{path} cannot be null");

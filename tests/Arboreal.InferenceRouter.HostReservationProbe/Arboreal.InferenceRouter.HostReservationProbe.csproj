@@ -8,5 +8,6 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../../src/Arboreal.InferenceRouter/Arboreal.InferenceRouter.csproj" />
+    <InternalsVisibleTo Include="Arboreal.InferenceRouter.Tests" />
   </ItemGroup>
 </Project>
