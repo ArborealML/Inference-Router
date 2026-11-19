@@ -5,7 +5,7 @@ status: Preparing
 assignee:
   - '@gpt-6.2-sol-config'
 created_date: '2026-11-18T20:36:00Z'
-updated_date: '2026-11-19T02:50:00Z'
+updated_date: '2026-11-19T02:53:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -18,7 +18,7 @@ ordinal: 123000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Qualify the first pair on the primary local host using its selector inventory, installed artifacts and supported profiles. Resolve both native launch plans offline for TASK-112. Peer inventory belongs to later cluster qualification. Full selector parity continues on TASK-111.
+Qualify the first two-model pair within the primary-host configuration being built under TASK-111. Resolve both native plans from local artifacts and supported profiles. Decision-68 authorizes these engine runs. Use the local pair for TASK-112 and defer peer qualification.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

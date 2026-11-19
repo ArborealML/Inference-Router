@@ -7,7 +7,7 @@ status: Done
 assignee:
   - '@gpt-6.2-sol-lifecycle'
 created_date: '2026-11-17T07:53:00Z'
-updated_date: '2026-11-18T20:03:00Z'
+updated_date: '2026-11-19T02:53:00Z'
 labels:
   - engine
   - lifecycle
@@ -23,7 +23,7 @@ ordinal: 32000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-The native provider is qualified against fake providers and Docker HTTP responses. Live mutation on the shared host remains parked by the owner.
+The initial qualification used fake providers and Docker HTTP responses. Decision-68 subsequently authorized primary-host selector engines for live qualification under TASK-112.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

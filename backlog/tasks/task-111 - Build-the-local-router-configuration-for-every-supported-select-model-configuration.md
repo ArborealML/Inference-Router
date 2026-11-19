@@ -3,11 +3,11 @@ id: TASK-111
 title: >-
   Build the local router configuration for every supported select-model
   configuration
-status: Waiting
+status: In Progress
 assignee:
-  - '@qwen3.8-flash-next-board'
+  - '@gpt-6.2-sol-config'
 created_date: '2026-11-18T18:15:00Z'
-updated_date: '2026-11-18T20:36:00Z'
+updated_date: '2026-11-19T02:53:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -19,7 +19,7 @@ ordinal: 109000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Wake when TASK-26 supplies native launch settings and TASK-118 verifies the exact serving target. Deliver a machine-local configuration for all supported selector combinations and demonstrate parity by dry-run and provider fixtures.
+Build a usable machine-local router configuration from the installed primary-host selector. Cover each valid model, alias, profile, default and supported option combination. Validate against the installed selector and router loader, and identify any missing router representation explicitly. Decision-68 authorizes local engine qualification. TASK-125 supplies the first pair while full parity proceeds.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
