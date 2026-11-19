@@ -99,7 +99,7 @@ public sealed partial class HostClosedRouteStagingTests
         {
             public LifecycleResult Result => LifecycleResult.Ok();
             public void WithdrawIncumbent() => Assert.True(host.Draining);
-            public bool CommitVerifiedRoute(HostServingProof proof, Func<bool> publish) =>
+            public bool CommitVerifiedRoute(HostServingProof proof, Func<bool> publish, Func<Action, bool> tryAccept) =>
                 throw new InvalidOperationException("The staged binding must not call legacy immediate commit.");
 
             public void Dispose()

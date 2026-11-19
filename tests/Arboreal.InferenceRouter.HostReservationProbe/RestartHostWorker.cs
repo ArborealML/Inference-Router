@@ -166,7 +166,9 @@ internal sealed class RestartHostWorker(string directory, string mode) : IHostLi
         {
             if (!allowWithdrawal) throw new InvalidOperationException("Unexpected fixture withdrawal.");
         }
-        public bool CommitVerifiedRoute(HostServingProof proof, Func<bool> publish) => publish();
+        // This process fixture models acceptance by its return value and has no route store.
+        public bool CommitVerifiedRoute(HostServingProof proof, Func<bool> publish, Func<Action, bool> tryAccept) =>
+            publish() && tryAccept(static () => { });
         public void Dispose() { }
     }
 }

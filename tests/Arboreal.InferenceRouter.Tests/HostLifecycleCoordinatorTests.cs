@@ -99,6 +99,164 @@ public sealed class HostLifecycleCoordinatorTests : IDisposable
         }
     }
 
+    [Theory(Timeout = 30_000)]
+    [InlineData(false)]
+    [InlineData(true)]
+    public Task ImmediateHostArbitrationPreservesStopAcrossAcceptance(bool acceptedBeforeStop) =>
+        AssertImmediateHostStopAsync(acceptedBeforeStop ? ImmediateHostStopAt.Complete : ImmediateHostStopAt.Proof);
+
+    [Fact(Timeout = 30_000)]
+    public Task ImmediateHostArbitrationVetoesAcceptanceAfterProvisionalSuccess() =>
+        AssertImmediateHostStopAsync(ImmediateHostStopAt.Acceptance);
+
+    private enum ImmediateHostStopAt { Proof, Acceptance, Complete }
+
+    private async Task AssertImmediateHostStopAsync(ImmediateHostStopAt stopAt)
+    {
+        using var watchdog = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        var ct = watchdog.Token;
+        var acceptedBeforeStop = stopAt == ImmediateHostStopAt.Complete;
+        var events = new EventRing();
+        using var endpoint = new FakeDockerDaemonHandler { TransportFails = true };
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var unwound = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var host = new FakeHost { BeforeRouteAcceptance = stopAt == ImmediateHostStopAt.Acceptance ? Hold : null };
+        LifecycleResult? reported = null;
+        var fixture = new HostImmediateRuntimeFixture(
+            BeforeComplete: acceptedBeforeStop ? Hold : null,
+            AfterResult: result => reported = result,
+            AfterRun: () => unwound.TrySetResult());
+        var path = CreateReservation("shared");
+        await using var engine = CreateEnrolledRuntime(path, host, events, endpoint, immediateForTests: fixture);
+        if (stopAt == ImmediateHostStopAt.Proof) engine.AfterSwitchProofForTests = Hold;
+        var invalidations = 0;
+        engine.AfterFailedMutationUnknownForTests = _ => invalidations++;
+        var waiter = engine.WaitForModelAsync("alias", Timeout.InfiniteTimeSpan, ct);
+        SwitchAttemptRecord cancelled;
+        HostServingProof? accepted;
+
+        try
+        {
+            await entered.Task.WaitAsync(ct);
+            accepted = host.CommittedProof;
+            if (acceptedBeforeStop) Assert.Equal("enrolled-1", Assert.IsType<HostServingProof>(accepted).ContainerId);
+            else Assert.Null(accepted);
+            var provisional = engine.Capability;
+            Assert.NotNull(provisional.SwitchProof);
+            Assert.True(host.AdmissionClosed);
+            Assert.Throws<IOException>(() =>
+            {
+                using var unexpected = HostReservation.Open(path);
+            });
+            Assert.Equal("enrolled.model", provisional.SwitchingToward);
+            Assert.False(engine.IsReadyFor("enrolled.model", null));
+            Assert.False(waiter.IsCompleted);
+            Assert.Empty(engine.SwitchHistory);
+
+            await Task.Run(async () => await engine.DisposeAsync(), ct).WaitAsync(ct);
+            var answer = await waiter.WaitAsync(ct);
+            Assert.Equal(EngineRuntime.SwitchOutcome.RouterStopped, answer.Outcome);
+            Assert.False(ct.IsCancellationRequested);
+            Assert.False(unwound.Task.IsCompleted);
+            cancelled = Assert.Single(engine.SwitchHistory).Terminal;
+            Assert.Equal(SwitchAttemptOutcome.Cancelled, cancelled.Outcome);
+            Assert.False(engine.TryBeginForward(CancellationToken.None));
+            Assert.Equal(0, engine.HttpUsesForTests);
+        }
+        finally
+        {
+            release.TrySetResult();
+            await unwound.Task.WaitAsync(ct);
+        }
+
+        Assert.Same(accepted, host.CommittedProof);
+        var result = Assert.IsType<LifecycleResult>(reported);
+        Assert.Equal(acceptedBeforeStop, result.Succeeded);
+        if (!acceptedBeforeStop) Assert.Equal("host_publication_refused", result.Reason);
+        Assert.Single(host.Calls, call => call == "commit");
+        Assert.False(host.AdmissionClosed);
+        using var reservation = HostReservation.Open(path);
+        Assert.Null(reservation.State.Pending);
+        Assert.Same(cancelled, Assert.Single(engine.SwitchHistory).Terminal);
+        Assert.Single(events.Replay(0), item => item.Kind == "engine.switch_started");
+        Assert.DoesNotContain(events.Replay(0), item => item.Kind is "engine.switch_completed" or "engine.switch_failed");
+        Assert.Equal(0, invalidations);
+        Assert.Null(engine.SwitchingToward);
+        Assert.Null(engine.Capability.SwitchProof);
+        Assert.False(engine.IsReadyFor("enrolled.model", null));
+        Assert.False(engine.TryBeginForward(CancellationToken.None));
+        Assert.Equal(0, engine.HttpUsesForTests);
+        Assert.Empty(endpoint.Requests);
+
+        void Hold()
+        {
+            entered.TrySetResult();
+            release.Task.WaitAsync(ct).GetAwaiter().GetResult();
+        }
+    }
+
+    [Fact(Timeout = 30_000)]
+    public async Task ImmediateHostArbitrationPreservesReadyAcrossConvertedCleanupFailure()
+    {
+        using var watchdog = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        var ct = watchdog.Token;
+        var cleanupEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseCleanup = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var unwound = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var host = new FakeHost
+        {
+            OnDrainDispose = () =>
+            {
+                cleanupEntered.TrySetResult();
+                releaseCleanup.Task.WaitAsync(ct).GetAwaiter().GetResult();
+                throw new IOException("fixture drain cleanup failure");
+            },
+        };
+        var events = new EventRing();
+        using var endpoint = new FakeDockerDaemonHandler { TransportFails = true };
+        LifecycleResult? reported = null;
+        var fixture = new HostImmediateRuntimeFixture(AfterResult: result => reported = result,
+            AfterRun: () => unwound.TrySetResult());
+        await using var engine = CreateEnrolledRuntime(CreateReservation("shared"), host, events, endpoint,
+            immediateForTests: fixture);
+        var invalidations = 0;
+        engine.AfterFailedMutationUnknownForTests = _ => invalidations++;
+        var waiter = engine.WaitForModelAsync("alias", Timeout.InfiniteTimeSpan, ct);
+        EngineCapability ready;
+        SwitchAttemptRecord terminal;
+        try
+        {
+            await cleanupEntered.Task.WaitAsync(ct);
+            Assert.True((await waiter.WaitAsync(ct)).IsReady);
+            Assert.False(unwound.Task.IsCompleted);
+            ready = engine.Capability;
+            Assert.True(ready.Healthy);
+            Assert.Null(ready.SwitchingToward);
+            Assert.NotNull(ready.SwitchProof);
+            terminal = Assert.Single(engine.SwitchHistory).Terminal;
+            Assert.Equal(SwitchAttemptOutcome.Ready, terminal.Outcome);
+        }
+        finally
+        {
+            releaseCleanup.TrySetResult();
+            await unwound.Task.WaitAsync(ct);
+        }
+
+        var result = Assert.IsType<LifecycleResult>(reported);
+        Assert.False(result.Succeeded);
+        Assert.Equal("host_reservation_unavailable", result.Reason);
+        Assert.Same(ready, engine.Capability);
+        Assert.Same(terminal, Assert.Single(engine.SwitchHistory).Terminal);
+        var outcome = Assert.Single(events.Replay(0), item => item.Kind is "engine.switch_completed" or "engine.switch_failed");
+        Assert.Equal("engine.switch_completed", outcome.Kind);
+        Assert.Equal(0, invalidations);
+        Assert.True(engine.IsReadyFor("enrolled.model", null));
+        Assert.Single(host.Calls, call => call == "commit");
+        Assert.False(host.AdmissionClosed);
+        Assert.Empty(endpoint.Requests);
+    }
+
     [Theory(Timeout = 20_000)]
     [InlineData(32_768L, null, false)]
     [InlineData(0L, "wide", true)]
@@ -729,7 +887,7 @@ public sealed class HostLifecycleCoordinatorTests : IDisposable
 
     private static EngineRuntime CreateEnrolledRuntime(
         string path, FakeHost host, EventRing events, HttpMessageHandler endpoint, ServingProfile? tier = null,
-        DockerLifecycleConfig? docker = null)
+        DockerLifecycleConfig? docker = null, HostImmediateRuntimeFixture? immediateForTests = null)
     {
         var definition = new EngineDefinition
         {
@@ -747,7 +905,8 @@ public sealed class HostLifecycleCoordinatorTests : IDisposable
                 },
             },
         };
-        var enrollment = new HostEngineEnrollment("test", definition.Name, new HostLifecycleCoordinator(path, host));
+        var enrollment = new HostEngineEnrollment("test", definition.Name, new HostLifecycleCoordinator(path, host),
+            ImmediateForTests: immediateForTests);
         return new EngineRuntime(definition, new RouterConfig(), events, endpoint,
             lifecycle: null, dispatchHint: null, hostEnrollment: enrollment);
     }
@@ -835,6 +994,8 @@ public sealed class HostLifecycleCoordinatorTests : IDisposable
         public Action? OnPreflight { get; set; }
         public Func<CancellationToken, Task>? OnDrain { get; set; }
         public Action? OnStop { get; set; }
+        public Action? OnDrainDispose { get; init; }
+        public Action? BeforeRouteAcceptance { get; init; }
         public Func<CancellationToken, Task>? Readiness { get; set; }
         public LifecycleResult Preflight { get; set; } = LifecycleResult.Ok();
         public bool AdmitVerifiedRoute { get; init; } = true;
@@ -966,18 +1127,22 @@ public sealed class HostLifecycleCoordinatorTests : IDisposable
                 host.OnWithdraw?.Invoke();
             }
 
-            public bool CommitVerifiedRoute(HostServingProof proof, Func<bool> publish)
+            public bool CommitVerifiedRoute(HostServingProof proof, Func<bool> publish, Func<Action, bool> tryAccept)
             {
                 host.Calls.Add("commit");
                 Assert.True(host.AdmissionClosed);
                 Assert.Equal(new HostResident(proof.Target.EngineName, proof.ContainerId), host.Resident);
                 if (!host.AdmitVerifiedRoute || !publish()) return false;
 
-                host.CommittedProof = proof;
-                return true;
+                host.BeforeRouteAcceptance?.Invoke();
+                return tryAccept(() => host.CommittedProof = proof);
             }
 
-            public void Dispose() => host.AdmissionClosed = false;
+            public void Dispose()
+            {
+                host.AdmissionClosed = false;
+                host.OnDrainDispose?.Invoke();
+            }
         }
     }
 }

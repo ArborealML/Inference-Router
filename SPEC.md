@@ -1,6 +1,6 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.89)
+Status: draft, continuously revised (v0.12.90)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
@@ -352,6 +352,8 @@ daemon transaction per engine. 137 tests green.
   that answers no `upload_url`, an upload that dies or answers no asset id, an asset name listed twice on
   the release, and a tag that moves after the first resolve. No tag has run the gate: still configured,
   not proven.
+- v0.12.90 — the offline immediate-host callback orders host acceptance, completion and
+  returned refusal with shutdown (§5.3.1).
 - v0.12.89 — engine shutdown withdraws current health and readiness even when idle and retains
   the last observed model roster (§5.5).
 - v0.12.88 — project Docker init, unless-stopped restart, daemon-default log rotation and matching
@@ -1847,6 +1849,14 @@ runtime waiter and terminal path with injected bound evidence. It exercises an i
 commit, one timeout at equality without timer delivery, and fresh verification of the same
 applied launch. Ordinary enrolled intake retains its capacity guard and production activation
 remains gated.
+
+In the older injected immediate-host fixture, proof publication remains provisional while the
+switch marker is raised. The host records acceptance with a synchronous store under the runtime
+transition lock. A stop before that store vetoes acceptance. A stop after it can still win the
+runtime terminal decision. Completion or a returned refusal
+selects the terminal outcome under the same transition lock as stop. The selected outcome
+is notified outside that lock, and a later cleanup failure cannot replace it. A stopped runtime
+refuses first-send admission even if the fake host already recorded acceptance.
 
 **Offline verified dispatch (TASK-118).** An injected resident proof binds the committed
 route generation, exact instance and serving incarnation, launch epoch, captured configuration
