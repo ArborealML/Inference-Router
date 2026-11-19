@@ -19,7 +19,7 @@ ordinal: 109000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Config is fixing three MA0001 errors in the per-tier command NUL checks at be35ab6. Release, config load and AOT stopped during compilation; zero tests executed. Independent source and fixture review dispatched.
+Config is preparing the v0.12.87 landing. Corrected eeeea6a passed 40 focused Release cases, the pinned eight-tier config load and warning-free linux-x64 Native AOT. Independent feature review is pending.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
