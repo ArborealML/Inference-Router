@@ -4,7 +4,7 @@ The first milestone requires a completed pi turn on the deployed router. An isol
 
 ## Delivery evidence as of November 19
 
-**Pi on a running router has five of six tasks complete.** The deployed router served streamed Qwen and Swift turns in the same Pi session across an operator-managed selector change. Model discovery and the pinned client agreed on Qwen’s 256,000-token window. [PR #8](https://github.com/ArborealML/Inference-Router/pull/8) qualified the remaining admission check when a serving window shrinks during selection. The open item is CLI prompt parsing for `air chat` and `air complete`, including stdin when only options are supplied.
+**Pi on a running router is complete (6/6).** The deployed router served streamed Qwen and Swift turns in the same Pi session across an operator-managed selector change. Model discovery and the pinned client agreed on Qwen’s 256,000-token window. [PR #8](https://github.com/ArborealML/Inference-Router/pull/8) qualified the remaining admission check when a serving window shrinks during selection. [PR #33](https://github.com/ArborealML/Inference-Router/pull/33) completed CLI prompt parsing for both verbs, including stdin when only options are supplied.
 
 **Native model swap through Pi has twelve of twenty-one tasks complete.** [PR #31](https://github.com/ArborealML/Inference-Router/pull/31) qualified offline launch projections across 75 model and tier targets. The native swap still requires an enrolled host with an authenticated launch record and an observed router-managed transition between real Pi turns.
 
