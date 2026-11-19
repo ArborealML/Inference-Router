@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@gpt-6.2-sol-scheduling'
 created_date: '2026-11-18T18:56:00Z'
-updated_date: '2026-11-19T08:48:00Z'
+updated_date: '2026-11-19T08:56:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -48,5 +48,5 @@ Publish one immutable sender with the ready preparation. Its exact invocation bo
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Plan reviews required exact sender transfer, fresh generation, strict validation and retirement evidence from before checkout. Transient preparation rearms on a fresh availability revision. Implementation released. At 614cd52 Release built, 34 passed and 13 target fixtures refused a non-loopback endpoint. Fix the fixture. Code review found four binding gaps. Validate present raw model against captured selection before rewrite; reject extra request/content headers; derive endpoint and projection from the same trusted config; require resident engine/model identity for tier reuse. Pin mismatches before checkout. No production activation.
+Plan reviews released offline implementation with exact sender, fresh generation, strict validation and pre-checkout retirement classification. At 43b64d5 Release built; 34 differential cases passed. All 35 failures occurred at router-owned non-loopback fixture setup (13 resolver, 22 new integration). The compatibility filter passed 39 existing cases and repeated the same 22 failures. Fix the fixture and rerun affected cases only. Review of 614cd52 also requires binding present raw model, headers, trusted projection/endpoint and resident engine/model identity. Runtime delta review dispatched.
 <!-- SECTION:NOTES:END -->
