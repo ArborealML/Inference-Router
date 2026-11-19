@@ -1,6 +1,27 @@
 using Arboreal.InferenceRouter;
 using Arboreal.InferenceRouter.Lifecycle;
 
+if (args is ["--effect-ledger", var ledgerPath, var ledgerMode, var ledgerTarget])
+{
+    Console.WriteLine(new HostEffectLedgerProbe(ledgerPath).Run(ledgerMode, ledgerTarget));
+    return 0;
+}
+
+if (args is ["--checkpoint-replace", var checkpointPath])
+{
+    using var checkpoint = HostEffectCheckpoint.Open(checkpointPath, (temporary, installed) =>
+    {
+        Console.WriteLine("before-replacement");
+        _ = Console.In.ReadLine();
+        File.Move(temporary, installed, overwrite: true);
+        Console.WriteLine("after-replacement");
+        _ = Console.In.ReadLine();
+    });
+    checkpoint.PrepareInitialLaunch(new HostCheckpointPlan("a", "a.model", null, "test-config", 1000, "route-a",
+        new string('A', 64)));
+    return 0;
+}
+
 if (args.Length == 3)
 {
     var path = args[0];

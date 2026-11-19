@@ -3,11 +3,11 @@ id: TASK-68
 title: >-
   Bind the serving gauges to a capability epoch, so a stale window cannot
   authorise a profile the engine cannot serve
-status: In Progress
+status: Waiting
 assignee:
-  - '@gpt-6.2-sol-scheduling'
+  - '@gpt-6.2-astra'
 created_date: '2026-11-18T01:11:00Z'
-updated_date: '2026-11-19T06:28:00Z'
+updated_date: '2026-11-19T06:57:00Z'
 labels:
   - concurrency
   - scheduling
@@ -48,7 +48,5 @@ Publish the immutable serving tuple with EngineCapability. Convert scheduler, en
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Model-bound serving publication landed in [PR #2](https://github.com/ArborealML/Inference-Router/pull/2). Claim-scoped restoration and timing-proof invalidation landed in [PR #3](https://github.com/ArborealML/Inference-Router/pull/3). The scheduling implementer now carries the explicit minimum from the actual winning ticket through selection, commit and fresh readiness, and qualifies bounded re-entry. Coordinate the readiness splice with TASK-126.
-
-Readiness landed in PR #4. Compose ticket floors and bounded retries on merge 5e345cc using SPEC v0.12.75.
+Serving publication and restoration landed in PRs #2 and #3. [PR #8](https://github.com/ArborealML/Inference-Router/pull/8) contains the context floor and bounded claim retries at 29cb7d5 (96 focused Release passes) and the accepted two-ticket fixture at 780eb0f (two Release passes on the identical tree). Parent feature review and updated hosted CI wake integration.
 <!-- SECTION:NOTES:END -->

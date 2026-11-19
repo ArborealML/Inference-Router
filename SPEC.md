@@ -356,6 +356,10 @@ daemon transaction per engine. 137 tests green.
   offline create projection (§5.3.1, §7). Canonical model and profile select immutable launch
   inputs. Engines with these declarations require separate host qualification before activation.
 
+- v0.12.73 — Add the standalone offline host successor checkpoint and effect ledger.
+  The checkpoint retains exact launch, stop and frozen successor evidence across process death.
+  The fake ledger verifies residency and separates send, acceptance, attempt and applied records
+  across restart without granting production host authority (§5.3.1, TASK-110).
 - v0.12.71 — order local inference sends and each health read against engine shutdown.
   A timed-out send retains its client through late response cleanup. Shutdown attempts
   lifecycle cleanup even if local HTTP close faults. Switch readiness delivery and timing
@@ -1686,6 +1690,39 @@ after recovery, and an unproved instance retains the fence. The fixture does not
 publication. Foreign or unknown occupancy refuses the switch without a provider fallback.
 Public configuration and the request dispatcher do not construct this binding. The dedicated
 single-engine restriction for explicit native ownership still applies.
+
+**Offline successor checkpoint (TASK-110).** The standalone store uses a separate stable lock and a
+versioned, bounded effect checkpoint. Only explicit provisioning creates genesis. Reopen requires a
+valid installed checkpoint. Old applied snapshots, route stages and temporary files cannot reseed it.
+Each transition checks the installed predecessor under the lock, flushes a complete replacement and
+installs it atomically. A failed or ambiguous write fences that handle. A new holder reads the actual
+installed version. These guarantees cover cooperating processes and trusted local storage through
+process death.
+
+One checkpoint retains the incumbent's exact launch and binds the next epoch, exact stop and frozen
+successor plan before dispatch. Prepared stop may abort before dispatch. A dispatched stop can retain
+the incumbent only with a matching before-issue rejection and an independently supplied fence against
+delayed delivery. An applied stop needs the exact receipt and independent stopped-instance evidence.
+Only that phase can prepare the recorded successor, and its applied launch needs the matching receipt
+and independent operation-to-instance binding. Unknown effects preserve the same dispatch intent.
+A settled resident's launch epoch equals the checkpoint epoch. A retained or transitioning incumbent
+can come from an earlier launch epoch. Every applied launch after the initial one retains its matching
+predecessor stop. The standalone store checks evidence identity and records the validated disposition.
+Its caller must obtain an independent effect or rejection fence from the authority that can prove it.
+The checkpoint contains no evidence provenance for physical authority or takeover audit. Worker I/O,
+runtime routing and admission remain on their existing paths. Production enrollment is disabled.
+
+The successor ledger fixture records submissions, worker acceptances, daemon attempts and applied
+records in separate journals. These are synthetic evidence roles and can share a fixture process.
+The fake worker holds one fence through the issue decision and daemon entry. A durable never-issue
+record bars delayed delivery and lets the worker finish a missing canonical rejection terminal under
+that fence. A contradictory terminal remains installed. An issue decision with no terminal reply blocks
+retain-A and further dispatch. Applied recovery matches the terminal and fake daemon effect. Launch
+recovery also reads installed residency and checks the complete launch, group and enrollment of the
+non-foreign resident. Stops compare the exact incumbent and creates recheck vacancy at fake daemon
+entry. Records stage in unique temporary files and publish atomically. Reopen ignores unpublished
+records and holds on corrupt installed evidence. These controls exercise subprocess death in trusted
+fixture storage. They supply no production authority or inference permit evidence.
 
 **Production evidence.** The raw Docker inventory can report known foreign containers. Even an
 empty inventory leaves vacancy unproven, and raw Docker supplies no terminal receipt for an
