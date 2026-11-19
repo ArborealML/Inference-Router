@@ -3,11 +3,11 @@ id: TASK-111
 title: >-
   Build the local router configuration for every supported select-model
   configuration
-status: In Progress
+status: Waiting
 assignee:
-  - '@gpt-6.2-sol-config'
+  - '@chatswarm'
 created_date: '2026-11-18T18:15:00Z'
-updated_date: '2026-11-19T12:26:00Z'
+updated_date: '2026-11-19T12:37:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -19,7 +19,7 @@ ordinal: 109000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Config is implementing six single-GPU HyperQwen target projections on the paired-policy landing. [PR #27](https://github.com/ArborealML/Inference-Router/pull/27) brought offline coverage to 57/75. The six targets span two models and three tiers; aliases and device choices do not increase that count.
+The independent single-GPU feature review dispatched November 19 wakes the coordinator. On 884d6cd all 53 focused Release cases passed, zero skips, including both mixed-format projections and the paired return. The pinned config loaded and the Linux x64 server Native AOT publish completed without warnings. [PR #27](https://github.com/ArborealML/Inference-Router/pull/27) established 57/75 offline targets on main. Six single-GPU targets await landing. Live device mapping, serving capacity and authority remain unqualified.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
