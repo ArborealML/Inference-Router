@@ -18,6 +18,7 @@ public sealed partial class HostClosedRouteStagingTests
         public LifecycleResult Readiness { private get; set; } = LifecycleResult.Ok();
         public Func<Guid, CancellationToken, ValueTask<HostOccupancy>>? OnObserve { private get; set; }
         public Action? OnDrainDispose { private get; set; }
+        public Func<LifecycleTarget, HostCheckpointPlan>? FrozenPlan { private get; init; }
 
         public HostCheckpointLaunchEffect? FindLaunch(HostMutation operation) => _applied?.Operation == operation ? _applied : null;
 
@@ -92,7 +93,7 @@ public sealed partial class HostClosedRouteStagingTests
         }
 
         private HostCheckpointPlan Plan(LifecycleTarget target) =>
-            new(target.EngineName, target.Model, target.Profile?.Name ?? target.Definition.Profile,
+            FrozenPlan?.Invoke(target) ?? new(target.EngineName, target.Model, target.Profile?.Name ?? target.Definition.Profile,
                 target.Definition.Name, readinessTimeoutMs, "fixture-private-route", new string('A', 64));
 
         private sealed class Drain(FakeHost host) : IHostDrain
@@ -140,6 +141,7 @@ public sealed partial class HostClosedRouteStagingTests
         private readonly Dictionary<Guid, Exchange> _issued = [];
         private int _permits;
         public Func<VerifiedInstanceGrant, Task>? HoldCheckout { private get; set; }
+        public Func<VerifiedInstanceRoute, bool>? AllowsRoute { private get; init; }
         public int Grants { get { lock (_gate) return _issued.Count; } }
         public int Permits { get { lock (_gate) return _permits; } }
 
@@ -147,7 +149,7 @@ public sealed partial class HostClosedRouteStagingTests
         {
             lock (_gate)
             {
-                if (!authority.CanMint(invocation.Route) || invocation.Id == Guid.Empty || _issued.ContainsKey(invocation.Id))
+                if (!CanDeliver(invocation.Route) || invocation.Id == Guid.Empty || _issued.ContainsKey(invocation.Id))
                     return null;
 
                 RecordedChannel? untransferred = null;
@@ -184,13 +186,16 @@ public sealed partial class HostClosedRouteStagingTests
             lock (_gate)
             {
                 if (!_issued.TryGetValue(grant.Invocation.Id, out var issued) || !ReferenceEquals(issued.Grant, grant) ||
-                    issued.Authorized || !authority.CanMint(grant.Invocation.Route)) return null;
+                    issued.Authorized || !CanDeliver(grant.Invocation.Route)) return null;
 
                 issued.Authorized = true;
                 _permits++;
                 return new FixturePermit();
             }
         }
+
+        private bool CanDeliver(VerifiedInstanceRoute route) =>
+            authority.CanMint(route) && (AllowsRoute is null || AllowsRoute(route));
 
         public byte[] Bytes(VerifiedInstanceInvocation invocation)
         {
