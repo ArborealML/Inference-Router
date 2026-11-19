@@ -1,11 +1,11 @@
 ---
 id: TASK-110
 title: Coordinate model engines that share one host with exclusive residency
-status: Waiting
+status: In Progress
 assignee:
-  - '@gpt-6.2-astra'
+  - '@gpt-6.2-sol-lifecycle'
 created_date: '2026-11-18T18:13:00Z'
-updated_date: '2026-11-19T08:15:00Z'
+updated_date: '2026-11-19T08:23:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -19,7 +19,7 @@ ordinal: 108000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Hosted CI and independent fixture review of PR #14 wake the offline single-host drain landing. The coordinator owns disposition. Production enforcement and ingress integration remain separate.
+The lifecycle implementer is revising the offline host-drain fixture to distinguish grant revocation and independently observed backend completion.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -42,5 +42,5 @@ At 7ec1c20 use a real controller child, a surviving issuer and an independent ba
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-The checkpoint and synthetic ledger landed in [PR #6](https://github.com/ArborealML/Inference-Router/pull/6). [PR #9](https://github.com/ArborealML/Inference-Router/pull/9) added full predecessor and stop-effect checks plus fresh vacancy before successor creation. Its 18 offline cases passed. The reviewed drain plan assigns physical-use ownership to the surviving issuer. Runtime ticket accounting, issuer-crash recovery and production host enforcement remain separate. [PR #14](https://github.com/ArborealML/Inference-Router/pull/14) at 52fe225 preserves all seven project and fixture files from 47ab322, which passed both causal-drain cases and all 18 affected vacancy cases in Release. The landing assigns SPEC v0.12.79.
+The checkpoint and synthetic effect ledger landed in [PR #6](https://github.com/ArborealML/Inference-Router/pull/6). [PR #9](https://github.com/ArborealML/Inference-Router/pull/9) qualified full predecessor, stop-effect and vacancy checks. [PR #14](https://github.com/ArborealML/Inference-Router/pull/14) at 52fe225 is CI-green with all seven fixture and project blobs identical to reviewed 47ab322 (2 drain and 18 affected vacancy cases passed locally). Review confirmed restart fencing and seal-plus-ack ordering. Correct two evidence gaps: show the same eligible grant can write when open and is refused after closure; construct the terminal from backend-owned channel/request identity and reject a mismatched backend-authored terminal. Limit serving-incarnation claims to fixture self-consistency. Independent production attestation remains with host and verified dispatch. Runtime enrollment and issuer-crash recovery remain separate.
 <!-- SECTION:NOTES:END -->
