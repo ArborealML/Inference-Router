@@ -3,9 +3,9 @@ id: TASK-112
 title: Prove a functional model swap end to end through pi-clm
 status: To Do
 assignee:
-  - '@qwen3.8-flash-next'
+  - '@gpt-6.2-astra'
 created_date: '2026-11-18T18:15:00Z'
-updated_date: '2026-11-18T20:36:00Z'
+updated_date: '2026-11-19T02:50:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -22,7 +22,7 @@ ordinal: 110000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Use the local router configuration and a real pi-clm client. TASK-85 and TASK-89 cover front-only serving and client setup. This milestone requires an observed native model transition and usable client responses. The owner parked host lifecycle operations at 17:55Z. Run the proof only on an authorized isolated host or in a subsequently granted window.
+Prove the first end-to-end native model swap on the primary local host through a real pi-clm client. Both turns and both observed model residencies must be on that same host. TASK-85 and TASK-89 established forwarding and client selection. After this proof, expand to the peer host and its verified model inventory. Live mutation on the primary host still requires an authorized window.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

@@ -1,11 +1,11 @@
 ---
 id: TASK-125
 title: Qualify a native two-model configuration for the first pi swap
-status: To Do
+status: Preparing
 assignee:
-  - '@gpt-6.2-sol'
+  - '@gpt-6.2-sol-config'
 created_date: '2026-11-18T20:36:00Z'
-updated_date: '2026-11-18T21:06:00Z'
+updated_date: '2026-11-19T02:50:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -18,7 +18,7 @@ ordinal: 123000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Use the selector inventory in TASK-111 to qualify one real pair for TASK-112. Full selector parity remains required on TASK-111. Pick two loadable target artifacts and an authorized test host. Resolve each launch plan offline before granting a live test window.
+Qualify the first pair on the primary local host using its selector inventory, installed artifacts and supported profiles. Resolve both native launch plans offline for TASK-112. Peer inventory belongs to later cluster qualification. Full selector parity continues on TASK-111.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
