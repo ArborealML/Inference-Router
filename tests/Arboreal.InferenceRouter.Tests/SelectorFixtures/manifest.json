@@ -1,0 +1,52 @@
+{
+  "archives": {
+    "defiant-selector-matrix.json": "d7630af0e8d7410edda3e5fd175c8d6f2db2678db9ba725ae45bc4608e46d6f4",
+    "defiant-native-coverage-3af5f10.json": "e2fafdab277b9c233cb10d68c357e2a734d3e4f2e52970b633368d1a70fb5543",
+    "defiant-launch-targets.json": "84f0fb6e871dc75003e93a5589e8220b57258857bda2b095ba7c555c450f2b96",
+    "selector-validator-receipt.json": "2a99c480db596acbbfbc6df278e0ab2c3ac71f98ddc6d3f1661d3b3dcb11a693"
+  },
+  "sources": {
+    "select_model.py": "6e804ee0b23c3c59c6459d3a1ad60526ba44962eb7c3c0320543f6998cd26993",
+    "start-strata.sh": "af7a8770c390ca29aa71d1fbf6a8021ef087e4562d3da22c32dbc45d4ba834a0",
+    "strata_profiles.py": "5581cf089859892604f7631edfe9d645d747886b03e3a3b739458e1c034aa8c0",
+    "start-hyperqwen-profile.sh": "6926364e0c1d6a0b5cf27bb475b08cf81c4030858d5cf3e1795d2b325044bba2",
+    "hyperqwen_parking.py": "bfdb575dc1916284b54cdfb577ceb7259597ffaf1aa82fa60cdec1bd8938e1f0",
+    "recovered/source/lib/hyperqwen-server.sh": "697eb69fb643d09c564ff8451643859a5081c721790dfe23f38110776cb5d497",
+    "deepseek_selector.py": "5d3a015a5f97a174ad3b90381f78666779360fa19210dfa7693c09a2e1f99005",
+    "glm_selector.py": "87ca9186359a9623740ac472fbd061ecdcb13af43c66e8101369e67857552e41",
+    "minimax_selector.py": "b7793d57520ce1a4ed910afd6f8962c1ea7b506c5326497b0d6cab4abec0e0db"
+  },
+  "specimens": {
+    "strata.toml": {
+      "original": "defiant-strata-profile-alias-offline.toml",
+      "original_sha256": "99e3c52e57238648e29d86120550ad6f4bec6fd257e2e0b068a607acc7e6cb33",
+      "sha256": "75a219f1088a42955977e773bf9783b460dc06d05a3a42bd4561a8e23e5403fa"
+    },
+    "minimax.toml": {
+      "original": "defiant-minimax-32k-offline.toml",
+      "original_sha256": "71e631311d7c50e0dd90e63b10f4c12101bf198667ccc6ba828d9a183d1f1083",
+      "sha256": "95b27c95d9db80af528109b7999febe3175ddc4c787047931a2d2056376c9d15"
+    },
+    "glm.toml": {
+      "original": "defiant-glm-three-tier-offline.toml",
+      "original_sha256": "a87e288d00173ac0189ad92ad12d632d89b60503dcd319ed0f5553d5715c5073",
+      "sha256": "8111882a03749deaa0b20c81d97f1d1817b43c5e5344167959a543a9b6141116"
+    },
+    "maya_xs.toml": {
+      "original": "defiant-deepseek-maya-xs-32k-offline.toml",
+      "original_sha256": "ad4a426e2b264b314b2b29ecaf7cc4daa13316fb265a5ace1ca963ed7752e68c",
+      "sha256": "0c22d147d922e189da4335082be80dd5fc85cc7e67848c4663de1ff8aa18305e"
+    },
+    "deepseek.toml": {
+      "original": "defiant-deepseek-flash-eight-tier-offline.toml",
+      "original_sha256": "dafb883c6de6bbd564fad0effdfd7b042d0be4a20de412f6862cd07ec0dd8ff6",
+      "sha256": "08333c0d307a1350c7ec490ed1f8ae24e64ad9d7805640e149e24db82d868bcd"
+    },
+    "hyperqwen.toml": {
+      "original": "defiant-hyperqwen-parking-defaults-offline.toml",
+      "original_sha256": "e27cb1bf0d17b29fe0ed735b289c7a8ea909a5cb22724f36e8755e577f1350b8",
+      "sha256": "074a088c77547e9bd7af8e6aa19023504df16567a8d4176caa9741b82fee3583"
+    }
+  },
+  "oracle_sha256": "4e3eb3193084b27cd5931b9a482f67e0af7be38071fd7a90e069e999f7757044"
+}

@@ -47,6 +47,8 @@ jobs:
         run: dotnet build --no-restore -c Release -v minimal
 
       - name: Test
+        env:
+          ARBOREAL_RUN_SELECTOR_DIFFERENTIAL: "0"
         run: dotnet test --no-build -c Release -v minimal
 
       # AOT publish must be trim/AOT-warning free; the analyser reports those as build

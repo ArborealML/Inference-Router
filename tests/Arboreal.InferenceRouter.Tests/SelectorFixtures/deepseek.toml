@@ -1,0 +1,184 @@
+default_model = "deepseek-v4.1-flash-1017-iq2-xxs"
+[engine.deepseek]
+kind = "openai-compatible"
+endpoint = "http://127.0.0.1:28060"
+lifecycle_owner = "router"
+[engine.deepseek.docker]
+image = "registry.invalid/selector-fixture/maya:offline"
+image_id = "sha256:5555555555555555555555555555555555555555555555555555555555555555"
+image_repo_digest = "registry.invalid/selector-fixture/maya@sha256:6666666666666666666666666666666666666666666666666666666666666666"
+image_platform = "linux/amd64"
+router_id = "selector-fixture"
+entrypoint = "/opt/maya-python/bin/python"
+ipc_mode = "host"
+env = ["STRATA_NO_ACQUIRE=1", "PYTHONPATH=/source:/source/tools:/policy"]
+host_ip = "127.0.0.1"
+host_port = 28060
+container_port = 8080
+stop_timeout_ms = 120000
+[engine.deepseek.docker.resources]
+gpu = { all = true }
+nano_cpus = 20000000000
+memory_bytes = 57982058496
+memory_swap_bytes = 60129542144
+bind_mounts = [
+  { source = "/fixture/install/prepared/deepseek-vision/weights", target = "/vision", read_only = true },
+  { source = "/fixture/install/experiments/deepseek-flash", target = "/legacy", read_only = true },
+  { source = "/fixture/install/prepared/maya-1.1.66", target = "/work", read_only = true },
+  { source = "/fixture/install/prepared/maya-1.1.66", target = "/source", read_only = true },
+]
+[engine.deepseek.catalog."deepseek-v4.1-flash-1017-iq2-xxs"]
+aliases = ["deepseek-v4.1-flash", "deepseek", "deepseek-flash"]
+default_profile = "max"
+[[engine.deepseek.catalog."deepseek-v4.1-flash-1017-iq2-xxs".serving]]
+name = "max"
+max_context = 1048576
+max_slots = 1
+[engine.deepseek.catalog."deepseek-v4.1-flash-1017-iq2-xxs".serving.docker]
+command = ["/selector.py", "serve", "1048576"]
+bind_mounts = [
+  { source = "/fixture/install/experiments/deepseek-flash/models", target = "/work/models", read_only = true, nested_under = "/work" },
+  { source = "/fixture/install/prepared/deepseek-vision/pack", target = "/work/data/pack", read_only = true, nested_under = "/work" },
+  { source = "/fixture/install/prepared/serve-candidate.py", target = "/policy/serve_candidate.py", read_only = true },
+  { source = "/fixture/install/deepseek_selector.py", target = "/selector.py", read_only = true },
+  { source = "/fixture/install/experiments/deepseek-flash/results/serving", target = "/serving-logs", read_only = false },
+]
+[engine.deepseek.catalog."deepseek-v4.1-flash-1017-iq2-xxs".serving.docker.healthcheck]
+command = "/opt/maya-python/bin/python /selector.py health 1048576"
+interval_ms = 30000
+start_period_ms = 3600000
+timeout_ms = 10000
+retries = 3
+[[engine.deepseek.catalog."deepseek-v4.1-flash-1017-iq2-xxs".serving]]
+name = "32k"
+max_context = 32768
+max_slots = 1
+[engine.deepseek.catalog."deepseek-v4.1-flash-1017-iq2-xxs".serving.docker]
+command = ["/selector.py", "serve", "32768"]
+bind_mounts = [
+  { source = "/fixture/install/experiments/deepseek-flash/models", target = "/work/models", read_only = true, nested_under = "/work" },
+  { source = "/fixture/install/prepared/deepseek-vision/pack", target = "/work/data/pack", read_only = true, nested_under = "/work" },
+  { source = "/fixture/install/prepared/serve-candidate.py", target = "/policy/serve_candidate.py", read_only = true },
+  { source = "/fixture/install/deepseek_selector.py", target = "/selector.py", read_only = true },
+  { source = "/fixture/install/experiments/deepseek-flash/results/serving", target = "/serving-logs", read_only = false },
+]
+[engine.deepseek.catalog."deepseek-v4.1-flash-1017-iq2-xxs".serving.docker.healthcheck]
+command = "/opt/maya-python/bin/python /selector.py health 32768"
+interval_ms = 30000
+start_period_ms = 3600000
+timeout_ms = 10000
+retries = 3
+[[engine.deepseek.catalog."deepseek-v4.1-flash-1017-iq2-xxs".serving]]
+name = "pilot"
+max_context = 65536
+max_slots = 1
+[engine.deepseek.catalog."deepseek-v4.1-flash-1017-iq2-xxs".serving.docker]
+command = ["/selector.py", "serve", "65536"]
+bind_mounts = [
+  { source = "/fixture/install/experiments/deepseek-flash/models", target = "/work/models", read_only = true, nested_under = "/work" },
+  { source = "/fixture/install/prepared/deepseek-vision/pack", target = "/work/data/pack", read_only = true, nested_under = "/work" },
+  { source = "/fixture/install/prepared/serve-candidate.py", target = "/policy/serve_candidate.py", read_only = true },
+  { source = "/fixture/install/deepseek_selector.py", target = "/selector.py", read_only = true },
+  { source = "/fixture/install/experiments/deepseek-flash/results/serving", target = "/serving-logs", read_only = false },
+]
+[engine.deepseek.catalog."deepseek-v4.1-flash-1017-iq2-xxs".serving.docker.healthcheck]
+command = "/opt/maya-python/bin/python /selector.py health 65536"
+interval_ms = 30000
+start_period_ms = 3600000
+timeout_ms = 10000
+retries = 3
+[[engine.deepseek.catalog."deepseek-v4.1-flash-1017-iq2-xxs".serving]]
+name = "128k"
+max_context = 131072
+max_slots = 1
+[engine.deepseek.catalog."deepseek-v4.1-flash-1017-iq2-xxs".serving.docker]
+command = ["/selector.py", "serve", "131072"]
+bind_mounts = [
+  { source = "/fixture/install/experiments/deepseek-flash/models", target = "/work/models", read_only = true, nested_under = "/work" },
+  { source = "/fixture/install/prepared/deepseek-vision/pack", target = "/work/data/pack", read_only = true, nested_under = "/work" },
+  { source = "/fixture/install/prepared/serve-candidate.py", target = "/policy/serve_candidate.py", read_only = true },
+  { source = "/fixture/install/deepseek_selector.py", target = "/selector.py", read_only = true },
+  { source = "/fixture/install/experiments/deepseek-flash/results/serving", target = "/serving-logs", read_only = false },
+]
+[engine.deepseek.catalog."deepseek-v4.1-flash-1017-iq2-xxs".serving.docker.healthcheck]
+command = "/opt/maya-python/bin/python /selector.py health 131072"
+interval_ms = 30000
+start_period_ms = 3600000
+timeout_ms = 10000
+retries = 3
+[[engine.deepseek.catalog."deepseek-v4.1-flash-1017-iq2-xxs".serving]]
+name = "256k"
+max_context = 262144
+max_slots = 1
+[engine.deepseek.catalog."deepseek-v4.1-flash-1017-iq2-xxs".serving.docker]
+command = ["/selector.py", "serve", "262144"]
+bind_mounts = [
+  { source = "/fixture/install/experiments/deepseek-flash/models", target = "/work/models", read_only = true, nested_under = "/work" },
+  { source = "/fixture/install/prepared/deepseek-vision/pack", target = "/work/data/pack", read_only = true, nested_under = "/work" },
+  { source = "/fixture/install/prepared/serve-candidate.py", target = "/policy/serve_candidate.py", read_only = true },
+  { source = "/fixture/install/deepseek_selector.py", target = "/selector.py", read_only = true },
+  { source = "/fixture/install/experiments/deepseek-flash/results/serving", target = "/serving-logs", read_only = false },
+]
+[engine.deepseek.catalog."deepseek-v4.1-flash-1017-iq2-xxs".serving.docker.healthcheck]
+command = "/opt/maya-python/bin/python /selector.py health 262144"
+interval_ms = 30000
+start_period_ms = 3600000
+timeout_ms = 10000
+retries = 3
+[[engine.deepseek.catalog."deepseek-v4.1-flash-1017-iq2-xxs".serving]]
+name = "320k"
+max_context = 327680
+max_slots = 1
+[engine.deepseek.catalog."deepseek-v4.1-flash-1017-iq2-xxs".serving.docker]
+command = ["/selector.py", "serve", "327680"]
+bind_mounts = [
+  { source = "/fixture/install/experiments/deepseek-flash/models", target = "/work/models", read_only = true, nested_under = "/work" },
+  { source = "/fixture/install/prepared/deepseek-vision/pack", target = "/work/data/pack", read_only = true, nested_under = "/work" },
+  { source = "/fixture/install/prepared/serve-candidate.py", target = "/policy/serve_candidate.py", read_only = true },
+  { source = "/fixture/install/deepseek_selector.py", target = "/selector.py", read_only = true },
+  { source = "/fixture/install/experiments/deepseek-flash/results/serving", target = "/serving-logs", read_only = false },
+]
+[engine.deepseek.catalog."deepseek-v4.1-flash-1017-iq2-xxs".serving.docker.healthcheck]
+command = "/opt/maya-python/bin/python /selector.py health 327680"
+interval_ms = 30000
+start_period_ms = 3600000
+timeout_ms = 10000
+retries = 3
+[[engine.deepseek.catalog."deepseek-v4.1-flash-1017-iq2-xxs".serving]]
+name = "512k"
+max_context = 524288
+max_slots = 1
+[engine.deepseek.catalog."deepseek-v4.1-flash-1017-iq2-xxs".serving.docker]
+command = ["/selector.py", "serve", "524288"]
+bind_mounts = [
+  { source = "/fixture/install/experiments/deepseek-flash/models", target = "/work/models", read_only = true, nested_under = "/work" },
+  { source = "/fixture/install/prepared/deepseek-vision/pack", target = "/work/data/pack", read_only = true, nested_under = "/work" },
+  { source = "/fixture/install/prepared/serve-candidate.py", target = "/policy/serve_candidate.py", read_only = true },
+  { source = "/fixture/install/deepseek_selector.py", target = "/selector.py", read_only = true },
+  { source = "/fixture/install/experiments/deepseek-flash/results/serving", target = "/serving-logs", read_only = false },
+]
+[engine.deepseek.catalog."deepseek-v4.1-flash-1017-iq2-xxs".serving.docker.healthcheck]
+command = "/opt/maya-python/bin/python /selector.py health 524288"
+interval_ms = 30000
+start_period_ms = 3600000
+timeout_ms = 10000
+retries = 3
+[[engine.deepseek.catalog."deepseek-v4.1-flash-1017-iq2-xxs".serving]]
+name = "768k"
+max_context = 786432
+max_slots = 1
+[engine.deepseek.catalog."deepseek-v4.1-flash-1017-iq2-xxs".serving.docker]
+command = ["/selector.py", "serve", "786432"]
+bind_mounts = [
+  { source = "/fixture/install/experiments/deepseek-flash/models", target = "/work/models", read_only = true, nested_under = "/work" },
+  { source = "/fixture/install/prepared/deepseek-vision/pack", target = "/work/data/pack", read_only = true, nested_under = "/work" },
+  { source = "/fixture/install/prepared/serve-candidate.py", target = "/policy/serve_candidate.py", read_only = true },
+  { source = "/fixture/install/deepseek_selector.py", target = "/selector.py", read_only = true },
+  { source = "/fixture/install/experiments/deepseek-flash/results/serving", target = "/serving-logs", read_only = false },
+]
+[engine.deepseek.catalog."deepseek-v4.1-flash-1017-iq2-xxs".serving.docker.healthcheck]
+command = "/opt/maya-python/bin/python /selector.py health 786432"
+interval_ms = 30000
+start_period_ms = 3600000
+timeout_ms = 10000
+retries = 3

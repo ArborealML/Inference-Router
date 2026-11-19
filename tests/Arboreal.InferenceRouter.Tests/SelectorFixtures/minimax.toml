@@ -1,0 +1,44 @@
+listen = "http://127.0.0.1:28321"
+default_model = "minimax-m3.1-flash"
+auto_switch = false
+
+[engine.minimax]
+kind = "openai-compatible"
+endpoint = "http://127.0.0.1:28060/v1"
+lifecycle_owner = "router"
+lifecycle = "docker"
+
+[engine.minimax.docker]
+image = "registry.invalid/selector-fixture/maya:offline"
+image_id = "sha256:5555555555555555555555555555555555555555555555555555555555555555"
+image_repo_digest = "registry.invalid/selector-fixture/maya@sha256:6666666666666666666666666666666666666666666666666666666666666666"
+image_platform = "linux/amd64"
+router_id = "selector-fixture"
+host_port = 28060
+container_port = 8080
+host_ip = "127.0.0.1"
+stop_timeout_ms = 120000
+entrypoint = "/opt/maya-python/bin/python"
+ipc_mode = "host"
+command = ["/selector.py", "serve", "32k"]
+env = ["PYTHONPATH=/work:/work/tools", "MAYA_UPDATE_CHECK=0"]
+
+[engine.minimax.docker.resources]
+gpu = { all = true }
+nano_cpus = 20000000000
+memory_bytes = 57982058496
+memory_swap_bytes = 60129542144
+bind_mounts = [
+  { source = "/fixture/install/prepared/maya-1.1.66", target = "/work", read_only = true },
+  { source = "/fixture/install/prepared/minimax-xs", target = "/assets", read_only = true },
+  { source = "/fixture/install/run-fixture/maya-token", target = "/fixture-token", read_only = true },
+  { source = "/fixture/install/minimax_selector.py", target = "/selector.py", read_only = true },
+  { source = "/fixture/install/glm_selector.py", target = "/glm_selector.py", read_only = true },
+  { source = "/fixture/install/prepared/minimax-xs/models", target = "/fixture/install/prepared/minimax-xs/models", read_only = true },
+  { source = "/fixture/install/run-fixture/minimax-serving", target = "/serving", read_only = false },
+]
+
+[engine.minimax.catalog."minimax-m3.1-flash"]
+aliases = ["minimax", "minimax-maya-xs"]
+default_profile = "32k"
+serving = [{ name = "32k", max_context = 32768, max_slots = 1 }]
