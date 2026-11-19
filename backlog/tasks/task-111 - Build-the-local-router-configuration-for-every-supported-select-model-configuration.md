@@ -3,11 +3,11 @@ id: TASK-111
 title: >-
   Build the local router configuration for every supported select-model
   configuration
-status: Preparing
+status: Waiting
 assignee:
-  - '@gpt-6.2-sol-config'
+  - '@chatswarm'
 created_date: '2026-11-18T18:15:00Z'
-updated_date: '2026-11-19T10:29:00Z'
+updated_date: '2026-11-19T10:33:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -19,7 +19,7 @@ ordinal: 109000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Config is preparing per-tier numeric launch arguments for eight general DeepSeek targets.
+Independent plan review dispatched on 0abdbf5. Its verdict wakes Config for the eight general DeepSeek targets.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -32,7 +32,7 @@ Config is preparing per-tier numeric launch arguments for eight general DeepSeek
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Plan review passed on 5643b27. Both changes are required for target 41 of 75. Project a checked positive health timeout and positive Int32 retries; omit unset fields. Permit only explicitly marked read-only tier children of an exact earlier read-only component ancestor. Validate all effective common-plus-tier destinations, preserve order, exclude annotations from Docker JSON and refuse common annotations, chains, writable or protected overlaps. Check nested raw JSON/TOML shadowing and direct DTO semantics, preserving legacy parsing and mutation gates. Compare one dual-format golden with fixed decimal 32768 arguments, 11 ordered mounts and unrelated writable logs. Reuse targeted mount, health-boundary and zero-write fixtures; run pinned config load and Native AOT once. Keep general DeepSeek command mapping, HyperQwen and live activation separate.
+Review the optional literal command on a Docker serving tier. A supplied nonempty argument array replaces the common command; omission preserves template expansion. Freeze the resulting arguments in the existing target and include them in the existing create-payload digest. Guard duplicate, malformed and misplaced declarations in JSON, TOML and direct DTO input. Verify eight numeric selector commands and matching probes in one dual-format ladder with max as default. Check a command-only digest difference and the existing zero-write gate. Run focused Release, config load and Native AOT on the candidate. Offline coverage would rise from 41 to 49 of 75 after landing.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
@@ -43,8 +43,6 @@ The installed selector has 169 valid and 337 invalid spellings across 75 distinc
 [PR #7](https://github.com/ArborealML/Inference-Router/pull/7) landed offline per-target environment and mounts, strict ownership checks and single-pass substitution. [PR #12](https://github.com/ArborealML/Inference-Router/pull/12) landed per-tier RAM and swap for the Qwen profiles. [PR #16](https://github.com/ArborealML/Inference-Router/pull/16) at ee6e0f5 adds the MiniMax executable entrypoint and host IPC. Its 96 focused cases, config load and Native AOT passed. Bind receipts and labels to canonical model, tier and serving instance before activation.
 
 Single-device profiles require one explicit index and paired profiles two distinct indices. Utilization is 0.50–0.95 (default 0.90), parking 1–48 GiB (default 32), variable lanes 1–8. The selector has no supported suffix-cache launch.
-
-
 
 [PR #18](https://github.com/ArborealML/Inference-Router/pull/18) projects the GLM health check offline. Review passed the supplied b422d61 production diff. The corrected fixture passed 51 Release cases; config and Native AOT passed. All hosted checks passed and PR #18 merged at 989ae12. Before live qualification verify the image shell and router readiness budget independently of Docker’s start period.
 
