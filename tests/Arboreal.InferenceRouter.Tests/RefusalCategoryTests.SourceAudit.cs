@@ -7,7 +7,7 @@ namespace Arboreal.InferenceRouter.Tests;
 public partial class RefusalCategoryTests
 {
     private const string DirectExit = "return new(SwitchResult.Failed(SwitchReason.NoLifecycleOwner));";
-    private const string RecordedExit = ": new ObservedSwitchResult(SwitchResult.FailedFromRecord(state.FailureReason));";
+    private const string RecordedExit = "? new ObservedSwitchResult(SwitchResult.FailedFromRecord(state.FailureReason)) : null;";
     private const string ProviderWrite = "state.FailureReason = SwitchReason.LaunchFailed;";
     private const string ReadinessWrite = "state.FailureReason = failure.Reason;";
     private const string ReadinessDefault = "_ => SwitchReason.HealthTimeout,";
@@ -51,9 +51,9 @@ public partial class RefusalCategoryTests
         nameof(ViolationKind.DirectCall), "SwitchResult.Failed(category: SwitchReason.NoLifecycleOwner)")]
     [InlineData(DirectExit, "return new(Failed(SwitchReason.NoLifecycleOwner));",
         nameof(ViolationKind.DirectCall), "Failed(SwitchReason.NoLifecycleOwner)")]
-    [InlineData(RecordedExit, """: new ObservedSwitchResult(woke ? SwitchResult.FailedFromRecord(state.FailureReason) : SwitchResult.FailedFromRecord("free prose"));""",
+    [InlineData(RecordedExit, """? new ObservedSwitchResult(woke ? SwitchResult.FailedFromRecord(state.FailureReason) : SwitchResult.FailedFromRecord("free prose")) : null;""",
         nameof(ViolationKind.RecordedCall), """SwitchResult.FailedFromRecord("free prose")""")]
-    [InlineData(RecordedExit, """: new ObservedSwitchResult(SwitchResult.FailedFromRecord("free prose")); /* SwitchResult.FailedFromRecord(state.FailureReason) */""",
+    [InlineData(RecordedExit, """? new ObservedSwitchResult(SwitchResult.FailedFromRecord("free prose")) : null; /* SwitchResult.FailedFromRecord(state.FailureReason) */""",
         nameof(ViolationKind.RecordedCall), """SwitchResult.FailedFromRecord("free prose")""")]
     [InlineData(ProviderWrite, "state.FailureReason += SwitchReason.LaunchFailed;",
         nameof(ViolationKind.RecordedWrite), "state.FailureReason += SwitchReason.LaunchFailed")]
@@ -97,8 +97,8 @@ public partial class RefusalCategoryTests
     [InlineData(DirectExit, """{ _ = "SwitchOutcome.Failed SwitchReason.Unknown"; """ + DirectExit + " }")]
     [InlineData(DirectExit, "return new(canonical.Length == 0 ? SwitchResult.Failed(SwitchReason.NoLifecycleOwner) : " +
         "SwitchResult.Failed(SwitchReason.SwitchError));")]
-    [InlineData(RecordedExit, ": new ObservedSwitchResult(woke ? SwitchResult.FailedFromRecord(state.FailureReason) : " +
-        "SwitchResult.FailedFromRecord(state.FailureReason));")]
+    [InlineData(RecordedExit, "? new ObservedSwitchResult(woke ? SwitchResult.FailedFromRecord(state.FailureReason) : " +
+        "SwitchResult.FailedFromRecord(state.FailureReason)) : null;")]
     [InlineData(RecordedDefault, "Failed( /* fallback */ recorded is { Length: > 0 } why ? why : SwitchReason.SwitchError )")]
     [InlineData(ReadinessWrite, "state.FailureReason  =  /* mapped category */ failure.Reason;")]
     public void SourceAuditAcceptsBenignSyntax(string before, string after)
