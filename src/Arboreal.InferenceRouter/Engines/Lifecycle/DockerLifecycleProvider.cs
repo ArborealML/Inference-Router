@@ -399,9 +399,10 @@ public sealed class DockerLifecycleProvider : IEngineLifecycleProvider, IDisposa
         var binds = launch?.Binds ?? resources?.BindMounts ?? [];
         var memory = launch is null ? resources?.MemoryBytes : launch.MemoryBytes;
         var memorySwap = launch is null ? resources?.MemorySwapBytes : launch.MemorySwapBytes;
+        var gpu = launch is null ? resources?.Gpu : launch.Gpu;
         var policy = _cfg.ContainerPolicy;
         if (_cfg.HostPort is null && _cfg.NetworkMode is null && _cfg.IpcMode is null && policy is null &&
-            resources is null && binds.IsEmpty && memory is null && memorySwap is null) return body;
+            resources is null && binds.IsEmpty && memory is null && memorySwap is null && gpu is null) return body;
 
         var host = new DockerHostConfig
         {
@@ -438,11 +439,11 @@ public sealed class DockerLifecycleProvider : IEngineLifecycleProvider, IDisposa
         }
         if (!binds.IsEmpty)
             host.Mounts = [.. binds.Select(bind => new DockerMount("bind", bind.Source, bind.Target, bind.ReadOnly))];
-        if (resources is null) return body;
-
-        if (resources.Gpu is { } gpu)
+        if (gpu is not null)
             host.DeviceRequests = [new DockerDeviceRequest("", gpu.All ? -1 : 0,
                 gpu.All ? null : gpu.DeviceIds.ToArray(), [["gpu"]])];
+        if (resources is null) return body;
+
         if (!resources.DevicePaths.IsEmpty)
             host.Devices = [.. resources.DevicePaths.Select(path => new DockerDeviceMapping(path, path, "rwm"))];
         host.NanoCpus = resources.NanoCpus;

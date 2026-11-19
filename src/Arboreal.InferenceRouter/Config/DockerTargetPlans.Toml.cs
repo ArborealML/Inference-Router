@@ -13,6 +13,7 @@ internal sealed partial class DockerTargetPlans
         {
             if (engineValue is not TomlTable engine) continue;
             var enginePath = $"engine.{engineName}";
+            RejectMisplacedGpuToml(engine, enginePath);
             CheckCommonTargetOptionsToml(engine, $"{enginePath}.docker");
             CheckContainerPolicyToml(root, engines, engineName, engine, enginePath);
             foreach (var catalog in TomlMembers(engine, "catalog").OfType<TomlTable>())
@@ -21,13 +22,18 @@ internal sealed partial class DockerTargetPlans
                 if (modelValue is not TomlTable model) continue;
                 var modelPath = $"{enginePath}.catalog.{modelName}";
                 RejectMisplacedContainerPolicyToml(model, modelPath);
+                RejectMisplacedGpuToml(model, modelPath);
                 foreach (var modelDocker in TomlMembers(model, "docker").OfType<TomlTable>())
+                {
                     RejectMisplacedContainerPolicyToml(modelDocker, $"{modelPath}.docker");
+                    RejectMisplacedGpuToml(modelDocker, $"{modelPath}.docker");
+                }
                 foreach (var serving in TomlMembers(model, "serving"))
                 {
                     if (serving is TomlTable malformed)
                     {
                         RejectMisplacedContainerPolicyToml(malformed, $"{modelPath}.serving");
+                        RejectMisplacedGpuToml(malformed, $"{modelPath}.serving");
                         if (HasTomlTierDeclaration(malformed) || HasTomlMember(malformed, "command"))
                             throw new RouterConfigException($"{modelPath}.serving must be an array of serving tiers");
                     }
@@ -41,6 +47,7 @@ internal sealed partial class DockerTargetPlans
                             continue;
                         }
                         RejectMisplacedContainerPolicyToml(tier, tierPath);
+                        RejectMisplacedGpuToml(tier, tierPath);
                         foreach (var tierDocker in TomlMembers(tier, "docker").OfType<TomlTable>())
                             RejectMisplacedContainerPolicyToml(tierDocker, $"{tierPath}.docker");
                         if (HasTomlMember(tier, "command"))
@@ -56,9 +63,12 @@ internal sealed partial class DockerTargetPlans
                             CheckTomlFields(model, modelPath, "serving", "aliases", "profile", "default_profile");
                             CheckTomlFields(tier, tierPath, "name", "max_context", "max_slots", "docker", "aliases");
                             CheckTomlSelectors(catalog, enginePath);
-                            CheckTierTargetTablesToml(tier, $"{tierPath}.docker");
+                            var hasGpu = CheckTierTargetTablesToml(tier, $"{tierPath}.docker");
                             foreach (var common in TomlMembers(engine, "docker").OfType<TomlTable>())
+                            {
                                 CheckCommandToml(common, $"{enginePath}.docker.command", requireArguments: false);
+                                if (hasGpu) CheckCommonGpuToml(common, $"{enginePath}.docker");
+                            }
                         }
                         index++;
                     }
@@ -72,6 +82,7 @@ internal sealed partial class DockerTargetPlans
         foreach (var docker in TomlMembers(engine, "docker").OfType<TomlTable>())
         {
             RejectMisplacedTargetOptionsToml(docker, path);
+            RejectMisplacedGpuToml(docker, path);
             foreach (var resources in TomlMembers(docker, "resources").OfType<TomlTable>())
             {
                 RejectMisplacedTargetOptionsToml(resources, $"{path}.resources");
@@ -100,12 +111,14 @@ internal sealed partial class DockerTargetPlans
         }
     }
 
-    private static void CheckTierTargetTablesToml(TomlTable tier, string path)
+    private static bool CheckTierTargetTablesToml(TomlTable tier, string path)
     {
+        var hasGpu = false;
         foreach (var target in TomlMembers(tier, "docker").OfType<TomlTable>())
         {
             CheckTomlFields(target, path, "bind_mounts", "healthcheck");
             CheckCommandToml(target, $"{path}.command", requireArguments: true);
+            hasGpu |= CheckTierGpuToml(target, $"{path}.gpu");
             foreach (var health in TomlMembers(target, "healthcheck").OfType<TomlTable>())
             {
                 CheckTomlFields(health, $"{path}.healthcheck", "command", "interval_ms", "start_period_ms", "timeout_ms", "retries");
@@ -131,6 +144,7 @@ internal sealed partial class DockerTargetPlans
                 }
             }
         }
+        return hasGpu;
     }
 
     private static void CheckCommandToml(TomlTable table, string path, bool requireArguments)

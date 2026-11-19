@@ -97,6 +97,7 @@ public sealed class VerifiedDispatchTargetTests
     [InlineData("env")]
     [InlineData("command")]
     [InlineData("init")]
+    [InlineData("gpu")]
     [InlineData("mount")]
     [InlineData("memory")]
     [InlineData("manifest")]
@@ -106,11 +107,13 @@ public sealed class VerifiedDispatchTargetTests
     [InlineData("endpoint")]
     public void DifferentEffectiveInputsChangeTheDigestWithIdenticalTierAndCapacity(string change)
     {
-        var baseline = Load(tierCommand: change == "command" ? "32768" : null);
+        var baseline = Load(tierCommand: change == "command" ? "32768" : null,
+            withInit: change == "gpu", tierGpu: change == "gpu" ? "0" : null);
         var changed = Load(
             mode: change == "env" ? "changed" : "normal",
             tierCommand: change == "command" ? "65536" : null,
-            withInit: change == "init",
+            withInit: change is "init" or "gpu",
+            tierGpu: change == "gpu" ? "1" : null,
             mount: change == "mount" ? "/fixture/other" : "/fixture/weights",
             memory: change == "memory" ? 8_388_608 : 6_291_456,
             digest: change == "manifest" ? OtherRepoDigest : RepoDigest,
@@ -166,6 +169,16 @@ public sealed class VerifiedDispatchTargetTests
             foreach (var item in before.RootElement.EnumerateObject())
                 if (!item.NameEquals("HostConfig"))
                     Assert.True(JsonElement.DeepEquals(item.Value, after.RootElement.GetProperty(item.Name)), item.Name);
+        }
+
+        if (change == "gpu")
+        {
+            var before = System.Text.Encoding.UTF8.GetString(oldCreate);
+            var after = System.Text.Encoding.UTF8.GetString(newCreate);
+            const string oldIds = "\"DeviceIDs\":[\"0\"]";
+            const string newIds = "\"DeviceIDs\":[\"1\"]";
+            Assert.Contains(oldIds, before, StringComparison.Ordinal);
+            Assert.Equal(before.Replace(oldIds, newIds, StringComparison.Ordinal), after);
         }
 
         var oldProof = new VerifiedInstanceRoute("host", 1, original.Engine, original.PlanDigest,
@@ -256,7 +269,7 @@ public sealed class VerifiedDispatchTargetTests
     internal static EngineDefinition Load(
         string mode = "normal", string mount = "/fixture/weights", long memory = 6_291_456, string digest = RepoDigest,
         string platform = "linux/amd64", string alias = "alias", bool singleton = false, string endpoint = DefaultEndpoint,
-        string? healthcheckCommand = null, bool withProfileAlias = false, string? tierCommand = null, bool withInit = false)
+        string? healthcheckCommand = null, bool withProfileAlias = false, string? tierCommand = null, bool withInit = false, string? tierGpu = null)
     {
         var residentTier = $$"""
             [[engine.fixture.catalog."model.canonical".serving]]
@@ -273,6 +286,7 @@ public sealed class VerifiedDispatchTargetTests
         var healthcheck = healthcheckCommand is null ? "" :
             $"healthcheck = {{ command = \"{healthcheckCommand}\", interval_ms = 1000, start_period_ms = 2000 }}";
         var literalCommand = tierCommand is null ? "" : $"command = [\"serve\", \"{tierCommand}\"]";
+        var gpu = tierGpu is null ? "" : $$"""gpu = { device_ids = ["{{tierGpu}}"] }""";
         return RouterConfigLoader.Load($$"""
             [engine.fixture]
             kind = "openai-compatible"
@@ -296,6 +310,7 @@ public sealed class VerifiedDispatchTargetTests
             max_slots = 2
             [engine.fixture.catalog."model.canonical".serving.docker]
             {{literalCommand}}
+            {{gpu}}
             env = ["SETTING={{mode}}"]
             bind_mounts = [{ source = "{{mount}}", target = "/weights", read_only = true }]
             memory_bytes = {{memoryLiteral}}

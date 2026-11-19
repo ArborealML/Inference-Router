@@ -1,6 +1,6 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.90)
+Status: draft, continuously revised (v0.12.91)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
@@ -352,6 +352,8 @@ daemon transaction per engine. 137 tests green.
   that answers no `upload_url`, an upload that dies or answers no asset id, an asset name listed twice on
   the release, and a tag that moves after the first resolve. No tag has run the gate: still configured,
   not proven.
+- v0.12.91 — project an explicit single-device NVIDIA request per offline serving tier for
+  six HyperQwen targets, with ordered common GPU selection inherited on omission (§7).
 - v0.12.90 — the offline immediate-host callback orders host acceptance, completion and
   returned refusal with shutdown (§5.3.1).
 - v0.12.89 — engine shutdown withdraws current health and readiness even when idle and retains
@@ -1615,8 +1617,8 @@ effective resource inspection, artifact and live instance identity, and reconcil
 an uncertain create while the host reservation is held. It also requires verification of
 read-only bind enforcement for nested mounts.
 
-Native serving tiers can declare literal commands, environment, mounts, memory limits and Docker
-health checks for offline create projection. Each of these settings gates engine activation and native
+Native serving tiers can declare literal commands, environment, mounts, memory limits, a single
+NVIDIA device and Docker health checks for offline create projection. Each of these settings gates engine activation and native
 mutations across the engine's catalog. The Docker provider refuses with
 `docker_target_not_qualified` before any write.
 A coordinated switch may first read ownership.
@@ -2645,7 +2647,8 @@ duplicated resource fields and explicit JSON nulls. Bind sources are literal pat
 on the Docker host. The create request uses structured binds with source creation disabled.
 
 **Offline Docker settings per serving tier.** A structured serving entry on a native Docker engine
-can declare a command, environment assignments, binds, memory limits or a Docker health check.
+can declare a command, environment assignments, binds, memory limits, a single NVIDIA device or
+a Docker health check.
 TOML inline and nested tables and JSON objects use the same fields.
 
 ```toml
@@ -2700,7 +2703,16 @@ The annotation is used during validation and omitted from Docker JSON. Effective
 and destinations must be outside protected control paths and their ancestors.
 These checks are lexical. Host qualification verifies actual mounted paths and effective read-only
 enforcement, including any recursive mounts.
-Device requests, image pins, network bindings and other resource limits remain engine-wide.
+Image pins, network bindings and resource limits without tier fields remain engine-wide.
+
+A tier's `docker.gpu = { device_ids = ["1"] }` replaces the entire common NVIDIA request.
+Supply exactly one canonical numeric device ID as a string. Omission inherits the exact
+common selection, including device order or the all-GPU request. The loader validates the
+common request even when a tier replaces it. A tier NVIDIA request cannot coexist with
+common HIP `device_paths`. Use `gpu` only inside serving-tier `docker` or engine-wide
+`docker.resources`. A GPU-only tier opts the whole engine into the offline mutation gate.
+Before activation, verify the actual device mapping, toolkit and driver support, allocation
+and serving fit on the daemon host.
 
 A tier's `docker.memory_bytes` and `docker.memory_swap_bytes` are exact 64-bit byte counts.
 Memory must be at least 6 MiB. `memory_swap_bytes` is total memory plus swap, at least the memory

@@ -14,6 +14,7 @@ public sealed class DockerTargetDto
     private long? _memoryBytes;
     private long? _memorySwapBytes;
     private DockerHealthcheckDto? _healthcheck;
+    private DockerTargetGpuDto? _gpu;
 
     [JsonPropertyName("command")][TomlPropertyName("command")]
     public string[]? Command
@@ -70,6 +71,17 @@ public sealed class DockerTargetDto
         }
     }
 
+    [JsonPropertyName("gpu")][TomlPropertyName("gpu")]
+    public DockerTargetGpuDto? Gpu
+    {
+        get => _gpu;
+        set
+        {
+            if (_gpu is not null) throw new RouterConfigException("duplicate serving-tier docker.gpu");
+            _gpu = value ?? throw new RouterConfigException("serving-tier docker.gpu cannot be null");
+        }
+    }
+
     [JsonPropertyName("healthcheck")][TomlPropertyName("healthcheck")]
     public DockerHealthcheckDto? Healthcheck
     {
@@ -80,6 +92,15 @@ public sealed class DockerTargetDto
             _healthcheck = value ?? throw new RouterConfigException("serving-tier docker.healthcheck cannot be null");
         }
     }
+
+    [JsonIgnore, TomlIgnore(Condition = TomlIgnoreCondition.Never), TomlExtensionData]
+    public TomlTable? Unknown { get; set; }
+}
+
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+public sealed class DockerTargetGpuDto
+{
+    [JsonPropertyName("device_ids")][TomlPropertyName("device_ids")] public string[]? DeviceIds { get; set; }
 
     [JsonIgnore, TomlIgnore(Condition = TomlIgnoreCondition.Never), TomlExtensionData]
     public TomlTable? Unknown { get; set; }

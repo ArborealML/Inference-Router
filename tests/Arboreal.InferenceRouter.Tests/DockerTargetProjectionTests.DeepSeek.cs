@@ -314,14 +314,14 @@ public sealed partial class DockerTargetProjectionTests
     }
 
     private static EngineDefinition DeepSeekFromDto(DockerTargetDto target, DockerResourcesDto? resources = null,
-        string[]? commonCommand = null) =>
+        string[]? commonCommand = null, string lifecycleOwner = "router") =>
         RouterConfigLoader.FromDto(new ConfigDto
         {
             Engines = new()
             {
                 ["strata"] = new()
                 {
-                    Kind = "openai-compatible", Endpoint = "http://127.0.0.1:18021", LifecycleOwner = "router",
+                    Kind = "openai-compatible", Endpoint = "http://127.0.0.1:18021", LifecycleOwner = lifecycleOwner,
                     Docker = new()
                     {
                         Image = ImageId, ImageId = ImageId, ImageRepoDigest = RepoDigest, ImagePlatform = "linux/amd64",
