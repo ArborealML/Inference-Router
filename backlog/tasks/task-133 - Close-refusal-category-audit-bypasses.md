@@ -1,11 +1,11 @@
 ---
 id: TASK-133
 title: Close refusal-category audit bypasses
-status: Waiting
+status: In Progress
 assignee:
-  - '@gpt-6.2-astra'
+  - '@gpt-6.2-sol-shutdown'
 created_date: '2026-11-19T06:27:00Z'
-updated_date: '2026-11-19T06:36:00Z'
+updated_date: '2026-11-19T06:47:00Z'
 labels: []
 dependencies: []
 priority: medium
@@ -15,7 +15,7 @@ ordinal: 131000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Waiting for the independent plan review to return. The readiness repair in PR #4 classifies current exits. Its audit can accept a record clone that overwrites Detail, a valid invocation beside an invalid one, and compound writes to the recorded reason.
+Audit individual failure expressions in EngineRuntime so record clones, same-line calls and compound writes cannot hide unclassified caller-facing reasons.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -28,11 +28,11 @@ Waiting for the independent plan review to return. The readiness repair in PR #4
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Review the test-only syntax audit before implementation. Check individual factory invocations, clone initializers and recorded-reason assignments. Use in-memory negative controls and preserve the health_timeout and switch_error defaults. Qualify with RefusalCategoryTests.
+Use a centrally versioned test-only C# syntax parser. Walk invocations, writes, clones, construction and readiness switch arms. Restrict the bare factory exception to the recorded-reason fallback. Diagnose syntax errors separately. Test syntax-valid mutations by violation and line alongside valid same-line and comment controls.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-The independent plan verdict wakes the coordinator. The landed audit matches the reviewed PR #4 head. The reviewer will assess the proposed parser dependency against cheaper alternatives.
+Plan review verified the audit on 5e345cc. Syntax checks apply within one file and deliberately reject Detail or Outcome clone assignments there. Preserve the existing behavioral checks, health_timeout readiness fallback and switch_error empty-record fallback.
 <!-- SECTION:NOTES:END -->

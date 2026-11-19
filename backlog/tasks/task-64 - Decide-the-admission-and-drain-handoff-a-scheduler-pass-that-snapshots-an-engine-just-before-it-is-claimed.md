@@ -3,11 +3,11 @@ id: TASK-64
 title: >-
   Decide the admission and drain handoff: a scheduler pass that snapshots an
   engine just before it is claimed
-status: In Progress
+status: Waiting
 assignee:
-  - '@gpt-6.2-sol-release'
+  - '@gpt-6.2-astra'
 created_date: '2026-11-17T23:07:00Z'
-updated_date: '2026-11-19T06:38:00Z'
+updated_date: '2026-11-19T06:49:00Z'
 labels:
   - scheduling
   - architecture
@@ -45,5 +45,5 @@ Carry the final ranked ticket and its route generation through preparation. Rele
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-All hosted checks passed at fc9e647 on [PR #5](https://github.com/ArborealML/Inference-Router/pull/5). Review found two admission gaps: logical completion can free an ordinary slot before verified physical cleanup, and detached owner accounting is route-local. The release implementer owns a shared-budget correction and targeted ordinary and cross-route tests. The shutdown-token change prevents late access to a disposed cancellation source. Public Start does not join its dispatcher on disposal. Production host admission remains separate.
+The shared-engine capacity correction at ac8b118 passed 149 focused Release checks. A submitted request with failed cleanup fences the successor after logical completion, an ordinary invocation consumes one of two permits, and staged owners share the final permit across routes. Public teardown guarantees safe captured-token access. Hosted CI and the dispatched correction review on [PR #5](https://github.com/ArborealML/Inference-Router/pull/5) wake integration. Production host admission remains separate.
 <!-- SECTION:NOTES:END -->
