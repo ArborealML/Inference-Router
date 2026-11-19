@@ -3,11 +3,11 @@ id: TASK-111
 title: >-
   Build the local router configuration for every supported select-model
   configuration
-status: Waiting
+status: Preparing
 assignee:
-  - '@chatswarm'
+  - '@gpt-6.2-sol-config'
 created_date: '2026-11-18T18:15:00Z'
-updated_date: '2026-11-19T11:09:00Z'
+updated_date: '2026-11-19T11:24:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -19,7 +19,7 @@ ordinal: 109000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-The independent HyperQwen policy plan review on 2683714 wakes Config. Review dispatched for eight paired-GPU targets. Landed offline coverage is 49 of 75 targets. [PR #24](https://github.com/ArborealML/Inference-Router/pull/24) merged at 2683714 after independent feature and landing reviews and all hosted checks passed. Corrected eeeea6a passed 40/40, the pinned config load and warning-free Native AOT. The eight tiers cover 24 selector spelling pairs and 32 AIR checks including its canonical ID; clarify that distinction with the next coverage edit.
+Config is correcting image provenance after review of the eight-target HyperQwen plan on 2683714. Landed offline coverage is 49 of 75 targets. [PR #24](https://github.com/ArborealML/Inference-Router/pull/24) merged at 2683714 after independent feature and landing reviews and all hosted checks passed. Corrected eeeea6a passed 40/40, the pinned config load and warning-free Native AOT. The eight tiers cover 24 selector spelling pairs and 32 AIR checks including its canonical ID; clarify that distinction with the next coverage edit.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -32,7 +32,7 @@ The independent HyperQwen policy plan review on 2683714 wakes Config. Review dis
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Review common Docker init, unless-stopped restart and log rotation with the daemon-selected driver. On this gated projection derive ExposedPorts from the existing published port. Pin four paired-device tiers on Swift and Classic with one independent payload, eight row comparisons, option-only refusal, raw/DTO validation and a policy-only digest change. Preserve legacy payloads and zero writes. Qualify the config and AOT once. Image association, restart authority, physical admission and same-wire-ID process binding remain activation dependencies. Six single-GPU and twelve parking targets remain separate.
+Separate selector locator, named digest, platform manifest, config digest, daemon-local identity and platform by evidence source. Mark missing bindings unavailable; synthetic fixture identities must be explicit. Preserve four sequences per replica without claiming global capacity. Project common Docker init, unless-stopped restart and log rotation with the daemon-selected driver. On this gated projection derive ExposedPorts from the existing published port. Pin four paired-device tiers on Swift and Classic with one independent payload, eight row comparisons, option-only refusal, raw/DTO validation and a policy-only digest change. Preserve legacy payloads and zero writes. Qualify the config and AOT once. Image association, restart authority, physical admission and same-wire-ID process binding remain activation dependencies. Six single-GPU and twelve parking targets remain separate.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
