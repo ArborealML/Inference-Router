@@ -8,11 +8,23 @@ namespace Arboreal.InferenceRouter;
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed class DockerTargetDto
 {
+    private string[]? _command;
     private string[]? _env;
     private DockerBindDto[]? _bindMounts;
     private long? _memoryBytes;
     private long? _memorySwapBytes;
     private DockerHealthcheckDto? _healthcheck;
+
+    [JsonPropertyName("command")][TomlPropertyName("command")]
+    public string[]? Command
+    {
+        get => _command;
+        set
+        {
+            if (_command is not null) throw new RouterConfigException("duplicate serving-tier docker.command");
+            _command = value ?? throw new RouterConfigException("serving-tier docker.command cannot be null");
+        }
+    }
 
     [JsonPropertyName("env")][TomlPropertyName("env")]
     public string[]? Env

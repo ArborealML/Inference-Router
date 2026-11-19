@@ -21,12 +21,15 @@ internal sealed partial class DockerTargetPlans
                 var modelPath = $"{enginePath}.catalog.{modelName}";
                 foreach (var serving in TomlMembers(model, "serving"))
                 {
-                    if (serving is TomlTable malformed && HasTomlTierDeclaration(malformed))
+                    if (serving is TomlTable malformed &&
+                        (HasTomlTierDeclaration(malformed) || HasTomlMember(malformed, "command")))
                         throw new RouterConfigException($"{modelPath}.serving must be an array of serving tiers");
                     var index = 0;
                     foreach (var row in TomlArrayItems(serving))
                     {
                         var tierPath = $"{modelPath}.serving[{index}]";
+                        if (row is TomlTable misplacedCommand && HasTomlMember(misplacedCommand, "command"))
+                            throw new RouterConfigException($"{tierPath}.command belongs inside serving-tier docker");
                         if (row is TomlTable misplaced && HasTomlMember(misplaced, "nested_under"))
                             throw new RouterConfigException($"{tierPath}.nested_under belongs on a serving-tier bind mount");
                         if (row is TomlTable tier && HasTomlTierDeclaration(tier))
@@ -39,6 +42,8 @@ internal sealed partial class DockerTargetPlans
                             CheckTomlFields(tier, tierPath, "name", "max_context", "max_slots", "docker", "aliases");
                             CheckTomlSelectors(catalog, enginePath);
                             CheckTierTargetTablesToml(tier, $"{tierPath}.docker");
+                            foreach (var common in TomlMembers(engine, "docker").OfType<TomlTable>())
+                                CheckCommandToml(common, $"{enginePath}.docker.command", requireArguments: false);
                         }
                         index++;
                     }
@@ -82,6 +87,7 @@ internal sealed partial class DockerTargetPlans
         foreach (var target in TomlMembers(tier, "docker").OfType<TomlTable>())
         {
             CheckTomlFields(target, path, "bind_mounts", "healthcheck");
+            CheckCommandToml(target, $"{path}.command", requireArguments: true);
             foreach (var health in TomlMembers(target, "healthcheck").OfType<TomlTable>())
             {
                 CheckTomlFields(health, $"{path}.healthcheck", "command", "interval_ms", "start_period_ms", "timeout_ms", "retries");
@@ -106,6 +112,19 @@ internal sealed partial class DockerTargetPlans
                     index++;
                 }
             }
+        }
+    }
+
+    private static void CheckCommandToml(TomlTable table, string path, bool requireArguments)
+    {
+        CheckTomlMember(table, "command", path);
+        foreach (var value in TomlMembers(table, "command"))
+        {
+            if (value is not TomlArray command || (requireArguments && command.Count == 0))
+                throw new RouterConfigException($"{path} must be {(requireArguments ? "a nonempty array" : "an array")} of strings");
+            for (var i = 0; i < command.Count; i++)
+                if (command[i] is not string argument || argument.Contains('\0', StringComparison.Ordinal))
+                    throw new RouterConfigException($"{path}[{i}] must be a string without NUL");
         }
     }
 

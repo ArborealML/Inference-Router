@@ -1,6 +1,6 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.86)
+Status: draft, continuously revised (v0.12.87)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
@@ -352,6 +352,8 @@ daemon transaction per engine. 137 tests green.
   that answers no `upload_url`, an upload that dies or answers no asset id, an asset name listed twice on
   the release, and a tag that moves after the first resolve. No tag has run the gate: still configured,
   not proven.
+- v0.12.87 — offline Docker serving tiers can replace the common container command with literal
+  arguments. General DeepSeek projects eight numeric context arguments without changing tier names (§7).
 - v0.12.86 — qualify original-launch deadline equality, exact proof binding and guarded Open in
   the offline enrolled host fixture (§5.3.1, TASK-110, TASK-126).
 - v0.12.85 — offline Docker serving tiers support explicit read-only nested binds and checked
@@ -1607,8 +1609,8 @@ effective resource inspection, artifact and live instance identity, and reconcil
 an uncertain create while the host reservation is held. It also requires verification of
 read-only bind enforcement for nested mounts.
 
-Native serving tiers can declare literal environment, mounts, memory limits and Docker health
-checks for offline create projection. Each of these settings gates engine activation and native
+Native serving tiers can declare literal commands, environment, mounts, memory limits and Docker
+health checks for offline create projection. Each of these settings gates engine activation and native
 mutations across the engine's catalog. The Docker provider refuses with
 `docker_target_not_qualified` before any write.
 A coordinated switch may first read ownership.
@@ -2608,8 +2610,8 @@ duplicated resource fields and explicit JSON nulls. Bind sources are literal pat
 on the Docker host. The create request uses structured binds with source creation disabled.
 
 **Offline Docker settings per serving tier.** A structured serving entry on a native Docker engine
-can declare environment assignments, binds, memory limits or a Docker health check. TOML inline
-and nested tables and JSON objects use the same fields.
+can declare a command, environment assignments, binds, memory limits or a Docker health check.
+TOML inline and nested tables and JSON objects use the same fields.
 
 ```toml
 [[engine.strata.catalog."example.chat-v1".serving]]
@@ -2645,10 +2647,15 @@ rejects null, empty or malformed lists and shadowed declarations in JSON and TOM
 refuses resolution. Aliases share the canonical launch plan, template inputs and labels.
 The serving ladder and offline-only activation gate continue to use canonical tiers.
 
-The loader freezes the effective inputs for each tier of an opted-in model. Only engine-wide
-`command` and `env` expand `{{model}}`, `{{profile}}` and `{{endpoint}}` in the original
-template. Replacements are literal identifiers. Tier assignments are literal and follow
-common assignments in the payload. Assignments use a portable
+The loader freezes the effective inputs for each tier of an opted-in model. A tier's
+`docker.command` replaces the common Docker `Cmd` in full. Supply a nonempty array of strings
+without NUL characters. Each argument preserves its literal text, including whitespace, empty
+strings and placeholder spellings. An omitted tier command inherits the common command. The
+loader validates common command arguments on an opted-in engine even when tiers override them.
+Only engine-wide `command` and `env` expand `{{model}}`, `{{profile}}` and `{{endpoint}}`
+in the original template. Replacements are literal identifiers. The entrypoint remains a
+separate engine-wide value. Tier environment assignments are literal and follow common
+assignments in the payload. Assignments use a portable
 `KEY=value` name and permit empty values. Duplicate names after common expansion are refused.
 Common mounts precede target mounts. Destinations in the combined list must be distinct.
 A tier bind may declare `nested_under` naming an exact, earlier bind destination that is a
