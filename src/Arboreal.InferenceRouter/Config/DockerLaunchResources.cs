@@ -35,7 +35,7 @@ internal sealed record DockerLaunchResources(
             throw new RouterConfigException($"{path}.gpu cannot be combined with device_paths");
         if (dto.NanoCpus is <= 0) throw new RouterConfigException($"{path}.nano_cpus must be positive");
         ValidateMemory(dto.MemoryBytes, dto.MemorySwapBytes, path);
-        if (dto.ShmSizeBytes is <= 0) throw new RouterConfigException($"{path}.shm_size_bytes must be positive");
+        ValidateSharedMemory(dto.ShmSizeBytes, $"{path}.shm_size_bytes");
 
         return new DockerLaunchResources(
             dto.Gpu is { } gpu ? ParseGpu(gpu, $"{path}.gpu") : null,
@@ -43,6 +43,12 @@ internal sealed record DockerLaunchResources(
             ParseBinds(dto.BindMounts, $"{path}.bind_mounts"),
             dto.NanoCpus, dto.MemoryBytes, dto.MemorySwapBytes, dto.ShmSizeBytes,
             ParseUlimits(dto.Ulimits, $"{path}.ulimits"));
+    }
+
+    internal static void ValidateSharedMemory(long? bytes, string path)
+    {
+        if (bytes is <= 0)
+            throw new RouterConfigException($"{path} must be positive");
     }
 
     internal static void ValidateMemory(long? memory, long? memorySwap, string path)

@@ -16,12 +16,6 @@ internal sealed partial class DockerTargetPlans
         return new DockerGpu(false, [id]);
     }
 
-    private static void RejectMisplacedGpuJson(JsonElement table, string path)
-    {
-        if (Members(table, "gpu").Any())
-            throw new RouterConfigException($"{path}.gpu belongs inside serving-tier docker or engine docker.resources");
-    }
-
     private static void CheckTierGpuJson(JsonElement target, string path)
     {
         CheckMember(target, "gpu", path);
@@ -45,12 +39,6 @@ internal sealed partial class DockerTargetPlans
             CheckMember(gpu, "device_ids", $"{path}.gpu.device_ids");
             CheckMember(gpu, "all", $"{path}.gpu.all");
         }
-    }
-
-    private static void RejectMisplacedGpuToml(TomlTable table, string path)
-    {
-        if (HasTomlMember(table, "gpu"))
-            throw new RouterConfigException($"{path}.gpu belongs inside serving-tier docker or engine docker.resources");
     }
 
     private static bool CheckTierGpuToml(TomlTable target, string path)

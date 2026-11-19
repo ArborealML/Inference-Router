@@ -1,6 +1,6 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.91)
+Status: draft, continuously revised (v0.12.92)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
@@ -352,6 +352,8 @@ daemon transaction per engine. 137 tests green.
   that answers no `upload_url`, an upload that dies or answers no asset id, an asset name listed twice on
   the release, and a tag that moves after the first resolve. No tag has run the gate: still configured,
   not proven.
+- v0.12.92 — project tier-specific Docker shared memory for twelve default HyperQwen parking
+  targets offline, with common shared memory inherited on omission (§7).
 - v0.12.91 — project an explicit single-device NVIDIA request per offline serving tier for
   six HyperQwen targets, with ordered common GPU selection inherited on omission (§7).
 - v0.12.90 — the offline immediate-host callback orders host acceptance, completion and
@@ -1618,8 +1620,8 @@ an uncertain create while the host reservation is held. It also requires verific
 read-only bind enforcement for nested mounts.
 
 Native serving tiers can declare literal commands, environment, mounts, memory limits, a single
-NVIDIA device and Docker health checks for offline create projection. Each of these settings gates engine activation and native
-mutations across the engine's catalog. The Docker provider refuses with
+NVIDIA device, shared memory and Docker health checks for offline create projection. Each of
+these settings gates engine activation and native mutations across the engine's catalog. The Docker provider refuses with
 `docker_target_not_qualified` before any write.
 A coordinated switch may first read ownership.
 The resolved payload describes launch intent. Serving readiness, host authority and exact-instance
@@ -2647,8 +2649,8 @@ duplicated resource fields and explicit JSON nulls. Bind sources are literal pat
 on the Docker host. The create request uses structured binds with source creation disabled.
 
 **Offline Docker settings per serving tier.** A structured serving entry on a native Docker engine
-can declare a command, environment assignments, binds, memory limits, a single NVIDIA device or
-a Docker health check.
+can declare a command, environment assignments, binds, memory limits, a single NVIDIA device,
+shared memory or a Docker health check.
 TOML inline and nested tables and JSON objects use the same fields.
 
 ```toml
@@ -2713,6 +2715,20 @@ common HIP `device_paths`. Use `gpu` only inside serving-tier `docker` or engine
 `docker.resources`. A GPU-only tier opts the whole engine into the offline mutation gate.
 Before activation, verify the actual device mapping, toolkit and driver support, allocation
 and serving fit on the daemon host.
+
+A tier's `docker.shm_size_bytes` replaces Docker's common `ShmSize` with a positive Int64
+byte count. Omission inherits the common value or leaves the field absent. Common values
+remain validated even when overridden. JSON and TOML check the legal tier and common
+resource locations before binding and reject shadowed or misplaced declarations. An
+explicit tier null is invalid. A SHM-only tier opts the engine into the same offline gate.
+
+The HyperQwen selector's default 32-GiB application cache projects to 36 GiB of Docker
+shared memory. The selector's 1- and 48-GiB cache endpoints project to 5 and 52 GiB.
+Changing cache or sequence choices requires resolving and configuring another launch vector.
+Docker SHM describes the container limit. Before activation, verify the effective size
+and check available host RAM for the selected cache plus a 10-GiB reserve after the
+predecessor stops. Device mapping, effective logging, readiness and host authority remain
+independent qualifications.
 
 A tier's `docker.memory_bytes` and `docker.memory_swap_bytes` are exact 64-bit byte counts.
 Memory must be at least 6 MiB. `memory_swap_bytes` is total memory plus swap, at least the memory
