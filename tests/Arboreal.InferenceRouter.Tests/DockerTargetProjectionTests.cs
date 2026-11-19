@@ -13,6 +13,12 @@ public sealed class DockerTargetProjectionTests
     private const string QwenTier = """{ name = "256k-4", max_context = 256000, max_slots = 4, docker = { env = ["FAMILY=qwen"] } }""";
     private const string TargetJson = """{"name":"256k-4","max_context":256000,"max_slots":4,"docker":{"env":["FAMILY=qwen"]}}""";
 
+    private static readonly string[] ConcurrentEnv =
+        ["COMMON=qwen:concurrent:strata", "STRATA_SET=conversation-cache-slots=4", "LITERAL={{profile}}", "EMPTY="];
+    private static readonly string[] SixtyFourKEnv =
+        ["COMMON=qwen:64k-4:strata", "STRATA_SET=conversation-cache-slots=8", "LITERAL={{profile}}", "EMPTY="];
+    private static readonly string[] UnchangedPlanEnv = ["COMMON=tier", "TARGET=original"];
+
     [Fact]
     public void PairedTargetsProjectExactlyInBothOrdersAndFormats()
     {
@@ -129,10 +135,8 @@ public sealed class DockerTargetProjectionTests
         Assert.Equal(implicitDefault, Project(provider, engine, "qwen", "concurrent"));
         using var concurrent = JsonDocument.Parse(implicitDefault);
         using var widerCache = JsonDocument.Parse(Project(provider, engine, "qwen", "64k-4"));
-        Assert.Equal(new[] { "COMMON=qwen:concurrent:strata", "STRATA_SET=conversation-cache-slots=4", "LITERAL={{profile}}", "EMPTY=" },
-            Strings(concurrent.RootElement.GetProperty("Env")));
-        Assert.Equal(new[] { "COMMON=qwen:64k-4:strata", "STRATA_SET=conversation-cache-slots=8", "LITERAL={{profile}}", "EMPTY=" },
-            Strings(widerCache.RootElement.GetProperty("Env")));
+        Assert.Equal(ConcurrentEnv, Strings(concurrent.RootElement.GetProperty("Env")));
+        Assert.Equal(SixtyFourKEnv, Strings(widerCache.RootElement.GetProperty("Env")));
         Assert.False(concurrent.RootElement.TryGetProperty("HostConfig", out _));
     }
 
@@ -166,7 +170,7 @@ public sealed class DockerTargetProjectionTests
         first.Env![0] = "COMMON=overwrite";
         first.HostConfig!.Mounts![0] = new DockerMount("bind", "/srv/other", "/models", false);
         var next = provider.BuildCreateRequest(target, engine.Docker.ImageIdentity!);
-        Assert.Equal(new[] { "COMMON=tier", "TARGET=original" }, next.Env);
+        Assert.Equal(UnchangedPlanEnv, next.Env);
         Assert.Equal("/srv/model", Assert.Single(next.HostConfig!.Mounts!).Source);
     }
 
