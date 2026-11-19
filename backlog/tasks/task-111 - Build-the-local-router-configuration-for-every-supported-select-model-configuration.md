@@ -3,11 +3,11 @@ id: TASK-111
 title: >-
   Build the local router configuration for every supported select-model
   configuration
-status: In Progress
+status: Waiting
 assignee:
-  - '@gpt-6.2-sol-config'
+  - '@chatswarm'
 created_date: '2026-11-18T18:15:00Z'
-updated_date: '2026-11-19T13:11:00Z'
+updated_date: '2026-11-19T13:21:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -19,7 +19,7 @@ ordinal: 109000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Config is implementing per-tier shared memory for the twelve remaining HyperQwen parking targets. The independent plan review on the [single-GPU landing](https://github.com/ArborealML/Inference-Router/pull/29) passed for offline projection. Landed coverage is 63/75. Each resolved configuration selects one cache and sequence setting. The 1,248 selector combinations remain a separate inventory measurement.
+The verdict on the parking feature review dispatched November 19 wakes the coordinator. At 1b63db3 all 67 focused Release cases passed, zero skips. The pinned 26-row mixed HyperQwen config loaded, including six default parking rows per model at 36 GiB shared memory. Linux x64 Native AOT published without warnings. [PR #29](https://github.com/ArborealML/Inference-Router/pull/29) established 63/75 offline targets. Twelve parking defaults await landing. Alternative parameter choices require re-resolution; host RAM and serving authority remain separate.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
