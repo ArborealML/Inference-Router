@@ -3,11 +3,11 @@ id: TASK-111
 title: >-
   Build the local router configuration for every supported select-model
   configuration
-status: In Progress
+status: Waiting
 assignee:
-  - '@gpt-6.2-sol-config'
+  - '@gpt-6.2-astra'
 created_date: '2026-11-18T18:15:00Z'
-updated_date: '2026-11-19T10:42:00Z'
+updated_date: '2026-11-19T11:03:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -19,7 +19,7 @@ ordinal: 109000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Config is preparing the v0.12.87 landing. Corrected eeeea6a passed 40 focused Release cases, the pinned eight-tier config load and warning-free linux-x64 Native AOT. Independent feature review is pending.
+Hosted CI and landing-delta review on [PR #24](https://github.com/ArborealML/Inference-Router/pull/24) wake the coordinator. Feature review passed on be35ab6. Existing raw-member guards cover optional casing-twin hardening. Corrected eeeea6a passed 40/40 focused Release, pinned config load and warning-free Native AOT. Landing source matches qualification.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
