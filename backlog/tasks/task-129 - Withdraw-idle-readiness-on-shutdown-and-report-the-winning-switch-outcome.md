@@ -1,11 +1,11 @@
 ---
 id: TASK-129
 title: Withdraw idle readiness on shutdown and report the winning switch outcome
-status: In Progress
+status: Waiting
 assignee:
-  - '@gpt-6.2-sol-shutdown'
+  - '@chatswarm'
 created_date: '2026-11-18T21:09:00Z'
-updated_date: '2026-11-19T12:11:00Z'
+updated_date: '2026-11-19T12:20:00Z'
 labels: []
 milestone: m-2
 dependencies: []
@@ -16,7 +16,7 @@ ordinal: 127000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Shutdown is implementing terminal arbitration for the older injected host callback. Idle shutdown landed in [PR #26](https://github.com/ArborealML/Inference-Router/pull/26); its focused test and hosted checks passed.
+The verdict on the immediate-host commit review dispatched November 19 wakes the coordinator. All three focused Release controls passed on 094b8c0, zero skips. They distinguish stop before and after host acceptance and preserve Ready through a cleanup I/O error returned as a refusal. This path uses injected host enrollment. Idle shutdown landed in [PR #26](https://github.com/ArborealML/Inference-Router/pull/26).
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
