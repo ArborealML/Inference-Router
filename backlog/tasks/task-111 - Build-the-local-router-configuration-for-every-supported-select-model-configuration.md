@@ -3,11 +3,11 @@ id: TASK-111
 title: >-
   Build the local router configuration for every supported select-model
   configuration
-status: Preparing
+status: Waiting
 assignee:
-  - '@gpt-6.2-sol-config'
+  - '@gpt-6.2-astra'
 created_date: '2026-11-18T18:15:00Z'
-updated_date: '2026-11-19T15:34:00Z'
+updated_date: '2026-11-19T15:41:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -19,7 +19,7 @@ ordinal: 109000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Config is identifying the first remaining dependency for the native Pi pair. [PR #32](https://github.com/ArborealML/Inference-Router/pull/32) merged at b380d5c. Review accepted the one provider condition at a5cb39d and the literal correction at 8ac206c. The existing byte-exact bare-port case covers the optional negative; the same computed TCP key supplies both declarations. Focused Release passed 35/35, the sweep compared 10,150 vectors and hosted CI passed. Forty-nine derived port projections changed. Unified configuration, alternate reconfiguration, credential bind, actual host binding and host authority remain open.
+Shared-host fencing in TASK-110 and host/provider and instance evidence in TASK-26 and TASK-118 wake the remaining qualification. [PR #32](https://github.com/ArborealML/Inference-Router/pull/32) qualified 75 normalized defaults across six dedicated inputs and 10,150 offline differential cases. One unified native input requires shared-host and port fencing; alternate choices require separate immutable configuration resolution. TASK-125 qualifies the chosen pair and TASK-112 owns the client-driven swap.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -32,7 +32,7 @@ Config is identifying the first remaining dependency for the native Pi pair. [PR
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Map remaining literal criteria to their existing dependency owners. Identify whether independent configuration work can advance the first native pair, or name the host evidence needed next. Reuse landed qualification.
+Retain both open criteria. Revisit unified configuration after fenced ownership and record the disposition of alternate-vector reconfiguration. Use independent image, bind, resource and recovery evidence from TASK-26 and exact serving proof from TASK-118. The manual Qwen launch lacks a controller journal.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes

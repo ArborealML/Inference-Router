@@ -1,11 +1,11 @@
 ---
 id: TASK-125
 title: Qualify a native two-model configuration for the first pi swap
-status: Waiting
+status: Preparing
 assignee:
   - '@gpt-6.2-sol-config'
 created_date: '2026-11-18T20:36:00Z'
-updated_date: '2026-11-19T09:55:00Z'
+updated_date: '2026-11-19T15:41:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -18,7 +18,7 @@ ordinal: 123000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-A trusted launch-record producer and an issuer that binds both readiness reads to the same serving process wake native qualification. The operator confirmed the manual Qwen launch had no participating controller journal. This historical instance is ineligible.
+Config is preparing the offline Qwen and Swift pair evidence. Native operation awaits a trusted launch record and both readiness reads bound to the same serving process. The historical operator-launched Qwen instance has no participating controller journal.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -27,6 +27,12 @@ A trusted launch-record producer and an issuer that binds both readiness reads t
 - [ ] #2 Exercise A-to-B and B-to-A with a fake provider using those resolved targets. A wrong image, wrong model or incompatible profile prevents delivery.
 - [ ] #3 Record host enrollment, artifact availability and how to independently observe residency and inference during the real pi test. Real mutation remains gated by host authority.
 <!-- AC:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Reconcile the existing config-only receipts and frozen target identities against the landed projection. Identify which bidirectional fake-provider assertions already cover this pair and which are missing, including wrong image, model and profile. Return the evidence map and a bounded plan for any uncovered assertion. No live host action.
+<!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
 
