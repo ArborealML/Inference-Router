@@ -1,6 +1,6 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.78)
+Status: draft, continuously revised (v0.12.80)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
@@ -352,6 +352,9 @@ daemon transaction per engine. 137 tests green.
   that answers no `upload_url`, an upload that dies or answers no asset id, an asset name listed twice on
   the release, and a tag that moves after the first resolve. No tag has run the gate: still configured,
   not proven.
+- v0.12.80 — offline Docker create projection supports a literal image entrypoint and host IPC
+  for a native engine. Either declaration gates engine startup and Docker mutations (§5.3.1, §7).
+
 - v0.12.78 — offline Docker create projection resolves memory and total memory plus swap per
   serving tier. The two values inherit or replace as a pair, and target-enabled mutation remains
   gated (§5.3.1, §7).
@@ -1595,6 +1598,12 @@ A coordinated switch may first read ownership.
 The resolved payload describes launch intent. Serving readiness, host authority and exact-instance
 request delivery require separate proof.
 
+An engine-wide entrypoint override or host IPC declaration also requires offline-only validation.
+Either one prevents runtime startup before provider binding or enrollment. The provider checks
+unqualified serving tiers first, then launch options with `docker_launch_options_not_qualified`,
+then unqualified resources. All three refusals precede Docker writes. A coordinated switch may
+first read ownership.
+
 A preflight refusal leaves existing containers untouched and can retain a still-valid incumbent
 discovery proof (§5.5). The provider refuses unavailable or unauthorized daemon access without
 escalating. Once stop begins, a failure can leave some peers stopped or
@@ -2470,6 +2479,18 @@ aliases = ["code"]
 default_profile = "32k-2"
 serving = [{ name = "32k-2", max_context = 32768, max_slots = 2 }]
 ```
+
+**Optional offline Docker launch options.** In `[engine.<name>.docker]`, set `entrypoint` to one
+literal, clean absolute Linux executable path inside the image. AIR sends it as a one-element
+Docker `Entrypoint` array. `command` still supplies the separate Docker `Cmd` argument array.
+The executable path keeps its literal spelling and receives no host path lookup or template
+substitution. Set `ipc_mode = "host"` to project only Docker `HostConfig.IpcMode`. Other explicit
+IPC modes are invalid. Omission of either option leaves its Docker defaults in effect.
+
+JSON and TOML reject explicit nulls or duplicate launch options. JSON also rejects shadowed
+opt-in ancestry and ownership fields, and requires canonical field casing for opted-in engines.
+Both options are available for offline projection only, even when the engine has no resources
+or per-tier launch declarations.
 
 **Optional Docker resources.** Use `[engine.<name>.docker.resources]` or the
 equivalent JSON object to validate a resource request offline. Keep the table omitted in
