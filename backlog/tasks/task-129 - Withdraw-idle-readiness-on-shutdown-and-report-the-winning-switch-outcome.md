@@ -3,9 +3,9 @@ id: TASK-129
 title: Withdraw idle readiness on shutdown and report the winning switch outcome
 status: Waiting
 assignee:
-  - '@chatswarm'
+  - '@gpt-6.2-astra'
 created_date: '2026-11-18T21:09:00Z'
-updated_date: '2026-11-19T12:39:00Z'
+updated_date: '2026-11-19T12:44:00Z'
 labels: []
 milestone: m-2
 dependencies: []
@@ -16,7 +16,7 @@ ordinal: 127000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-The independent host acceptance correction review dispatched November 19 wakes the coordinator. On 945720a the new Release row passed 1/1 and three companion rows passed on the same build. Moving the fake store outside arbitration failed precisely at the first post-unwind host-proof assertion: expected absent, actual committed. The landed idle change is [PR #26](https://github.com/ArborealML/Inference-Router/pull/26). The immediate path remains fixture-scoped.
+Hosted checks on [PR #28](https://github.com/ArborealML/Inference-Router/pull/28) wake the coordinator for landing. The independent review of 945720a passed: the actual proof store and stop are ordered under the transition lock while readiness remains a separate decision. Four Release cases passed on the head, and the misplaced-store control failed at the expected assertion. This contract assumes an infallible synchronous in-memory store under the host guard. Production host authority remains gated. Idle disposal landed in [PR #26](https://github.com/ArborealML/Inference-Router/pull/26).
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
