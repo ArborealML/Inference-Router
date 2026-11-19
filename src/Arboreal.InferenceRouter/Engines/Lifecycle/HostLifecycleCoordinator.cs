@@ -78,8 +78,37 @@ internal sealed class HostLifecycleCoordinator(string reservationPath, IHostLife
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            return LifecycleResult.Fail("host_reservation_unavailable",
-                "the router could not reserve this host or persist its operation; check the host authority and its reservation file");
+            return ReservationRefusal();
+        }
+    }
+
+    internal async ValueTask<HostStagedSwitchResult> SwitchStagedAsync(
+        LifecycleTarget target, HostStagedDeadlinePublication publication, CancellationToken ct)
+    {
+        if (stagingForTests is null || publication.ClaimId == Guid.Empty)
+            return new(PublicationRefusal(), default);
+
+        using var staged = stagingForTests.Begin(publication);
+        try
+        {
+            var result = await SwitchUnderReservationAsync(target, null, staged, ct).ConfigureAwait(false);
+            if (result.Succeeded)
+            {
+                if (!staged.Open(ct)) return new(RouteNotOpened(), staged.Decision);
+                publication.Opened();
+            }
+            return new(result, staged.Decision, staged.Opened);
+        }
+        catch (Exception error) when (staged.Decision.Verdict != HostStagedVerdict.Refused)
+        {
+            // A selected runtime outcome survives post-guard notification and cleanup faults.
+            return new(LifecycleResult.Fail("host_route_delivery_failed",
+                "the staged outcome was selected but completion, cleanup, or wake failed"),
+                staged.Decision, staged.Opened, error);
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        {
+            return new(ReservationRefusal(), default);
         }
     }
 
@@ -92,11 +121,12 @@ internal sealed class HostLifecycleCoordinator(string reservationPath, IHostLife
             if (staged is not null)
             {
                 if (reservation.State.Phase != HostMutationPhase.LaunchApplied ||
-                    reservation.State.LaunchedContainerId is not { } stagedContainerId || !MatchesRequest(pending, target))
+                    reservation.State.LaunchedContainerId is not { } stagedContainerId)
                     return PendingOperation();
 
                 // The saved launch already superseded the old route, even if occupancy cannot prove it now.
                 staged.Close();
+                if (!MatchesRequest(pending, target)) return PendingOperation();
                 return await RecoverLaunchAsync(reservation, pending, stagedContainerId, target, null, staged, ct)
                     .ConfigureAwait(false);
             }
@@ -192,17 +222,18 @@ internal sealed class HostLifecycleCoordinator(string reservationPath, IHostLife
         CancellationToken ct)
     {
         var instance = new HostResident(launch.Engine, containerId);
-        if (!await IsCurrentInstanceAsync(instance, ct).ConfigureAwait(false)) return OccupancyRefusal();
+        if (!await IsCurrentInstanceAsync(provider, instance, ct).ConfigureAwait(false)) return OccupancyRefusal();
         using var drain = await provider.CloseAndDrainAsync(instance, ct).ConfigureAwait(false);
         if (!drain.Result.Succeeded) return drain.Result;
-        if (!await IsCurrentInstanceAsync(instance, ct).ConfigureAwait(false)) return OccupancyRefusal();
+        if (staged?.UsesDeadline != true && !await IsCurrentInstanceAsync(provider, instance, ct).ConfigureAwait(false))
+            return OccupancyRefusal();
         return await CompleteLaunchAsync(reservation, launch, containerId, target, drain, publication, staged, ct)
             .ConfigureAwait(false);
     }
 
-    private async ValueTask<bool> IsCurrentInstanceAsync(HostResident expected, CancellationToken ct)
+    private static async Task<bool> IsCurrentInstanceAsync(IHostLifecycleProvider observer, HostResident expected, CancellationToken ct)
     {
-        var current = await ObserveFreshAsync(ct).ConfigureAwait(false);
+        var current = await ObserveFreshAsync(observer, ct).ConfigureAwait(false);
         return current.Kind == HostOccupancyKind.Owned && current.Resident == expected;
     }
 
@@ -210,6 +241,14 @@ internal sealed class HostLifecycleCoordinator(string reservationPath, IHostLife
         string containerId, LifecycleTarget target, IHostDrain drain, HostSwitchPublication? publication,
         HostClosedRouteStaging.Attempt? staged, CancellationToken ct)
     {
+        if (staged?.UsesDeadline == true)
+        {
+            var observer = provider;
+            var expected = new HostResident(launch.Engine, containerId);
+            return await staged.VerifyAndPublishAsync(reservationPath, reservation.State, launch, containerId,
+                token => IsCurrentInstanceAsync(observer, expected, token), ct).ConfigureAwait(false);
+        }
+
         var ready = await provider.VerifyReadyAsync(launch, containerId, ct).ConfigureAwait(false);
         if (!ready.Succeeded) return ready;
 
@@ -256,10 +295,12 @@ internal sealed class HostLifecycleCoordinator(string reservationPath, IHostLife
         }
     }
 
-    private async ValueTask<HostOccupancy> ObserveFreshAsync(CancellationToken ct)
+    private ValueTask<HostOccupancy> ObserveFreshAsync(CancellationToken ct) => ObserveFreshAsync(provider, ct);
+
+    private static async ValueTask<HostOccupancy> ObserveFreshAsync(IHostLifecycleProvider observer, CancellationToken ct)
     {
         var queryId = Guid.NewGuid();
-        var occupancy = await provider.ObserveAsync(queryId, ct).ConfigureAwait(false);
+        var occupancy = await observer.ObserveAsync(queryId, ct).ConfigureAwait(false);
         return occupancy.QueryId == queryId ? occupancy : default;
     }
 
@@ -274,4 +315,10 @@ internal sealed class HostLifecycleCoordinator(string reservationPath, IHostLife
 
     private static LifecycleResult PublicationRefusal() => LifecycleResult.Fail("host_publication_refused",
         "the host could not publish and admit against the verified serving instance");
+
+    private static LifecycleResult RouteNotOpened() => LifecycleResult.Fail("host_route_not_opened",
+        "the committed route stayed closed; recover the applied launch with a fresh authorized generation");
+
+    private static LifecycleResult ReservationRefusal() => LifecycleResult.Fail("host_reservation_unavailable",
+        "the router could not reserve this host or persist its operation; check the host authority and its reservation file");
 }

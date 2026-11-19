@@ -4,7 +4,7 @@ namespace Arboreal.InferenceRouter.Tests;
 
 public sealed partial class HostClosedRouteStagingTests
 {
-    private sealed class FakeHost : IHostLifecycleProvider
+    private sealed class FakeHost(int readinessTimeoutMs = 1000) : IHostLifecycleProvider
     {
         private HostResident? _resident = new("a", "instance-a");
         private HostCheckpointLaunchEffect? _applied;
@@ -15,6 +15,7 @@ public sealed partial class HostClosedRouteStagingTests
         public int Disposals { get; private set; }
         public bool Draining { get; private set; }
         public LifecycleResult Preflight { private get; set; } = LifecycleResult.Ok();
+        public LifecycleResult Readiness { private get; set; } = LifecycleResult.Ok();
         public Func<Guid, CancellationToken, ValueTask<HostOccupancy>>? OnObserve { private get; set; }
         public Action? OnDrainDispose { private get; set; }
 
@@ -87,12 +88,12 @@ public sealed partial class HostClosedRouteStagingTests
             Assert.Equal(applied.InstanceId, containerId);
             Assert.Equal(new HostResident(launch.Engine, containerId), _resident);
             Verified++;
-            return ValueTask.FromResult(LifecycleResult.Ok());
+            return ValueTask.FromResult(Readiness);
         }
 
-        private static HostCheckpointPlan Plan(LifecycleTarget target) =>
+        private HostCheckpointPlan Plan(LifecycleTarget target) =>
             new(target.EngineName, target.Model, target.Profile?.Name ?? target.Definition.Profile,
-                target.Definition.Name, 1000, "fixture-private-route", new string('A', 64));
+                target.Definition.Name, readinessTimeoutMs, "fixture-private-route", new string('A', 64));
 
         private sealed class Drain(FakeHost host) : IHostDrain
         {
@@ -108,6 +109,29 @@ public sealed partial class HostClosedRouteStagingTests
                 host.OnDrainDispose?.Invoke();
             }
         }
+    }
+
+    private async Task<FakeHost> SeedAppliedDeadlineLaunchAsync(LifecycleTarget target, CancellationToken ct)
+    {
+        var host = new FakeHost(readinessTimeoutMs: 100)
+        {
+            Readiness = LifecycleResult.Fail("fixture_seed_saved_launch", "Leave the applied launch available for recovery."),
+        };
+        HostReservation.ProvisionNew(ReservationPath);
+        var seeded = await new HostLifecycleCoordinator(ReservationPath, host).SwitchAsync(target, ct);
+        Assert.Equal("fixture_seed_saved_launch", seeded.Reason);
+        Assert.Equal(1, host.Stops);
+        Assert.Equal(1, host.Creates);
+        var saved = ReadReservation();
+        Assert.Equal(HostMutationPhase.LaunchApplied, saved.Phase);
+        var operation = Assert.IsType<HostMutation>(saved.Pending);
+        var launch = Assert.IsType<HostCheckpointLaunchEffect>(host.FindLaunch(operation));
+        Assert.True(launch.IsValid());
+        Assert.Equal(100, launch.Plan.ReadinessTimeoutMs);
+        Assert.Equal(host.GetLaunchPlanDigest(target), operation.PlanDigest);
+        Assert.Equal(saved.LaunchedContainerId, launch.InstanceId);
+        host.Readiness = LifecycleResult.Ok();
+        return host;
     }
 
     private sealed class FixtureIssuer(HostClosedRouteStaging authority) : IVerifiedInstanceStreamIssuer

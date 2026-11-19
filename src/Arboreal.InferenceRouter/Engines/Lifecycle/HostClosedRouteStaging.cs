@@ -10,6 +10,42 @@ internal sealed record HostStagedPublication(
 
 internal sealed record HostClosedRouteStage(int Version, Guid ClaimId, HostCheckpointLaunchEffect Launch, VerifiedInstanceRoute Route);
 
+internal enum HostStagedVerdict { Refused, Expired, Stopped, Committed }
+
+internal readonly record struct HostStagedDecision(HostStagedVerdict Verdict, SwitchServingProof? Proof = null)
+{
+    public LifecycleResult Result => Verdict switch
+    {
+        HostStagedVerdict.Committed => LifecycleResult.Ok(),
+        HostStagedVerdict.Expired => LifecycleResult.Fail("health_timeout", "the original launch readiness deadline expired"),
+        HostStagedVerdict.Stopped => LifecycleResult.Fail("router_stopped", "the engine stopped during readiness"),
+        _ => LifecycleResult.Fail("host_publication_refused", "the host could not bind and publish the staged route"),
+    };
+}
+
+internal readonly record struct HostStagedSwitchResult(
+    LifecycleResult Result, HostStagedDecision Decision, bool Opened = false, Exception? DeliveryFailure = null);
+
+internal sealed record HostStagedReadiness(HostClosedRouteStage Binding, string CanonicalModel, ServingCapacity Serving);
+
+// ReadAsync owns its I/O and returns bound data. Settle and TryOpen are runtime guard entries.
+// They take the transition gate while host admission is held and call their state-only store
+// inside that joint decision. A missing observation permits an expiry/stop decision only.
+internal sealed record HostStagedDeadlinePublication(
+    Guid ClaimId, SwitchAttemptId ExpectedAttempt, SwitchSampleKey ExpectedTarget, TimeProvider Clock,
+    Func<HostClosedRouteStage, CancellationToken, Task<HostStagedReadiness?>> ReadAsync,
+    Func<HostClosedRouteStage, HostStagedReadiness?, ReadinessDeadline, Action<SwitchServingProof>, HostStagedDecision> Settle,
+    Action<HostStagedDecision> Deliver,
+    Func<HostClosedRouteStage, SwitchServingProof, Func<bool>, bool> TryOpen,
+    Action Opened,
+    Action<HostClosedRouteStage>? AfterStageInstalledForTests = null)
+{
+    public bool MatchesLaunch(HostCheckpointPlan plan) =>
+        ExpectedAttempt.RuntimeEpoch != Guid.Empty && ExpectedAttempt.Sequence > 0 &&
+        ExpectedTarget.RuntimeEpoch == ExpectedAttempt.RuntimeEpoch &&
+        ExpectedTarget.CanonicalModel == plan.Model && ExpectedTarget.EffectiveProfile == (plan.Tier ?? "");
+}
+
 /// <summary>Internal staged fixture authority. Only Open exposes an exact generation to the issuer.</summary>
 internal sealed class HostClosedRouteStaging(
     Func<HostMutation, HostCheckpointLaunchEffect?> loadLaunch,
@@ -22,12 +58,13 @@ internal sealed class HostClosedRouteStaging(
     private HostClosedRouteStage? _stage;
     private long _generation = incumbentForTests?.RouteIncarnation ?? 0;
     private bool _completed;
+    private bool _opening;
 
     public Action<HostClosedRouteStage, Func<HostClosedRouteStage, bool>>? BeforeOpenForTests { private get; set; }
 
     public bool CanMint(VerifiedInstanceRoute route)
     {
-        lock (_gate) return _openRoute == route;
+        lock (_gate) return !_opening && _openRoute == route;
     }
 
     private bool Open(Attempt owner, HostClosedRouteStage expected, CancellationToken ct)
@@ -42,11 +79,17 @@ internal sealed class HostClosedRouteStaging(
         }
     }
 
-    public Attempt Begin(HostStagedPublication publication) => new(this, publication);
+    public Attempt Begin(HostStagedPublication publication) => new(this, publication.ClaimId, publication, null);
 
-    internal sealed class Attempt(HostClosedRouteStaging authority, HostStagedPublication publication) : IDisposable
+    public Attempt Begin(HostStagedDeadlinePublication publication) => new(this, publication.ClaimId, null, publication);
+
+    internal sealed class Attempt(HostClosedRouteStaging authority, Guid claimId, HostStagedPublication? plain,
+        HostStagedDeadlinePublication? deadlinePublication) : IDisposable
     {
         private HostClosedRouteStage? _completedStage;
+        public bool UsesDeadline => deadlinePublication is not null;
+        public HostStagedDecision Decision { get; private set; }
+        public bool Opened { get; private set; }
 
         public void Close()
         {
@@ -62,29 +105,16 @@ internal sealed class HostClosedRouteStaging(
         public bool StageAndComplete(string reservationPath, HostReservationState state, HostMutation operation, string containerId,
             CancellationToken ct)
         {
+            var publication = plain!;
             var launch = LoadExactLaunch(state, operation, containerId);
-            if (launch is null || publication.ClaimId == Guid.Empty) return false;
-            var last = HostClosedRouteStageFile.Read(reservationPath);
-            long generation;
-            lock (authority._gate)
-            {
-                if (authority._owner != this) return false;
-                generation = checked(Math.Max(authority._generation, last?.Route.RouteIncarnation ?? 0) + 1);
-                authority._generation = generation;
-            }
-
-            var route = authority.PrepareRoute(launch, generation);
-            if (route.RouteIncarnation != generation || route.LaunchEpoch != operation.Epoch || route.Engine != operation.Engine ||
-                route.ContainerId != containerId || route.EffectiveTarget != operation.PlanDigest || route.EnrollmentGeneration <= 0 ||
-                string.IsNullOrWhiteSpace(route.HostGroup) || string.IsNullOrWhiteSpace(route.ServingIncarnation)) return false;
-
-            var stage = new HostClosedRouteStage(1, publication.ClaimId, launch, route);
+            if (launch is null || ReserveClosedStage(reservationPath, launch) is not { } stage) return false;
             HostClosedRouteStageFile.Install(reservationPath, stage);
             publication.AfterStageInstalledForTests?.Invoke();
             ct.ThrowIfCancellationRequested();
             lock (authority._gate)
             {
-                if (authority._owner != this || authority._generation != generation || ct.IsCancellationRequested) return false;
+                if (authority._owner != this || authority._generation != stage.Route.RouteIncarnation ||
+                    ct.IsCancellationRequested) return false;
                 authority._stage = stage;
                 // The injected operation commits fixture state only. It does no I/O or notifications.
                 if (!publication.TryPublishState(stage) || authority._owner != this || authority._stage != stage) return false;
@@ -93,6 +123,94 @@ internal sealed class HostClosedRouteStaging(
             publication.AfterStateAcceptedForTests?.Invoke();
             ct.ThrowIfCancellationRequested();
             publication.Complete(stage);
+            return MarkCompleted(stage);
+        }
+
+        public async ValueTask<LifecycleResult> VerifyAndPublishAsync(string reservationPath, HostReservationState state,
+            HostMutation operation, string containerId, Func<CancellationToken, Task<bool>> verifyIdentity, CancellationToken ct)
+        {
+            var publication = deadlinePublication!;
+            var launch = LoadExactLaunch(state, operation, containerId);
+            if (launch is null || !publication.MatchesLaunch(launch.Plan)) return Refused();
+
+            using var deadline = ReadinessDeadline.Start(publication.Clock,
+                TimeSpan.FromMilliseconds(launch.Plan.ReadinessTimeoutMs), ct);
+            if (ReserveClosedStage(reservationPath, launch) is not { } stage) return Refused();
+
+            var identity = await deadline.ObserveAsync(verifyIdentity).ConfigureAwait(false);
+            if (identity.Outcome != ReadinessStepOutcome.Completed)
+                return SettleDeadline(publication, stage, null, deadline);
+            if (!identity.Observation)
+                return LifecycleResult.Fail("host_occupancy_unproven", "the saved instance is no longer verified");
+
+            var read = publication.ReadAsync;
+            var readiness = await deadline.ObserveAsync(token => read(stage, token)).ConfigureAwait(false);
+            if (readiness.Outcome != ReadinessStepOutcome.Completed)
+                return SettleDeadline(publication, stage, null, deadline);
+            if (readiness.Observation is not { } evidence || evidence.Binding != stage ||
+                evidence.CanonicalModel != launch.Plan.Model)
+                return SettleDeadline(publication, stage, null, deadline);
+
+            HostClosedRouteStageFile.Install(reservationPath, stage);
+            publication.AfterStageInstalledForTests?.Invoke(stage);
+            return SettleDeadline(publication, stage, evidence, deadline);
+        }
+
+        private LifecycleResult SettleDeadline(HostStagedDeadlinePublication publication, HostClosedRouteStage stage,
+            HostStagedReadiness? evidence, ReadinessDeadline deadline)
+        {
+            lock (authority._gate)
+            {
+                if (authority._owner != this || authority._generation != stage.Route.RouteIncarnation) return Refused();
+                var callback = new SynchronousGuardCallback();
+                SwitchServingProof? storedProof = null;
+                HostStagedDecision proposed;
+                try
+                {
+                    // The runtime CAS and this exact assignment share the host and transition gates.
+                    proposed = publication.Settle(stage, evidence, deadline, proof =>
+                    {
+                        if (evidence is not null && callback.TryUse())
+                        {
+                            storedProof = proof;
+                            authority._stage = stage;
+                        }
+                    });
+                }
+                finally { callback.End(); }
+
+                if (!IsValidDecision(publication, proposed, stage, storedProof))
+                {
+                    if (ReferenceEquals(authority._stage, stage)) authority._stage = null;
+                    return Refused();
+                }
+                Decision = proposed;
+            }
+
+            if (Decision.Verdict != HostStagedVerdict.Refused) publication.Deliver(Decision);
+            if (Decision.Verdict == HostStagedVerdict.Committed && !MarkCompleted(stage))
+                throw new InvalidOperationException("The committed staged proof lost its closed route binding.");
+            return Decision.Result;
+        }
+
+        private static LifecycleResult Refused() => default(HostStagedDecision).Result;
+
+        private bool IsValidDecision(HostStagedDeadlinePublication publication, HostStagedDecision proposed,
+            HostClosedRouteStage stage, SwitchServingProof? storedProof) =>
+            authority._owner == this && stage.ClaimId == publication.ClaimId &&
+            authority._generation == stage.Route.RouteIncarnation &&
+            (proposed.Verdict switch
+            {
+                HostStagedVerdict.Committed => ReferenceEquals(authority._stage, stage) &&
+                    proposed.Proof is { Version: > 0 } proof && ReferenceEquals(proof, storedProof) &&
+                    proof.Attempt == publication.ExpectedAttempt && proof.Target == publication.ExpectedTarget,
+                HostStagedVerdict.Expired or HostStagedVerdict.Stopped or HostStagedVerdict.Refused =>
+                    authority._stage is null && proposed.Proof is null,
+                _ => false,
+            });
+
+        private bool MarkCompleted(HostClosedRouteStage stage)
+        {
             lock (authority._gate)
             {
                 if (authority._owner != this || authority._stage != stage) return false;
@@ -100,6 +218,27 @@ internal sealed class HostClosedRouteStaging(
                 _completedStage = stage;
                 return true;
             }
+        }
+
+        private HostClosedRouteStage? ReserveClosedStage(string reservationPath, HostCheckpointLaunchEffect launch)
+        {
+            if (claimId == Guid.Empty) return null;
+            var last = HostClosedRouteStageFile.Read(reservationPath);
+            long generation;
+            lock (authority._gate)
+            {
+                if (authority._owner != this) return null;
+                generation = checked(Math.Max(authority._generation, last?.Route.RouteIncarnation ?? 0) + 1);
+                authority._generation = generation;
+            }
+
+            var route = authority.PrepareRoute(launch, generation);
+            var operation = launch.Operation;
+            if (route.RouteIncarnation != generation || route.LaunchEpoch != operation.Epoch || route.Engine != operation.Engine ||
+                route.ContainerId != launch.InstanceId || route.EffectiveTarget != operation.PlanDigest || route.EnrollmentGeneration <= 0 ||
+                string.IsNullOrWhiteSpace(route.HostGroup) || string.IsNullOrWhiteSpace(route.ServingIncarnation)) return null;
+
+            return new HostClosedRouteStage(1, claimId, launch, route);
         }
 
         private HostCheckpointLaunchEffect? LoadExactLaunch(HostReservationState state, HostMutation operation, string containerId)
@@ -118,7 +257,29 @@ internal sealed class HostClosedRouteStaging(
             if (_completedStage is not { } stage) return false;
             // The fixture can try stale proposals but cannot open the current stage from the callback.
             authority.BeforeOpenForTests?.Invoke(stage, stale => stale != stage && authority.Open(this, stale, ct));
-            return authority.Open(this, stage, ct);
+            if (deadlinePublication is not { } publication) return authority.Open(this, stage, ct);
+            if (Decision.Proof is not { } proof) return false;
+            lock (authority._gate)
+            {
+                if (Opened || authority._opening) return false;
+                var callback = new SynchronousGuardCallback();
+                var exposed = false;
+                authority._opening = true;
+                try
+                {
+                    var accepted = publication.TryOpen(stage, proof, () =>
+                        callback.TryUse() && (exposed = authority.Open(this, stage, ct)));
+                    Opened = accepted && exposed && authority._owner == this && authority._openRoute == stage.Route;
+                    return Opened;
+                }
+                finally
+                {
+                    callback.End();
+                    // A contradictory guard cannot expose the route, including to reentrant mint checks.
+                    if (!Opened && exposed && authority._openRoute == stage.Route) authority._openRoute = null;
+                    authority._opening = false;
+                }
+            }
         }
 
         public void Dispose()
@@ -135,6 +296,21 @@ internal sealed class HostClosedRouteStaging(
 
     private HostCheckpointLaunchEffect? LoadLaunch(HostMutation operation) => loadLaunch(operation);
     private VerifiedInstanceRoute PrepareRoute(HostCheckpointLaunchEffect launch, long generation) => prepareRoute(launch, generation);
+
+    private sealed class SynchronousGuardCallback
+    {
+        private readonly int _thread = Environment.CurrentManagedThreadId;
+        private bool _available = true;
+
+        public bool TryUse()
+        {
+            if (Environment.CurrentManagedThreadId != _thread || !_available) return false;
+            _available = false;
+            return true;
+        }
+
+        public void End() => _available = false;
+    }
 }
 
 internal static class HostClosedRouteStageFile
