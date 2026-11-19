@@ -24,9 +24,10 @@ public sealed partial class SelectorDifferentialTests
             Assert.Equal(1, parking.GetProperty("cache_min").GetInt32());
             Assert.Equal(48, parking.GetProperty("cache_max").GetInt32());
             Assert.Equal(32, parking.GetProperty("cache_default").GetInt32());
-            Assert.Equal(1, parking.GetProperty("lanes_min").GetInt32());
-            Assert.Equal(8, parking.GetProperty("lanes_max").GetInt32());
-            Assert.Equal(2, parking.GetProperty("lanes_default").GetInt32());
+            var variable = row.Tier == "parked";
+            Assert.Equal(variable ? 1 : row.SelectorLanes, parking.GetProperty("lanes_min").GetInt32());
+            Assert.Equal(variable ? 8 : row.SelectorLanes, parking.GetProperty("lanes_max").GetInt32());
+            Assert.Equal(variable ? 2 : row.SelectorLanes, parking.GetProperty("lanes_default").GetInt32());
         }
 
         var raw = ParseToml(FixtureText(HyperQwen));
