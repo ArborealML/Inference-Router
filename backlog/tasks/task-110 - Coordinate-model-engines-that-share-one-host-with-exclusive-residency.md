@@ -1,11 +1,11 @@
 ---
 id: TASK-110
 title: Coordinate model engines that share one host with exclusive residency
-status: Preparing
+status: Waiting
 assignee:
   - '@gpt-6.2-sol-lifecycle'
 created_date: '2026-11-18T18:13:00Z'
-updated_date: '2026-11-19T18:53:00Z'
+updated_date: '2026-11-19T19:01:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -20,7 +20,7 @@ ordinal: 108000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Lifecycle is designing the unconfigured case offline while TASK-139 requests a privileged effective-policy export. Selector-owned Qwen occupies both GPUs and lacks original launch provenance. Shared daemon access bypasses the proposed boundary. No enrolled supervisor, independent partition observer or protected journal head was evidenced. The design must mediate competing writers. A future launch requires a separately authorized vacant window.
+The independent plan verdict will wake Lifecycle. The privileged export matched the incumbent and both resident device filters allow both GPUs. Docker group access remains shared. Exclusivity, private-route enforcement and journal freshness remain unverified. The conditional design uses a supervised writer, separate observer and independently anchored checkpoint. Existing enforcement must be assessed before selecting the implementation. Offline plan review dispatched November 19.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
