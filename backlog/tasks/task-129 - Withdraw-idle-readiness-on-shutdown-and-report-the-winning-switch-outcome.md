@@ -1,11 +1,11 @@
 ---
 id: TASK-129
 title: Withdraw idle readiness on shutdown and report the winning switch outcome
-status: Preparing
+status: Waiting
 assignee:
-  - '@gpt-6.2-sol-shutdown'
+  - '@chatswarm'
 created_date: '2026-11-18T21:09:00Z'
-updated_date: '2026-11-19T11:36:00Z'
+updated_date: '2026-11-19T11:42:00Z'
 labels: []
 milestone: m-2
 dependencies: []
@@ -16,7 +16,7 @@ ordinal: 127000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Idle disposal can preserve a healthy roster after withdrawing windows. Shutdown can also win settlement after readiness proof and before the completion event. Keep historical model listings independent from serving authority.
+The verdict from the independent idle-shutdown plan review dispatched November 19 wakes the coordinator. Idle stop clears measured capacity but preserves health and the roster, so a model-only readiness query can still succeed. First-write admission already refuses stop.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -28,5 +28,11 @@ Idle disposal can preserve a healthy roster after withdrawing windows. Shutdown 
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Check idle disposal against current readiness and first-write guards. Trace proof publication, stop settlement and completion event order for each reachable path. Match both criteria to existing tests and identify only missing observations before proposing code.
+Withdraw current health and its claim provenance in the versioned stop snapshot. Preserve the roster, switch marker and historical waiter result. One offline control observes eligibility before disposal and retained roster, ineligibility and refused first-write admission afterward.
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Legacy and staged paths settle proof and terminal under the transition lock. Reuse the stop-first and commit-first evidence from PRs #4, #8 and #25. The older injected immediate publication releases the lock while pending and emits completion separately. Review this distinct ordering before closing criterion 2. Production RouterCore supplies no enrollment.
+<!-- SECTION:NOTES:END -->
