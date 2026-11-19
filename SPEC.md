@@ -362,6 +362,12 @@ daemon transaction per engine. 137 tests green.
   The checkpoint retains exact launch, stop and frozen successor evidence across process death.
   The fake ledger verifies residency and separates send, acceptance, attempt and applied records
   across restart without granting production host authority (§5.3.1, TASK-110).
+- v0.12.72 — qualify exact-ticket admission with an offline sender and bounded preparation.
+  A retirement wake revisits deferred staged preparation before an ordinary route can reserve
+  the freed slot. Model and profile routes share the engine's physical permit budget. Repeated
+  aborts share retirement completion, and a submitted use stays counted if disposal fails.
+  A dispatcher entering its wait during teardown uses the router's captured shutdown token
+  (§5.5, TASK-64).
 - v0.12.71 — order local inference sends and each health read against engine shutdown.
   A timed-out send retains its client through late response cleanup. Shutdown attempts
   lifecycle cleanup even if local HTTP close faults. Switch readiness delivery and timing
@@ -1813,6 +1819,39 @@ engine forks land; the scheduler interface will not change shape.
   first ticket in that queue whose thread has capacity. Commit takes that exact ticket only
   while it is still first admissible. If the candidate is removed or displaced before commit,
   dispatch restarts the queue scan.
+- **Offline exact-ticket admission.** The injected sender qualifies the queue handshake.
+  Schedule outside the router lock. The host admission gate, router lock and model queue lock
+  order the live check and exact removal. Validate the ranked route generation, model-bound
+  window for an explicit minimum, free slots, thread room and original elapsed queue deadline.
+  Preparation owns no physical slot. A preparing head preserves its queue order and another
+  queue may progress. Each ticket may start one preparation per binding and route generation
+  and have only one outstanding attempt, including retirement. The scoped preparation limit is
+  the greater of two and the engine count at construction, shared by preparing, ready and
+  retiring work. Cancellation, expiry, supersession and shutdown signal retirement. Work
+  that ignores cancellation still occupies its preparation slot until it settles. A parked
+  scan wakes on published state and checks its revision after arming. Its wait uses the
+  captured shutdown token even if teardown has already disposed the source. Public `Start`
+  schedules its loop without retaining the task. The offline fixture joins the loop it starts.
+  Closing the route fences authorization. An authorized invocation counts before its first
+  byte. Cancellation can release it early only by atomically preventing submission. The
+  injected invocation owns the response through consumption and disposal, then finishes
+  prepared-resource cleanup before releasing the permit. Each engine shares one physical
+  budget across its routes and charges an ordinary use once while it occupies both the
+  logical and physical counts. A cleanup fault leaves a submitted use counted after its
+  logical request ends and emits `request.cleanup_failed` independently of the ticket result.
+  An abort that claims an unstarted invocation prevents submission, and further
+  abort calls wait on the same cleanup result. Execution that arrives after that abort waits
+  for cleanup and ends as cancellation. The injected sender is under fixture
+  control and does not exercise the production response timeout. An engine has at most one
+  staged owner. An eligible owner has first opportunity for its final free permit when the
+  owner's route opens in the same generation. Cancellation, expiry or failed preparation hands
+  the slot to an ordinary joiner. The staged owner holds no counted use while closed.
+  When a prior attempt or a full preparation table blocks an exact staged owner,
+  a dispatcher wake reconsiders that request. An eligible owner waiting for capacity gets the
+  first available preparation slot ahead of ordinary routes. An ordinary preparation rechecks
+  that priority under the admission gate, including when a slot opens after the scan starts.
+  Production admission still needs the enrolled host and verified transport. Production owner
+  promotion and late cleanup remain TASK-25.
 - **Engine-local send permission.** A historical switch result may still be delivered after
   engine shutdown. Entry to the upstream HTTP sender requires a separate claim under the
   transition gate that records the stop. If stop wins, the request settles as cancelled
@@ -2702,6 +2741,8 @@ the feed excerpt and error prose, and a size policy for admin responses generall
 - `request.streaming_first_token {ticket, engine, msFromEnqueue}`
 - `request.completed {ticket, engine, tokens, msFromEnqueue, msFromFirstToken}`
 - `request.failed/cancelled/deadline_exceeded {ticket, reason}`
+- `request.cleanup_failed {ticket, thread, engine, model, reason}` — offline admission cleanup fault,
+  reported independently of the ticket's terminal result
 - `engine.health {engine, healthy, loadedModels}`
 - `engine.switch_started/completed/failed {engine, model, profile, ms}`
 - `queue.rejected {thread, model, reason}` — refused before joining a queue; `reason` is `queue_overflow` or

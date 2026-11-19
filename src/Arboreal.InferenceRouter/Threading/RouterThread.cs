@@ -120,6 +120,12 @@ public sealed class RouterTicket
     /// the ticket reaches a terminal state.</summary>
     internal System.Threading.Timer? QueueTimer;
     private int _terminal;
+    private int _admissionRevoked;
+    internal bool CanPrepareAdmission => Volatile.Read(ref _terminal) == 0 &&
+        Volatile.Read(ref _admissionRevoked) == 0;
+
+    internal void RevokeAdmission() => Volatile.Write(ref _admissionRevoked, 1);
+
     /// <summary>Claims the ticket's one terminal transition (complete, fail, cancel or queue
     /// rejection). Every sink goes through this, so a ticket cannot be reported both completed and
     /// failed — which is a real race in streaming, where a late pump cancellation meets a write that
