@@ -3,11 +3,11 @@ id: TASK-118
 title: >-
   Resolve each native launch profile and dispatch to its verified serving
   instance
-status: Waiting
+status: In Progress
 assignee:
-  - '@chatswarm'
+  - '@gpt-6.2-sol-scheduling'
 created_date: '2026-11-18T18:56:00Z'
-updated_date: '2026-11-19T08:22:00Z'
+updated_date: '2026-11-19T08:29:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -23,7 +23,7 @@ ordinal: 116000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Independent review of the single-host dispatch plan wakes implementation. Carry the resolved target and frozen request to the verified serving instance so a rebound endpoint cannot receive work under an earlier proof.
+Implement the offline frozen request and target binding on the selected ticket. The configuration interface is confirmed. Independent reviews of issuer closure and terminal retirement continue in parallel.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -48,7 +48,5 @@ Publish one immutable sender with the ready preparation. Its exact invocation bo
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Plan and three bounded peer corrections dispatched for independent review against fe005df. Implementation starts after disposition. Per-family attestation, the engine-stop bridge, durable production issuance, host publication and activation remain separate.
-
-The pre-header ownership and permanent refusal interface is included in independent review.
+Review on fe005df required exact preparation transfer, permanent retirement, strict request validation and independent terminal evidence. Accepted all four. Compare method, effective URI/path/query, media type, body and credential mode/value/epoch before checkout. Reject malformed, duplicate or case-shadowed model properties before normalization. Config confirmed fixture digest covers create projection and pinned image. Issuer and retirement edits await their reviews. Production attestation, stop bridge and activation remain separate.
 <!-- SECTION:NOTES:END -->
