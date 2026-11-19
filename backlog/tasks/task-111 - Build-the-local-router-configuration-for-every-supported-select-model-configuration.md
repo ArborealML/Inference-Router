@@ -3,11 +3,11 @@ id: TASK-111
 title: >-
   Build the local router configuration for every supported select-model
   configuration
-status: In Progress
+status: Waiting
 assignee:
-  - '@gpt-6.2-sol-config'
+  - '@gpt-6.2-astra'
 created_date: '2026-11-18T18:15:00Z'
-updated_date: '2026-11-19T14:34:00Z'
+updated_date: '2026-11-19T14:35:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -19,7 +19,7 @@ ordinal: 109000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Config owns a one-sentence receipt correction on [PR #31](https://github.com/ArborealML/Inference-Router/pull/31). Review of 11e5677 accepted the measured counts and timing. The two intervening commits changed three parking lane assertions and one zero-SHM refusal expectation. All hosted checks passed on 11e5677. The driver review remains pending. The 10,150-vector run belongs to 80febe5 and the smoke to fb16200. Disposal, fixed-lane and raw refusal reviews passed. [PR #30](https://github.com/ArborealML/Inference-Router/pull/30) landed 75 normalized defaults. Unified configuration, alternate reconfiguration, protected credential bind, published ports and host authority remain open.
+Hosted checks and pending verifier and wording reviews on [PR #31](https://github.com/ArborealML/Inference-Router/pull/31) wake the coordinator. Docs-only head bb8d4ac resolves the attribution finding on 11e5677: three lane assertions and one raw zero-SHM refusal expectation changed. The sweep at 80febe5 measured 10,150 distinct vectors, and the smoke passed at fb16200. Parent CI passed. Disposal, fixed-lane and raw refusal reviews passed. [PR #30](https://github.com/ArborealML/Inference-Router/pull/30) landed 75 normalized defaults. Unified configuration, alternate reconfiguration, protected credential bind, published ports and host authority remain open.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
