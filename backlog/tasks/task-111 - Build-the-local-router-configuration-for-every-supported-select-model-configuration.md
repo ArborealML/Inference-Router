@@ -5,9 +5,9 @@ title: >-
   configuration
 status: Waiting
 assignee:
-  - '@gpt-6.2-astra'
+  - '@chatswarm'
 created_date: '2026-11-18T18:15:00Z'
-updated_date: '2026-11-19T12:55:00Z'
+updated_date: '2026-11-19T12:59:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -19,7 +19,7 @@ ordinal: 109000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Hosted checks on [PR #29](https://github.com/ArborealML/Inference-Router/pull/29) wake the coordinator for landing. The engine-root correction passed independent static review and all three differential cases. The 14 non-SPEC feature files match the qualified child. The prior 53-case Release run, config load and warning-free Native AOT remain attributed to their tested revisions. Landed coverage is 57/75 and rises to 63/75 on merge. The twelve parking targets await plan review on that base.
+The verdict on the parking plan dispatched November 19 wakes Config. [PR #29](https://github.com/ArborealML/Inference-Router/pull/29) merged at 39918a0 after the parser correction review and all hosted checks passed. Its six single-GPU tiers bring landed offline coverage to 63 of 75 normalized targets. The twelve remaining targets are HyperQwen parking tiers. Host GPU mapping, available RAM and serving authority require separate live verification.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -32,7 +32,7 @@ Hosted checks on [PR #29](https://github.com/ArborealML/Inference-Router/pull/29
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-The plan review on c36b8e8 passed. Freeze one canonical device index per opted tier; omission inherits ordered common IDs or all. Account for the effective request at both provider early returns. Validate common inputs and reject common HIP devices with a tier NVIDIA override. Reject misplaced GPU at engine Docker, model, model Docker without tiers, or serving-row root; retain valid common resources. Use one dual-format six-target fixture, paired return bytes, representative malformed inputs, copied arrays, a device-ID-only digest change and engine-wide zero-write refusal. Host verification must establish physical mapping, driver, capacity and instance authority before activation.
+Review one positive per-tier shared-memory byte count, with common inheritance on omission. Exercise the twelve default parking targets in both formats, paired return bytes, the low and high cache/SHM limits, resource-null projection, misplaced input, engine-wide zero writes and a SHM-only digest change. Keep the host RAM reserve and post-stop availability check as independent host prerequisites.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
