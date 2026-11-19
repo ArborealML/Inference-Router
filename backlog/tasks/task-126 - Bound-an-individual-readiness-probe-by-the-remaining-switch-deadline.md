@@ -1,11 +1,11 @@
 ---
 id: TASK-126
 title: Bound an individual readiness probe by the remaining switch deadline
-status: In Progress
+status: Waiting
 assignee:
-  - '@gpt-6.2-sol-shutdown'
+  - '@chatswarm'
 created_date: '2026-11-18T20:43:00Z'
-updated_date: '2026-11-19T11:30:00Z'
+updated_date: '2026-11-19T11:32:00Z'
 labels: []
 milestone: m-4
 dependencies: []
@@ -16,7 +16,7 @@ ordinal: 124000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Shutdown is correcting the typed-stop test after review of 0a71565 (7/7 Release). Await the retired observation after releasing its late reply before checking final state. PR #23 supplies explicit named success. The separate contender acquires both gates through locking accessors while reservation exclusion holds. URI literals verified; slot inputs exercise fixture normalization.
+The synchronization review on 40e483b wakes the coordinator for landing. Typed-stop passed 1/1 after awaiting retired-read cleanup before final assertions. Parent 0a71565 passed 7/7. PR #23 covers explicit named success; locking accessors verify both gates. Slot inputs exercise fixture normalization.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
