@@ -105,18 +105,26 @@ public class ServerWireTests
         await Assert.ThrowsAnyAsync<Exception>(() => probe.ConnectAsync(IPAddress.Loopback, configPort).WaitAsync(TimeSpan.FromSeconds(2)));
     }
 
-    /// <summary>/admin/status carries the live serving gauges read from the engine probe (§7.6).</summary>
-    [Fact]
-    public async Task Status_Exports_Serving_Gauges()
+    /// <summary>/admin/status carries the live slots and any model-bound context window (§7.6).</summary>
+    [Theory]
+    [InlineData(false, 131_072L)]
+    [InlineData(true, 0L)]
+    public async Task Status_Exports_Serving_Gauges(bool multipleModels, long expectedWindow)
     {
         var port = await FreePortAsync();
-        using var fake = new FakeEngineHandler { NCtx = 131_072, TotalSlots = 3 };
+        using var fake = new FakeEngineHandler
+        {
+            LoadedModels = multipleModels ? ["test-model", "other-model"] : ["test-model"],
+            NCtx = 131_072,
+            TotalSlots = 3,
+        };
         var app = ServerApp.Build([], configOverride: WireConfig(port, fake));
         await app.StartAsync();
         await using var _ = app;
         using var http = Client(port);
 
         long window = 0;
+        var slots = 0;
         var deadline = DateTimeOffset.UtcNow + TimeSpan.FromSeconds(5);
         while (DateTimeOffset.UtcNow < deadline)
         {
@@ -127,11 +135,12 @@ public class ServerWireTests
             Assert.True(engine.TryGetProperty("ActiveContextWindow", out var w));
             Assert.True(engine.TryGetProperty("ActiveSlots", out var sl));
             window = w.GetInt64();
-            Assert.Equal(3, sl.GetInt32());
-            if (window > 0) break;
+            slots = sl.GetInt32();
+            if (slots > 0) break;
             await Task.Delay(50);
         }
-        Assert.Equal(131_072, window);
+        Assert.Equal(3, slots);
+        Assert.Equal(expectedWindow, window);
     }
 
     [Fact]
