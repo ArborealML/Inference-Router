@@ -45,7 +45,7 @@ public sealed partial class HostClosedRouteStagingTests
             // This observation has a complete, different image-backed digest. The fake applies
             // a self-consistent operation for it so only the originally frozen target can veto it.
             var observedCreate = ReadPairCreate(successor.ReferenceCreate);
-            Assert.NotEqual(observedCreate.Image, OtherPairImageId);
+            Assert.NotEqual(OtherPairImageId, observedCreate.Image);
             observedCreate.Image = OtherPairImageId;
             observedPlan = PairCheckpoint(engine, successor.Launch, observedCreate);
             Assert.NotEqual(successor.Frozen.PlanDigest, observedPlan.Digest());
