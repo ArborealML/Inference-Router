@@ -362,8 +362,9 @@ public sealed partial class VerifiedInstanceTransportTests
                 Assert.Equal(0, await firstByte);
             await Assert.ThrowsAsync<HttpRequestException>(() => sending.WaitAsync(ct));
             Assert.Equal(1, Volatile.Read(ref substitutedCloses));
-            // The issuer owns the withheld grant. This half-close only checks for buffered bytes.
-            original.Client.Client.Shutdown(SocketShutdown.Send);
+            Assert.Equal(0, issuer.StreamCloses);
+
+            await issuer.RevokeWithheldGrantAsync(invocation.Id);
             Assert.Equal(0, await firstByte.WaitAsync(ct));
             if (alternateChannel)
                 Assert.Equal(0, await original.Server.GetStream().ReadAsync(new byte[1], ct));
@@ -381,7 +382,7 @@ public sealed partial class VerifiedInstanceTransportTests
         Assert.Equal(1, issuer.FirstWriteAttempts);
         Assert.Equal(substitute ? 0 : 1, issuer.Authorizations);
         Assert.Equal(substitute ? 0 : 1, issuer.Releases);
-        Assert.Equal(substitute ? 0 : 1, issuer.StreamCloses);
+        Assert.Equal(1, issuer.StreamCloses);
         Assert.Equal(0, issuer.PhysicalUses);
     }
 
@@ -531,6 +532,17 @@ public sealed partial class VerifiedInstanceTransportTests
         internal VerifiedInstanceGrant? ReadIssuedGrant(Guid invocationId)
         {
             lock (_gate) return _issued.GetValueOrDefault(invocationId);
+        }
+
+        internal ValueTask RevokeWithheldGrantAsync(Guid invocationId)
+        {
+            VerifiedInstanceGrant? withheld;
+            lock (_gate)
+            {
+                withheld = _issued.GetValueOrDefault(invocationId);
+                _issued[invocationId] = null;
+            }
+            return withheld?.CloseAsync() ?? ValueTask.CompletedTask;
         }
 
         public async ValueTask<VerifiedInstanceGrant?> CheckoutAsync(VerifiedInstanceInvocation invocation, CancellationToken ct)

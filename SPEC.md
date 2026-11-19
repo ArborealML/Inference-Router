@@ -1750,11 +1750,11 @@ bound to one invocation. The transport validates the route and invocation before
 HTTP/1.1 serializer. The first nonempty application write presents the exact grant for that stream.
 The single-host issuer fixture permits one checkout per invocation and consumes the issued grant
 once. It rejects an unissued grant even when the invocation and stream match. The exchange closes
-the grant it receives and awaits terminal permit cleanup. The adversarial issuer owns cleanup
-of its withheld original grant. The fixture's manual send-half close checks for buffered bytes
-on that stream. Natural closure of the withheld grant is outside that check. Production enrollment
-still requires frozen request body and authorization binding, durable issuance and authoritative
-physical retirement.
+the grant it receives and awaits terminal permit cleanup. The issuer owns the cleanup of a grant
+it withholds. In the substitution fixture, the issuer explicitly revokes and closes the withheld
+original grant, and the peer observes EOF with zero bytes. Production enrollment still requires
+frozen request body and authorization binding, durable issuance and authoritative physical
+retirement.
 
 **Production evidence.** The raw Docker inventory can report known foreign containers. Even an
 empty inventory leaves vacancy unproven, and raw Docker supplies no terminal receipt for an
