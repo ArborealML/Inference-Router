@@ -3,11 +3,11 @@ id: TASK-118
 title: >-
   Resolve each native launch profile and dispatch to its verified serving
   instance
-status: Preparing
+status: In Progress
 assignee:
   - '@gpt-6.2-sol-scheduling'
 created_date: '2026-11-18T18:56:00Z'
-updated_date: '2026-11-19T08:07:00Z'
+updated_date: '2026-11-19T09:03:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -23,7 +23,7 @@ ordinal: 116000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-The selector includes launch profiles with identical model, context and slot counts but different effective settings. The current runtime owns one HTTP client per engine. Carry the resolved launch identity through verification and request delivery so an endpoint rebound to another process cannot receive work under its predecessor’s proof.
+Correct verified transport cleanup accounting and fault reporting before offline dispatch lands.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -37,12 +37,16 @@ The selector includes launch profiles with identical model, context and slot cou
 - [ ] #7 Freeze the final rewritten body and credential policy with the invocation. Changing either after preparation refuses delivery before the first write. An unchanged invocation sends the expected bytes to the verified route.
 <!-- AC:END -->
 
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Drive one real selected ticket through exact take and the verified issuer. Bind its effective target, final rewritten bytes and credential policy. Publish one immutable fake resident tuple containing the exact route, process, epoch, generation, config, plan, canonical model, effective tier, measured window and total slots. Named and resolved-default tiers, including ordinary reuse of a named resident, require a fitting positive window and positive measured slots. Public gauges and roster can veto only. After retirement require a fresh generation. Serialize issuer closure against first nonempty write; hold the write with caller and router tokens live and verify closure prevents bytes. Release accounting only on typed no-issue or confirmed retirement; retain unknown use even after a pre-header failure. Treat parsed Docker projections and digest as offline intent paired with a separate inert resident. Preserve startup and mutation guards. Engine-stop integration requires an explicit issuer bridge.
+
+Publish one immutable sender with the ready preparation. Its exact invocation borrows it and retains the existing cancel/submit decision. Before headers the single transport worker exposes independent primary and terminal outcomes. End response borrowing in finally; finish preparation on every path. Release submitted capacity once only after conclusive no-use or retirement and successful preparation cleanup. After exact peer receipt, hold retirement through a pre-header failure: one primary terminal, zero successor bytes; failed retirement emits one redacted cleanup fault and retains use, confirmed cleanup releases once. Preserve standalone transport behavior. A permanent binding refusal settles only the current exact ticket once without relying on a timer; stale preparation cannot settle a replacement.
+<!-- SECTION:PLAN:END -->
+
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Verify catalog names and aliases resolve to one immutable target, including an alias that shadows a different canonical spelling. Ambiguous routing must yield zero writes and zero lifecycle mutations.
-
-TASK-130 supplies verified-instance transport using the integrated host fixture. This task verifies that profile resolution and inference dispatch use it end to end. Production host closure consumes that evidence.
-
-The admission and per-ticket floor paths are now combined on main with the offline transport. Prepare the smallest independent Defiant dispatch-binding plan against the landed base: frozen effective target, final rewritten body and credential policy. Identify the host issuance and resource dependencies before runtime edits.
+At 1bd351d the four envelope/target binding corrections passed 118 distinct Release cases and Linux x64 Native AOT. Binding correction review dispatched. Runtime review of 43b64d5 found two defects still present on 1bd351d. A response-disposal fault with confirmed issuer retirement and successful preparation cleanup must release capacity once and independently report one redacted fault. Preserve concurrent stream-close and permit-retirement exceptions for standalone callers. Unknown issuer retirement or failed preparation cleanup retains the charge. Hold landing for both focused controls.
 <!-- SECTION:NOTES:END -->

@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@gpt-6.2-sol-lifecycle'
 created_date: '2026-11-18T18:13:00Z'
-updated_date: '2026-11-19T07:52:00Z'
+updated_date: '2026-11-19T08:59:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -19,7 +19,7 @@ ordinal: 108000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Implement the offline single-host drain witness before issuing a prepared incumbent stop. Production enforcement and ingress integration remain separate.
+Implement offline host-route staging through the common coordinator. A declined publication retains the exact applied launch and leaves both routes closed after disposal.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -36,13 +36,19 @@ Implement the offline single-host drain witness before issuing a prepared incumb
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-At 7ec1c20 use a real controller child, a surviving issuer and an independent backend terminal acknowledgment. Persist the exact stop and frozen successor before closing ingress. Serialize close and first-write, revoke prepared grants and account for every live incumbent route or prove there is only one. Bind the closed set to full launch, process, route, close ID and exact invocations/grants. Hold an authorized write before backend receipt. Count one issuer use; logical timeout is synthetic. Require both successful channel sealing and exact backend terminal evidence. Failed close, attempted disposal, mismatched acknowledgment and guard disposal grant nothing. Include one small terminal-first control alongside cleanup-first. Kill the controller, verify a new process and fresh nonce, and retain StopPrepared with zero stop/create ledger entries at every boundary while unresolved. Publish the immutable retired set under the issue fence without reopening. Recheck independent ownership and witness before dispatch; require fresh vacancy before one frozen successor create. Keep successor ingress closed.
+Fence wrong target or missing publication before legacy recovery can settle or grant. Bind original launch-owned plan, operation, instance and epoch. Finish fallible staging while closed. Retain the applied record through refusal and success. Disposal grants nothing. Only successful completion followed by explicit Open of the still-current generation authorizes inference. In one paired fixture first send on the eligible old route and hold another unused grant. Decline a valid publication and verify zero new permits/bytes, then probe wrong target without relaunch. Recover with a new coordinator, verify no mint through Complete or stale Open, and send once after fresh matching Open with one create total. Keep injection internal; runtime deadline, dispatch, admission and production activation remain separate.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-The checkpoint and synthetic ledger landed in [PR #6](https://github.com/ArborealML/Inference-Router/pull/6). [PR #9](https://github.com/ArborealML/Inference-Router/pull/9) at b7a9ac9 passed 18 offline vacancy cases with the subprocess probe rebuilt. Review corrections bind the full predecessor and checkpoint stop effect, detect mismatched operation identity and stale owner evidence, and hold a competing facts writer through daemon entry. Merged at 47eaced after green hosted CI and independent review. Early owner refusals prove zero submission; downstream decision and terminal counts are separately pinned at the daemon-entry guard. Prepare the causal-drain and physical-retirement plan for the single host. Enforced host coverage, physical retirement and instance-bound admission remain prerequisites for production activation.
+[PR #6](https://github.com/ArborealML/Inference-Router/pull/6) landed the checkpoint and synthetic ledger; [PR #9](https://github.com/ArborealML/Inference-Router/pull/9) landed predecessor, exact stop-effect and fresh vacancy checks. Review of 47ab322 confirmed restart fencing and identified two weak observations. [PR #14](https://github.com/ArborealML/Inference-Router/pull/14) at c2db0ee passed all four affected Release cases with the probe rebuilt. The open control sends exact bytes with one use; closure denies an otherwise eligible grant. An independently backend-authored wrong grant retains the use after seal and blocks mutation. Matching acknowledgment permits retirement. Serving-process authenticity remains fixture-local. Independent correction review dispatched. Production enforcement and runtime admission remain separate.
 
-Plan review accepted the subprocess ownership split with corrections to the complete use set, two independent retirement conditions, restart ordering and issue-time checks. Direct transport exercises one physical owner. Runtime ticket accounting and issuer-crash recovery remain outside this increment.
+Independent review of c2db0ee accepted all three dispositions, and hosted CI passed. GitHub refused the merge after MiniMax landed; merge-tree identified only SPEC.md. Retain the .80 header and ordered .80/.79 entries. Verify identical fixture blobs before advancing the PR.
+
+Published df6174e preserves all seven reviewed project and fixture blobs from c2db0ee. Against its main parent the SPEC adds only the .79 entry and corrected scope under the existing .80 header. Both parent diff checks passed.
+
+[PR #14](https://github.com/ArborealML/Inference-Router/pull/14) merged at 3160a11 after the reconciled df6174e passed hosted CI. This qualifies offline causal retirement with a surviving issuer and independent backend acknowledgment.
+
+Plan review on 3160a11 identified the legacy wrong-target recovery fallback and required a discriminating old grant and fresh-open positive. All four findings incorporated; lifecycle released to implement.
 <!-- SECTION:NOTES:END -->

@@ -7,7 +7,8 @@ namespace Arboreal.InferenceRouter;
 
 // Separate journal roles in a cooperative fixture, which can all run in one process. The worker
 // issue fence spans the decision and daemon entry, including the exact owner/vacancy comparison.
-internal sealed partial class HostEffectLedgerProbe(string checkpointPath, bool requirePartitionProof = false)
+internal sealed partial class HostEffectLedgerProbe(string checkpointPath, bool requirePartitionProof = false,
+    bool requireCausalDrain = false)
 {
     private const string Group = "fixture-group";
     private const string Enrollment = "fixture-enrollment";
@@ -16,6 +17,7 @@ internal sealed partial class HostEffectLedgerProbe(string checkpointPath, bool 
     private readonly string _checkpointPath = checkpointPath;
     private readonly string _root = Path.GetDirectoryName(checkpointPath)!;
     private readonly bool _requirePartitionProof = requirePartitionProof;
+    private readonly bool _requireCausalDrain = requireCausalDrain;
     private string FencePath => Path.Combine(_root, "worker.fence");
     private string DaemonPath => Path.Combine(_root, "daemon-residency.json");
 
@@ -96,7 +98,9 @@ internal sealed partial class HostEffectLedgerProbe(string checkpointPath, bool 
     {
         var state = checkpoint.State;
         var stop = state.Transition!.Stop!;
-        var proof = _requirePartitionProof ? ObservePartition(state, vacant: false, mode) : null;
+        var drain = _requireCausalDrain ? RequestCausalDrain(state) : null;
+        if (_requireCausalDrain && drain is null) return "pending";
+        var proof = _requirePartitionProof ? ObservePartition(state, vacant: false, mode, drain) : null;
         if (_requirePartitionProof && proof is null) return "pending";
         Park(mode, "stop-prepared");
         checkpoint.MarkStopDispatching(stop);
@@ -405,4 +409,8 @@ internal readonly record struct LedgerSubmission(string Disposition, HostMutatio
 [JsonSerializable(typeof(PartitionQuery))]
 [JsonSerializable(typeof(PartitionProof))]
 [JsonSerializable(typeof(HostCheckpointLaunchEffect))]
+[JsonSerializable(typeof(CausalDrainRequest))]
+[JsonSerializable(typeof(CausalDrainReply))]
+[JsonSerializable(typeof(CausalRouteBinding))]
+[JsonSerializable(typeof(CausalRetirementWitness))]
 internal sealed partial class HostEffectLedgerJsonContext : JsonSerializerContext;

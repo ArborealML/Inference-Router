@@ -3,11 +3,11 @@ id: TASK-111
 title: >-
   Build the local router configuration for every supported select-model
   configuration
-status: Waiting
+status: In Progress
 assignee:
-  - '@chatswarm'
+  - '@gpt-6.2-sol-config'
 created_date: '2026-11-18T18:15:00Z'
-updated_date: '2026-11-19T07:57:00Z'
+updated_date: '2026-11-19T08:53:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -19,7 +19,7 @@ ordinal: 109000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Independent plan review of MiniMax 32k entrypoint and IPC wakes the next offline implementation. Build the local configuration from the installed selector and verify all valid models, aliases, profiles, defaults and options. Decision-68 authorizes local qualification; TASK-125 carries the first live pair.
+Implement offline Docker health-check projection for GLM 32k, 256k and the default 1m tier on the landed MiniMax base.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -32,19 +32,19 @@ Independent plan review of MiniMax 32k entrypoint and IPC wakes the next offline
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-For one dedicated MiniMax engine, project a literal absolute executable into Docker Entrypoint, preserve the separate Cmd array and project explicit host IPC into HostConfig.IpcMode. IPC alone needs HostConfig; entrypoint alone does not. Detect both options before raw ancestry and authority fields can be shadowed. Preserve absent-field behavior and keep each option behind startup and pre-mutation gates for every model on that engine. Compare the exact serving payload through fake projection, with isolated options, invalid input and zero-write controls. Verify the private config with the loader. Keep other selector gaps independent.
+Project the literal per-tier command as a top-level Docker CMD-SHELL health check, with a 30-second interval and one-hour start period. Omit unset fields, check millisecond conversion for overflow, and preserve legacy omission. Reject malformed, misplaced and shadowed declarations. Keep health-only tiers behind the existing engine-wide startup and mutation guards. Compare all three complete GLM payloads across TOML and JSON, then run focused parser/refusal checks, config-only load and server Native AOT. Independent plan review dispatched on 0418440. DeepSeek timeout, retries and nested binds and the separate Strata profile alias stay outside.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Selector inventory at fingerprint 8af827d3c375efda08cad8a5b9b7fd862b44a2f5a7482042c5255623a891a030 found 169 valid and 337 invalid spellings, 75 distinct targets, 12 spellings requiring one explicit GPU, 22 omitted defaults, and 1,248 parking combinations. Single-device profiles require one explicit index; paired profiles require two distinct indices. GPU utilization accepts 0.50–0.95, default 0.90. Parking accepts 1–48 GiB, default 32, and 1–8 variable lanes. Suffix-cache launch has no supported mechanism. TASK-26 covers resources, TASK-114 cold starts and TASK-125 the first live pair.
+The installed selector has 169 valid and 337 invalid spellings across 75 distinct targets (36 Strata, 26 HyperQwen, 13 Maya). Twelve spellings require one GPU; 22 defaults and 1,248 parking combinations were inventoried. Preserve GPU index, utilization, parking and suffix-cache limits in the tracked coverage report. TASK-26 covers resources, TASK-114 cold starts and TASK-125 the first live pair.
 
-[PR #7](https://github.com/ArborealML/Inference-Router/pull/7) corrects shadowed ownership and selector fields, common Docker key casing and template substitution. Review of 7eda8ad accepted the correction subject to verification. At 6505ea1 all 108 focused tests, the pinned pair config and server Native AOT passed. The CLI separately refused a sibling select/Select pair and a duplicate common env key at the expected paths. Integration head 3af5f10 preserves both SPEC revisions. Continue offline comparison for remaining targets. Before activation, bind receipts and labels to the same canonical model, tier and serving instance.
+[PR #7](https://github.com/ArborealML/Inference-Router/pull/7) landed offline per-target environment and mounts, strict ownership checks and single-pass substitution. [PR #12](https://github.com/ArborealML/Inference-Router/pull/12) landed per-tier RAM and swap for the Qwen profiles. [PR #16](https://github.com/ArborealML/Inference-Router/pull/16) at ee6e0f5 adds the MiniMax executable entrypoint and host IPC. Its 96 focused Release cases passed, the pinned MiniMax config loaded, and linux-x64 server Native AOT published. Independent code review dispatched. Remaining coverage includes profile aliases, GPU ordering, shared memory, runtime policy, nested mounts and health settings. Bind receipts and labels to canonical model, tier and serving instance before activation.
 
-Offline comparison covered 36 Strata, 26 HyperQwen and 13 Maya targets. MiniMax 32k requires host IPC and an entrypoint override. Qwen 768k and 1m require profile-specific memory and total swap. At 606961f all 127 focused Docker target/resource tests passed. The pinned Defiant config loaded and the linux-x64 server Native AOT publish had zero trim warnings.  Other gaps include profile aliases, GPU ordering, shared memory, runtime policy, nested mounts and health settings.
+Single-device profiles require one explicit index and paired profiles two distinct indices. Utilization is 0.50–0.95 (default 0.90), parking 1–48 GiB (default 32), variable lanes 1–8. The selector has no supported suffix-cache launch.
 
-[PR #12](https://github.com/ArborealML/Inference-Router/pull/12) landed at 5992c4e with SPEC v0.12.78 after hosted Release, Native AOT and smoke passed on 7133401. Review accepted supplied-profile projection. Config-only controls accepted either common RAM key spelling alone and refused both together as duplicate. Automatic profile selection and live activation remain separate.
+PR #16 merged at 0418440 after hosted CI and independent PASS on ee6e0f5. The review confirmed the resource-free IPC payload, separate entrypoint and command, legacy omission, and refusal before mutation.
 
-MiniMax 32k offline IPC and entrypoint plan review dispatched against 5992c4e on November 19.
+Plan review on 0418440 passed. Validate misplaced common probes in both formats explicitly, preserve unspecified Docker fields and distinguish default restart behavior from byte equivalence. The fingerprinted selector confirms the literal environment path. Offline implementation released.
 <!-- SECTION:NOTES:END -->
