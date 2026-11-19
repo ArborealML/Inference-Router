@@ -3,11 +3,11 @@ id: TASK-111
 title: >-
   Build the local router configuration for every supported select-model
   configuration
-status: Waiting
+status: Preparing
 assignee:
-  - '@gpt-6.2-astra'
+  - '@gpt-6.2-sol-config'
 created_date: '2026-11-18T18:15:00Z'
-updated_date: '2026-11-19T14:45:00Z'
+updated_date: '2026-11-19T14:55:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -19,7 +19,7 @@ ordinal: 109000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Hosted CI and the bounded correction review on [PR #31](https://github.com/ArborealML/Inference-Router/pull/31) wake the coordinator. Both focused Release checks passed on 70e71f2 with zero skips. The corrected sweep compared 10,150 distinct positive vectors in 8.364 seconds, verified the manifest, rejected the wrong SHM through the real comparison and counted five AIR refusals. Its two parser spelling checks are separate from 78 format comparisons. The earlier receipt remains on 80febe5. Unified topology, alternate configuration, protected credential bind, published ports and host authority remain open.
+Config is mapping the remaining configuration differences to existing dependencies after [PR #31](https://github.com/ArborealML/Inference-Router/pull/31) merged at ae0d530. The 70e71f2 review accepted all six verifier dispositions. Both focused Release tests and hosted CI passed; the corrected opt-in run compared 10,150 distinct positive vectors in 8.364 seconds. It used six dedicated native inputs and redacted selector-derived expectations. Independent original-source authentication and effective host behavior remain open.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -32,7 +32,7 @@ Hosted CI and the bounded correction review on [PR #31](https://github.com/Arbor
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Exercise the real comparison assertion with wrong SHM and count the observed failure. Verify manifest hashes and inventory before projection, reject tampering and allowlist eight embedded resources. Count distinct original spelling keys and require five AIR refusals. Compare representative alias/default resolution across formats and bound catalog claims to measured fields. Retain the approved MiniMax canonical/default common projection and distinguish derived selector expectations from captured launches. Qualify one correction with the cheap smoke and opt-in sweep.
+Identify the smallest remaining representability correction from the landed coverage report, starting with Strata and Maya published-port declarations. Check existing dependency ownership, distinguish projection differences from host evidence, and return a bounded recommendation before implementation. Keep unified configuration, alternate-vector reconfiguration, the protected credential bind and activation dependencies explicit. Reuse the landed measurements.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
