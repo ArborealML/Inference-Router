@@ -3,11 +3,11 @@ id: TASK-118
 title: >-
   Resolve each native launch profile and dispatch to its verified serving
   instance
-status: In Progress
+status: Waiting
 assignee:
-  - '@gpt-6.2-sol-scheduling'
+  - '@gpt-6.2-astra'
 created_date: '2026-11-18T18:56:00Z'
-updated_date: '2026-11-19T09:21:00Z'
+updated_date: '2026-11-19T09:26:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -23,7 +23,7 @@ ordinal: 116000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Prepare the verified dispatch landing on current main while the pending-header cancellation correction is reviewed.
+Hosted CI and the landing review for PR #20 wake the coordinator. Land after the closed-route SPEC entry is integrated.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -48,5 +48,5 @@ Publish one immutable sender with the ready preparation. Its exact invocation bo
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Binding at 1bd351d passed review, 118 Release cases and Linux x64 Native AOT. Cleanup review verified e05f5c9 releases once after conclusive retirement and successful preparation, reports response-disposal faults independently and retains concurrent exceptions. Six of seven parent cases passed; cancellation hung on a silent peer. Child 9e1a9df passed both differential cases with the watchdog live, caller cancellation observed and cleanup joined. Child review dispatched. Preserve GLM .81 and lifecycle .82 when integrating dispatch .83.
+Binding at 1bd351d passed review, 118 Release cases and Linux x64 Native AOT. Cleanup review passed e05f5c9; six cases passed and a silent-peer cancellation timed out. At 9e1a9df both cancellation rows passed with a live watchdog; bounded review accepted the header-only fallback. Explicit read tokens and post-header semantics are preserved. [PR #20](https://github.com/ArborealML/Inference-Router/pull/20) at 0e6343a passed the new health-check identity case with zero daemon calls. Landing review dispatched. Preserve .83/.82/.81 and both lifecycle sections after PR #19. Production enrollment stays closed.
 <!-- SECTION:NOTES:END -->
