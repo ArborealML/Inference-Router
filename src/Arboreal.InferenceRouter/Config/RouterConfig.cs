@@ -34,7 +34,8 @@ public sealed class DockerLifecycleConfig
     internal DockerLaunchResources? Resources { get; init; }
     internal DockerTargetPlans? TargetPlans { get; init; }
     internal bool HasUnqualifiedTargetDocker => TargetPlans is not null;
-    internal bool HasUnqualifiedLaunchOptions => Entrypoint is not null || IpcMode is not null;
+    internal DockerContainerPolicy? ContainerPolicy { get; init; }
+    internal bool HasUnqualifiedLaunchOptions => Entrypoint is not null || IpcMode is not null || ContainerPolicy is not null;
     /// <summary><c>unix:///path/to/sock</c> or <c>http(s)://host:port</c>.</summary>
     public string Socket { get; init; } = "unix:///var/run/docker.sock";
     /// <summary>Pinned so a daemon update cannot change the API under a running router.</summary>

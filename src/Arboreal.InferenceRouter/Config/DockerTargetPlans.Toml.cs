@@ -14,25 +14,40 @@ internal sealed partial class DockerTargetPlans
             if (engineValue is not TomlTable engine) continue;
             var enginePath = $"engine.{engineName}";
             CheckCommonTargetOptionsToml(engine, $"{enginePath}.docker");
+            CheckContainerPolicyToml(root, engines, engineName, engine, enginePath);
             foreach (var catalog in TomlMembers(engine, "catalog").OfType<TomlTable>())
             foreach (var (modelName, modelValue) in catalog)
             {
                 if (modelValue is not TomlTable model) continue;
                 var modelPath = $"{enginePath}.catalog.{modelName}";
+                RejectMisplacedContainerPolicyToml(model, modelPath);
+                foreach (var modelDocker in TomlMembers(model, "docker").OfType<TomlTable>())
+                    RejectMisplacedContainerPolicyToml(modelDocker, $"{modelPath}.docker");
                 foreach (var serving in TomlMembers(model, "serving"))
                 {
-                    if (serving is TomlTable malformed &&
-                        (HasTomlTierDeclaration(malformed) || HasTomlMember(malformed, "command")))
-                        throw new RouterConfigException($"{modelPath}.serving must be an array of serving tiers");
+                    if (serving is TomlTable malformed)
+                    {
+                        RejectMisplacedContainerPolicyToml(malformed, $"{modelPath}.serving");
+                        if (HasTomlTierDeclaration(malformed) || HasTomlMember(malformed, "command"))
+                            throw new RouterConfigException($"{modelPath}.serving must be an array of serving tiers");
+                    }
                     var index = 0;
                     foreach (var row in TomlArrayItems(serving))
                     {
                         var tierPath = $"{modelPath}.serving[{index}]";
-                        if (row is TomlTable misplacedCommand && HasTomlMember(misplacedCommand, "command"))
+                        if (row is not TomlTable tier)
+                        {
+                            index++;
+                            continue;
+                        }
+                        RejectMisplacedContainerPolicyToml(tier, tierPath);
+                        foreach (var tierDocker in TomlMembers(tier, "docker").OfType<TomlTable>())
+                            RejectMisplacedContainerPolicyToml(tierDocker, $"{tierPath}.docker");
+                        if (HasTomlMember(tier, "command"))
                             throw new RouterConfigException($"{tierPath}.command belongs inside serving-tier docker");
-                        if (row is TomlTable misplaced && HasTomlMember(misplaced, "nested_under"))
+                        if (HasTomlMember(tier, "nested_under"))
                             throw new RouterConfigException($"{tierPath}.nested_under belongs on a serving-tier bind mount");
-                        if (row is TomlTable tier && HasTomlTierDeclaration(tier))
+                        if (HasTomlTierDeclaration(tier))
                         {
                             CheckTomlMember(root, "engine", "engine");
                             CheckTomlMember(engines, engineName, enginePath);
@@ -58,7 +73,10 @@ internal sealed partial class DockerTargetPlans
         {
             RejectMisplacedTargetOptionsToml(docker, path);
             foreach (var resources in TomlMembers(docker, "resources").OfType<TomlTable>())
+            {
                 RejectMisplacedTargetOptionsToml(resources, $"{path}.resources");
+                RejectMisplacedContainerPolicyToml(resources, $"{path}.resources");
+            }
         }
     }
 

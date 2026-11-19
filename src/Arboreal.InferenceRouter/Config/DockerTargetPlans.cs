@@ -254,6 +254,7 @@ internal sealed partial class DockerTargetPlans
         {
             var enginePath = $"engine.{engine.Name}";
             var modelPath = $"{enginePath}.catalog.{model.Name}";
+            RejectMisplacedContainerPolicyJson(serving.Value, $"{modelPath}.serving");
             if (serving.Value.ValueKind == JsonValueKind.Object &&
                 (HasTierDeclaration(serving.Value) || Members(serving.Value, "command").Any()))
                 throw new RouterConfigException($"{modelPath}.serving must be an array of serving tiers");
@@ -262,6 +263,9 @@ internal sealed partial class DockerTargetPlans
             foreach (var tier in serving.Value.EnumerateArray())
             {
                 var tierPath = $"{modelPath}.serving[{index}]";
+                RejectMisplacedContainerPolicyJson(tier, tierPath);
+                foreach (var tierDocker in Members(tier, "docker"))
+                    RejectMisplacedContainerPolicyJson(tierDocker.Value, $"{tierPath}.docker");
                 if (Members(tier, "command").Any())
                     throw new RouterConfigException($"{tierPath}.command belongs inside serving-tier docker");
                 if (Members(tier, "nested_under").Any())
@@ -321,19 +325,36 @@ internal sealed partial class DockerTargetPlans
     {
         foreach (var engines in Members(root, "engine"))
         foreach (var engine in Properties(engines.Value))
-        foreach (var docker in Members(engine.Value, "docker"))
         {
             var path = $"engine.{engine.Name}";
-            RejectMisplacedTargetOptionsJson(docker.Value, $"{path}.docker");
-            foreach (var resources in Members(docker.Value, "resources"))
-                RejectMisplacedTargetOptionsJson(resources.Value, $"{path}.docker.resources");
-            if (!Members(docker.Value, "entrypoint").Any() && !Members(docker.Value, "ipc_mode").Any()) continue;
-            CheckMember(root, "engine", "engine");
-            CheckMember(engines.Value, engine.Name, path, exactKey: true);
-            CheckCommonDocker(engine.Value, path);
-            CheckMember(engine.Value, "catalog", $"{path}.catalog");
-            _ = engine.Value.TryGetProperty("catalog", out var catalog);
-            CheckAuthority(engine.Value, catalog, path);
+            RejectMisplacedContainerPolicyJson(engine.Value, path);
+            foreach (var catalogOccurrence in Members(engine.Value, "catalog"))
+            foreach (var model in Properties(catalogOccurrence.Value))
+            {
+                var modelPath = $"{path}.catalog.{model.Name}";
+                RejectMisplacedContainerPolicyJson(model.Value, modelPath);
+                foreach (var modelDocker in Members(model.Value, "docker"))
+                    RejectMisplacedContainerPolicyJson(modelDocker.Value, $"{modelPath}.docker");
+            }
+            foreach (var docker in Members(engine.Value, "docker"))
+            {
+                var dockerPath = $"{path}.docker";
+                RejectMisplacedTargetOptionsJson(docker.Value, dockerPath);
+                foreach (var resources in Members(docker.Value, "resources"))
+                {
+                    RejectMisplacedTargetOptionsJson(resources.Value, $"{dockerPath}.resources");
+                    RejectMisplacedContainerPolicyJson(resources.Value, $"{dockerPath}.resources");
+                }
+                var hasPolicy = ContainerPolicyFields.Any(field => Members(docker.Value, field).Any());
+                if (!hasPolicy && !Members(docker.Value, "entrypoint").Any() && !Members(docker.Value, "ipc_mode").Any()) continue;
+                CheckMember(root, "engine", "engine");
+                CheckMember(engines.Value, engine.Name, path, exactKey: true);
+                CheckCommonDocker(engine.Value, path);
+                CheckMember(engine.Value, "catalog", $"{path}.catalog");
+                _ = engine.Value.TryGetProperty("catalog", out var catalog);
+                CheckAuthority(engine.Value, catalog, path);
+                if (hasPolicy) CheckContainerPolicyJson(docker.Value, dockerPath);
+            }
         }
     }
 

@@ -74,6 +74,10 @@ public sealed class DockerDto : ITomlOnDeserialized
     private string? _imagePlatform;
     private string? _entrypoint;
     private string? _ipcMode;
+    private bool? _init;
+    private string? _restart;
+    private DockerLogRotationDto? _logRotation;
+    internal bool HasContainerPolicy => Init is not null || Restart is not null || LogRotation is not null;
     // JSON null is an explicit value, so it must not take the legacy all-omitted path.
     internal bool HasImageIdentity { get; private set; }
 
@@ -120,6 +124,36 @@ public sealed class DockerDto : ITomlOnDeserialized
             _ipcMode = value ?? throw new RouterConfigException("docker.ipc_mode cannot be null");
         }
     }
+    [JsonPropertyName("init")][TomlPropertyName("init")]
+    public bool? Init
+    {
+        get => _init;
+        set
+        {
+            if (_init is not null) throw new RouterConfigException("duplicate docker.init");
+            _init = value ?? throw new RouterConfigException("docker.init cannot be null");
+        }
+    }
+    [JsonPropertyName("restart")][TomlPropertyName("restart")]
+    public string? Restart
+    {
+        get => _restart;
+        set
+        {
+            if (_restart is not null) throw new RouterConfigException("duplicate docker.restart");
+            _restart = value ?? throw new RouterConfigException("docker.restart cannot be null");
+        }
+    }
+    [JsonPropertyName("log_rotation")][TomlPropertyName("log_rotation")]
+    public DockerLogRotationDto? LogRotation
+    {
+        get => _logRotation;
+        set
+        {
+            if (_logRotation is not null) throw new RouterConfigException("duplicate docker.log_rotation");
+            _logRotation = value ?? throw new RouterConfigException("docker.log_rotation cannot be null");
+        }
+    }
     [JsonPropertyName("command")][TomlPropertyName("command")] public string[]? Command { get; set; }
     [JsonPropertyName("env")][TomlPropertyName("env")] public string[]? Env { get; set; }
     [JsonPropertyName("stop_timeout_ms")][TomlPropertyName("stop_timeout_ms")] public int? StopTimeoutMs { get; set; }
@@ -143,6 +177,12 @@ public sealed class DockerDto : ITomlOnDeserialized
         if (UnmappedToml?.Keys.Any(key => key.Equals("healthcheck", StringComparison.OrdinalIgnoreCase)) == true)
             throw new RouterConfigException($"{path}.healthcheck is only supported inside a serving-tier docker block");
     }
+}
+
+public sealed class DockerLogRotationDto
+{
+    [JsonPropertyName("max_size")][TomlPropertyName("max_size")] public string? MaxSize { get; set; }
+    [JsonPropertyName("max_files")][TomlPropertyName("max_files")] public int? MaxFiles { get; set; }
 }
 
 public sealed class HealthProbeDto
