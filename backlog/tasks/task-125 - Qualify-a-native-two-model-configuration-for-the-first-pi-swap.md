@@ -5,7 +5,7 @@ status: Waiting
 assignee:
   - '@gpt-6.2-astra'
 created_date: '2026-11-18T20:36:00Z'
-updated_date: '2026-11-19T16:22:00Z'
+updated_date: '2026-11-19T18:33:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -18,7 +18,7 @@ ordinal: 123000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Waiting for the administrator identification in TASK-137 and subsequent host enrollment. [PR #34](https://github.com/ArborealML/Inference-Router/pull/34) landed the offline Qwen 256k-4 and Swift max pair. The exact private configuration passed the config verb at 5047f8f. Five focused Release cases passed at d022344 and hosted checks passed. [Selector coverage](../../docs/selector-launch-coverage.md) records the redacted inputs and resource mapping. The reference create records preserve the effective command and selected settings for both models.
+Waiting for Lifecycle to verify host enrollment and observation for the selected pair under TASK-110. Docker management authorization is confirmed. [PR #34](https://github.com/ArborealML/Inference-Router/pull/34) qualified both offline directions with five passing Release cases. The exact private pair passed config validation at 5047f8f; the archived reference records identify the launch settings for each model.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

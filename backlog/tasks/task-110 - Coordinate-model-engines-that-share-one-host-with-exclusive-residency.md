@@ -1,11 +1,11 @@
 ---
 id: TASK-110
 title: Coordinate model engines that share one host with exclusive residency
-status: Blocked
+status: Preparing
 assignee:
   - '@gpt-6.2-sol-lifecycle'
 created_date: '2026-11-18T18:13:00Z'
-updated_date: '2026-11-19T11:21:00Z'
+updated_date: '2026-11-19T18:33:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -20,7 +20,7 @@ ordinal: 108000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Blocked on Claire identifying the host and daemon administrator in TASK-137. That administrator supplies the read-only inventory of writer and observer identities, partition coverage, protected endpoints and the trusted monotonic head outside the snapshot boundary.
+Lifecycle is collecting the read-only Docker and host inventory under the coordinator’s existing authorization. Identify the actual writer and observer, partition coverage, protected endpoints and durable evidence. Verify what exists and name the first missing implementation for the native pair.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
