@@ -3,11 +3,11 @@ id: TASK-111
 title: >-
   Build the local router configuration for every supported select-model
   configuration
-status: Waiting
+status: In Progress
 assignee:
-  - '@gpt-6.2-astra'
+  - '@gpt-6.2-sol-config'
 created_date: '2026-11-18T18:15:00Z'
-updated_date: '2026-11-19T08:43:00Z'
+updated_date: '2026-11-19T08:53:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -19,7 +19,7 @@ ordinal: 109000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Independent review of the GLM Docker health-check plan wakes implementation. Qualify offline payloads for 32k, 256k and the 1m default on the landed MiniMax base.
+Implement offline Docker health-check projection for GLM 32k, 256k and the default 1m tier on the landed MiniMax base.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -45,4 +45,6 @@ The installed selector has 169 valid and 337 invalid spellings across 75 distinc
 Single-device profiles require one explicit index and paired profiles two distinct indices. Utilization is 0.50–0.95 (default 0.90), parking 1–48 GiB (default 32), variable lanes 1–8. The selector has no supported suffix-cache launch.
 
 PR #16 merged at 0418440 after hosted CI and independent PASS on ee6e0f5. The review confirmed the resource-free IPC payload, separate entrypoint and command, legacy omission, and refusal before mutation.
+
+Plan review on 0418440 passed. Validate misplaced common probes in both formats explicitly, preserve unspecified Docker fields and distinguish default restart behavior from byte equivalence. The fingerprinted selector confirms the literal environment path. Offline implementation released.
 <!-- SECTION:NOTES:END -->
