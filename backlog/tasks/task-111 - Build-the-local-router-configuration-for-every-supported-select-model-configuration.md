@@ -3,11 +3,11 @@ id: TASK-111
 title: >-
   Build the local router configuration for every supported select-model
   configuration
-status: Waiting
+status: In Progress
 assignee:
-  - '@chatswarm'
+  - '@gpt-6.2-sol-config'
 created_date: '2026-11-18T18:15:00Z'
-updated_date: '2026-11-19T12:59:00Z'
+updated_date: '2026-11-19T13:11:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -19,7 +19,7 @@ ordinal: 109000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-The verdict on the parking plan dispatched November 19 wakes Config. [PR #29](https://github.com/ArborealML/Inference-Router/pull/29) merged at 39918a0 after the parser correction review and all hosted checks passed. Its six single-GPU tiers bring landed offline coverage to 63 of 75 normalized targets. The twelve remaining targets are HyperQwen parking tiers. Host GPU mapping, available RAM and serving authority require separate live verification.
+Config is implementing per-tier shared memory for the twelve remaining HyperQwen parking targets. The independent plan review on the [single-GPU landing](https://github.com/ArborealML/Inference-Router/pull/29) passed for offline projection. Landed coverage is 63/75. Each resolved configuration selects one cache and sequence setting. The 1,248 selector combinations remain a separate inventory measurement.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -32,7 +32,7 @@ The verdict on the parking plan dispatched November 19 wakes Config. [PR #29](ht
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Review one positive per-tier shared-memory byte count, with common inheritance on omission. Exercise the twelve default parking targets in both formats, paired return bytes, the low and high cache/SHM limits, resource-null projection, misplaced input, engine-wide zero writes and a SHM-only digest change. Keep the host RAM reserve and post-stop availability check as independent host prerequisites.
+Freeze positive Int64 tier SHM or inherit common SHM. Validate superseded common settings and project before both provider early returns. Reject misplaced or shadowed declarations in both formats, including engine-only and model-only inputs. Use one mixed fixture for twelve defaults, per-model cache and environment order, max-to-parked-to-max byte identity, cache/sequence boundaries, zero-write refusal and a SHM-only digest difference. Run focused Release, config-only validation and Native AOT. Live parking requires independent host RAM verification including the 10 GiB reserve after predecessor stop.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
