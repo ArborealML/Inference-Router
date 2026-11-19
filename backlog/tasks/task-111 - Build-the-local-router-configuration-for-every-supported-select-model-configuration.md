@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@gpt-6.2-sol-config'
 created_date: '2026-11-18T18:15:00Z'
-updated_date: '2026-11-19T14:24:00Z'
+updated_date: '2026-11-19T14:26:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -19,7 +19,7 @@ ordinal: 109000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Config owns the Release compile correction for the offline verifier at 63ea6db. The focused smoke build stopped after 19.17 seconds on CA2000 in mixed-case JSON provider disposal. Zero tests executed. The opt-in sweep awaits the corrected build. Bounded driver and workflow review dispatched November 19. [PR #30](https://github.com/ArborealML/Inference-Router/pull/30) landed all 75 normalized defaults; dedicated topology, alternate configuration, protected credential bind, published ports and host authority remain open. Public shared-memory inputs and the tier DTO reject explicit null; direct null assignment to the older common DTO preserves omission.
+Config owns the fixed-lane verifier correction. At fb16200 the Release smoke passed 1/1, clearing CA2000. The same-build opt-in sweep stopped in 2.55 seconds at the parking lane minimum assertion: expected 1, observed 4. Distinguish fixed counts from the variable parked tier before measuring vector totals. Driver and disposal reviews dispatched November 19. [PR #30](https://github.com/ArborealML/Inference-Router/pull/30) landed 75 normalized defaults. Dedicated topology, alternate configuration, protected credential bind, published ports and host authority remain open. Public shared-memory inputs and the tier DTO reject explicit null; the older common DTO preserves omission.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
