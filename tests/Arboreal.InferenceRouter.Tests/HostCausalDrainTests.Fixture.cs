@@ -5,20 +5,35 @@ namespace Arboreal.InferenceRouter.Tests;
 
 public sealed partial class HostCausalDrainTests
 {
-    private sealed class BackendAcknowledgements
+    // The backend establishes the channel identity before checkout. The serving process label is
+    // fixture metadata shared with the issuer, rather than a process attestation.
+    private sealed class BackendAcknowledgements(VerifiedInstanceInvocation invocation, Guid backendId)
     {
+        private readonly Guid _otherGrant = Guid.NewGuid();
         private CausalBackendTerminal? _acknowledgment;
+        private CausalBackendTerminal? _mismatchedAcknowledgment;
+        public CausalFrontierUse ChannelIdentity { get; } = new(invocation, Guid.NewGuid(), backendId);
 
-        public CausalBackendTerminal Complete(Guid closeId, CausalFrontierUse use)
+        public CausalBackendTerminal Complete(Guid closeId)
         {
-            var terminal = new CausalBackendTerminal(closeId, use);
+            var terminal = new CausalBackendTerminal(closeId, ChannelIdentity);
             if (Interlocked.CompareExchange(ref _acknowledgment, terminal, null) is not null)
                 throw new InvalidOperationException("The fake backend can acknowledge its invocation only once.");
             return terminal;
         }
 
+        public (CausalBackendTerminal Matched, CausalBackendTerminal WrongGrant) CompleteDelivery(Guid closeId)
+        {
+            var matched = Complete(closeId);
+            // Inject a backend attribution fault after observing the request on its paired channel.
+            var wrong = new CausalBackendTerminal(closeId, ChannelIdentity with { GrantId = _otherGrant });
+            Volatile.Write(ref _mismatchedAcknowledgment, wrong);
+            return (matched, wrong);
+        }
+
         // Reference identity is the authored event in this in-process fake, separate from its payload.
-        public bool Authored(CausalBackendTerminal terminal) => ReferenceEquals(Volatile.Read(ref _acknowledgment), terminal);
+        public bool Authored(CausalBackendTerminal terminal) => ReferenceEquals(Volatile.Read(ref _acknowledgment), terminal) ||
+            ReferenceEquals(Volatile.Read(ref _mismatchedAcknowledgment), terminal);
     }
 
     // The test issuer has exactly one immutable route and up to one submitted invocation.
@@ -27,46 +42,47 @@ public sealed partial class HostCausalDrainTests
         Stream channel, Func<ValueTask> seal, BackendAcknowledgements backend) : IVerifiedInstanceStreamIssuer
     {
         private readonly object _gate = new();
-        private readonly Dictionary<VerifiedInstanceGrant, CausalFrontierUse> _prepared = [];
         private readonly TaskCompletionSource _retired = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        private readonly TaskCompletionSource<(Guid CloseId, CausalFrontierUse Use)> _closedFrontier =
-            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource<Guid> _closed = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private VerifiedInstanceGrant? _prepared;
         private Guid _closeId;
         private CausalFrontierUse? _submitted;
         private CausalBackendTerminal? _terminal;
         private bool _sealed;
         private int _releases;
 
-        public Task<(Guid CloseId, CausalFrontierUse Use)> ClosedFrontier => _closedFrontier.Task;
+        public Func<VerifiedInstanceGrant, Task>? HoldCheckout { private get; init; }
+        public Task<Guid> ClosedGeneration => _closed.Task;
         public int PhysicalUses { get { lock (_gate) return _submitted is not null && _releases == 0 ? 1 : 0; } }
         public int Releases { get { lock (_gate) return _releases; } }
-        public int Prepared { get { lock (_gate) return _prepared.Count; } }
+        public bool Prepared { get { lock (_gate) return _prepared is not null; } }
 
-        public ValueTask<VerifiedInstanceGrant?> CheckoutAsync(VerifiedInstanceInvocation requested, CancellationToken ct)
+        public async ValueTask<VerifiedInstanceGrant?> CheckoutAsync(VerifiedInstanceInvocation requested, CancellationToken ct)
         {
             ct.ThrowIfCancellationRequested();
+            VerifiedInstanceGrant grant;
             lock (_gate)
             {
-                if (_closeId != Guid.Empty || requested.Route != binding.Route || requested.Id == Guid.Empty ||
-                    _submitted?.Invocation.Id == requested.Id || _prepared.Values.Any(g => g.Invocation.Id == requested.Id))
-                    return ValueTask.FromResult<VerifiedInstanceGrant?>(null);
+                var stamp = backend.ChannelIdentity;
+                if (_closeId != Guid.Empty || requested.Route != binding.Route || requested != invocation ||
+                    requested != stamp.Invocation || requested.Id == Guid.Empty ||
+                    stamp.BackendId != binding.BackendId || _submitted is not null || _prepared is not null) return null;
 
-                var stamp = new CausalFrontierUse(requested, Guid.NewGuid(), binding.BackendId);
-                var grant = requested == invocation
-                    ? new VerifiedInstanceGrant(requested, channel, () => SealAsync(stamp))
-                    : new VerifiedInstanceGrant(requested, Stream.Null, static () => ValueTask.CompletedTask);
-                _prepared.Add(grant, stamp);
-                return ValueTask.FromResult<VerifiedInstanceGrant?>(grant);
+                grant = new VerifiedInstanceGrant(requested, channel, () => SealAsync(stamp));
+                _prepared = grant;
             }
+            if (HoldCheckout is { } hold) await hold(grant).WaitAsync(ct);
+            return grant;
         }
 
         public IAsyncDisposable? TryAuthorizeFirstWrite(VerifiedInstanceGrant grant)
         {
             lock (_gate)
             {
-                if (_closeId != Guid.Empty || _submitted is not null || grant.Invocation != invocation ||
-                    !_prepared.Remove(grant, out var stamp)) return null;
-                _submitted = stamp;
+                if (_closeId != Guid.Empty || _submitted is not null || _prepared is null || !ReferenceEquals(_prepared, grant))
+                    return null;
+                _prepared = null;
+                _submitted = backend.ChannelIdentity;
                 return new Permit(_retired.Task);
             }
         }
@@ -86,8 +102,8 @@ public sealed partial class HostCausalDrainTests
                 if (_closeId == Guid.Empty)
                 {
                     _closeId = Guid.NewGuid();
-                    _prepared.Clear();
-                    if (_submitted is { } submitted) _closedFrontier.SetResult((_closeId, submitted));
+                    _prepared = null;
+                    _closed.SetResult(_closeId);
                 }
 
                 // This fixture only certifies the exercised one-use frontier. There is no reopen API.
@@ -134,7 +150,7 @@ public sealed partial class HostCausalDrainTests
         }
     }
 
-    private sealed class HeldApplicationChannel : Stream
+    private sealed class HeldApplicationChannel(BackendAcknowledgements backend) : Stream
     {
         private readonly Pipe _requests = new();
         private readonly Pipe _responses = new();
@@ -144,9 +160,11 @@ public sealed partial class HostCausalDrainTests
         private readonly TaskCompletionSource _entered = new(TaskCreationOptions.RunContinuationsAsynchronously);
         private readonly TaskCompletionSource _allowWrite = new(TaskCreationOptions.RunContinuationsAsynchronously);
         private readonly TaskCompletionSource _channelSealed = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource<byte[]> _requestDelivered = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         public Task EnteredWrite => _entered.Task;
         public Task ChannelSealed => _channelSealed.Task;
+        public Task<byte[]> RequestDelivered => _requestDelivered.Task;
         public int ReceiverBytes => Volatile.Read(ref _receiverBytes);
         public void ReleaseWrite() => _allowWrite.TrySetResult();
 
@@ -162,7 +180,7 @@ public sealed partial class HostCausalDrainTests
             _channelSealed.TrySetResult();
         }
 
-        public async Task<CausalBackendTerminal> RespondAsync(SurvivingIssuer issuer, BackendAcknowledgements backend,
+        public async Task<(CausalBackendTerminal Matched, CausalBackendTerminal WrongGrant)> RespondAsync(Task<Guid> closedGeneration,
             byte[] expected, CancellationToken ct)
         {
             using var request = _requests.Reader.AsStream(leaveOpen: true);
@@ -180,10 +198,19 @@ public sealed partial class HostCausalDrainTests
             await request.ReadExactlyAsync(body, ct);
             Interlocked.Add(ref _receiverBytes, body.Length);
             Assert.Equal(expected, body);
-            var (close, use) = await issuer.ClosedFrontier.WaitAsync(ct);
+            _requestDelivered.SetResult(body);
+            var close = await closedGeneration.WaitAsync(ct);
             await _responses.Writer.WriteAsync("HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nOK"u8.ToArray(), ct);
             await _responses.Writer.CompleteAsync();
-            return backend.Complete(close, use);
+            return backend.CompleteDelivery(close);
+        }
+
+        public async Task<int> ObserveReceiverEndAsync(CancellationToken ct)
+        {
+            using var stream = _requests.Reader.AsStream(leaveOpen: true);
+            var bytes = await stream.ReadAsync(new byte[1], ct);
+            Interlocked.Add(ref _receiverBytes, bytes);
+            return bytes;
         }
 
         public override async ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default)

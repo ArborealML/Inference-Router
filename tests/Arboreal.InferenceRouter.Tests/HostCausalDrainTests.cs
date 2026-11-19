@@ -17,17 +17,15 @@ public sealed partial class HostCausalDrainTests : IDisposable
         var binding = await PrepareAAsync();
         var invocation = Invocation(binding);
         using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(45));
-        using var channel = new HeldApplicationChannel();
-        var acknowledgments = new BackendAcknowledgements();
+        var acknowledgments = new BackendAcknowledgements(invocation, binding.BackendId);
+        using var channel = new HeldApplicationChannel(acknowledgments);
         var issuer = new SurvivingIssuer(binding, invocation, channel, channel.SealAsync, acknowledgments);
-        var preparedGrant = Assert.IsType<VerifiedInstanceGrant>(await issuer.CheckoutAsync(
-            invocation with { Id = Guid.NewGuid() }, deadline.Token));
         var body = "{\"model\":\"a\"}"u8.ToArray();
-        var backend = channel.RespondAsync(issuer, acknowledgments, body, deadline.Token);
+        var backend = channel.RespondAsync(issuer.ClosedGeneration, body, deadline.Token);
         var sending = new VerifiedInstanceTransport(invocation, issuer).SendAsync(invocation, body, null, deadline.Token);
         await channel.EnteredWrite.WaitAsync(deadline.Token);
         Assert.Equal(1, issuer.PhysicalUses);
-        Assert.Equal(1, issuer.Prepared);
+        Assert.False(issuer.Prepared);
         Assert.Equal(0, channel.ReceiverBytes);
 
         // Only the transport and issuer are exercised. This is a synthetic logical timeout.
@@ -48,9 +46,7 @@ public sealed partial class HostCausalDrainTests : IDisposable
                 original = issuer.CloseAndObserve(request);
                 Assert.NotEqual(Guid.Empty, original.CloseId);
                 Assert.Null(original.Witness);
-                Assert.Equal(0, issuer.Prepared);
-                Assert.Null(issuer.TryAuthorizeFirstWrite(preparedGrant));
-                Assert.Null(await issuer.CheckoutAsync(invocation with { Id = Guid.NewGuid() }, deadline.Token));
+                Assert.False(issuer.Prepared);
                 await ReplyAsync(controller, original);
                 Assert.Equal("pending", await ReadLineAsync(controller));
                 prepared = ReadCheckpoint();
@@ -73,11 +69,10 @@ public sealed partial class HostCausalDrainTests : IDisposable
         AssertOnlyInitialLaunch(binding.Incumbent.Operation.Id);
         Assert.Equal(0, channel.ReceiverBytes);
         Assert.Equal(1, issuer.PhysicalUses);
-        var (_, outstandingUse) = await issuer.ClosedFrontier.WaitAsync(deadline.Token);
-        Assert.False(issuer.AcceptTerminal(new CausalBackendTerminal(original.CloseId, outstandingUse)));
+        Assert.False(issuer.AcceptTerminal(new CausalBackendTerminal(original.CloseId, acknowledgments.ChannelIdentity)));
 
         channel.ReleaseWrite();
-        var terminal = await backend.WaitAsync(deadline.Token);
+        var (terminal, wrongGrant) = await backend.WaitAsync(deadline.Token);
         var exchange = await sending.WaitAsync(deadline.Token);
         try
         {
@@ -85,6 +80,11 @@ public sealed partial class HostCausalDrainTests : IDisposable
             var cleanup = exchange.DisposeAsync().AsTask();
             await channel.ChannelSealed.WaitAsync(deadline.Token);
             Assert.False(cleanup.IsCompleted);
+            Assert.True(acknowledgments.Authored(wrongGrant));
+            Assert.Equal(terminal.CloseId, wrongGrant.CloseId);
+            Assert.Equal(terminal.Use.Invocation, wrongGrant.Use.Invocation);
+            Assert.NotEqual(terminal.Use.GrantId, wrongGrant.Use.GrantId);
+            Assert.False(issuer.AcceptTerminal(wrongGrant));
             Assert.False(issuer.AcceptTerminal(terminal with { CloseId = Guid.NewGuid() }));
             Assert.Equal(1, issuer.PhysicalUses);
             Assert.Equal(0, issuer.Releases);
@@ -139,27 +139,91 @@ public sealed partial class HostCausalDrainTests : IDisposable
         Assert.False(logical.TrySetResult("ready"));
     }
 
+    [Theory(Timeout = 25_000)]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ExactPreparedGrantWritesOnlyWhenFirstWriteWinsAgainstClosure(bool closeFirst)
+    {
+        var binding = SyntheticBinding();
+        var invocation = Invocation(binding);
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        var acknowledgments = new BackendAcknowledgements(invocation, binding.BackendId);
+        using var channel = new HeldApplicationChannel(acknowledgments);
+        var prepared = new TaskCompletionSource<VerifiedInstanceGrant>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseCheckout = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var issuer = new SurvivingIssuer(binding, invocation, channel, channel.SealAsync, acknowledgments)
+        {
+            HoldCheckout = grant =>
+            {
+                prepared.SetResult(grant);
+                return releaseCheckout.Task;
+            },
+        };
+        var body = "{\"model\":\"a\"}"u8.ToArray();
+        var sending = new VerifiedInstanceTransport(invocation, issuer).SendAsync(invocation, body, null, deadline.Token);
+        var grant = await prepared.Task.WaitAsync(deadline.Token);
+        Assert.Equal(invocation, grant.Invocation);
+        Assert.Equal(invocation, acknowledgments.ChannelIdentity.Invocation);
+        Assert.True(issuer.Prepared);
+        Assert.Equal(0, issuer.PhysicalUses);
+        var close = CloseRequest(binding);
+
+        if (closeFirst)
+        {
+            var receiver = channel.ObserveReceiverEndAsync(deadline.Token);
+            Assert.NotEqual(Guid.Empty, issuer.CloseAndObserve(close).CloseId);
+            Assert.False(issuer.Prepared);
+            releaseCheckout.SetResult();
+            await Assert.ThrowsAsync<HttpRequestException>(() => sending.WaitAsync(deadline.Token));
+            await channel.ChannelSealed.WaitAsync(deadline.Token);
+            Assert.Equal(0, await receiver.WaitAsync(deadline.Token));
+            Assert.False(channel.EnteredWrite.IsCompleted);
+            Assert.Equal(0, channel.ReceiverBytes);
+            Assert.Equal(0, issuer.PhysicalUses);
+            Assert.Equal(0, issuer.Releases);
+            return;
+        }
+
+        var backend = channel.RespondAsync(issuer.ClosedGeneration, body, deadline.Token);
+        releaseCheckout.SetResult();
+        await channel.EnteredWrite.WaitAsync(deadline.Token);
+        Assert.Equal(1, issuer.PhysicalUses);
+        channel.ReleaseWrite();
+        Assert.Equal(body, await channel.RequestDelivered.WaitAsync(deadline.Token));
+        Assert.Equal(1, issuer.PhysicalUses);
+        Assert.NotEqual(Guid.Empty, issuer.CloseAndObserve(close).CloseId);
+        var (terminal, _) = await backend.WaitAsync(deadline.Token);
+        var exchange = await sending.WaitAsync(deadline.Token);
+        try
+        {
+            Assert.Equal("OK", await exchange.Response.Content.ReadAsStringAsync(deadline.Token));
+            Assert.True(issuer.AcceptTerminal(terminal));
+        }
+        finally
+        {
+            issuer.AcceptTerminal(terminal);
+            await exchange.DisposeAsync().AsTask().WaitAsync(deadline.Token);
+        }
+        Assert.Equal(0, issuer.PhysicalUses);
+        Assert.Equal(1, issuer.Releases);
+    }
+
     [Fact(Timeout = 45_000)]
     public async Task ExactAckBeforeCleanupDoesNotRetireThroughAnAttemptedOrFailedSeal()
     {
-        var plan = new HostCheckpointPlan("a", "a.model", "named", "fixture-config", 1000, "fixture-route", new string('A', 64));
-        var launch = new HostMutation(1, Guid.NewGuid(), HostMutationKind.Launch, plan.Engine, plan.Model, plan.Tier, plan.Digest());
-        var binding = NewBinding(new PartitionScope("fixture-group", "fixture-enrollment", 1, 1, 1), 1, 1,
-            new HostCheckpointLaunchEffect(launch, plan, "fixture-a"));
+        var binding = SyntheticBinding();
         var invocation = Invocation(binding);
         var sealSucceeds = false;
-        var acknowledgments = new BackendAcknowledgements();
+        var acknowledgments = new BackendAcknowledgements(invocation, binding.BackendId);
         var issuer = new SurvivingIssuer(binding, invocation, Stream.Null, () => sealSucceeds
             ? ValueTask.CompletedTask : ValueTask.FromException(new IOException("Synthetic channel seal failure.")), acknowledgments);
         var grant = Assert.IsType<VerifiedInstanceGrant>(await issuer.CheckoutAsync(invocation, CancellationToken.None));
         var permit = Assert.IsAssignableFrom<IAsyncDisposable>(issuer.TryAuthorizeFirstWrite(grant));
         // Small issuer-only control, with an exact synthetic backend acknowledgment.
-        var successor = binding.Incumbent.Plan with { Engine = "b", Model = "b.model" };
-        var stop = new HostMutation(2, Guid.NewGuid(), HostMutationKind.Stop, binding.Route.Engine, binding.Route.ContainerId, null, null);
-        var request = new CausalDrainRequest(Guid.NewGuid(), Environment.ProcessId, binding, stop, 2, successor);
+        var request = CloseRequest(binding);
         var closed = issuer.CloseAndObserve(request);
-        var (_, use) = await issuer.ClosedFrontier.WaitAsync(TimeSpan.FromSeconds(5));
-        Assert.True(issuer.AcceptTerminal(acknowledgments.Complete(closed.CloseId, use)));
+        Assert.NotEqual(Guid.Empty, closed.CloseId);
+        Assert.True(issuer.AcceptTerminal(acknowledgments.Complete(closed.CloseId)));
         Assert.Equal(1, issuer.PhysicalUses);
         Assert.Null(issuer.CloseAndObserve(request).Witness);
 
@@ -203,6 +267,22 @@ public sealed partial class HostCausalDrainTests : IDisposable
 
     private static VerifiedInstanceInvocation Invocation(CausalRouteBinding binding) =>
         new(binding.Route, Guid.NewGuid(), new Uri("http://fixture.invalid/v1/chat/completions"));
+
+    private static CausalRouteBinding SyntheticBinding()
+    {
+        var plan = new HostCheckpointPlan("a", "a.model", "named", "fixture-config", 1000, "fixture-route", new string('A', 64));
+        var launch = new HostMutation(1, Guid.NewGuid(), HostMutationKind.Launch, plan.Engine, plan.Model, plan.Tier, plan.Digest());
+        return NewBinding(new PartitionScope("fixture-group", "fixture-enrollment", 1, 1, 1), 1, 1,
+            new HostCheckpointLaunchEffect(launch, plan, "fixture-a"));
+    }
+
+    private static CausalDrainRequest CloseRequest(CausalRouteBinding binding)
+    {
+        var successor = binding.Incumbent.Plan with { Engine = "b", Model = "b.model" };
+        var epoch = binding.Incumbent.Operation.Epoch + 1;
+        var stop = new HostMutation(epoch, Guid.NewGuid(), HostMutationKind.Stop, binding.Route.Engine, binding.Route.ContainerId, null, null);
+        return new CausalDrainRequest(Guid.NewGuid(), Environment.ProcessId, binding, stop, epoch, successor);
+    }
 
     private async Task<CausalDrainReply> TryDrainAsync(SurvivingIssuer issuer, string target, string expected, bool publishWitness = false)
     {
