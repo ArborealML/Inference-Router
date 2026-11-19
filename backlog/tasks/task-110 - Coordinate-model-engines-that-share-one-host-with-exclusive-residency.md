@@ -1,11 +1,11 @@
 ---
 id: TASK-110
 title: Coordinate model engines that share one host with exclusive residency
-status: Preparing
+status: Blocked
 assignee:
   - '@gpt-6.2-sol-lifecycle'
 created_date: '2026-11-18T18:13:00Z'
-updated_date: '2026-11-19T11:16:00Z'
+updated_date: '2026-11-19T11:21:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -13,13 +13,14 @@ dependencies:
   - TASK-25
   - TASK-64
   - TASK-118
+  - TASK-137
 ordinal: 108000
 ---
 
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Lifecycle is identifying the concrete broker and observer prerequisites after review found no enrolled production writer.
+Blocked on Claire identifying the host and daemon administrator in TASK-137. That administrator supplies the read-only inventory of writer and observer identities, partition coverage, protected endpoints and the trusted monotonic head outside the snapshot boundary.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
