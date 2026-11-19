@@ -1,6 +1,6 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.76)
+Status: draft, continuously revised (v0.12.77)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
@@ -352,6 +352,10 @@ daemon transaction per engine. 137 tests green.
   that answers no `upload_url`, an upload that dies or answers no asset id, an asset name listed twice on
   the release, and a tag that moves after the first resolve. No tag has run the gate: still configured,
   not proven.
+- v0.12.77 — qualify offline one-shot transport over a host-issued, preauthenticated serving
+  stream. First write requires the exact issued grant and its verified route and invocation.
+  The single-host issuer refuses reuse, and the exchange retains its permit through
+  issuer-confirmed cleanup (§5.3.1, TASK-130).
 - v0.12.76 — Qualify independent partition vacancy and owner evidence for the offline
   successor fixture. Prepared operations requery after restart and uncertain dispatch stays fenced
   (§5.3.1, TASK-110).
@@ -1746,6 +1750,17 @@ or applied effect. Prepared stop and launch requery on reopen and keep their rec
 Reopened dispatch reconciles only the exact operation. A recovered stop requires a new vacancy
 query. A recovered launch uses its exact terminal and effect. The retirement and partition evidence
 are synthetic. Production enrollment remains disabled.
+
+**Offline first write (TASK-130).** The issuer transfers an authenticated application stream
+bound to one invocation. The transport validates the route and invocation before connecting its
+HTTP/1.1 serializer. The first nonempty application write presents the exact grant for that stream.
+The single-host issuer fixture permits one checkout per invocation and consumes the issued grant
+once. It rejects an unissued grant even when the invocation and stream match. The exchange closes
+the grant it receives and awaits terminal permit cleanup. The issuer owns the cleanup of a grant
+it withholds. In the substitution fixture, the issuer explicitly revokes and closes the withheld
+original grant, and the peer observes EOF with zero bytes. Production enrollment still requires
+frozen request body and authorization binding, durable issuance and authoritative physical
+retirement.
 
 **Production evidence.** The raw Docker inventory can report known foreign containers. Even an
 empty inventory leaves vacancy unproven, and raw Docker supplies no terminal receipt for an
