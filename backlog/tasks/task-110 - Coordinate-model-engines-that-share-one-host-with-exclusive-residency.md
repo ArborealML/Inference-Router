@@ -1,11 +1,11 @@
 ---
 id: TASK-110
 title: Coordinate model engines that share one host with exclusive residency
-status: Waiting
+status: In Progress
 assignee:
   - '@gpt-6.2-sol-lifecycle'
 created_date: '2026-11-18T18:13:00Z'
-updated_date: '2026-11-19T19:01:00Z'
+updated_date: '2026-11-19T19:10:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -20,7 +20,7 @@ ordinal: 108000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-The independent plan verdict will wake Lifecycle. The privileged export matched the incumbent and both resident device filters allow both GPUs. Docker group access remains shared. Exclusivity, private-route enforcement and journal freshness remain unverified. The conditional design uses a supervised writer, separate observer and independently anchored checkpoint. Existing enforcement must be assessed before selecting the implementation. Offline plan review dispatched November 19.
+Lifecycle owns one offline initial-launch and reopen fixture. Accepted the November 19 independent review for this slice. The live incumbent is foreign to enrollment. Its device filters allow both GPUs and shared Docker access remains. Independent host exclusion, route enforcement, authenticated observation and journal freshness remain unverified.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -37,7 +37,7 @@ The independent plan verdict will wake Lifecycle. The privileged export matched 
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Review on 955436b requires a real supervised writer, protected daemon channel and independent whole-partition observer. Identify owners and enrollment evidence. Persist reproducible effective settings or verified immutable bytes; share one operation and epoch. Dispatch and worker acceptance precede I/O. Independently verify exact create/start and settings before durable effect and acknowledgment. Serialize authenticated ID lookup; require crash-durable installation and monotonic evidence against valid-old rollback. Unknown effects bar resend and successors until authoritative reconciliation or certified pre-issue rejection. Later, attest the connected process on both closed reads; preserve an interrupted budget origin or expire. Stay closed after observation. No launch or provisioning authorized.
+Freeze the exact serialized create bytes using the landed projection. Bind a single operation and epoch to anchored dispatch, worker acceptance and an exclusive may-have-issued decision before fake daemon mutation. An independent fake observer must corroborate create and start, immutable ID, settings, complete pair coverage and closed ingress. Reopen all stores against a separate head and recover the original receipt bytes with one effect and zero resend, competing issue or grants. Reuse checkpoint, ledger and readiness coverage. Add only missing authority, observer mismatch, valid-old restore, split-head and delayed-issue controls. Host enforcement, directory durability and authenticated anchoring remain production obligations.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
