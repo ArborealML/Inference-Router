@@ -3,11 +3,11 @@ id: TASK-111
 title: >-
   Build the local router configuration for every supported select-model
   configuration
-status: Waiting
+status: Preparing
 assignee:
-  - '@gpt-6.2-astra'
+  - '@gpt-6.2-sol-config'
 created_date: '2026-11-18T18:15:00Z'
-updated_date: '2026-11-19T15:23:00Z'
+updated_date: '2026-11-19T15:34:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -19,7 +19,7 @@ ordinal: 109000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Hosted CI and the parent feature review on [PR #32](https://github.com/ArborealML/Inference-Router/pull/32) wake the coordinator. The GLM fixture literal review passed on 8ac206c; its whitespace change preserves the empty JSON object. Focused Release passed 35/35 and the opt-in sweep compared 10,150 distinct vectors in 8.443 seconds. Exactly 49 default expectations gained root exposure. All 26 HyperQwen expectations retained their prior payloads. Unified configuration, alternate reconfiguration, protected credential bind, actual host binding and host authority remain open.
+Config is identifying the first remaining dependency for the native Pi pair. [PR #32](https://github.com/ArborealML/Inference-Router/pull/32) merged at b380d5c. Review accepted the one provider condition at a5cb39d and the literal correction at 8ac206c. The existing byte-exact bare-port case covers the optional negative; the same computed TCP key supplies both declarations. Focused Release passed 35/35, the sweep compared 10,150 vectors and hosted CI passed. Forty-nine derived port projections changed. Unified configuration, alternate reconfiguration, credential bind, actual host binding and host authority remain open.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -32,7 +32,7 @@ Hosted CI and the parent feature review on [PR #32](https://github.com/ArborealM
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Within the host-port branch, use the existing target-plan or launch-option declaration flags and the same container TCP key for exposure and binding. Cover the unprojected sibling, independent entrypoint and IPC options, and unchanged bare-port, resources-only and no-port cases. Reuse policy, dual-format and refusal controls. Update exactly 49 derived expected payloads from archived publish arguments and update their reference digest; preserve original source and specimen hashes. Record changed plan identity. Qualify the narrow controls, fixture smoke and one opt-in sweep without daemon access.
+Map remaining literal criteria to their existing dependency owners. Identify whether independent configuration work can advance the first native pair, or name the host evidence needed next. Reuse landed qualification.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
