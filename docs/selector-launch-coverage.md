@@ -109,8 +109,134 @@ to 5 and 52 GiB of Docker shared memory. The `parked` tier defaults to two seque
 and allows one through eight when re-resolved. The other five parking tiers keep their
 named sequence counts. Other choices require separate configuration of the resolved vector.
 
-Qualification and landing would bring coverage to 75 of 75 normalized offline target
-defaults. This measures launch projection. Effective shared memory, available host RAM
+The parking slice brought landed coverage to 75 of 75 normalized offline target defaults. This measures launch projection. Effective shared memory, available host RAM
 of at least cache plus 10 GiB after the predecessor stops, device and logging compatibility,
 readiness and host authority require independent verification before activation. The first
 native swap pair remains Qwen and Swift on one host.
+
+## Reproduce the offline comparison
+
+The six redacted TOML specimens cover 75 default launch vectors across nine canonical
+models. Each has one native router-owned engine. Four independently configured Maya
+engines share one listener address, leaving three distinct backend addresses in the file
+union. The sweep exercises the loader's refusal when those six definitions are put into
+one native configuration. One combined native config and live selector-to-router
+equivalence remain open.
+
+The [fixture manifest](../tests/Arboreal.InferenceRouter.Tests/SelectorFixtures/manifest.json)
+pins the six original specimen hashes, the redacted hashes in their committed LF form, the serving launcher source
+hashes and the original receipt hashes. The [selector reference](../tests/Arboreal.InferenceRouter.Tests/SelectorFixtures/selector-reference.json)
+contains the expected create document, accepted spellings, default, capacity and applicable
+device choices for each row. Its expected values were transcribed from the original
+records and serving branches. The verifier never uses the AIR specimens, production
+serialization or another AIR golden to derive those expectations.
+
+Run the cheap check used by default CI.
+
+```sh
+dotnet test -c Release --filter FullyQualifiedName~SelectorDifferentialTests.RedactedFixtureSmoke
+```
+
+Run the direct sweep as an explicit opt-in. Both the production loader and Docker
+create projection run in-process. A throwing HTTP handler guards the provider and
+catalog view. The driver calls neither container lifecycle nor serving endpoints.
+
+```sh
+ARBOREAL_RUN_SELECTOR_DIFFERENTIAL=1 dotnet test -c Release \
+  --filter FullyQualifiedName~SelectorDifferentialTests.OfflineSelectorSweep \
+  --logger 'console;verbosity=detailed'
+```
+
+The sweep requires 10,150 distinct full create comparisons. That count is 49
+non-HyperQwen defaults, 2,496 parking and 28 ordinary HyperQwen vectors at each of four
+utilization forms, three off-grid values across different shapes, and two in-range
+float-neighbor cases. Devices are checked in both recorded orders for paired tiers and
+on both recorded devices for single tiers. The four utilization forms are the omitted
+literal `0.90` and explicit `0.5`, `0.9`, and `0.95`. Parking covers every integer cache
+value from 1 to 48 GiB, and variable `parked` covers every sequence count from 1 through 8.
+The five fixed-lane profiles retain their named counts. Each projection comes from a
+native config resolved through the production loader. AIR takes explicit effective
+settings in config, so different vectors require generating and loading different settings.
+
+The driver reports the 169 explicit spelling probes, 22 omitted-profile probes, 78
+format comparisons and the executed AIR refusals independently of that vector count.
+It verifies actual catalog `MaxContext` and `MaxSlots` separately from the backend command
+and environment. The HyperQwen DP2 `32k` declaration omits global `max_slots`, so AIR
+loads a default of one while `MAX_SEQS=4` applies per replica. MiniMax uses the production
+catalog lookup to resolve the original spelling and loaded `32k` default, then projects
+both omitted and explicit profiles with the original native settings. The comparator
+checks full property sets and preserves array order. A deliberate one-byte change to
+expected parked `HostConfig.ShmSize` must identify that exact field.
+
+### Reference provenance
+
+A clone can check the redacted bytes and reproduce the AIR results. The named original
+artifacts below are held by the coordinator with the private selector receipt. Verifying
+their authenticity and the redaction against them requires access to those artifacts.
+
+| Original record pinned in the manifest | What it supplies |
+| --- | --- |
+| `defiant-selector-matrix.json` | Model names, aliases, raw tier spellings and defaults, contexts, slots, source fingerprints, and archived option inventory |
+| `defiant-native-coverage-3af5f10.json` | 75 normalized rows, exact Strata target environment and bind choices, memory and total memory-plus-swap, HyperQwen device choices and parking ranges |
+| `defiant-launch-targets.json` | Strata launcher and adapter provenance, common resource and bind intent, and protected credential target |
+| `selector-validator-receipt.json` | Original inventory census, including 337 rejected spelling pairs and 1,248 parking tuples before device expansion |
+
+The serving rules used by the reference are summarized here with the source filenames
+and branches. The manifest pins the original bytes for each file.
+
+- `select_model.py`, model table, preflight and `gpu_utilization`. Resolve the spellings
+  and defaults before launch. Parse explicit utilization as a float in the inclusive
+  range 0.50 to 0.95, then pass its normalized string. The launcher supplies `0.90` on omission.
+- `start-strata.sh`, serving `docker run` and resource branch, with profile sizing and
+  tuning from `strata_profiles.py`. All GPUs, 2 GiB SHM, unlimited memlock, 120-second
+  stop timeout, ordered data and model binds, and the model/profile environment. Qwen
+  `768k` and `1m` require 54 GiB RAM and 58 GiB total RAM plus swap. The selector puts
+  model mounts first and interleaves shared and profile environment entries.
+- `minimax_selector.py`, `glm_selector.py`, and `deepseek_selector.py`, their serving
+  `docker('run', …)` and `mounts` branches. All GPUs, host IPC, 20 CPUs, 54/56 GiB RAM and
+  total RAM plus swap, 120-second stop timeout and the Python entrypoint. MiniMax
+  serves `32k` without a Docker health command. GLM passes its tier text and uses
+  30-second interval and 3600-second start period. DeepSeek passes decimal context
+  and adds the 10-second timeout and three retries. Both health commands use
+  `CMD-SHELL`. Maya-XS adds the two absolute-path mounts and environment to the
+  ordered DeepSeek serving mounts before the separate writable log.
+- `start-hyperqwen-profile.sh`, device/profile validation and cache-directory branches,
+  plus `hyperqwen_parking.py` and the archived HyperQwen serving launcher. The
+  launcher preserves GPU order, prepares a 2 GiB default SHM size or
+  `(cacheGiB + 4) × 2³⁰` bytes when parking, and sets `KV_OFFLOAD_GB` and
+  `MAX_SEQS` according to the tier. The `32k` branch uses data parallelism.
+  The other branches set tensor parallelism, with `single-64k` selecting fast
+  context and four draft tokens. Mount order, the two Swift tiers' shared tuning
+  cache, the profile cache choices, environment order, init, restart and rotation
+  settings are carried into the reference.
+
+Inputs outside the utilization bounds, including `0.49999999999999994` and
+`0.9500000000000001`, malformed floats, NaN and infinity, cache 0 or 49, sequence
+counts 0 or 9, conflicting fixed lanes and invalid devices are selector source
+cases. The clone run does not execute the installed selector parser or re-run the
+337 archived rejections. Its negative operations exercise the AIR loader on a
+duplicate GPU index, zero SHM, the protected mount and the combined config, and
+exercise the AIR resolver on an unknown tier.
+
+### Substitutions and payload differences
+
+The specimens substitute inert install and HyperQwen mount prefixes and synthetic
+credential, cache and adapter paths. In-image absolute bind aliases retain the same
+value as their source where the selector requires it. Loopback ports are shifted
+together, preserving listener sharing, and the router label is synthetic. Each
+image family uses a distinct fixture-only locator, named repository digest and
+daemon-local ID. The request's `Image` must be the local ID. The fixtures provide
+zero evidence about any current host image association.
+
+| Field | Difference represented in the reference |
+| --- | --- |
+| `Labels` | AIR adds canonical router/engine/model/profile labels. Selector launch and signature labels are absent. HyperQwen's selector signature varies with the vector and active artifacts. |
+| `Env`, `HostConfig.Mounts` (Strata) | Expected AIR order is common then tier. The selector's order differs. The protected `/run` credential target is refused. The projected substitute path and its environment value require pinned-image verification. |
+| `ExposedPorts` (Strata, Maya) | The selector CLI publishes the TCP port and emits root exposure. AIR projects the matching `PortBindings` with root exposure absent. Any inherited exposure needs pinned-image evidence. |
+| `HostConfig.RestartPolicy` (Strata, Maya) | AIR omits the Docker default. The selector passes explicit `--restart no`. |
+| `HostConfig.LogConfig` (HyperQwen) | AIR leaves the driver empty and requests both rotation options. Effective driver identity and support still require verification. |
+
+Host checks still include exact image, checkpoint and instance binding, physical device
+and toolkit fit, effective mounts and SHM, available RAM after stop, restart and logging,
+serving readiness, fenced ownership and route-specific admission. Config loads and create
+projections establish configured launch intent.

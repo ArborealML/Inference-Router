@@ -1,0 +1,904 @@
+auto_switch = false
+default_model = "swift"
+
+[engine.hyperqwen]
+kind = "openai-compatible"
+endpoint = "http://127.0.0.1:28020/v1"
+lifecycle_owner = "router"
+lifecycle = "docker"
+
+[engine.hyperqwen.docker]
+image = "registry.invalid/selector-fixture/hyperqwen:offline"
+image_id = "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+image_repo_digest = "registry.invalid/selector-fixture/hyperqwen@sha256:2222222222222222222222222222222222222222222222222222222222222222"
+image_platform = "linux/amd64"
+router_id = "selector-fixture"
+command = ["single"]
+host_ip = "127.0.0.1"
+host_port = 28020
+container_port = 8000
+stop_timeout_ms = 60000
+init = true
+restart = "unless-stopped"
+log_rotation = { max_size = "20m", max_files = 3 }
+env = ["HOME=/cache", "MODEL=/app/models", "PREPARE=0", "VERIFY=0", "HOST=0.0.0.0", "PORT=8000"]
+
+[engine.hyperqwen.docker.resources]
+gpu = { device_ids = ["0", "1"] }
+shm_size_bytes = 2147483648
+
+[engine.hyperqwen.catalog."swift"]
+aliases = ["swift-27b"]
+default_profile = "max"
+
+[[engine.hyperqwen.catalog."swift".serving]]
+name = "max"
+max_context = 262144
+max_slots = 1
+[engine.hyperqwen.catalog."swift".serving.docker]
+env = [
+  "CTX=long",
+  "SPEC=mtp",
+  "DRAFT_TOKENS=3",
+  "MAX_LEN=262144",
+  "MAX_SEQS=1",
+  "GPU_UTIL=0.90",
+  "TOOLS=1",
+  "PREFIX_CACHE=1",
+  "VISION=1",
+  "API_SERVERS=1",
+  "HF_HUB_OFFLINE=1",
+  "TRANSFORMERS_OFFLINE=1",
+  "PYTORCH_CUDA_ALLOC_CONF=expandable_segments:False",
+  "CUDA_DEVICE_ORDER=PCI_BUS_ID",
+  "NCCL_IB_DISABLE=1",
+  "EXTRA_ARGS=--tensor-parallel-size 2 --disable-custom-all-reduce --limit-mm-per-prompt {\"image\":{\"count\":8}} --chat-template /app/managed-chat-template.jinja"
+]
+bind_mounts = [
+  { source = "/fixture/hyperqwen/checkpoints/swift", target = "/app/models", read_only = true },
+  { source = "/fixture/hyperqwen/chat-template.jinja", target = "/app/managed-chat-template.jinja", read_only = true },
+  { source = "/fixture/hyperqwen/cache/swift/max-context", target = "/cache", read_only = false },
+  { source = "/fixture/hyperqwen/token", target = "/app/fixture-token", read_only = true }
+]
+
+[[engine.hyperqwen.catalog."swift".serving]]
+name = "max-2"
+max_context = 262144
+max_slots = 2
+[engine.hyperqwen.catalog."swift".serving.docker]
+env = [
+  "CTX=long",
+  "SPEC=mtp",
+  "DRAFT_TOKENS=3",
+  "MAX_LEN=262144",
+  "MAX_SEQS=2",
+  "GPU_UTIL=0.90",
+  "TOOLS=1",
+  "PREFIX_CACHE=1",
+  "VISION=1",
+  "API_SERVERS=1",
+  "HF_HUB_OFFLINE=1",
+  "TRANSFORMERS_OFFLINE=1",
+  "PYTORCH_CUDA_ALLOC_CONF=expandable_segments:False",
+  "CUDA_DEVICE_ORDER=PCI_BUS_ID",
+  "NCCL_IB_DISABLE=1",
+  "EXTRA_ARGS=--tensor-parallel-size 2 --disable-custom-all-reduce --max-num-batched-tokens 2048 --limit-mm-per-prompt {\"image\":{\"count\":8}} --chat-template /app/managed-chat-template.jinja"
+]
+bind_mounts = [
+  { source = "/fixture/hyperqwen/checkpoints/swift", target = "/app/models", read_only = true },
+  { source = "/fixture/hyperqwen/chat-template.jinja", target = "/app/managed-chat-template.jinja", read_only = true },
+  { source = "/fixture/hyperqwen/tuning/cache/tp-128k-c2", target = "/cache", read_only = false },
+  { source = "/fixture/hyperqwen/token", target = "/app/fixture-token", read_only = true }
+]
+
+[[engine.hyperqwen.catalog."swift".serving]]
+name = "128k-2"
+max_context = 131072
+max_slots = 2
+[engine.hyperqwen.catalog."swift".serving.docker]
+env = [
+  "CTX=long",
+  "SPEC=mtp",
+  "DRAFT_TOKENS=3",
+  "MAX_LEN=131072",
+  "MAX_SEQS=2",
+  "GPU_UTIL=0.90",
+  "TOOLS=1",
+  "PREFIX_CACHE=1",
+  "VISION=1",
+  "API_SERVERS=1",
+  "HF_HUB_OFFLINE=1",
+  "TRANSFORMERS_OFFLINE=1",
+  "PYTORCH_CUDA_ALLOC_CONF=expandable_segments:False",
+  "CUDA_DEVICE_ORDER=PCI_BUS_ID",
+  "NCCL_IB_DISABLE=1",
+  "EXTRA_ARGS=--tensor-parallel-size 2 --disable-custom-all-reduce --max-num-batched-tokens 2048 --limit-mm-per-prompt {\"image\":{\"count\":8}} --chat-template /app/managed-chat-template.jinja"
+]
+bind_mounts = [
+  { source = "/fixture/hyperqwen/checkpoints/swift", target = "/app/models", read_only = true },
+  { source = "/fixture/hyperqwen/chat-template.jinja", target = "/app/managed-chat-template.jinja", read_only = true },
+  { source = "/fixture/hyperqwen/tuning/cache/tp-128k-c2", target = "/cache", read_only = false },
+  { source = "/fixture/hyperqwen/token", target = "/app/fixture-token", read_only = true }
+]
+
+[[engine.hyperqwen.catalog."swift".serving]]
+name = "32k"
+max_context = 32768
+[engine.hyperqwen.catalog."swift".serving.docker]
+env = [
+  "CTX=long",
+  "SPEC=mtp",
+  "DRAFT_TOKENS=3",
+  "MAX_LEN=32768",
+  "MAX_SEQS=4",
+  "GPU_UTIL=0.90",
+  "TOOLS=1",
+  "PREFIX_CACHE=1",
+  "VISION=1",
+  "API_SERVERS=1",
+  "HF_HUB_OFFLINE=1",
+  "TRANSFORMERS_OFFLINE=1",
+  "PYTORCH_CUDA_ALLOC_CONF=expandable_segments:False",
+  "CUDA_DEVICE_ORDER=PCI_BUS_ID",
+  "NCCL_IB_DISABLE=1",
+  "EXTRA_ARGS=--data-parallel-size 2 --limit-mm-per-prompt {\"image\":{\"count\":8}} --chat-template /app/managed-chat-template.jinja"
+]
+bind_mounts = [
+  { source = "/fixture/hyperqwen/checkpoints/swift", target = "/app/models", read_only = true },
+  { source = "/fixture/hyperqwen/chat-template.jinja", target = "/app/managed-chat-template.jinja", read_only = true },
+  { source = "/fixture/hyperqwen/cache/swift/32k", target = "/cache", read_only = false },
+  { source = "/fixture/hyperqwen/token", target = "/app/fixture-token", read_only = true }
+]
+
+[[engine.hyperqwen.catalog."swift".serving]]
+name = "single-64k"
+max_context = 65536
+max_slots = 1
+[engine.hyperqwen.catalog."swift".serving.docker]
+gpu = { device_ids = ["1"] }
+env = [
+  "CTX=fast",
+  "SPEC=mtp",
+  "DRAFT_TOKENS=4",
+  "MAX_LEN=65536",
+  "MAX_SEQS=1",
+  "GPU_UTIL=0.90",
+  "TOOLS=1",
+  "PREFIX_CACHE=1",
+  "VISION=1",
+  "API_SERVERS=1",
+  "HF_HUB_OFFLINE=1",
+  "TRANSFORMERS_OFFLINE=1",
+  "PYTORCH_CUDA_ALLOC_CONF=expandable_segments:False",
+  "CUDA_DEVICE_ORDER=PCI_BUS_ID",
+  "NCCL_IB_DISABLE=1",
+  "EXTRA_ARGS=--tensor-parallel-size 1 --disable-custom-all-reduce --max-num-batched-tokens 2048 --limit-mm-per-prompt {\"image\":{\"count\":8}} --chat-template /app/managed-chat-template.jinja"
+]
+bind_mounts = [
+  { source = "/fixture/hyperqwen/checkpoints/swift", target = "/app/models", read_only = true },
+  { source = "/fixture/hyperqwen/chat-template.jinja", target = "/app/managed-chat-template.jinja", read_only = true },
+  { source = "/fixture/hyperqwen/cache/swift/single-64k", target = "/cache", read_only = false },
+  { source = "/fixture/hyperqwen/token", target = "/app/fixture-token", read_only = true }
+]
+
+[[engine.hyperqwen.catalog."swift".serving]]
+name = "single-128k-2"
+max_context = 131072
+max_slots = 2
+[engine.hyperqwen.catalog."swift".serving.docker]
+gpu = { device_ids = ["1"] }
+env = [
+  "CTX=long",
+  "SPEC=mtp",
+  "DRAFT_TOKENS=3",
+  "MAX_LEN=131072",
+  "MAX_SEQS=2",
+  "GPU_UTIL=0.90",
+  "TOOLS=1",
+  "PREFIX_CACHE=1",
+  "VISION=1",
+  "API_SERVERS=1",
+  "HF_HUB_OFFLINE=1",
+  "TRANSFORMERS_OFFLINE=1",
+  "PYTORCH_CUDA_ALLOC_CONF=expandable_segments:False",
+  "CUDA_DEVICE_ORDER=PCI_BUS_ID",
+  "NCCL_IB_DISABLE=1",
+  "EXTRA_ARGS=--tensor-parallel-size 1 --disable-custom-all-reduce --max-num-batched-tokens 2048 --limit-mm-per-prompt {\"image\":{\"count\":8}} --chat-template /app/managed-chat-template.jinja"
+]
+bind_mounts = [
+  { source = "/fixture/hyperqwen/checkpoints/swift", target = "/app/models", read_only = true },
+  { source = "/fixture/hyperqwen/chat-template.jinja", target = "/app/managed-chat-template.jinja", read_only = true },
+  { source = "/fixture/hyperqwen/single-cache/swift/single-128k-2", target = "/cache", read_only = false },
+  { source = "/fixture/hyperqwen/token", target = "/app/fixture-token", read_only = true }
+]
+
+[[engine.hyperqwen.catalog."swift".serving]]
+name = "single-max"
+max_context = 163840
+max_slots = 1
+[engine.hyperqwen.catalog."swift".serving.docker]
+gpu = { device_ids = ["1"] }
+env = [
+  "CTX=long",
+  "SPEC=mtp",
+  "DRAFT_TOKENS=3",
+  "MAX_LEN=163840",
+  "MAX_SEQS=1",
+  "GPU_UTIL=0.90",
+  "TOOLS=1",
+  "PREFIX_CACHE=1",
+  "VISION=1",
+  "API_SERVERS=1",
+  "HF_HUB_OFFLINE=1",
+  "TRANSFORMERS_OFFLINE=1",
+  "PYTORCH_CUDA_ALLOC_CONF=expandable_segments:False",
+  "CUDA_DEVICE_ORDER=PCI_BUS_ID",
+  "NCCL_IB_DISABLE=1",
+  "EXTRA_ARGS=--tensor-parallel-size 1 --disable-custom-all-reduce --max-num-batched-tokens 2048 --limit-mm-per-prompt {\"image\":{\"count\":8}} --chat-template /app/managed-chat-template.jinja"
+]
+bind_mounts = [
+  { source = "/fixture/hyperqwen/checkpoints/swift", target = "/app/models", read_only = true },
+  { source = "/fixture/hyperqwen/chat-template.jinja", target = "/app/managed-chat-template.jinja", read_only = true },
+  { source = "/fixture/hyperqwen/single-cache/swift/single-max", target = "/cache", read_only = false },
+  { source = "/fixture/hyperqwen/token", target = "/app/fixture-token", read_only = true }
+]
+
+[[engine.hyperqwen.catalog."swift".serving]]
+name = "parked"
+max_context = 262144
+max_slots = 2
+[engine.hyperqwen.catalog."swift".serving.docker]
+shm_size_bytes = 38654705664
+env = [
+  "CTX=long",
+  "SPEC=mtp",
+  "DRAFT_TOKENS=3",
+  "MAX_LEN=262144",
+  "MAX_SEQS=2",
+  "GPU_UTIL=0.90",
+  "TOOLS=1",
+  "PREFIX_CACHE=1",
+  "VISION=1",
+  "API_SERVERS=1",
+  "HF_HUB_OFFLINE=1",
+  "TRANSFORMERS_OFFLINE=1",
+  "PYTORCH_CUDA_ALLOC_CONF=expandable_segments:False",
+  "CUDA_DEVICE_ORDER=PCI_BUS_ID",
+  "NCCL_IB_DISABLE=1",
+  "KV_OFFLOAD_GB=32",
+  "PTH_FA=0",
+  "FA2_FP8KV=0",
+  "REQ_METRICS=1",
+  "REQ_METRICS_DETAILED=0",
+  "PREFIX_RETENTION=",
+  "EXTRA_ARGS=--tensor-parallel-size 2 --disable-custom-all-reduce --max-num-batched-tokens 2048 --limit-mm-per-prompt {\"image\":{\"count\":8}} --chat-template /app/managed-chat-template.jinja"
+]
+bind_mounts = [
+  { source = "/fixture/hyperqwen/checkpoints/swift", target = "/app/models", read_only = true },
+  { source = "/fixture/hyperqwen/chat-template.jinja", target = "/app/managed-chat-template.jinja", read_only = true },
+  { source = "/fixture/hyperqwen/parking-cache/swift", target = "/cache", read_only = false },
+  { source = "/fixture/hyperqwen/token", target = "/app/fixture-token", read_only = true }
+]
+
+[[engine.hyperqwen.catalog."swift".serving]]
+name = "64k-4"
+max_context = 65536
+max_slots = 4
+[engine.hyperqwen.catalog."swift".serving.docker]
+shm_size_bytes = 38654705664
+env = [
+  "CTX=long",
+  "SPEC=mtp",
+  "DRAFT_TOKENS=3",
+  "MAX_LEN=65536",
+  "MAX_SEQS=4",
+  "GPU_UTIL=0.90",
+  "TOOLS=1",
+  "PREFIX_CACHE=1",
+  "VISION=1",
+  "API_SERVERS=1",
+  "HF_HUB_OFFLINE=1",
+  "TRANSFORMERS_OFFLINE=1",
+  "PYTORCH_CUDA_ALLOC_CONF=expandable_segments:False",
+  "CUDA_DEVICE_ORDER=PCI_BUS_ID",
+  "NCCL_IB_DISABLE=1",
+  "KV_OFFLOAD_GB=32",
+  "PTH_FA=0",
+  "FA2_FP8KV=0",
+  "REQ_METRICS=1",
+  "REQ_METRICS_DETAILED=0",
+  "PREFIX_RETENTION=",
+  "EXTRA_ARGS=--tensor-parallel-size 2 --disable-custom-all-reduce --max-num-batched-tokens 2048 --limit-mm-per-prompt {\"image\":{\"count\":8}} --chat-template /app/managed-chat-template.jinja"
+]
+bind_mounts = [
+  { source = "/fixture/hyperqwen/checkpoints/swift", target = "/app/models", read_only = true },
+  { source = "/fixture/hyperqwen/chat-template.jinja", target = "/app/managed-chat-template.jinja", read_only = true },
+  { source = "/fixture/hyperqwen/parking-cache/swift", target = "/cache", read_only = false },
+  { source = "/fixture/hyperqwen/token", target = "/app/fixture-token", read_only = true }
+]
+
+[[engine.hyperqwen.catalog."swift".serving]]
+name = "64k-6"
+max_context = 65536
+max_slots = 6
+[engine.hyperqwen.catalog."swift".serving.docker]
+shm_size_bytes = 38654705664
+env = [
+  "CTX=long",
+  "SPEC=mtp",
+  "DRAFT_TOKENS=3",
+  "MAX_LEN=65536",
+  "MAX_SEQS=6",
+  "GPU_UTIL=0.90",
+  "TOOLS=1",
+  "PREFIX_CACHE=1",
+  "VISION=1",
+  "API_SERVERS=1",
+  "HF_HUB_OFFLINE=1",
+  "TRANSFORMERS_OFFLINE=1",
+  "PYTORCH_CUDA_ALLOC_CONF=expandable_segments:False",
+  "CUDA_DEVICE_ORDER=PCI_BUS_ID",
+  "NCCL_IB_DISABLE=1",
+  "KV_OFFLOAD_GB=32",
+  "PTH_FA=0",
+  "FA2_FP8KV=0",
+  "REQ_METRICS=1",
+  "REQ_METRICS_DETAILED=0",
+  "PREFIX_RETENTION=",
+  "EXTRA_ARGS=--tensor-parallel-size 2 --disable-custom-all-reduce --max-num-batched-tokens 2048 --limit-mm-per-prompt {\"image\":{\"count\":8}} --chat-template /app/managed-chat-template.jinja"
+]
+bind_mounts = [
+  { source = "/fixture/hyperqwen/checkpoints/swift", target = "/app/models", read_only = true },
+  { source = "/fixture/hyperqwen/chat-template.jinja", target = "/app/managed-chat-template.jinja", read_only = true },
+  { source = "/fixture/hyperqwen/parking-cache/swift", target = "/cache", read_only = false },
+  { source = "/fixture/hyperqwen/token", target = "/app/fixture-token", read_only = true }
+]
+
+[[engine.hyperqwen.catalog."swift".serving]]
+name = "64k-8"
+max_context = 65536
+max_slots = 8
+[engine.hyperqwen.catalog."swift".serving.docker]
+shm_size_bytes = 38654705664
+env = [
+  "CTX=long",
+  "SPEC=mtp",
+  "DRAFT_TOKENS=3",
+  "MAX_LEN=65536",
+  "MAX_SEQS=8",
+  "GPU_UTIL=0.90",
+  "TOOLS=1",
+  "PREFIX_CACHE=1",
+  "VISION=1",
+  "API_SERVERS=1",
+  "HF_HUB_OFFLINE=1",
+  "TRANSFORMERS_OFFLINE=1",
+  "PYTORCH_CUDA_ALLOC_CONF=expandable_segments:False",
+  "CUDA_DEVICE_ORDER=PCI_BUS_ID",
+  "NCCL_IB_DISABLE=1",
+  "KV_OFFLOAD_GB=32",
+  "PTH_FA=0",
+  "FA2_FP8KV=0",
+  "REQ_METRICS=1",
+  "REQ_METRICS_DETAILED=0",
+  "PREFIX_RETENTION=",
+  "EXTRA_ARGS=--tensor-parallel-size 2 --disable-custom-all-reduce --max-num-batched-tokens 2048 --limit-mm-per-prompt {\"image\":{\"count\":8}} --chat-template /app/managed-chat-template.jinja"
+]
+bind_mounts = [
+  { source = "/fixture/hyperqwen/checkpoints/swift", target = "/app/models", read_only = true },
+  { source = "/fixture/hyperqwen/chat-template.jinja", target = "/app/managed-chat-template.jinja", read_only = true },
+  { source = "/fixture/hyperqwen/parking-cache/swift", target = "/cache", read_only = false },
+  { source = "/fixture/hyperqwen/token", target = "/app/fixture-token", read_only = true }
+]
+
+[[engine.hyperqwen.catalog."swift".serving]]
+name = "96k-4"
+max_context = 98304
+max_slots = 4
+[engine.hyperqwen.catalog."swift".serving.docker]
+shm_size_bytes = 38654705664
+env = [
+  "CTX=long",
+  "SPEC=mtp",
+  "DRAFT_TOKENS=3",
+  "MAX_LEN=98304",
+  "MAX_SEQS=4",
+  "GPU_UTIL=0.90",
+  "TOOLS=1",
+  "PREFIX_CACHE=1",
+  "VISION=1",
+  "API_SERVERS=1",
+  "HF_HUB_OFFLINE=1",
+  "TRANSFORMERS_OFFLINE=1",
+  "PYTORCH_CUDA_ALLOC_CONF=expandable_segments:False",
+  "CUDA_DEVICE_ORDER=PCI_BUS_ID",
+  "NCCL_IB_DISABLE=1",
+  "KV_OFFLOAD_GB=32",
+  "PTH_FA=0",
+  "FA2_FP8KV=0",
+  "REQ_METRICS=1",
+  "REQ_METRICS_DETAILED=0",
+  "PREFIX_RETENTION=",
+  "EXTRA_ARGS=--tensor-parallel-size 2 --disable-custom-all-reduce --max-num-batched-tokens 2048 --limit-mm-per-prompt {\"image\":{\"count\":8}} --chat-template /app/managed-chat-template.jinja"
+]
+bind_mounts = [
+  { source = "/fixture/hyperqwen/checkpoints/swift", target = "/app/models", read_only = true },
+  { source = "/fixture/hyperqwen/chat-template.jinja", target = "/app/managed-chat-template.jinja", read_only = true },
+  { source = "/fixture/hyperqwen/parking-cache/swift", target = "/cache", read_only = false },
+  { source = "/fixture/hyperqwen/token", target = "/app/fixture-token", read_only = true }
+]
+
+[[engine.hyperqwen.catalog."swift".serving]]
+name = "128k-4"
+max_context = 131072
+max_slots = 4
+[engine.hyperqwen.catalog."swift".serving.docker]
+shm_size_bytes = 38654705664
+env = [
+  "CTX=long",
+  "SPEC=mtp",
+  "DRAFT_TOKENS=3",
+  "MAX_LEN=131072",
+  "MAX_SEQS=4",
+  "GPU_UTIL=0.90",
+  "TOOLS=1",
+  "PREFIX_CACHE=1",
+  "VISION=1",
+  "API_SERVERS=1",
+  "HF_HUB_OFFLINE=1",
+  "TRANSFORMERS_OFFLINE=1",
+  "PYTORCH_CUDA_ALLOC_CONF=expandable_segments:False",
+  "CUDA_DEVICE_ORDER=PCI_BUS_ID",
+  "NCCL_IB_DISABLE=1",
+  "KV_OFFLOAD_GB=32",
+  "PTH_FA=0",
+  "FA2_FP8KV=0",
+  "REQ_METRICS=1",
+  "REQ_METRICS_DETAILED=0",
+  "PREFIX_RETENTION=",
+  "EXTRA_ARGS=--tensor-parallel-size 2 --disable-custom-all-reduce --max-num-batched-tokens 2048 --limit-mm-per-prompt {\"image\":{\"count\":8}} --chat-template /app/managed-chat-template.jinja"
+]
+bind_mounts = [
+  { source = "/fixture/hyperqwen/checkpoints/swift", target = "/app/models", read_only = true },
+  { source = "/fixture/hyperqwen/chat-template.jinja", target = "/app/managed-chat-template.jinja", read_only = true },
+  { source = "/fixture/hyperqwen/parking-cache/swift", target = "/cache", read_only = false },
+  { source = "/fixture/hyperqwen/token", target = "/app/fixture-token", read_only = true }
+]
+
+[engine.hyperqwen.catalog."qwen-3.8-27b"]
+aliases = ["classic"]
+default_profile = "max"
+
+[[engine.hyperqwen.catalog."qwen-3.8-27b".serving]]
+name = "max"
+max_context = 262144
+max_slots = 1
+[engine.hyperqwen.catalog."qwen-3.8-27b".serving.docker]
+env = [
+  "CTX=long",
+  "SPEC=mtp",
+  "DRAFT_TOKENS=3",
+  "MAX_LEN=262144",
+  "MAX_SEQS=1",
+  "GPU_UTIL=0.90",
+  "TOOLS=1",
+  "PREFIX_CACHE=1",
+  "VISION=1",
+  "API_SERVERS=1",
+  "HF_HUB_OFFLINE=1",
+  "TRANSFORMERS_OFFLINE=1",
+  "PYTORCH_CUDA_ALLOC_CONF=expandable_segments:False",
+  "CUDA_DEVICE_ORDER=PCI_BUS_ID",
+  "NCCL_IB_DISABLE=1",
+  "EXTRA_ARGS=--tensor-parallel-size 2 --disable-custom-all-reduce --limit-mm-per-prompt {\"image\":{\"count\":8}} --chat-template /app/managed-chat-template.jinja"
+]
+bind_mounts = [
+  { source = "/fixture/hyperqwen/checkpoints/classic", target = "/app/models", read_only = true },
+  { source = "/fixture/hyperqwen/chat-template.jinja", target = "/app/managed-chat-template.jinja", read_only = true },
+  { source = "/fixture/hyperqwen/cache/classic/max-context", target = "/cache", read_only = false },
+  { source = "/fixture/hyperqwen/token", target = "/app/fixture-token", read_only = true }
+]
+
+[[engine.hyperqwen.catalog."qwen-3.8-27b".serving]]
+name = "max-2"
+max_context = 262144
+max_slots = 2
+[engine.hyperqwen.catalog."qwen-3.8-27b".serving.docker]
+env = [
+  "CTX=long",
+  "SPEC=mtp",
+  "DRAFT_TOKENS=3",
+  "MAX_LEN=262144",
+  "MAX_SEQS=2",
+  "GPU_UTIL=0.90",
+  "TOOLS=1",
+  "PREFIX_CACHE=1",
+  "VISION=1",
+  "API_SERVERS=1",
+  "HF_HUB_OFFLINE=1",
+  "TRANSFORMERS_OFFLINE=1",
+  "PYTORCH_CUDA_ALLOC_CONF=expandable_segments:False",
+  "CUDA_DEVICE_ORDER=PCI_BUS_ID",
+  "NCCL_IB_DISABLE=1",
+  "EXTRA_ARGS=--tensor-parallel-size 2 --disable-custom-all-reduce --max-num-batched-tokens 2048 --limit-mm-per-prompt {\"image\":{\"count\":8}} --chat-template /app/managed-chat-template.jinja"
+]
+bind_mounts = [
+  { source = "/fixture/hyperqwen/checkpoints/classic", target = "/app/models", read_only = true },
+  { source = "/fixture/hyperqwen/chat-template.jinja", target = "/app/managed-chat-template.jinja", read_only = true },
+  { source = "/fixture/hyperqwen/cache/classic/max-2", target = "/cache", read_only = false },
+  { source = "/fixture/hyperqwen/token", target = "/app/fixture-token", read_only = true }
+]
+
+[[engine.hyperqwen.catalog."qwen-3.8-27b".serving]]
+name = "128k-2"
+max_context = 131072
+max_slots = 2
+[engine.hyperqwen.catalog."qwen-3.8-27b".serving.docker]
+env = [
+  "CTX=long",
+  "SPEC=mtp",
+  "DRAFT_TOKENS=3",
+  "MAX_LEN=131072",
+  "MAX_SEQS=2",
+  "GPU_UTIL=0.90",
+  "TOOLS=1",
+  "PREFIX_CACHE=1",
+  "VISION=1",
+  "API_SERVERS=1",
+  "HF_HUB_OFFLINE=1",
+  "TRANSFORMERS_OFFLINE=1",
+  "PYTORCH_CUDA_ALLOC_CONF=expandable_segments:False",
+  "CUDA_DEVICE_ORDER=PCI_BUS_ID",
+  "NCCL_IB_DISABLE=1",
+  "EXTRA_ARGS=--tensor-parallel-size 2 --disable-custom-all-reduce --max-num-batched-tokens 2048 --limit-mm-per-prompt {\"image\":{\"count\":8}} --chat-template /app/managed-chat-template.jinja"
+]
+bind_mounts = [
+  { source = "/fixture/hyperqwen/checkpoints/classic", target = "/app/models", read_only = true },
+  { source = "/fixture/hyperqwen/chat-template.jinja", target = "/app/managed-chat-template.jinja", read_only = true },
+  { source = "/fixture/hyperqwen/cache/classic/128k-2", target = "/cache", read_only = false },
+  { source = "/fixture/hyperqwen/token", target = "/app/fixture-token", read_only = true }
+]
+
+[[engine.hyperqwen.catalog."qwen-3.8-27b".serving]]
+name = "32k"
+max_context = 32768
+[engine.hyperqwen.catalog."qwen-3.8-27b".serving.docker]
+env = [
+  "CTX=long",
+  "SPEC=mtp",
+  "DRAFT_TOKENS=3",
+  "MAX_LEN=32768",
+  "MAX_SEQS=4",
+  "GPU_UTIL=0.90",
+  "TOOLS=1",
+  "PREFIX_CACHE=1",
+  "VISION=1",
+  "API_SERVERS=1",
+  "HF_HUB_OFFLINE=1",
+  "TRANSFORMERS_OFFLINE=1",
+  "PYTORCH_CUDA_ALLOC_CONF=expandable_segments:False",
+  "CUDA_DEVICE_ORDER=PCI_BUS_ID",
+  "NCCL_IB_DISABLE=1",
+  "EXTRA_ARGS=--data-parallel-size 2 --limit-mm-per-prompt {\"image\":{\"count\":8}} --chat-template /app/managed-chat-template.jinja"
+]
+bind_mounts = [
+  { source = "/fixture/hyperqwen/checkpoints/classic", target = "/app/models", read_only = true },
+  { source = "/fixture/hyperqwen/chat-template.jinja", target = "/app/managed-chat-template.jinja", read_only = true },
+  { source = "/fixture/hyperqwen/cache/classic/32k", target = "/cache", read_only = false },
+  { source = "/fixture/hyperqwen/token", target = "/app/fixture-token", read_only = true }
+]
+
+[[engine.hyperqwen.catalog."qwen-3.8-27b".serving]]
+name = "single-64k"
+max_context = 65536
+max_slots = 1
+[engine.hyperqwen.catalog."qwen-3.8-27b".serving.docker]
+gpu = { device_ids = ["1"] }
+env = [
+  "CTX=fast",
+  "SPEC=mtp",
+  "DRAFT_TOKENS=4",
+  "MAX_LEN=65536",
+  "MAX_SEQS=1",
+  "GPU_UTIL=0.90",
+  "TOOLS=1",
+  "PREFIX_CACHE=1",
+  "VISION=1",
+  "API_SERVERS=1",
+  "HF_HUB_OFFLINE=1",
+  "TRANSFORMERS_OFFLINE=1",
+  "PYTORCH_CUDA_ALLOC_CONF=expandable_segments:False",
+  "CUDA_DEVICE_ORDER=PCI_BUS_ID",
+  "NCCL_IB_DISABLE=1",
+  "EXTRA_ARGS=--tensor-parallel-size 1 --disable-custom-all-reduce --max-num-batched-tokens 2048 --limit-mm-per-prompt {\"image\":{\"count\":8}} --chat-template /app/managed-chat-template.jinja"
+]
+bind_mounts = [
+  { source = "/fixture/hyperqwen/checkpoints/classic", target = "/app/models", read_only = true },
+  { source = "/fixture/hyperqwen/chat-template.jinja", target = "/app/managed-chat-template.jinja", read_only = true },
+  { source = "/fixture/hyperqwen/cache/classic/single-64k", target = "/cache", read_only = false },
+  { source = "/fixture/hyperqwen/token", target = "/app/fixture-token", read_only = true }
+]
+
+[[engine.hyperqwen.catalog."qwen-3.8-27b".serving]]
+name = "single-128k-2"
+max_context = 131072
+max_slots = 2
+[engine.hyperqwen.catalog."qwen-3.8-27b".serving.docker]
+gpu = { device_ids = ["1"] }
+env = [
+  "CTX=long",
+  "SPEC=mtp",
+  "DRAFT_TOKENS=3",
+  "MAX_LEN=131072",
+  "MAX_SEQS=2",
+  "GPU_UTIL=0.90",
+  "TOOLS=1",
+  "PREFIX_CACHE=1",
+  "VISION=1",
+  "API_SERVERS=1",
+  "HF_HUB_OFFLINE=1",
+  "TRANSFORMERS_OFFLINE=1",
+  "PYTORCH_CUDA_ALLOC_CONF=expandable_segments:False",
+  "CUDA_DEVICE_ORDER=PCI_BUS_ID",
+  "NCCL_IB_DISABLE=1",
+  "EXTRA_ARGS=--tensor-parallel-size 1 --disable-custom-all-reduce --max-num-batched-tokens 2048 --limit-mm-per-prompt {\"image\":{\"count\":8}} --chat-template /app/managed-chat-template.jinja"
+]
+bind_mounts = [
+  { source = "/fixture/hyperqwen/checkpoints/classic", target = "/app/models", read_only = true },
+  { source = "/fixture/hyperqwen/chat-template.jinja", target = "/app/managed-chat-template.jinja", read_only = true },
+  { source = "/fixture/hyperqwen/single-cache/classic/single-128k-2", target = "/cache", read_only = false },
+  { source = "/fixture/hyperqwen/token", target = "/app/fixture-token", read_only = true }
+]
+
+[[engine.hyperqwen.catalog."qwen-3.8-27b".serving]]
+name = "single-max"
+max_context = 163840
+max_slots = 1
+[engine.hyperqwen.catalog."qwen-3.8-27b".serving.docker]
+gpu = { device_ids = ["1"] }
+env = [
+  "CTX=long",
+  "SPEC=mtp",
+  "DRAFT_TOKENS=3",
+  "MAX_LEN=163840",
+  "MAX_SEQS=1",
+  "GPU_UTIL=0.90",
+  "TOOLS=1",
+  "PREFIX_CACHE=1",
+  "VISION=1",
+  "API_SERVERS=1",
+  "HF_HUB_OFFLINE=1",
+  "TRANSFORMERS_OFFLINE=1",
+  "PYTORCH_CUDA_ALLOC_CONF=expandable_segments:False",
+  "CUDA_DEVICE_ORDER=PCI_BUS_ID",
+  "NCCL_IB_DISABLE=1",
+  "EXTRA_ARGS=--tensor-parallel-size 1 --disable-custom-all-reduce --max-num-batched-tokens 2048 --limit-mm-per-prompt {\"image\":{\"count\":8}} --chat-template /app/managed-chat-template.jinja"
+]
+bind_mounts = [
+  { source = "/fixture/hyperqwen/checkpoints/classic", target = "/app/models", read_only = true },
+  { source = "/fixture/hyperqwen/chat-template.jinja", target = "/app/managed-chat-template.jinja", read_only = true },
+  { source = "/fixture/hyperqwen/single-cache/classic/single-max", target = "/cache", read_only = false },
+  { source = "/fixture/hyperqwen/token", target = "/app/fixture-token", read_only = true }
+]
+
+[[engine.hyperqwen.catalog."qwen-3.8-27b".serving]]
+name = "parked"
+max_context = 262144
+max_slots = 2
+[engine.hyperqwen.catalog."qwen-3.8-27b".serving.docker]
+shm_size_bytes = 38654705664
+env = [
+  "CTX=long",
+  "SPEC=mtp",
+  "DRAFT_TOKENS=3",
+  "MAX_LEN=262144",
+  "MAX_SEQS=2",
+  "GPU_UTIL=0.90",
+  "TOOLS=1",
+  "PREFIX_CACHE=1",
+  "VISION=1",
+  "API_SERVERS=1",
+  "HF_HUB_OFFLINE=1",
+  "TRANSFORMERS_OFFLINE=1",
+  "PYTORCH_CUDA_ALLOC_CONF=expandable_segments:False",
+  "CUDA_DEVICE_ORDER=PCI_BUS_ID",
+  "NCCL_IB_DISABLE=1",
+  "KV_OFFLOAD_GB=32",
+  "PTH_FA=0",
+  "FA2_FP8KV=0",
+  "REQ_METRICS=1",
+  "REQ_METRICS_DETAILED=0",
+  "PREFIX_RETENTION=",
+  "EXTRA_ARGS=--tensor-parallel-size 2 --disable-custom-all-reduce --max-num-batched-tokens 2048 --limit-mm-per-prompt {\"image\":{\"count\":8}} --chat-template /app/managed-chat-template.jinja"
+]
+bind_mounts = [
+  { source = "/fixture/hyperqwen/checkpoints/classic", target = "/app/models", read_only = true },
+  { source = "/fixture/hyperqwen/chat-template.jinja", target = "/app/managed-chat-template.jinja", read_only = true },
+  { source = "/fixture/hyperqwen/parking-cache/classic", target = "/cache", read_only = false },
+  { source = "/fixture/hyperqwen/token", target = "/app/fixture-token", read_only = true }
+]
+
+[[engine.hyperqwen.catalog."qwen-3.8-27b".serving]]
+name = "64k-4"
+max_context = 65536
+max_slots = 4
+[engine.hyperqwen.catalog."qwen-3.8-27b".serving.docker]
+shm_size_bytes = 38654705664
+env = [
+  "CTX=long",
+  "SPEC=mtp",
+  "DRAFT_TOKENS=3",
+  "MAX_LEN=65536",
+  "MAX_SEQS=4",
+  "GPU_UTIL=0.90",
+  "TOOLS=1",
+  "PREFIX_CACHE=1",
+  "VISION=1",
+  "API_SERVERS=1",
+  "HF_HUB_OFFLINE=1",
+  "TRANSFORMERS_OFFLINE=1",
+  "PYTORCH_CUDA_ALLOC_CONF=expandable_segments:False",
+  "CUDA_DEVICE_ORDER=PCI_BUS_ID",
+  "NCCL_IB_DISABLE=1",
+  "KV_OFFLOAD_GB=32",
+  "PTH_FA=0",
+  "FA2_FP8KV=0",
+  "REQ_METRICS=1",
+  "REQ_METRICS_DETAILED=0",
+  "PREFIX_RETENTION=",
+  "EXTRA_ARGS=--tensor-parallel-size 2 --disable-custom-all-reduce --max-num-batched-tokens 2048 --limit-mm-per-prompt {\"image\":{\"count\":8}} --chat-template /app/managed-chat-template.jinja"
+]
+bind_mounts = [
+  { source = "/fixture/hyperqwen/checkpoints/classic", target = "/app/models", read_only = true },
+  { source = "/fixture/hyperqwen/chat-template.jinja", target = "/app/managed-chat-template.jinja", read_only = true },
+  { source = "/fixture/hyperqwen/parking-cache/classic", target = "/cache", read_only = false },
+  { source = "/fixture/hyperqwen/token", target = "/app/fixture-token", read_only = true }
+]
+
+[[engine.hyperqwen.catalog."qwen-3.8-27b".serving]]
+name = "64k-6"
+max_context = 65536
+max_slots = 6
+[engine.hyperqwen.catalog."qwen-3.8-27b".serving.docker]
+shm_size_bytes = 38654705664
+env = [
+  "CTX=long",
+  "SPEC=mtp",
+  "DRAFT_TOKENS=3",
+  "MAX_LEN=65536",
+  "MAX_SEQS=6",
+  "GPU_UTIL=0.90",
+  "TOOLS=1",
+  "PREFIX_CACHE=1",
+  "VISION=1",
+  "API_SERVERS=1",
+  "HF_HUB_OFFLINE=1",
+  "TRANSFORMERS_OFFLINE=1",
+  "PYTORCH_CUDA_ALLOC_CONF=expandable_segments:False",
+  "CUDA_DEVICE_ORDER=PCI_BUS_ID",
+  "NCCL_IB_DISABLE=1",
+  "KV_OFFLOAD_GB=32",
+  "PTH_FA=0",
+  "FA2_FP8KV=0",
+  "REQ_METRICS=1",
+  "REQ_METRICS_DETAILED=0",
+  "PREFIX_RETENTION=",
+  "EXTRA_ARGS=--tensor-parallel-size 2 --disable-custom-all-reduce --max-num-batched-tokens 2048 --limit-mm-per-prompt {\"image\":{\"count\":8}} --chat-template /app/managed-chat-template.jinja"
+]
+bind_mounts = [
+  { source = "/fixture/hyperqwen/checkpoints/classic", target = "/app/models", read_only = true },
+  { source = "/fixture/hyperqwen/chat-template.jinja", target = "/app/managed-chat-template.jinja", read_only = true },
+  { source = "/fixture/hyperqwen/parking-cache/classic", target = "/cache", read_only = false },
+  { source = "/fixture/hyperqwen/token", target = "/app/fixture-token", read_only = true }
+]
+
+[[engine.hyperqwen.catalog."qwen-3.8-27b".serving]]
+name = "64k-8"
+max_context = 65536
+max_slots = 8
+[engine.hyperqwen.catalog."qwen-3.8-27b".serving.docker]
+shm_size_bytes = 38654705664
+env = [
+  "CTX=long",
+  "SPEC=mtp",
+  "DRAFT_TOKENS=3",
+  "MAX_LEN=65536",
+  "MAX_SEQS=8",
+  "GPU_UTIL=0.90",
+  "TOOLS=1",
+  "PREFIX_CACHE=1",
+  "VISION=1",
+  "API_SERVERS=1",
+  "HF_HUB_OFFLINE=1",
+  "TRANSFORMERS_OFFLINE=1",
+  "PYTORCH_CUDA_ALLOC_CONF=expandable_segments:False",
+  "CUDA_DEVICE_ORDER=PCI_BUS_ID",
+  "NCCL_IB_DISABLE=1",
+  "KV_OFFLOAD_GB=32",
+  "PTH_FA=0",
+  "FA2_FP8KV=0",
+  "REQ_METRICS=1",
+  "REQ_METRICS_DETAILED=0",
+  "PREFIX_RETENTION=",
+  "EXTRA_ARGS=--tensor-parallel-size 2 --disable-custom-all-reduce --max-num-batched-tokens 2048 --limit-mm-per-prompt {\"image\":{\"count\":8}} --chat-template /app/managed-chat-template.jinja"
+]
+bind_mounts = [
+  { source = "/fixture/hyperqwen/checkpoints/classic", target = "/app/models", read_only = true },
+  { source = "/fixture/hyperqwen/chat-template.jinja", target = "/app/managed-chat-template.jinja", read_only = true },
+  { source = "/fixture/hyperqwen/parking-cache/classic", target = "/cache", read_only = false },
+  { source = "/fixture/hyperqwen/token", target = "/app/fixture-token", read_only = true }
+]
+
+[[engine.hyperqwen.catalog."qwen-3.8-27b".serving]]
+name = "96k-4"
+max_context = 98304
+max_slots = 4
+[engine.hyperqwen.catalog."qwen-3.8-27b".serving.docker]
+shm_size_bytes = 38654705664
+env = [
+  "CTX=long",
+  "SPEC=mtp",
+  "DRAFT_TOKENS=3",
+  "MAX_LEN=98304",
+  "MAX_SEQS=4",
+  "GPU_UTIL=0.90",
+  "TOOLS=1",
+  "PREFIX_CACHE=1",
+  "VISION=1",
+  "API_SERVERS=1",
+  "HF_HUB_OFFLINE=1",
+  "TRANSFORMERS_OFFLINE=1",
+  "PYTORCH_CUDA_ALLOC_CONF=expandable_segments:False",
+  "CUDA_DEVICE_ORDER=PCI_BUS_ID",
+  "NCCL_IB_DISABLE=1",
+  "KV_OFFLOAD_GB=32",
+  "PTH_FA=0",
+  "FA2_FP8KV=0",
+  "REQ_METRICS=1",
+  "REQ_METRICS_DETAILED=0",
+  "PREFIX_RETENTION=",
+  "EXTRA_ARGS=--tensor-parallel-size 2 --disable-custom-all-reduce --max-num-batched-tokens 2048 --limit-mm-per-prompt {\"image\":{\"count\":8}} --chat-template /app/managed-chat-template.jinja"
+]
+bind_mounts = [
+  { source = "/fixture/hyperqwen/checkpoints/classic", target = "/app/models", read_only = true },
+  { source = "/fixture/hyperqwen/chat-template.jinja", target = "/app/managed-chat-template.jinja", read_only = true },
+  { source = "/fixture/hyperqwen/parking-cache/classic", target = "/cache", read_only = false },
+  { source = "/fixture/hyperqwen/token", target = "/app/fixture-token", read_only = true }
+]
+
+[[engine.hyperqwen.catalog."qwen-3.8-27b".serving]]
+name = "128k-4"
+max_context = 131072
+max_slots = 4
+[engine.hyperqwen.catalog."qwen-3.8-27b".serving.docker]
+shm_size_bytes = 38654705664
+env = [
+  "CTX=long",
+  "SPEC=mtp",
+  "DRAFT_TOKENS=3",
+  "MAX_LEN=131072",
+  "MAX_SEQS=4",
+  "GPU_UTIL=0.90",
+  "TOOLS=1",
+  "PREFIX_CACHE=1",
+  "VISION=1",
+  "API_SERVERS=1",
+  "HF_HUB_OFFLINE=1",
+  "TRANSFORMERS_OFFLINE=1",
+  "PYTORCH_CUDA_ALLOC_CONF=expandable_segments:False",
+  "CUDA_DEVICE_ORDER=PCI_BUS_ID",
+  "NCCL_IB_DISABLE=1",
+  "KV_OFFLOAD_GB=32",
+  "PTH_FA=0",
+  "FA2_FP8KV=0",
+  "REQ_METRICS=1",
+  "REQ_METRICS_DETAILED=0",
+  "PREFIX_RETENTION=",
+  "EXTRA_ARGS=--tensor-parallel-size 2 --disable-custom-all-reduce --max-num-batched-tokens 2048 --limit-mm-per-prompt {\"image\":{\"count\":8}} --chat-template /app/managed-chat-template.jinja"
+]
+bind_mounts = [
+  { source = "/fixture/hyperqwen/checkpoints/classic", target = "/app/models", read_only = true },
+  { source = "/fixture/hyperqwen/chat-template.jinja", target = "/app/managed-chat-template.jinja", read_only = true },
+  { source = "/fixture/hyperqwen/parking-cache/classic", target = "/cache", read_only = false },
+  { source = "/fixture/hyperqwen/token", target = "/app/fixture-token", read_only = true }
+]

@@ -18,6 +18,7 @@
 
   <ItemGroup>
     <Using Include="Xunit" />
+    <EmbeddedResource Include="SelectorFixtures/*" LogicalName="SelectorFixtures/%(Filename)%(Extension)" />
   </ItemGroup>
 
   <ItemGroup>
