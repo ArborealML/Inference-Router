@@ -33,5 +33,5 @@ Delete only dotnet-quality: preview in CI and release; preserve the action and g
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-[PR #17](https://github.com/ArborealML/Inference-Router/pull/17) merged at bac532b. [Hosted CI](https://github.com/ArborealML/Inference-Router/actions/runs/44490496023) found SDK 11.0.100 installed, restored, built and passed 986 Release tests with zero skips, Linux Native AOT and smoke. The review accepted the two workflow deletions but checked the board-only parent for their presence. GitHub commit API verified both reviewed hunks verbatim on the implementation child 3422493; supplied the corrected head reference. No Windows release execution or direct CLI version measurement was claimed.
+[PR #17](https://github.com/ArborealML/Inference-Router/pull/17) merged at bac532b. Independent review accepted both workflow deletions and confirmed their exact implementation commit 3422493 against its parent. [Hosted CI](https://github.com/ArborealML/Inference-Router/actions/runs/44490496023) found SDK 11.0.100 installed, restored and built, passed 986 Release tests with zero skips, and passed Linux Native AOT and smoke. Verification covered Ubuntu CI and static parity with release workflow setup.
 <!-- SECTION:NOTES:END -->
