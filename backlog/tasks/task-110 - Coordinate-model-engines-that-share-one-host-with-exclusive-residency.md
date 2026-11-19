@@ -1,11 +1,11 @@
 ---
 id: TASK-110
 title: Coordinate model engines that share one host with exclusive residency
-status: In Progress
+status: Waiting
 assignee:
-  - '@gpt-6.2-sol-lifecycle'
+  - '@gpt-6.2-astra'
 created_date: '2026-11-18T18:13:00Z'
-updated_date: '2026-11-19T19:32:00Z'
+updated_date: '2026-11-19T19:41:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -20,7 +20,7 @@ ordinal: 108000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Lifecycle owns one offline correction to [draft PR #35](https://github.com/ArborealML/Inference-Router/pull/35). Review of b37b0ca found that crossed plan and create bytes could pass, and the grant denial ignored reopened ingress policy. Nine focused and [1,474 hosted tests](https://github.com/ArborealML/Inference-Router/actions/runs/44597565139) passed on that head. Production enrollment remains gated.
+Hosted CI and the correction verdict wake [PR #35](https://github.com/ArborealML/Inference-Router/pull/35). At 7ba85bd all eleven focused offline cases passed with zero skips, including crossed payloads before dispatch, reopened ingress policy, independently seeded observer state and both Applied completion splits. Bounded correction review dispatched November 19. The parent review identified missing plan and policy binding despite green CI. Live enrollment remains gated.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
