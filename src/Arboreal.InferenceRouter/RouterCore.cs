@@ -13,6 +13,7 @@ public sealed class RouterCore : IInferenceRouter
     private readonly IRequestScheduler _scheduler;
     private readonly EventRing _events;
     private readonly TimeProvider _clock;
+    private readonly ExactTicketAdmission? _admission;
     private readonly Dictionary<string, EngineRuntime> _engines = new(StringComparer.OrdinalIgnoreCase);
     /// <summary>The same engines as the capability scan sees, fixed once at construction. A stable list is
     /// what lets one scan prove that no engine published while it was deciding (§5.5).</summary>
@@ -34,6 +35,10 @@ public sealed class RouterCore : IInferenceRouter
     private long _seq;
     private readonly CancellationTokenSource _shutdown = new();
     internal Action? BeforeCostCommitForTests;
+    internal Action<RouterTicket>? BeforeAdmissionCommitForTests;
+    internal Action<RouterTicket>? BeforeAdmissionPreparationForTests;
+    internal Action<bool>? BeforeDispatchParkForTests;
+    internal Action<Task>? AfterDispatchParkForTests;
 
     public RouterCore(RouterConfig config, IRequestScheduler? scheduler = null, EventRing? events = null)
         : this(config, scheduler, events, TimeProvider.System)
@@ -41,7 +46,8 @@ public sealed class RouterCore : IInferenceRouter
     }
 
     internal RouterCore(RouterConfig config, IRequestScheduler? scheduler, EventRing? events, TimeProvider clock,
-                        Func<EngineDefinition, IEngineLifecycleProvider>? lifecycleFactory = null)
+                        Func<EngineDefinition, IEngineLifecycleProvider>? lifecycleFactory = null,
+                        ExactTicketAdmission? admission = null)
     {
         config.ValidateLifecycleTopology();
         _config = config;
@@ -58,6 +64,8 @@ public sealed class RouterCore : IInferenceRouter
         foreach (var (id, td) in config.Threads)
             _threads[id] = new RouterThread(id, td.Priority, td.Weight, td.ModelAffinity);
         _capabilitySources = [.. _engines.Values];
+        _admission = admission;
+        admission?.Attach(_engines.Count, _clock, SignalDispatch);
     }
 
     public EventRing Events => _events;
@@ -119,6 +127,7 @@ public sealed class RouterCore : IInferenceRouter
             _events.Append(new RouterEvent { Kind = "thread.priority_changed", ThreadId = threadId, Value = priority.Class });
             foreach (var q in _queues.Values) q.Resort();
         }
+        SignalDispatch();
     }
 
     public ValueTask<RouterTicket> EnqueueAsync(string threadId, InferenceRequest request, CancellationToken ct = default)
@@ -215,6 +224,7 @@ public sealed class RouterCore : IInferenceRouter
         {
             if (q.TryRemoveById(ticketId))
             {
+                _admission?.Invalidate(ticket);
                 Fail(ticket, "cancelled", "cancelled while queued");
                 return true;
             }
@@ -368,25 +378,31 @@ public sealed class RouterCore : IInferenceRouter
 
     // ── dispatch loop ───────────────────────────────────────────────────────
 
-    private readonly SemaphoreSlim _dispatchSignal = new(0, int.MaxValue);
+    private readonly DispatchWake _dispatchWake = new();
 
-    private void SignalDispatch() => _dispatchSignal.Release();
+    private void SignalDispatch() => _dispatchWake.Signal();
 
-    private async Task DispatchLoop()
+    private enum DispatchResult { Dispatched, StateChanged, Parked }
+
+    internal async Task DispatchLoop()
     {
         while (!_shutdown.IsCancellationRequested)
         {
+            var revision = _dispatchWake.Revision;
+            if (DispatchOnce() == DispatchResult.Dispatched) continue;
+
+            BeforeDispatchParkForTests?.Invoke(false);
+            var wake = _dispatchWake.Arm();
+            BeforeDispatchParkForTests?.Invoke(true);
+            if (_dispatchWake.Revision != revision) continue;
+            AfterDispatchParkForTests?.Invoke(wake);
             try
             {
-                await _dispatchSignal.WaitAsync(_shutdown.Token).ConfigureAwait(false);
+                await wake.WaitAsync(_shutdown.Token).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
                 return;
-            }
-            while (TryDispatchOnce())
-            {
-                // drain
             }
         }
     }
@@ -411,141 +427,243 @@ public sealed class RouterCore : IInferenceRouter
         return new SwitchComparison(engine, observation, incumbent, _clock.GetTimestamp(), _clock.GetUtcNow());
     }
 
-    internal bool TryDispatchOnce()
-    {
-        QueuedRequest? candidate = null;
-        EngineRuntime? engine = null;
-        bool switchRequired = false;
-        string? targetProfile = null;
-        SwitchServingProof? servingProof = null;
-        long selectedAt = 0;
+    private readonly record struct QueueHead(ModelQueue Queue, QueueDispatchCandidate Candidate);
+    private readonly record struct Selection(QueueHead Head, SchedulerDecision Decision);
+    private enum TakeResult { Taken, Changed, Ineligible, Expired }
+    private readonly record struct AdmissionTake(TakeResult Result, ExactTicketAdmission.Invocation? Invocation = null);
 
+    internal bool TryDispatchOnce() => DispatchOnce() != DispatchResult.Parked;
+
+    private DispatchResult DispatchOnce()
+    {
+        _admission?.ResumePendingOpeningOwnerPreparations();
+
+        QueueHead[] heads;
         lock (_gate)
+            heads = [.. _queues.Values
+                .Select(static (queue, ordinal) => new QueueHead(queue, queue.SnapshotCandidate(ordinal, HasThreadCapacity)))
+                .OrderBy(static head => head.Candidate.Depth)
+                .ThenBy(static head => head.Candidate.BaselineOrdinal)];
+
+        var comparison = ReadSwitchComparison();
+        for (var next = 0; next < heads.Length;)
         {
-            var ordered = _queues.Values
-                .Select(static (queue, ordinal) =>
-                    (Queue: queue, Candidate: queue.SnapshotCandidate(ordinal, HasThreadCapacity)))
-                .OrderBy(entry => entry.Candidate.Depth)
-                .ThenBy(entry => entry.Candidate.BaselineOrdinal);
-            using var scan = ordered.GetEnumerator();
-            var comparison = ReadSwitchComparison();
-            while (scan.MoveNext())
+            var head = heads[next++];
+            if (head.Candidate.Request is not { } request) continue;
+            var infos = BuildEngineInfos(request, comparison);
+            var decision = _scheduler.SelectNext(request,
+                new SchedulerView(infos, comparison?.UtcNow ?? _clock.GetUtcNow()), _config);
+            if (decision.Engine is null)
             {
-                var (q, snapshot) = scan.Current;
-                if (snapshot.Request is not { } request) continue;
-                var infos = BuildEngineInfos(request, comparison);
-                var decision = _scheduler.SelectNext(request,
-                    new SchedulerView(infos, comparison?.UtcNow ?? _clock.GetUtcNow()), _config);
-                if (decision.Engine is null)
+                MaybeFailDeadline(request);
+                continue;
+            }
+
+            var selection = new Selection(head, decision);
+            var compared = comparison is not null && decision.SwitchRequired;
+            if (comparison is { } cost && compared)
+                selection = OrderEligibleSwitches(heads, ref next, selection, request, cost);
+
+            var candidate = selection.Head.Candidate.Request!;
+            var engine = _engines[selection.Decision.Engine!];
+            if (!(comparison?.Observation.HasCapacity ?? engine.HasCapacity)) continue;
+            var proof = selection.Decision.SwitchRequired
+                ? null
+                : infos.FirstOrDefault(info => info.Name == engine.Name)?.SwitchProof;
+
+            AdmissionTake take;
+            if (_admission is { } admission)
+            {
+                var route = new ExactTicketAdmission.Route(engine.Name, candidate.Ticket.Model, selection.Decision.TargetProfile);
+                var explicitContext = Math.Max(0, candidate.Request.Options?.RequiredContext ?? 0);
+                if (admission.Capture(candidate, route, selection.Decision.SwitchRequired, explicitContext) is not { } claim)
+                    continue;
+                if (compared) BeforeCostCommitForTests?.Invoke();
+                if (candidate.QueueExpired(_clock))
                 {
-                    // The scheduler's reason (no_engines / no_available_engine) is internal: read by the
-                    // scheduler's own tests, never emitted to the feed and never the caller's answer, whose
-                    // wait ends as deadline_exceeded if it ends at all (§6.1). A request that nothing here
-                    // could ever take is refused before it is queued (§5.5), so what reaches this line is a
-                    // wait that could still resolve.
-                    MaybeFailDeadline(request);
+                    MaybeFailDeadline(candidate);
                     continue;
                 }
-                var e = _engines[decision.Engine];
-                if (!(comparison?.Observation.HasCapacity ?? e.HasCapacity)) continue;
-                var selection = (Queue: q, Candidate: snapshot, Decision: decision);
-                Func<bool>? observationIsCurrent = null;
-                if (comparison is { } switchView)
+
+                bool prepared;
+                lock (admission.Gate) prepared = admission.IsPrepared(claim) && admission.IsOpen(claim);
+                if (!prepared)
                 {
-                    if (decision.SwitchRequired)
-                    {
-                        selection = OrderEligibleSwitches(scan, selection, request, switchView);
-                        BeforeCostCommitForTests?.Invoke();
-                    }
-                    observationIsCurrent = () => e.IsDispatchObservationCurrent(switchView.Observation);
+                    BeforeAdmissionPreparationForTests?.Invoke(candidate.Ticket);
+                    admission.Prepare(claim);
+                    continue;
                 }
-                // A cancelled or displaced candidate invalidates this pass. Reapply queue ordering
-                // on the next pass so the scheduler evaluates whichever ticket is now first.
-                if (!selection.Queue.TryTakeExact(selection.Candidate, HasThreadCapacity, observationIsCurrent))
-                    return true;
-                selectedAt = _clock.GetTimestamp();
-                candidate = selection.Candidate.Request!;
-                engine = e;
-                switchRequired = selection.Decision.SwitchRequired;
-                targetProfile = selection.Decision.TargetProfile;
-                if (!switchRequired)
+
+                BeforeAdmissionCommitForTests?.Invoke(candidate.Ticket);
+                lock (admission.Gate)
                 {
-                    foreach (var info in infos)
-                    {
-                        if (info.Name == e.Name)
-                        {
-                            servingProof = info.SwitchProof;
-                            break;
-                        }
-                    }
+                    take = TryTake(selection, engine, comparison, claim);
                 }
-                candidate.Thread.IncrementInflight();
-                engine.BeginRequest(candidate.PromptChars);  // reserve engine capacity now:
-                break;                                     // the drain loop must not over-dispatch
             }
+            else
+            {
+                if (compared) BeforeCostCommitForTests?.Invoke();
+                take = TryTake(selection, engine, comparison, claim: null);
+            }
+
+            if (take.Result == TakeResult.Taken)
+            {
+                StartSelected(candidate, engine, selection.Decision, proof, take.Invocation);
+                return DispatchResult.Dispatched;
+            }
+            if (take.Result == TakeResult.Expired) MaybeFailDeadline(candidate);
+            if (take.Result == TakeResult.Changed) return DispatchResult.StateChanged;
         }
+        return DispatchResult.Parked;
+    }
 
-        if (candidate is null || engine is null) return false;
+    private AdmissionTake TryTake(Selection selection, EngineRuntime engine, SwitchComparison? comparison,
+                                  ExactTicketAdmission.Claim? claim)
+    {
+        var head = selection.Head;
+        var candidate = head.Candidate.Request!;
+        lock (_gate)
+        lock (head.Queue.Gate)
+        {
+            if (_shutdown.IsCancellationRequested) return new(TakeResult.Ineligible);
+            if (claim is { } stamped && _admission is { } admission)
+            {
+                if (!admission.IsOpen(stamped) || !admission.IsPrepared(stamped)) return new(TakeResult.Ineligible);
+                if (candidate.QueueExpired(_clock)) return new(TakeResult.Expired);
+                var observation = engine.ReadDispatchObservation();
+                if (!observation.HasCapacity || !observation.Capability.Healthy ||
+                    observation.Capability.SwitchingToward is not null ||
+                    !engine.CanServeModel(candidate.Ticket.Model, observation.Capability))
+                    return new(TakeResult.Ineligible);
 
+                // The fake supplies a route proof for a switch winner without running lifecycle.
+                // Loaded dispatch uses the engine's live, model-bound observation.
+                var window = admission.Window(stamped);
+                if (!stamped.SwitchRequired)
+                {
+                    if (!observation.Capability.ModelRoster.Contains(candidate.Ticket.Model, StringComparer.OrdinalIgnoreCase))
+                        return new(TakeResult.Ineligible);
+                    window = observation.Capability.Serving.WindowFor(candidate.Ticket.Model);
+                }
+                var availableSlots = observation.SlotLimit - observation.Inflight;
+                if (window < stamped.ExplicitContext || !admission.CanTake(stamped, availableSlots, window))
+                    return new(TakeResult.Ineligible);
+            }
+
+            if (comparison is { } cost && !engine.IsDispatchObservationCurrent(cost.Observation))
+                return new(TakeResult.Changed);
+            if (!engine.HasCapacity) return new(TakeResult.Ineligible);
+            if (claim is not null && candidate.QueueExpired(_clock)) return new(TakeResult.Expired);
+            if (!head.Queue.TryTakeExact(head.Candidate, HasThreadCapacity)) return new(TakeResult.Changed);
+
+            var invocation = claim is { } exact ? _admission!.Authorize(exact) : null;
+            candidate.Thread.IncrementInflight();
+            engine.BeginRequest(candidate.PromptChars);
+            return new(TakeResult.Taken, invocation);
+        }
+    }
+
+    private void StartSelected(QueuedRequest candidate, EngineRuntime engine, SchedulerDecision decision,
+                               SwitchServingProof? servingProof, ExactTicketAdmission.Invocation? invocation)
+    {
         var ticket = candidate.Ticket;
-        if (candidate.Request.Stream && ticket.StreamChannel is null)
-        {
-            // Publish the channel with the state change: a listener that sees Executing must be
-            // able to read the stream from that moment, not only after the engine call starts.
-            ticket.StreamChannel = Channel.CreateUnbounded<ReadOnlyMemory<byte>>(
-                new UnboundedChannelOptions { SingleReader = true, SingleWriter = true });
-        }
-
-        ticket.State = switchRequired ? TicketState.WaitingForModel : TicketState.Executing;
-        ticket.Engine = engine.Name;
-        _events.Append(new RouterEvent
-        {
-            Kind = "request.selected",
-            ThreadId = ticket.ThreadId,
-            TicketId = ticket.Id,
-            Engine = engine.Name,
-            Model = ticket.Model,
-        });
         try
         {
+            var selectedAt = _clock.GetTimestamp();
+            var switchRequired = invocation is null && decision.SwitchRequired;
+            if (candidate.Request.Stream && ticket.StreamChannel is null)
+            {
+                // Publish the channel with the state change: a listener that sees Executing must be
+                // able to read the stream from that moment, not only after the engine call starts.
+                ticket.StreamChannel = Channel.CreateUnbounded<ReadOnlyMemory<byte>>(
+                    new UnboundedChannelOptions { SingleReader = true, SingleWriter = true });
+            }
+
+            ticket.State = switchRequired ? TicketState.WaitingForModel : TicketState.Executing;
+            ticket.Engine = engine.Name;
+            _events.Append(new RouterEvent
+            {
+                Kind = "request.selected",
+                ThreadId = ticket.ThreadId,
+                TicketId = ticket.Id,
+                Engine = engine.Name,
+                Model = ticket.Model,
+            });
             // No cancellation token on Task.Run here: with an already-cancelled token Task.Run hands
             // back a task that never runs the delegate, which would strand the thread slot and the
             // engine slot reserved at pop. ExecuteAsync links its own CTS to _shutdown.
-            _ = Task.Run(() => ExecuteAsync(candidate, engine, switchRequired, targetProfile, servingProof, selectedAt));
+            _ = Task.Run(() => ExecuteAsync(candidate, engine, switchRequired, decision.TargetProfile, servingProof, selectedAt, invocation));
         }
         catch (Exception)
         {
-            engine.EndRequest(candidate.PromptChars);
-            candidate.Thread.DecrementInflight();
-            Fail(ticket, "cancelled", "router is shutting down");
-            SignalDispatch();
+            _ = AbortBeforeExecutionAsync(candidate, engine, invocation);
         }
-        return true;
     }
 
-    private (ModelQueue Queue, QueueDispatchCandidate Candidate, SchedulerDecision Decision) OrderEligibleSwitches(
-        IEnumerator<(ModelQueue Queue, QueueDispatchCandidate Candidate)> scan,
-        (ModelQueue Queue, QueueDispatchCandidate Candidate, SchedulerDecision Decision) baseline,
-        QueuedRequest first, SwitchComparison comparison)
+    private async Task AbortBeforeExecutionAsync(QueuedRequest candidate, EngineRuntime engine,
+                                                  ExactTicketAdmission.Invocation? invocation)
     {
-        var order = new SwitchCostOrder<(ModelQueue Queue, QueueDispatchCandidate Candidate, SchedulerDecision Decision)>();
-        Consider(first, baseline);
-        while (scan.MoveNext())
+        try
         {
-            var (queue, candidate) = scan.Current;
-            if (candidate.Depth != baseline.Candidate.Depth) break;
-            if (candidate.Request is not { } request) continue;
+            await AbortUnstartedInvocationAsync(candidate.Ticket, invocation).ConfigureAwait(false);
+        }
+        finally
+        {
+            engine.EndRequest(candidate.PromptChars);
+            candidate.Thread.DecrementInflight();
+            Fail(candidate.Ticket, "cancelled", "router is shutting down");
+            ReleaseExecutionCancellation(candidate.Ticket);
+            SignalDispatch();
+        }
+    }
+
+    // The router creates this source before enqueue. Detaching it transfers the router's
+    // ownership to this scope and prevents either terminal path from disposing it twice.
+    private static void ReleaseExecutionCancellation(RouterTicket ticket)
+    {
+        using var owned = Interlocked.Exchange(ref ticket.ExecCts, null);
+    }
+
+    private async ValueTask AbortUnstartedInvocationAsync(RouterTicket ticket, ExactTicketAdmission.Invocation? invocation)
+    {
+        if (invocation is null) return;
+        try
+        {
+            await invocation.AbortAsync().ConfigureAwait(false);
+        }
+        catch (InvalidOperationException ex)
+        {
+            // A failed cleanup keeps the submitted use counted. Settling the logical ticket
+            // must not strand its thread or replace a terminal outcome it already published.
+            Fail(ticket, "engine_unreachable", ex.Message);
+        }
+    }
+
+    private Selection OrderEligibleSwitches(QueueHead[] heads, ref int next, Selection baseline,
+                                            QueuedRequest first, SwitchComparison comparison)
+    {
+        var order = new SwitchCostOrder<Selection>();
+        Consider(first, baseline);
+        while (next < heads.Length)
+        {
+            var head = heads[next];
+            if (head.Candidate.Depth != baseline.Head.Candidate.Depth) break;
+            if (head.Candidate.Request is not { } request)
+            {
+                next++;
+                continue;
+            }
             var decision = _scheduler.SelectNext(request,
                 new SchedulerView(BuildEngineInfos(request, comparison), comparison.UtcNow), _config);
-            if (decision.Engine is null) continue;
-            if (!decision.SwitchRequired || request.PriorityNode.Priority.CompareTo(first.PriorityNode.Priority) != 0)
+            if (decision.Engine is not null &&
+                (!decision.SwitchRequired || request.PriorityNode.Priority.CompareTo(first.PriorityNode.Priority) != 0))
                 break;
-            Consider(request, (queue, candidate, decision));
+            next++;
+            if (decision.Engine is not null) Consider(request, new Selection(head, decision));
         }
         return order.Selected ?? baseline;
 
-        void Consider(QueuedRequest request, (ModelQueue Queue, QueueDispatchCandidate Candidate,
-                                              SchedulerDecision Decision) selection)
+        void Consider(QueuedRequest request, Selection selection)
         {
             var estimate = comparison.Engine.EstimateVerifiedTransition(comparison.Incumbent, request.Ticket.Model,
                 selection.Decision.TargetProfile, comparison.Timestamp);
@@ -596,6 +714,7 @@ public sealed class RouterCore : IInferenceRouter
         {
             if (q.TryRemoveById(ticket.Id))
             {
+                _admission?.Invalidate(ticket);
                 Fail(ticket, "deadline_exceeded", $"queue wait exceeded {window}");
                 return;
             }
@@ -604,18 +723,16 @@ public sealed class RouterCore : IInferenceRouter
 
     private void MaybeFailDeadline(QueuedRequest head)
     {
-        var maxQueue = head.Request.Options.MaxQueueTime;
-        if (maxQueue is { } window && _clock.GetElapsedTime(head.EnqueuedAtTimestamp) > window)
-        {
-            if (GetQueue(head.Ticket.Model)?.TryRemoveById(head.Ticket.Id) == true)
-                Fail(head.Ticket, "deadline_exceeded", $"queue wait exceeded {window}");
-        }
+        if (!head.QueueExpired(_clock) || GetQueue(head.Ticket.Model)?.TryRemoveById(head.Ticket.Id) != true) return;
+        _admission?.Invalidate(head.Ticket);
+        Fail(head.Ticket, "deadline_exceeded", $"queue wait exceeded {head.Request.Options?.MaxQueueTime}");
     }
 
     // ── execution ───────────────────────────────────────────────────────────
 
     private async Task ExecuteAsync(QueuedRequest candidate, EngineRuntime engine, bool switchRequired,
-                                    string? targetProfileName, SwitchServingProof? servingProof, long selectedAt)
+                                    string? targetProfileName, SwitchServingProof? servingProof, long selectedAt,
+                                    ExactTicketAdmission.Invocation? invocation)
     {
         var ticket = candidate.Ticket;
         var thread = candidate.Thread;
@@ -638,7 +755,7 @@ public sealed class RouterCore : IInferenceRouter
         try
         {
 
-            if ((switchRequired || targetProfile is not null) && _config.AutoSwitch)
+            if (invocation is null && (switchRequired || targetProfile is not null) && _config.AutoSwitch)
             {
                 ticket.State = TicketState.WaitingForModel;
                 // A ticket's own deadline bounds only its time in the queue, so the wait for a model
@@ -695,6 +812,17 @@ public sealed class RouterCore : IInferenceRouter
                 // caller through that is what this cap exists to prevent. Once the owed bytes are in hand
                 // the gate is disarmed and a long generation runs to its end: one gate per request, not
                 // per token.
+                if (invocation is not null)
+                {
+                    using var request = MakeUpstreamRequest(engine, body, suffix);
+                    await invocation.RunAsync(request, response =>
+                    {
+                        cts.Token.ThrowIfCancellationRequested();
+                        return FinishWithResponseAsync(engine, ticket, response, candidate, gate: null, cts.Token);
+                    }, ReportExecutionFailure, cts.Token).ConfigureAwait(false);
+                    return;
+                }
+
                 var responseTimeout = engine.ResponseTimeout;
                 if (responseTimeout is null)
                 {
@@ -776,36 +904,55 @@ public sealed class RouterCore : IInferenceRouter
                 engine.RecordPrefix(candidate.Messages());
             }
         }
-        catch (OperationCanceledException)
-        {
-            Fail(ticket, "cancelled", "cancelled");
-        }
         catch (Exception ex)
         {
-            Fail(ticket, "engine_unreachable", ex.Message);
+            ReportExecutionFailure(ex);
         }
         finally
         {
+            try
+            {
+                await AbortUnstartedInvocationAsync(ticket, invocation).ConfigureAwait(false);
+            }
+            finally
+            {
+                ReleaseLogical();
+            }
+        }
+
+        void ReportExecutionFailure(Exception error)
+        {
+            if (error is OperationCanceledException) Fail(ticket, "cancelled", "cancelled");
+            else Fail(ticket, "engine_unreachable", error.Message);
+        }
+
+        void ReleaseLogical()
+        {
             EndEngineOnce();
-            SignalDispatch();          // wake dispatch AFTER capacity is released
-            ticket.ExecCts?.Dispose();
-            ticket.ExecCts = null;
+            ReleaseExecutionCancellation(ticket);
             DecrementOnce();
+            SignalDispatch();          // wake dispatch AFTER both capacity counts are released
         }
     }
 
     private static async Task<HttpResponseMessage> SendAsync(
         EngineRuntime engine, byte[] body, string suffix, string model, SwitchServingProof? proof, CancellationToken ct)
     {
+        using var req = MakeUpstreamRequest(engine, body, suffix);
+        engine.ObserveFirstForward(proof, model, ct);
+        return await engine.Http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
+    }
+
+    private static HttpRequestMessage MakeUpstreamRequest(EngineRuntime engine, byte[] body, string suffix)
+    {
         // The suffix is composed against the endpoint path (EngineRuntime.Combine), so an endpoint
         // mounted under /v1 keeps it.
-        using var req = new HttpRequestMessage(HttpMethod.Post, engine.CompletionUri(suffix));
+        var req = new HttpRequestMessage(HttpMethod.Post, engine.CompletionUri(suffix));
         if (engine.ApiKey is not null)
             req.Headers.TryAddWithoutValidation("Authorization", $"Bearer {engine.ApiKey}");
         req.Content = new ByteArrayContent(body);
         req.Content.Headers.TryAddWithoutValidation("Content-Type", "application/json");
-        engine.ObserveFirstForward(proof, model, ct);
-        return await engine.Http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
+        return req;
     }
 
     /// <summary>What happens once the engine has answered: an error status becomes the router's own
@@ -1169,6 +1316,7 @@ public sealed class RouterCore : IInferenceRouter
 
     public async ValueTask DisposeAsync()
     {
+        _admission?.Stop();
         _shutdown.Cancel();
         // A queued ticket has no execution to cancel, so it needs an explicit terminal transition;
         // without this its relays sit open until the process exits.

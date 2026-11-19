@@ -1,6 +1,6 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.69)
+Status: draft, continuously revised (v0.12.70)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
@@ -352,6 +352,10 @@ daemon transaction per engine. 137 tests green.
   that answers no `upload_url`, an upload that dies or answers no asset id, an asset name listed twice on
   the release, and a tag that moves after the first resolve. No tag has run the gate: still configured,
   not proven.
+- v0.12.70 — qualify exact-ticket admission with an offline sender and bounded preparation.
+  A retirement wake revisits deferred staged preparation before an ordinary route can reserve
+  the freed slot. Repeated aborts share retirement completion, and a submitted use stays counted
+  if disposal fails (§5.5, TASK-64).
 - v0.12.69 — read-only switch refusal restores an incumbent's serving tuple only while its exact
   claim has no serving contradiction. Late evidence from that claim can first withdraw serving
   capacity and then withdraw roster health on a model contradiction (§5.5, TASK-68).
@@ -1734,6 +1738,33 @@ engine forks land; the scheduler interface will not change shape.
   first ticket in that queue whose thread has capacity. Commit takes that exact ticket only
   while it is still first admissible. If the candidate is removed or displaced before commit,
   dispatch restarts the queue scan.
+- **Offline exact-ticket admission.** The injected sender qualifies the queue handshake.
+  Schedule outside the router lock. The host admission gate, router lock and model queue lock
+  order the live check and exact removal. Validate the ranked route generation, model-bound
+  window for an explicit minimum, free slots, thread room and original elapsed queue deadline.
+  Preparation owns no physical slot. A preparing head preserves its queue order and another
+  queue may progress. Each ticket may start one preparation per binding and route generation
+  and have only one outstanding attempt, including retirement. The scoped preparation limit is
+  the greater of two and the engine count at construction, shared by preparing, ready and
+  retiring work. Cancellation, expiry, supersession and shutdown signal retirement. Work
+  that ignores cancellation still occupies its preparation slot until it settles. A parked
+  scan wakes on published state and checks its revision after arming.
+  Closing the route fences authorization. An authorized invocation counts before its first
+  byte. Cancellation can release it early only by atomically preventing submission. The
+  injected invocation owns the response through consumption and disposal, then finishes
+  prepared-resource cleanup before releasing the permit. A cleanup fault leaves a submitted
+  use counted. An abort that claims an unstarted invocation prevents submission, and further
+  abort calls wait on the same cleanup result. Execution that arrives after that abort waits
+  for cleanup and ends as cancellation. The injected sender is under fixture
+  control and does not exercise the production response timeout. In the one-slot fixture an
+  exact staged owner has first opportunity when its generation opens. Cancellation, expiry or
+  failed preparation hands the slot to the ordinary joiner. The staged owner holds no counted use
+  while closed. When a prior attempt or a full preparation table blocks an exact staged owner,
+  a dispatcher wake reconsiders that request. An eligible owner waiting for capacity gets the
+  first available preparation slot ahead of ordinary routes. An ordinary preparation rechecks
+  that priority under the admission gate, including when a slot opens after the scan starts.
+  Production admission still needs the enrolled host and verified transport. Production owner
+  promotion and late cleanup remain TASK-25.
 - **Measured switch ordering.** The built-in scheduler can compare consecutive eligible switch candidates
   of equal queue depth and request priority on one configured native Docker engine. It needs an idle engine
   with a current proof for a single incumbent. The comparison ends at the first eligible route outside the

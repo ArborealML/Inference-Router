@@ -578,47 +578,48 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
         using var timer = new PeriodicTimer(interval);
         while (true)
         {
-            // bootstrap: probe immediately at startup, then on the interval
-            // Read the version before the round trip, *outside* the try: both the success publish and the
-            // failure publish below are fenced on it, so a poll can never overwrite fresher evidence with
-            // its own older answer — in either direction (§5.5).
-            var capBefore = Capability;
-            try
-            {
-                BeforeModelsFetchForTests?.Invoke();
-                // CA2000's "recommended dispose pattern" doesn't track `using var` in an async
-                // loop body; the CTS is disposed at each iteration and the await completes inside.
-#pragma warning disable CA2000
-                using var cts = new CancellationTokenSource(_def.Health?.TimeoutMs ?? 5_000);
-#pragma warning restore CA2000
-                ModelsObservation observation;
-                try
-                {
-                    observation = await FetchModelsObservationAsync(cts.Token).ConfigureAwait(false);
-                }
-                catch (Exception ex) when (!ct.IsCancellationRequested ||
-                    ex is not OperationCanceledException canceled || canceled.CancellationToken != ct)
-                {
-                    // The loop token stops future ticks. An in-flight fetch can still report a failure
-                    // under its own timeout and the ordinary publication fences.
-                    PublishProbeFailure(capBefore);
-                    throw;
-                }
-                var state = await ReadServingProbeAsync(cts.Token).ConfigureAwait(false);
-                PublishProbeResult(capBefore, observation, BindServing(observation, state));
-                if (Volatile.Read(ref _stopped)) break;
-                Emit("engine.health", value: observation.LoadedModels.Count);
-            }
-            catch (Exception ex)
-            {
-                if (Volatile.Read(ref _stopped)) break;
-                Emit("engine.health", reason: WireText.Bound(ex.Message, ProviderReasonChars), value: 0);
-            }
+            await ProbeHealthOnceAsync(ct).ConfigureAwait(false);
+            if (Volatile.Read(ref _stopped)) break;
             try
             {
                 if (!await timer.WaitForNextTickAsync(ct).ConfigureAwait(false)) break;
             }
             catch (OperationCanceledException) { break; }
+        }
+    }
+
+    internal async Task ProbeHealthOnceAsync(CancellationToken ct)
+    {
+        // Read the version before the round trip, *outside* the try: both the success publish and the
+        // failure publish below are fenced on it, so a poll can never overwrite fresher evidence with
+        // its own older answer — in either direction (§5.5).
+        var capBefore = Capability;
+        try
+        {
+            BeforeModelsFetchForTests?.Invoke();
+            using var cts = new CancellationTokenSource(_def.Health?.TimeoutMs ?? 5_000);
+            ModelsObservation observation;
+            try
+            {
+                observation = await FetchModelsObservationAsync(cts.Token).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (!ct.IsCancellationRequested ||
+                ex is not OperationCanceledException canceled || canceled.CancellationToken != ct)
+            {
+                // The loop token stops future ticks. An in-flight fetch can still report a failure
+                // under its own timeout and the ordinary publication fences.
+                PublishProbeFailure(capBefore);
+                throw;
+            }
+            var state = await ReadServingProbeAsync(cts.Token).ConfigureAwait(false);
+            PublishProbeResult(capBefore, observation, BindServing(observation, state));
+            if (Volatile.Read(ref _stopped)) return;
+            Emit("engine.health", value: observation.LoadedModels.Count);
+        }
+        catch (Exception ex)
+        {
+            if (Volatile.Read(ref _stopped)) return;
+            Emit("engine.health", reason: WireText.Bound(ex.Message, ProviderReasonChars), value: 0);
         }
     }
 
