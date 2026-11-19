@@ -19,7 +19,7 @@ ordinal: 108000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Correct fixture locality and staged guard validity for deadline qualification.
+Lifecycle is correcting staged proof validation and route opening after the deadline fixture passed.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -48,5 +48,5 @@ Review on 3160a11 required wrong-target recovery fencing and old-grant/fresh-ope
 
 [PR #19](https://github.com/ArborealML/Inference-Router/pull/19) preserves the paired 1/1 receipt at 6ef4723. Review identified stale incumbent authority during applied-launch recovery and missing failure controls. Published e7b951c closes after the exact match and before the first occupancy await. Six focused Release cases passed, covering denial during and after a held probe, untouched preflight, both cancellation cuts, completion, installation and drain-disposal faults, and fresh retry without duplicate effects. Both findings cleared review, all hosted checks passed, and PR #19 merged at 0b84766. Deadline equality in the enrolled path remains separate from fixture cancellation.
 
-Signature fix 2062886 builds. The paired case failed at engine construction on its non-loopback fixture endpoint, before deadline assertions. Correct fixture locality and rerun that case. Review of 046ea91 found malformed committed verdicts can be delivered as success. Validate proof and closed binding before delivery; preserve valid winners on later faults. Enforce synchronous exact Open, signal only actual opening, handle delivery faults through retained launch and fresh authorized recovery. Close stale incumbent authority on durable applied recovery even for mismatched requests. Shutdown verifies wake progress. Runtime and paired-fixture reviews continue.
+Loopback fixture correction 8af4cdd passed the single Release case with zero skips: success before the deadline, expiry at equality, then fresh same-ID recovery. Review of 046ea91 found malformed committed verdicts can be delivered as success. Validate proof and closed binding before delivery; preserve valid winners on later faults. Enforce synchronous exact Open, signal only actual opening, handle delivery faults through retained launch and fresh authorized recovery. Close stale incumbent authority on durable applied recovery even for mismatched requests. Shutdown verifies wake progress. Runtime and paired-fixture reviews continue.
 <!-- SECTION:NOTES:END -->
