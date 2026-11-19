@@ -106,6 +106,24 @@ public sealed class SwitchCostDispatchTests
         await rig.AssertModelSwitchFloorAsync(ticket, launchWindow, forwards);
     }
 
+    [Theory(Timeout = 20_000)]
+    [InlineData(129L, 128L, true)]
+    [InlineData(128L, 129L, false)]
+    public async Task RankedSwitchUsesTheWinnersExplicitFloorInsteadOfTheScanHeads(
+        long headMinimum, long winnerMinimum, bool forwards)
+    {
+        await using var rig = new SwitchRig(aLoadMs: 80, bLoadMs: 20, servingLadder: false);
+        await rig.TrainAsync();
+        rig.Clock.Set(TimeSpan.FromMinutes(1));
+        var head = await rig.EnqueueAsync("a", requiredContext: headMinimum);
+        var winner = await rig.EnqueueAsync("b", requiredContext: winnerMinimum);
+        Assert.Equal(TimeSpan.FromMilliseconds(87), rig.Estimate("a"));
+        Assert.Equal(TimeSpan.FromMilliseconds(27), rig.Estimate("b"));
+
+        await rig.AssertModelSwitchFloorAsync(winner, launchWindow: 128, forwards);
+        Assert.Equal(TicketState.Queued, head.State);
+    }
+
     [Fact(Timeout = 20_000)]
     public async Task AReadOnlyRefusalRestoresTheServingTupleAndTheMeasuredIncumbent()
     {

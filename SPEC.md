@@ -355,7 +355,8 @@ daemon transaction per engine. 137 tests green.
 - v0.12.75 — preserve the exact ticket's explicit context minimum through dispatch and
   post-launch model readiness. Joined waiters apply their own minimum to the observed
   window. Bound an idle switch claim to eight superseded capability observations and
-  the caller's original wait budget (§5.5, §7.6, TASK-68).
+  the caller's original wait budget, including initial lock acquisition. An injected
+  host switch requiring measured capacity refuses before host effects (§5.5, §7.6, TASK-68).
 - v0.12.73 — Add the standalone offline host successor checkpoint and effect ledger.
   The checkpoint retains exact launch, stop and frozen successor evidence across process death.
   The fake ledger verifies residency and separates send, acceptance, attempt and applied records
@@ -2049,7 +2050,10 @@ engine forks land; the scheduler interface will not change shape.
   acquiring the switch and transition locks. If the compare-exchange loses or the idle answer is stale,
   release both locks before re-deciding. A poll that proves the requested model can retire the offer.
   After eight lost idle offers, return `switch_failed` with `switch_error` without starting a lifecycle
-  operation. Caller cancellation, shutdown and expiry of the original wait budget retain precedence.
+  operation. The caller's original finite budget bounds the first acquisition of the switch lock,
+  each later acquisition and the decision to start an idle claim. An immediately ready caller can
+  still use its current proof, and an already joined caller retains its committed outcome under the
+  delivery rules above. Caller cancellation and shutdown retain precedence.
   **A waiter is authorised at the moment it resumes, not at the moment it was promised**. It uses the
   evidence this router has about the engine at that point. The readiness task settling and the switch state
   clearing happen before a waiter is scheduled, so a successor can claim the engine in that window. A claim is one
@@ -2457,7 +2461,10 @@ Semantics:
   minimum to the measured result, including when it receives a committed verdict after
   shutdown. A same-target waiter whose minimum exceeds the committed window cannot use
   that proof to forward. A tier label, static configuration and prompt estimates alone
-  supply no measured capacity.
+  supply no measured capacity. The injected host path can attest to exact-instance roster
+  readiness today. A switch with an explicit minimum, selected named tier or a resolved
+  named default requires bound capacity evidence and refuses before entering the host
+  transaction until that evidence is supported.
 - **Admission**: an engine's live capacity is the *tighter* of
   `scheduler.max_inflight_per_engine` and the slots it reports (`total_slots`);
   until the gauge is known the configured ceiling alone applies. A profile

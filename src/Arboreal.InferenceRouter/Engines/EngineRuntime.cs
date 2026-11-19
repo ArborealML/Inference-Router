@@ -949,7 +949,7 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
     }
 
     /// <summary>Authority and catalog checks for an idle acquisition.</summary>
-    private enum EntryGuard { Ok, NoLifecycleOwner, Absent, NoUsableSelector }
+    private enum EntryGuard { Ok, NoLifecycleOwner, Absent, NoUsableSelector, MissingHostCapacity }
 
     /// <summary>Resolve and validate, once for this acquisition attempt, the catalog entry a new claim would run
     /// on. Nothing is published or mutated here, and the predicate for "can this selector be run" is the provider's
@@ -1057,17 +1057,8 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
             {
                 // The linked source outlives this await.
 #pragma warning disable IDISP013 // await-in-using not applicable: the wait is awaited, not detached
-                if (claimLosses == 0 || deadline == DateTimeOffset.MaxValue)
-                {
-                    await _switchLock.WaitAsync(waiter).ConfigureAwait(false);
-                }
-                else
-                {
-                    var retryWait = RemainingSwitchWait(deadline);
-                    if (retryWait <= TimeSpan.Zero ||
-                        !await _switchLock.WaitAsync(retryWait, waiter).ConfigureAwait(false))
-                        return UnclaimedWaitExpired(ct);
-                }
+                if (!await TryWaitForSwitchLockAsync(deadline, waiter).ConfigureAwait(false))
+                    return UnclaimedWaitExpired(ct);
 #pragma warning restore IDISP013
             }
             catch (OperationCanceledException) when (!ct.IsCancellationRequested && Volatile.Read(ref _stopped))
@@ -1089,7 +1080,8 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
                     state = _switchState;
                     if (state.Model is null)
                     {
-                        if (claimLosses > 0 && deadline != DateTimeOffset.MaxValue && DateTimeOffset.UtcNow >= deadline)
+                        ct.ThrowIfCancellationRequested();
+                        if (deadline != DateTimeOffset.MaxValue && DateTimeOffset.UtcNow >= deadline)
                             return UnclaimedWaitExpired(ct);
 
                         // A join takes precedence over the optimistic offer. An idle attempt can publish
@@ -1103,6 +1095,9 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
                         else
                         {
                             entryMiss = ResolveClaimTarget(canonical, profileOverride, out var target);
+                            if (entryMiss == EntryGuard.Ok && _hostEnrollment is not null &&
+                                (requiredWindow > 0 || GetProfile(canonical, target!.EffectiveProfile) is not null))
+                                entryMiss = EntryGuard.MissingHostCapacity;
                             if (entryMiss != EntryGuard.Ok)
                             {
                                 retryClaim = !ReferenceEquals(Capability, offered);
@@ -1118,6 +1113,9 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
                                     RequiredWindow = requiredWindow,
                                     IncumbentProof = offered.Healthy ? offered : null,
                                 };
+                                ct.ThrowIfCancellationRequested();
+                                if (deadline != DateTimeOffset.MaxValue && DateTimeOffset.UtcNow >= deadline)
+                                    return UnclaimedWaitExpired(ct);
                                 retryClaim = !TryPublishSwitchStarted(canonical, offered);
                                 if (!retryClaim)
                                 {
@@ -1216,6 +1214,12 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
             // switch to end and the engine keeps the proof it had (§5.5).
             if (entryMiss == EntryGuard.NoLifecycleOwner)
                 return new(SwitchResult.Failed(SwitchReason.NoLifecycleOwner));
+            if (entryMiss == EntryGuard.MissingHostCapacity)
+            {
+                Emit("engine.switch_failed", model: canonical,
+                    reason: "window_too_small: enrolled switch requires an exact-instance serving window");
+                return new(SwitchResult.Failed(SwitchReason.WindowTooSmall));
+            }
             if (entryMiss != EntryGuard.Ok)
             {
                 Emit("engine.switch_failed", model: canonical,
@@ -1258,6 +1262,26 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
             if (ReadSwitchAnswer(state, canonical, profileOverride, requiredWindow, woke: true) is { } answer) return answer;
             // A contradicted proof or an unrelated outcome sends the caller back through the claim gate.
         }
+    }
+
+    private async Task<bool> TryWaitForSwitchLockAsync(DateTimeOffset deadline, CancellationToken ct)
+    {
+        if (deadline == DateTimeOffset.MaxValue)
+        {
+            await _switchLock.WaitAsync(ct).ConfigureAwait(false);
+            return true;
+        }
+
+        // A single semaphore wait takes integer milliseconds. Keep the deadline for callers with longer waits.
+        var remaining = deadline - DateTimeOffset.UtcNow;
+        while (remaining > TimeSpan.Zero)
+        {
+            var waitMs = (int)Math.Min(int.MaxValue, Math.Ceiling(remaining.TotalMilliseconds));
+            if (await _switchLock.WaitAsync(waitMs, ct).ConfigureAwait(false)) return true;
+            if (waitMs < int.MaxValue) break;
+            remaining = deadline - DateTimeOffset.UtcNow;
+        }
+        return false;
     }
 
     private TimeSpan RemainingSwitchWait(DateTimeOffset deadline) => deadline == DateTimeOffset.MaxValue
