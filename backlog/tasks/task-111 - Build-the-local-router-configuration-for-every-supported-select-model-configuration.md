@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@gpt-6.2-sol-config'
 created_date: '2026-11-18T18:15:00Z'
-updated_date: '2026-11-19T02:53:00Z'
+updated_date: '2026-11-19T06:47:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -47,4 +47,6 @@ Independent static enumeration at selector source fingerprint 8af827d3c375efda08
 Target-proof plan dispatched on 2026-11-18. Static controls: single-device profiles require one explicit index; paired profiles require two distinct indices. GPU utilization accepts 0.50–0.95 inclusive, default 0.90. Parking RAM accepts 1–48 GiB, default 32; variable lanes accept 1–8. This revision has no supported suffix-cache launch mechanism. Controls cover malformed, out-of-range and unsupported options.
 
 TASK-125 qualifies one pair for the first live proof. This row retains full selector parity and every unsupported combination remains visible.
+
+Review of [PR #7](https://github.com/ArborealML/Inference-Router/pull/7) at f7ff610 found two loader gaps still present on green head 552b1f6. Reject shadowed ownership and selector fields and noncanonical common Docker keys for opted-in JSON. Preserve legacy parsing. Before activation, require launch receipts and labels to share the canonical model and tier for alias and implicit tiers. Current provider gates block mutation.
 <!-- SECTION:NOTES:END -->
