@@ -6,6 +6,38 @@ using Tomlyn.Serialization;
 namespace Arboreal.InferenceRouter;
 
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+public sealed class DockerTargetDto
+{
+    private string[]? _env;
+    private DockerBindDto[]? _bindMounts;
+
+    [JsonPropertyName("env")][TomlPropertyName("env")]
+    public string[]? Env
+    {
+        get => _env;
+        set
+        {
+            if (_env is not null) throw new RouterConfigException("duplicate serving-tier docker.env");
+            _env = value ?? throw new RouterConfigException("serving-tier docker.env cannot be null");
+        }
+    }
+
+    [JsonPropertyName("bind_mounts")][TomlPropertyName("bind_mounts")]
+    public DockerBindDto[]? BindMounts
+    {
+        get => _bindMounts;
+        set
+        {
+            if (_bindMounts is not null) throw new RouterConfigException("serving-tier docker.bind_mounts appears more than once");
+            _bindMounts = value ?? throw new RouterConfigException("serving-tier docker.bind_mounts cannot be null");
+        }
+    }
+
+    [JsonIgnore, TomlIgnore(Condition = TomlIgnoreCondition.Never), TomlExtensionData]
+    public TomlTable? Unknown { get; set; }
+}
+
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed class DockerResourcesDto
 {
     [JsonPropertyName("gpu")][TomlPropertyName("gpu")] public DockerGpuDto? Gpu { get; set; }

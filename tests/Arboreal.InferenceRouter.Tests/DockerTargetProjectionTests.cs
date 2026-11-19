@@ -1,0 +1,379 @@
+using System.Net;
+using System.Text.Json;
+using Arboreal.InferenceRouter.Lifecycle;
+
+namespace Arboreal.InferenceRouter.Tests;
+
+public sealed class DockerTargetProjectionTests
+{
+    private const string ImageId = "sha256:1111111111111111111111111111111111111111111111111111111111111111";
+    private const string RepoDigest = "example/strata@sha256:2222222222222222222222222222222222222222222222222222222222222222";
+    private const string QwenOptions = "resident-budget-gib=36 conversation-cache-slots=8  rope-scaling=none";
+    private const string SwiftOptions = "resident-budget-gib=40 conversation-cache-slots=4  rope-scaling=none";
+    private const string QwenTier = """{ name = "256k-4", max_context = 256000, max_slots = 4, docker = { env = ["FAMILY=qwen"] } }""";
+    private const string TargetJson = """{"name":"256k-4","max_context":256000,"max_slots":4,"docker":{"env":["FAMILY=qwen"]}}""";
+
+    [Fact]
+    public void PairedTargetsProjectExactlyInBothOrdersAndFormats()
+    {
+        var toml = LoadToml($$$"""
+            [engine.strata.catalog."qwen.model"]
+            aliases = ["qwen"]
+            default_profile = "256k-4"
+
+            [[engine.strata.catalog."qwen.model".serving]]
+            name = "256k-4"
+            max_context = 256000
+            max_slots = 4
+
+            [engine.strata.catalog."qwen.model".serving.docker]
+            env = ["FAMILY=qwen", "CONTEXT=256000", "PARALLEL=4", "PRESET=fixture-qwen-256k-4", "STRATA_SET={{{QwenOptions}}}"]
+            bind_mounts = [
+              { source = "/srv/qwen/data", target = "/data", read_only = false },
+              { source = "/srv/qwen/model", target = "/models", read_only = true },
+            ]
+
+            [engine.strata.catalog."swift.model"]
+            aliases = ["swift"]
+            default_profile = "max"
+            serving = [
+              { name = "max", max_context = 262144, max_slots = 1, docker = { env = ["FAMILY=swift", "CONTEXT=256k", "PARALLEL=1", "PRESET=fixture-swift-max", "STRATA_SET={{{SwiftOptions}}}"], bind_mounts = [{ source = "/srv/swift/data", target = "/data", read_only = false }, { source = "/srv/swift/model", target = "/models", read_only = true }] } }
+            ]
+            """, """
+            host_port = 18021
+            command = ["serve", "{{model}}", "{{profile}}", "{{endpoint}}"]
+            env = ["MODEL=IQ3_S", "GPUS=0,1"]
+            [engine.strata.docker.resources]
+            gpu = { all = true }
+            shm_size_bytes = 2147483648
+            ulimits = [{ name = "memlock", soft = -1, hard = -1 }]
+            bind_mounts = [
+              { source = "/srv/shared/profile.py", target = "/profile-check.py", read_only = true },
+              { source = "/srv/shared/runner.py", target = "/opt/strata/runner.py", read_only = true },
+            ]
+            """);
+        var json = LoadJson($$$"""
+            "qwen.model":{"aliases":["qwen"],"default_profile":"256k-4","serving":[{
+              "name":"256k-4","max_context":256000,"max_slots":4,"docker":{
+                "env":["FAMILY=qwen","CONTEXT=256000","PARALLEL=4","PRESET=fixture-qwen-256k-4","STRATA_SET={{{QwenOptions}}}"],
+                "bind_mounts":[{"source":"/srv/qwen/data","target":"/data","read_only":false},
+                               {"source":"/srv/qwen/model","target":"/models","read_only":true}]
+              }}]},
+            "swift.model":{"aliases":["swift"],"default_profile":"max","serving":[{
+              "name":"max","max_context":262144,"max_slots":1,"docker":{
+                "env":["FAMILY=swift","CONTEXT=256k","PARALLEL=1","PRESET=fixture-swift-max","STRATA_SET={{{SwiftOptions}}}"],
+                "bind_mounts":[{"source":"/srv/swift/data","target":"/data","read_only":false},
+                               {"source":"/srv/swift/model","target":"/models","read_only":true}]
+              }}]}
+            """, """
+            ,"host_port":18021,"command":["serve","{{model}}","{{profile}}","{{endpoint}}"],"env":["MODEL=IQ3_S","GPUS=0,1"],
+            "resources":{"gpu":{"all":true},"shm_size_bytes":2147483648,"ulimits":[{"name":"memlock","soft":-1,"hard":-1}],
+              "bind_mounts":[{"source":"/srv/shared/profile.py","target":"/profile-check.py","read_only":true},
+                             {"source":"/srv/shared/runner.py","target":"/opt/strata/runner.py","read_only":true}]}
+            """);
+        using var daemon = new FakeDockerDaemonHandler();
+        using var tomlProvider = new DockerLifecycleProvider(toml.Docker!, "strata", daemon);
+        using var jsonProvider = new DockerLifecycleProvider(json.Docker!, "strata", daemon);
+        var qwen = Project(tomlProvider, toml, "qwen.model");
+        var swift = Project(tomlProvider, toml, "swift.model");
+        Assert.Equal(swift, Project(jsonProvider, json, "SWIFT", "max"));
+        Assert.Equal(qwen, Project(jsonProvider, json, "QWEN", "256k-4"));
+        Assert.Equal(qwen, Project(tomlProvider, toml, "qwen", "256k-4"));
+        Assert.Equal(swift, Project(tomlProvider, toml, "swift", "max"));
+        AssertPair(qwen, "qwen", "256k-4", "256000", "4", QwenOptions);
+        AssertPair(swift, "swift", "max", "256k", "1", SwiftOptions);
+        Assert.Empty(daemon.Requests);
+    }
+
+    private static void AssertPair(byte[] body, string family, string tier, string context, string slots, string options)
+    {
+        using var json = JsonDocument.Parse(body);
+        var request = json.RootElement;
+        var canonical = family + ".model";
+        Assert.Equal(ImageId, request.GetProperty("Image").GetString());
+        Assert.Equal(canonical, request.GetProperty("Labels").GetProperty(DockerLifecycleProvider.LabelModel).GetString());
+        Assert.Equal(tier, request.GetProperty("Labels").GetProperty(DockerLifecycleProvider.LabelProfile).GetString());
+        Assert.Equal(new[] { "serve", canonical, tier, "strata" }, Strings(request.GetProperty("Cmd")));
+        Assert.Equal(new[] { "MODEL=IQ3_S", "GPUS=0,1", $"FAMILY={family}", $"CONTEXT={context}",
+            $"PARALLEL={slots}", $"PRESET=fixture-{family}-{tier}", $"STRATA_SET={options}" }, Strings(request.GetProperty("Env")));
+        var host = request.GetProperty("HostConfig");
+        Assert.Equal(2147483648L, host.GetProperty("ShmSize").GetInt64());
+        Assert.Equal(-1, host.GetProperty("DeviceRequests")[0].GetProperty("Count").GetInt32());
+        Assert.Equal("18021", host.GetProperty("PortBindings").GetProperty("8080/tcp")[0].GetProperty("HostPort").GetString());
+        Assert.Equal(-1L, host.GetProperty("Ulimits")[0].GetProperty("Soft").GetInt64());
+        var mounts = host.GetProperty("Mounts").EnumerateArray().Select(mount =>
+            (mount.GetProperty("Source").GetString(), mount.GetProperty("Target").GetString(),
+                mount.GetProperty("ReadOnly").GetBoolean())).ToArray();
+        Assert.Equal(new (string?, string?, bool)[]
+        {
+            ("/srv/shared/profile.py", "/profile-check.py", true),
+            ("/srv/shared/runner.py", "/opt/strata/runner.py", true),
+            ($"/srv/{family}/data", "/data", false),
+            ($"/srv/{family}/model", "/models", true),
+        }, mounts);
+    }
+
+    [Fact]
+    public void EqualSizeProfilesKeepDistinctLiteralSettingsAndUseTheCapturedDefault()
+    {
+        var engine = LoadToml("""
+            [engine.strata.catalog.qwen]
+            default_profile = "concurrent"
+            serving = [
+              { name = "concurrent", max_context = 65536, max_slots = 4, docker = { env = ["STRATA_SET=conversation-cache-slots=4", "LITERAL={{profile}}", "EMPTY="] } },
+              { name = "64k-4", max_context = 65536, max_slots = 4, docker = { env = ["STRATA_SET=conversation-cache-slots=8", "LITERAL={{profile}}", "EMPTY="] } },
+            ]
+            """, """env = ["COMMON={{model}}:{{profile}}:{{endpoint}}"]""");
+        using var provider = new DockerLifecycleProvider(engine.Docker!, "strata");
+        var implicitDefault = Project(provider, engine, "qwen");
+        Assert.Equal(implicitDefault, Project(provider, engine, "qwen", "concurrent"));
+        using var concurrent = JsonDocument.Parse(implicitDefault);
+        using var widerCache = JsonDocument.Parse(Project(provider, engine, "qwen", "64k-4"));
+        Assert.Equal(new[] { "COMMON=qwen:concurrent:strata", "STRATA_SET=conversation-cache-slots=4", "LITERAL={{profile}}", "EMPTY=" },
+            Strings(concurrent.RootElement.GetProperty("Env")));
+        Assert.Equal(new[] { "COMMON=qwen:64k-4:strata", "STRATA_SET=conversation-cache-slots=8", "LITERAL={{profile}}", "EMPTY=" },
+            Strings(widerCache.RootElement.GetProperty("Env")));
+        Assert.False(concurrent.RootElement.TryGetProperty("HostConfig", out _));
+    }
+
+    [Fact]
+    public void TargetPlanFreezesTheDtoAndEachProjectionGetsItsOwnArrays()
+    {
+        var targetEnv = new[] { "TARGET=original" };
+        var commonEnv = new[] { "COMMON={{profile}}" };
+        var binds = new[] { new DockerBindDto { Source = "/srv/model", Target = "/models", ReadOnly = true } };
+        var dto = new ConfigDto { Engines = new()
+        {
+            ["strata"] = new EngineDto
+            {
+                Kind = "openai-compatible", Endpoint = "http://127.0.0.1:18021", LifecycleOwner = "router",
+                Docker = new DockerDto { Image = ImageId, ImageId = ImageId, ImageRepoDigest = RepoDigest,
+                    ImagePlatform = "linux/amd64", RouterId = "test-router", Env = commonEnv },
+                Catalog = new()
+                {
+                    ["qwen"] = new ModelDto { Serving = [new ServingDto { Name = "tier", MaxContext = 1024,
+                        Docker = new DockerTargetDto { Env = targetEnv, BindMounts = binds } }] },
+                },
+            },
+        } };
+        var engine = RouterConfigLoader.FromDto(dto, "fixture").Engines["strata"];
+        targetEnv[0] = "TARGET=changed";
+        commonEnv[0] = "COMMON=changed";
+        binds[0].Source = "/srv/changed";
+        using var provider = new DockerLifecycleProvider(engine.Docker!, "strata");
+        var target = Selection(engine, "qwen");
+        var first = provider.BuildCreateRequest(target, engine.Docker!.ImageIdentity!);
+        first.Env![0] = "COMMON=overwrite";
+        first.HostConfig!.Mounts![0] = new DockerMount("bind", "/srv/other", "/models", false);
+        var next = provider.BuildCreateRequest(target, engine.Docker.ImageIdentity!);
+        Assert.Equal(new[] { "COMMON=tier", "TARGET=original" }, next.Env);
+        Assert.Equal("/srv/model", Assert.Single(next.HostConfig!.Mounts!).Source);
+    }
+
+    [Theory]
+    [InlineData("""env = ["FAMILY=qwen"]""", false)]
+    [InlineData("""bind_mounts = [{ source = "/srv/model", target = "/models", read_only = true }]""", true)]
+    public async Task TargetDeclarationRefusesEveryLivePathEvenForAnotherModel(string fields, bool hasMount)
+    {
+        var engine = LoadToml($$$"""
+            [engine.strata.catalog.qwen]
+            serving = [{ name = "tier", max_context = 256000, docker = { {{{fields}}} } }]
+            [engine.strata.catalog.other]
+            """);
+        using var daemon = new FakeDockerDaemonHandler
+        {
+            Responder = _ => (HttpStatusCode.OK,
+                """[{"Id":"incumbent","Labels":{"arboreal.router":"test-router","arboreal.engine":"strata","arboreal.model":"other"}}]"""),
+        };
+        using var provider = new DockerLifecycleProvider(engine.Docker!, "strata", daemon);
+        using var coordinator = new EngineLifecycleCoordinator(provider);
+        var projection = provider.BuildCreateRequest(Selection(engine, "qwen"), engine.Docker!.ImageIdentity!);
+        Assert.Equal(hasMount, projection.HostConfig is not null);
+        if (hasMount) Assert.Equal("/models", Assert.Single(projection.HostConfig!.Mounts!).Target);
+
+        var other = Selection(engine, "other");
+        foreach (var result in new[]
+        {
+            await provider.PreflightAsync(other, CancellationToken.None),
+            await provider.StopAsync(other, [new EnginePeer("incumbent", ImageId, "other", true)], CancellationToken.None),
+            await provider.LaunchAsync(other, CancellationToken.None),
+        })
+        {
+            Assert.False(result.Succeeded);
+            Assert.Equal("docker_target_not_qualified", result.Reason);
+        }
+        Assert.Empty(daemon.Requests);
+        using var plainProvider = new DockerLifecycleProvider(new DockerLifecycleConfig
+            { Image = ImageId, RouterId = "test-router" }, "strata", daemon);
+        foreach (var injected in new[] { null, plainProvider })
+        {
+            var error = await Assert.ThrowsAsync<RouterConfigException>(async () =>
+            {
+                await using var runtime = new EngineRuntime(engine, new RouterConfig(), new EventRing(), lifecycle: injected);
+            });
+            Assert.Contains("require host qualification", error.Message, StringComparison.Ordinal);
+        }
+        Assert.Empty(daemon.Requests);
+
+        var coordinated = await coordinator.SwitchWithReportAsync(other, CancellationToken.None);
+        Assert.True(coordinated.RefusedBeforeMutation);
+        Assert.Equal("docker_target_not_qualified", coordinated.Result.Reason);
+        Assert.StartsWith("GET /v1.44/containers/json?", Assert.Single(daemon.Requests), StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("""env = ["BARE"]""", "", "KEY=value")]
+    [InlineData("""env = ["=value"]""", "", "KEY=value")]
+    [InlineData("""env = ["BAD.KEY=value"]""", "", "KEY=value")]
+    [InlineData("""env = ["K=bad\nvalue"]""", "", "KEY=value")]
+    [InlineData("""env = ["K=one", "K=two"]""", "", "repeats")]
+    [InlineData("""env = ["K=three"]""", """env = ["J=one", "J=two"]""", "repeats")]
+    [InlineData("""env = ["qwen=target"]""", """env = ["{{model}}=common"]""", "repeats")]
+    [InlineData("""env = ["K=one"], Env = ["L=two"]""", "", "duplicate")]
+    [InlineData("""image = "other" """, "", "image")]
+    [InlineData("", "", "must contain")]
+    [InlineData("""bind_mounts = [{ source = "/var/run/docker.sock", target = "/socket", read_only = true }]""", "", "source")]
+    [InlineData("""bind_mounts = [{ source = "/srv/model", target = "/run/secret", read_only = true }]""", "", "target")]
+    [InlineData("""bind_mounts = [{ source = "/var", target = "/socket", read_only = true }]""", "", "parent")]
+    [InlineData("""bind_mounts = [{ source = "/srv/../model", target = "/models", read_only = true }]""", "", "source")]
+    [InlineData("""bind_mounts = [{ source = "/srv/model", target = "/models" }]""", "", "read_only")]
+    public void TomlRejectsUnsafeOrAmbiguousLaunchFields(string tier, string common, string field)
+    {
+        var error = Assert.Throws<RouterConfigException>(() => LoadToml($$$"""
+            [engine.strata.catalog.qwen]
+            serving = [{ name = "256k-4", max_context = 256000, docker = { {{{tier}}} } }]
+            """, common));
+        Assert.Contains(field, error.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Theory]
+    [InlineData("/models", "/models")]
+    [InlineData("/models/child", "/models")]
+    [InlineData("/models", "/models/child")]
+    public void CommonAndTargetDestinationsCannotOverlap(string common, string tier)
+    {
+        var error = Assert.Throws<RouterConfigException>(() => LoadToml($$$"""
+            [engine.strata.catalog.qwen]
+            serving = [{ name = "tier", max_context = 100, docker = { bind_mounts = [{ source = "/srv/target", target = "{{{tier}}}", read_only = true }] } }]
+            """, $$$"""
+            [engine.strata.docker.resources]
+            bind_mounts = [{ source = "/srv/common", target = "{{{common}}}", read_only = true }]
+            """));
+        Assert.Contains("overlaps", error.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("""aliases = ["SWIFT"]""", QwenTier, "shared")]
+    [InlineData("""profile = "64k-4" """ + "\n" + """default_profile = "256k-4" """,
+        QwenTier + """, { name = "64k-4", max_context = 65536 }""", "conflicts")]
+    [InlineData("""default_profile = "256k-4" """, QwenTier + """, { name = "256k-4", max_context = 1 }""", "duplicates")]
+    [InlineData("", QwenTier + """, { name = "64k-4", max_context = 65536 }""", "default_profile")]
+    public void AmbiguousModelOrTierSelectionIsRejected(string model, string tiers, string field)
+    {
+        var error = Assert.Throws<RouterConfigException>(() => LoadToml($$$"""
+            [engine.strata.catalog.qwen]
+            {{{model}}}
+            serving = [{{{tiers}}}]
+            [engine.strata.catalog.swift]
+            """));
+        Assert.Contains(field, error.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("null", "docker")]
+    [InlineData("[]", "docker")]
+    [InlineData("""{"env":null}""", "env")]
+    [InlineData("""{"env":[null]}""", "env")]
+    [InlineData("""{"env":"FAMILY=qwen"}""", "env")]
+    [InlineData("""{"env":["A=1"],"env":["B=2"]}""", "env")]
+    [InlineData("""{"image":"other"}""", "image")]
+    [InlineData("""{"bind_mounts":[{"source":"/srv/model","target":"/models","target":"/other","read_only":true}]}""", "target")]
+    public void JsonRejectsMalformedTierDockerBeforeOrDuringMapping(string docker, string field)
+    {
+        var error = Assert.Throws<RouterConfigException>(() => LoadJson($$$"""
+            "qwen":{"serving":[{"name":"tier","max_context":100,"docker":{{{docker}}}}]}
+            """));
+        Assert.Contains(field, error.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Theory]
+    [InlineData("""{"engine":{"strata":{"catalog":{"qwen":{"serving":[""" + TargetJson + """]}}}},"engine":{}}""", "engine")]
+    [InlineData("""{"engine":{"strata":{"catalog":{"qwen":{"serving":[""" + TargetJson + """]}}},"strata":null}}""", "strata")]
+    [InlineData("""{"engine":{"strata":{"catalog":{"qwen":{"serving":[""" + TargetJson + """]}},"catalog":{}}}}""", "catalog")]
+    [InlineData("""{"engine":{"strata":{"catalog":{"qwen":{"serving":[""" + TargetJson + """]},"qwen":null}}}}""", "qwen")]
+    [InlineData("""{"engine":{"strata":{"catalog":{"qwen":{"serving":[""" + TargetJson + """],"serving":[]}}}}}""", "serving")]
+    [InlineData("""{"engine":{"strata":{"catalog":{"qwen":{"serving":[{"docker":null,"docker":{}}]}}}}}""", "docker")]
+    [InlineData("""{"engine":{"strata":{"catalog":{"qwen":{"serving":[{"Docker":{}}]}}}}}""", "casing")]
+    [InlineData("""{"engine":{"strata":{"catalog":{"qwen":{"serving":{"docker":{}},"serving":[]}}}}}""", "array")]
+    public void JsonCannotEraseEarlierTargetOptIn(string json, string field)
+    {
+        var error = Assert.Throws<RouterConfigException>(() => RouterConfigLoader.Load(json, isJson: true));
+        Assert.Contains(field, error.Message, StringComparison.Ordinal);
+        Assert.StartsWith("engine", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ATargetRequiresAUsableEngineDockerDeclaration()
+    {
+        var error = Assert.Throws<RouterConfigException>(() => RouterConfigLoader.Load($$$"""
+            [engine.strata]
+            kind = "openai-compatible"
+            endpoint = "http://127.0.0.1:18021"
+            [engine.strata.catalog.qwen]
+            serving = [{{{QwenTier}}}]
+            """));
+        Assert.Contains("requires a native Docker engine", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void TomlTargetMembersUseTheExistingPropertyCasingRules()
+    {
+        var engine = LoadToml("""
+            [engine.strata.catalog.qwen]
+            serving = [{ name = "tier", max_context = 100, Docker = { Env = ["TARGET=literal"] } }]
+            """);
+        using var provider = new DockerLifecycleProvider(engine.Docker!, "strata");
+        var request = provider.BuildCreateRequest(Selection(engine, "qwen"), engine.Docker!.ImageIdentity!);
+        Assert.Equal("TARGET=literal", Assert.Single(request.Env!));
+    }
+
+    private static EngineDefinition LoadToml(string catalog, string common = "") =>
+        RouterConfigLoader.Load($$$"""
+            [engine.strata]
+            kind = "openai-compatible"
+            endpoint = "http://127.0.0.1:18021"
+            lifecycle_owner = "router"
+            [engine.strata.docker]
+            image = "{{{ImageId}}}"
+            image_id = "{{{ImageId}}}"
+            image_repo_digest = "{{{RepoDigest}}}"
+            image_platform = "linux/amd64"
+            router_id = "test-router"
+            {{{common}}}
+            {{{catalog}}}
+            """).Engines["strata"];
+
+    private static EngineDefinition LoadJson(string catalog, string common = "") =>
+        RouterConfigLoader.Load($$$$"""
+            {"engine":{"strata":{
+              "kind":"openai-compatible","endpoint":"http://127.0.0.1:18021","lifecycle_owner":"router",
+              "docker":{"image":"{{{{ImageId}}}}","image_id":"{{{{ImageId}}}}","image_repo_digest":"{{{{RepoDigest}}}}",
+                        "image_platform":"linux/amd64","router_id":"test-router"{{{{common}}}} },
+              "catalog":{ {{{{catalog}}}} }
+            }}}
+            """, isJson: true).Engines["strata"];
+
+    private static LifecycleTarget Selection(EngineDefinition engine, string requested, string? tier = null)
+    {
+        var model = engine.Catalog.Values.Single(entry => entry.Name.Equals(requested, StringComparison.OrdinalIgnoreCase) ||
+            entry.Aliases.Contains(requested, StringComparer.OrdinalIgnoreCase));
+        var profile = tier is null ? null : model.ServingProfiles.Single(p => p.Name == tier);
+        return new LifecycleTarget(engine.Name, requested, profile, model);
+    }
+
+    private static byte[] Project(DockerLifecycleProvider provider, EngineDefinition engine, string requested, string? profile = null) =>
+        JsonSerializer.SerializeToUtf8Bytes(provider.BuildCreateRequest(Selection(engine, requested, profile),
+            engine.Docker!.ImageIdentity!), DockerJsonContext.Default.DockerCreateRequest);
+
+    private static string?[] Strings(JsonElement array) => array.EnumerateArray().Select(element => element.GetString()).ToArray();
+}
