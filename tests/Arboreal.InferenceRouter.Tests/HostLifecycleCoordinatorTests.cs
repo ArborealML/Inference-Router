@@ -102,24 +102,34 @@ public sealed class HostLifecycleCoordinatorTests : IDisposable
     [Theory(Timeout = 30_000)]
     [InlineData(false)]
     [InlineData(true)]
-    public async Task ImmediateHostArbitrationPreservesStopAcrossAcceptance(bool acceptedBeforeStop)
+    public Task ImmediateHostArbitrationPreservesStopAcrossAcceptance(bool acceptedBeforeStop) =>
+        AssertImmediateHostStopAsync(acceptedBeforeStop ? ImmediateHostStopAt.Complete : ImmediateHostStopAt.Proof);
+
+    [Fact(Timeout = 30_000)]
+    public Task ImmediateHostArbitrationVetoesAcceptanceAfterProvisionalSuccess() =>
+        AssertImmediateHostStopAsync(ImmediateHostStopAt.Acceptance);
+
+    private enum ImmediateHostStopAt { Proof, Acceptance, Complete }
+
+    private async Task AssertImmediateHostStopAsync(ImmediateHostStopAt stopAt)
     {
         using var watchdog = new CancellationTokenSource(TimeSpan.FromSeconds(20));
         var ct = watchdog.Token;
-        var host = new FakeHost();
+        var acceptedBeforeStop = stopAt == ImmediateHostStopAt.Complete;
         var events = new EventRing();
         using var endpoint = new FakeDockerDaemonHandler { TransportFails = true };
         var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var unwound = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var host = new FakeHost { BeforeRouteAcceptance = stopAt == ImmediateHostStopAt.Acceptance ? Hold : null };
         LifecycleResult? reported = null;
         var fixture = new HostImmediateRuntimeFixture(
             BeforeComplete: acceptedBeforeStop ? Hold : null,
             AfterResult: result => reported = result,
             AfterRun: () => unwound.TrySetResult());
-        await using var engine = CreateEnrolledRuntime(CreateReservation("shared"), host, events, endpoint,
-            immediateForTests: fixture);
-        if (!acceptedBeforeStop) engine.AfterSwitchProofForTests = Hold;
+        var path = CreateReservation("shared");
+        await using var engine = CreateEnrolledRuntime(path, host, events, endpoint, immediateForTests: fixture);
+        if (stopAt == ImmediateHostStopAt.Proof) engine.AfterSwitchProofForTests = Hold;
         var invalidations = 0;
         engine.AfterFailedMutationUnknownForTests = _ => invalidations++;
         var waiter = engine.WaitForModelAsync("alias", Timeout.InfiniteTimeSpan, ct);
@@ -135,6 +145,10 @@ public sealed class HostLifecycleCoordinatorTests : IDisposable
             var provisional = engine.Capability;
             Assert.NotNull(provisional.SwitchProof);
             Assert.True(host.AdmissionClosed);
+            Assert.Throws<IOException>(() =>
+            {
+                using var unexpected = HostReservation.Open(path);
+            });
             Assert.Equal("enrolled.model", provisional.SwitchingToward);
             Assert.False(engine.IsReadyFor("enrolled.model", null));
             Assert.False(waiter.IsCompleted);
@@ -156,12 +170,14 @@ public sealed class HostLifecycleCoordinatorTests : IDisposable
             await unwound.Task.WaitAsync(ct);
         }
 
+        Assert.Same(accepted, host.CommittedProof);
         var result = Assert.IsType<LifecycleResult>(reported);
         Assert.Equal(acceptedBeforeStop, result.Succeeded);
         if (!acceptedBeforeStop) Assert.Equal("host_publication_refused", result.Reason);
-        Assert.Same(accepted, host.CommittedProof);
         Assert.Single(host.Calls, call => call == "commit");
         Assert.False(host.AdmissionClosed);
+        using var reservation = HostReservation.Open(path);
+        Assert.Null(reservation.State.Pending);
         Assert.Same(cancelled, Assert.Single(engine.SwitchHistory).Terminal);
         Assert.Single(events.Replay(0), item => item.Kind == "engine.switch_started");
         Assert.DoesNotContain(events.Replay(0), item => item.Kind is "engine.switch_completed" or "engine.switch_failed");
@@ -979,6 +995,7 @@ public sealed class HostLifecycleCoordinatorTests : IDisposable
         public Func<CancellationToken, Task>? OnDrain { get; set; }
         public Action? OnStop { get; set; }
         public Action? OnDrainDispose { get; init; }
+        public Action? BeforeRouteAcceptance { get; init; }
         public Func<CancellationToken, Task>? Readiness { get; set; }
         public LifecycleResult Preflight { get; set; } = LifecycleResult.Ok();
         public bool AdmitVerifiedRoute { get; init; } = true;
@@ -1110,15 +1127,15 @@ public sealed class HostLifecycleCoordinatorTests : IDisposable
                 host.OnWithdraw?.Invoke();
             }
 
-            public bool CommitVerifiedRoute(HostServingProof proof, Func<bool> publish)
+            public bool CommitVerifiedRoute(HostServingProof proof, Func<bool> publish, Func<Action, bool> tryAccept)
             {
                 host.Calls.Add("commit");
                 Assert.True(host.AdmissionClosed);
                 Assert.Equal(new HostResident(proof.Target.EngineName, proof.ContainerId), host.Resident);
                 if (!host.AdmitVerifiedRoute || !publish()) return false;
 
-                host.CommittedProof = proof;
-                return true;
+                host.BeforeRouteAcceptance?.Invoke();
+                return tryAccept(() => host.CommittedProof = proof);
             }
 
             public void Dispose()

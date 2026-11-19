@@ -12,7 +12,8 @@ internal readonly record struct HostMutationOutcome(HostMutation? Operation, Hos
 
 internal sealed record HostServingProof(LifecycleTarget Target, long Epoch, string ContainerId);
 
-internal sealed record HostSwitchPublication(Func<HostServingProof, bool> TryPublish, Action Complete);
+internal sealed record HostSwitchPublication(
+    Func<HostServingProof, bool> TryPublish, Func<Action, bool> TryAccept, Action Complete);
 
 internal interface IHostDrain : IDisposable
 {
@@ -22,9 +23,10 @@ internal interface IHostDrain : IDisposable
     // Disposing the admission guard must never restore this authority without fresh evidence.
     void WithdrawIncumbent();
 
-    // Commit admission for this exact proof and publish it while the guard is held. A declined
-    // publication grants no admission. No other launch can intervene in the handoff.
-    bool CommitVerifiedRoute(HostServingProof proof, Func<bool> publish);
+    // Publish provisionally under host admission, then pass the exact route store to tryAccept.
+    // Return the decision from tryAccept. Its synchronous store is infallible and must perform
+    // no I/O, take no locks and send no notifications.
+    bool CommitVerifiedRoute(HostServingProof proof, Func<bool> publish, Func<Action, bool> tryAccept);
 }
 
 /// <summary>The host authority for cooperating launchers. Observations cover the physical host,
@@ -259,7 +261,7 @@ internal sealed class HostLifecycleCoordinator(string reservationPath, IHostLife
         reservation.Settle(launch);
         if (publication is null) return ready;
         var proof = new HostServingProof(target, launch.Epoch, containerId);
-        if (!drain.CommitVerifiedRoute(proof, () => publication.TryPublish(proof)))
+        if (!drain.CommitVerifiedRoute(proof, () => publication.TryPublish(proof), publication.TryAccept))
             return PublicationRefusal();
 
         publication.Complete();

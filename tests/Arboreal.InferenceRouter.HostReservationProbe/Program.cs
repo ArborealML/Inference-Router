@@ -52,6 +52,10 @@ if (args.Length == 3)
         {
             published = proof;
             return true;
+        }, store =>
+        {
+            store();
+            return true;
         }, () =>
         {
             // At this point CommitVerifiedRoute succeeded, but the caller has no switch reply.

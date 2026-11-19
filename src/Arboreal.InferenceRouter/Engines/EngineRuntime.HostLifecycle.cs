@@ -24,7 +24,8 @@ public sealed partial class EngineRuntime
     {
         var delivery = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         SwitchServingProof? provisional = null;
-        var publication = new HostSwitchPublication(TryPublish, Complete);
+        var accepted = false;
+        var publication = new HostSwitchPublication(TryPublish, TryAccept, Complete);
         var result = await enrollment.Controller.SwitchAsync(target, ct, publication).ConfigureAwait(false);
         enrollment.ImmediateForTests?.AfterResult?.Invoke(result);
 
@@ -46,6 +47,18 @@ public sealed partial class EngineRuntime
             lock (_transitionGate) return PendingClaim() && HasCurrentProof();
         }
 
+        bool TryAccept(Action store)
+        {
+            lock (_transitionGate)
+            {
+                if (accepted || !PendingClaim() || !HasCurrentProof()) return false;
+                // The host guard is already held. This callback only stores the exact host proof.
+                store();
+                accepted = true;
+                return true;
+            }
+        }
+
         void Complete()
         {
             // The coordinator enters this callback only after the host's acceptance call returns.
@@ -57,7 +70,7 @@ public sealed partial class EngineRuntime
         {
             lock (_transitionGate)
             {
-                if (!PendingClaim() || (ready && !HasCurrentProof())) return false;
+                if (!PendingClaim() || (ready && (!accepted || !HasCurrentProof()))) return false;
                 if (!ready) state.FailureReason = SwitchReason.LaunchFailed;
                 state.ReadinessOutcomeDelivered = delivery;
                 state.End = ready ? SwitchEnd.Ready : SwitchEnd.Failed;
