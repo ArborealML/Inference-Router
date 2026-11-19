@@ -12,6 +12,7 @@ public sealed class DockerTargetDto
     private DockerBindDto[]? _bindMounts;
     private long? _memoryBytes;
     private long? _memorySwapBytes;
+    private DockerHealthcheckDto? _healthcheck;
 
     [JsonPropertyName("env")][TomlPropertyName("env")]
     public string[]? Env
@@ -54,6 +55,61 @@ public sealed class DockerTargetDto
         {
             if (_memorySwapBytes.HasValue) throw new RouterConfigException("duplicate serving-tier docker.memory_swap_bytes");
             _memorySwapBytes = value ?? throw new RouterConfigException("serving-tier docker.memory_swap_bytes cannot be null");
+        }
+    }
+
+    [JsonPropertyName("healthcheck")][TomlPropertyName("healthcheck")]
+    public DockerHealthcheckDto? Healthcheck
+    {
+        get => _healthcheck;
+        set
+        {
+            if (_healthcheck is not null) throw new RouterConfigException("duplicate serving-tier docker.healthcheck");
+            _healthcheck = value ?? throw new RouterConfigException("serving-tier docker.healthcheck cannot be null");
+        }
+    }
+
+    [JsonIgnore, TomlIgnore(Condition = TomlIgnoreCondition.Never), TomlExtensionData]
+    public TomlTable? Unknown { get; set; }
+}
+
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+public sealed class DockerHealthcheckDto
+{
+    private string? _command;
+    private long? _intervalMs;
+    private long? _startPeriodMs;
+
+    [JsonPropertyName("command")][TomlPropertyName("command")]
+    public string? Command
+    {
+        get => _command;
+        set
+        {
+            if (_command is not null) throw new RouterConfigException("duplicate docker.healthcheck.command");
+            _command = value ?? throw new RouterConfigException("docker.healthcheck.command cannot be null");
+        }
+    }
+
+    [JsonPropertyName("interval_ms")][TomlPropertyName("interval_ms")]
+    public long? IntervalMs
+    {
+        get => _intervalMs;
+        set
+        {
+            if (_intervalMs.HasValue) throw new RouterConfigException("duplicate docker.healthcheck.interval_ms");
+            _intervalMs = value ?? throw new RouterConfigException("docker.healthcheck.interval_ms cannot be null");
+        }
+    }
+
+    [JsonPropertyName("start_period_ms")][TomlPropertyName("start_period_ms")]
+    public long? StartPeriodMs
+    {
+        get => _startPeriodMs;
+        set
+        {
+            if (_startPeriodMs.HasValue) throw new RouterConfigException("duplicate docker.healthcheck.start_period_ms");
+            _startPeriodMs = value ?? throw new RouterConfigException("docker.healthcheck.start_period_ms cannot be null");
         }
     }
 

@@ -38,9 +38,17 @@ public sealed class DockerCreateRequest
     [JsonPropertyName("Entrypoint")] public string[]? Entrypoint { get; set; }
     [JsonPropertyName("Cmd")] public string[]? Cmd { get; set; }
     [JsonPropertyName("Env")] public string[]? Env { get; set; }
+    [JsonPropertyName("Healthcheck")] public DockerCreateHealthcheck? Healthcheck { get; set; }
     [JsonPropertyName("Labels")] public required Dictionary<string, string> Labels { get; set; }
     [JsonPropertyName("StopTimeout")] public int? StopTimeoutSeconds { get; set; }
     [JsonPropertyName("HostConfig")] public DockerHostConfig? HostConfig { get; set; }
+}
+
+public sealed class DockerCreateHealthcheck
+{
+    [JsonPropertyName("Test")] public required string[] Test { get; init; }
+    [JsonPropertyName("Interval")] public long? Interval { get; init; }
+    [JsonPropertyName("StartPeriod")] public long? StartPeriod { get; init; }
 }
 
 public sealed class DockerHostConfig

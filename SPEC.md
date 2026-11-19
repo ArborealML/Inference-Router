@@ -1,6 +1,6 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.80)
+Status: draft, continuously revised (v0.12.81)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
@@ -352,6 +352,8 @@ daemon transaction per engine. 137 tests green.
   that answers no `upload_url`, an upload that dies or answers no asset id, an asset name listed twice on
   the release, and a tag that moves after the first resolve. No tag has run the gate: still configured,
   not proven.
+- v0.12.81 — offline Docker create projection supports literal serving-tier health checks and
+  checked Docker timing fields. Health-only tiers keep the native startup and mutation gate (§5.3.1, §7).
 - v0.12.80 — offline Docker create projection supports a literal image entrypoint and host IPC
   for a native engine. Either declaration gates engine startup and Docker mutations (§5.3.1, §7).
 
@@ -1593,13 +1595,14 @@ effective resource inspection, artifact and live instance identity, and reconcil
 an uncertain create while the host reservation is held. It also requires verification of
 read-only bind enforcement for nested mounts.
 
-Native serving tiers can also declare literal environment, mounts and memory limits for offline
-create projection. Any such declaration gates engine activation and all native mutations,
-including env-only, bind-only and memory-only targets and requests for other models on the same
-engine. The Docker provider refuses with `docker_target_not_qualified` before any write.
+Native serving tiers can declare literal environment, mounts, memory limits and Docker health
+checks for offline create projection. Each of these settings gates engine activation and native
+mutations across the engine's catalog. The Docker provider refuses with
+`docker_target_not_qualified` before any write.
 A coordinated switch may first read ownership.
 The resolved payload describes launch intent. Serving readiness, host authority and exact-instance
-request delivery require separate proof.
+request delivery require separate proof. Docker health check metadata and status grant no AIR
+readiness, capacity or admission authority.
 
 An engine-wide entrypoint override or host IPC declaration also requires offline-only validation.
 Either one prevents runtime startup before provider binding or enrollment. The provider checks
@@ -2530,8 +2533,8 @@ duplicated resource fields and explicit JSON nulls. Bind sources are literal pat
 on the Docker host. The create request uses structured binds with source creation disabled.
 
 **Offline Docker settings per serving tier.** A structured serving entry on a native Docker engine
-can declare environment assignments, binds or memory limits. TOML inline and nested tables and JSON
-objects use the same fields.
+can declare environment assignments, binds, memory limits or a Docker health check. TOML inline
+and nested tables and JSON objects use the same fields.
 
 ```toml
 [[engine.strata.catalog."example.chat-v1".serving]]
@@ -2543,6 +2546,14 @@ max_slots = 2
 env = ["CONTEXT=65536", "PARALLEL=2"]
 bind_mounts = [{ source = "/srv/example/weights", target = "/models", read_only = true }]
 ```
+
+A tier's `docker.healthcheck` accepts a nonblank, control-free `command` and optional
+`interval_ms` and `start_period_ms` integers in 1 through 9,223,372,036,854. Each supplied
+duration becomes a signed 64-bit nanosecond value. The top-level Docker `Healthcheck.Test` is
+`["CMD-SHELL", command]`, with the decoded command preserved literally. An absent probe or
+duration is omitted from the create request to preserve Docker inheritance and defaults.
+The start period controls when failures count toward an unhealthy status. The health check is
+available only on a serving tier, and any declaration keeps the whole engine offline for projection.
 
 For an engine using this feature, model IDs and aliases match case-insensitively and must
 identify one canonical model. An opted-in model's serving names must be distinct under ordinal

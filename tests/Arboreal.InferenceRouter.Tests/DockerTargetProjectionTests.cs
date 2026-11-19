@@ -4,7 +4,7 @@ using Arboreal.InferenceRouter.Lifecycle;
 
 namespace Arboreal.InferenceRouter.Tests;
 
-public sealed class DockerTargetProjectionTests
+public sealed partial class DockerTargetProjectionTests
 {
     private const string ImageId = "sha256:1111111111111111111111111111111111111111111111111111111111111111";
     private const string RepoDigest = "example/strata@sha256:2222222222222222222222222222222222222222222222222222222222222222";
@@ -12,6 +12,7 @@ public sealed class DockerTargetProjectionTests
     private const string SwiftOptions = "resident-budget-gib=40 conversation-cache-slots=4  rope-scaling=none";
     private const string QwenTier = """{ name = "256k-4", max_context = 256000, max_slots = 4, docker = { env = ["FAMILY=qwen"] } }""";
     private const string TargetJson = """{"name":"256k-4","max_context":256000,"max_slots":4,"docker":{"env":["FAMILY=qwen"]}}""";
+    private const string HealthcheckTargetJson = """{"name":"tier","max_context":100,"docker":{"healthcheck":{"command":"probe"}}}""";
     private const string OptedCatalogJson = "\"qwen\":{\"serving\":[" + TargetJson + "]}";
     private const long WideMemory = 57_982_058_496;
     private const long WideMemoryAndSwap = 62_277_025_792;
@@ -261,7 +262,8 @@ public sealed class DockerTargetProjectionTests
                 {
                     ["qwen"] = new ModelDto { Serving = [new ServingDto { Name = "tier", MaxContext = 1024,
                         Docker = new DockerTargetDto { Env = targetEnv, BindMounts = binds,
-                            MemoryBytes = WideMemory, MemorySwapBytes = WideMemoryAndSwap } }] },
+                            MemoryBytes = WideMemory, MemorySwapBytes = WideMemoryAndSwap,
+                            Healthcheck = new DockerHealthcheckDto { Command = "original check", IntervalMs = 1 } } }] },
                 },
             },
         } };
@@ -275,11 +277,19 @@ public sealed class DockerTargetProjectionTests
         var target = Selection(engine, "qwen");
         var first = provider.BuildCreateRequest(target, engine.Docker!.ImageIdentity!);
         first.Env![0] = "COMMON=overwrite";
+        var firstProbe = Assert.IsType<DockerCreateHealthcheck>(first.Healthcheck);
+        firstProbe.Test[1] = "overwritten check";
         first.HostConfig!.Mounts![0] = new DockerMount("bind", "/srv/other", "/models", false);
         first.HostConfig.Memory = 0;
         first.HostConfig.MemorySwap = 0;
         var next = provider.BuildCreateRequest(target, engine.Docker.ImageIdentity!);
         Assert.Equal(UnchangedPlanEnv, next.Env);
+        var nextProbe = Assert.IsType<DockerCreateHealthcheck>(next.Healthcheck);
+        Assert.NotSame(firstProbe, nextProbe);
+        Assert.NotSame(firstProbe.Test, nextProbe.Test);
+        Assert.Collection(nextProbe.Test, mode => Assert.Equal("CMD-SHELL", mode),
+            command => Assert.Equal("original check", command));
+        Assert.Equal(1_000_000L, nextProbe.Interval);
         Assert.Equal("/srv/model", Assert.Single(next.HostConfig!.Mounts!).Source);
         Assert.Equal(WideMemory, next.HostConfig.Memory);
         Assert.Equal(WideMemoryAndSwap, next.HostConfig.MemorySwap);
@@ -289,6 +299,7 @@ public sealed class DockerTargetProjectionTests
     [InlineData("""env = ["FAMILY=qwen"]""", false, false)]
     [InlineData("""bind_mounts = [{ source = "/srv/model", target = "/models", read_only = true }]""", true, false)]
     [InlineData("memory_bytes = 57982058496, memory_swap_bytes = 62277025792", false, true)]
+    [InlineData("""healthcheck = { command = "probe" }""", false, false)]
     public async Task TargetDeclarationRefusesEveryLivePathEvenForAnotherModel(string fields, bool hasMount, bool hasMemory)
     {
         var engine = LoadToml($$$"""
@@ -432,6 +443,7 @@ public sealed class DockerTargetProjectionTests
     [InlineData("""{"engine":{"strata":{"catalog":{"qwen":{"serving":[""" + TargetJson + """]}}}},"engine":{}}""", "engine")]
     [InlineData("""{"engine":{"strata":{"catalog":{"qwen":{"serving":[""" + TargetJson + """]}}},"strata":null}}""", "strata")]
     [InlineData("""{"engine":{"strata":{"catalog":{"qwen":{"serving":[""" + TargetJson + """]}},"catalog":{}}}}""", "catalog")]
+    [InlineData("""{"engine":{"strata":{"catalog":{"qwen":{"serving":[""" + HealthcheckTargetJson + """]}},"Catalog":{}}}}""", "catalog")]
     [InlineData("""{"engine":{"strata":{"catalog":{"qwen":{"serving":[""" + TargetJson + """]},"qwen":null}}}}""", "qwen")]
     [InlineData("""{"engine":{"strata":{"catalog":{"qwen":{"serving":[""" + TargetJson + """],"serving":[]}}}}}""", "serving")]
     [InlineData("""{"engine":{"strata":{"catalog":{"qwen":{"serving":[{"docker":null,"docker":{}}]}}}}}""", "docker")]
@@ -492,6 +504,8 @@ public sealed class DockerTargetProjectionTests
         using var provider = new DockerLifecycleProvider(engine.Docker!, "strata", daemon);
         var request = provider.BuildCreateRequest(Selection(engine, "qwen"), engine.Docker!.ImageIdentity!);
         Assert.Equal("COMMON=retained", Assert.Single(request.Env!));
+        using var payload = JsonSerializer.SerializeToDocument(request, DockerJsonContext.Default.DockerCreateRequest);
+        Assert.False(payload.RootElement.TryGetProperty("Healthcheck", out _));
         Assert.Empty(daemon.Requests);
     }
 
