@@ -22,7 +22,7 @@ python3 tools/board-check.py       # backlog/ against the task-content rules bel
 and its failure paths. The coordinator executes them in the assigned worktree and returns the results. At integration, rerun the affected tests when resolving conflicts changes the
 tested code. CI runs the full Release suite on main pushes and pull requests. Run a full suite locally only
 when a named acceptance measurement explicitly requires it or a documented failure occurs only in
-the complete suite. Record that reason in the task.
+the complete suite. Record that reason in the task. Keep one integration candidate per deliverable. Reuse a saved result when its commit and filter cover the request. Widen a local run only for a named failure, changed dependency, integration conflict or acceptance criterion. The receipt is the handoff; workers report again when a fix, finding or assignment changes the next action.
 
 **CI triage.** The coordinator checks main and open PRs after integration, at worker handoffs, and at
 least every ten minutes during active implementation. Use `gh run list --workflow ci --branch main`,
@@ -99,7 +99,7 @@ a capability is withdrawn or the plan changes.
 3. **Every commit gets an external deep-review pass**, dispatched by the manager as soon as the implementer's sha
    lands — the operator's own model-review runs, through the
    same external service as plan reviews — covering the
-   diff or a bounded range of commits; never the whole repo. Reviews are asynchronous: dispatch, keep
+   diff or a bounded range of commits; never the whole repo. Group fixture and analyzer corrections for the same feature into one bounded review range. Record the commits it covers and include any later changes in a follow-up range before integration. Reviews are asynchronous: dispatch, keep
    working, ingest when it lands. A dispatched review is recorded in the task body; it changes neither
    the task's status nor its assignee.
 
