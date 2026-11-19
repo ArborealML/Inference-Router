@@ -3,11 +3,11 @@ id: TASK-111
 title: >-
   Build the local router configuration for every supported select-model
   configuration
-status: In Progress
+status: Waiting
 assignee:
-  - '@gpt-6.2-sol-config'
+  - '@gpt-6.2-astra'
 created_date: '2026-11-18T18:15:00Z'
-updated_date: '2026-11-19T15:12:00Z'
+updated_date: '2026-11-19T15:19:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -19,7 +19,7 @@ ordinal: 109000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Config owns the reviewed offline published-port correction on ae0d530. [PR #31](https://github.com/ArborealML/Inference-Router/pull/31) qualified the preceding projections. The reviewed change affects 36 Strata and 13 Maya defaults among the existing 75. Unified topology, alternate-vector reconfiguration, credential bind, original source authentication and live authority remain open.
+Independent reviews of the published-port feature and GLM fixture correction wake the coordinator. On 8ac206c the focused Release checks passed 35/35, followed by one opt-in sweep over 10,150 distinct vectors in 8.443 seconds. Exactly 49 default expectations gained root exposure. All 26 HyperQwen expectations retained their prior payloads. [PR #31](https://github.com/ArborealML/Inference-Router/pull/31) supplies the offline verifier. Unified configuration, alternate reconfiguration, protected credential bind, actual host binding and host authority remain open.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
