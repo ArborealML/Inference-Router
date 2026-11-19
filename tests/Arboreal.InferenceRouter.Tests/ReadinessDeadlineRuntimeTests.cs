@@ -109,6 +109,71 @@ public sealed partial class ReadinessDeadlineTests
     }
 
     [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task JoinedModelOnlyWaiterUsesItsOwnFloorEvenAfterTheProofIsCommitted(bool stopAfterProof)
+    {
+        var clock = new ManualClock();
+        var feed = new EventRing();
+        var held = new HeldRead<byte[]>("""{"n_ctx":32768,"total_slots":2}"""u8.ToArray());
+        using var content = new HeldJsonContent(held);
+        using var handler = new TrustReadinessHandler(content);
+        var published = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var deliver = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await using var engine = new EngineRuntime(TrustEngine(tier: null), new RouterConfig(), feed,
+            handler, lifecycle: new TrustReadinessProvider())
+        {
+            ReadinessClockForTests = clock,
+        };
+        if (stopAfterProof)
+        {
+            engine.AfterSwitchProofForTests = () =>
+            {
+                published.TrySetResult();
+                deliver.Task.WaitAsync(Watchdog).GetAwaiter().GetResult();
+            };
+        }
+
+        try
+        {
+            var fitting = engine.EnsureLoadedAsync("model", null, Watchdog, queue: null,
+                CancellationToken.None, explicitContextMinimum: 32_768);
+            await held.Entered.Task.WaitAsync(Watchdog);
+            var stricter = engine.EnsureLoadedAsync("model", null, Watchdog, queue: null,
+                CancellationToken.None, explicitContextMinimum: 32_769);
+            Assert.False(stricter.IsCompleted);
+
+            held.Release.TrySetResult();
+            if (stopAfterProof)
+            {
+                await published.Task.WaitAsync(Watchdog);
+                await engine.DisposeAsync().AsTask().WaitAsync(Watchdog);
+                Assert.False(fitting.IsCompleted);
+                Assert.False(stricter.IsCompleted);
+                deliver.TrySetResult();
+            }
+
+            var fit = await fitting.WaitAsync(Watchdog);
+            var strict = await stricter.WaitAsync(Watchdog);
+            Assert.True(fit.Result.IsReady);
+            Assert.Equal(stopAfterProof ? EngineRuntime.SwitchOutcome.RouterStopped : EngineRuntime.SwitchOutcome.Failed,
+                strict.Result.Outcome);
+            Assert.Equal(stopAfterProof ? null : SwitchReason.WindowTooSmall, strict.Result.Detail);
+            Assert.Null(strict.Proof);
+            if (stopAfterProof) Assert.Null(fit.Proof);
+            Assert.Equal(1, handler.StateCalls);
+            Assert.Single(feed.Replay(0), row => row.Kind == "engine.switch_started");
+            Assert.Single(feed.Replay(0), row => row.Kind == "engine.switch_completed");
+        }
+        finally
+        {
+            held.Release.TrySetResult();
+            deliver.TrySetResult();
+            if (held.Entered.Task.IsCompleted) await content.Disposed.Task.WaitAsync(Watchdog);
+        }
+    }
+
+    [Theory]
     [InlineData(true, true)]
     [InlineData(false, true)]
     [InlineData(true, false)]

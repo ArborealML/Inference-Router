@@ -417,7 +417,7 @@ public sealed class RouterCore : IInferenceRouter
         QueuedRequest? candidate = null;
         EngineRuntime? engine = null;
         bool switchRequired = false;
-        string? targetProfile = null;
+        ServingProfile? targetProfile = null;
         SwitchServingProof? servingProof = null;
         long selectedAt = 0;
 
@@ -447,39 +447,41 @@ public sealed class RouterCore : IInferenceRouter
                     MaybeFailDeadline(request);
                     continue;
                 }
-                var e = _engines[decision.Engine];
-                if (!(comparison?.Observation.HasCapacity ?? e.HasCapacity)) continue;
                 var selection = (Queue: q, Candidate: snapshot, Decision: decision);
-                Func<bool>? observationIsCurrent = null;
-                if (comparison is { } switchView)
+                if (comparison is { } switchView && decision.SwitchRequired)
                 {
-                    if (decision.SwitchRequired)
-                    {
-                        selection = OrderEligibleSwitches(scan, selection, request, switchView);
-                        BeforeCostCommitForTests?.Invoke();
-                    }
-                    observationIsCurrent = () => e.IsDispatchObservationCurrent(switchView.Observation);
+                    selection = OrderEligibleSwitches(scan, selection, request, switchView);
+                    BeforeCostCommitForTests?.Invoke();
                 }
-                // A cancelled or displaced candidate invalidates this pass. Reapply queue ordering
-                // on the next pass so the scheduler evaluates whichever ticket is now first.
+                var exactRequest = selection.Candidate.Request!;
+                var explicitMinimum = exactRequest.ExplicitContextMinimum;
+                var e = _engines[selection.Decision.Engine!];
+                var observation = comparison?.Observation ?? FindDispatchObservation(infos, e.Name);
+                var needsCurrentObservation = comparison is not null || explicitMinimum > 0 ||
+                    selection.Decision.TargetProfile is not null ||
+                    (exactRequest.RequiredContextTokens > 0 && e.ProfilesForModel(exactRequest.Ticket.Model).Count > 0);
+                if (!(needsCurrentObservation ? observation.HasCapacity : e.HasCapacity)) continue;
+                var profile = e.GetProfile(exactRequest.Ticket.Model, selection.Decision.TargetProfile);
+                var requiredWindow = EngineRuntime.RequiredWindow(profile, explicitMinimum);
+                if (requiredWindow > 0 &&
+                    observation.Capability.Serving.WindowFor(exactRequest.Ticket.Model) < requiredWindow &&
+                    !WillWaitForModel(selection.Decision.SwitchRequired, profile))
+                {
+                    MaybeFailDeadline(exactRequest);
+                    continue;
+                }
+
+                Func<bool>? observationIsCurrent = needsCurrentObservation
+                    ? () => e.IsDispatchObservationCurrent(observation) : null;
+                // A cancelled or displaced candidate or a changed serving observation invalidates the pass.
                 if (!selection.Queue.TryTakeExact(selection.Candidate, HasThreadCapacity, observationIsCurrent))
                     return true;
                 selectedAt = _clock.GetTimestamp();
-                candidate = selection.Candidate.Request!;
+                candidate = exactRequest;
                 engine = e;
                 switchRequired = selection.Decision.SwitchRequired;
-                targetProfile = selection.Decision.TargetProfile;
-                if (!switchRequired)
-                {
-                    foreach (var info in infos)
-                    {
-                        if (info.Name == e.Name)
-                        {
-                            servingProof = info.SwitchProof;
-                            break;
-                        }
-                    }
-                }
+                targetProfile = profile;
+                if (!switchRequired) servingProof = observation.Capability.SwitchProof;
                 candidate.Thread.IncrementInflight();
                 engine.BeginRequest(candidate.PromptChars);  // reserve engine capacity now:
                 break;                                     // the drain loop must not over-dispatch
@@ -555,6 +557,16 @@ public sealed class RouterCore : IInferenceRouter
         }
     }
 
+    private bool WillWaitForModel(bool switchRequired, ServingProfile? profile) =>
+        _config.AutoSwitch && (switchRequired || profile is not null);
+
+    private static EngineRuntime.DispatchObservation FindDispatchObservation(EngineRuntimeInfo[] infos, string engine)
+    {
+        foreach (var info in infos)
+            if (info.Name == engine) return info.DispatchObservation;
+        throw new InvalidOperationException("The selected engine is missing from the scheduler view.");
+    }
+
     private EngineRuntimeInfo[] BuildEngineInfos(QueuedRequest head, SwitchComparison? comparison = null)
     {
         var messages = head.Messages();
@@ -580,7 +592,7 @@ public sealed class RouterCore : IInferenceRouter
                 MatchedPrefixChars = e.MatchedPrefixChars(messages),
                 ActiveContextWindow = cap.Serving.WindowFor(head.Ticket.Model),
                 ServingProfiles = e.ProfilesForModel(head.Ticket.Model),
-                SwitchProof = cap.SwitchProof,
+                DispatchObservation = observation,
             });
         }
         return list.ToArray();
@@ -616,11 +628,10 @@ public sealed class RouterCore : IInferenceRouter
     // ── execution ───────────────────────────────────────────────────────────
 
     private async Task ExecuteAsync(QueuedRequest candidate, EngineRuntime engine, bool switchRequired,
-                                    string? targetProfileName, SwitchServingProof? servingProof, long selectedAt)
+                                    ServingProfile? targetProfile, SwitchServingProof? servingProof, long selectedAt)
     {
         var ticket = candidate.Ticket;
         var thread = candidate.Thread;
-        var targetProfile = engine.GetProfile(ticket.Model, targetProfileName);
         var execCts = ticket.ExecCts ??= new CancellationTokenSource();
         var decremented = false;
         var ended = false;
@@ -639,7 +650,7 @@ public sealed class RouterCore : IInferenceRouter
         try
         {
 
-            if ((switchRequired || targetProfile is not null) && _config.AutoSwitch)
+            if (WillWaitForModel(switchRequired, targetProfile))
             {
                 ticket.State = TicketState.WaitingForModel;
                 // A ticket's own deadline bounds only its time in the queue, so the wait for a model
@@ -651,7 +662,8 @@ public sealed class RouterCore : IInferenceRouter
                 // The caller's token bounds only its own wait: the switch transaction runs on the engine's
                 // token, so giving up here never leaves the engine half-switched with nothing loaded.
                 var observed = await engine.EnsureLoadedAsync(ticket.Model, targetProfile, switchWait,
-                    new SwitchQueueTiming(candidate.EnqueuedAtTimestamp, selectedAt), execCts.Token).ConfigureAwait(false);
+                    new SwitchQueueTiming(candidate.EnqueuedAtTimestamp, selectedAt), execCts.Token,
+                    explicitContextMinimum: candidate.ExplicitContextMinimum).ConfigureAwait(false);
                 var switchResult = observed.Result;
                 if (switchResult.Outcome == EngineRuntime.SwitchOutcome.RouterStopped)
                 {

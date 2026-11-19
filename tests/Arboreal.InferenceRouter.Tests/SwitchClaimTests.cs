@@ -103,6 +103,78 @@ public sealed class SwitchClaimTests
         return new EngineRuntime(def, config, feed ?? new EventRing(), models, lifecycle: provider, dispatchHint: dispatchHint);
     }
 
+    [Theory(Timeout = 30_000)]
+    [InlineData(false, 8)]
+    [InlineData(true, 1)]
+    public async Task LostClaimReleasesBothLocksAndStopsAtTheCountOrOriginalDeadline(bool deadlineWins, int expectedLosses)
+    {
+        var provider = new GatedProvider();
+        using var reported = Reports("m");
+        var feed = new EventRing();
+        await using var engine = Engine(provider, feed, models: reported);
+        var offers = 0;
+        if (deadlineWins) engine.SwitchWaitTimeForTests = deadline => deadline;
+
+        void SupersedeOffer()
+        {
+            var offer = ++offers;
+            Assert.InRange(offer, 1, 8);
+            if (offer == 2)
+            {
+                // This other caller must acquire both locks while the retry is outside them.
+                engine.BeforeSwitchWaitForTests = null;
+                try
+                {
+                    var other = Task.Run(() => engine.WaitForModelAsync("undeclared", TimeSpan.FromSeconds(5),
+                        CancellationToken.None));
+                    var refusal = other.WaitAsync(TimeSpan.FromSeconds(5)).GetAwaiter().GetResult();
+                    Assert.Equal(SwitchReason.NoSelectCommand, refusal.Detail);
+                }
+                finally
+                {
+                    engine.BeforeSwitchWaitForTests = SupersedeOffer;
+                }
+            }
+
+            using var stop = new CancellationTokenSource();
+            var observed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            void Observe(RouterEvent entry)
+            {
+                if (entry.Kind == "engine.health") observed.TrySetResult();
+            }
+
+            var before = engine.Capability;
+            reported.NCtx = 128 + offer;
+            feed.Subscribe(Observe);
+            try
+            {
+                engine.StartHealthLoop(stop.Token);
+                observed.Task.WaitAsync(TimeSpan.FromSeconds(5)).GetAwaiter().GetResult();
+            }
+            finally
+            {
+                feed.Unsubscribe(Observe);
+                stop.Cancel();
+            }
+            Assert.NotSame(before, engine.Capability);
+            Assert.Null(engine.SwitchingToward);
+        }
+
+        engine.BeforeSwitchWaitForTests = SupersedeOffer;
+        var result = await engine.WaitForModelAsync("extra", TimeSpan.FromSeconds(20), CancellationToken.None);
+
+        Assert.Equal(expectedLosses, offers);
+        Assert.Equal(deadlineWins ? EngineRuntime.SwitchOutcome.TimedOut : EngineRuntime.SwitchOutcome.Failed,
+            result.Outcome);
+        Assert.Equal(deadlineWins ? null : SwitchReason.SwitchError, result.Detail);
+        Assert.Empty(provider.Launches);
+        Assert.Empty(engine.SwitchHistory);
+        Assert.Null(engine.SwitchingToward);
+        Assert.DoesNotContain(feed.Replay(0), entry => entry.Kind == "engine.switch_started");
+        Assert.Equal(deadlineWins ? 0 : 1, feed.Replay(0).Count(entry =>
+            entry.Kind == "engine.switch_failed" && entry.Model == "extra"));
+    }
+
     private static async Task WaitUntil(Func<bool> condition)
     {
         for (var i = 0; i < 400 && !condition(); i++) await Task.Delay(5);

@@ -1,6 +1,6 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.73)
+Status: draft, continuously revised (v0.12.75)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
@@ -352,6 +352,10 @@ daemon transaction per engine. 137 tests green.
   that answers no `upload_url`, an upload that dies or answers no asset id, an asset name listed twice on
   the release, and a tag that moves after the first resolve. No tag has run the gate: still configured,
   not proven.
+- v0.12.75 — preserve the exact ticket's explicit context minimum through dispatch and
+  post-launch model readiness. Joined waiters apply their own minimum to the observed
+  window. Bound an idle switch claim to eight superseded capability observations and
+  the caller's original wait budget (§5.5, §7.6, TASK-68).
 - v0.12.73 — Add the standalone offline host successor checkpoint and effect ledger.
   The checkpoint retains exact launch, stop and frozen successor evidence across process death.
   The fake ledger verifies residency and separates send, acceptance, attempt and applied records
@@ -1962,8 +1966,8 @@ engine forks land; the scheduler interface will not change shape.
   guarded proof decision. At equality the attempt is expired. A zero or negative readiness
   timeout expires before the first read, including `-1`. The delegated selector's process-exit wait
   and the request's own switch wait keep their existing meanings. With `wait_health = false`,
-  model-only readiness still requires a fresh roster naming the target. A named tier also needs
-  a fresh bound window. If its shorter state cap expires first, the attempt refuses
+  readiness requires a fresh roster naming the target. A selected tier or positive explicit context
+  minimum also needs a fresh bound window. If the shorter state cap expires first, the attempt refuses
   `window_too_small` while late I/O retires. At the guard, stop or absolute expiry can
   supersede an earlier step-cap result until the terminal outcome commits. A fresh attempt
   may observe independently while the retired read disposes. At overall expiry, the guard keeps the
@@ -1979,8 +1983,8 @@ engine forks land; the scheduler interface will not change shape.
   and they are three refusals rather than one timeout: an engine that never answered the probe is `health_timeout`
   (**retry later** — it may answer next time); an engine that stayed up and never reported the target is
   `refresh_omits` (**fix the configuration** — the catalog key has to match what the engine reports, and an alias is
-  the router's spelling, not the engine's); an engine serving the target in a window too small for the profile asked
-  for is `window_too_small` (**fix the configuration** — a ladder tier that fits, or a smaller profile). Under v0.12.41
+  the router's spelling, not the engine's); an engine serving the target below the required context window
+  is `window_too_small` (**fix the configuration** — supply a window that fits the request). Under v0.12.41
   all three were `health_timeout`: a permanent mismatch and a transient wait wearing one name, which is the exact
   distinction a retry decision exists to make. The expired window and its milliseconds stay on the feed at all three
   exits beside the names the engine reported and both sides of the comparison, so the grep key for an expired
@@ -2041,12 +2045,13 @@ engine forks land; the scheduler interface will not change shape.
   outcome events are emitted *before* the commit, so a dispatcher woken by them sees the marker still up and would
   otherwise not look at the queue again until the next health poll.
 - **The claim is decided and published from one snapshot, and a switch's end settles before it nudges.** The
-  readiness answer and the marker come from the **same** capability snapshot: the claim is an expected-version
-  compare-exchange on the version that decision read, and a lost exchange means something published while this
-  caller was deciding — so it re-decides on the newer snapshot, and a poll that proved the requested model
-  retires the claim instead of buying a second launch of a model already served. **A waiter is authorised at the
-  moment it resumes, not at the moment it was promised** — and what authorises it is the evidence this router has
-  about the engine, not a snapshot that has merely moved on. The readiness task settling and the switch state
+  readiness answer and the marker use the same capability snapshot. An idle offer captures it before
+  acquiring the switch and transition locks. If the compare-exchange loses or the idle answer is stale,
+  release both locks before re-deciding. A poll that proves the requested model can retire the offer.
+  After eight lost idle offers, return `switch_failed` with `switch_error` without starting a lifecycle
+  operation. Caller cancellation, shutdown and expiry of the original wait budget retain precedence.
+  **A waiter is authorised at the moment it resumes, not at the moment it was promised**. It uses the
+  evidence this router has about the engine at that point. The readiness task settling and the switch state
   clearing happen before a waiter is scheduled, so a successor can claim the engine in that window. A claim is one
   publication that takes health down, raises the marker, and says nothing at all about what the engine serves: it is
   somebody else's transaction starting. Withdrawing a proof this router published **itself** on that snapshot is
@@ -2227,8 +2232,8 @@ by the whole poll interval — the benchmark harness measured exactly that befor
 `X-Inference-Thread: agent-42`, `X-Inference-Priority: high:200`
 (`class[:sub]`), `X-Inference-Affinity: <normalized-prefix-hash>` (optional,
 server-side prefix normalization is authoritative anyway (§7.6),
-`X-Inference-Required-Context: <tokens>` (declares the context the request must
-be served under; absent ⇒ the router estimates from prompt chars, §7.6). Every admitted request
+`X-Inference-Required-Context: <tokens>` declares a positive measured context minimum for the
+request. With the header absent, the prompt estimate informs serving-tier selection (§7.6). Every admitted request
 carries its ticket id back on the response as `X-Inference-Ticket`, which is how a client reaches
 `GET|DELETE /admin/tickets/{id}` (watch / cancel) without scraping the event stream. Body-only
 callers (default thread `anon`, priority Normal) work unchanged.
@@ -2441,9 +2446,18 @@ and `health_probe.slots_path` to read those gauges. The probe checks described i
 
 Semantics:
 
-- **Demand estimate**: a request's required context is `options.required_context` when the
-  client declares it (the Pi extension can compute it exactly), else
-  `ceil(prompt_chars / scheduler.chars_per_token_estimate)` (default 4.0).
+- **Tier selection demand**: use a positive `options.required_context` when the client declares
+  it. Otherwise use `ceil(prompt_chars / scheduler.chars_per_token_estimate)` (default 4.0).
+- **Explicit context minimum**: a positive declaration stays with the exact selected ticket.
+  A loaded route needs a current measured window for that model at least as large as this
+  minimum, even without a named tier. Exact take revalidates the capability and slot
+  observation used for an explicit minimum or tier decision. A switch must prove a fresh
+  model-bound window that fits both the request's explicit minimum and any selected tier.
+  Trust mode reads fresh state for either requirement. Each joined waiter applies its own
+  minimum to the measured result, including when it receives a committed verdict after
+  shutdown. A same-target waiter whose minimum exceeds the committed window cannot use
+  that proof to forward. A tier label, static configuration and prompt estimates alone
+  supply no measured capacity.
 - **Admission**: an engine's live capacity is the *tighter* of
   `scheduler.max_inflight_per_engine` and the slots it reports (`total_slots`);
   until the gauge is known the configured ceiling alone applies. A profile
@@ -2452,7 +2466,8 @@ Semantics:
   A loaded model needs an observed window that meets that tier. A smaller reported window can
   trigger a switch when `auto_switch = true`. An unknown window on a loaded model leaves a
   capacity-dependent request waiting for evidence. A healthy loaded model can still serve a
-  request with no required profile. An engine whose ladder has no fitting tier is skipped.
+  request with neither an explicit minimum nor a required profile. An engine whose ladder has
+  no fitting tier is skipped.
   A failed switch returns `switch_failed` (§5.5, §6).
 - **Binding**: an engine-wide context window binds to a single non-alias, loaded roster row
   that matches a canonical catalog key case-insensitively. An additional upstream row with a
