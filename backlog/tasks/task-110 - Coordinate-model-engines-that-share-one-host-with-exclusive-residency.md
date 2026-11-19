@@ -1,11 +1,11 @@
 ---
 id: TASK-110
 title: Coordinate model engines that share one host with exclusive residency
-status: Waiting
+status: Preparing
 assignee:
-  - '@gpt-6.2-astra'
+  - '@gpt-6.2-sol-lifecycle'
 created_date: '2026-11-18T18:13:00Z'
-updated_date: '2026-11-19T19:41:00Z'
+updated_date: '2026-11-19T19:48:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -20,7 +20,7 @@ ordinal: 108000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Hosted CI and the correction verdict wake [PR #35](https://github.com/ArborealML/Inference-Router/pull/35). At 7ba85bd all eleven focused offline cases passed with zero skips, including crossed payloads before dispatch, reopened ingress policy, independently seeded observer state and both Applied completion splits. Bounded correction review dispatched November 19. The parent review identified missing plan and policy binding despite green CI. Live enrollment remains gated.
+Lifecycle is mapping the first enforceable step from the verified offline receipt to production enrollment. [PR #35](https://github.com/ArborealML/Inference-Router/pull/35) landed at 7b4c626 after correction review accepted 7ba85bd. Its eleven focused cases and [1,476 hosted Release cases](https://github.com/ArborealML/Inference-Router/actions/runs/44600860457) passed with zero skips. Sequential synthetic evidence leaves physical exclusion, authenticated durability and concurrent policy enforcement open.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -37,7 +37,7 @@ Hosted CI and the correction verdict wake [PR #35](https://github.com/ArborealML
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Compare proposed bytes with a separately approved projection before dispatch. Exercise reopened ingress policy at eligibility with an otherwise-eligible open control. Independently source effective settings and start evidence. At both Applied completion splits require quarantine on reopen with no successful lookup, resend or competing launch. Keep policy evidence journal-backed. Limit counters and competition claims to sequential fake calls. Preserve qualified pre-I/O and stale-delivery coverage; run only the differential filter on the corrective child.
+Use the privileged host inventory and landed receipt to identify the smallest enforceable production increment, its ownership and prerequisites. Preserve the serving incumbent during preparation. Review of 7ba85bd accepted pre-dispatch and reopen byte binding, current ingress gating, independent effective-state evidence and quarantine at both partial completion cuts. Split reconciliation and concurrent policy changes remain open. Reuse the offline fixture evidence.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
