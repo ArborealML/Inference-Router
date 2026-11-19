@@ -1,6 +1,6 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.81)
+Status: draft, continuously revised (v0.12.82)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
@@ -352,6 +352,8 @@ daemon transaction per engine. 137 tests green.
   that answers no `upload_url`, an upload that dies or answers no asset id, an asset name listed twice on
   the release, and a tag that moves after the first resolve. No tag has run the gate: still configured,
   not proven.
+- v0.12.82 — qualify closed-route staging through verified publication refusal, drain disposal
+  and explicit fresh-generation open in the offline host coordinator fixture (§5.3.1, TASK-110).
 - v0.12.81 — offline Docker create projection supports literal serving-tier health checks and
   checked Docker timing fields. Health-only tiers keep the native startup and mutation gate (§5.3.1, §7).
 - v0.12.80 — offline Docker create projection supports a literal image entrypoint and host IPC
@@ -1802,6 +1804,15 @@ fresh vacancy to create the frozen successor. The replacement route remains clos
 identity is checked for consistency within the issuer's fixture binding. Independent process
 attestation remains a production host and verified-dispatch requirement. Enrolled admission, issuer
 crash recovery and live host authority remain outside this qualification.
+
+The offline host coordinator fixture installs a closed route stage against the exact applied
+launch and its original plan. It keeps the applied launch record after publication refusal and
+after success. The guarded state decision runs with minting closed. Completion runs outside the
+short guard, and drain disposal grants no mint authority. A new coordinator can reverify the same
+launch and stage a fresh generation without another stop or create. Only explicit Open of the
+still-current completed generation enables the test issuer to grant a permit and send. The old
+and declined generations stay closed. Enrolled runtime, deadline enforcement and production
+activation remain outside this qualification.
 
 **Production evidence.** The raw Docker inventory can report known foreign containers. Even an
 empty inventory leaves vacancy unproven, and raw Docker supplies no terminal receipt for an
