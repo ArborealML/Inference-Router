@@ -3,11 +3,11 @@ id: TASK-111
 title: >-
   Build the local router configuration for every supported select-model
   configuration
-status: In Progress
+status: Waiting
 assignee:
-  - '@gpt-6.2-sol-config'
+  - '@chatswarm'
 created_date: '2026-11-18T18:15:00Z'
-updated_date: '2026-11-19T12:04:00Z'
+updated_date: '2026-11-19T12:09:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -19,7 +19,7 @@ ordinal: 109000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Config is correcting a misplaced model-level Docker policy accepted by both TOML and JSON. Coordinator config-only probes on 6ea04f8 reproduced both accepts; serving-tier Docker resources already refuse in both formats. Keep the selector’s daemon-default logger and require compatible rotation options before future activation. The paired candidate passed 63/63 focused Release, pinned config load and warning-free Native AOT. Its eight targets remain pending. Landed offline coverage is 49/75 after [PR #24](https://github.com/ArborealML/Inference-Router/pull/24).
+The independent parser correction review dispatched November 19 wakes the coordinator. At 6ea04f8 eight misplaced or shadowed model-level Docker policy inputs unexpectedly loaded and two valid controls passed. At 0d76e2d all ten passed, zero skips, and the pinned paired config loaded. Parent qualification was 63/63 plus warning-free Native AOT. Future activation requires a known daemon driver supporting both rotation options. Landed offline coverage remains 49/75 after [PR #24](https://github.com/ArborealML/Inference-Router/pull/24).
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
