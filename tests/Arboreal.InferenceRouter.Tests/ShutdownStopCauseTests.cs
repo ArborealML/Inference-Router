@@ -38,28 +38,60 @@ public sealed class ShutdownStopCauseTests
     [Fact(Timeout = 60_000)]
     public async Task AStoppedAnswerArrivesWhileTheProviderIsStillHeld()
     {
+        var beforeWake = new Pause();
         var cancelling = new Pause();
         var provider = new HeldProvider(cancelling.Enter);
         using var handler = new FakeEngineHandler();
         var ended = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         await using var engine = Engine(provider, handler, dispatchHint: () => ended.TrySetResult());
+        var atWake = new TaskCompletionSource<(SwitchAttemptRecord Record, RetainedSwitchAttempt Snapshot)[]>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        engine.AfterStopDecisionForTests = beforeWake.Enter;
+        engine.AfterReadyWaitForTests = _ => atWake.TrySetResult(engine.SwitchHistory
+            .Select(entry => (entry.Terminal, entry with { Terminal = entry.Terminal with { } }))
+            .ToArray());
         var waiter = engine.WaitForModelAsync(Model, HoldLimit, CancellationToken.None);
         Task? shutdown = null;
         EngineRuntime.SwitchResult stopped;
         string? markerWhileHeld;
+        SwitchAttemptRecord sealedBeforeWake;
+        RetainedSwitchAttempt snapshotBeforeWake;
 
         try
         {
             await provider.Launched.WaitAsync(Limit);
             shutdown = Task.Run(async () => await engine.DisposeAsync());
-            // The provider has observed cancellation and still owns the launch. Keep cancellation
-            // paused too, so a readiness wake before publication cannot race the stop write.
+            await beforeWake.Entered.WaitAsync(Limit);
+            Assert.False(waiter.IsCompleted);
+            Assert.False(provider.CancellationObserved.IsCompleted);
+            var retained = Assert.Single(engine.SwitchHistory);
+            sealedBeforeWake = retained.Terminal;
+            snapshotBeforeWake = retained with { Terminal = sealedBeforeWake with { } };
+            Assert.Equal(Model, snapshotBeforeWake.Terminal.Target.CanonicalModel);
+            Assert.Equal(SwitchAttemptOutcome.Cancelled, snapshotBeforeWake.Terminal.Outcome);
+            var launch = Assert.IsType<SwitchStageObservation>(snapshotBeforeWake.Terminal.GetStage(SwitchStage.Launch));
+            Assert.Equal(SwitchStageOutcome.Incomplete, launch.Outcome);
+            Assert.InRange(launch.StartedAt, snapshotBeforeWake.Terminal.StartedAt, snapshotBeforeWake.Terminal.EndedAt);
+            Assert.Equal(snapshotBeforeWake.Terminal.EndedAt, launch.ObservedUntil);
+            Assert.Null(snapshotBeforeWake.Terminal.GetStage(SwitchStage.Shutdown));
+            Assert.Null(snapshotBeforeWake.Terminal.ShutdownSource);
+            Assert.Empty(snapshotBeforeWake.Terminal.NativeStops);
+            Assert.Null(snapshotBeforeWake.Terminal.NativeLaunch);
+            Assert.Null(snapshotBeforeWake.FirstForwardedAt);
+            beforeWake.Release();
+
+            // Hold provider cancellation so the waiter can read the actual published terminal
+            // while launch is still outstanding.
             await cancelling.Entered.WaitAsync(Limit);
             stopped = await waiter.WaitAsync(Limit);
             markerWhileHeld = engine.SwitchingToward;
+            var observed = Assert.Single(await atWake.Task.WaitAsync(Limit));
+            Assert.Same(sealedBeforeWake, observed.Record);
+            Assert.Equal(snapshotBeforeWake, observed.Snapshot);
         }
         finally
         {
+            beforeWake.Release();
             cancelling.Release();
             provider.Release(LifecycleResult.Fail("cancelled_during_launch", "the held launch observed cancellation"));
             if (shutdown is not null) await shutdown.WaitAsync(Limit);
@@ -70,6 +102,9 @@ public sealed class ShutdownStopCauseTests
         Assert.Null(stopped.Detail);
         Assert.Equal(Model, markerWhileHeld);
         Assert.Null(engine.SwitchingToward);
+        var afterProviderReturn = Assert.Single(engine.SwitchHistory);
+        Assert.Same(sealedBeforeWake, afterProviderReturn.Terminal);
+        Assert.Equal(snapshotBeforeWake, afterProviderReturn);
     }
 
     [Fact(Timeout = 60_000)]
@@ -238,6 +273,7 @@ public sealed class ShutdownStopCauseTests
         var waiter = engine.WaitForModelAsync(Model, Limit, CancellationToken.None);
         EngineRuntime.SwitchResult stopped;
         (bool Switching, string? Target) whileStopped;
+        SwitchAttemptRecord sealedWhileHeld;
 
         try
         {
@@ -247,6 +283,7 @@ public sealed class ShutdownStopCauseTests
             await engine.DisposeAsync();
             stopped = await waiter.WaitAsync(Limit);
             whileStopped = (engine.Switching, engine.SwitchingToward);
+            sealedWhileHeld = Assert.Single(engine.SwitchHistory).Terminal;
         }
         finally
         {
@@ -261,6 +298,12 @@ public sealed class ShutdownStopCauseTests
         Assert.False(engine.Switching);
         Assert.Null(engine.SwitchingToward);
         Assert.False(engine.IsReadyFor(Model, null));
+        Assert.Equal(SwitchAttemptOutcome.Cancelled, sealedWhileHeld.Outcome);
+        Assert.Equal(SwitchStageOutcome.Completed,
+            Assert.IsType<SwitchStageObservation>(sealedWhileHeld.GetStage(SwitchStage.Readiness)).Outcome);
+        var retained = Assert.Single(engine.SwitchHistory);
+        Assert.Same(sealedWhileHeld, retained.Terminal);
+        Assert.Null(retained.FirstForwardedAt);
     }
 
     [Fact(Timeout = 60_000)]

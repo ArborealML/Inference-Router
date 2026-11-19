@@ -40,6 +40,7 @@ public sealed record EngineCapability(
             _modelRoster = ImmutableList.CreateRange(value);
             ModelContextWindows = NoModelContextWindows;
             Serving = default;
+            SwitchProof = null;
         }
     }
 
@@ -56,6 +57,7 @@ public sealed record EngineCapability(
     internal ImmutableDictionary<string, long> ModelContextWindows { get; init; } = NoModelContextWindows;
 
     internal ServingCapacity Serving { get; init; }
+    internal SwitchServingProof? SwitchProof { get; init; }
 
     /// <summary>Did the switch that raised the current marker author this engine's unknown health? One
     /// <see cref="Healthy"/> flag cannot say both "we do not know" and "who made us not know", and the

@@ -28,6 +28,7 @@ public sealed class DockerLifecycleProvider : IEngineLifecycleProvider, IDisposa
     public const string LabelRouter = "arboreal.router";
     public const string LabelEngine = "arboreal.engine";
     public const string LabelModel = "arboreal.model";
+    internal const string LabelProfile = "arboreal.profile";
 
     private readonly record struct DaemonTransport(Uri BaseAddress, string? UnixPath)
     {
@@ -196,7 +197,7 @@ public sealed class DockerLifecycleProvider : IEngineLifecycleProvider, IDisposa
     /// <summary>Preserve a pending operation after a lost Docker response. Docker inventory and
     /// inspect cannot supply a terminal receipt for the operation ID or rule out a delayed effect.</summary>
     internal static HostMutationOutcome ReconcileUnacknowledgedHostMutation(HostMutation operation) =>
-        new(operation.Id, HostMutationStatus.Unknown);
+        new(operation, HostMutationStatus.UnknownAfterIssue);
 
     public async ValueTask<IReadOnlyList<EnginePeer>> OwnedPeersAsync(LifecycleTarget target, CancellationToken ct)
     {
@@ -233,43 +234,83 @@ public sealed class DockerLifecycleProvider : IEngineLifecycleProvider, IDisposa
                 && c.Labels.TryGetValue(LabelRouter, out var router) && router == _scope.RouterId
                 && c.Labels.TryGetValue(LabelEngine, out var engine) && engine == _scope.EngineName;
             var model = c.Labels is not null && c.Labels.TryGetValue(LabelModel, out var m) ? m : null;
-            peers.Add(new EnginePeer(c.Id ?? "", c.Image ?? "", model, ours));
+            var profile = c.Labels is not null && c.Labels.TryGetValue(LabelProfile, out var p) ? p : null;
+            peers.Add(new EnginePeer(c.Id ?? "", c.Image ?? "", model, ours)
+            {
+                EffectiveProfile = profile,
+                ImageId = c.ImageId,
+            });
         }
         return peers;
     }
 
-    public async ValueTask<LifecycleResult> StopAsync(
-        LifecycleTarget target, IReadOnlyList<EnginePeer> peers, CancellationToken ct)
+    public ValueTask<LifecycleResult> StopAsync(
+        LifecycleTarget target, IReadOnlyList<EnginePeer> peers, CancellationToken ct) =>
+        StopWithObservationsAsync(peers, observe: null, ct);
+
+    internal async ValueTask<LifecycleResult> StopWithObservationsAsync(
+        IReadOnlyList<EnginePeer> peers, Action<NativePeerStop>? observe, CancellationToken ct)
     {
         if (_cfg.Resources is not null) return ResourcesNotQualified();
 
+        var observations = new List<NativePeerStop>(peers.Count);
         foreach (var peer in peers)
         {
             if (!peer.OwnedByUs)
                 return LifecycleResult.Fail(
                     $"refused_to_stop_unowned {peer.Id}",
-                    "the lifecycle provider was asked to stop a container it did not start; this is a bug, not a configuration problem");
+                    "the lifecycle provider was asked to stop a container it did not start; this is a bug, not a configuration problem")
+                    .WithNativeStops(observations);
 
             var t = Math.Max(1, _cfg.StopTimeoutMs / 1000);
             // 304 (already stopped), 404 (already gone) and 409 (not running) all mean the desired
             // state holds. A previous switch leaves stopped containers behind, and treating that as a
             // failure would refuse every switch after the first.
-            var (ok, _, failure) = await CallAsync(
+            var stop = await CallAsync(
                 HttpMethod.Post, $"{_cfg.ApiVersion}/containers/{Uri.EscapeDataString(peer.Id)}/stop?t={t}", null, ct,
                 already: [304, 404, 409]).ConfigureAwait(false);
-            if (!ok) return failure!;
+            var disposition = stop.Status switch
+            {
+                204 => NativeStopDisposition.Stopped,
+                304 => NativeStopDisposition.AlreadyStopped,
+                404 => NativeStopDisposition.Absent,
+                _ => stop.Ok ? NativeStopDisposition.Unconfirmed : NativeStopDisposition.Failed,
+            };
+            var observation = new NativePeerStop(peer, disposition, stop.Ok && _cfg.RemoveStopped
+                ? NativeRemovalDisposition.Incomplete : NativeRemovalDisposition.NotRequested);
+            observe?.Invoke(observation);
+            if (!stop.Ok)
+            {
+                observations.Add(observation);
+                return stop.Failure!.WithNativeStops(observations);
+            }
 
             if (_cfg.RemoveStopped)
             {
                 // Removing is what keeps a model change from accumulating stopped containers on the
                 // host. It is refused for anything we do not own, which is the same proof as above.
-                var (removed, _, removeFailure) = await CallAsync(
+                var removal = await CallAsync(
                     HttpMethod.Delete, $"{_cfg.ApiVersion}/containers/{Uri.EscapeDataString(peer.Id)}?force=true", null, ct,
                     already: [404]).ConfigureAwait(false);
-                if (!removed) return removeFailure!;
+                observation = observation with
+                {
+                    Removal = removal.Status switch
+                    {
+                        204 => NativeRemovalDisposition.Removed,
+                        404 => NativeRemovalDisposition.Absent,
+                        _ => removal.Ok ? NativeRemovalDisposition.Unconfirmed : NativeRemovalDisposition.Failed,
+                    },
+                };
+                observe?.Invoke(observation);
+                if (!removal.Ok)
+                {
+                    observations.Add(observation);
+                    return removal.Failure!.WithNativeStops(observations);
+                }
             }
+            observations.Add(observation);
         }
-        return LifecycleResult.Ok($"stopped={peers.Count}");
+        return LifecycleResult.Ok($"stopped={peers.Count}").WithNativeStops(observations);
     }
 
     public async ValueTask<LifecycleResult> LaunchAsync(LifecycleTarget target, CancellationToken ct)
@@ -291,12 +332,19 @@ public sealed class DockerLifecycleProvider : IEngineLifecycleProvider, IDisposa
 
         // 304 means it was already running. 404 must be a failure: the container we were just given an
         // id for is gone, and reporting a successful launch with nothing running is worse than failing.
-        var (started, _, startFailure) = await CallAsync(
+        var start = await CallAsync(
             HttpMethod.Post, $"{_cfg.ApiVersion}/containers/{Uri.EscapeDataString(id)}/start", null, ct,
             already: [304]).ConfigureAwait(false);
-        if (!started) return startFailure!;
+        if (!start.Ok) return start.Failure!;
 
-        return LifecycleResult.Ok($"container={id[..Math.Min(12, id.Length)]}");
+        return new LifecycleResult
+        {
+            Succeeded = true,
+            Reason = $"container={id[..Math.Min(12, id.Length)]}",
+            NativeLaunch = start.Status == 204
+                ? new NativeLaunch(id, target.Model, target.EffectiveProfile, identity.Id)
+                : null,
+        };
     }
 
     internal DockerCreateRequest BuildCreateRequest(LifecycleTarget target, DockerImageIdentity image)
@@ -309,6 +357,7 @@ public sealed class DockerLifecycleProvider : IEngineLifecycleProvider, IDisposa
                 [LabelRouter] = _scope.RouterId,
                 [LabelEngine] = _scope.EngineName,
                 [LabelModel] = target.Model,
+                [LabelProfile] = target.EffectiveProfile,
             },
             StopTimeoutSeconds = Math.Max(1, _cfg.StopTimeoutMs / 1000),
         };
@@ -441,7 +490,17 @@ public sealed class DockerLifecycleProvider : IEngineLifecycleProvider, IDisposa
         return acc;
     }
 
-    private async ValueTask<(bool Ok, string Body, LifecycleResult? Failure)> CallAsync(
+    private readonly record struct DockerCall(bool Ok, string Body, LifecycleResult? Failure, int? Status = null)
+    {
+        public void Deconstruct(out bool ok, out string body, out LifecycleResult? failure)
+        {
+            ok = Ok;
+            body = Body;
+            failure = Failure;
+        }
+    }
+
+    private async ValueTask<DockerCall> CallAsync(
         HttpMethod method, string path, HttpContent? content, CancellationToken ct, int[]? already = null,
         int? requiredStatus = null)
     {
@@ -460,7 +519,7 @@ public sealed class DockerLifecycleProvider : IEngineLifecycleProvider, IDisposa
             var status = (int)response.StatusCode;
             var accepted = requiredStatus is { } required ? status == required : response.IsSuccessStatusCode;
             if (accepted || (already is not null && Array.IndexOf(already, status) >= 0))
-                return (true, body, default);   // the desired state already holds
+                return new DockerCall(true, body, null, status);
 
             // Which statuses mean "already in the desired state" is decided per call site, not here: a
             // 404 from stop means the container is gone, but a 404 from start means the container we were
@@ -477,23 +536,23 @@ public sealed class DockerLifecycleProvider : IEngineLifecycleProvider, IDisposa
                 >= 500 => $"the daemon failed ({status}) on {path}: {snippet}",
                 _ => $"the daemon answered {status} for {method.Method} {path}: {snippet}",
             };
-            return (false, body, LifecycleResult.Fail(reason, action));
+            return new DockerCall(false, body, LifecycleResult.Fail(reason, action), status);
         }
         catch (HttpRequestException ex)
         {
-            return (false, "", LifecycleResult.Fail(
+            return new DockerCall(false, "", LifecycleResult.Fail(
                 $"daemon_unreachable {ex.Message}",
                 $"cannot reach the Docker daemon at {_cfg.Socket}: start it, or point this engine's docker.socket somewhere the router user may reach — the router will not retry with elevated rights"));
         }
         catch (SocketException ex)
         {
-            return (false, "", LifecycleResult.Fail(
+            return new DockerCall(false, "", LifecycleResult.Fail(
                 $"socket_unreachable {ex.Message}",
                 $"the socket {_cfg.Socket} refused the connection: check its path and the router user's permission on it"));
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
-            return (false, "", LifecycleResult.Fail(
+            return new DockerCall(false, "", LifecycleResult.Fail(
                 $"daemon_call_timeout_{_cfg.CallTimeoutMs}ms",
                 $"the daemon at {_cfg.Socket} accepted the request and did not answer within {_cfg.CallTimeoutMs} ms: " +
                 "check whether dockerd is wedged, or raise docker.call_timeout_ms if this host is slow"));

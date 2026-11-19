@@ -1,4 +1,6 @@
+using System.Collections.Concurrent;
 using System.Net;
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
@@ -153,6 +155,91 @@ public sealed class ModelsContextWireTests
         Assert.Equal("collision", row.GetProperty("id").GetString());
         Assert.Equal(engine, row.GetProperty("owned_by").GetString());
         AssertRow(row, window);
+    }
+
+    [Theory(Timeout = 60_000)]
+    [InlineData("qwen-3.8-flash-next", false)]
+    [InlineData("qwen3.8-flash-next-iq3_s", true)]
+    public async Task ReportedQwenRowNeedsTheMatchingCatalogKeyForServingCapacity(string catalogKey, bool bound)
+    {
+        const string reportedModel = "qwen3.8-flash-next-iq3_s";
+        const string completionPath = "/v1/chat/completions";
+        var endpoint = new Uri("http://127.0.0.1:9/v1");
+        var upstreamUri = new Uri(endpoint, completionPath);
+        var submittedPayload = """
+            {
+              "model": "qwen3.8-flash-next-iq3_s",
+              "messages": [{"role": "user", "content": "ping  with spaces"}]
+            }
+            """u8.ToArray();
+        // The router rewrites the top-level model and emits compact JSON even when the ID already matches.
+        var expectedUpstreamPayload = """
+            {"model":"qwen3.8-flash-next-iq3_s","messages":[{"role":"user","content":"ping  with spaces"}]}
+            """u8.ToArray();
+        var forwarded = new ConcurrentQueue<ForwardedCompletion>();
+        using var engine = new ModelsHandler(
+            """{"data":[{"id":"qwen3.8-flash-next-iq3_s","status":{"value":"loaded"},"meta":{"n_ctx":196608}}]}""",
+            servingState: """{"n_ctx":256000,"total_slots":4}""",
+            completion: async (request, ct) =>
+            {
+                if (request.Content is not { } content) return new HttpResponseMessage(HttpStatusCode.BadRequest);
+                var seen = new ForwardedCompletion(request.Method, request.RequestUri!,
+                    content.Headers.ContentType?.ToString(), await content.ReadAsByteArrayAsync(ct));
+                forwarded.Enqueue(seen);
+                if (seen.Method != HttpMethod.Post || seen.Uri != upstreamUri ||
+                    seen.ContentType != "application/json" || !seen.Body.AsSpan().SequenceEqual(expectedUpstreamPayload))
+                    return new HttpResponseMessage(HttpStatusCode.BadRequest);
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(
+                        """{"choices":[{"message":{"role":"assistant","content":"pong"}}]}""",
+                        Encoding.UTF8, "application/json"),
+                };
+            });
+        var definition = new EngineDefinition
+        {
+            Name = "first",
+            Endpoint = endpoint,
+            Remote = true,
+            Health = new HealthProbeDefinition { Path = "/props", IntervalMs = 3_600_000 },
+            LoadedRequiresStatusLoaded = true,
+            ModelsContextWindowPath = "meta.n_ctx",
+            Capabilities = new EngineCapabilities { MaxContext = 131_072 },
+            Catalog = new Dictionary<string, EngineModelDefinition> { [catalogKey] = new() { Name = catalogKey } },
+        };
+        var (app, address) = await StartAsync(new RouterConfig
+        {
+            Engines = new Dictionary<string, EngineDefinition> { [definition.Name] = definition },
+            HttpHandlerFactory = _ => engine,
+        });
+        await using var _ = app;
+        using var http = new HttpClient { BaseAddress = address };
+        var runtime = app.Services.GetRequiredService<RouterCore>().Engines[definition.Name];
+        var observed = runtime.Capability;
+        Assert.True(observed.Healthy);
+        Assert.Equal(4, observed.Serving.TotalSlots);
+        Assert.Equal(bound ? 256_000 : 0, observed.Serving.WindowFor(reportedModel));
+        Assert.Equal(bound, runtime.IsReadyFor(reportedModel, new ServingProfile { Name = "wide", MaxContext = 256_000 }));
+
+        using var list = await http.GetAsync("/v1/models");
+        list.EnsureSuccessStatusCode();
+        using var models = JsonDocument.Parse(await list.Content.ReadAsByteArrayAsync());
+        var row = Assert.Single(models.RootElement.GetProperty("data").EnumerateArray());
+        Assert.Equal(reportedModel, row.GetProperty("id").GetString());
+        AssertRow(row, 196_608);
+
+        using var request = new ByteArrayContent(submittedPayload);
+        request.Headers.ContentType = new MediaTypeHeaderValue("application/json");
+        using var completed = await http.PostAsync(completionPath, request);
+        var sent = Assert.Single(forwarded);
+        Assert.Equal(HttpMethod.Post, sent.Method);
+        Assert.Equal(upstreamUri, sent.Uri);
+        Assert.Equal("application/json", sent.ContentType);
+        using var forwardedJson = JsonDocument.Parse(sent.Body);
+        Assert.Equal(reportedModel, forwardedJson.RootElement.GetProperty("model").GetString());
+        Assert.Equal(expectedUpstreamPayload, sent.Body);
+        completed.EnsureSuccessStatusCode();
+        Assert.Contains("pong", await completed.Content.ReadAsStringAsync());
     }
 
     [Fact(Timeout = 60_000)]
@@ -320,7 +407,10 @@ public sealed class ModelsContextWireTests
         while (!observed()) await Task.Delay(10, timeout.Token);
     }
 
-    private sealed class ModelsHandler(string models, string servingState = """{"n_ctx":65536}""") : HttpMessageHandler
+    private sealed record ForwardedCompletion(HttpMethod Method, Uri Uri, string? ContentType, byte[] Body);
+
+    private sealed class ModelsHandler(string models, string servingState = """{"n_ctx":65536}""",
+        Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>>? completion = null) : HttpMessageHandler
     {
         private string _models = models;
         private bool _failed;
@@ -335,12 +425,18 @@ public sealed class ModelsContextWireTests
 
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
-            var isModels = request.RequestUri!.AbsolutePath == "/models";
+            var path = request.RequestUri!.AbsolutePath;
+            if (path == "/v1/chat/completions" && completion is not null)
+                return completion(request, cancellationToken);
+            if (request.Method != HttpMethod.Get || path is not ("/models" or "/props"))
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
+
+            var isModels = path == "/models";
             var status = isModels && Volatile.Read(ref _failed) ? HttpStatusCode.ServiceUnavailable : HttpStatusCode.OK;
+            var body = isModels ? Volatile.Read(ref _models) : servingState;
             return Task.FromResult(new HttpResponseMessage(status)
             {
-                Content = new StringContent(isModels ? Volatile.Read(ref _models) : servingState,
-                    Encoding.UTF8, "application/json"),
+                Content = new StringContent(body, Encoding.UTF8, "application/json"),
             });
         }
     }

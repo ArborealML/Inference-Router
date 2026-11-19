@@ -6,9 +6,9 @@ internal sealed record HostResident(string Engine, string ContainerId);
 
 internal readonly record struct HostOccupancy(Guid QueryId, HostOccupancyKind Kind, HostResident? Resident = null);
 
-internal enum HostMutationStatus { Unknown, Applied, Rejected }
+internal enum HostMutationStatus { UnknownAfterIssue, Applied, RejectedBeforeIssue }
 
-internal readonly record struct HostMutationOutcome(Guid OperationId, HostMutationStatus Status, string? ContainerId = null);
+internal readonly record struct HostMutationOutcome(HostMutation? Operation, HostMutationStatus Status, string? ContainerId = null);
 
 internal sealed record HostServingProof(LifecycleTarget Target, long Epoch, string ContainerId);
 
@@ -40,15 +40,18 @@ internal interface IHostLifecycleProvider
     // must release admission, either through its guard or before throwing.
     ValueTask<IHostDrain> CloseAndDrainAsync(HostResident? incumbent, CancellationToken ct);
 
-    // The mutation methods bind to the recorded epoch, operation ID and target. Applied and
-    // Rejected both prove that no delayed effect of this operation remains outstanding.
+    // Digest the full immutable launch plan understood by this provider, without issuing I/O.
+    string GetLaunchPlanDigest(LifecycleTarget target);
+
+    // Dispatch must already be durable. The worker binds the request to the exact operation and
+    // durably accepts it before I/O. RejectedBeforeIssue is authoritative only before mutation I/O.
     ValueTask<HostMutationOutcome> StopAsync(HostMutation operation, CancellationToken ct);
     ValueTask<HostMutationOutcome> LaunchAsync(HostMutation operation, LifecycleTarget target, CancellationToken ct);
 
     // Read-only. A vacancy snapshot or an elapsed timeout cannot settle an outstanding operation.
     ValueTask<HostMutationOutcome> ReconcileAsync(HostMutation operation, CancellationToken ct);
-    // Validate the exact launched ID and publish its readiness while the reservation is still held.
-    ValueTask<LifecycleResult> VerifyReadyAsync(LifecycleTarget target, string containerId, CancellationToken ct);
+    // Verify the exact launched ID against its recorded plan, including after loss of the original claim.
+    ValueTask<LifecycleResult> VerifyReadyAsync(HostMutation launch, string containerId, CancellationToken ct);
 }
 
 /// <summary>Serializes one host transaction through readiness and leaves uncertain effects recorded
@@ -63,8 +66,21 @@ internal sealed class HostLifecycleCoordinator(string reservationPath, IHostLife
             using var reservation = HostReservation.Open(reservationPath);
             if (reservation.State.Pending is { } pending)
             {
-                var outcome = await provider.ReconcileAsync(pending, ct).ConfigureAwait(false);
-                if (!TrySettle(reservation, pending, outcome)) return PendingOperation();
+                if (reservation.State.Phase == HostMutationPhase.Prepared)
+                    reservation.Settle(pending);
+                else if (reservation.State.Phase == HostMutationPhase.Dispatching)
+                {
+                    var outcome = await ReadOutcomeAsync(() => provider.ReconcileAsync(pending, ct)).ConfigureAwait(false);
+                    if (!TryRecordOutcome(reservation, pending, outcome)) return PendingOperation();
+                }
+
+                if (reservation.State.LaunchedContainerId is { } containerId)
+                {
+                    var matchesRequest = MatchesRequest(pending, target);
+                    var recovered = await RecoverLaunchAsync(reservation, pending, containerId, target,
+                        matchesRequest ? publication : null, ct).ConfigureAwait(false);
+                    if (!recovered.Succeeded || matchesRequest) return recovered;
+                }
             }
 
             ct.ThrowIfCancellationRequested();
@@ -92,6 +108,9 @@ internal sealed class HostLifecycleCoordinator(string reservationPath, IHostLife
 
         var preflight = await provider.PreflightAsync(target, ct).ConfigureAwait(false);
         if (!preflight.Succeeded) return preflight;
+        var planDigest = provider.GetLaunchPlanDigest(target);
+        if (!HostMutation.IsPlanDigest(planDigest))
+            return LifecycleResult.Fail("host_plan_unbound", "the host authority did not bind the full launch plan");
 
         ct.ThrowIfCancellationRequested();
         using var drain = await provider.CloseAndDrainAsync(occupancy.Resident, ct).ConfigureAwait(false);
@@ -107,9 +126,10 @@ internal sealed class HostLifecycleCoordinator(string reservationPath, IHostLife
 
             ct.ThrowIfCancellationRequested();
             var stop = reservation.Begin(epoch, HostMutationKind.Stop, owned.Engine, owned.ContainerId);
+            reservation.MarkDispatching(stop);
             drain.WithdrawIncumbent();
-            var stopped = await provider.StopAsync(stop, ct).ConfigureAwait(false);
-            if (!TrySettle(reservation, stop, stopped)) return PendingOperation();
+            var stopped = await ReadOutcomeAsync(() => provider.StopAsync(stop, ct)).ConfigureAwait(false);
+            if (!TryRecordOutcome(reservation, stop, stopped)) return PendingOperation();
             if (stopped.Status != HostMutationStatus.Applied)
                 return LifecycleResult.Fail("host_stop_refused", "the host refused to stop the incumbent; check its state before retrying");
         }
@@ -121,18 +141,50 @@ internal sealed class HostLifecycleCoordinator(string reservationPath, IHostLife
 
         ct.ThrowIfCancellationRequested();
         var launch = reservation.Begin(epoch, HostMutationKind.Launch, target.EngineName, target.Model,
-            target.Profile?.Name ?? target.Definition.Profile);
-        var launched = await provider.LaunchAsync(launch, target, ct).ConfigureAwait(false);
-        if (!TrySettle(reservation, launch, launched)) return PendingOperation();
+            target.Profile?.Name ?? target.Definition.Profile, planDigest);
+        reservation.MarkDispatching(launch);
+        var launched = await ReadOutcomeAsync(() => provider.LaunchAsync(launch, target, ct)).ConfigureAwait(false);
+        if (!TryRecordOutcome(reservation, launch, launched)) return PendingOperation();
         if (launched.Status != HostMutationStatus.Applied)
             return LifecycleResult.Fail("host_launch_refused", "the host refused the launch; check the target launch configuration");
 
-        var containerId = launched.ContainerId!;
-        var ready = await provider.VerifyReadyAsync(target, containerId, ct).ConfigureAwait(false);
-        if (!ready.Succeeded || publication is null) return ready;
+        return await CompleteLaunchAsync(reservation, launch, launched.ContainerId!, target, drain, publication, ct)
+            .ConfigureAwait(false);
+    }
+
+    private bool MatchesRequest(HostMutation launch, LifecycleTarget target) =>
+        launch.Engine == target.EngineName && launch.Target == target.Model &&
+        launch.Profile == (target.Profile?.Name ?? target.Definition.Profile) &&
+        launch.PlanDigest == provider.GetLaunchPlanDigest(target);
+
+    private async ValueTask<LifecycleResult> RecoverLaunchAsync(HostReservation reservation, HostMutation launch,
+        string containerId, LifecycleTarget target, HostSwitchPublication? publication, CancellationToken ct)
+    {
+        var instance = new HostResident(launch.Engine, containerId);
+        if (!await IsCurrentInstanceAsync(instance, ct).ConfigureAwait(false)) return OccupancyRefusal();
+        using var drain = await provider.CloseAndDrainAsync(instance, ct).ConfigureAwait(false);
+        if (!drain.Result.Succeeded) return drain.Result;
+        if (!await IsCurrentInstanceAsync(instance, ct).ConfigureAwait(false)) return OccupancyRefusal();
+        return await CompleteLaunchAsync(reservation, launch, containerId, target, drain, publication, ct)
+            .ConfigureAwait(false);
+    }
+
+    private async ValueTask<bool> IsCurrentInstanceAsync(HostResident expected, CancellationToken ct)
+    {
+        var current = await ObserveFreshAsync(ct).ConfigureAwait(false);
+        return current.Kind == HostOccupancyKind.Owned && current.Resident == expected;
+    }
+
+    private async ValueTask<LifecycleResult> CompleteLaunchAsync(HostReservation reservation, HostMutation launch,
+        string containerId, LifecycleTarget target, IHostDrain drain, HostSwitchPublication? publication, CancellationToken ct)
+    {
+        var ready = await provider.VerifyReadyAsync(launch, containerId, ct).ConfigureAwait(false);
+        if (!ready.Succeeded) return ready;
 
         ct.ThrowIfCancellationRequested();
-        var proof = new HostServingProof(target, epoch, containerId);
+        reservation.Settle(launch);
+        if (publication is null) return ready;
+        var proof = new HostServingProof(target, launch.Epoch, containerId);
         if (!drain.CommitVerifiedRoute(proof, () => publication.TryPublish(proof)))
             return LifecycleResult.Fail("host_publication_refused",
                 "the host could not publish and admit against the verified serving instance");
@@ -141,15 +193,33 @@ internal sealed class HostLifecycleCoordinator(string reservationPath, IHostLife
         return ready;
     }
 
-    private static bool TrySettle(HostReservation reservation, HostMutation operation, HostMutationOutcome outcome)
+    private static bool TryRecordOutcome(HostReservation reservation, HostMutation operation, HostMutationOutcome outcome)
     {
-        if (outcome.OperationId != operation.Id ||
-            outcome.Status is not HostMutationStatus.Applied and not HostMutationStatus.Rejected ||
-            outcome.Status == HostMutationStatus.Applied && operation.Kind == HostMutationKind.Launch &&
-            string.IsNullOrWhiteSpace(outcome.ContainerId)) return false;
+        if (outcome.Operation != operation) return false;
+        if (outcome.Status == HostMutationStatus.RejectedBeforeIssue && outcome.ContainerId is null)
+        {
+            reservation.Settle(operation);
+            return true;
+        }
+        if (outcome.Status != HostMutationStatus.Applied || string.IsNullOrWhiteSpace(outcome.ContainerId)) return false;
+        if (operation.Kind == HostMutationKind.Launch)
+            reservation.RecordAppliedLaunch(operation, outcome.ContainerId);
+        else if (outcome.ContainerId == operation.Target)
+            reservation.Settle(operation);
+        else
+            return false;
 
-        reservation.Settle(operation);
         return true;
+    }
+
+    private static async ValueTask<HostMutationOutcome> ReadOutcomeAsync(Func<ValueTask<HostMutationOutcome>> read)
+    {
+        try { return await read().ConfigureAwait(false); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // Failure to receive a receipt never proves that the worker did not issue the operation.
+            return default;
+        }
     }
 
     private async ValueTask<HostOccupancy> ObserveFreshAsync(CancellationToken ct)

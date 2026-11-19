@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using Arboreal.InferenceRouter.Lifecycle;
 
 namespace Arboreal.InferenceRouter;
 
@@ -41,6 +42,18 @@ internal readonly record struct SwitchSampleKey(
 
 internal readonly record struct SwitchQueueTiming(long EnqueuedAt, long SelectedAt);
 
+internal sealed class SwitchServingProof(
+    SwitchAttemptId attempt, long version, SwitchSampleKey target, NativeLaunch? nativeLaunch)
+{
+    private int _forwardObserved;
+    internal SwitchAttemptId Attempt { get; } = attempt;
+    internal long Version { get; } = version;
+    internal SwitchSampleKey Target { get; } = target;
+    internal NativeLaunch? NativeLaunch { get; } = nativeLaunch;
+    internal bool ForwardObserved => Volatile.Read(ref _forwardObserved) != 0;
+    internal void MarkForwardObserved() => Volatile.Write(ref _forwardObserved, 1);
+}
+
 /// <summary>An absent stage has no value. An incomplete stage was still open when the attempt ended.</summary>
 internal readonly record struct SwitchStageObservation(
     long StartedAt, long ObservedUntil, SwitchStageOutcome Outcome);
@@ -49,6 +62,8 @@ internal sealed record SwitchAttemptRecord(
     SwitchAttemptId Id,
     SwitchSampleKey Target,
     SwitchSampleKey? ShutdownSource,
+    ImmutableArray<NativePeerStop> NativeStops,
+    NativeLaunch? NativeLaunch,
     long StartedAt,
     long EndedAt,
     SwitchAttemptOutcome Outcome,
@@ -67,6 +82,8 @@ internal sealed class SwitchAttempt
     private readonly object _gate = new();
     private readonly SwitchStageObservation?[] _stages = new SwitchStageObservation?[(int)SwitchStage.Readiness + 1];
     private SwitchSampleKey? _shutdownSource;
+    private ImmutableArray<NativePeerStop> _nativeStops = [];
+    private NativeLaunch? _nativeLaunch;
     private bool _sealed;
 
     internal SwitchAttempt(TimeProvider clock, SwitchAttemptId id, SwitchSampleKey target,
@@ -79,6 +96,9 @@ internal sealed class SwitchAttempt
         if (queue is { } wait)
             _stages[(int)SwitchStage.Queue] = new(wait.EnqueuedAt, wait.SelectedAt, SwitchStageOutcome.Completed);
     }
+
+    internal SwitchSampleKey Target => _target;
+    internal long StartedAt => _startedAt;
 
     internal bool TryStartStage(SwitchStage stage)
     {
@@ -97,14 +117,44 @@ internal sealed class SwitchAttempt
     }
 
     /// <summary>The caller supplies a source only when provider evidence attributes the entire stop.</summary>
-    internal bool TryCompleteShutdown(bool succeeded, SwitchSampleKey? verifiedSource)
+    internal bool TryCompleteShutdown(bool succeeded, SwitchSampleKey? verifiedSource,
+                                      ImmutableArray<NativePeerStop> nativeStops = default)
     {
         lock (_gate)
         {
             if (!CompleteStage(SwitchStage.Shutdown, succeeded)) return false;
+            if (!nativeStops.IsDefault) _nativeStops = nativeStops;
             if (succeeded) _shutdownSource = verifiedSource;
             return true;
         }
+    }
+
+    internal void ObserveNativeStop(NativePeerStop observation)
+    {
+        lock (_gate)
+        {
+            if (_sealed) return;
+            // The provider reports one peer at a time, then updates it after removal.
+            if (!_nativeStops.IsEmpty && _nativeStops[^1].Peer.Id == observation.Peer.Id)
+                _nativeStops = _nativeStops.SetItem(_nativeStops.Length - 1, observation);
+            else
+                _nativeStops = _nativeStops.Add(observation);
+        }
+    }
+
+    internal bool TryCompleteNativeLaunch(bool succeeded, NativeLaunch? evidence)
+    {
+        lock (_gate)
+        {
+            if (!CompleteStage(SwitchStage.Launch, succeeded)) return false;
+            if (succeeded && evidence is { } launch && launch.Matches(_target)) _nativeLaunch = launch;
+            return true;
+        }
+    }
+
+    internal SwitchServingProof Proof(long version)
+    {
+        lock (_gate) return new SwitchServingProof(_id, version, _target, _nativeLaunch);
     }
 
     private bool CompleteStage(SwitchStage stage, bool succeeded)
@@ -131,7 +181,8 @@ internal sealed class SwitchAttempt
                     _stages[i] = active with { ObservedUntil = endedAt };
             }
             _sealed = true;
-            return new SwitchAttemptRecord(_id, _target, _shutdownSource, _startedAt, endedAt, outcome,
+            return new SwitchAttemptRecord(_id, _target, _shutdownSource, _nativeStops, _nativeLaunch,
+                                           _startedAt, endedAt, outcome,
                                            ImmutableArray.CreateRange(_stages));
         }
     }

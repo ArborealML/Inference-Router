@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text.Json;
 using System.Threading.Channels;
+using Arboreal.InferenceRouter.Lifecycle;
 
 namespace Arboreal.InferenceRouter;
 
@@ -32,13 +33,15 @@ public sealed class RouterCore : IInferenceRouter
     private readonly object _gate = new();
     private long _seq;
     private readonly CancellationTokenSource _shutdown = new();
+    internal Action? BeforeCostCommitForTests;
 
     public RouterCore(RouterConfig config, IRequestScheduler? scheduler = null, EventRing? events = null)
         : this(config, scheduler, events, TimeProvider.System)
     {
     }
 
-    internal RouterCore(RouterConfig config, IRequestScheduler? scheduler, EventRing? events, TimeProvider clock)
+    internal RouterCore(RouterConfig config, IRequestScheduler? scheduler, EventRing? events, TimeProvider clock,
+                        Func<EngineDefinition, IEngineLifecycleProvider>? lifecycleFactory = null)
     {
         config.ValidateLifecycleTopology();
         _config = config;
@@ -51,7 +54,7 @@ public sealed class RouterCore : IInferenceRouter
             // emitted before the capability transition commits, so a dispatcher woken by them still sees the
             // engine marked as switching. Committing the transition nudges the loop again (§5.5).
             _engines[name] = new EngineRuntime(def, config, _events, config.HttpHandlerFactory?.Invoke(def),
-                                               dispatchHint: SignalDispatch);
+                lifecycleFactory?.Invoke(def), SignalDispatch, hostEnrollment: null, clock: clock);
         foreach (var (id, td) in config.Threads)
             _threads[id] = new RouterThread(id, td.Priority, td.Weight, td.ModelAffinity);
         _capabilitySources = [.. _engines.Values];
@@ -390,12 +393,32 @@ public sealed class RouterCore : IInferenceRouter
 
     private static bool HasThreadCapacity(RouterThread thread) => thread.Inflight < thread.MaxInflight;
 
+    private readonly record struct SwitchComparison(
+        EngineRuntime Engine, EngineRuntime.DispatchObservation Observation, SwitchSampleKey Incumbent,
+        long Timestamp, DateTimeOffset UtcNow);
+
+    private SwitchComparison? ReadSwitchComparison()
+    {
+        if (_scheduler is not PrefixAwareScheduler || !_config.AutoSwitch || _engines.Count != 1)
+            return null;
+
+        var engine = _engines.Values.Single();
+        var observation = engine.ReadDispatchObservation();
+        if (observation.Inflight != 0 || !observation.HasCapacity ||
+            engine.ReadVerifiedSwitchIncumbent(observation.Capability) is not { } incumbent)
+            return null;
+
+        return new SwitchComparison(engine, observation, incumbent, _clock.GetTimestamp(), _clock.GetUtcNow());
+    }
+
     internal bool TryDispatchOnce()
     {
         QueuedRequest? candidate = null;
         EngineRuntime? engine = null;
         bool switchRequired = false;
         string? targetProfile = null;
+        SwitchServingProof? servingProof = null;
+        long selectedAt = 0;
 
         lock (_gate)
         {
@@ -404,11 +427,15 @@ public sealed class RouterCore : IInferenceRouter
                     (Queue: queue, Candidate: queue.SnapshotCandidate(ordinal, HasThreadCapacity)))
                 .OrderBy(entry => entry.Candidate.Depth)
                 .ThenBy(entry => entry.Candidate.BaselineOrdinal);
-            foreach (var (q, snapshot) in ordered)
+            using var scan = ordered.GetEnumerator();
+            var comparison = ReadSwitchComparison();
+            while (scan.MoveNext())
             {
+                var (q, snapshot) = scan.Current;
                 if (snapshot.Request is not { } request) continue;
-                var infos = BuildEngineInfos(request);
-                var decision = _scheduler.SelectNext(request, new SchedulerView(infos, _clock.GetUtcNow()), _config);
+                var infos = BuildEngineInfos(request, comparison);
+                var decision = _scheduler.SelectNext(request,
+                    new SchedulerView(infos, comparison?.UtcNow ?? _clock.GetUtcNow()), _config);
                 if (decision.Engine is null)
                 {
                     // The scheduler's reason (no_engines / no_available_engine) is internal: read by the
@@ -420,16 +447,40 @@ public sealed class RouterCore : IInferenceRouter
                     continue;
                 }
                 var e = _engines[decision.Engine];
-                if (!e.HasCapacity) continue;
+                if (!(comparison?.Observation.HasCapacity ?? e.HasCapacity)) continue;
+                var selection = (Queue: q, Candidate: snapshot, Decision: decision);
+                Func<bool>? observationIsCurrent = null;
+                if (comparison is { } switchView)
+                {
+                    if (decision.SwitchRequired)
+                    {
+                        selection = OrderEligibleSwitches(scan, selection, request, switchView);
+                        BeforeCostCommitForTests?.Invoke();
+                    }
+                    observationIsCurrent = () => e.IsDispatchObservationCurrent(switchView.Observation);
+                }
                 // A cancelled or displaced candidate invalidates this pass. Reapply queue ordering
                 // on the next pass so the scheduler evaluates whichever ticket is now first.
-                if (!q.TryTakeExact(snapshot, HasThreadCapacity)) return true;
-                candidate = request;
+                if (!selection.Queue.TryTakeExact(selection.Candidate, HasThreadCapacity, observationIsCurrent))
+                    return true;
+                selectedAt = _clock.GetTimestamp();
+                candidate = selection.Candidate.Request!;
                 engine = e;
-                switchRequired = decision.SwitchRequired;
-                targetProfile = decision.TargetProfile;
-                request.Thread.IncrementInflight();
-                engine.BeginRequest(request.PromptChars);  // reserve engine capacity now:
+                switchRequired = selection.Decision.SwitchRequired;
+                targetProfile = selection.Decision.TargetProfile;
+                if (!switchRequired)
+                {
+                    foreach (var info in infos)
+                    {
+                        if (info.Name == e.Name)
+                        {
+                            servingProof = info.SwitchProof;
+                            break;
+                        }
+                    }
+                }
+                candidate.Thread.IncrementInflight();
+                engine.BeginRequest(candidate.PromptChars);  // reserve engine capacity now:
                 break;                                     // the drain loop must not over-dispatch
             }
         }
@@ -460,7 +511,7 @@ public sealed class RouterCore : IInferenceRouter
             // No cancellation token on Task.Run here: with an already-cancelled token Task.Run hands
             // back a task that never runs the delegate, which would strand the thread slot and the
             // engine slot reserved at pop. ExecuteAsync links its own CTS to _shutdown.
-            _ = Task.Run(() => ExecuteAsync(candidate, engine, switchRequired, targetProfile));
+            _ = Task.Run(() => ExecuteAsync(candidate, engine, switchRequired, targetProfile, servingProof, selectedAt));
         }
         catch (Exception)
         {
@@ -472,7 +523,38 @@ public sealed class RouterCore : IInferenceRouter
         return true;
     }
 
-    private EngineRuntimeInfo[] BuildEngineInfos(QueuedRequest head)
+    private (ModelQueue Queue, QueueDispatchCandidate Candidate, SchedulerDecision Decision) OrderEligibleSwitches(
+        IEnumerator<(ModelQueue Queue, QueueDispatchCandidate Candidate)> scan,
+        (ModelQueue Queue, QueueDispatchCandidate Candidate, SchedulerDecision Decision) baseline,
+        QueuedRequest first, SwitchComparison comparison)
+    {
+        var order = new SwitchCostOrder<(ModelQueue Queue, QueueDispatchCandidate Candidate, SchedulerDecision Decision)>();
+        Consider(first, baseline);
+        while (scan.MoveNext())
+        {
+            var (queue, candidate) = scan.Current;
+            if (candidate.Depth != baseline.Candidate.Depth) break;
+            if (candidate.Request is not { } request) continue;
+            var decision = _scheduler.SelectNext(request,
+                new SchedulerView(BuildEngineInfos(request, comparison), comparison.UtcNow), _config);
+            if (decision.Engine is null) continue;
+            if (!decision.SwitchRequired || request.PriorityNode.Priority.CompareTo(first.PriorityNode.Priority) != 0)
+                break;
+            Consider(request, (queue, candidate, decision));
+        }
+        return order.Selected ?? baseline;
+
+        void Consider(QueuedRequest request, (ModelQueue Queue, QueueDispatchCandidate Candidate,
+                                              SchedulerDecision Decision) selection)
+        {
+            var estimate = comparison.Engine.EstimateVerifiedTransition(comparison.Incumbent, request.Ticket.Model,
+                selection.Decision.TargetProfile, comparison.Timestamp);
+            var age = _clock.GetElapsedTime(request.EnqueuedAtTimestamp, comparison.Timestamp);
+            order.Consider(selection, request.EnqueuedSeq, age, estimate);
+        }
+    }
+
+    private EngineRuntimeInfo[] BuildEngineInfos(QueuedRequest head, SwitchComparison? comparison = null)
     {
         var messages = head.Messages();
         var list = new List<EngineRuntimeInfo>(_engines.Count);
@@ -481,7 +563,8 @@ public sealed class RouterCore : IInferenceRouter
             // One snapshot per engine, and every capability-shaped field derived from that one read: the
             // loaded list, the switch marker and the eligibility bit cannot come from different instants and
             // then disagree inside one scheduling decision (§5.5).
-            var cap = e.Capability;
+            var observation = comparison?.Observation ?? e.ReadDispatchObservation();
+            var cap = observation.Capability;
             list.Add(new EngineRuntimeInfo
             {
                 Name = e.Name,
@@ -489,13 +572,14 @@ public sealed class RouterCore : IInferenceRouter
                 CatalogModels = e.CatalogModelNames.ToArray(),
                 SwitchingToward = cap.SwitchingToward is null ? [] : [cap.SwitchingToward],
                 CanServeModel = e.CanServeModel(head.Ticket.Model, cap),
-                Inflight = e.Inflight,
-                InflightTokenProxy = e.InflightTokenProxy,
+                Inflight = observation.Inflight,
+                InflightTokenProxy = observation.InflightTokenProxy,
                 Healthy = cap.Healthy,
                 Switching = cap.SwitchingToward is not null,
                 MatchedPrefixChars = e.MatchedPrefixChars(messages),
                 ActiveContextWindow = cap.Serving.WindowFor(head.Ticket.Model),
                 ServingProfiles = e.ProfilesForModel(head.Ticket.Model),
+                SwitchProof = cap.SwitchProof,
             });
         }
         return list.ToArray();
@@ -530,7 +614,8 @@ public sealed class RouterCore : IInferenceRouter
 
     // ── execution ───────────────────────────────────────────────────────────
 
-    private async Task ExecuteAsync(QueuedRequest candidate, EngineRuntime engine, bool switchRequired, string? targetProfileName)
+    private async Task ExecuteAsync(QueuedRequest candidate, EngineRuntime engine, bool switchRequired,
+                                    string? targetProfileName, SwitchServingProof? servingProof, long selectedAt)
     {
         var ticket = candidate.Ticket;
         var thread = candidate.Thread;
@@ -564,9 +649,9 @@ public sealed class RouterCore : IInferenceRouter
                 var switchWait = ceilingMs <= 0 ? Timeout.InfiniteTimeSpan : TimeSpan.FromMilliseconds(ceilingMs);
                 // The caller's token bounds only its own wait: the switch transaction runs on the engine's
                 // token, so giving up here never leaves the engine half-switched with nothing loaded.
-                var switchResult = targetProfile is null
-                    ? await engine.WaitForModelAsync(ticket.Model, switchWait, execCts.Token).ConfigureAwait(false)
-                    : await engine.WaitForProfileAsync(ticket.Model, targetProfile, switchWait, execCts.Token).ConfigureAwait(false);
+                var observed = await engine.EnsureLoadedAsync(ticket.Model, targetProfile, switchWait,
+                    new SwitchQueueTiming(candidate.EnqueuedAtTimestamp, selectedAt), execCts.Token).ConfigureAwait(false);
+                var switchResult = observed.Result;
                 if (switchResult.Outcome == EngineRuntime.SwitchOutcome.RouterStopped)
                 {
                     Fail(ticket, "cancelled", "cancelled");
@@ -588,6 +673,7 @@ public sealed class RouterCore : IInferenceRouter
                         : $"engine {WireText.Ident(engine.Name)} could not serve {what}{detail}");
                     return;
                 }
+                servingProof = observed.Proof;
                 ticket.State = TicketState.Executing;
             }
 
@@ -612,7 +698,8 @@ public sealed class RouterCore : IInferenceRouter
                 var responseTimeout = engine.ResponseTimeout;
                 if (responseTimeout is null)
                 {
-                    using var res = await SendAsync(engine, body, suffix, cts.Token).ConfigureAwait(false);
+                    using var res = await SendAsync(engine, body, suffix, ticket.Model, servingProof, cts.Token)
+                        .ConfigureAwait(false);
                     await FinishWithResponseAsync(engine, ticket, res, candidate, gate: null, cts.Token).ConfigureAwait(false);
                 }
                 else
@@ -623,7 +710,7 @@ public sealed class RouterCore : IInferenceRouter
                     // which is disarmed when the request ends or when the engine delivers what it owed.
                     using var gate = new ResponseGate(responseTimeout.Value);
                     var delay = Task.Delay(Timeout.Infinite, gate.Token);
-                    var send = SendAsync(engine, body, suffix, cts.Token);
+                    var send = SendAsync(engine, body, suffix, ticket.Model, servingProof, cts.Token);
                     HttpResponseMessage? res = null;
                     bool silent;
                     try
@@ -707,7 +794,8 @@ public sealed class RouterCore : IInferenceRouter
         }
     }
 
-    private static async Task<HttpResponseMessage> SendAsync(EngineRuntime engine, byte[] body, string suffix, CancellationToken ct)
+    private static async Task<HttpResponseMessage> SendAsync(
+        EngineRuntime engine, byte[] body, string suffix, string model, SwitchServingProof? proof, CancellationToken ct)
     {
         // The suffix is composed against the endpoint path (EngineRuntime.Combine), so an endpoint
         // mounted under /v1 keeps it.
@@ -716,6 +804,7 @@ public sealed class RouterCore : IInferenceRouter
             req.Headers.TryAddWithoutValidation("Authorization", $"Bearer {engine.ApiKey}");
         req.Content = new ByteArrayContent(body);
         req.Content.Headers.TryAddWithoutValidation("Content-Type", "application/json");
+        engine.ObserveFirstForward(proof, model, ct);
         return await engine.Http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
     }
 

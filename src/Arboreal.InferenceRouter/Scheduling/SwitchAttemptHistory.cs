@@ -103,7 +103,7 @@ internal sealed class SwitchAttemptHistory(TimeProvider clock, Guid runtimeEpoch
                 ? clock.GetElapsedTime(stage.StartedAt, stage.ObservedUntil)
                 : null;
 
-        return record.Target.Matches(key) &&
+        return record.NativeLaunch is not null && record.Target.Matches(key) &&
             record.GetStage(SwitchStage.Readiness) is { Outcome: SwitchStageOutcome.Completed } readiness &&
             readiness.StartedAt >= stage.ObservedUntil
             ? clock.GetElapsedTime(stage.StartedAt, readiness.ObservedUntil)

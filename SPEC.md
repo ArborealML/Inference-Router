@@ -1,6 +1,6 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.66)
+Status: draft, continuously revised (v0.12.69)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
@@ -352,6 +352,17 @@ daemon transaction per engine. 137 tests green.
   that answers no `upload_url`, an upload that dies or answers no asset id, an asset name listed twice on
   the release, and a tag that moves after the first resolve. No tag has run the gate: still configured,
   not proven.
+- v0.12.69 — read-only switch refusal restores an incumbent's serving tuple only while its exact
+  claim has no serving contradiction. Late evidence from that claim can first withdraw serving
+  capacity and then withdraw roster health on a model contradiction (§5.5, TASK-68).
+- v0.12.68 — The offline shared-host fixture persists dispatch and worker acceptance before create.
+  After a lost reply, a new process uses the durable receipt to verify the exact instance without a
+  second create. An accepted operation without a terminal receipt fences successor mutations.
+  Production host enrollment remains disabled (§5.3.1, TASK-110).
+- v0.12.67 — the built-in dispatcher compares observed shutdown and activation costs for
+  competing switches on one idle native Docker engine with a proven incumbent. Aged eligible
+  tickets take precedence within the comparison. Shutdown cost requires matching launch, stop
+  and incumbent sample identities (§5.5).
 - v0.12.66 — ordinary model and serving-state probes publish one versioned capability. A profile
   needs a current window bound to its model. Missing state withdraws capacity without withdrawing
   a healthy roster (§5.5, §7.6, TASK-68).
@@ -1627,8 +1638,9 @@ inference capacity, or the scheduler will read a switching engine as a busy one.
 open the same stable local file. The fixture provisions a checksummed genesis record and retains the
 file and directory across restarts. A missing, empty or unreadable record refuses mutation. The
 coordinator flushes each new owner and epoch and persists the operation ID and target before stop or
-launch. For stop, it flushes the intent before withdrawing the incumbent's serving authority. A
-pending intent blocks a successor epoch until the provider supplies a matching terminal outcome.
+launch. It flushes `Prepared` and then `Dispatching` before sending the operation. For stop, it writes
+both records before withdrawing the incumbent's serving authority. Recovery can discard `Prepared`.
+`Dispatching` blocks a successor epoch until the provider supplies a matching terminal outcome.
 This file protects ordering among its holders. Host authority, store identity, and protection against
 restoring earlier checksummed contents require independent evidence.
 
@@ -1636,10 +1648,19 @@ restoring earlier checksummed contents require independent evidence.
 controller. The coordinator closes the supplied admission guard for vacant and occupied groups and
 rechecks vacancy before launch. For an occupied group it repeats preflight after drain and stops only
 the freshly observed, owned immutable ID. The fake verifies the launched instance and commits
-readiness through the guard while the reservation is held. Foreign or unknown occupancy refuses the
-switch without a provider fallback on this path. The admission callback exercises proof publication
-and switch settlement. Public configuration and the request dispatcher do not construct this
-binding, and the dedicated single-engine restriction for explicit native ownership still applies.
+readiness through the guard while the reservation is held. A fake worker records acceptance before
+its simulated create. Receipts match the full operation, including its ID, epoch, action, target and
+launch plan digest. Applied stop also names the exact stopped instance. A rejection before issue
+can settle an intent. An absent, mismatched or uncertain receipt leaves the operation fenced.
+
+An applied launch records the returned immutable instance ID through exact-plan readiness. A new
+coordinator can recover from a lost reply by reading the worker's durable receipt. It re-observes
+the recorded instance under a closed admission guard, then verifies it without issuing create again.
+Only the same requested plan can reuse that readiness. A different target must take a fresh epoch
+after recovery, and an unproved instance retains the fence. The fixture does not persist route
+publication. Foreign or unknown occupancy refuses the switch without a provider fallback.
+Public configuration and the request dispatcher do not construct this binding. The dedicated
+single-engine restriction for explicit native ownership still applies.
 
 **Production evidence.** The raw Docker inventory can report known foreign containers. Even an
 empty inventory leaves vacancy unproven, and raw Docker supplies no terminal receipt for an
@@ -1713,6 +1734,35 @@ engine forks land; the scheduler interface will not change shape.
   first ticket in that queue whose thread has capacity. Commit takes that exact ticket only
   while it is still first admissible. If the candidate is removed or displaced before commit,
   dispatch restarts the queue scan.
+- **Measured switch ordering.** The built-in scheduler can compare consecutive eligible switch candidates
+  of equal queue depth and request priority on one configured native Docker engine. It needs an idle engine
+  with a current proof for a single incumbent. The comparison ends at the first eligible route outside the
+  group. The winner still uses the existing capacity, exact-ticket, lifecycle and readiness checks. A changed
+  incumbent or displaced ticket restarts the scan. Custom schedulers keep baseline queue ordering.
+  The estimate adds verified incumbent shutdown to the requested model and profile's activation. The estimator
+  takes the median of up to five recent matching successes per phase and requires at least three samples no
+  older than 24 hours. If any contender lacks a complete estimate, the group uses enqueue order. Equal estimates
+  also use enqueue order. At a queue age of 30 seconds or more, the earliest enqueued eligible aged contender
+  takes precedence within that group. At later eligible comparisons, only earlier enqueued aged contenders can
+  precede it. This limits cost-induced overtakes within the group. Host admission, streams occupying slots,
+  queue deadlines and batching determine the wider wait.
+- **Switch attempts and evidence.** The runtime retains up to 64 terminal attempts in memory. Queue, ownership,
+  preflight, shutdown, launch or delegated command, and readiness use monotonic observations. Attempt records
+  distinguish absent, completed, failed and incomplete stages. A known zero is a completed observation.
+  Native shutdown contributes only when exactly one proved owned container for the incumbent's model, profile
+  and image is actually stopped and configured removal succeeds. The stop receipt must match both the
+  incumbent's launch receipt and its sample identity. Already-stopped, absent, ambiguous and partial
+  operations remain diagnostic. Native activation starts at launch and ends at confirmed readiness. It requires
+  an acknowledged fresh container start. Fresh-container observations establish process freshness. Model asset
+  digest and host cache state are currently unknown. Samples match the engine runtime, its bound configuration,
+  canonical model, effective profile, image identity and observation class. After known eviction, a fresh
+  launch uses matching fresh-container observations or has an unknown estimate. Delegated commands supply
+  diagnostic command time. Their stop and load phases remain unobserved.
+  Shutdown seals a cancelled attempt before releasing waiters. The first send attempt attaches once to the
+  matching current proof immediately before the router calls the upstream HTTP client. The send can fail
+  before reaching the engine. The timestamp supplies diagnostic timing only. Host drain, switch-rate
+  bounds, verified responder identity and batching have their own work (§5.3.1 and §13.3). History
+  expires on router restart.
 - **Fairness**: within a class, `SubPriority` then FIFO; a `Weight` limits
   how many in-flight requests a thread may hold concurrently
   (`maxInflight = ceil(Weight)`), so heavy threads can't monopolize slots.
@@ -1875,15 +1925,23 @@ engine forks land; the scheduler interface will not change shape.
   than one of the three readiness names, because the attempt itself threw. A timed-out wait says nothing about the
   attempt at all and carries no name.
   An ownership or preflight refusal verified before any possible mutation clears its matching claim
-  and restores the displaced incumbent's health and per-model window evidence together. The claim must
-  have displaced a healthy proof and still own the same version. While the marker is raised, a poll
-  started on that claim can veto restoration if its models query fails or its roster or windows differ
-  from the incumbent. If it finishes after the refusal, it makes that exact restored generation unknown
-  and withdraws its windows on contradiction. The poll publishes no capability through the marker or
-  across a successor snapshot. An observation started before the claim cannot revoke the restored
-  proof. A refusal after attempted stop or launch, a thrown transaction, a superseded claim, and
-  shutdown cannot restore the displaced proof. The caller still receives the switch failure and its
-  existing category, even when the incumbent remains schedulable.
+  and restores the displaced incumbent's health and per-model discovery windows together. The claim must
+  have displaced a healthy proof and still own the same version. A poll started on that claim can veto
+  the full restoration if its models query fails or its roster or discovery windows differ from the incumbent.
+  If that contradiction arrives after refusal, it makes the exact restored snapshot unknown, even
+  after another poll from the same claim has withdrawn its serving tuple.
+  When the model observation agrees, a missing, unavailable or different serving observation invalidates
+  only the whole serving tuple. An identical tuple remains valid when `health.expect` alone fails. Marker
+  clear restores either the entire still-valid tuple or unknown serving capacity alongside the roster proof.
+  A matching late serving-only contradiction clears the restored tuple in one versioned publication.
+  Model-only readiness remains available, and a waiter that needs the invalidated window cannot use it.
+  Restoring the still-valid serving tuple preserves its switch timing proof. Withdrawing the serving tuple
+  or the whole capability proof also retires the timing proof.
+  Each committed withdrawal nudges dispatch. Later observations from that claim cannot restore withdrawn
+  proof. The poll publishes no capability through the marker or across an independent publication or
+  successor snapshot. An observation started before the claim cannot revoke the restored proof.
+  Attempted stop or launch, a thrown transaction, a superseded claim and shutdown prevent restoration.
+  The caller still receives the switch failure and its existing category, even when the incumbent remains schedulable.
   A quiet poll keeps the published roster and version when the roster and context windows agree with the
   current snapshot. Without window evidence the ordered roster comparison ignores case. With window
   evidence it keeps the reported spelling alongside the proof. A reordered roster, a repeated name that

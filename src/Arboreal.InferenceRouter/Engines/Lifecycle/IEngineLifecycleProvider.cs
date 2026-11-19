@@ -1,3 +1,5 @@
+using System.Collections.Immutable;
+
 namespace Arboreal.InferenceRouter.Lifecycle;
 
 /// <summary>One model on one engine, as a lifecycle provider sees it. Deliberately narrow: a provider
@@ -6,12 +8,41 @@ public sealed record LifecycleTarget(
     string EngineName,
     string Model,
     ServingProfile? Profile,
-    EngineModelDefinition Definition);
+    EngineModelDefinition Definition)
+{
+    internal string EffectiveProfile => Profile?.Name ?? Definition.Profile ?? "";
+}
 
 /// <summary>A container (or equivalent unit) a provider found for this engine. <see cref="OwnedByUs"/>
 /// is the ownership proof: it is true only when the unit carries this launcher's labels, and the
 /// coordinator will never hand an unowned unit to <see cref="IEngineLifecycleProvider.StopAsync"/>.</summary>
-public sealed record EnginePeer(string Id, string Image, string? Model, bool OwnedByUs, bool QueryFailed = false);
+public sealed record EnginePeer(string Id, string Image, string? Model, bool OwnedByUs, bool QueryFailed = false)
+{
+    internal string? EffectiveProfile { get; init; }
+    internal string? ImageId { get; init; }
+}
+
+internal enum NativeStopDisposition { Stopped, AlreadyStopped, Absent, Unconfirmed, Failed }
+internal enum NativeRemovalDisposition { NotRequested, Incomplete, Removed, Absent, Unconfirmed, Failed }
+
+internal readonly record struct NativePeerStop(
+    EnginePeer Peer, NativeStopDisposition Stop, NativeRemovalDisposition Removal);
+
+internal readonly record struct NativeLaunch(string ContainerId, string Model, string Profile, string ImageId)
+{
+    internal bool Matches(SwitchSampleKey key) =>
+        !string.IsNullOrEmpty(ContainerId) &&
+        string.Equals(Model, key.CanonicalModel, StringComparison.OrdinalIgnoreCase) &&
+        string.Equals(Profile, key.EffectiveProfile, StringComparison.Ordinal) &&
+        string.Equals(ImageId, key.ProviderIdentity, StringComparison.Ordinal);
+
+    internal bool Matches(EnginePeer peer) =>
+        peer.OwnedByUs &&
+        string.Equals(ContainerId, peer.Id, StringComparison.Ordinal) &&
+        string.Equals(Model, peer.Model, StringComparison.OrdinalIgnoreCase) &&
+        string.Equals(Profile, peer.EffectiveProfile, StringComparison.Ordinal) &&
+        string.Equals(ImageId, peer.ImageId, StringComparison.Ordinal);
+}
 
 /// <summary>Outcome of a lifecycle step. <see cref="Reason"/> is the short machine-readable form that
 /// goes on the event feed; <see cref="Action"/> is one sentence telling the operator what to do, and a
@@ -21,6 +52,16 @@ public sealed class LifecycleResult
     public required bool Succeeded { get; init; }
     public string? Reason { get; init; }
     public string? Action { get; init; }
+    internal ImmutableArray<NativePeerStop> NativeStops { get; init; } = [];
+    internal NativeLaunch? NativeLaunch { get; init; }
+
+    internal LifecycleResult WithNativeStops(IEnumerable<NativePeerStop> observed) => new()
+    {
+        Succeeded = Succeeded,
+        Reason = Reason,
+        Action = Action,
+        NativeStops = ImmutableArray.CreateRange(observed),
+    };
 
     public static LifecycleResult Ok(string? reason = null) => new() { Succeeded = true, Reason = reason };
 

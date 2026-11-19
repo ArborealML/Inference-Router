@@ -26,6 +26,7 @@ public sealed class DockerContainerSummary
 {
     [JsonPropertyName("Id")] public string? Id { get; set; }
     [JsonPropertyName("Image")] public string? Image { get; set; }
+    [JsonPropertyName("ImageID")] public string? ImageId { get; set; }
     [JsonPropertyName("State")] public string? State { get; set; }
     [JsonPropertyName("Status")] public string? Status { get; set; }
     [JsonPropertyName("Labels")] public Dictionary<string, string>? Labels { get; set; }
