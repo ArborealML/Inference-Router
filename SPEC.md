@@ -1,6 +1,6 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.84)
+Status: draft, continuously revised (v0.12.85)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
@@ -352,6 +352,8 @@ daemon transaction per engine. 137 tests green.
   that answers no `upload_url`, an upload that dies or answers no asset id, an asset name listed twice on
   the release, and a tag that moves after the first resolve. No tag has run the gate: still configured,
   not proven.
+- v0.12.85 — offline Docker serving tiers support explicit read-only nested binds and checked
+  health probe timeout and retries. The Maya-XS 32k projection remains behind the tier gate (§7).
 - v0.12.84 — offline Docker serving tiers accept profile aliases that resolve to the same
   canonical launch plan. Default tiers and activation gates retain their existing rules (§7).
 - v0.12.83 — bind an offline admitted ticket's effective launch intent, final JSON and upstream
@@ -2603,11 +2605,12 @@ env = ["CONTEXT=65536", "PARALLEL=2"]
 bind_mounts = [{ source = "/srv/example/weights", target = "/models", read_only = true }]
 ```
 
-A tier's `docker.healthcheck` accepts a nonblank, control-free `command` and optional
-`interval_ms` and `start_period_ms` integers in 1 through 9,223,372,036,854. Each supplied
-duration becomes a signed 64-bit nanosecond value. The top-level Docker `Healthcheck.Test` is
+A tier's `docker.healthcheck` accepts a nonblank, control-free `command`. The optional
+`interval_ms`, `start_period_ms` and `timeout_ms` fields are integers in 1 through
+9,223,372,036,854. Each supplied duration becomes a signed 64-bit nanosecond value.
+Optional `retries` accepts a positive signed 32-bit integer. The top-level Docker `Healthcheck.Test` is
 `["CMD-SHELL", command]`, with the decoded command preserved literally. An absent probe or
-duration is omitted from the create request to preserve Docker inheritance and defaults.
+optional field is omitted from the create request to preserve Docker inheritance and defaults.
 The start period controls when failures count toward an unhealthy status. The health check is
 available only on a serving tier, and any declaration keeps the whole engine offline for projection.
 
@@ -2630,9 +2633,14 @@ The loader freezes the effective inputs for each tier of an opted-in model. Only
 template. Replacements are literal identifiers. Tier assignments are literal and follow
 common assignments in the payload. Assignments use a portable
 `KEY=value` name and permit empty values. Duplicate names after common expansion are refused.
-Common mounts precede target mounts. Destinations in the combined list must be distinct and
-may not overlap. Effective sources and destinations cannot cover protected control directories.
-These checks are lexical. Host qualification verifies the actual mounted paths and access modes.
+Common mounts precede target mounts. Destinations in the combined list must be distinct.
+A tier bind may declare `nested_under` naming an exact, earlier bind destination that is a
+strict path-component ancestor. Both binds must be read-only, and the parent cannot itself be
+nested. Every other overlap is refused. Common bind entries have no `nested_under` field.
+The annotation is used during validation and omitted from Docker JSON. Effective sources
+and destinations must be outside protected control paths and their ancestors.
+These checks are lexical. Host qualification verifies actual mounted paths and effective read-only
+enforcement, including any recursive mounts.
 Device requests, image pins, network bindings and other resource limits remain engine-wide.
 
 A tier's `docker.memory_bytes` and `docker.memory_swap_bytes` are exact 64-bit byte counts.

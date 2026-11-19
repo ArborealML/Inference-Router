@@ -49,6 +49,8 @@ public sealed class DockerCreateHealthcheck
     [JsonPropertyName("Test")] public required string[] Test { get; init; }
     [JsonPropertyName("Interval")] public long? Interval { get; init; }
     [JsonPropertyName("StartPeriod")] public long? StartPeriod { get; init; }
+    [JsonPropertyName("Timeout")] public long? Timeout { get; init; }
+    [JsonPropertyName("Retries")] public int? Retries { get; init; }
 }
 
 public sealed class DockerHostConfig

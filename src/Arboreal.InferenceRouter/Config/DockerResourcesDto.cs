@@ -79,6 +79,8 @@ public sealed class DockerHealthcheckDto
     private string? _command;
     private long? _intervalMs;
     private long? _startPeriodMs;
+    private long? _timeoutMs;
+    private int? _retries;
 
     [JsonPropertyName("command")][TomlPropertyName("command")]
     public string? Command
@@ -110,6 +112,28 @@ public sealed class DockerHealthcheckDto
         {
             if (_startPeriodMs.HasValue) throw new RouterConfigException("duplicate docker.healthcheck.start_period_ms");
             _startPeriodMs = value ?? throw new RouterConfigException("docker.healthcheck.start_period_ms cannot be null");
+        }
+    }
+
+    [JsonPropertyName("timeout_ms")][TomlPropertyName("timeout_ms")]
+    public long? TimeoutMs
+    {
+        get => _timeoutMs;
+        set
+        {
+            if (_timeoutMs.HasValue) throw new RouterConfigException("duplicate docker.healthcheck.timeout_ms");
+            _timeoutMs = value ?? throw new RouterConfigException("docker.healthcheck.timeout_ms cannot be null");
+        }
+    }
+
+    [JsonPropertyName("retries")][TomlPropertyName("retries")]
+    public int? Retries
+    {
+        get => _retries;
+        set
+        {
+            if (_retries.HasValue) throw new RouterConfigException("duplicate docker.healthcheck.retries");
+            _retries = value ?? throw new RouterConfigException("docker.healthcheck.retries cannot be null");
         }
     }
 
@@ -146,9 +170,21 @@ public sealed class DockerGpuDto
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed class DockerBindDto
 {
+    private string? _nestedUnder;
+
     [JsonPropertyName("source")][TomlPropertyName("source")] public string? Source { get; set; }
     [JsonPropertyName("target")][TomlPropertyName("target")] public string? Target { get; set; }
     [JsonPropertyName("read_only")][TomlPropertyName("read_only")] public bool? ReadOnly { get; set; }
+    [JsonPropertyName("nested_under")][TomlPropertyName("nested_under")]
+    public string? NestedUnder
+    {
+        get => _nestedUnder;
+        set
+        {
+            if (_nestedUnder is not null) throw new RouterConfigException("duplicate bind_mounts nested_under");
+            _nestedUnder = value ?? throw new RouterConfigException("bind_mounts nested_under cannot be null");
+        }
+    }
 
     [JsonIgnore, TomlIgnore(Condition = TomlIgnoreCondition.Never), TomlExtensionData]
     public TomlTable? Unknown { get; set; }

@@ -296,13 +296,14 @@ public sealed partial class DockerTargetProjectionTests
     }
 
     [Theory]
-    [InlineData("""env = ["FAMILY=qwen"]""", false, false, false)]
-    [InlineData("""bind_mounts = [{ source = "/srv/model", target = "/models", read_only = true }]""", true, false, false)]
-    [InlineData("memory_bytes = 57982058496, memory_swap_bytes = 62277025792", false, true, false)]
-    [InlineData("""healthcheck = { command = "probe" }""", false, false, false)]
-    [InlineData("""env = ["FAMILY=qwen"]""", false, false, true)]
+    [InlineData("""env = ["FAMILY=qwen"]""", false, false, false, false)]
+    [InlineData("""bind_mounts = [{ source = "/srv/model", target = "/models", read_only = true }]""", true, false, false, false)]
+    [InlineData("memory_bytes = 57982058496, memory_swap_bytes = 62277025792", false, true, false, false)]
+    [InlineData("""healthcheck = { command = "probe" }""", false, false, false, false)]
+    [InlineData("""env = ["FAMILY=qwen"]""", false, false, true, false)]
+    [InlineData("""bind_mounts = [{ source = "/srv/root", target = "/work", read_only = true }, { source = "/srv/model", target = "/work/models", read_only = true, nested_under = "/work" }], healthcheck = { command = "probe", timeout_ms = 10000, retries = 3 }""", false, false, false, true)]
     public async Task TargetDeclarationRefusesEveryLivePathEvenForAnotherModel(
-        string fields, bool hasMount, bool hasMemory, bool hasAlias)
+        string fields, bool hasMount, bool hasMemory, bool hasAlias, bool hasNested)
     {
         var aliases = hasAlias ? """aliases = ["max-4"], """ : "";
         var engine = LoadToml($$$"""
@@ -321,8 +322,11 @@ public sealed partial class DockerTargetProjectionTests
         if (hasAlias) selected = selected with { Profile = selected.Profile! with { Name = "max-4" } };
         var projection = provider.BuildCreateRequest(selected, engine.Docker!.ImageIdentity!);
         Assert.Equal("tier", projection.Labels[DockerLifecycleProvider.LabelProfile]);
-        Assert.Equal(hasMount || hasMemory, projection.HostConfig is not null);
+        Assert.Equal(hasMount || hasMemory || hasNested, projection.HostConfig is not null);
         if (hasMount) Assert.Equal("/models", Assert.Single(projection.HostConfig!.Mounts!).Target);
+        if (hasNested)
+            Assert.Collection(projection.HostConfig!.Mounts!, parent => Assert.Equal("/work", parent.Target),
+                child => Assert.Equal("/work/models", child.Target));
         if (hasMemory)
         {
             Assert.Equal(WideMemory, projection.HostConfig!.Memory);

@@ -9,7 +9,8 @@ internal sealed record DockerTargetLaunch(string Model, string Profile, Immutabl
     ImmutableArray<string> Env, ImmutableArray<DockerBind> Binds, long? MemoryBytes, long? MemorySwapBytes,
     DockerTargetHealthcheck? Healthcheck);
 
-internal sealed record DockerTargetHealthcheck(string Command, long? IntervalNs, long? StartPeriodNs);
+internal sealed record DockerTargetHealthcheck(string Command, long? IntervalNs, long? StartPeriodNs,
+    long? TimeoutNs, int? Retries);
 
 /// <summary>Immutable Docker create inputs. They describe launch intent, not a verified serving instance.</summary>
 internal sealed partial class DockerTargetPlans
@@ -142,7 +143,7 @@ internal sealed partial class DockerTargetPlans
             AddEnv(value);
 
         var bindPath = $"{path}.docker.bind_mounts";
-        var additions = DockerLaunchResources.ParseBinds(tier?.BindMounts, bindPath);
+        var additions = DockerLaunchResources.ParseBinds(tier?.BindMounts, bindPath, isTier: true);
         var binds = DockerLaunchResources.CombineTargetBinds(common?.BindMounts ?? [], additions, bindPath);
         var (memory, memorySwap) = ResolveMemory(tier, common, $"{path}.docker");
         var healthcheck = tier?.Healthcheck is { } probe ? ParseHealthcheck(probe, $"{path}.docker.healthcheck") : null;
@@ -168,9 +169,12 @@ internal sealed partial class DockerTargetPlans
         var command = probe.Command;
         if (string.IsNullOrWhiteSpace(command) || command.Any(char.IsControl))
             throw new RouterConfigException($"{path}.command must be a nonblank control-free string");
+        if (probe.Retries is <= 0)
+            throw new RouterConfigException($"{path}.retries must be a positive Int32");
         return new DockerTargetHealthcheck(command,
             Nanoseconds(probe.IntervalMs, $"{path}.interval_ms"),
-            Nanoseconds(probe.StartPeriodMs, $"{path}.start_period_ms"));
+            Nanoseconds(probe.StartPeriodMs, $"{path}.start_period_ms"),
+            Nanoseconds(probe.TimeoutMs, $"{path}.timeout_ms"), probe.Retries);
     }
 
     private static long? Nanoseconds(long? milliseconds, string path)
@@ -240,6 +244,8 @@ internal sealed partial class DockerTargetPlans
             var index = 0;
             foreach (var tier in serving.Value.EnumerateArray())
             {
+                if (Members(tier, "nested_under").Any())
+                    throw new RouterConfigException($"{modelPath}.serving[{index}].nested_under belongs on a serving-tier bind mount");
                 if (HasTierDeclaration(tier))
                 {
                     CheckMember(root, "engine", "engine");
@@ -262,6 +268,7 @@ internal sealed partial class DockerTargetPlans
                     if (!tier.TryGetProperty("docker", out var target) || target.ValueKind != JsonValueKind.Object)
                         throw new RouterConfigException($"{tierPath}.docker must be an object");
                     CheckHealthcheckJson(target, $"{tierPath}.docker.healthcheck");
+                    CheckTierBindsJson(target, $"{tierPath}.docker.bind_mounts");
                     DockerLaunchResources.CheckJsonTree(tier, tierPath);
                     CheckCommonDocker(engine.Value, enginePath);
                 }
@@ -280,8 +287,9 @@ internal sealed partial class DockerTargetPlans
         foreach (var docker in Members(engine.Value, "docker"))
         {
             var path = $"engine.{engine.Name}";
-            if (Members(docker.Value, "healthcheck").Any())
-                throw new RouterConfigException($"{path}.docker.healthcheck is only supported inside a serving-tier docker block");
+            RejectMisplacedTargetOptionsJson(docker.Value, $"{path}.docker");
+            foreach (var resources in Members(docker.Value, "resources"))
+                RejectMisplacedTargetOptionsJson(resources.Value, $"{path}.docker.resources");
             if (!Members(docker.Value, "entrypoint").Any() && !Members(docker.Value, "ipc_mode").Any()) continue;
             CheckMember(root, "engine", "engine");
             CheckMember(engines.Value, engine.Name, path, exactKey: true);
@@ -289,6 +297,46 @@ internal sealed partial class DockerTargetPlans
             CheckMember(engine.Value, "catalog", $"{path}.catalog");
             _ = engine.Value.TryGetProperty("catalog", out var catalog);
             CheckAuthority(engine.Value, catalog, path);
+        }
+    }
+
+    private static void RejectMisplacedTargetOptionsJson(JsonElement table, string path)
+    {
+        if (Members(table, "healthcheck").Any())
+            throw new RouterConfigException($"{path}.healthcheck is only supported inside a serving-tier docker block");
+        if (Members(table, "nested_under").Any())
+            throw new RouterConfigException($"{path}.nested_under is only supported on serving-tier bind mounts");
+        foreach (var list in Members(table, "bind_mounts"))
+        {
+            if (Members(list.Value, "nested_under").Any())
+                throw new RouterConfigException($"{path}.bind_mounts.nested_under is only supported on serving-tier bind mounts");
+            if (list.Value.ValueKind != JsonValueKind.Array) continue;
+            var index = 0;
+            foreach (var bind in list.Value.EnumerateArray())
+            {
+                if (Members(bind, "nested_under").Any())
+                    throw new RouterConfigException($"{path}.bind_mounts[{index}].nested_under is only supported on serving-tier bind mounts");
+                index++;
+            }
+        }
+    }
+
+    private static void CheckTierBindsJson(JsonElement target, string path)
+    {
+        CheckMember(target, "bind_mounts", path);
+        if (!target.TryGetProperty("bind_mounts", out var binds) || binds.ValueKind != JsonValueKind.Array) return;
+        var index = 0;
+        foreach (var bind in binds.EnumerateArray())
+        {
+            var bindPath = $"{path}[{index}]";
+            CheckMember(bind, "source", $"{bindPath}.source");
+            CheckMember(bind, "target", $"{bindPath}.target");
+            CheckMember(bind, "read_only", $"{bindPath}.read_only");
+            CheckMember(bind, "nested_under", $"{bindPath}.nested_under");
+            if (bind.ValueKind == JsonValueKind.Object && bind.TryGetProperty("nested_under", out var parent) &&
+                parent.ValueKind != JsonValueKind.String)
+                throw new RouterConfigException($"{bindPath}.nested_under must be a string");
+            index++;
         }
     }
 
@@ -302,6 +350,8 @@ internal sealed partial class DockerTargetPlans
         CheckMember(healthcheck, "command", $"{path}.command");
         CheckMember(healthcheck, "interval_ms", $"{path}.interval_ms");
         CheckMember(healthcheck, "start_period_ms", $"{path}.start_period_ms");
+        CheckMember(healthcheck, "timeout_ms", $"{path}.timeout_ms");
+        CheckMember(healthcheck, "retries", $"{path}.retries");
         foreach (var field in healthcheck.EnumerateObject())
         {
             switch (field.Name)
@@ -312,8 +362,13 @@ internal sealed partial class DockerTargetPlans
                     break;
                 case "interval_ms":
                 case "start_period_ms":
+                case "timeout_ms":
                     if (field.Value.ValueKind != JsonValueKind.Number || !field.Value.TryGetInt64(out _))
                         throw new RouterConfigException($"{path}.{field.Name} must be an Int64 integer");
+                    break;
+                case "retries":
+                    if (field.Value.ValueKind != JsonValueKind.Number || !field.Value.TryGetInt32(out _))
+                        throw new RouterConfigException($"{path}.retries must be an Int32 integer");
                     break;
                 default:
                     throw new RouterConfigException($"{path}.{field.Name} is not a health check setting");

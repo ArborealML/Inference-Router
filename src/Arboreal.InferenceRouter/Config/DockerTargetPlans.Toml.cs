@@ -12,35 +12,33 @@ internal sealed partial class DockerTargetPlans
         foreach (var (engineName, engineValue) in engines)
         {
             if (engineValue is not TomlTable engine) continue;
+            var enginePath = $"engine.{engineName}";
+            CheckCommonTargetOptionsToml(engine, $"{enginePath}.docker");
             foreach (var catalog in TomlMembers(engine, "catalog").OfType<TomlTable>())
             foreach (var (modelName, modelValue) in catalog)
             {
                 if (modelValue is not TomlTable model) continue;
+                var modelPath = $"{enginePath}.catalog.{modelName}";
                 foreach (var serving in TomlMembers(model, "serving"))
                 {
                     if (serving is TomlTable malformed && HasTomlTierDeclaration(malformed))
-                        throw new RouterConfigException($"engine.{engineName}.catalog.{modelName}.serving must be an array of serving tiers");
-                    IEnumerable<object?> rows = serving switch
-                    {
-                        TomlTableArray tables => tables,
-                        TomlArray array => array,
-                        _ => [],
-                    };
+                        throw new RouterConfigException($"{modelPath}.serving must be an array of serving tiers");
                     var index = 0;
-                    foreach (var row in rows)
+                    foreach (var row in TomlArrayItems(serving))
                     {
+                        var tierPath = $"{modelPath}.serving[{index}]";
+                        if (row is TomlTable misplaced && HasTomlMember(misplaced, "nested_under"))
+                            throw new RouterConfigException($"{tierPath}.nested_under belongs on a serving-tier bind mount");
                         if (row is TomlTable tier && HasTomlTierDeclaration(tier))
                         {
-                            var enginePath = $"engine.{engineName}";
-                            var modelPath = $"{enginePath}.catalog.{modelName}";
                             CheckTomlMember(root, "engine", "engine");
                             CheckTomlMember(engines, engineName, enginePath);
                             CheckTomlFields(engine, enginePath, "catalog", "docker", "lifecycle_owner", "remote", "lifecycle");
                             CheckTomlMember(catalog, modelName, modelPath);
                             CheckTomlFields(model, modelPath, "serving", "aliases", "profile", "default_profile");
-                            CheckTomlFields(tier, $"{modelPath}.serving[{index}]",
-                                "name", "max_context", "max_slots", "docker", "aliases");
+                            CheckTomlFields(tier, tierPath, "name", "max_context", "max_slots", "docker", "aliases");
                             CheckTomlSelectors(catalog, enginePath);
+                            CheckTierTargetTablesToml(tier, $"{tierPath}.docker");
                         }
                         index++;
                     }
@@ -48,6 +46,75 @@ internal sealed partial class DockerTargetPlans
             }
         }
     }
+
+    private static void CheckCommonTargetOptionsToml(TomlTable engine, string path)
+    {
+        foreach (var docker in TomlMembers(engine, "docker").OfType<TomlTable>())
+        {
+            RejectMisplacedTargetOptionsToml(docker, path);
+            foreach (var resources in TomlMembers(docker, "resources").OfType<TomlTable>())
+                RejectMisplacedTargetOptionsToml(resources, $"{path}.resources");
+        }
+    }
+
+    private static void RejectMisplacedTargetOptionsToml(TomlTable table, string path)
+    {
+        if (HasTomlMember(table, "healthcheck"))
+            throw new RouterConfigException($"{path}.healthcheck is only supported inside a serving-tier docker block");
+        if (HasTomlMember(table, "nested_under"))
+            throw new RouterConfigException($"{path}.nested_under is only supported on serving-tier bind mounts");
+        foreach (var list in TomlMembers(table, "bind_mounts"))
+        {
+            if (list is TomlTable malformed && HasTomlMember(malformed, "nested_under"))
+                throw new RouterConfigException($"{path}.bind_mounts.nested_under is only supported on serving-tier bind mounts");
+            var index = 0;
+            foreach (var row in TomlArrayItems(list))
+            {
+                if (row is TomlTable bind && HasTomlMember(bind, "nested_under"))
+                    throw new RouterConfigException($"{path}.bind_mounts[{index}].nested_under is only supported on serving-tier bind mounts");
+                index++;
+            }
+        }
+    }
+
+    private static void CheckTierTargetTablesToml(TomlTable tier, string path)
+    {
+        foreach (var target in TomlMembers(tier, "docker").OfType<TomlTable>())
+        {
+            CheckTomlFields(target, path, "bind_mounts", "healthcheck");
+            foreach (var health in TomlMembers(target, "healthcheck").OfType<TomlTable>())
+            {
+                CheckTomlFields(health, $"{path}.healthcheck", "command", "interval_ms", "start_period_ms", "timeout_ms", "retries");
+                if (TomlMembers(health, "timeout_ms").Any(value => value is not long))
+                    throw new RouterConfigException($"{path}.healthcheck.timeout_ms must be an Int64 integer");
+                if (TomlMembers(health, "retries").Any(value => value is not long retries ||
+                    retries > int.MaxValue || retries < int.MinValue))
+                    throw new RouterConfigException($"{path}.healthcheck.retries must be an Int32 integer");
+            }
+            foreach (var list in TomlMembers(target, "bind_mounts"))
+            {
+                var index = 0;
+                foreach (var row in TomlArrayItems(list))
+                {
+                    if (row is TomlTable bind)
+                    {
+                        var bindPath = $"{path}.bind_mounts[{index}]";
+                        CheckTomlFields(bind, bindPath, "source", "target", "read_only", "nested_under");
+                        if (TomlMembers(bind, "nested_under").Any(value => value is not string))
+                            throw new RouterConfigException($"{bindPath}.nested_under must be a string");
+                    }
+                    index++;
+                }
+            }
+        }
+    }
+
+    private static IEnumerable<object?> TomlArrayItems(object? value) => value switch
+    {
+        TomlTableArray tables => tables,
+        TomlArray array => array,
+        _ => [],
+    };
 
     private static bool HasTomlTierDeclaration(TomlTable tier) =>
         HasTomlMember(tier, "docker") || HasTomlMember(tier, "aliases");

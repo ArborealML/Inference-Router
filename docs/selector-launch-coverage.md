@@ -6,7 +6,7 @@ The inspected reference selector accepted 169 of 506 explicit model/profile spel
 | --- | ---: | --- |
 | Strata | 36 | Offline projection supports per-tier environment and data/model binds, memory plus swap for capped Qwen profiles, and the `max-4` alias for `256k-4`. |
 | HyperQwen | 26 | Different profiles and options change the ordered GPU request and shared-memory limit. Parking derives shared memory from its 1–48 GiB RAM cache. Init, restart policy and log settings also need representation. Shared wire IDs need exact checkpoint and serving-instance proof. |
-| Maya | 13 | MiniMax `32k` and all three GLM tiers have offline launch projections. The nine DeepSeek targets also require an explicit Docker probe timeout and retry count, plus nested bind destinations. |
+| Maya | 13 | MiniMax `32k` and all three GLM tiers have qualified offline launch projections. Maya-XS `32k` uses the new read-only bind overlays and explicit probe timeout and retries. The eight general DeepSeek tiers still need per-tier numeric command arguments. |
 
 The environment and bind projection merged in [PR #7](https://github.com/ArborealML/Inference-Router/pull/7). It composes settings for offline validation and keeps target-enabled startup and native Docker writes gated. [Configuration and lifecycle contract](../SPEC.md#7-configuration-toml)
 
@@ -43,3 +43,16 @@ The tier appears in the serving arguments and in the literal `CMD-SHELL` probe. 
 has a 30-second interval and a 3,600-second start period. Probe timeout, retries and startup
 interval follow Docker inheritance and defaults. Omission of the restart policy preserves the
 selector's disabled-restart behavior. The three projections establish launch intent only.
+
+## DeepSeek Maya-XS 32k
+
+The model's sole tier uses fixed decimal `32768` serving and probe arguments. A dedicated
+engine can keep the existing literal command. The Docker payload requests a 10-second probe
+timeout and three retries. Its 11 ordered bind mounts include two explicit read-only children
+of `/work` and an independent writable log mount. The qualifier compares equivalent JSON and
+TOML configurations with one redacted payload.
+
+This slice adds one target to the 40 already covered offline after qualification and landing.
+The inventory remains at 75 targets. Effective read-only mount enforcement and the AIR
+readiness budget require separate host qualification. The first native swap pair remains Qwen
+and Swift on the same host.
