@@ -1,11 +1,11 @@
 ---
 id: TASK-110
 title: Coordinate model engines that share one host with exclusive residency
-status: Preparing
+status: Waiting
 assignee:
-  - '@gpt-6.2-sol-lifecycle'
+  - '@chatswarm'
 created_date: '2026-11-18T18:13:00Z'
-updated_date: '2026-11-19T10:55:00Z'
+updated_date: '2026-11-19T11:02:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -19,7 +19,7 @@ ordinal: 108000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Lifecycle is identifying the launch-record producer and observation issuer for a future authorized Defiant launch.
+The independent review of the future launch-record plan on 955436b wakes Lifecycle. Review dispatched before implementation.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -36,7 +36,7 @@ Lifecycle is identifying the launch-record producer and observation issuer for a
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Review on 6177f17 confirmed the fake plan uses 1000 ms, ordinary enrollment settles before guard, and the staged bool fixture bypasses runtime. Persist a validated 100 ms B plan, independently vary caller wait. Lifecycle starts one original-policy budget before post-drain identity and reserves the exact closed generation before bound reads. Hand a pinned child to Shutdown for a fixture-scoped real RunSwitchAsync claim. Under host then transition check stop, identity and deadline before CAS; retry with unchanged budget. Commit proof, closed authority and terminal together. Return handled expiry or committed witness through later faults. Keep callbacks outside locks. Preserve completion/feed ordering with minting closed; after cleanup Open checks committed generation and live stop, then wakes outside locks. Check t99 success, withheld-timer t100 expiry with one health_timeout and no publication or duplicate failure, retained B and fresh same-ID recovery without duplicate effects. Production enrollment and capacity guards stay closed.
+Review the first real launch-record producer on Defiant. A future enrolled single writer freezes operation, epoch and plan before dispatch, persists acceptance before daemon I/O, independently verifies the exact applied instance and records the effect before acknowledgment. Reopen and authenticate a lookup by immutable container ID. Reuse checkpoint validation; an uncertain effect remains fenced. The subsequent observation issuer must attest one connected serving process for both roster and capacity reads on a closed generation within the original budget. Establish enforcement, covered vacancy and crash/rollback guarantees before live launch. Existing selector residency has no original controller record.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
