@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@gpt-6.2-sol-scheduling'
 created_date: '2026-11-18T18:56:00Z'
-updated_date: '2026-11-19T08:56:00Z'
+updated_date: '2026-11-19T09:02:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -23,7 +23,7 @@ ordinal: 116000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Implement offline dispatch for one selected ticket. Production enrollment remains disabled.
+Prepare the reviewed offline dispatch candidate for integration with the current provider and SPEC. Production enrollment remains disabled.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -48,5 +48,5 @@ Publish one immutable sender with the ready preparation. Its exact invocation bo
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Plan reviews released offline implementation with exact sender, fresh generation, strict validation and pre-checkout retirement classification. At 43b64d5 Release built; 34 differential cases passed. All 35 failures occurred at router-owned non-loopback fixture setup (13 resolver, 22 new integration). The compatibility filter passed 39 existing cases and repeated the same 22 failures. Fix the fixture and rerun affected cases only. Review of 614cd52 also requires binding present raw model, headers, trusted projection/endpoint and resident engine/model identity. Runtime delta review dispatched.
+Plan reviews released offline exact-ticket dispatch with typed retirement and event-driven rearm. At 43b64d5 non-loopback fixture setup prevented 35 cases from reaching assertions. At 1bd351d the fixture and four earlier binding findings are addressed: raw selection, allowed headers, trusted projection/endpoint and resident identity. Focused Release passed 63 cases and another 55 distinct compatibility/integration cases, zero skips; Linux x64 Native AOT passed without trim warnings. Runtime and correction reviews dispatched. Landing preview conflicts only in SPEC; verify provider auto-merge before promotion.
 <!-- SECTION:NOTES:END -->
