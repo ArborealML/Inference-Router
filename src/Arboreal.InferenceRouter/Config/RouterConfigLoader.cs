@@ -218,10 +218,14 @@ public static class RouterConfigLoader
         }
 
         var hasTargetDocker = DockerTargetPlans.IsDeclared(e);
-        if (hasTargetDocker && (e.Docker is null || e.Remote == true ||
+        var hasLaunchOptions = e.Docker is { Entrypoint: not null } or { IpcMode: not null };
+        if ((hasTargetDocker || hasLaunchOptions) && (e.Docker is null || e.Remote == true ||
             e.LifecycleOwner is not (null or "router") ||
             e.Lifecycle is { } targetLifecycle && !targetLifecycle.Trim().Equals("docker", StringComparison.OrdinalIgnoreCase)))
-            throw new RouterConfigException($"engine.{name}: serving-tier Docker requires a native Docker engine");
+        {
+            var fields = hasTargetDocker ? "serving-tier Docker" : "docker.entrypoint or docker.ipc_mode";
+            throw new RouterConfigException($"engine.{name}: {fields} requires a native Docker engine");
+        }
 
         var lifecycle = EngineLifecycleKind.Delegated;
         DockerLifecycleConfig? docker = null;
@@ -242,6 +246,8 @@ public static class RouterConfigLoader
             if (string.IsNullOrWhiteSpace(d.Image))
                 throw new RouterConfigException(
                     $"engine.{name}.docker.image is required: the router starts an image that is already on the host and never pulls one itself");
+            if (d.IpcMode is not (null or "host"))
+                throw new RouterConfigException($"engine.{name}.docker.ipc_mode must be host when supplied");
             var commonResources = d.Resources is { } resources ? DockerLaunchResources.Parse(resources, name) : null;
             docker = new DockerLifecycleConfig
             {
@@ -254,6 +260,8 @@ public static class RouterConfigLoader
                 RouterId = d.RouterId ?? throw new RouterConfigException(
                     $"engine.{name}.docker.router_id is required: it is the label that says which router owns a container, and a shared default would let two routers stop each other's work"),
                 Command = d.Command ?? [],
+                Entrypoint = ParseDockerEntrypoint(d.Entrypoint, name),
+                IpcMode = d.IpcMode,
                 Env = d.Env ?? [],
                 StopTimeoutMs = d.StopTimeoutMs ?? 30_000,
                 HostPort = d.HostPort,
@@ -332,6 +340,16 @@ public static class RouterConfigLoader
         };
         _ = definition.ResolveLifecycleOwner();
         return definition;
+    }
+
+    private static string? ParseDockerEntrypoint(string? value, string engine)
+    {
+        if (value is null) return null;
+        if (value.Length <= 1 || value[0] != '/' || value != value.Trim() ||
+            value.Contains('\\', StringComparison.Ordinal) || value.Any(char.IsControl) ||
+            value[1..].Split('/').Any(segment => segment is "" or "." or ".."))
+            throw new RouterConfigException($"engine.{engine}.docker.entrypoint must be a clean absolute Linux executable path inside the image");
+        return value;
     }
 
     private static DockerImageIdentity? ParseDockerImageIdentity(DockerDto docker, string engineName)

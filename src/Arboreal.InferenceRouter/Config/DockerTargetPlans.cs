@@ -164,10 +164,11 @@ internal sealed partial class DockerTargetPlans
     [GeneratedRegex(@"\{\{(?:model|profile|endpoint)\}\}", RegexOptions.CultureInvariant, matchTimeoutMilliseconds: 1_000)]
     private static partial Regex TargetPlaceholders();
 
-    // Walk each occurrence before STJ can discard a shadowed opt-in. Only ancestors of an
-    // actual tier block receive the new strictness. JSON structural names use schema casing.
+    // Walk each occurrence before STJ can discard a shadowed opt-in. JSON structural names
+    // use schema casing for engines that declare a tier or unqualified launch options.
     internal static void CheckJson(JsonElement root)
     {
+        CheckLaunchOptionsJson(root);
         foreach (var engines in Members(root, "engine"))
         foreach (var engine in Properties(engines.Value))
         foreach (var catalog in Members(engine.Value, "catalog"))
@@ -206,6 +207,23 @@ internal sealed partial class DockerTargetPlans
                 }
                 index++;
             }
+        }
+    }
+
+    private static void CheckLaunchOptionsJson(JsonElement root)
+    {
+        foreach (var engines in Members(root, "engine"))
+        foreach (var engine in Properties(engines.Value))
+        foreach (var docker in Members(engine.Value, "docker"))
+        {
+            if (!Members(docker.Value, "entrypoint").Any() && !Members(docker.Value, "ipc_mode").Any()) continue;
+            var path = $"engine.{engine.Name}";
+            CheckMember(root, "engine", "engine");
+            CheckMember(engines.Value, engine.Name, path, exactKey: true);
+            CheckCommonDocker(engine.Value, path);
+            CheckMember(engine.Value, "catalog", $"{path}.catalog");
+            _ = engine.Value.TryGetProperty("catalog", out var catalog);
+            CheckAuthority(engine.Value, catalog, path);
         }
     }
 

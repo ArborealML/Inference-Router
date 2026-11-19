@@ -166,6 +166,8 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
         config.ValidateLifecycleTopology(def);
         if (def.Docker?.HasUnqualifiedTargetDocker == true)
             throw new RouterConfigException($"engine.{WireText.Ident(def.Name)}: serving-tier Docker targets require host qualification before activation");
+        if (def.Docker?.HasUnqualifiedLaunchOptions == true)
+            throw new RouterConfigException($"engine.{WireText.Ident(def.Name)}: docker.entrypoint and docker.ipc_mode require host qualification before activation");
         _lifecycleBinding = BindLifecycle(def, lifecycle);
         if (hostEnrollment is { } enrollment &&
             (!def.HasExplicitRouterLifecycle || enrollment.Engine != def.Name || enrollment.RouterId != def.Docker?.RouterId ||

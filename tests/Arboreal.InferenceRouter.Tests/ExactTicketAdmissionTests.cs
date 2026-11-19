@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Net;
 using System.Text;
+using System.Threading.Channels;
 
 namespace Arboreal.InferenceRouter.Tests;
 
@@ -77,6 +78,129 @@ public sealed class ExactTicketAdmissionTests
         Assert.Equal(1, rig.Sink.Calls);
         Assert.Equal(Payload("a", "original"), Assert.Single(rig.Sink.ReceivedBodies));
         Assert.Equal(1, rig.Attempts[ticket.Id]);
+    }
+
+    [Fact(Timeout = 20_000)]
+    public async Task CompletionAndProfileWakesLeaveTheExactTicketQueuedUntilMatchingOpen()
+    {
+        using var bootProbe = new AdmissionFixtureBarrier();
+        using var response = new AdmissionFixtureBarrier();
+        using var lifetime = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        var token = lifetime.Token;
+        await using var rig = new Rig(respond: RespondAsync, singleModel: true);
+        await rig.ProbeAsync();
+        var ticket = await rig.EnqueueAsync("a", "completion-open");
+        await rig.PrepareAsync(ticket);
+        var originalClaim = rig.Claims[ticket.Id];
+        rig.Publish("a", originalClaim.Generation, open: false);
+
+        var parks = Channel.CreateUnbounded<Task>();
+        var admitted = new ConcurrentQueue<ExactTicketAdmission.Claim>();
+        var closedScans = 0;
+        var submissions = 0;
+        var engine = rig.Router.Engines["fixture"];
+        engine.BeforeModelsFetchForTests = () => bootProbe.HoldAsync(token).GetAwaiter().GetResult();
+        rig.Router.AfterDispatchParkForTests = wake => parks.Writer.TryWrite(wake);
+        rig.Router.BeforeAdmissionPreparationForTests = current =>
+        {
+            if (ReferenceEquals(current, ticket)) Interlocked.Increment(ref closedScans);
+        };
+        rig.Admission.BeforeSubmitForTests = claim =>
+        {
+            admitted.Enqueue(claim);
+            return Task.CompletedTask;
+        };
+        rig.Admission.BeforeSendForTests = _ =>
+        {
+            Interlocked.Increment(ref submissions);
+            return Task.CompletedTask;
+        };
+        var released = rig.ArmRelease();
+
+        try
+        {
+            rig.Router.Start();
+            // Setup wakes have already fired. The automatic health probe stays held until teardown.
+            await bootProbe.Reached.WaitAsync(token);
+            var initialPark = await ReadClosedParkAsync(expectedScans: 1);
+
+            rig.Router.Events.Append(new RouterEvent { Kind = "engine.switch_completed", Engine = "fixture", Model = "a" });
+            await initialPark.WaitAsync(token);
+            var afterCompletion = await ReadClosedParkAsync(expectedScans: 2);
+            Assert.NotSame(initialPark, afterCompletion);
+
+            rig.Router.Events.Append(new RouterEvent { Kind = "engine.profile", Engine = "fixture", Model = "a" });
+            await afterCompletion.WaitAsync(token);
+            var afterProfile = await ReadClosedParkAsync(expectedScans: 3);
+            Assert.NotSame(initialPark, afterProfile);
+            Assert.NotSame(afterCompletion, afterProfile);
+
+            rig.Publish("a", originalClaim.Generation, open: true);
+            await afterProfile.WaitAsync(token);
+            await response.Reached.WaitAsync(token);
+            Assert.Equal(originalClaim, Assert.Single(admitted));
+            Assert.Equal(1, Volatile.Read(ref submissions));
+            Assert.Equal(ticket.Id, Assert.Single(rig.Selected).TicketId);
+            Assert.Equal(1, rig.Admission.PhysicalUses);
+            Assert.Equal(0, rig.Admission.Releases);
+            Assert.Equal(1, rig.Sink.Calls);
+            Assert.Equal(Payload("a", "completion-open"), Assert.Single(rig.Sink.ReceivedBodies));
+            Assert.False(ticket.CompletionTask.IsCompleted);
+
+            response.Release();
+            Assert.Equal("{}"u8.ToArray(), await ticket.CompletionTask.WaitAsync(token));
+            await released.WaitAsync(token);
+            Assert.Equal("request.completed", Assert.Single(TerminalEvents(rig, ticket)).Kind);
+            Assert.Equal(1, rig.Admission.Releases);
+            Assert.Equal(0, rig.Admission.PhysicalUses);
+            Assert.Equal(1, rig.Attempts[ticket.Id]);
+            Assert.Single(admitted);
+            Assert.Equal(1, Volatile.Read(ref submissions));
+            Assert.Single(rig.Selected);
+            Assert.Equal(1, rig.Sink.Calls);
+            Assert.Single(rig.Sink.ReceivedBodies);
+        }
+        finally
+        {
+            engine.BeforeModelsFetchForTests = null;
+            rig.Router.AfterDispatchParkForTests = null;
+            rig.Router.BeforeAdmissionPreparationForTests = null;
+            rig.Admission.BeforeSubmitForTests = null;
+            rig.Admission.BeforeSendForTests = null;
+            rig.Admission.AfterReleaseForTests = null;
+            response.Release();
+            bootProbe.Release();
+        }
+
+        async Task<Task> ReadClosedParkAsync(int expectedScans)
+        {
+            var park = await parks.Reader.ReadAsync(token);
+            Assert.False(park.IsCompleted);
+            Assert.Equal(expectedScans, Volatile.Read(ref closedScans));
+            Assert.Equal(TicketState.Queued, ticket.State);
+            Assert.Equal(originalClaim, rig.Claims[ticket.Id]);
+            lock (rig.Admission.Gate)
+            {
+                Assert.True(rig.Admission.IsPrepared(originalClaim));
+                Assert.False(rig.Admission.IsOpen(originalClaim));
+            }
+            Assert.Equal(1, rig.Admission.PreparationCount);
+            Assert.Equal(1, rig.Attempts[ticket.Id]);
+            Assert.Empty(rig.Selected);
+            Assert.Empty(admitted);
+            Assert.Equal(0, Volatile.Read(ref submissions));
+            Assert.Equal(0, rig.Admission.PhysicalUses);
+            Assert.Equal(0, rig.Admission.Releases);
+            Assert.Equal(0, rig.Sink.Calls);
+            Assert.Empty(rig.Sink.ReceivedBodies);
+            return park;
+        }
+
+        async Task<HttpResponseMessage> RespondAsync()
+        {
+            await response.HoldAsync(token);
+            return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}") };
+        }
     }
 
     [Theory(Timeout = 20_000)]

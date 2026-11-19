@@ -9,6 +9,25 @@ public sealed class HostLifecycleCoordinatorTests : IDisposable
     private static readonly string FixturePlanDigest = new('A', 64);
     private readonly DirectoryInfo _directory = Directory.CreateTempSubdirectory("air-host-");
 
+    [Theory]
+    [InlineData("/opt/maya-python/bin/python", null)]
+    [InlineData(null, "host")]
+    public async Task LaunchOptionsRefuseEnrolledStartup(string? entrypoint, string? ipcMode)
+    {
+        var path = CreateReservation("shared");
+        var host = new FakeHost();
+        using var endpoint = new FakeDockerDaemonHandler { TransportFails = true };
+        var docker = new DockerLifecycleConfig { Image = "fixture", RouterId = "test",
+            Entrypoint = entrypoint, IpcMode = ipcMode };
+        var error = await Assert.ThrowsAsync<RouterConfigException>(async () =>
+        {
+            await using var engine = CreateEnrolledRuntime(path, host, new EventRing(), endpoint, docker: docker);
+        });
+        Assert.Contains("docker.entrypoint and docker.ipc_mode require host qualification", error.Message, StringComparison.Ordinal);
+        Assert.Empty(host.Calls);
+        Assert.Empty(endpoint.Requests);
+    }
+
     [Theory(Timeout = 20_000)]
     [InlineData(true)]
     [InlineData(false)]
@@ -682,7 +701,8 @@ public sealed class HostLifecycleCoordinatorTests : IDisposable
     }
 
     private static EngineRuntime CreateEnrolledRuntime(
-        string path, FakeHost host, EventRing events, HttpMessageHandler endpoint, ServingProfile? tier = null)
+        string path, FakeHost host, EventRing events, HttpMessageHandler endpoint, ServingProfile? tier = null,
+        DockerLifecycleConfig? docker = null)
     {
         var definition = new EngineDefinition
         {
@@ -690,7 +710,7 @@ public sealed class HostLifecycleCoordinatorTests : IDisposable
             Endpoint = new Uri("http://127.0.0.1/v1"),
             LifecycleOwner = EngineLifecycleOwner.Router,
             Lifecycle = EngineLifecycleKind.Docker,
-            Docker = new DockerLifecycleConfig { Image = "fixture", RouterId = "test" },
+            Docker = docker ?? new DockerLifecycleConfig { Image = "fixture", RouterId = "test" },
             Catalog = new Dictionary<string, EngineModelDefinition>
             {
                 ["enrolled.model"] = new()
