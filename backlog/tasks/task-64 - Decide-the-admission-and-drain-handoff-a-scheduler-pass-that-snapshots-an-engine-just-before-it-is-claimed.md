@@ -3,11 +3,11 @@ id: TASK-64
 title: >-
   Decide the admission and drain handoff: a scheduler pass that snapshots an
   engine just before it is claimed
-status: Waiting
+status: In Progress
 assignee:
-  - '@gpt-6.2-astra'
+  - '@gpt-6.2-sol-release'
 created_date: '2026-11-17T23:07:00Z'
-updated_date: '2026-11-19T08:03:00Z'
+updated_date: '2026-11-19T08:12:00Z'
 labels:
   - scheduling
   - architecture
@@ -20,7 +20,7 @@ ordinal: 64000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Hosted CI and independent review of the single completion/open fixture wake landing. Synthetic notifications traverse the real router subscription; matching route open sends the retained ticket once. Production host integration consumes this evidence separately.
+The release implementer is completing the SPEC section 15 source citation for the admission and drain gap. The injected scheduler and completion/open witnesses are on main.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -28,7 +28,7 @@ Hosted CI and independent review of the single completion/open fixture wake land
 - [ ] #1 SPEC 15 carries the accepted gap with this task named and the fd5e0cd review as its source
 - [x] #2 the admission/drain shape is written as a decision with the in-flight-pass rule stated
 - [x] #3 a test shows a ticket approved by an earlier pass is not dispatched to an engine claimed after that pass
-- [ ] #4 Consume completion and profile wakes while the route is closed. The same ticket stays queued with zero grants or bytes. Opening the matching generation wakes dispatch outside locks and sends that ticket once without another external event.
+- [x] #4 Consume completion and profile wakes while the route is closed. The same ticket stays queued with zero grants or bytes. Opening the matching generation wakes dispatch outside locks and sends that ticket once without another external event.
 - [x] #5 Hold the queue expiry callback behind the router lock past the original monotonic deadline. The final admission check refuses the expired ticket with zero upstream writes.
 - [x] #6 Close the ranked winner after scanning the first eligible ticket beyond its group. That ticket dispatches exactly once in baseline order; repeated wakes neither spin nor restart the closed preparation.
 - [x] #7 On a model-only route, use identical prompts and equal derived requirements. Withdrawing the measured window before exact take blocks only the explicit floor. Losing the final permit blocks either ticket. Refused tickets write zero bytes.
@@ -45,7 +45,5 @@ Use public Router.Start once. Hold the boot probe and omit the queue timer. Prep
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-At ac8b118, 149 focused checks covered retained cleanup, engine-wide final-slot reservation, two-slot progress and exact take after close, expiry or window changes. [PR #5](https://github.com/ArborealML/Inference-Router/pull/5) merged at 1061d70 after green hosted CI. Review of 374af08 verified inline selection precedes execution scheduling and the held backend registers cancellation before signalling entry. Both orderings produce one terminal and return engine inflight to zero. Release cardinality, thread count at quiescence and every pre-send window are outside those assertions. Revisit when the release ordering or event delivery changes.
-
-[PR #13](https://github.com/ArborealML/Inference-Router/pull/13) at f755292 passed the single focused Release case. Each event produced a separate park with zero submissions, and matching open sent the original stamp and body once. Independent fixture review dispatched.
+PR #5 landed the injected admission controls. [PR #13](https://github.com/ArborealML/Inference-Router/pull/13) merged at e7586a3. The focused Release case and hosted CI passed. Independent review of f755292 confirmed both synthetic events traversed the public subscription, the same prepared ticket stayed queued through both wakes, and matching open sent its exact body once. Public startup does not expose a joinable dispatcher exit, so this fixture makes no teardown-completion claim. SPEC section 15 already identifies the gap and task. Add the missing source attribution to the review of fd5e0cd. Production host integration remains with the host and dispatch tasks.
 <!-- SECTION:NOTES:END -->
