@@ -3,11 +3,11 @@ id: TASK-64
 title: >-
   Decide the admission and drain handoff: a scheduler pass that snapshots an
   engine just before it is claimed
-status: In Progress
+status: Waiting
 assignee:
-  - '@gpt-6.2-sol-release'
+  - '@gpt-6.2-astra'
 created_date: '2026-11-17T23:07:00Z'
-updated_date: '2026-11-19T08:12:00Z'
+updated_date: '2026-11-19T08:19:00Z'
 labels:
   - scheduling
   - architecture
@@ -20,7 +20,7 @@ ordinal: 64000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-The release implementer is completing the SPEC section 15 source citation for the admission and drain gap. The injected scheduler and completion/open witnesses are on main.
+Hosted CI and independent review of the SPEC citation in PR #15 wake final integration. All scheduler and completion/open fixtures are on main.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -46,4 +46,6 @@ Use public Router.Start once. Hold the boot probe and omit the queue timer. Prep
 
 <!-- SECTION:NOTES:BEGIN -->
 PR #5 landed the injected admission controls. [PR #13](https://github.com/ArborealML/Inference-Router/pull/13) merged at e7586a3. The focused Release case and hosted CI passed. Independent review of f755292 confirmed both synthetic events traversed the public subscription, the same prepared ticket stayed queued through both wakes, and matching open sent its exact body once. Public startup does not expose a joinable dispatcher exit, so this fixture makes no teardown-completion claim. SPEC section 15 already identifies the gap and task. Add the missing source attribution to the review of fd5e0cd. Production host integration remains with the host and dispatch tasks.
+
+The documentation-only [PR #15](https://github.com/ArborealML/Inference-Router/pull/15) cites the review of fd5e0cd and distinguishes the landed injected witnesses from production admission. Independent review dispatched for b45c876. Close the source-citation criterion at merge.
 <!-- SECTION:NOTES:END -->
