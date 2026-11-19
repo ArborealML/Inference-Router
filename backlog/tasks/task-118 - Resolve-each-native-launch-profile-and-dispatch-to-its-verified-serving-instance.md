@@ -5,9 +5,9 @@ title: >-
   instance
 status: Waiting
 assignee:
-  - '@chatswarm'
+  - '@gpt-6.2-sol-scheduling'
 created_date: '2026-11-18T18:56:00Z'
-updated_date: '2026-11-19T09:54:00Z'
+updated_date: '2026-11-19T10:02:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -23,7 +23,7 @@ ordinal: 116000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-The independent admission-plan verdict wakes Scheduling. The active readiness claim still has no reachable second configuration on this base.
+An actual cross-configuration readiness join or an enrolled issuer for the single-resident dispatch path wakes the remaining work.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -40,7 +40,7 @@ The independent admission-plan verdict wakes Scheduling. The active readiness cl
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Plan dispatched on 084e3e0. At verified admission, hold an A-stamped ticket before submit with spare capacity; offer another A-stamped ticket through resolver B. Vary the default or effective settings at equal gauges. Require a typed target refusal and zero checkout before A sends; after retirement a fresh B must send under digest B. Review whether existing tests already establish this and remove redundant cases. This can qualify the offline admission generation only. AC2 remains open for an actual active readiness claim across snapshots. No reload or alias changes. For first-host qualification bind one existing resident to the launch receipt, serving process and peer, and measured capacity over the issuer-bound channel before managed switching.
+Review on 084e3e0 ruled out the proposed two-ticket admission test as AC2 evidence. The runtime captures one config per engine and an installed readiness claim cannot receive configuration B. Injecting a second resolver reaches only per-ticket preparation. Ordinary omitted-tier reuse selects the resident tier, so both proposed rows exercise settings drift. Existing effective-input digest, wrong-target refusal before checkout, fresh-generation and positive delivery controls cover that outcome. Drop both rows and the optional substitute. Revisit AC2 when a real join can observe distinct snapshots. For Defiant, connect the verified resident only after original launch provenance and issuer-bound process and capacity evidence are available. Preserve production gates.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
