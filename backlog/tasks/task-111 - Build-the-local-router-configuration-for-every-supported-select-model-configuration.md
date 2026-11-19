@@ -3,11 +3,11 @@ id: TASK-111
 title: >-
   Build the local router configuration for every supported select-model
   configuration
-status: Waiting
+status: In Progress
 assignee:
-  - '@chatswarm'
+  - '@gpt-6.2-sol-config'
 created_date: '2026-11-18T18:15:00Z'
-updated_date: '2026-11-19T14:59:00Z'
+updated_date: '2026-11-19T15:12:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -19,7 +19,7 @@ ordinal: 109000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-The published-port plan review dispatched November 19 on ae0d530 wakes the coordinator. [PR #31](https://github.com/ArborealML/Inference-Router/pull/31) landed the offline verifier. Its measured 10,150 comparisons used redacted selector-derived expectations. Native ownership still requires six dedicated inputs; alternate configuration, the credential bind, original source authentication and host authority remain open.
+Config owns the reviewed offline published-port correction on ae0d530. [PR #31](https://github.com/ArborealML/Inference-Router/pull/31) qualified the preceding projections. The reviewed change affects 36 Strata and 13 Maya defaults among the existing 75. Unified topology, alternate-vector reconfiguration, credential bind, original source authentication and live authority remain open.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -32,7 +32,7 @@ The published-port plan review dispatched November 19 on ae0d530 wakes the coord
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-In the existing host_port branch, derive root ExposedPorts and HostConfig.PortBindings from the same container TCP key for engines declaring tier Docker plans or offline launch options. Preserve the existing policy case, legacy and resources-only output, no-port omission and write refusals. Review engine-wide eligibility for mixed catalogs and changed frozen digests. Compare the 36 Strata and 13 Maya default projections, keep selector provenance distinct from AIR expectations, and reuse the opt-in sweep once. Effective bind and image exposure require separate host evidence.
+Within the host-port branch, use the existing target-plan or launch-option declaration flags and the same container TCP key for exposure and binding. Cover the unprojected sibling, independent entrypoint and IPC options, and unchanged bare-port, resources-only and no-port cases. Reuse policy, dual-format and refusal controls. Update exactly 49 derived expected payloads from archived publish arguments and update their reference digest; preserve original source and specimen hashes. Record changed plan identity. Qualify the narrow controls, fixture smoke and one opt-in sweep without daemon access.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
