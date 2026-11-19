@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@gpt-6.2-sol-lifecycle'
 created_date: '2026-11-18T18:13:00Z'
-updated_date: '2026-11-19T07:52:00Z'
+updated_date: '2026-11-19T08:09:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -45,4 +45,6 @@ At 7ec1c20 use a real controller child, a surviving issuer and an independent ba
 The checkpoint and synthetic ledger landed in [PR #6](https://github.com/ArborealML/Inference-Router/pull/6). [PR #9](https://github.com/ArborealML/Inference-Router/pull/9) at b7a9ac9 passed 18 offline vacancy cases with the subprocess probe rebuilt. Review corrections bind the full predecessor and checkpoint stop effect, detect mismatched operation identity and stale owner evidence, and hold a competing facts writer through daemon entry. Merged at 47eaced after green hosted CI and independent review. Early owner refusals prove zero submission; downstream decision and terminal counts are separately pinned at the daemon-entry guard. Prepare the causal-drain and physical-retirement plan for the single host. Enforced host coverage, physical retirement and instance-bound admission remain prerequisites for production activation.
 
 Plan review accepted the subprocess ownership split with corrections to the complete use set, two independent retirement conditions, restart ordering and issue-time checks. Direct transport exercises one physical owner. Runtime ticket accounting and issuer-crash recovery remain outside this increment.
+
+At 47ab322 the rebuilt controller probe passed both causal-drain cases and all 18 affected vacancy cases in Release. Independent fixture review dispatched. Prepare the v0.12.79 landing with the tested source intact.
 <!-- SECTION:NOTES:END -->
