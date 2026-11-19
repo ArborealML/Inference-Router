@@ -3,11 +3,11 @@ id: TASK-118
 title: >-
   Resolve each native launch profile and dispatch to its verified serving
   instance
-status: Preparing
+status: Waiting
 assignee:
-  - '@gpt-6.2-sol-scheduling'
+  - '@chatswarm'
 created_date: '2026-11-18T18:56:00Z'
-updated_date: '2026-11-19T08:07:00Z'
+updated_date: '2026-11-19T08:17:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -23,7 +23,7 @@ ordinal: 116000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-The selector includes launch profiles with identical model, context and slot counts but different effective settings. The current runtime owns one HTTP client per engine. Carry the resolved launch identity through verification and request delivery so an endpoint rebound to another process cannot receive work under its predecessor’s proof.
+Independent review of the single-host dispatch plan wakes implementation. Carry the resolved target and frozen request to the verified serving instance so a rebound endpoint cannot receive work under an earlier proof.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -37,12 +37,14 @@ The selector includes launch profiles with identical model, context and slot cou
 - [ ] #7 Freeze the final rewritten body and credential policy with the invocation. Changing either after preparation refuses delivery before the first write. An unchanged invocation sends the expected bytes to the verified route.
 <!-- AC:END -->
 
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Use one real selected ticket, its captured catalog, exact admission and the existing issuer. Freeze the effective target, rewritten bytes and credential policy outside locks. At commitment recheck the ticket, route, deadline and capacity. Reject changed inputs before checkout. On submission retain the same physical use through confirmed exchange cleanup. Qualify explicit selection and fitting resident inference, stale identity, body or credential mismatch, and a held retirement against independent sinks. Use an injected resident with zero lifecycle mutations.
+<!-- SECTION:PLAN:END -->
+
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Verify catalog names and aliases resolve to one immutable target, including an alias that shadows a different canonical spelling. Ambiguous routing must yield zero writes and zero lifecycle mutations.
-
-TASK-130 supplies verified-instance transport using the integrated host fixture. This task verifies that profile resolution and inference dispatch use it end to end. Production host closure consumes that evidence.
-
-The admission and per-ticket floor paths are now combined on main with the offline transport. Prepare the smallest independent Defiant dispatch-binding plan against the landed base: frozen effective target, final rewritten body and credential policy. Identify the host issuance and resource dependencies before runtime edits.
+Plan dispatched for independent review against fe005df. Implementation starts after disposition. Family-specific readiness, durable production issuance and host activation remain separate. Confirm effective-plan identity, cleanup ownership and the mutation boundary with the assigned peers.
 <!-- SECTION:NOTES:END -->
