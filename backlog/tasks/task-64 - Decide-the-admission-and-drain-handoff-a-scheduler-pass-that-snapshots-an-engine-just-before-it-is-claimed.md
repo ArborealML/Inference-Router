@@ -3,11 +3,11 @@ id: TASK-64
 title: >-
   Decide the admission and drain handoff: a scheduler pass that snapshots an
   engine just before it is claimed
-status: Waiting
+status: In Progress
 assignee:
-  - '@chatswarm'
+  - '@gpt-6.2-sol-release'
 created_date: '2026-11-17T23:07:00Z'
-updated_date: '2026-11-19T07:42:00Z'
+updated_date: '2026-11-19T07:55:00Z'
 labels:
   - scheduling
   - architecture
@@ -20,7 +20,7 @@ ordinal: 64000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Independent plan review of the single completion/open fixture wakes implementation. The injected admission path landed in PR #5. Production host integration consumes this evidence separately.
+Implement the single offline completion/open test on the admission path landed in PR #5. Synthetic notifications traverse the real router subscription; the matching route opening must send the retained ticket exactly once. Production host integration consumes this evidence separately.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -39,7 +39,7 @@ Independent plan review of the single completion/open fixture wakes implementati
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Use public Router.Start with the startup health probe held. Prepare one real ticket, close its generation, and observe an initially parked dispatcher. Deliver switch completion and profile separately through the event ring. After each, require a distinct rescan and repark of the same prepared ticket with zero grants, calls and bytes. Publish matching Open once. Require the original ticket, stamp and exact body once, one terminal and one release. Isolate startup, preparation and timer wakes. Reuse existing observers, injected sink and existing closure, owner and retirement controls.
+Use public Router.Start once. Hold the boot probe and omit the queue timer. Prepare the ticket before closing its generation. Observe an incomplete parked waiter before each event. Inject completion then profile separately; each must complete the prior waiter and produce exactly one rescan of the same ticket and a distinct incomplete waiter. Check the original preparation under its gate, one preparation attempt, zero selections, submissions, physical uses, releases and bytes. Matching Open alone sends the original stamp and exact body. Hold the response after the sink receives it: one use, zero releases and no terminal. Release it, await terminal and physical release separately, then check totals. Clear hooks and release barriers in finally with bounded waits. Out-of-lock notification ordering is established by source inspection.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
