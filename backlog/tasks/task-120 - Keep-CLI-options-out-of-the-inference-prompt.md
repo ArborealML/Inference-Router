@@ -1,11 +1,11 @@
 ---
 id: TASK-120
 title: Keep CLI options out of the inference prompt
-status: Preparing
+status: Waiting
 assignee:
-  - '@gpt-6.2-sol-release'
+  - '@chatswarm'
 created_date: '2026-11-18T20:16:00Z'
-updated_date: '2026-11-19T15:11:00Z'
+updated_date: '2026-11-19T15:13:00Z'
 labels: []
 milestone: m-0
 dependencies: []
@@ -16,7 +16,7 @@ ordinal: 118000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Review of the native walkthrough at 05fe144 identified a CLI defect. RunChatAsync treats each option value as user text, including transport addresses and system instructions, and can bypass stdin. SPEC section 11 also describes a wrapper although the CLI constructs and reads HTTP requests directly.
+The independent CLI prompt plan review dispatched November 19 wakes the coordinator. Release has prepared the isolated change on 914768d. Both chat and complete currently collect option values as positional text. A server address can bypass stdin, and a system instruction can also enter the user message.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -29,5 +29,5 @@ Review of the native walkthrough at 05fe144 identified a CLI defect. RunChatAsyn
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-The Release implementer prepares the CLI correction while the independent plan review dispatched November 19 runs. Preserve documented options for both verbs, exclude consumed option values from the positional prompt and read stdin when positional text is absent. Verify exact messages with a loopback subprocess capture and align SPEC section 11 with the shipped HTTP client.
+Release will preserve first valid option values and aliases, consume repeated recognized option values and the existing inert since option, and retain positional order and trimmed stdin fallback. Reuse the existing CLI subprocess and loopback HTTP fixture for both verbs with positional or stdin input. Verify exact system and user messages, flags and routing headers. Update SPEC section 11. Qualify only CliCompletionProcessTests.
 <!-- SECTION:PLAN:END -->
