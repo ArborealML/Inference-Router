@@ -1,11 +1,11 @@
 ---
 id: TASK-125
 title: Qualify a native two-model configuration for the first pi swap
-status: Waiting
+status: Preparing
 assignee:
   - '@gpt-6.2-sol-config'
 created_date: '2026-11-18T20:36:00Z'
-updated_date: '2026-11-19T23:29:31Z'
+updated_date: '2026-11-19T23:38:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -18,7 +18,7 @@ ordinal: 123000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Waiting for independent review of the selected DeepSeek V4.1 Flash 1017 IQ2-XXS 32k (32768 context, one slot) and Qwen 3.8 Flash Next IQ3_S 256k-4 (256000 context, four slots) plan on 98db2b2. The verdict wakes Config. Each dedicated configuration can be qualified offline. ValidateLifecycleTopology rejects explicit router ownership with multiple engines even on distinct listeners. One-router live qualification depends on managed peer fencing under TASK-110, a separately reviewed enrolled topology path and verified serving dispatch under TASK-118.
+Config is amending the offline pair proof after review on 98db2b2. The selected profiles remain DeepSeek V4.1 Flash 1017 IQ2-XXS 32k (32768 context, one slot) and Qwen 3.8 Flash Next IQ3_S 256k-4 (256000 context, four slots). Separate dedicated configs are valid test inputs. ValidateLifecycleTopology refuses explicit router ownership with multiple engines. Live qualification still depends on enrolled topology, host fencing and verified serving dispatch.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -31,7 +31,7 @@ Waiting for independent review of the selected DeepSeek V4.1 Flash 1017 IQ2-XXS 
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Prepare the smallest offline readback of the captured targets and both handoff directions. Verify that the derived DeepSeek inference URL resolves to the installed /v1/chat/completions handler and the readiness probe uses its intended path. Exercise the real topology guard, keep exact identifiers and effective settings, and report any unsupported composition before changing behavior. Keep the host untouched.
+Retain six focused rows and two config-only reads. In each direction freeze the request, validate the offer and use certified send; observe exact delivery on the intended stream and zero bytes on the alternate. Distinguish image and model mismatch from a current measured window below the requirement. Check same-engine stale issuer rejection at checkout and first write. Pin DeepSeek inference and readiness paths and probe fields with fakes. Keep the multi-engine refusal intact.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
