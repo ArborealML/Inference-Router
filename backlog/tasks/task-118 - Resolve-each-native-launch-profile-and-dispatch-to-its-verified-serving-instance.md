@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@gpt-6.2-sol-scheduling'
 created_date: '2026-11-18T18:56:00Z'
-updated_date: '2026-11-19T08:41:00Z'
+updated_date: '2026-11-19T08:48:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -23,7 +23,7 @@ ordinal: 116000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Implement verified offline dispatch for one selected ticket. All plan findings are dispositioned. Production enrollment remains disabled.
+Implement offline dispatch for one selected ticket. Production enrollment remains disabled.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -48,5 +48,5 @@ Publish one immutable sender with the ready preparation. Its exact invocation bo
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Review on fe005df required exact sender transfer, generation retirement, strict raw/rewritten model and auth validation, and terminal classification before checkout. Accepted all four. Transient preparation rearms only on a fresh availability revision. Config confirmed offline create intent. Full offline implementation released. At 614cd52 Release built; 34 passed, 13 target cases failed at fixture load because a router-owned endpoint was non-loopback. Correct fixture only and rerun affected class. Independent four-file review dispatched.
+Plan reviews required exact sender transfer, fresh generation, strict validation and retirement evidence from before checkout. Transient preparation rearms on a fresh availability revision. Implementation released. At 614cd52 Release built, 34 passed and 13 target fixtures refused a non-loopback endpoint. Fix the fixture. Code review found four binding gaps. Validate present raw model against captured selection before rewrite; reject extra request/content headers; derive endpoint and projection from the same trusted config; require resident engine/model identity for tier reuse. Pin mismatches before checkout. No production activation.
 <!-- SECTION:NOTES:END -->
