@@ -5,7 +5,7 @@ status: Done
 assignee:
   - '@gpt-6.2-astra'
 created_date: '2026-11-18T20:43:00Z'
-updated_date: '2026-11-19T11:40:00Z'
+updated_date: '2026-11-19T11:44:00Z'
 labels: []
 milestone: m-4
 dependencies: []
@@ -39,7 +39,7 @@ Five slot cases and two races. Supply omitted and numeric-zero observation input
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Held state and models probes stayed pending at 99 ms and settled once at 100 ms before release. All three rows passed on 90c5449 and 4bc9a0a. Legacy readiness and local HTTP cleanup landed in [PR #4](https://github.com/ArborealML/Inference-Router/pull/4). The two-ticket control in [PR #8](https://github.com/ArborealML/Inference-Router/pull/8) passed both rows: the stopped engine granted neither ticket a send, and the open engine accepted one exact POST. Production enrollment and capacity gates remain closed.
+Held state and models probes stayed pending at 99 ms and settled once at 100 ms before release. Legacy readiness and local HTTP cleanup landed in [PR #4](https://github.com/ArborealML/Inference-Router/pull/4). Both two-ticket controls passed in [PR #8](https://github.com/ArborealML/Inference-Router/pull/8). The stopped engine granted neither ticket a send, and the open engine accepted one exact POST.
 
-Runtime review of df9fdef found Ready survives a refused Open. Preserve that historical result: withdrawing its proof can send a woken waiter back to retry. The offline issuer checks exact open authority at mint and first write. Production RouterCore supplies no enrollment. Require both checks when integrating enrolled dispatch and admission. Synchronous Open takes host admission before transition. At 8af4cdd the deadline fixture passed 1/1 with a closed completion hint, an open hint on success and zero permits on expiry. [PR #23](https://github.com/ArborealML/Inference-Router/pull/23) includes the post-Open notification change. Its fault control passed on a99b91c, preserving committed readiness, actual opening and the original exception.
+The recovered launch and notification controls landed in [PR #23](https://github.com/ArborealML/Inference-Router/pull/23). Deadline equality granted zero permits. Successful Open retained the committed waiter result even when its notification threw. The offline issuer checks exact open authority at mint and first write. Production enrollment and capacity remain gated.
 <!-- SECTION:NOTES:END -->
