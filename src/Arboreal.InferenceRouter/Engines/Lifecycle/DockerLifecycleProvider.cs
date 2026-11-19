@@ -424,7 +424,7 @@ public sealed class DockerLifecycleProvider : IEngineLifecycleProvider, IDisposa
         if (_cfg.HostPort is { } port)
         {
             var containerPort = $"{_cfg.ContainerPort}/tcp";
-            if (policy is not null)
+            if (_cfg.HasUnqualifiedTargetDocker || _cfg.HasUnqualifiedLaunchOptions)
                 body.ExposedPorts = new Dictionary<string, DockerExposedPort>(StringComparer.Ordinal)
                 {
                     [containerPort] = new DockerExposedPort(),

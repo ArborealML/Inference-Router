@@ -58,6 +58,8 @@ public sealed partial class DockerTargetProjectionTests
             serving = [
               { name = "max", max_context = 262144, max_slots = 1, docker = { env = ["FAMILY=swift", "CONTEXT=256k", "PARALLEL=1", "PRESET=fixture-swift-max", "STRATA_SET={{{SwiftOptions}}}"], bind_mounts = [{ source = "/srv/swift/data", target = "/data", read_only = false }, { source = "/srv/swift/model", target = "/models", read_only = true }] } }
             ]
+
+            [engine.strata.catalog.sibling]
             """, """
             host_port = 18021
             command = ["serve", "{{model}}", "{{profile}}", "{{endpoint}}"]
@@ -83,7 +85,8 @@ public sealed partial class DockerTargetProjectionTests
                 "env":["FAMILY=swift","CONTEXT=256k","PARALLEL=1","PRESET=fixture-swift-max","STRATA_SET={{{SwiftOptions}}}"],
                 "bind_mounts":[{"source":"/srv/swift/data","target":"/data","read_only":false},
                                {"source":"/srv/swift/model","target":"/models","read_only":true}]
-              }}]}
+              }}]},
+            "sibling":{}
             """, """
             ,"host_port":18021,"command":["serve","{{model}}","{{profile}}","{{endpoint}}"],"env":["MODEL=IQ3_S","GPUS=0,1"],
             "resources":{"gpu":{"all":true},"shm_size_bytes":2147483648,"ulimits":[{"name":"memlock","soft":-1,"hard":-1}],
@@ -101,7 +104,21 @@ public sealed partial class DockerTargetProjectionTests
         Assert.Equal(swift, Project(tomlProvider, toml, "swift", "max"));
         AssertPair(qwen, "qwen", "256k-4", "256000", "4", QwenOptions);
         AssertPair(swift, "swift", "max", "256k", "1", SwiftOptions);
+
+        Assert.Null(toml.Docker!.TargetPlans!.Resolve(Selection(toml, "sibling")));
+        Assert.Null(json.Docker!.TargetPlans!.Resolve(Selection(json, "sibling")));
+        var sibling = Project(tomlProvider, toml, "sibling");
+        Assert.Equal(sibling, Project(jsonProvider, json, "sibling"));
+        using var siblingRequest = JsonDocument.Parse(sibling);
+        AssertStrataPublishedPort(siblingRequest.RootElement);
         Assert.Empty(daemon.Requests);
+    }
+
+    private static void AssertStrataPublishedPort(JsonElement request)
+    {
+        Assert.Equal("""{"8080/tcp":{}}""", request.GetProperty("ExposedPorts").GetRawText());
+        Assert.Equal("""{"8080/tcp":[{"HostIp":"127.0.0.1","HostPort":"18021"}]}""",
+            request.GetProperty("HostConfig").GetProperty("PortBindings").GetRawText());
     }
 
     private static void AssertPair(byte[] body, string family, string tier, string context, string slots, string options)
@@ -118,7 +135,7 @@ public sealed partial class DockerTargetProjectionTests
         var host = request.GetProperty("HostConfig");
         Assert.Equal(2147483648L, host.GetProperty("ShmSize").GetInt64());
         Assert.Equal(-1, host.GetProperty("DeviceRequests")[0].GetProperty("Count").GetInt32());
-        Assert.Equal("18021", host.GetProperty("PortBindings").GetProperty("8080/tcp")[0].GetProperty("HostPort").GetString());
+        AssertStrataPublishedPort(request);
         Assert.Equal(-1L, host.GetProperty("Ulimits")[0].GetProperty("Soft").GetInt64());
         var mounts = host.GetProperty("Mounts").EnumerateArray().Select(mount =>
             (mount.GetProperty("Source").GetString(), mount.GetProperty("Target").GetString(),
@@ -325,6 +342,7 @@ public sealed partial class DockerTargetProjectionTests
         if (hasAlias) selected = selected with { Profile = selected.Profile! with { Name = "max-4" } };
         var projection = provider.BuildCreateRequest(selected, engine.Docker!.ImageIdentity!);
         Assert.Equal("tier", projection.Labels[DockerLifecycleProvider.LabelProfile]);
+        Assert.Null(projection.ExposedPorts);
         var hasGpu = fields.StartsWith("gpu", StringComparison.Ordinal);
         var hasShm = fields.StartsWith("shm_size_bytes", StringComparison.Ordinal);
         Assert.Equal(hasMount || hasMemory || hasNested || hasGpu || hasShm, projection.HostConfig is not null);

@@ -85,10 +85,17 @@ public sealed partial class DockerResourceProjectionTests
             env = {HipEnv}
             """);
         using var actual = Project(cfg);
-        JsonEqual(HipHostConfig, actual.RootElement.GetProperty("HostConfig"));
-        JsonEqual(command, actual.RootElement.GetProperty("Cmd"));
-        JsonEqual(HipEnv, actual.RootElement.GetProperty("Env"));
-        Assert.Equal(PinnedId, actual.RootElement.GetProperty("Image").GetString());
+        JsonEqual($$"""
+            {
+              "Image":"{{PinnedId}}",
+              "Cmd":{{command}},
+              "Env":{{HipEnv}},
+              "Labels":{"arboreal.router":"fixture-router","arboreal.engine":"fixture",
+                "arboreal.model":"model","arboreal.profile":""},
+              "StopTimeout":30,
+              "HostConfig":{{HipHostConfig}}
+            }
+            """, actual.RootElement);
     }
 
     [Theory]
@@ -144,7 +151,8 @@ public sealed partial class DockerResourceProjectionTests
                 """[{"Id":"incumbent","Labels":{"arboreal.router":"fixture-router","arboreal.engine":"fixture","arboreal.model":"old"}}]"""),
         };
         using var provider = new DockerLifecycleProvider(
-            LoadToml(resources ? HipResources : null, fields + "\n[engine.fixture.catalog.model]"), "fixture", daemon);
+            LoadToml(resources ? HipResources : null, "host_port = 18066\n" + fields + "\n[engine.fixture.catalog.model]"),
+            "fixture", daemon);
         using var coordinator = new EngineLifecycleCoordinator(provider, ownsProvider: false);
         var target = Target();
 

@@ -354,6 +354,8 @@ daemon transaction per engine. 137 tests green.
   not proven.
 - v0.12.94 — keep named option operands out of the `air chat` and `air complete` user message,
   read stdin when no positional arguments remain, and document the direct HTTP client (§11).
+- v0.12.93 — project matching TCP exposure for published ports on engines with per-tier Docker
+  plans or engine-wide offline launch options (§7).
 - v0.12.92 — project tier-specific Docker shared memory for twelve default HyperQwen parking
   targets offline, with common shared memory inherited on omission (§7).
 - v0.12.91 — project an explicit single-device NVIDIA request per offline serving tier for
@@ -2623,13 +2625,20 @@ value must match the form above. Omitted options leave their fields absent from 
 These keys belong in the engine's Docker block. A model-level Docker table containing any of
 them is invalid.
 
-On this offline policy path, a configured `host_port` adds the corresponding container TCP
-port to the root `ExposedPorts` object with an empty object value. The existing port binding
-supplies the host address and port. Each option gates startup and mutation across the engine,
-with the existing serving-tier, launch-option, then resource refusal order. Docker policy
-describes create intent. Before activation, verify that the effective daemon log driver supports
-both `max-size` and `max-file`. Refuse activation if the driver or its support for either option
-is unknown or incompatible. Restart authority, image association and authenticated serving-instance
+For an engine that declares per-tier Docker plans or engine-wide offline launch options,
+`host_port` adds the corresponding container TCP key to root `ExposedPorts` with an empty
+object value. The same key in `HostConfig.PortBindings` supplies the configured host address
+and port. This applies to every model on the opted-in engine, including siblings that use
+only common settings. A bare port binding or one with only common resources omits the root
+field. Omitting `host_port` also omits root exposure.
+
+Where a launch plan freezes the serialized create request, the added exposure changes the
+launch settings digest and requires evidence for the new envelope. The existing Docker
+declarations gate startup and mutation across the engine, in serving-tier, launch-option,
+then resource refusal order. Docker policy describes create intent. Before
+activation, verify that the effective daemon log driver supports both `max-size` and
+`max-file`. Refuse activation if the driver or its support for either option is unknown
+or incompatible. Restart authority, image association and authenticated serving-instance
 admission also require host verification.
 
 **Optional Docker resources.** Use `[engine.<name>.docker.resources]` or the
