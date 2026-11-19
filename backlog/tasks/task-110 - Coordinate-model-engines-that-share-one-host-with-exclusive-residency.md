@@ -1,11 +1,11 @@
 ---
 id: TASK-110
 title: Coordinate model engines that share one host with exclusive residency
-status: Waiting
+status: Preparing
 assignee:
-  - '@gpt-6.2-astra'
+  - '@gpt-6.2-sol-lifecycle'
 created_date: '2026-11-18T18:13:00Z'
-updated_date: '2026-11-19T08:44:00Z'
+updated_date: '2026-11-19T08:48:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -19,7 +19,7 @@ ordinal: 108000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Hosted CI on the reconciled PR #14 head wakes landing of the approved offline host-drain witness.
+Prepare the Defiant closed-route staging and disposal check. After a declined publication, the exact launch remains recoverable and neither generation can mint a permit.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -36,7 +36,7 @@ Hosted CI on the reconciled PR #14 head wakes landing of the approved offline ho
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-At 7ec1c20 use a real controller child, a surviving issuer and an independent backend terminal acknowledgment. Persist the exact stop and frozen successor before closing ingress. Serialize close and first-write, revoke prepared grants and account for every live incumbent route or prove there is only one. Bind the closed set to full launch, process, route, close ID and exact invocations/grants. Hold an authorized write before backend receipt. Count one issuer use; logical timeout is synthetic. Require both successful channel sealing and exact backend terminal evidence. Failed close, attempted disposal, mismatched acknowledgment and guard disposal grant nothing. Include one small terminal-first control alongside cleanup-first. Kill the controller, verify a new process and fresh nonce, and retain StopPrepared with zero stop/create ledger entries at every boundary while unresolved. Publish the immutable retired set under the issue fence without reopening. Recheck independent ownership and witness before dispatch; require fresh vacancy before one frozen successor create. Keep successor ingress closed.
+Trace the landed coordinator and guard. Identify the smallest offline slice for retained launch ID, closed staging and explicit same-generation open, including a refusal or deadline followed by disposal. Qualify actual mint authority and a fresh-open positive. Coordinate dispatch and switch ownership with TASK-118 and TASK-25; production activation remains gated.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
@@ -47,4 +47,6 @@ At 7ec1c20 use a real controller child, a surviving issuer and an independent ba
 Independent review of c2db0ee accepted all three dispositions, and hosted CI passed. GitHub refused the merge after MiniMax landed; merge-tree identified only SPEC.md. Retain the .80 header and ordered .80/.79 entries. Verify identical fixture blobs before advancing the PR.
 
 Published df6174e preserves all seven reviewed project and fixture blobs from c2db0ee. Against its main parent the SPEC adds only the .79 entry and corrected scope under the existing .80 header. Both parent diff checks passed.
+
+[PR #14](https://github.com/ArborealML/Inference-Router/pull/14) merged at 3160a11 after the reconciled df6174e passed hosted CI. This qualifies offline causal retirement with a surviving issuer and independent backend acknowledgment.
 <!-- SECTION:NOTES:END -->
