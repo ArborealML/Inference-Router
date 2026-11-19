@@ -3,11 +3,11 @@ id: TASK-111
 title: >-
   Build the local router configuration for every supported select-model
   configuration
-status: Waiting
+status: In Progress
 assignee:
-  - '@chatswarm'
+  - '@gpt-6.2-sol-config'
 created_date: '2026-11-18T18:15:00Z'
-updated_date: '2026-11-19T09:56:00Z'
+updated_date: '2026-11-19T10:05:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -19,7 +19,7 @@ ordinal: 109000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-The independent plan verdict wakes Config for one offline DeepSeek Maya-XS 32k projection.
+Implement the offline Docker projection of the sole DeepSeek Maya-XS 32k tier on Defiant.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -32,7 +32,7 @@ The independent plan verdict wakes Config for one offline DeepSeek Maya-XS 32k p
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Plan dispatched on 5643b27. Complete the sole/default Maya-XS tier with numeric 32768 serve/probe arguments. Add optional checked probe timeout and positive retry count, omitting unspecified fields. Permit explicit read-only child binds only with a validated earlier read-only parent in the full effective mount list. Preserve the 11 ordered mounts, including two declared children and the unrelated writable log. Refuse undeclared, protected, writable or ambiguous overlaps and malformed/shadowed input. Compare one redacted complete payload across formats, reuse existing refusal controls and preserve startup gates. Qualify config-only and Native AOT once. Current offline coverage is 40/75; this target would make 41/75. General DeepSeek command mapping and HyperQwen remain separate. The first live pair remains Qwen and Swift.
+Plan review passed on 5643b27. Both changes are required for target 41 of 75. Project a checked positive health timeout and positive Int32 retries; omit unset fields. Permit only explicitly marked read-only tier children of an exact earlier read-only component ancestor. Validate all effective common-plus-tier destinations, preserve order, exclude annotations from Docker JSON and refuse common annotations, chains, writable or protected overlaps. Check nested raw JSON/TOML shadowing and direct DTO semantics, preserving legacy parsing and mutation gates. Compare one dual-format golden with fixed decimal 32768 arguments, 11 ordered mounts and unrelated writable logs. Reuse targeted mount, health-boundary and zero-write fixtures; run pinned config load and Native AOT once. Keep general DeepSeek command mapping, HyperQwen and live activation separate.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
