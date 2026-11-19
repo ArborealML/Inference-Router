@@ -1,11 +1,11 @@
 ---
 id: TASK-110
 title: Coordinate model engines that share one host with exclusive residency
-status: Preparing
+status: Waiting
 assignee:
-  - '@gpt-6.2-sol-lifecycle'
+  - '@gpt-6.2-astra'
 created_date: '2026-11-18T18:13:00Z'
-updated_date: '2026-11-19T09:38:00Z'
+updated_date: '2026-11-19T09:42:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -19,7 +19,7 @@ ordinal: 108000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Map the remaining enrolled deadline check against the landed closed-route staging guarantee.
+The independent deadline-plan verdict and Shutdown’s source readback wake the coordinator to release the offline equality fixture.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -36,7 +36,7 @@ Map the remaining enrolled deadline check against the landed closed-route stagin
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Fence wrong target or missing publication before legacy recovery can settle or grant. Bind original launch-owned plan, operation, instance and epoch. Finish fallible staging while closed. Retain the applied record through refusal and success. Disposal grants nothing. Only successful completion followed by explicit Open of the still-current generation authorizes inference. In one paired fixture first send on the eligible old route and hold another unused grant. Decline a valid publication and verify zero new permits/bytes, then probe wrong target without relaunch. Recover with a new coordinator, verify no mint through Complete or stale Open, and send once after fresh matching Open with one create total. Keep injection internal; runtime deadline, dispatch, admission and production activation remain separate.
+Plan review dispatched on 6177f17. Resolve the timeout from the exact retained launch. Start one monotonic attempt before the post-drain identity check and carry it through observation, durable staging and final publication. Acquire host admission then transition lock. Check stop and deadline equality immediately before the capability CAS and exact closed-authority commit; recheck on CAS retry using the original budget. State changes under the guards must be callback-free. Settle once, with hooks and completion outside both locks. With qualifying evidence at 99 ms and timer delivery withheld, reach 100 ms after staging: refuse proof, Complete, Open and writes, retain applied B, then recover the same ID on a fresh authorized attempt and send once without repeating effects. Keep activation closed.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
