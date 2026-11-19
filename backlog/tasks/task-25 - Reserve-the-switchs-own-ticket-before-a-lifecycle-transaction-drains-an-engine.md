@@ -3,11 +3,11 @@ id: TASK-25
 title: >-
   Reserve the switch's own ticket before a lifecycle transaction drains an
   engine
-status: To Do
+status: Preparing
 assignee:
-  - '@qwen3.8-flash-next'
+  - '@gpt-6.2-sol-scheduling'
 created_date: '2026-11-17T02:41:00Z'
-updated_date: '2026-11-18T20:59:00Z'
+updated_date: '2026-11-19T19:36:00Z'
 labels:
   - engine
   - lifecycle
@@ -20,7 +20,7 @@ ordinal: 25000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-The lifecycle coordinator now runs ownership proof, preflight, stop and launch in one order, but two steps in the approved transaction are missing on purpose: closing admission to the engine, and draining the requests already running on it. Neither can be added where they sit today. A switch is started by an admitted request that counts as inflight and then waits for the switch to finish, so a drain-to-zero would wait on the request that asked for the switch. The scheduler has to hold the switch ticket aside first, and that touches queue accounting and the terminal-event semantics the parity work is already carrying.
+Scheduling is tracing the live switch ticket through queue admission, logical inflight accounting and physical-use retirement. Prepare the smallest change that reserves the triggering ticket before draining the incumbent. Reuse landed admission and verified dispatch evidence. Identify which integration can land independently of host enrollment and which requires an enrolled writer or observer. The native switch must avoid waiting for its own ticket during drain.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
