@@ -33,6 +33,28 @@ public sealed class VerifiedDispatchTargetTests
     }
 
     [Fact]
+    public void ProfileAliasSharesCanonicalVerifiedDigest()
+    {
+        var engine = Load(withProfileAlias: true);
+        using var daemon = new FakeDockerDaemonHandler();
+        using var projection = new DockerLifecycleProvider(engine.Docker!, engine.Name, daemon);
+        var resolver = new VerifiedDispatchTargetResolver(engine, projection);
+
+        var canonical = resolver.Resolve("model.canonical", "resident", null, Configuration, BackendRoute);
+        var alias = resolver.Resolve("alias", "max-4", null, Configuration, BackendRoute);
+
+        Assert.Equal(canonical, alias);
+        Assert.Equal("resident", alias.Tier);
+        Assert.NotEqual(resolver.Resolve("alias", null, null, Configuration, BackendRoute).PlanDigest, alias.PlanDigest);
+        var route = new VerifiedInstanceRoute("host", 1, canonical.Engine, canonical.PlanDigest,
+            "fixture-container", "fixture-incarnation", 2, 3);
+        Assert.True(alias.Matches(route));
+        Assert.Throws<VerifiedDispatchBindingException>(
+            () => resolver.Resolve("alias", null, canonical with { Tier = "max-4" }, Configuration, BackendRoute));
+        Assert.Empty(daemon.Requests);
+    }
+
+    [Fact]
     public void SingletonTierIsTheSameEffectivePlanWithOrWithoutAnOverride()
     {
         var engine = Load(singleton: true);
@@ -202,13 +224,14 @@ public sealed class VerifiedDispatchTargetTests
     internal static EngineDefinition Load(
         string mode = "normal", string mount = "/fixture/weights", long memory = 6_291_456, string digest = RepoDigest,
         string platform = "linux/amd64", string alias = "alias", bool singleton = false, string endpoint = DefaultEndpoint,
-        string? healthcheckCommand = null)
+        string? healthcheckCommand = null, bool withProfileAlias = false)
     {
-        const string residentTier = """
+        var residentTier = $$"""
             [[engine.fixture.catalog."model.canonical".serving]]
             name = "resident"
             max_context = 32768
             max_slots = 2
+            {{(withProfileAlias ? "aliases = [\"max-4\"]" : "")}}
             [engine.fixture.catalog."model.canonical".serving.docker]
             env = ["SETTING=resident"]
             """;

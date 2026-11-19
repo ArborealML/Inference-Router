@@ -4,11 +4,19 @@ The inspected reference selector accepted 169 of 506 explicit model/profile spel
 
 | Backend family | Normalized targets | Launch settings that still need representation or verification |
 | --- | ---: | --- |
-| Strata | 36 | The offline projection supports literal per-tier environment and data/model binds. The capped Qwen profiles use per-tier memory and total memory plus swap. The selector's `max-4` alias of `256k-4` covers six spellings across three existing targets and adds zero normalized targets. AIR still needs the alias mapping. |
+| Strata | 36 | Offline projection supports per-tier environment and data/model binds, memory plus swap for capped Qwen profiles, and the `max-4` alias for `256k-4`. |
 | HyperQwen | 26 | Different profiles and options change the ordered GPU request and shared-memory limit. Parking derives shared memory from its 1–48 GiB RAM cache. Init, restart policy and log settings also need representation. Shared wire IDs need exact checkpoint and serving-instance proof. |
 | Maya | 13 | MiniMax `32k` and all three GLM tiers have offline launch projections. The nine DeepSeek targets also require an explicit Docker probe timeout and retry count, plus nested bind destinations. |
 
 The environment and bind projection merged in [PR #7](https://github.com/ArborealML/Inference-Router/pull/7). It composes settings for offline validation and keeps target-enabled startup and native Docker writes gated. [Configuration and lifecycle contract](../SPEC.md#7-configuration-toml)
+
+## Strata profile alias
+
+For Swift Flash Next, Qwen Flash Next and Qwen Flash Next Coder, declare `aliases = ["max-4"]`
+on the canonical `256k-4` serving row. The alias covers six pairs across the models and their
+model aliases. Each pair uses the same offline launch plan as its canonical spelling,
+with 256,000 requested context tokens and four slots. Omitted tiers still resolve to
+`max`, `512k` and `max` respectively. The inventory remains at 36 Strata targets and 75 overall.
 
 ## Strata memory boundary
 

@@ -1,6 +1,6 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.83)
+Status: draft, continuously revised (v0.12.84)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
@@ -352,6 +352,8 @@ daemon transaction per engine. 137 tests green.
   that answers no `upload_url`, an upload that dies or answers no asset id, an asset name listed twice on
   the release, and a tag that moves after the first resolve. No tag has run the gate: still configured,
   not proven.
+- v0.12.84 — offline Docker serving tiers accept profile aliases that resolve to the same
+  canonical launch plan. Default tiers and activation gates retain their existing rules (§7).
 - v0.12.83 — bind an offline admitted ticket's effective launch intent, final JSON and upstream
   credential policy to its verified resident and single-use stream. Separate logical outcome
   from issuer retirement, keep unsettled physical use counted and report independent
@@ -2613,6 +2615,15 @@ For an engine using this feature, model IDs and aliases match case-insensitively
 identify one canonical model. An opted-in model's serving names must be distinct under ordinal
 comparison. Its omitted selection uses its declared default or its sole tier. Multiple tiers
 require a default, and `profile` and `default_profile` must agree if both are present.
+
+A serving row with its own nonempty native Docker target may list explicit profile spellings
+in `aliases`, such as `aliases = ["max-4"]` on the `256k-4` row. Match aliases by ordinal
+comparison. Each alias must be nonblank and contain neither control characters nor edge whitespace.
+Within one model an alias must be unique among aliases and canonical tier names. The loader
+rejects null, empty or malformed lists and shadowed declarations in JSON and TOML.
+`profile` and `default_profile` use canonical names only. An unknown explicit spelling
+refuses resolution. Aliases share the canonical launch plan, template inputs and labels.
+The serving ladder and offline-only activation gate continue to use canonical tiers.
 
 The loader freezes the effective inputs for each tier of an opted-in model. Only engine-wide
 `command` and `env` expand `{{model}}`, `{{profile}}` and `{{endpoint}}` in the original

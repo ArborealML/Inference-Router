@@ -29,15 +29,32 @@ internal sealed partial class DockerTargetPlans
     internal static bool IsDeclared(EngineDto engine) =>
         engine.Catalog?.Values.Any(model => model.Serving?.Any(tier => tier?.Docker is not null) == true) == true;
 
-    internal DockerTargetLaunch? Resolve(LifecycleTarget target)
+    internal DockerTargetLaunch? Resolve(LifecycleTarget target) =>
+        Resolve(target.EngineName, target.Model, target.Profile?.Name);
+
+    internal DockerTargetLaunch? Resolve(string engine, string requestedModel, string? requestedTier)
     {
-        if (!string.Equals(_engine, target.EngineName, StringComparison.Ordinal) ||
-            !_models.TryGetValue(target.Model, out var model))
+        if (!string.Equals(_engine, engine, StringComparison.Ordinal) ||
+            !_models.TryGetValue(requestedModel, out var model))
             throw new RouterConfigException("Docker target model is not in the captured catalog");
         if (model.DefaultProfile is null) return null;
-        var profile = target.Profile?.Name ?? model.DefaultProfile;
+        var profile = requestedTier ?? model.DefaultProfile;
         return model.Profiles.TryGetValue(profile, out var launch) ? launch
             : throw new RouterConfigException("Docker target profile is not in the captured catalog");
+    }
+
+    internal static void ValidateProfileAliases(string[] aliases, DockerTargetDto? target, string path)
+    {
+        if (target is null || !HasLaunchSettings(target))
+            throw new RouterConfigException($"{path}.aliases requires a nonempty Docker target on this serving tier");
+        if (aliases.Length == 0)
+            throw new RouterConfigException($"{path}.aliases must contain at least one profile alias");
+        for (var i = 0; i < aliases.Length; i++)
+        {
+            var alias = aliases[i];
+            if (string.IsNullOrWhiteSpace(alias) || alias.AsSpan().Trim().Length != alias.Length || alias.Any(char.IsControl))
+                throw new RouterConfigException($"{path}.aliases[{i}] must be a nonblank control-free profile name without edge whitespace");
+        }
     }
 
     internal static DockerTargetPlans Parse(string engine, Dictionary<string, ModelDto> catalog, DockerDto docker,
@@ -87,16 +104,30 @@ internal sealed partial class DockerTargetPlans
                 throw new RouterConfigException($"{tierPath}.name duplicates a serving profile");
             plans.Add(tier.Name, Compose(engine, canonical, tier.Name, docker, common, tier.Docker, tierPath));
         }
+        if (!plans.ContainsKey(defaultProfile))
+            throw new RouterConfigException($"{path}.default_profile must name a canonical serving tier");
+        for (var i = 0; i < tiers.Count; i++)
+        {
+            var tier = tiers[i];
+            if (tier.Aliases is not { } aliases) continue;
+            var launch = plans[tier.Name!];
+            for (var aliasIndex = 0; aliasIndex < aliases.Length; aliasIndex++)
+                if (!plans.TryAdd(aliases[aliasIndex], launch))
+                    throw new RouterConfigException($"{path}.serving[{i}].aliases[{aliasIndex}] duplicates a canonical tier or alias");
+        }
         return new ModelPlans(canonical, defaultProfile, plans.ToImmutable());
     }
+
+    private static bool HasLaunchSettings(DockerTargetDto target) =>
+        target.MemoryBytes is not null || target.MemorySwapBytes is not null ||
+        target.Env is { Length: > 0 } || target.BindMounts is { Length: > 0 } || target.Healthcheck is not null;
 
     private static DockerTargetLaunch Compose(string engine, string model, string profile, DockerDto docker,
         DockerLaunchResources? common, DockerTargetDto? tier, string path)
     {
         if (tier?.Unknown is { Count: > 0 } unknown)
             throw new RouterConfigException($"{path}.docker.{unknown.Keys.First()} is not a target setting");
-        if (tier is { MemoryBytes: null, MemorySwapBytes: null } &&
-            tier.Env is not { Length: > 0 } && tier.BindMounts is not { Length: > 0 } && tier.Healthcheck is null)
+        if (tier is not null && !HasLaunchSettings(tier))
             throw new RouterConfigException($"{path}.docker must contain environment assignments, bind mounts, memory settings or a health check");
 
         var command = ImmutableArray.CreateBuilder<string>();
@@ -203,13 +234,13 @@ internal sealed partial class DockerTargetPlans
         {
             var enginePath = $"engine.{engine.Name}";
             var modelPath = $"{enginePath}.catalog.{model.Name}";
-            if (serving.Value.ValueKind == JsonValueKind.Object && Members(serving.Value, "docker").Any())
+            if (serving.Value.ValueKind == JsonValueKind.Object && HasTierDeclaration(serving.Value))
                 throw new RouterConfigException($"{modelPath}.serving must be an array of serving tiers");
             if (serving.Value.ValueKind != JsonValueKind.Array) continue;
             var index = 0;
             foreach (var tier in serving.Value.EnumerateArray())
             {
-                if (Members(tier, "docker").Any())
+                if (HasTierDeclaration(tier))
                 {
                     CheckMember(root, "engine", "engine");
                     CheckMember(engines.Value, engine.Name, enginePath, exactKey: true);
@@ -225,8 +256,10 @@ internal sealed partial class DockerTargetPlans
                     CheckMember(tier, "name", $"{tierPath}.name");
                     CheckMember(tier, "max_context", $"{tierPath}.max_context");
                     CheckMember(tier, "max_slots", $"{tierPath}.max_slots");
-                    var target = tier.GetProperty("docker");
-                    if (target.ValueKind != JsonValueKind.Object)
+                    CheckMember(tier, "aliases", $"{tierPath}.aliases");
+                    if (tier.TryGetProperty("aliases", out var aliases) && aliases.ValueKind != JsonValueKind.Array)
+                        throw new RouterConfigException($"{tierPath}.aliases must be an array of profile names");
+                    if (!tier.TryGetProperty("docker", out var target) || target.ValueKind != JsonValueKind.Object)
                         throw new RouterConfigException($"{tierPath}.docker must be an object");
                     CheckHealthcheckJson(target, $"{tierPath}.docker.healthcheck");
                     DockerLaunchResources.CheckJsonTree(tier, tierPath);
@@ -236,6 +269,9 @@ internal sealed partial class DockerTargetPlans
             }
         }
     }
+
+    private static bool HasTierDeclaration(JsonElement tier) =>
+        Members(tier, "docker").Any() || Members(tier, "aliases").Any();
 
     private static void CheckLaunchOptionsJson(JsonElement root)
     {
