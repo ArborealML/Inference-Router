@@ -3,11 +3,11 @@ id: TASK-111
 title: >-
   Build the local router configuration for every supported select-model
   configuration
-status: Waiting
+status: In Progress
 assignee:
-  - '@chatswarm'
+  - '@gpt-6.2-sol-config'
 created_date: '2026-11-18T18:15:00Z'
-updated_date: '2026-11-19T09:19:00Z'
+updated_date: '2026-11-19T09:29:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -19,7 +19,7 @@ ordinal: 109000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-The independent plan verdict wakes configuration work on six Strata profile spellings.
+Implement the Strata profile alias for six selector spellings using the existing canonical launch plans.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -32,7 +32,7 @@ The independent plan verdict wakes configuration work on six Strata profile spel
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Review dispatched on the landed GLM source at 989ae12. Resolve max-4 to canonical 256k-4 for three Strata models and two model spellings each. Validate ordinal per-model aliases, collisions, hidden declarations and canonical-only defaults. Reuse one frozen plan and preserve create bytes, labels, defaults and the 75 normalized targets. Discriminate equal gauges with different settings. Coordinate the captured-tier lookup in verified dispatch in actual merge order. Preserve existing startup and activation gates.
+Plan review on 989ae12 identified four required corrections. Validate alias presence before Docker-only parsing, including direct DTO null and sole alias-only declarations. Require native ownership and a valid Docker block on that row. Trigger raw shadow checks on Docker or aliases, including hidden ancestors, malformed serving and overwritten alias-only tiers. Preserve single mixed-case TOML behavior and reject twins. Register all canonical tier names before ordinal aliases, retaining canonical-only defaults and immutable plan identity. Feed original requested spellings directly into the resolver in tests. Compare same-snapshot references and cross-format create bytes, preserve six pairs, defaults and 75 targets, and discriminate differing settings. The second feature to land owns canonicalization and one verified-dispatch digest control. Keep activation closed.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
