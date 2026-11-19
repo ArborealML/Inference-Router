@@ -3,11 +3,11 @@ id: TASK-118
 title: >-
   Resolve each native launch profile and dispatch to its verified serving
   instance
-status: To Do
+status: Preparing
 assignee:
-  - '@gpt-6.2-sol'
+  - '@gpt-6.2-sol-scheduling'
 created_date: '2026-11-18T18:56:00Z'
-updated_date: '2026-11-19T03:39:00Z'
+updated_date: '2026-11-19T08:07:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -43,4 +43,6 @@ The selector includes launch profiles with identical model, context and slot cou
 Verify catalog names and aliases resolve to one immutable target, including an alias that shadows a different canonical spelling. Ambiguous routing must yield zero writes and zero lifecycle mutations.
 
 TASK-130 supplies verified-instance transport using the integrated host fixture. This task verifies that profile resolution and inference dispatch use it end to end. Production host closure consumes that evidence.
+
+The admission and per-ticket floor paths are now combined on main with the offline transport. Prepare the smallest independent Defiant dispatch-binding plan against the landed base: frozen effective target, final rewritten body and credential policy. Identify the host issuance and resource dependencies before runtime edits.
 <!-- SECTION:NOTES:END -->
