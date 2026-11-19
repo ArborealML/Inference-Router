@@ -1,11 +1,11 @@
 ---
 id: TASK-110
 title: Coordinate model engines that share one host with exclusive residency
-status: Waiting
+status: Preparing
 assignee:
   - '@gpt-6.2-sol-lifecycle'
 created_date: '2026-11-18T18:13:00Z'
-updated_date: '2026-11-19T23:29:31Z'
+updated_date: '2026-11-19T23:37:38Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -21,7 +21,7 @@ ordinal: 108000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Waiting for the independent review of the revised closed launch receipt plan on 98db2b2. Its verdict wakes Lifecycle. The revision makes enrollment durable before granting the operation, fences both legacy switch entry points through partial installs and saved Applied receipts, and uses the coordinator-assigned operation and epoch. A later request cannot clear or replace the original receipt.
+Lifecycle is amending the closed-receipt plan after review on 98db2b2. Exercise owner-only recovery through the receipt entry and both switch wrappers with original and competing intent. Establish the slot and current enrollment from independent provenance. Verify the local checkpoint under issue exclusion at both worker acceptance and issue, including rollback after coordinator loss. After Applied, distinguish exact historical lookup from fresh closed-ingress authorization when owner or ingress authority changes. Reuse existing controls and keep serving and host activation outside this increment.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

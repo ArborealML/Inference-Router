@@ -1,10 +1,11 @@
 ---
 id: TASK-141
 title: Include HY4 Flash in the inference router configuration
-status: To Do
+status: Waiting
 assignee:
   - '@gpt-6.2-sol-config'
 created_date: '2026-11-19T23:21:00Z'
+updated_date: '2026-11-19T23:37:38Z'
 labels: []
 dependencies: []
 priority: high
@@ -14,7 +15,7 @@ ordinal: 139000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Add the installed selector’s HY4 Flash Maya-XS entry to the maintained router configuration. Config owns this companion after handing off the selected DeepSeek and Qwen pair plan. Preserve the first-swap pair and historical selector census.
+Waiting for independent review of the HY4 Flash configuration plan on c0a68a6. Its verdict wakes Config. Add the installed selector’s HY4 Flash Maya-XS entry to the maintained router configuration. Preserve the selected DeepSeek and Qwen first-swap pair and historical selector census.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
