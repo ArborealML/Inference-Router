@@ -3,11 +3,11 @@ id: TASK-111
 title: >-
   Build the local router configuration for every supported select-model
   configuration
-status: In Progress
+status: Waiting
 assignee:
-  - '@gpt-6.2-sol-config'
+  - '@gpt-6.2-astra'
 created_date: '2026-11-18T18:15:00Z'
-updated_date: '2026-11-19T14:29:00Z'
+updated_date: '2026-11-19T14:30:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -19,7 +19,7 @@ ordinal: 109000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Config is recording the measured offline selector comparison on 80febe5. Release built with zero warnings; the opt-in sweep passed 1/1 in 9.54 seconds wall time. It compared 10,150 distinct positive vectors, 169 spellings, 22 omitted profiles and 78 parser-equivalence cases, with five AIR refusals, one deliberate SHM mismatch and 52 device choices across 26 tiers. Emitted inputs matched the manifest. No selector execution. Bounded reviews dispatched November 19. [PR #30](https://github.com/ArborealML/Inference-Router/pull/30) landed all 75 defaults. Unified topology, alternate reconfiguration, credential bind, published ports and host authority remain open.
+Hosted checks and outstanding feature, refusal and receipt reviews on [PR #31](https://github.com/ArborealML/Inference-Router/pull/31) wake the coordinator. The receipt at 11e5677 credits 10,150 distinct offline comparisons on 80febe5. Disposal review of fb16200 passed: providers release their own clients and retain caller ownership of the injected handler. Fixed-lane review of 97e9e78 passed: fixed bounds compare to the separate selector lane value. Receipt checksum verified; qualification stands. [PR #30](https://github.com/ArborealML/Inference-Router/pull/30) landed 75 normalized defaults. Unified configuration, alternate reconfiguration, protected credential bind, published ports and host authority remain open.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
