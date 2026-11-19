@@ -3,11 +3,11 @@ id: TASK-111
 title: >-
   Build the local router configuration for every supported select-model
   configuration
-status: Preparing
+status: Waiting
 assignee:
-  - '@gpt-6.2-sol-config'
+  - '@chatswarm'
 created_date: '2026-11-18T18:15:00Z'
-updated_date: '2026-11-19T13:53:00Z'
+updated_date: '2026-11-19T13:59:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -19,7 +19,7 @@ ordinal: 109000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Config is revising the offline comparison plan following review on 316899c. [PR #30](https://github.com/ArborealML/Inference-Router/pull/30) completed 75 normalized defaults across nine models. Six dedicated inputs preserve native ownership. The topology guard rules out a unified native input. Both remaining criteria stay open. Public shared-memory inputs and the tier DTO reject explicit null; the older common DTO treats direct null assignment as omission.
+The bounded rereview dispatched November 19 wakes the coordinator. All 75 normalized defaults landed in [PR #30](https://github.com/ArborealML/Inference-Router/pull/30). Six dedicated native inputs preserve explicit ownership. Unified configuration and selector-option parity remain open. Public shared-memory inputs and the tier DTO reject explicit null; the older common DTO treats direct null assignment as omission.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -32,7 +32,7 @@ Config is revising the offline comparison plan following review on 316899c. [PR 
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Specify a portable redacted comparison using pinned selector-derived expectations independent of AIR. Resolve spellings and omitted defaults through AIR and compare catalog capacity and complete serialized create fields, preserving order, omissions and ownership differences. Pin wrong-field detection, parser equivalence, range boundaries and utilization formatting. Verify device cardinality. Factor the finite sweep only where both implementations demonstrate independence and mixed corners agree; compare costs against one batched sweep. Report six config loads, variant reconfiguration, credential bind and published-port discrepancies separately. Host evidence remains with the activation dependencies.
+Review one reproducible offline batch against independent selector expectations. The proposed 10,150 positive vectors include two utilization neighbors. The 1,436-vector alternative requires evidence that both implementations preserve independence at mixed corners. Count spelling, parser and invalid controls separately. Assess recurring CI cost separately from qualification. Compare complete create fields and catalog capacity; record protected binds, published ports, reconfiguration and outstanding host evidence.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
