@@ -9,6 +9,11 @@ updated_date: '2026-11-19T19:54:00Z'
 labels: []
 milestone: m-4
 dependencies:
+  - TASK-69
+  - TASK-25
+  - TASK-64
+  - TASK-118
+  - TASK-137
   - TASK-140
 ordinal: 108000
 ---
