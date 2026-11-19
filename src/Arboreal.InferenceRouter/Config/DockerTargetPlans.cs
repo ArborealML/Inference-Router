@@ -61,6 +61,8 @@ internal sealed partial class DockerTargetPlans
     internal static DockerTargetPlans Parse(string engine, Dictionary<string, ModelDto> catalog, DockerDto docker,
         DockerLaunchResources? common)
     {
+        if (docker.Command is { } command)
+            ValidateCommandArguments(command, $"engine.{engine}.docker.command");
         var models = ImmutableDictionary.CreateBuilder<string, ModelPlans>(StringComparer.OrdinalIgnoreCase);
         foreach (var (canonical, model) in catalog)
         {
@@ -120,7 +122,7 @@ internal sealed partial class DockerTargetPlans
     }
 
     private static bool HasLaunchSettings(DockerTargetDto target) =>
-        target.MemoryBytes is not null || target.MemorySwapBytes is not null ||
+        target.Command is not null || target.MemoryBytes is not null || target.MemorySwapBytes is not null ||
         target.Env is { Length: > 0 } || target.BindMounts is { Length: > 0 } || target.Healthcheck is not null;
 
     private static DockerTargetLaunch Compose(string engine, string model, string profile, DockerDto docker,
@@ -129,12 +131,11 @@ internal sealed partial class DockerTargetPlans
         if (tier?.Unknown is { Count: > 0 } unknown)
             throw new RouterConfigException($"{path}.docker.{unknown.Keys.First()} is not a target setting");
         if (tier is not null && !HasLaunchSettings(tier))
-            throw new RouterConfigException($"{path}.docker must contain environment assignments, bind mounts, memory settings or a health check");
+            throw new RouterConfigException($"{path}.docker must contain a command, environment assignments, bind mounts, memory settings or a health check");
 
-        var command = ImmutableArray.CreateBuilder<string>();
-        foreach (var value in docker.Command ?? [])
-            command.Add(ExpandTargetTemplate(value ?? throw new RouterConfigException("Docker command entries must be strings"),
-                model, profile, engine));
+        ImmutableArray<string> command = tier?.Command is { } literal
+            ? FreezeTierCommand(literal, $"{path}.docker.command")
+            : [.. (docker.Command ?? []).Select(value => ExpandTargetTemplate(value, model, profile, engine))];
         var env = ImmutableArray.CreateBuilder<string>();
         var names = new HashSet<string>(StringComparer.Ordinal);
         foreach (var value in docker.Env ?? [])
@@ -147,7 +148,7 @@ internal sealed partial class DockerTargetPlans
         var binds = DockerLaunchResources.CombineTargetBinds(common?.BindMounts ?? [], additions, bindPath);
         var (memory, memorySwap) = ResolveMemory(tier, common, $"{path}.docker");
         var healthcheck = tier?.Healthcheck is { } probe ? ParseHealthcheck(probe, $"{path}.docker.healthcheck") : null;
-        return new DockerTargetLaunch(model, profile, command.ToImmutable(), env.ToImmutable(), binds, memory, memorySwap,
+        return new DockerTargetLaunch(model, profile, command, env.ToImmutable(), binds, memory, memorySwap,
             healthcheck);
 
         void AddEnv(string? value)
@@ -160,6 +161,21 @@ internal sealed partial class DockerTargetPlans
                 throw new RouterConfigException($"{path}.docker.env repeats an effective environment name");
             env.Add(value);
         }
+    }
+
+    private static ImmutableArray<string> FreezeTierCommand(string[] command, string path)
+    {
+        if (command.Length == 0)
+            throw new RouterConfigException($"{path} must contain at least one argument");
+        ValidateCommandArguments(command, path);
+        return [.. command];
+    }
+
+    private static void ValidateCommandArguments(string[] command, string path)
+    {
+        for (var i = 0; i < command.Length; i++)
+            if (command[i] is not { } argument || argument.Contains('\0', StringComparison.Ordinal))
+                throw new RouterConfigException($"{path}[{i}] must be a string without NUL");
     }
 
     private static DockerTargetHealthcheck ParseHealthcheck(DockerHealthcheckDto probe, string path)
@@ -238,14 +254,18 @@ internal sealed partial class DockerTargetPlans
         {
             var enginePath = $"engine.{engine.Name}";
             var modelPath = $"{enginePath}.catalog.{model.Name}";
-            if (serving.Value.ValueKind == JsonValueKind.Object && HasTierDeclaration(serving.Value))
+            if (serving.Value.ValueKind == JsonValueKind.Object &&
+                (HasTierDeclaration(serving.Value) || Members(serving.Value, "command").Any()))
                 throw new RouterConfigException($"{modelPath}.serving must be an array of serving tiers");
             if (serving.Value.ValueKind != JsonValueKind.Array) continue;
             var index = 0;
             foreach (var tier in serving.Value.EnumerateArray())
             {
+                var tierPath = $"{modelPath}.serving[{index}]";
+                if (Members(tier, "command").Any())
+                    throw new RouterConfigException($"{tierPath}.command belongs inside serving-tier docker");
                 if (Members(tier, "nested_under").Any())
-                    throw new RouterConfigException($"{modelPath}.serving[{index}].nested_under belongs on a serving-tier bind mount");
+                    throw new RouterConfigException($"{tierPath}.nested_under belongs on a serving-tier bind mount");
                 if (HasTierDeclaration(tier))
                 {
                     CheckMember(root, "engine", "engine");
@@ -257,7 +277,6 @@ internal sealed partial class DockerTargetPlans
                     CheckMember(model.Value, "aliases", $"{modelPath}.aliases");
                     CheckMember(model.Value, "profile", $"{modelPath}.profile");
                     CheckMember(model.Value, "default_profile", $"{modelPath}.default_profile");
-                    var tierPath = $"{modelPath}.serving[{index}]";
                     CheckMember(tier, "docker", $"{tierPath}.docker");
                     CheckMember(tier, "name", $"{tierPath}.name");
                     CheckMember(tier, "max_context", $"{tierPath}.max_context");
@@ -267,13 +286,31 @@ internal sealed partial class DockerTargetPlans
                         throw new RouterConfigException($"{tierPath}.aliases must be an array of profile names");
                     if (!tier.TryGetProperty("docker", out var target) || target.ValueKind != JsonValueKind.Object)
                         throw new RouterConfigException($"{tierPath}.docker must be an object");
+                    CheckCommandJson(target, $"{tierPath}.docker.command", requireArguments: true);
                     CheckHealthcheckJson(target, $"{tierPath}.docker.healthcheck");
                     CheckTierBindsJson(target, $"{tierPath}.docker.bind_mounts");
                     DockerLaunchResources.CheckJsonTree(tier, tierPath);
                     CheckCommonDocker(engine.Value, enginePath);
+                    if (engine.Value.TryGetProperty("docker", out var common))
+                        CheckCommandJson(common, $"{enginePath}.docker.command", requireArguments: false);
                 }
                 index++;
             }
+        }
+    }
+
+    private static void CheckCommandJson(JsonElement table, string path, bool requireArguments)
+    {
+        CheckMember(table, "command", path);
+        if (!table.TryGetProperty("command", out var command)) return;
+        if (command.ValueKind != JsonValueKind.Array || (requireArguments && command.GetArrayLength() == 0))
+            throw new RouterConfigException($"{path} must be {(requireArguments ? "a nonempty array" : "an array")} of strings");
+        var index = 0;
+        foreach (var value in command.EnumerateArray())
+        {
+            if (value.ValueKind != JsonValueKind.String || value.GetString() is not { } argument || argument.Contains('\0', StringComparison.Ordinal))
+                throw new RouterConfigException($"{path}[{index}] must be a string without NUL");
+            index++;
         }
     }
 

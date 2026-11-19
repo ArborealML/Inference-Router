@@ -301,6 +301,7 @@ public sealed partial class DockerTargetProjectionTests
     [InlineData("memory_bytes = 57982058496, memory_swap_bytes = 62277025792", false, true, false, false)]
     [InlineData("""healthcheck = { command = "probe" }""", false, false, false, false)]
     [InlineData("""env = ["FAMILY=qwen"]""", false, false, true, false)]
+    [InlineData("""command = ["serve", "32768"]""", false, false, true, false)]
     [InlineData("""bind_mounts = [{ source = "/srv/root", target = "/work", read_only = true }, { source = "/srv/model", target = "/work/models", read_only = true, nested_under = "/work" }], healthcheck = { command = "probe", timeout_ms = 10000, retries = 3 }""", false, false, false, true)]
     public async Task TargetDeclarationRefusesEveryLivePathEvenForAnotherModel(
         string fields, bool hasMount, bool hasMemory, bool hasAlias, bool hasNested)

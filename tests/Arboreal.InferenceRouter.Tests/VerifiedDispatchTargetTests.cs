@@ -95,6 +95,7 @@ public sealed class VerifiedDispatchTargetTests
 
     [Theory]
     [InlineData("env")]
+    [InlineData("command")]
     [InlineData("mount")]
     [InlineData("memory")]
     [InlineData("manifest")]
@@ -104,9 +105,10 @@ public sealed class VerifiedDispatchTargetTests
     [InlineData("endpoint")]
     public void DifferentEffectiveInputsChangeTheDigestWithIdenticalTierAndCapacity(string change)
     {
-        var baseline = Load();
+        var baseline = Load(tierCommand: change == "command" ? "32768" : null);
         var changed = Load(
             mode: change == "env" ? "changed" : "normal",
+            tierCommand: change == "command" ? "65536" : null,
             mount: change == "mount" ? "/fixture/other" : "/fixture/weights",
             memory: change == "memory" ? 8_388_608 : 6_291_456,
             digest: change == "manifest" ? OtherRepoDigest : RepoDigest,
@@ -135,6 +137,17 @@ public sealed class VerifiedDispatchTargetTests
             Assert.Equal(oldCreate, newCreate);
         else
             Assert.False(oldCreate.AsSpan().SequenceEqual(newCreate));
+        if (change == "command")
+        {
+            using var before = JsonDocument.Parse(oldCreate);
+            using var after = JsonDocument.Parse(newCreate);
+            Assert.Equal("32768", before.RootElement.GetProperty("Cmd")[1].GetString());
+            Assert.Equal("65536", after.RootElement.GetProperty("Cmd")[1].GetString());
+            Assert.Equal(before.RootElement.EnumerateObject().Count(), after.RootElement.EnumerateObject().Count());
+            foreach (var item in before.RootElement.EnumerateObject())
+                if (!item.NameEquals("Cmd"))
+                    Assert.True(JsonElement.DeepEquals(item.Value, after.RootElement.GetProperty(item.Name)), item.Name);
+        }
 
         var oldProof = new VerifiedInstanceRoute("host", 1, original.Engine, original.PlanDigest,
             "fixture-container", "fixture-incarnation", 2, 3);
@@ -224,7 +237,7 @@ public sealed class VerifiedDispatchTargetTests
     internal static EngineDefinition Load(
         string mode = "normal", string mount = "/fixture/weights", long memory = 6_291_456, string digest = RepoDigest,
         string platform = "linux/amd64", string alias = "alias", bool singleton = false, string endpoint = DefaultEndpoint,
-        string? healthcheckCommand = null, bool withProfileAlias = false)
+        string? healthcheckCommand = null, bool withProfileAlias = false, string? tierCommand = null)
     {
         var residentTier = $$"""
             [[engine.fixture.catalog."model.canonical".serving]]
@@ -240,6 +253,7 @@ public sealed class VerifiedDispatchTargetTests
         var defaultField = singleton ? "" : "default_profile = \"wide\"";
         var healthcheck = healthcheckCommand is null ? "" :
             $"healthcheck = {{ command = \"{healthcheckCommand}\", interval_ms = 1000, start_period_ms = 2000 }}";
+        var literalCommand = tierCommand is null ? "" : $"command = [\"serve\", \"{tierCommand}\"]";
         return RouterConfigLoader.Load($$"""
             [engine.fixture]
             kind = "openai-compatible"
@@ -261,6 +275,7 @@ public sealed class VerifiedDispatchTargetTests
             max_context = 32768
             max_slots = 2
             [engine.fixture.catalog."model.canonical".serving.docker]
+            {{literalCommand}}
             env = ["SETTING={{mode}}"]
             bind_mounts = [{ source = "{{mount}}", target = "/weights", read_only = true }]
             memory_bytes = {{memoryLiteral}}

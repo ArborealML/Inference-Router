@@ -313,7 +313,8 @@ public sealed partial class DockerTargetProjectionTests
         Assert.StartsWith("engine.strata.docker.healthcheck ", toml.Message, StringComparison.Ordinal);
     }
 
-    private static EngineDefinition DeepSeekFromDto(DockerTargetDto target, DockerResourcesDto? resources = null) =>
+    private static EngineDefinition DeepSeekFromDto(DockerTargetDto target, DockerResourcesDto? resources = null,
+        string[]? commonCommand = null) =>
         RouterConfigLoader.FromDto(new ConfigDto
         {
             Engines = new()
@@ -324,7 +325,7 @@ public sealed partial class DockerTargetProjectionTests
                     Docker = new()
                     {
                         Image = ImageId, ImageId = ImageId, ImageRepoDigest = RepoDigest, ImagePlatform = "linux/amd64",
-                        RouterId = "test-router", Resources = resources,
+                        RouterId = "test-router", Resources = resources, Command = commonCommand,
                     },
                     Catalog = new() { ["qwen"] = new() { Serving = [new() { Name = "tier", MaxContext = 100, Docker = target }] } },
                 },

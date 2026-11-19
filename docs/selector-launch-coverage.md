@@ -6,7 +6,7 @@ The inspected reference selector accepted 169 of 506 explicit model/profile spel
 | --- | ---: | --- |
 | Strata | 36 | Offline projection supports per-tier environment and data/model binds, memory plus swap for capped Qwen profiles, and the `max-4` alias for `256k-4`. |
 | HyperQwen | 26 | Different profiles and options change the ordered GPU request and shared-memory limit. Parking derives shared memory from its 1–48 GiB RAM cache. Init, restart policy and log settings also need representation. Shared wire IDs need exact checkpoint and serving-instance proof. |
-| Maya | 13 | MiniMax `32k` and all three GLM tiers have qualified offline launch projections. Maya-XS `32k` uses the new read-only bind overlays and explicit probe timeout and retries. The eight general DeepSeek tiers still need per-tier numeric command arguments. |
+| Maya | 13 | MiniMax `32k`, the three GLM tiers and Maya-XS `32k` have qualified offline projections. Per-tier literal commands express the eight general DeepSeek launch payloads. |
 
 The environment and bind projection merged in [PR #7](https://github.com/ArborealML/Inference-Router/pull/7). It composes settings for offline validation and keeps target-enabled startup and native Docker writes gated. [Configuration and lifecycle contract](../SPEC.md#7-configuration-toml)
 
@@ -52,7 +52,17 @@ timeout and three retries. Its 11 ordered bind mounts include two explicit read-
 of `/work` and an independent writable log mount. The qualifier compares equivalent JSON and
 TOML configurations with one redacted payload.
 
-This slice adds one target to the 40 already covered offline after qualification and landing.
-The inventory remains at 75 targets. Effective read-only mount enforcement and the AIR
-readiness budget require separate host qualification. The first native swap pair remains Qwen
-and Swift on the same host.
+Maya-XS brought landed offline coverage to 41 of 75 targets. Effective read-only mount
+enforcement and the AIR readiness budget require separate host qualification.
+
+## General DeepSeek serving commands
+
+One engine holds all eight canonical tiers. Each tier supplies a literal
+`["/selector.py", "serve", "<decimal context>"]` argument array and a separate probe with the
+same decimal. The `max` default passes `1048576` while the `32k` tier passes `32768`.
+The independent payload check covers the nine ordered mounts, the existing loopback port,
+the resource limits and the literal probe for every tier. The three selector model spellings
+resolve to the same canonical serving model, covering 24 explicit model and profile pairs.
+
+Qualification and landing add eight to the 41 previously covered offline. The inventory
+remains at 75 targets. Qwen and Swift remain the first native swap pair on one host.
