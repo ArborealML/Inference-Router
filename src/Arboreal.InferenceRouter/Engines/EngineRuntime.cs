@@ -50,6 +50,8 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
     /// claim queues behind. <see cref="BeforeScheduleSwitchForTests"/> runs at the scheduling boundary, so a
     /// synchronous failure there is testable; a real thread-pool rejection is not, and is not claimed.</summary>
     internal Action? BeforeSwitchWaitForTests;
+    // Runs with the switch semaphore held, before observing the claim under the transition gate.
+    internal Action<DateTimeOffset>? AfterSwitchLockAcquiredForTests;
     internal Action<bool>? AfterEndCommitForTests;
     internal Action? BeforeScheduleSwitchForTests;
     // Observes the published proof before the switch clears the marker, outside the transition gate.
@@ -1069,6 +1071,7 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
             }
             try
             {
+                AfterSwitchLockAcquiredForTests?.Invoke(deadline);
                 SwitchState? mine = null;
                 Exception? claimFault = null;
                 CancellationToken switchToken = default;
@@ -1079,14 +1082,14 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
                 lock (_transitionGate)
                 {
                     if (_stopped) return new(SwitchResult.RouterStopped);
+                    ct.ThrowIfCancellationRequested();
+                    if (deadline != DateTimeOffset.MaxValue && DateTimeOffset.UtcNow >= deadline)
+                        return UnclaimedWaitExpired(ct);
+
                     state = _switchState;
                     if (state.Model is null)
                     {
-                        ct.ThrowIfCancellationRequested();
-                        if (deadline != DateTimeOffset.MaxValue && DateTimeOffset.UtcNow >= deadline)
-                            return UnclaimedWaitExpired(ct);
-
-                        // A join takes precedence over the optimistic offer. An idle attempt can publish
+                        // An active claim takes precedence over the optimistic offer. An idle attempt can publish
                         // only from the exact snapshot it evaluated, and retries release both locks.
                         if (ReadyIn(offered, canonical, requiredWindow))
                         {

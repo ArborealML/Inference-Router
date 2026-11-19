@@ -2061,8 +2061,8 @@ engine forks land; the scheduler interface will not change shape.
   acquiring the switch and transition locks. If the compare-exchange loses or the idle answer is stale,
   release both locks before re-deciding. A poll that proves the requested model can retire the offer.
   After eight lost idle offers, return `switch_failed` with `switch_error` without starting a lifecycle
-  operation. The caller's original finite budget bounds the first acquisition of the switch lock,
-  each later acquisition and the decision to start an idle claim. An immediately ready caller can
+  operation. The caller's original finite budget bounds every acquisition of the switch lock
+  and the subsequent decision to join an active claim or start an idle one. An immediately ready caller can
   still use its current proof, and an already joined caller retains its committed outcome under the
   delivery rules above. Caller cancellation and shutdown retain precedence.
   **A waiter is authorised at the moment it resumes, not at the moment it was promised**. It uses the
