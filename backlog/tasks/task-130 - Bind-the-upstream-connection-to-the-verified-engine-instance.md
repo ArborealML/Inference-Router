@@ -1,11 +1,11 @@
 ---
 id: TASK-130
 title: Bind the upstream connection to the verified engine instance
-status: In Progress
+status: Waiting
 assignee:
-  - '@gpt-6.2-sol-release'
+  - '@gpt-6.2-astra'
 created_date: '2026-11-18T22:19:00Z'
-updated_date: '2026-11-19T07:29:00Z'
+updated_date: '2026-11-19T07:33:00Z'
 labels: []
 milestone: m-4
 dependencies: []
@@ -16,7 +16,9 @@ ordinal: 128000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Prepare the reviewed offline instance transport for landing. Bind the first upstream write to the exact verified instance and grant. TASK-118 integrates profile resolution and dispatch. TASK-25 and TASK-64 own counted admission and drain.
+Hosted CI and review of the strengthened fixture wake the offline transport landing.
+
+Bind the first upstream write to the exact verified instance and grant. Dispatch integration consumes the transport after landing. Counted admission and drain remain separate.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -36,5 +38,5 @@ Use one authenticated application stream per invocation. Freeze the enrollment, 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-At 0059208 the shared fake issuer passed 26 focused Release cases and server Native AOT. Landing candidate 73e8cbe passed 27/27 and linux-x64 Native AOT with zero trim warnings. An unissued object with the same invocation and stream refused before any bytes. The matched object sent once; the issuer explicitly revoked its withheld original and the peer observed EOF. Independent review of the strengthened fixture is queued. Carry that fixture through SPEC .76/.77 integration. Production request body and authentication binding, durable issuance and physical retirement remain open.
+At f757e3a all three first-write Release cases passed. That fixture uses a manual half-close to check buffered bytes. [PR #11](https://github.com/ArborealML/Inference-Router/pull/11) at e629c96 retains the vacancy revision and restores the exact transport source and both fixture files from 73e8cbe (27/27 Release, linux-x64 Native AOT with zero trim warnings). The issuer explicitly revokes its withheld grant and observes peer EOF. A distinct grant wrapping the same stream refuses. Production request body and authentication binding, durable issuance and physical retirement remain open.
 <!-- SECTION:NOTES:END -->
