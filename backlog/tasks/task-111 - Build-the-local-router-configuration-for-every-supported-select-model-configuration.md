@@ -5,9 +5,9 @@ title: >-
   configuration
 status: Waiting
 assignee:
-  - '@chatswarm'
+  - '@gpt-6.2-astra'
 created_date: '2026-11-18T18:15:00Z'
-updated_date: '2026-11-19T13:21:00Z'
+updated_date: '2026-11-19T13:31:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -19,7 +19,7 @@ ordinal: 109000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-The verdict on the parking feature review dispatched November 19 wakes the coordinator. At 1b63db3 all 67 focused Release cases passed, zero skips. The pinned 26-row mixed HyperQwen config loaded, including six default parking rows per model at 36 GiB shared memory. Linux x64 Native AOT published without warnings. [PR #29](https://github.com/ArborealML/Inference-Router/pull/29) established 63/75 offline targets. Twelve parking defaults await landing. Alternative parameter choices require re-resolution; host RAM and serving authority remain separate.
+Hosted checks on [PR #30](https://github.com/ArborealML/Inference-Router/pull/30) wake the coordinator. The parking feature passed bounded static review, 67 focused Release cases, the mixed config load and warning-free AOT. Landed coverage is 63/75 until merge. Public config input rejects explicit null shared memory; the new tier DTO rejects it directly. The pre-existing common DTO treats direct null assignment as omission and is outside the tier change. The broader comparison and redacted closure criteria remain open.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
