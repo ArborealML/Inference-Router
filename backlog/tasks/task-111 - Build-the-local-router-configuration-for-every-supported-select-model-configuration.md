@@ -19,7 +19,7 @@ ordinal: 109000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Config owns implementation of literal per-tier commands for eight general DeepSeek targets.
+Config is fixing three MA0001 errors in the per-tier command NUL checks at be35ab6. Release, config load and AOT stopped during compilation; zero tests executed. Independent source and fixture review dispatched.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
