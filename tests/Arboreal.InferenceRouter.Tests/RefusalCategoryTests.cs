@@ -1,6 +1,5 @@
 using System.Net;
 using System.Text;
-using System.Text.RegularExpressions;
 using Arboreal.InferenceRouter.Lifecycle;
 
 namespace Arboreal.InferenceRouter.Tests;
@@ -20,7 +19,7 @@ namespace Arboreal.InferenceRouter.Tests;
 /// caller was told the wrong thing and pointed at the wrong fix. Mutation control for that is exactly this swap: the
 /// per-exit checks go red and the set equality stays green.
 /// </remarks>
-public class RefusalCategoryTests
+public partial class RefusalCategoryTests
 {
     /// <summary>The set as the wire states it, and what SPEC §5.5 tells a caller to do with each name: retry the
     /// request, retry somewhere else, or fix the configuration. A name whose action is "fix the configuration" is
@@ -352,93 +351,6 @@ public class RefusalCategoryTests
         var recorded = Assert.Throws<ArgumentException>(
             () => EngineRuntime.SwitchResult.FailedFromRecord("the engine on 127.0.0.1:8080 said no"));
         Assert.Contains("outside the closed set", recorded.Message);
-    }
-
-    /// <summary>The audit AC #1 asks for: every failed switch answer in the engine leaves through the door with a
-    /// named member, every name the source mentions is one of the eight, and every one of the eight is produced by
-    /// an exit. A tenth exit answering with prose, or a name added with nothing to produce it, fails here. The
-    /// source is read as text because the audit is about the shape of the file: it is the check that a future
-    /// <c>return</c> nobody walked cannot pass silently. Two doors, and the shape of each call is checked: a caller
-    /// is told either a member named at the call site, or exactly what the attempt recorded, and the fallback to the
-    /// catch-all exists in one arm of one expression.</summary>
-    [Fact]
-    public void SourceAuditCoversEveryFailedExit()
-    {
-        var path = RepoFile("src/Arboreal.InferenceRouter/Engines/EngineRuntime.cs");
-        Assert.NotNull(path);
-        var source = File.ReadAllText(path!);
-
-        // Provider failure and the exception path record constants directly. Readiness commits the
-        // category computed by ReadinessFailure.Reason, so follow that producer to its switch arms.
-        var recordedReasons = Regex.Matches(source, @"\b[A-Za-z_]\w*\.FailureReason\s*=\s*(?<reason>[^;]+);")
-            .Select(match => match.Groups["reason"].Value.Trim())
-            .ToArray();
-        Assert.Single(recordedReasons, reason => reason == "failure.Reason");
-        foreach (var reason in recordedReasons)
-        {
-            if (reason == "failure.Reason") continue;
-            Assert.Matches(@"^SwitchReason\.[A-Za-z]+$", reason);
-            Assert.Contains(reason["SwitchReason.".Length..], NamedMembers);
-        }
-
-        var readinessMapping = Regex.Match(source,
-            @"\brecord struct ReadinessFailure\([^{}]*\)\s*\{\s*public string Reason => Miss switch\s*" +
-            @"\{(?<arms>[^{}]+)\};\s*\}");
-        Assert.True(readinessMapping.Success, "The recorded readiness reason must come from the audited mapping.");
-        var readinessArms = readinessMapping.Groups["arms"].Value
-            .Split('\n', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
-        Assert.Contains("_ => SwitchReason.HealthTimeout,", readinessArms);
-        foreach (var arm in readinessArms)
-        {
-            var category = Regex.Match(arm, @"^(?:ReadinessMiss\.[A-Za-z]+|_) => SwitchReason\.(?<name>[A-Za-z]+),$");
-            Assert.True(category.Success, $"Uncategorized readiness reason: {arm}");
-            Assert.Contains(category.Groups["name"].Value, NamedMembers);
-        }
-
-        foreach (var raw in source.Split('\n'))
-        {
-            var line = raw.Trim();
-            if (line.Contains("SwitchResult.Failed(", StringComparison.Ordinal) &&
-                !line.StartsWith("///", StringComparison.Ordinal))
-                Assert.Matches(@"SwitchResult\.Failed\(SwitchReason\.[A-Za-z]+\)", line);
-            if (line.Contains("SwitchResult.FailedFromRecord(", StringComparison.Ordinal) &&
-                !line.StartsWith("///", StringComparison.Ordinal))
-                Assert.Matches(@"SwitchResult\.FailedFromRecord\(state\.FailureReason\)", line);
-        }
-
-        // The fallback is not something a new exit may invent at its own call site: it lives in the recorded-reason
-        // door, in one line, and that line names the catch-all member rather than a sentence.
-        var fallback = Regex.Count(source, @"^\s*Failed\(recorded", RegexOptions.Multiline);
-        Assert.Equal(1, fallback);
-        Assert.All(
-            source.Split('\n').Where(l => l.Contains("Failed(recorded is", StringComparison.Ordinal)),
-            l => Assert.Contains("SwitchReason.SwitchError", l));
-
-        // …and the door is the only route: a Failed outcome built anywhere else in the engine sidesteps the set
-        // entirely, so exactly one line in the file constructs one and it is the door's own line. This is the check
-        // that a bypass fails, not merely a wrong name: the mutation that puts the old sentence back at the resume
-        // exit — building the result directly — reddens here and in SwitchClaimTests, and nothing else.
-        var constructed = source.Split('\n')
-            .Where(l => l.Contains("SwitchOutcome.Failed", StringComparison.Ordinal) &&
-                        !l.TrimStart().StartsWith("///", StringComparison.Ordinal))
-            .ToArray();
-        Assert.Single(constructed);
-        Assert.Matches(@"return new SwitchResult\(SwitchOutcome\.Failed, category\);", constructed[0]);
-
-        var mentioned = Regex.Matches(source, @"SwitchReason\.([A-Za-z]+)")
-            .Select(m => m.Groups[1].Value)
-            // `SwitchReason.All` is the set itself, the array this audit compares the source against, not a name a
-            // caller can be told. It is the one member of the type that is not a member of the wire set.
-            .Where(name => name != "All")
-            .Distinct(StringComparer.Ordinal)
-            .ToArray();
-        Assert.All(mentioned, name => Assert.Contains(name, NamedMembers));
-        foreach (var member in NamedMembers)
-            Assert.Contains(member, mentioned);
-
-        // The members this test names are the set the source declares, and the set is the wire set.
-        Assert.Equal(NamedMembers.Length, SwitchReason.All.Length);
-        Assert.Equal(NamedMembers.Length, WireSet.Length);
     }
 
     /// <summary>A catalog entry that names no selector is a fixed configuration gap. Asked of the provider it comes
