@@ -5,7 +5,7 @@ status: Waiting
 assignee:
   - '@gpt-6.2-sol-shutdown'
 created_date: '2026-11-18T20:43:00Z'
-updated_date: '2026-11-19T10:13:00Z'
+updated_date: '2026-11-19T10:21:00Z'
 labels: []
 milestone: m-4
 dependencies: []
@@ -42,4 +42,6 @@ Use one monotonic readiness budget across state headers and body, model discover
 Legacy readiness and local HTTP cleanup landed in [PR #4](https://github.com/ArborealML/Inference-Router/pull/4). The two-ticket control in [PR #8](https://github.com/ArborealML/Inference-Router/pull/8) passed both rows: the stopped engine granted neither ticket a send, and the open engine accepted one exact POST. For the offline enrolled case, Lifecycle owns coordinator, staging and the single recovered-launch fixture. Shutdown owns EngineRuntime and its host lifecycle partial. Build on the exact host child, reuse its launch-owned deadline and the existing guarded CAS and delivery signal, and consume the typed terminal outcome before generic launch failure. Preserve production capacity gates.
 
 Host commit 046ea91 on 17c0f5d is available. Runtime child df9fdef and its fixture-only observer child c65ebfb change only the two engine files. Independent runtime review dispatched; qualify on the paired fixture child.
+
+At 2062886 ordinary dispatch uses a revision-backed asynchronous wake. The injected post-Open hint can hide an exception. Preserve that failure on the staged result with actual Opened and the committed verdict intact. Future enrolled dispatch should signal the current generation directly; a wake retry never replays completion, opening or mutation. Recovery after failed delivery needs a fresh authorized claim.
 <!-- SECTION:NOTES:END -->
