@@ -5,9 +5,9 @@ title: >-
   instance
 status: Waiting
 assignee:
-  - '@gpt-6.2-astra'
+  - '@gpt-6.2-sol-scheduling'
 created_date: '2026-11-18T18:56:00Z'
-updated_date: '2026-11-19T09:26:00Z'
+updated_date: '2026-11-19T09:32:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -23,7 +23,7 @@ ordinal: 116000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Hosted CI and the landing review for PR #20 wake the coordinator. Land after the closed-route SPEC entry is integrated.
+The PR #19 merge wakes Scheduling to reconcile the two SPEC sections and return the final PR #20 head.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -48,5 +48,5 @@ Publish one immutable sender with the ready preparation. Its exact invocation bo
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Binding at 1bd351d passed review, 118 Release cases and Linux x64 Native AOT. Cleanup review passed e05f5c9; six cases passed and a silent-peer cancellation timed out. At 9e1a9df both cancellation rows passed with a live watchdog; bounded review accepted the header-only fallback. Explicit read tokens and post-header semantics are preserved. [PR #20](https://github.com/ArborealML/Inference-Router/pull/20) at 0e6343a passed the new health-check identity case with zero daemon calls. Landing review dispatched. Preserve .83/.82/.81 and both lifecycle sections after PR #19. Production enrollment stays closed.
+Binding review, 118 Release cases and Linux x64 AOT passed on 1bd351d. Cleanup review passed e05f5c9; six cases passed, one silent-peer cancellation timed out. Fix 9e1a9df passed both cancellation rows and review. [PR #20](https://github.com/ArborealML/Inference-Router/pull/20) at 0e6343a passed integration review, the focused health-check test and hosted CI. Changing only the command invalidates the prior route with zero daemon calls. Reconcile .83/.82/.81 and both sections after PR #19. Production enrollment stays closed.
 <!-- SECTION:NOTES:END -->
