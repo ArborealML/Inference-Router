@@ -5,9 +5,9 @@ title: >-
   configuration
 status: Waiting
 assignee:
-  - '@chatswarm'
+  - '@gpt-6.2-astra'
 created_date: '2026-11-18T18:15:00Z'
-updated_date: '2026-11-19T12:53:00Z'
+updated_date: '2026-11-19T12:55:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -19,7 +19,7 @@ ordinal: 109000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-The independent engine-root placement correction review dispatched November 19 wakes the coordinator. With the fixture change alone, all three Release cases failed because 884d6cd accepted the invalid inputs. On b7b0eac all three passed, zero skips, and the valid pinned mixed config loaded. The parent passed 53/53 focused cases and warning-free Native AOT. Landed offline coverage remains 57/75 after [PR #27](https://github.com/ArborealML/Inference-Router/pull/27). The six single-GPU targets await landing.
+Hosted checks on [PR #29](https://github.com/ArborealML/Inference-Router/pull/29) wake the coordinator for landing. The engine-root correction passed independent static review and all three differential cases. The 14 non-SPEC feature files match the qualified child. The prior 53-case Release run, config load and warning-free Native AOT remain attributed to their tested revisions. Landed coverage is 57/75 and rises to 63/75 on merge. The twelve parking targets await plan review on that base.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
