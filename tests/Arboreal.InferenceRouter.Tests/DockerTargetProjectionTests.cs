@@ -13,6 +13,17 @@ public sealed class DockerTargetProjectionTests
     private const string QwenTier = """{ name = "256k-4", max_context = 256000, max_slots = 4, docker = { env = ["FAMILY=qwen"] } }""";
     private const string TargetJson = """{"name":"256k-4","max_context":256000,"max_slots":4,"docker":{"env":["FAMILY=qwen"]}}""";
     private const string OptedCatalogJson = "\"qwen\":{\"serving\":[" + TargetJson + "]}";
+    private const long WideMemory = 57_982_058_496;
+    private const long WideMemoryAndSwap = 62_277_025_792;
+    private const string CommonMemoryAndSwap = """
+        [engine.strata.docker.resources]
+        memory_bytes = 8589934592
+        memory_swap_bytes = 10737418240
+        """;
+    private const string CommonMemoryOnly = """
+        [engine.strata.docker.resources]
+        memory_bytes = 8589934592
+        """;
 
     private static readonly string[] ConcurrentEnv =
         ["COMMON=qwen:concurrent:strata", "STRATA_SET=conversation-cache-slots=4", "LITERAL={{profile}}", "EMPTY="];
@@ -141,6 +152,98 @@ public sealed class DockerTargetProjectionTests
         Assert.False(concurrent.RootElement.TryGetProperty("HostConfig", out _));
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void QwenMemoryPairFollowsTheSelectedTierOnRepeatedProjection(bool json)
+    {
+        var engine = json
+            ? LoadJson("""
+                "qwen":{"aliases":["flash-next"],"default_profile":"512k","serving":[
+                  {"name":"512k","max_context":524288,"docker":{"env":["CONTEXT=524288"]}},
+                  {"name":"768k","max_context":786432,"docker":{"env":["CONTEXT=786432"],
+                    "memory_bytes":57982058496,"memory_swap_bytes":62277025792}}
+                ]}
+                """, """
+                ,"resources":{"gpu":{"all":true},"shm_size_bytes":2147483648,
+                  "bind_mounts":[{"source":"/srv/example/weights","target":"/models","read_only":true}]}
+                """)
+            : LoadToml("""
+                [engine.strata.catalog.qwen]
+                aliases = ["flash-next"]
+                default_profile = "512k"
+                serving = [
+                  { name = "512k", max_context = 524288, docker = { env = ["CONTEXT=524288"] } },
+                  { name = "768k", max_context = 786432, docker = { env = ["CONTEXT=786432"], memory_bytes = 57982058496, memory_swap_bytes = 62277025792 } },
+                ]
+                """, """
+                [engine.strata.docker.resources]
+                gpu = { all = true }
+                shm_size_bytes = 2147483648
+                bind_mounts = [{ source = "/srv/example/weights", target = "/models", read_only = true }]
+                """);
+        using var daemon = new FakeDockerDaemonHandler();
+        using var provider = new DockerLifecycleProvider(engine.Docker!, "strata", daemon);
+        var uncapped = Project(provider, engine, "flash-next");
+        var capped = Project(provider, engine, "qwen", "768k");
+        Assert.Equal(uncapped, Project(provider, engine, "qwen", "512k"));
+        Assert.Equal(capped, Project(provider, engine, "flash-next", "768k"));
+
+        using var uncappedJson = JsonDocument.Parse(uncapped);
+        using var cappedJson = JsonDocument.Parse(capped);
+        var uncappedRequest = uncappedJson.RootElement;
+        var cappedRequest = cappedJson.RootElement;
+        var uncappedHost = uncappedRequest.GetProperty("HostConfig");
+        var cappedHost = cappedRequest.GetProperty("HostConfig");
+        Assert.False(uncappedHost.TryGetProperty("Memory", out _));
+        Assert.False(uncappedHost.TryGetProperty("MemorySwap", out _));
+        Assert.Equal(WideMemory, cappedHost.GetProperty("Memory").GetInt64());
+        Assert.Equal(WideMemoryAndSwap, cappedHost.GetProperty("MemorySwap").GetInt64());
+        Assert.Equal(2_147_483_648L, uncappedHost.GetProperty("ShmSize").GetInt64());
+        Assert.Equal(-1, uncappedHost.GetProperty("DeviceRequests")[0].GetProperty("Count").GetInt32());
+        Assert.True(uncappedHost.GetProperty("Mounts")[0].GetProperty("ReadOnly").GetBoolean());
+        foreach (var property in uncappedHost.EnumerateObject())
+            Assert.True(JsonElement.DeepEquals(property.Value, cappedHost.GetProperty(property.Name)), property.Name);
+        Assert.Equal("512k", uncappedRequest.GetProperty("Labels").GetProperty(DockerLifecycleProvider.LabelProfile).GetString());
+        Assert.Equal("768k", cappedRequest.GetProperty("Labels").GetProperty(DockerLifecycleProvider.LabelProfile).GetString());
+        Assert.Equal("CONTEXT=524288", Assert.Single(Strings(uncappedRequest.GetProperty("Env"))));
+        Assert.Equal("CONTEXT=786432", Assert.Single(Strings(cappedRequest.GetProperty("Env"))));
+        Assert.Empty(daemon.Requests);
+    }
+
+    [Theory]
+    [InlineData(CommonMemoryAndSwap, """env = ["TIER=inherited"]""", 8_589_934_592L, 10_737_418_240L)]
+    [InlineData(CommonMemoryAndSwap, "memory_bytes = 57982058496, memory_swap_bytes = 62277025792", WideMemory, WideMemoryAndSwap)]
+    [InlineData(CommonMemoryOnly, "memory_bytes = 6291456", 6_291_456L, null)]
+    [InlineData("", "memory_bytes = 6291456", 6_291_456L, null)]
+    [InlineData("", "memory_bytes = 6291456, memory_swap_bytes = 6291456", 6_291_456L, 6_291_456L)]
+    public void TargetMemoryInheritsOrReplacesTheWholePair(string common, string tier, long memory, long? memorySwap)
+    {
+        var engine = LoadToml($$$"""
+            [engine.strata.catalog.qwen]
+            serving = [{ name = "tier", max_context = 100, docker = { {{{tier}}} } }]
+            """, common);
+        using var provider = new DockerLifecycleProvider(engine.Docker!, "strata");
+        using var projected = JsonDocument.Parse(Project(provider, engine, "qwen"));
+        var host = projected.RootElement.GetProperty("HostConfig");
+        Assert.Equal(memory, host.GetProperty("Memory").GetInt64());
+        if (memorySwap is { } total)
+            Assert.Equal(total, host.GetProperty("MemorySwap").GetInt64());
+        else
+            Assert.False(host.TryGetProperty("MemorySwap", out _));
+    }
+
+    [Fact]
+    public void LegacyEngineMemoryLimitStillLeavesTotalMemoryAndSwapAbsent()
+    {
+        var engine = LoadToml("[engine.strata.catalog.qwen]", CommonMemoryOnly);
+        using var provider = new DockerLifecycleProvider(engine.Docker!, "strata");
+        using var projected = JsonDocument.Parse(Project(provider, engine, "qwen"));
+        var host = projected.RootElement.GetProperty("HostConfig");
+        Assert.Equal(8_589_934_592L, host.GetProperty("Memory").GetInt64());
+        Assert.False(host.TryGetProperty("MemorySwap", out _));
+    }
+
     [Fact]
     public void TargetPlanFreezesTheDtoAndEachProjectionGetsItsOwnArrays()
     {
@@ -157,7 +260,8 @@ public sealed class DockerTargetProjectionTests
                 Catalog = new()
                 {
                     ["qwen"] = new ModelDto { Serving = [new ServingDto { Name = "tier", MaxContext = 1024,
-                        Docker = new DockerTargetDto { Env = targetEnv, BindMounts = binds } }] },
+                        Docker = new DockerTargetDto { Env = targetEnv, BindMounts = binds,
+                            MemoryBytes = WideMemory, MemorySwapBytes = WideMemoryAndSwap } }] },
                 },
             },
         } };
@@ -165,20 +269,27 @@ public sealed class DockerTargetProjectionTests
         targetEnv[0] = "TARGET=changed";
         commonEnv[0] = "COMMON=changed";
         binds[0].Source = "/srv/changed";
+        dto.Engines!["strata"].Catalog!["qwen"].Serving![0] = new ServingDto
+            { Name = "tier", MaxContext = 1024, Docker = new DockerTargetDto { MemoryBytes = 6_291_456 } };
         using var provider = new DockerLifecycleProvider(engine.Docker!, "strata");
         var target = Selection(engine, "qwen");
         var first = provider.BuildCreateRequest(target, engine.Docker!.ImageIdentity!);
         first.Env![0] = "COMMON=overwrite";
         first.HostConfig!.Mounts![0] = new DockerMount("bind", "/srv/other", "/models", false);
+        first.HostConfig.Memory = 0;
+        first.HostConfig.MemorySwap = 0;
         var next = provider.BuildCreateRequest(target, engine.Docker.ImageIdentity!);
         Assert.Equal(UnchangedPlanEnv, next.Env);
         Assert.Equal("/srv/model", Assert.Single(next.HostConfig!.Mounts!).Source);
+        Assert.Equal(WideMemory, next.HostConfig.Memory);
+        Assert.Equal(WideMemoryAndSwap, next.HostConfig.MemorySwap);
     }
 
     [Theory]
-    [InlineData("""env = ["FAMILY=qwen"]""", false)]
-    [InlineData("""bind_mounts = [{ source = "/srv/model", target = "/models", read_only = true }]""", true)]
-    public async Task TargetDeclarationRefusesEveryLivePathEvenForAnotherModel(string fields, bool hasMount)
+    [InlineData("""env = ["FAMILY=qwen"]""", false, false)]
+    [InlineData("""bind_mounts = [{ source = "/srv/model", target = "/models", read_only = true }]""", true, false)]
+    [InlineData("memory_bytes = 57982058496, memory_swap_bytes = 62277025792", false, true)]
+    public async Task TargetDeclarationRefusesEveryLivePathEvenForAnotherModel(string fields, bool hasMount, bool hasMemory)
     {
         var engine = LoadToml($$$"""
             [engine.strata.catalog.qwen]
@@ -193,8 +304,13 @@ public sealed class DockerTargetProjectionTests
         using var provider = new DockerLifecycleProvider(engine.Docker!, "strata", daemon);
         using var coordinator = new EngineLifecycleCoordinator(provider);
         var projection = provider.BuildCreateRequest(Selection(engine, "qwen"), engine.Docker!.ImageIdentity!);
-        Assert.Equal(hasMount, projection.HostConfig is not null);
+        Assert.Equal(hasMount || hasMemory, projection.HostConfig is not null);
         if (hasMount) Assert.Equal("/models", Assert.Single(projection.HostConfig!.Mounts!).Target);
+        if (hasMemory)
+        {
+            Assert.Equal(WideMemory, projection.HostConfig!.Memory);
+            Assert.Equal(WideMemoryAndSwap, projection.HostConfig.MemorySwap);
+        }
 
         var other = Selection(engine, "other");
         foreach (var result in new[]
@@ -242,6 +358,12 @@ public sealed class DockerTargetProjectionTests
     [InlineData("""bind_mounts = [{ source = "/var", target = "/socket", read_only = true }]""", "", "parent")]
     [InlineData("""bind_mounts = [{ source = "/srv/../model", target = "/models", read_only = true }]""", "", "source")]
     [InlineData("""bind_mounts = [{ source = "/srv/model", target = "/models" }]""", "", "read_only")]
+    [InlineData("memory_bytes = 6291455", "", "memory_bytes")]
+    [InlineData("memory_bytes = 6291456, memory_swap_bytes = 6291455", "", "memory_swap_bytes")]
+    [InlineData("memory_swap_bytes = 62277025792", "", "memory_swap_bytes")]
+    [InlineData("memory_swap_bytes = 62277025792", CommonMemoryAndSwap, "memory_swap_bytes")]
+    [InlineData("memory_bytes = 57982058496", CommonMemoryAndSwap, "memory_swap_bytes")]
+    [InlineData("memory_bytes = 6291456, Memory_Bytes = 6291457", "", "memory_bytes")]
     public void TomlRejectsUnsafeOrAmbiguousLaunchFields(string tier, string common, string field)
     {
         var error = Assert.Throws<RouterConfigException>(() => LoadToml($$$"""
@@ -291,6 +413,11 @@ public sealed class DockerTargetProjectionTests
     [InlineData("""{"env":[null]}""", "env")]
     [InlineData("""{"env":"FAMILY=qwen"}""", "env")]
     [InlineData("""{"env":["A=1"],"env":["B=2"]}""", "env")]
+    [InlineData("""{"memory_bytes":null,"memory_swap_bytes":62277025792}""", "memory_bytes")]
+    [InlineData("""{"memory_bytes":57982058496,"memory_swap_bytes":null}""", "memory_swap_bytes")]
+    [InlineData("""{"memory_bytes":"57982058496","memory_swap_bytes":62277025792}""", "memory_bytes")]
+    [InlineData("""{"memory_bytes":57982058496,"memory_bytes":6291456,"memory_swap_bytes":62277025792}""", "memory_bytes")]
+    [InlineData("""{"Memory_Bytes":57982058496,"memory_swap_bytes":62277025792}""", "memory_bytes")]
     [InlineData("""{"image":"other"}""", "image")]
     [InlineData("""{"bind_mounts":[{"source":"/srv/model","target":"/models","target":"/other","read_only":true}]}""", "target")]
     public void JsonRejectsMalformedTierDockerBeforeOrDuringMapping(string docker, string field)

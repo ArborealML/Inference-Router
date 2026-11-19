@@ -34,10 +34,7 @@ internal sealed record DockerLaunchResources(
         if (dto.Gpu is not null && dto.DevicePaths is not null)
             throw new RouterConfigException($"{path}.gpu cannot be combined with device_paths");
         if (dto.NanoCpus is <= 0) throw new RouterConfigException($"{path}.nano_cpus must be positive");
-        if (dto.MemoryBytes is < 6 * 1024 * 1024L)
-            throw new RouterConfigException($"{path}.memory_bytes must be at least 6 MiB");
-        if (dto.MemorySwapBytes is { } total && (dto.MemoryBytes is not { } memory || total < memory))
-            throw new RouterConfigException($"{path}.memory_swap_bytes requires memory_bytes and must be at least that value");
+        ValidateMemory(dto.MemoryBytes, dto.MemorySwapBytes, path);
         if (dto.ShmSizeBytes is <= 0) throw new RouterConfigException($"{path}.shm_size_bytes must be positive");
 
         return new DockerLaunchResources(
@@ -46,6 +43,14 @@ internal sealed record DockerLaunchResources(
             ParseBinds(dto.BindMounts, $"{path}.bind_mounts"),
             dto.NanoCpus, dto.MemoryBytes, dto.MemorySwapBytes, dto.ShmSizeBytes,
             ParseUlimits(dto.Ulimits, $"{path}.ulimits"));
+    }
+
+    internal static void ValidateMemory(long? memory, long? memorySwap, string path)
+    {
+        if (memory is < 6 * 1024 * 1024L)
+            throw new RouterConfigException($"{path}.memory_bytes must be at least 6 MiB");
+        if (memorySwap is { } total && (memory is not { } ram || total < ram))
+            throw new RouterConfigException($"{path}.memory_swap_bytes requires memory_bytes and must be at least that value");
     }
 
     private static DockerGpu ParseGpu(DockerGpuDto dto, string path)

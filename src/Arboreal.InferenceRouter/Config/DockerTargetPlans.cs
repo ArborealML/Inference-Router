@@ -6,7 +6,7 @@ using Arboreal.InferenceRouter.Lifecycle;
 namespace Arboreal.InferenceRouter;
 
 internal sealed record DockerTargetLaunch(string Model, string Profile, ImmutableArray<string> Command,
-    ImmutableArray<string> Env, ImmutableArray<DockerBind> Binds);
+    ImmutableArray<string> Env, ImmutableArray<DockerBind> Binds, long? MemoryBytes, long? MemorySwapBytes);
 
 /// <summary>Immutable Docker create inputs. They describe launch intent, not a verified serving instance.</summary>
 internal sealed partial class DockerTargetPlans
@@ -92,8 +92,9 @@ internal sealed partial class DockerTargetPlans
     {
         if (tier?.Unknown is { Count: > 0 } unknown)
             throw new RouterConfigException($"{path}.docker.{unknown.Keys.First()} is not a target setting");
-        if (tier is not null && tier.Env is not { Length: > 0 } && tier.BindMounts is not { Length: > 0 })
-            throw new RouterConfigException($"{path}.docker must contain environment assignments or bind mounts");
+        if (tier is { MemoryBytes: null, MemorySwapBytes: null } &&
+            tier.Env is not { Length: > 0 } && tier.BindMounts is not { Length: > 0 })
+            throw new RouterConfigException($"{path}.docker must contain environment assignments, bind mounts or memory settings");
 
         var command = ImmutableArray.CreateBuilder<string>();
         foreach (var value in docker.Command ?? [])
@@ -109,7 +110,8 @@ internal sealed partial class DockerTargetPlans
         var bindPath = $"{path}.docker.bind_mounts";
         var additions = DockerLaunchResources.ParseBinds(tier?.BindMounts, bindPath);
         var binds = DockerLaunchResources.CombineTargetBinds(common?.BindMounts ?? [], additions, bindPath);
-        return new DockerTargetLaunch(model, profile, command.ToImmutable(), env.ToImmutable(), binds);
+        var (memory, memorySwap) = ResolveMemory(tier, common, $"{path}.docker");
+        return new DockerTargetLaunch(model, profile, command.ToImmutable(), env.ToImmutable(), binds, memory, memorySwap);
 
         void AddEnv(string? value)
         {
@@ -121,6 +123,19 @@ internal sealed partial class DockerTargetPlans
                 throw new RouterConfigException($"{path}.docker.env repeats an effective environment name");
             env.Add(value);
         }
+    }
+
+    private static (long? Memory, long? MemorySwap) ResolveMemory(DockerTargetDto? tier,
+        DockerLaunchResources? common, string path)
+    {
+        var memory = tier?.MemoryBytes;
+        var memorySwap = tier?.MemorySwapBytes;
+        if (memory is null && memorySwap is null)
+            return (common?.MemoryBytes, common?.MemorySwapBytes);
+        if (memorySwap is null && common?.MemorySwapBytes is not null)
+            throw new RouterConfigException($"{path}.memory_swap_bytes is required when overriding an engine memory and swap pair");
+        DockerLaunchResources.ValidateMemory(memory, memorySwap, path);
+        return (memory, memorySwap);
     }
 
     private static bool IsEnvName(ReadOnlySpan<char> name)
