@@ -263,11 +263,10 @@ public sealed class ShutdownStopCauseTests
         var readyBeforeEnd = new Pause();
         var ended = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var feed = new EventRing();
-        feed.Subscribe(e =>
-        {
-            if (e.Kind is "engine.switch_completed") readyBeforeEnd.Enter();
-        });
         await using var engine = Engine(provider, handler, feed, () => ended.TrySetResult());
+        var proofs = 0;
+        engine.BeforeReadinessCommitForTests = readyBeforeEnd.Enter;
+        engine.AfterSwitchProofForTests = () => Interlocked.Increment(ref proofs);
         (bool Switching, string? Target) atClaim = default;
         engine.AfterClaimForTests = () => atClaim = (engine.Switching, engine.SwitchingToward);
         var waiter = engine.WaitForModelAsync(Model, Limit, CancellationToken.None);
@@ -298,12 +297,147 @@ public sealed class ShutdownStopCauseTests
         Assert.False(engine.Switching);
         Assert.Null(engine.SwitchingToward);
         Assert.False(engine.IsReadyFor(Model, null));
+        Assert.Equal(0, Volatile.Read(ref proofs));
+        Assert.DoesNotContain(feed.Replay(0), e => e.Kind == "engine.switch_completed");
         Assert.Equal(SwitchAttemptOutcome.Cancelled, sealedWhileHeld.Outcome);
-        Assert.Equal(SwitchStageOutcome.Completed,
+        Assert.Equal(SwitchStageOutcome.Incomplete,
             Assert.IsType<SwitchStageObservation>(sealedWhileHeld.GetStage(SwitchStage.Readiness)).Outcome);
         var retained = Assert.Single(engine.SwitchHistory);
         Assert.Same(sealedWhileHeld, retained.Terminal);
         Assert.Null(retained.FirstForwardedAt);
+    }
+
+    [Theory]
+    [InlineData(true, false, false)]
+    [InlineData(false, false, false)]
+    [InlineData(true, true, false)]
+    [InlineData(true, false, true)]
+    public async Task EngineStopCancellationCannotDisseminateAHeldReadinessWinner(
+        bool ready, bool cancelCaller, bool throwFromEvent)
+    {
+        var provider = new HeldProvider();
+        using var handler = new FakeEngineHandler { LoadedModels = ready ? [Model] : ["other"] };
+        var heldEvent = new Pause();
+        var feed = new EventRing();
+        var expectedEvent = ready ? "engine.switch_completed" : "engine.switch_failed";
+        feed.Subscribe(e =>
+        {
+            if (e.Kind != expectedEvent) return;
+            heldEvent.Enter();
+            if (throwFromEvent) throw new InvalidOperationException("fixture subscriber");
+        });
+        var ended = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await using var engine = Engine(provider, handler, feed, () => ended.TrySetResult());
+        using var starterCancel = new CancellationTokenSource();
+        using var joinedCancel = new CancellationTokenSource();
+        var linkedWake = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var deliveryWait = new TaskCompletionSource<Task>(TaskCreationOptions.RunContinuationsAsynchronously);
+        engine.AfterReadyWaitForTests = cancelled =>
+        {
+            if (cancelled) linkedWake.TrySetResult();
+        };
+        engine.AfterOutcomeDeliveryWaitForTests = wait => deliveryWait.TrySetResult(wait);
+
+        var starter = engine.WaitForModelAsync(Model, HoldLimit, starterCancel.Token);
+        Task<EngineRuntime.SwitchResult>? joined = null;
+        try
+        {
+            await provider.Launched.WaitAsync(Limit);
+            joined = engine.WaitForModelAsync(Model, HoldLimit, joinedCancel.Token);
+            Assert.False(joined.IsCompleted);
+
+            await starterCancel.CancelAsync();
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => starter.WaitAsync(Limit));
+
+            provider.Release(LifecycleResult.Ok());
+            await heldEvent.Entered.WaitAsync(Limit);
+            await engine.DisposeAsync().AsTask().WaitAsync(Limit);
+
+            await linkedWake.Task.WaitAsync(Limit);
+            var pendingDelivery = await deliveryWait.Task.WaitAsync(Limit);
+            Assert.False(pendingDelivery.IsCompleted);
+            Assert.False(joined.IsCompleted);
+            Assert.False(engine.IsReadyFor(Model, null));
+            Assert.Equal(EngineRuntime.SwitchOutcome.RouterStopped,
+                (await engine.WaitForModelAsync(Model, Limit, CancellationToken.None).WaitAsync(Limit)).Outcome);
+
+            if (cancelCaller)
+            {
+                await joinedCancel.CancelAsync();
+                var cancelled = await Assert.ThrowsAnyAsync<OperationCanceledException>(() => joined.WaitAsync(Limit));
+                Assert.Equal(joinedCancel.Token, cancelled.CancellationToken);
+            }
+        }
+        finally
+        {
+            provider.Release(LifecycleResult.Fail("cleanup", "fixture releases the provider"));
+            heldEvent.Release();
+        }
+
+        if (!cancelCaller)
+        {
+            var result = await joined!.WaitAsync(Limit);
+            Assert.Equal(ready ? EngineRuntime.SwitchOutcome.Ready : EngineRuntime.SwitchOutcome.Failed,
+                result.Outcome);
+            Assert.Equal(ready ? null : SwitchReason.RefreshOmits, result.Detail);
+            Assert.False(engine.IsReadyFor(Model, null));
+        }
+        await ended.Task.WaitAsync(Limit);
+        Assert.Single(feed.Replay(0), e => e.Kind is "engine.switch_completed" or "engine.switch_failed");
+        var retained = Assert.Single(engine.SwitchHistory);
+        Assert.Equal(ready ? SwitchAttemptOutcome.Ready : SwitchAttemptOutcome.Failed, retained.Terminal.Outcome);
+        Assert.Equal(ready ? SwitchStageOutcome.Completed : SwitchStageOutcome.Incomplete,
+            Assert.IsType<SwitchStageObservation>(retained.Terminal.GetStage(SwitchStage.Readiness)).Outcome);
+        Assert.Null(retained.FirstForwardedAt);
+    }
+
+    [Fact]
+    public async Task ExpiredOwnWaitCannotDisseminateAHeldReadinessWinner()
+    {
+        var provider = new HeldProvider();
+        using var handler = new FakeEngineHandler { LoadedModels = [Model] };
+        var beforeExpiry = new Pause();
+        var heldEvent = new Pause();
+        var feed = new EventRing();
+        feed.Subscribe(e =>
+        {
+            if (e.Kind == "engine.switch_completed") heldEvent.Enter();
+        });
+        await using var engine = Engine(provider, handler, feed);
+        var deliveryWait = new TaskCompletionSource<Task>(TaskCreationOptions.RunContinuationsAsynchronously);
+        engine.AfterOutcomeDeliveryWaitForTests = wait => deliveryWait.TrySetResult(wait);
+        engine.SwitchWaitTimeForTests = deadline =>
+        {
+            beforeExpiry.Enter();
+            return deadline;
+        };
+
+        var starter = engine.WaitForModelAsync(Model, Timeout.InfiniteTimeSpan, CancellationToken.None);
+        Task<EngineRuntime.SwitchResult>? joined = null;
+        try
+        {
+            await provider.Launched.WaitAsync(Limit);
+            joined = Task.Run(() => engine.WaitForModelAsync(Model, HoldLimit, CancellationToken.None));
+            await beforeExpiry.Entered.WaitAsync(Limit);
+
+            provider.Release(LifecycleResult.Ok());
+            await heldEvent.Entered.WaitAsync(Limit);
+            beforeExpiry.Release();
+
+            var pendingDelivery = await deliveryWait.Task.WaitAsync(Limit);
+            Assert.False(pendingDelivery.IsCompleted);
+            Assert.False(joined.IsCompleted);
+        }
+        finally
+        {
+            provider.Release(LifecycleResult.Fail("cleanup", "fixture releases the provider"));
+            beforeExpiry.Release();
+            heldEvent.Release();
+        }
+
+        Assert.True((await joined!.WaitAsync(Limit)).IsReady);
+        Assert.True((await starter.WaitAsync(Limit)).IsReady);
+        Assert.Single(feed.Replay(0), e => e.Kind == "engine.switch_completed");
     }
 
     [Fact(Timeout = 60_000)]
@@ -384,6 +518,119 @@ public sealed class ShutdownStopCauseTests
         var answer = await owner.WaitAsync(Limit);
         Assert.Equal(expected, answer.Outcome);
         Assert.Equal(detail, answer.Detail);
+    }
+
+    [Theory(Timeout = 60_000)]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task EngineLocalStopCannotAuthorizeAnAlreadyWaitingTicketToSend(bool stopBeforeSend)
+    {
+        var provider = new HeldProvider();
+        using var handler = new CapturingCompletionHandler { LoadedModels = [Model] };
+        var def = new EngineDefinition
+        {
+            Name = "fake",
+            Kind = EngineKind.OpenAiCompatible,
+            Endpoint = new Uri("http://localhost/v1"),
+            Lifecycle = EngineLifecycleKind.Docker,
+            Docker = new DockerLifecycleConfig { Image = "fixture", RouterId = "test" },
+            Catalog = new Dictionary<string, EngineModelDefinition> { [Model] = new() { Name = Model } },
+        };
+        var config = new RouterConfig
+        {
+            AutoSwitch = true,
+            Engines = new Dictionary<string, EngineDefinition> { [def.Name] = def },
+            HttpHandlerFactory = _ => handler,
+        };
+        var heldOutcome = new Pause();
+        var heldStop = new Pause();
+        var feed = new EventRing();
+        feed.Subscribe(e =>
+        {
+            if (e.Kind == "engine.switch_completed") heldOutcome.Enter();
+        });
+        await using var router = new RouterCore(config, new AlwaysSwitchScheduler(def.Name), feed,
+            TimeProvider.System, lifecycleFactory: _ => provider);
+        var engine = router.Engines[def.Name];
+        engine.AfterStopDecisionForTests = heldStop.Enter;
+        var body = """{"model":"extra","messages":[{"role":"user","content":"held stop"}]}"""u8.ToArray();
+        var stopping = Task.CompletedTask;
+
+        try
+        {
+            var ticket = await router.EnqueueAsync("fixture", new InferenceRequest
+            {
+                Model = Model,
+                Body = body,
+                Options = new RouterRequestOptions(),
+            }, CancellationToken.None);
+            Assert.True(router.TryDispatchOnce());
+            await provider.Launched.WaitAsync(Limit);
+            var joined = engine.WaitForModelAsync(Model, Timeout.InfiniteTimeSpan, CancellationToken.None);
+            Assert.False(joined.IsCompleted);
+            provider.Release(LifecycleResult.Ok());
+            await heldOutcome.Entered.WaitAsync(Limit);
+            Assert.Equal(TicketState.WaitingForModel, ticket.State);
+            Assert.Equal(0, handler.WriteInvocations);
+
+            if (stopBeforeSend)
+            {
+                // Keep the caller and router live, and pause engine disposal before it can close HTTP.
+                stopping = Task.Run(async () => await engine.DisposeAsync(), CancellationToken.None);
+                await heldStop.Entered.WaitAsync(Limit);
+                Assert.False(stopping.IsCompleted);
+                Assert.Equal(EngineRuntime.SwitchOutcome.RouterStopped,
+                    (await engine.WaitForModelAsync(Model, Limit, CancellationToken.None)).Outcome);
+            }
+
+            heldOutcome.Release();
+            Assert.True((await joined.WaitAsync(Limit)).IsReady);
+            var failure = await Record.ExceptionAsync(() => ticket.CompletionTask.WaitAsync(Limit));
+            Assert.IsNotType<TimeoutException>(failure);
+            Assert.Equal(stopBeforeSend ? 0 : 1, handler.WriteInvocations);
+            if (stopBeforeSend)
+            {
+                Assert.False(stopping.IsCompleted);
+                Assert.Null(handler.WrittenBody);
+                Assert.IsType<RouterRequestException>(failure);
+            }
+            else
+            {
+                Assert.Null(failure);
+                Assert.Equal(body, Assert.IsType<byte[]>(handler.WrittenBody));
+            }
+        }
+        finally
+        {
+            provider.Release(LifecycleResult.Fail("cleanup", "the test released the fake launch"));
+            heldOutcome.Release();
+            heldStop.Release();
+            await stopping.WaitAsync(Limit);
+        }
+    }
+
+    private sealed class AlwaysSwitchScheduler(string engine) : IRequestScheduler
+    {
+        public SchedulerDecision SelectNext(QueuedRequest request, SchedulerView view, RouterConfig config) =>
+            new() { Engine = engine, SwitchRequired = true };
+    }
+
+    private sealed class CapturingCompletionHandler : FakeEngineHandler
+    {
+        private int _writeInvocations;
+        public int WriteInvocations => Volatile.Read(ref _writeInvocations);
+        public byte[]? WrittenBody { get; private set; }
+
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            if (request.Method == HttpMethod.Post)
+            {
+                Interlocked.Increment(ref _writeInvocations);
+                Assert.False(cancellationToken.IsCancellationRequested);
+                WrittenBody = await request.Content!.ReadAsByteArrayAsync(cancellationToken);
+            }
+            return await base.SendAsync(request, cancellationToken);
+        }
     }
 
     private static EngineRuntime Engine(

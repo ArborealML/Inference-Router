@@ -356,6 +356,15 @@ daemon transaction per engine. 137 tests green.
   The checkpoint retains exact launch, stop and frozen successor evidence across process death.
   The fake ledger verifies residency and separates send, acceptance, attempt and applied records
   across restart without granting production host authority (§5.3.1, TASK-110).
+- v0.12.71 — order local inference sends and each health read against engine shutdown.
+  A timed-out send retains its client through late response cleanup. Shutdown attempts
+  lifecycle cleanup even if local HTTP close faults. Switch readiness delivery and timing
+  proof remain separate from local send permission (§5.5).
+- v0.12.70 — both non-enrolled switch paths use one monotonic post-launch deadline through
+  complete observations and guarded settlement. Expired or retired reads release their I/O
+  without publishing. The terminal decision retains a completed in-budget failure diagnosis.
+  A joined caller sees its committed outcome after event delivery, including when the caller's
+  wait expires or engine shutdown wakes it (§5.5, TASK-126).
 - v0.12.69 — read-only switch refusal restores an incumbent's serving tuple only while its exact
   claim has no serving contradiction. Late evidence from that claim can first withdraw serving
   capacity and then withdraw roster health on a model contradiction (§5.5, TASK-68).
@@ -1472,9 +1481,12 @@ serializes switches per engine and uses the selector's exit status before checki
   from blocking the selector. A nonzero exit fails the switch.
 - `select.wait_timeout_ms` defaults to 7,200,000 ms. A selector timeout kills the process tree
   (`Kill(entireProcessTree: true)`) and reports `timeout_after_<ms>ms` on `engine.switch_failed`.
-- After a successful exit, readiness follows `select.wait_health` and its wait timeout. Even with
-  `wait_health = false`, the model-list refresh must report the requested model. The runtime
-  clears the switching state when the attempt ends (§5.5).
+  The value `-1` gives the selector process an unlimited exit wait.
+- After a successful exit, the router starts a separate readiness budget from
+  `select.wait_timeout_ms`. A value of `-1` expires this budget before its first read.
+  Use a positive value to allow post-exit readiness. Even with `select.wait_health = false`,
+  a fresh model-list response must report the requested model. The runtime clears the
+  switching state when the attempt ends (§5.5).
 
 #### 5.3.1 Container-native lifecycle (partly implemented)
 
@@ -1557,15 +1569,17 @@ removed. A create, start or readiness failure can leave the target container beh
 path has no rollback and no persistent target quarantine. The scheduler considers only healthy
 engines for an automatic switch, so `auto_switch` alone cannot load the first model on a cold engine.
 
-With `wait_health = true` (the Docker default), readiness requires a passing health probe and a
-model list containing the canonical target. For an explicit profile target, a known context window
-must meet the profile minimum. A missing context value can pass because an unknown gauge is accepted,
-and a previous gauge may survive a probe that omits the field (TASK-68). The runtime does not match
-the reported slot count to the profile. The probes reach the configured endpoint and carry no proof
-that its responder is the container ID returned by Docker (TASK-118). With `wait_health = false`,
-the runtime still refreshes the model list and requires the target. The native provider's verification
-uses fake providers and fake Docker HTTP responses. A live model swap has its own acceptance work
-(TASK-112).
+On the non-enrolled Docker path, the post-launch readiness budget comes from
+`docker.wait_timeout_ms` (default 600,000 ms). A value of `-1`, zero, or any negative value
+expires before the first readiness read. Use a positive value to give the new process
+time to prove readiness. With `wait_health = true` (the default), readiness requires a
+passing health probe and a model list containing the canonical target. With
+`wait_health = false`, the runtime still refreshes the model list and requires the target.
+A named profile requires a fresh measured window bound to that model and large enough
+for the profile. The non-enrolled runtime does not match reported total slots to the
+profile. Its probes reach the configured endpoint without an exact-container binding
+(TASK-118). The native provider's verification uses fake providers and fake Docker HTTP
+responses. A live model swap has its own acceptance work (TASK-112).
 
 **Target container-runtime interface.** The remaining design adds a fakeable, cancellable
 `IContainerRuntime` below the provider seam:
@@ -1771,6 +1785,21 @@ engine forks land; the scheduler interface will not change shape.
   first ticket in that queue whose thread has capacity. Commit takes that exact ticket only
   while it is still first admissible. If the candidate is removed or displaced before commit,
   dispatch restarts the queue scan.
+- **Engine-local send permission.** A historical switch result may still be delivered after
+  engine shutdown. Entry to the upstream HTTP sender requires a separate claim under the
+  transition gate that records the stop. If stop wins, the request settles as cancelled
+  before reaching the sender. If the send claim wins, its local client remains owned through
+  response disposal or a late send fault after a caller-facing timeout. An ordinary health
+  round claims each GET under the same stop gate and stops when admission is refused, even
+  if an earlier request keeps the client open. Cancellation of the poll loop bars a new
+  round. An admitted round keeps its poll timeout and publication fences. Client disposal
+  follows the last counted inference send or ordinary health GET. Switch readiness
+  observations retain their separate deadline and cancellation rules. Shutdown still
+  attempts lifecycle cleanup if HTTP close faults. Deferred cleanup cannot
+  change a ticket's terminal response. Model-only forwarding uses the same check with
+  an optional timing proof. Verified host admission and physical backend retirement
+  retain their separate authority and evidence requirements.
+
 - **Measured switch ordering.** The built-in scheduler can compare consecutive eligible switch candidates
   of equal queue depth and request priority on one configured native Docker engine. It needs an idle engine
   with a current proof for a single incumbent. The comparison ends at the first eligible route outside the
@@ -1927,6 +1956,25 @@ engine forks land; the scheduler interface will not change shape.
   still running, so a set that says why an attempt *stopped* does not reach it, and the caller is quoted their own
   ceiling and the engine's state and never the other request's target. The request-side wait ceiling of §5.4 sits
   inside that scoping; it is not a ninth name.
+  **Post-launch readiness has one monotonic deadline.** On the non-enrolled switch path,
+  the provider's readiness timeout starts after a successful launch. It covers the complete
+  models and state observations, including response bodies and parsing, any poll delay, and the
+  guarded proof decision. At equality the attempt is expired. A zero or negative readiness
+  timeout expires before the first read, including `-1`. The delegated selector's process-exit wait
+  and the request's own switch wait keep their existing meanings. With `wait_health = false`,
+  model-only readiness still requires a fresh roster naming the target. A named tier also needs
+  a fresh bound window. If its shorter state cap expires first, the attempt refuses
+  `window_too_small` while late I/O retires. At the guard, stop or absolute expiry can
+  supersede an earlier step-cap result until the terminal outcome commits. A fresh attempt
+  may observe independently while the retired read disposes. At overall expiry, the guard keeps the
+  last completed in-budget diagnosis, including an omission, failed model-list refresh, or measured
+  window mismatch on the trust path. Evidence first returned at or after the deadline cannot supply
+  the diagnosis. Late reads cannot publish proof, change serving capacity in either attempt, or
+  change the terminal outcome.
+  A stop under the claim guard wins while readiness is pending.
+  An already committed readiness outcome is delivered to its own joined waiter after the outcome
+  event, even if engine shutdown or the waiter's timeout wakes it first. Caller cancellation
+  can still leave that wait, and shutdown closes dispatch.
   **The readiness window names what its last poll saw.** A `wait_health = true` switch ends unsatisfied three ways,
   and they are three refusals rather than one timeout: an engine that never answered the probe is `health_timeout`
   (**retry later** — it may answer next time); an engine that stayed up and never reported the target is
