@@ -5,7 +5,7 @@ using Tomlyn.Model;
 namespace Arboreal.InferenceRouter;
 
 internal sealed record DockerGpu(bool All, ImmutableArray<string> DeviceIds);
-internal sealed record DockerBind(string Source, string Target, bool ReadOnly);
+internal sealed record DockerBind(string Source, string Target, bool ReadOnly, string? NestedUnder);
 internal sealed record DockerUlimit(string Name, long Soft, long Hard);
 
 /// <summary>A checked container request. Resolving paths, identifying character
@@ -85,7 +85,7 @@ internal sealed record DockerLaunchResources(
         return [.. values];
     }
 
-    internal static ImmutableArray<DockerBind> ParseBinds(DockerBindDto[]? values, string path)
+    internal static ImmutableArray<DockerBind> ParseBinds(DockerBindDto[]? values, string path, bool isTier = false)
     {
         if (values is null) return [];
         if (values.Length == 0) throw new RouterConfigException($"{path} must be nonempty");
@@ -99,8 +99,12 @@ internal sealed record DockerLaunchResources(
             var target = CheckBindPath(item.Target, $"{itemPath}.target");
             if (item.ReadOnly is not { } readOnly)
                 throw new RouterConfigException($"{itemPath}.read_only must explicitly specify true or false");
-            CheckBindOverlap(binds, target, $"{itemPath}.target");
-            binds.Add(new DockerBind(source, target, readOnly));
+            if (!isTier && item.NestedUnder is not null)
+                throw new RouterConfigException($"{itemPath}.nested_under is only supported on serving-tier bind mounts");
+            var parent = item.NestedUnder is { } nestedUnder ? CheckBindPath(nestedUnder, $"{itemPath}.nested_under") : null;
+            if (!isTier && binds.Any(prior => Overlaps(target, prior.Target)))
+                throw new RouterConfigException($"{itemPath}.target overlaps another bind target");
+            binds.Add(new DockerBind(source, target, readOnly, parent));
         }
         return binds.MoveToImmutable();
     }
@@ -108,22 +112,30 @@ internal sealed record DockerLaunchResources(
     internal static ImmutableArray<DockerBind> CombineTargetBinds(ImmutableArray<DockerBind> common,
         ImmutableArray<DockerBind> additions, string path)
     {
-        foreach (var bind in additions)
-            CheckBindOverlap(common, bind.Target, path);
-
         var combined = common.AddRange(additions);
-        foreach (var bind in combined)
+        for (var i = 0; i < combined.Length; i++)
+        {
+            var bind = combined[i];
             if (ControlPaths.Any(control => Within(control, bind.Source) || Within(control, bind.Target)))
                 throw new RouterConfigException($"{path} cannot mount a parent of a control directory");
+
+            var allowedParentFound = false;
+            for (var j = 0; j < i; j++)
+            {
+                var prior = combined[j];
+                if (!Overlaps(bind.Target, prior.Target)) continue;
+                if (prior.Target != bind.NestedUnder || bind.Target == prior.Target ||
+                    !Within(bind.Target, prior.Target) || !bind.ReadOnly || !prior.ReadOnly || prior.NestedUnder is not null)
+                    throw new RouterConfigException($"{path} overlaps another bind target without an allowed read-only parent");
+                allowedParentFound = true;
+            }
+            if (bind.NestedUnder is not null && !allowedParentFound)
+                throw new RouterConfigException($"{path}.nested_under must name an earlier read-only ancestor bind target");
+        }
         return combined;
     }
 
-    private static void CheckBindOverlap(IEnumerable<DockerBind> binds, string target, string path)
-    {
-        foreach (var prior in binds)
-            if (Within(target, prior.Target) || Within(prior.Target, target))
-                throw new RouterConfigException($"{path} overlaps another bind target");
-    }
+    private static bool Overlaps(string left, string right) => Within(left, right) || Within(right, left);
 
     private static string CheckBindPath(string? value, string path)
     {

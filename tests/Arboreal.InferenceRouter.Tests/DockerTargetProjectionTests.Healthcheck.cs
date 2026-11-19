@@ -135,7 +135,7 @@ public sealed partial class DockerTargetProjectionTests
     [InlineData("""{"healthcheck":{"command":" "}}""", ".command")]
     [InlineData("""{"healthcheck":{"command":"probe\n"}}""", ".command")]
     [InlineData("""{"healthcheck":{"command":"probe","Command":"shadow"}}""", ".command")]
-    [InlineData("""{"healthcheck":{"command":"probe","retries":3}}""", ".retries")]
+    [InlineData("""{"healthcheck":{"command":"probe","start_interval_ms":3}}""", ".start_interval_ms")]
     [InlineData("""{"healthcheck":{"command":"probe","interval_ms":null}}""", ".interval_ms")]
     [InlineData("""{"healthcheck":{"command":"probe","interval_ms":1.5}}""", ".interval_ms")]
     [InlineData("""{"healthcheck":{"command":"probe","interval_ms":0}}""", ".interval_ms")]
@@ -154,7 +154,7 @@ public sealed partial class DockerTargetProjectionTests
     [InlineData("""command = "probe", interval_ms = 1, Interval_Ms = 2""", "interval_ms")]
     [InlineData("""command = "probe", interval_ms = 0""", "interval_ms")]
     [InlineData("""command = "probe", start_period_ms = 9223372036855""", "start_period_ms")]
-    [InlineData("""command = "probe", retries = 3""", "retries")]
+    [InlineData("""command = "probe", start_interval_ms = 3""", "start_interval_ms")]
     public void HealthcheckTomlRefusesMalformedProbe(string probe, string member)
     {
         var error = Assert.Throws<RouterConfigException>(() => LoadToml($$$"""

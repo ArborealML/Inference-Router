@@ -370,6 +370,8 @@ public sealed class DockerLifecycleProvider : IEngineLifecycleProvider, IDisposa
                 Test = ["CMD-SHELL", probe.Command],
                 Interval = probe.IntervalNs,
                 StartPeriod = probe.StartPeriodNs,
+                Timeout = probe.TimeoutNs,
+                Retries = probe.Retries,
             } : null,
             Labels = new Dictionary<string, string>(StringComparer.Ordinal)
             {
