@@ -150,7 +150,7 @@ public sealed partial class DockerTargetProjectionTests
     }
 
     [Theory]
-    [InlineData("""command = "probe", Command = "shadow"""", "command")]
+    [InlineData("command = \"probe\", Command = \"shadow\"", "command")]
     [InlineData("""command = "probe", interval_ms = 1, Interval_Ms = 2""", "interval_ms")]
     [InlineData("""command = "probe", interval_ms = 0""", "interval_ms")]
     [InlineData("""command = "probe", start_period_ms = 9223372036855""", "start_period_ms")]
