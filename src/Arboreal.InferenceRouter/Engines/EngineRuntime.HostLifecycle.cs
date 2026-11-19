@@ -19,7 +19,7 @@ public sealed partial class EngineRuntime
             {
                 Emit("engine.switch_completed", model: target.Model,
                     reason: state.Profile is null ? null : $"profile={WireText.Ident(state.Profile)}",
-                    value: (DateTimeOffset.UtcNow - state.StartedAt).TotalMilliseconds);
+                    value: _clock.GetElapsedTime(state.Timing!.StartedAt).TotalMilliseconds);
                 EndSwitch(state, true);
             });
         var result = await enrollment.Controller.SwitchAsync(target, ct, publication).ConfigureAwait(false);

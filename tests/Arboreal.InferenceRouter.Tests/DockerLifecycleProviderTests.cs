@@ -499,11 +499,11 @@ public sealed class DockerLifecycleProviderTests
     public void LostDockerMutationResponseLeavesItsExactOperationUnsettled(bool stop)
     {
         var operation = new HostMutation(1, Guid.NewGuid(), stop ? HostMutationKind.Stop : HostMutationKind.Launch,
-            "strata", stop ? Ours : "model-a", null);
+            "strata", stop ? Ours : "model-a", null, stop ? null : new string('A', 64));
 
         var outcome = DockerLifecycleProvider.ReconcileUnacknowledgedHostMutation(operation);
 
-        Assert.Equal(new HostMutationOutcome(operation.Id, HostMutationStatus.Unknown), outcome);
+        Assert.Equal(new HostMutationOutcome(operation, HostMutationStatus.UnknownAfterIssue), outcome);
     }
 
     [Fact(Timeout = 20_000)]
@@ -828,5 +828,111 @@ public sealed class DockerLifecycleProviderTests
         Assert.False(result.Succeeded);
         Assert.Contains("create_returned_no_id", result.Reason);
         Assert.Equal(["POST /v1.44/containers/create"], daemon.Requests.ToArray());
+    }
+
+    [Theory(Timeout = 20_000)]
+    [InlineData(204, "incumbent", true)]
+    [InlineData(204, "different-model", false)]
+    [InlineData(304, "incumbent", false)]
+    [InlineData(404, "incumbent", false)]
+    [InlineData(409, "incumbent", false)]
+    public async Task NativeShutdownTimingRequiresTheOwnedIncumbentAndAnActualStop(
+        int stopStatus, string proofModel, bool comparable)
+    {
+        var clock = new TimingClock();
+        using var daemon = new FakeDockerDaemonHandler
+        {
+            Responder = path =>
+            {
+                if (path.Contains("/containers/json", StringComparison.Ordinal))
+                    return (HttpStatusCode.OK,
+                        $$$"""[{"Id":"{{{Ours}}}","ImageID":"{{{ImageId}}}","Labels":{"arboreal.router":"r1","arboreal.engine":"strata","arboreal.model":"incumbent","arboreal.profile":"p"}}]""");
+                if (path.EndsWith("/version", StringComparison.Ordinal))
+                    return (HttpStatusCode.OK, """{"ApiVersion":"1.44"}""");
+                if (path.Contains("/images/", StringComparison.Ordinal)) return (HttpStatusCode.OK, Inspect());
+                if (path.Contains("/stop?", StringComparison.Ordinal))
+                {
+                    clock.Advance(TimeSpan.FromMilliseconds(7));
+                    return ((HttpStatusCode)stopStatus, "");
+                }
+                if (path.Contains("?force=true", StringComparison.Ordinal))
+                {
+                    clock.Advance(TimeSpan.FromMilliseconds(2));
+                    return (HttpStatusCode.NoContent, "");
+                }
+                if (path.EndsWith("/create", StringComparison.Ordinal))
+                    return (HttpStatusCode.Created, """{"Id":"replacement"}""");
+                if (path.EndsWith("/start", StringComparison.Ordinal)) return (HttpStatusCode.NoContent, "");
+                return (HttpStatusCode.InternalServerError, "");
+            },
+        };
+        using var provider = new DockerLifecycleProvider(Cfg(), "strata", daemon);
+        using var coordinator = new EngineLifecycleCoordinator(provider);
+        var runtime = new Guid("78e6d6db-f0b8-4725-8953-79fcd2145163");
+        var target = Target();
+        var incumbent = new SwitchSampleKey(runtime, DockerLifecycleProvider.ProviderKind, proofModel, "p", 0,
+            SwitchObservationClass.FreshContainer, ImageId);
+        var incoming = incumbent with { CanonicalModel = target.Model, EffectiveProfile = target.EffectiveProfile };
+        var proof = new SwitchServingProof(new SwitchAttemptId(runtime, 1), 1, incumbent,
+            new NativeLaunch(Ours, "incumbent", "p", ImageId));
+        var attempt = new SwitchAttempt(clock, new SwitchAttemptId(runtime, 2), incoming);
+
+        var report = await coordinator.SwitchWithReportAsync(target, attempt, proof, CancellationToken.None);
+
+        Assert.True(report.Result.Succeeded);
+        var record = Assert.IsType<SwitchAttemptRecord>(attempt.TrySeal(SwitchAttemptOutcome.Ready));
+        Assert.Equal(comparable ? incumbent : (SwitchSampleKey?)null, record.ShutdownSource);
+        var shutdown = Assert.IsType<SwitchStageObservation>(record.GetStage(SwitchStage.Shutdown));
+        Assert.Equal(TimeSpan.FromMilliseconds(9), clock.GetElapsedTime(shutdown.StartedAt, shutdown.ObservedUntil));
+        var receipt = Assert.Single(record.NativeStops);
+        Assert.Equal(NativeRemovalDisposition.Removed, receipt.Removal);
+        Assert.NotNull(record.NativeLaunch);
+        Assert.Null(record.GetStage(SwitchStage.Readiness));
+    }
+
+    [Fact(Timeout = 20_000)]
+    public async Task CancellationDuringRemovalKeepsTheStopReceiptAndCensorsShutdownTiming()
+    {
+        using var caller = new CancellationTokenSource();
+        using var daemon = new FakeDockerDaemonHandler
+        {
+            Responder = path =>
+            {
+                if (path.Contains("/stop?", StringComparison.Ordinal)) return (HttpStatusCode.NoContent, "");
+                caller.Cancel();
+                caller.Token.ThrowIfCancellationRequested();
+                return (HttpStatusCode.InternalServerError, "");
+            },
+        };
+        using var provider = new DockerLifecycleProvider(Cfg(), "strata", daemon);
+        var peer = new EnginePeer(Ours, Locator, "incumbent", OwnedByUs: true)
+        {
+            ImageId = ImageId,
+            EffectiveProfile = "p",
+        };
+        var runtime = new Guid("78e6d6db-f0b8-4725-8953-79fcd2145163");
+        var key = new SwitchSampleKey(runtime, DockerLifecycleProvider.ProviderKind, "replacement", "", 0,
+            SwitchObservationClass.FreshContainer, ImageId);
+        var attempt = new SwitchAttempt(new TimingClock(), new SwitchAttemptId(runtime, 1), key);
+        Assert.True(attempt.TryStartStage(SwitchStage.Shutdown));
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            provider.StopWithObservationsAsync([peer], attempt.ObserveNativeStop, caller.Token).AsTask());
+
+        var record = Assert.IsType<SwitchAttemptRecord>(attempt.TrySeal(SwitchAttemptOutcome.Cancelled));
+        Assert.Null(record.ShutdownSource);
+        var stop = Assert.Single(record.NativeStops);
+        Assert.Equal(NativeStopDisposition.Stopped, stop.Stop);
+        Assert.Equal(NativeRemovalDisposition.Incomplete, stop.Removal);
+        Assert.Equal(SwitchStageOutcome.Incomplete,
+            Assert.IsType<SwitchStageObservation>(record.GetStage(SwitchStage.Shutdown)).Outcome);
+    }
+
+    private sealed class TimingClock : TimeProvider
+    {
+        private long _timestamp;
+        public override long TimestampFrequency => TimeSpan.TicksPerSecond;
+        public override long GetTimestamp() => _timestamp;
+        internal void Advance(TimeSpan elapsed) => _timestamp += elapsed.Ticks;
     }
 }

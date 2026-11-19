@@ -19,6 +19,9 @@ public sealed class SwitchAttemptTests
         Assert.True(attempt.TryStartStage(SwitchStage.Preflight));
         Assert.True(attempt.TryCompleteStage(SwitchStage.Preflight, succeeded: true));
         Assert.True(attempt.TryStartStage(SwitchStage.Shutdown));
+        var peer = new EnginePeer("container", "locator", "incumbent", OwnedByUs: true);
+        var provisional = new NativePeerStop(peer, NativeStopDisposition.Stopped, NativeRemovalDisposition.Incomplete);
+        attempt.ObserveNativeStop(provisional);
         clock.Advance(TimeSpan.FromSeconds(2));
         clock.UtcNow -= TimeSpan.FromDays(1);
 
@@ -33,9 +36,11 @@ public sealed class SwitchAttemptTests
         Assert.Null(terminal.ShutdownSource);
 
         clock.Advance(TimeSpan.FromSeconds(3));
+        attempt.ObserveNativeStop(provisional with { Removal = NativeRemovalDisposition.Removed });
         Assert.False(attempt.TryCompleteShutdown(succeeded: true, Incumbent));
         Assert.False(attempt.TryStartStage(SwitchStage.Launch));
         Assert.Null(attempt.TrySeal(SwitchAttemptOutcome.Ready));
+        Assert.Equal(provisional, Assert.Single(terminal.NativeStops));
         AssertStage(terminal, SwitchStage.Shutdown, SwitchStageOutcome.Incomplete, TimeSpan.FromSeconds(2), clock);
     }
 
@@ -123,6 +128,37 @@ public sealed class SwitchAttemptTests
         for (var i = 1; i <= 3; i++)
             noStopHistory.Add(Measure(clock, i, verifiedStop: false));
         Assert.Null(noStopHistory.EstimateTransition(Incumbent, Target));
+    }
+
+    [Theory]
+    [InlineData(null, "target", "default", "observed-image")]
+    [InlineData("", "target", "default", "observed-image")]
+    [InlineData("container", "wrong-model", "default", "observed-image")]
+    [InlineData("container", "target", "wrong-profile", "observed-image")]
+    [InlineData("container", "target", "default", "wrong-image")]
+    public void CompletedLaunchWithoutMatchingNativeEvidenceDoesNotTrainActivation(
+        string? containerId, string model, string profile, string image)
+    {
+        var clock = new ManualClock();
+        var history = new SwitchAttemptHistory(clock, Runtime);
+        for (var sequence = 1; sequence <= 3; sequence++)
+        {
+            var attempt = new SwitchAttempt(clock, new SwitchAttemptId(Runtime, sequence), Target);
+            Assert.True(attempt.TryStartStage(SwitchStage.Shutdown));
+            Assert.True(attempt.TryCompleteShutdown(succeeded: true, Incumbent));
+            Assert.True(attempt.TryStartStage(SwitchStage.Launch));
+            if (containerId is null)
+                Assert.True(attempt.TryCompleteStage(SwitchStage.Launch, succeeded: true));
+            else
+                Assert.True(attempt.TryCompleteNativeLaunch(succeeded: true, new NativeLaunch(containerId, model, profile, image)));
+            Assert.True(attempt.TryStartStage(SwitchStage.Readiness));
+            Assert.True(attempt.TryCompleteStage(SwitchStage.Readiness, succeeded: true));
+            var record = Assert.IsType<SwitchAttemptRecord>(attempt.TrySeal(SwitchAttemptOutcome.Ready));
+            Assert.Null(record.NativeLaunch);
+            history.Add(record);
+        }
+
+        Assert.Null(history.EstimateTransition(Incumbent, Target));
     }
 
     [Fact]
@@ -222,13 +258,16 @@ public sealed class SwitchAttemptTests
         bool verifiedStop = true, SwitchStageOutcome? readiness = SwitchStageOutcome.Completed,
         SwitchSampleKey? target = null)
     {
-        var attempt = new SwitchAttempt(clock, new SwitchAttemptId(Runtime, sequence), target ?? Target);
+        var measuredTarget = target ?? Target;
+        var attempt = new SwitchAttempt(clock, new SwitchAttemptId(Runtime, sequence), measuredTarget);
         Assert.True(attempt.TryStartStage(SwitchStage.Shutdown));
         clock.Advance(TimeSpan.FromMilliseconds(stopMs));
         Assert.True(attempt.TryCompleteShutdown(succeeded: true, verifiedStop ? Incumbent : null));
         Assert.True(attempt.TryStartStage(SwitchStage.Launch));
         clock.Advance(TimeSpan.FromMilliseconds(launchMs));
-        Assert.True(attempt.TryCompleteStage(SwitchStage.Launch, succeeded: true));
+        Assert.True(attempt.TryCompleteNativeLaunch(succeeded: true,
+            new NativeLaunch("container", measuredTarget.CanonicalModel,
+                             measuredTarget.EffectiveProfile!, measuredTarget.ProviderIdentity!)));
         if (readiness is { } observed)
         {
             Assert.True(attempt.TryStartStage(SwitchStage.Readiness));

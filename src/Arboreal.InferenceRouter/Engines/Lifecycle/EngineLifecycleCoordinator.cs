@@ -48,12 +48,17 @@ public sealed class EngineLifecycleCoordinator : IDisposable
     public async ValueTask<LifecycleResult> SwitchAsync(LifecycleTarget target, CancellationToken ct) =>
         (await SwitchWithReportAsync(target, ct).ConfigureAwait(false)).Result;
 
-    internal async ValueTask<SwitchReport> SwitchWithReportAsync(LifecycleTarget target, CancellationToken ct)
+    internal ValueTask<SwitchReport> SwitchWithReportAsync(LifecycleTarget target, CancellationToken ct) =>
+        SwitchWithReportAsync(target, timing: null, incumbent: null, ct);
+
+    internal async ValueTask<SwitchReport> SwitchWithReportAsync(
+        LifecycleTarget target, SwitchAttempt? timing, SwitchServingProof? incumbent, CancellationToken ct)
     {
         await _gate.WaitAsync(ct).ConfigureAwait(false);
         try
         {
             // 1. Ownership proof first: everything below is decided by what we are allowed to touch.
+            timing?.TryStartStage(SwitchStage.Ownership);
             var peers = await _provider.OwnedPeersAsync(target, ct).ConfigureAwait(false);
             var ours = new List<EnginePeer>(peers.Count);
             foreach (var peer in peers)
@@ -68,14 +73,20 @@ public sealed class EngineLifecycleCoordinator : IDisposable
             foreach (var peer in peers)
             {
                 if (peer.QueryFailed)
+                {
+                    timing?.TryCompleteStage(SwitchStage.Ownership, succeeded: false);
                     return new SwitchReport(LifecycleResult.Fail(
                         $"ownership_query_failed {peer.Id}",
                         "the router could not prove which containers it already owns, so it changed nothing: fix the daemon connection and switch again"),
                         RefusedBeforeMutation: true);
+                }
             }
+            timing?.TryCompleteStage(SwitchStage.Ownership, succeeded: true);
 
             // 2. Preflight before any mutation, so a refusal costs the engine nothing it had.
+            timing?.TryStartStage(SwitchStage.Preflight);
             var preflight = await _provider.PreflightAsync(target, ct).ConfigureAwait(false);
+            timing?.TryCompleteStage(SwitchStage.Preflight, preflight.Succeeded);
             if (!preflight.Succeeded)
             {
                 Record($"preflight_refused:{preflight.Reason}");
@@ -87,7 +98,11 @@ public sealed class EngineLifecycleCoordinator : IDisposable
             // so a provider that reports foreign containers cannot be talked into stopping them.
             if (ours.Count > 0)
             {
-                var stopped = await _provider.StopAsync(target, ours, ct).ConfigureAwait(false);
+                timing?.TryStartStage(SwitchStage.Shutdown);
+                var stopped = _provider is DockerLifecycleProvider native && timing is not null
+                    ? await native.StopWithObservationsAsync(ours, timing.ObserveNativeStop, ct).ConfigureAwait(false)
+                    : await _provider.StopAsync(target, ours, ct).ConfigureAwait(false);
+                timing?.TryCompleteShutdown(stopped.Succeeded, VerifiedShutdown(stopped, incumbent), stopped.NativeStops);
                 if (!stopped.Succeeded)
                 {
                     Record($"stop_failed:{stopped.Reason}");
@@ -98,7 +113,11 @@ public sealed class EngineLifecycleCoordinator : IDisposable
 
             // 4. Launch the exact target. Readiness is proved by whoever owns the engine's health probe
             // (the runtime), not here: this step only claims the launch was accepted.
+            var delegated = string.Equals(_provider.Kind, DelegatedExecProvider.ProviderKind, StringComparison.Ordinal);
+            timing?.TryStartStage(delegated ? SwitchStage.DelegatedCommand : SwitchStage.Launch);
             var launched = await _provider.LaunchAsync(target, ct).ConfigureAwait(false);
+            if (delegated) timing?.TryCompleteStage(SwitchStage.DelegatedCommand, launched.Succeeded);
+            else timing?.TryCompleteNativeLaunch(launched.Succeeded, launched.NativeLaunch);
             if (!launched.Succeeded)
             {
                 Record($"launch_failed:{launched.Reason}");
@@ -111,6 +130,19 @@ public sealed class EngineLifecycleCoordinator : IDisposable
         {
             _gate.Release();
         }
+    }
+
+    private static SwitchSampleKey? VerifiedShutdown(LifecycleResult result, SwitchServingProof? incumbent)
+    {
+        if (!result.Succeeded || result.NativeStops.Length != 1 ||
+            incumbent is not { NativeLaunch: { } launch })
+            return null;
+        var actual = result.NativeStops[0];
+        return actual.Stop == NativeStopDisposition.Stopped &&
+            (actual.Removal is NativeRemovalDisposition.NotRequested or NativeRemovalDisposition.Removed) &&
+            launch.Matches(actual.Peer) && launch.Matches(incumbent.Target)
+            ? incumbent.Target
+            : null;
     }
 
     // IDISP007 assumes an injected dependency stays the caller's; here the coordinator may have created

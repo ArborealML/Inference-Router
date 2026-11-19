@@ -1,10 +1,12 @@
 using System.Diagnostics;
+using System.Text.Json;
 using Arboreal.InferenceRouter.Lifecycle;
 
 namespace Arboreal.InferenceRouter.Tests;
 
 public sealed class HostLifecycleCoordinatorTests : IDisposable
 {
+    private static readonly string FixturePlanDigest = new('A', 64);
     private readonly DirectoryInfo _directory = Directory.CreateTempSubdirectory("air-host-");
 
     [Theory(Timeout = 20_000)]
@@ -97,6 +99,7 @@ public sealed class HostLifecycleCoordinatorTests : IDisposable
         {
             Assert.Equal(1L, recovered.State.Epoch);
             Assert.Equal("crashed-owner", recovered.State.Owner);
+            Assert.Equal(HostMutationPhase.Dispatching, recovered.State.Phase);
             operation = Assert.IsType<HostMutation>(recovered.State.Pending);
             Assert.Equal("original.model", operation.Target);
         }
@@ -105,9 +108,150 @@ public sealed class HostLifecycleCoordinatorTests : IDisposable
         Assert.Equal("host_operation_unsettled", (await SwitchAsync(path, host, "successor")).Reason);
         Assert.Equal(["reconcile"], host.Calls);
 
-        host.ReportReconciliation = new HostMutationOutcome(operation.Id, HostMutationStatus.Rejected);
+        host.ReportReconciliation = new HostMutationOutcome(operation, HostMutationStatus.RejectedBeforeIssue);
         Assert.True((await SwitchAsync(path, host, "successor")).Succeeded);
         Assert.Equal(new HostResident("successor", "successor-2"), host.Resident);
+    }
+
+    [Theory(Timeout = 30_000)]
+    [InlineData("lost-reply", true)]
+    [InlineData("uncertain", false)]
+    public async Task ANewProcessRecoversOnlyADurableTerminalCreateReceipt(string mode, bool settled)
+    {
+        var path = CreateReservation("shared");
+        Assert.Equal("host_operation_unsettled", await RunReservationProbeAsync(path, mode, "a"));
+
+        HostMutation operation;
+        using (var reservation = HostReservation.Open(path))
+        {
+            Assert.Equal(HostMutationPhase.Dispatching, reservation.State.Phase);
+            Assert.Equal(1L, reservation.State.Epoch);
+            operation = Assert.IsType<HostMutation>(reservation.State.Pending);
+            Assert.Equal("a.model", operation.Target);
+            Assert.True(HostMutation.IsPlanDigest(operation.PlanDigest));
+        }
+
+        var createdPath = Path.Combine(_directory.FullName, "created");
+        var createEffect = await File.ReadAllBytesAsync(createdPath);
+        Assert.Equal(operation, Assert.Single(await ReadProbeOperationsAsync("create-attempts")));
+        Assert.Single(_directory.GetFiles("*.accepted"));
+        Assert.Equal(settled, File.Exists(Path.Combine(_directory.FullName, $"{operation.Id:N}.receipt")));
+
+        var result = await RunReservationProbeAsync(path, "recover", settled ? "a" : "successor");
+
+        Assert.Equal(settled ? $"id-{operation.Id:N}" : "host_operation_unsettled", result);
+        Assert.Equal(createEffect, await File.ReadAllBytesAsync(createdPath));
+        Assert.Equal(operation, Assert.Single(await ReadProbeOperationsAsync("create-attempts")));
+        Assert.Single(_directory.GetFiles("*.accepted"));
+        using var recovered = HostReservation.Open(path);
+        Assert.Equal(settled ? new HostReservationState(1, "a", null)
+            : new HostReservationState(1, "a", operation, HostMutationPhase.Dispatching), recovered.State);
+    }
+
+    [Fact(Timeout = 30_000)]
+    public async Task AttemptLedgerCountsADuplicateEvenWhenTheEffectFileRejectsIt()
+    {
+        var path = CreateReservation("shared");
+
+        Assert.Equal("host_operation_unsettled", await RunReservationProbeAsync(path, "duplicate-create-control", "a"));
+
+        using var reservation = HostReservation.Open(path);
+        var operation = Assert.IsType<HostMutation>(reservation.State.Pending);
+        Assert.Equal([operation, operation], await ReadProbeOperationsAsync("create-attempts"));
+        Assert.Single(_directory.GetFiles("created"));
+        Assert.Single(_directory.GetFiles("*.accepted"));
+        Assert.Empty(_directory.GetFiles("*.receipt"));
+    }
+
+    [Theory(Timeout = 30_000)]
+    [InlineData("mismatched-applied", "host_operation_unsettled")]
+    [InlineData("wrong-instance-applied", "host_occupancy_unproven")]
+    public async Task AppliedReceiptMismatchCannotAuthorizeRecovery(string mode, string expectedReason)
+    {
+        var path = CreateReservation("shared");
+        Assert.Equal("host_operation_unsettled", await RunReservationProbeAsync(path, mode, "a"));
+        var operation = Assert.Single(await ReadProbeOperationsAsync("create-attempts"));
+        using (var reservation = HostReservation.Open(path))
+            Assert.Equal(new HostReservationState(1, "a", operation, HostMutationPhase.Dispatching), reservation.State);
+
+        Assert.Equal(expectedReason, await RunReservationProbeAsync(path, "recover", "a"));
+
+        Assert.Equal(operation, Assert.Single(await ReadProbeOperationsAsync("create-attempts")));
+        Assert.False(File.Exists(Path.Combine(_directory.FullName, "stop-requests")));
+        using var recovered = HostReservation.Open(path);
+        var expected = mode == "mismatched-applied"
+            ? new HostReservationState(1, "a", operation, HostMutationPhase.Dispatching)
+            : new HostReservationState(1, "a", operation, HostMutationPhase.LaunchApplied, "wrong-instance");
+        Assert.Equal(expected, recovered.State);
+    }
+
+    [Fact(Timeout = 30_000)]
+    public async Task LostPublicationReplyExercisesSameTargetReentry()
+    {
+        var path = CreateReservation("shared");
+        Assert.Equal("host_operation_unsettled", await RunReservationProbeAsync(path, "lost-reply", "a"));
+        var launch = Assert.Single(await ReadProbeOperationsAsync("create-attempts"));
+        var instance = $"id-{launch.Id:N}";
+        var createdPath = Path.Combine(_directory.FullName, "created");
+        var createdEffect = await File.ReadAllBytesAsync(createdPath);
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        using var child = Process.Start(CreateWorkerProbe(path, "published-before-ack", "a")) ??
+            throw new InvalidOperationException("Could not start the publication probe.");
+        try
+        {
+            Assert.Equal($"published:{instance}", await child.StandardOutput.ReadLineAsync(timeout.Token));
+            Assert.Equal("host_reservation_unavailable", await RunReservationProbeAsync(path, "recover", "a"));
+            Assert.False(child.HasExited);
+        }
+        finally
+        {
+            if (!child.HasExited) child.Kill();
+            await child.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(5));
+        }
+
+        // The settled publication has no durable replay key. Re-entry can request a stop of the exact
+        // incumbent. This probe rejects it before issuing any stop effect to measure that boundary.
+        Assert.Equal("host_stop_refused", await RunReservationProbeAsync(path, "reenter-after-publication", "a"));
+
+        var requestedStop = Assert.Single(await ReadProbeOperationsAsync("stop-requests"));
+        Assert.Equal(HostMutationKind.Stop, requestedStop.Kind);
+        Assert.Equal(launch.Engine, requestedStop.Engine);
+        Assert.Equal(instance, requestedStop.Target);
+        Assert.Equal(launch.Epoch + 1, requestedStop.Epoch);
+        Assert.Equal(launch, Assert.Single(await ReadProbeOperationsAsync("create-attempts")));
+        Assert.Equal(createdEffect, await File.ReadAllBytesAsync(createdPath));
+    }
+
+    [Fact(Timeout = 30_000)]
+    public async Task AWorkerRejectionBeforeIssueSettlesWithoutCreatingAnything()
+    {
+        var path = CreateReservation("shared");
+
+        Assert.Equal("host_launch_refused", await RunReservationProbeAsync(path, "reject", "a"));
+
+        Assert.False(File.Exists(Path.Combine(_directory.FullName, "created")));
+        Assert.False(File.Exists(Path.Combine(_directory.FullName, "create-attempts")));
+        Assert.Single(_directory.GetFiles("*.accepted"));
+        Assert.Single(_directory.GetFiles("*.receipt"));
+        using var recovered = HostReservation.Open(path);
+        Assert.Equal(new HostReservationState(1, "a", null), recovered.State);
+    }
+
+    [Fact(Timeout = 20_000)]
+    public async Task PreparedWithoutDispatchDoesNotReachTheWorkerOnRestart()
+    {
+        var path = CreateReservation("shared");
+        using (var reservation = HostReservation.Open(path))
+        {
+            var epoch = reservation.Grant("a");
+            reservation.Begin(epoch, HostMutationKind.Launch, "a", "a.model", planDigest: FixturePlanDigest);
+            Assert.Equal(HostMutationPhase.Prepared, reservation.State.Phase);
+        }
+
+        var host = new FakeHost();
+        Assert.True((await SwitchAsync(path, host, "b")).Succeeded);
+        Assert.Equal(["observe", "preflight", "drain", "observe", "launch", "ready"], host.Calls);
+        Assert.Equal(new HostResident("b", "b-2"), host.Resident);
     }
 
     [Fact(Timeout = 20_000)]
@@ -188,7 +332,7 @@ public sealed class HostLifecycleCoordinatorTests : IDisposable
             Assert.Equal(delayed, reservation.State.Pending);
         }
 
-        host.ReportReconciliation = new HostMutationOutcome(Guid.Empty, HostMutationStatus.Applied, "unrelated-instance");
+        host.ReportReconciliation = new HostMutationOutcome(delayed with { Id = Guid.Empty }, HostMutationStatus.Applied, "unrelated-instance");
         host.Calls.Clear();
         Assert.Equal("host_operation_unsettled", (await SwitchAsync(path, host, "b")).Reason);
         Assert.Equal(["reconcile"], host.Calls);
@@ -200,6 +344,60 @@ public sealed class HostLifecycleCoordinatorTests : IDisposable
         Assert.Equal(loseStop ? "old-instance" : "a-1", Assert.Single(host.Stops).Target);
         using var settled = HostReservation.Open(path);
         Assert.Equal(new HostReservationState(2, "b", null), settled.State);
+    }
+
+    [Theory(Timeout = 20_000)]
+    [InlineData("id")]
+    [InlineData("epoch")]
+    [InlineData("kind")]
+    [InlineData("engine")]
+    [InlineData("target")]
+    [InlineData("profile")]
+    [InlineData("plan")]
+    public async Task AReceiptMustBindTheWholeDurableOperation(string changedBinding)
+    {
+        var path = CreateReservation("shared");
+        var host = new FakeHost { LoseResponse = HostMutationKind.Launch };
+        Assert.Equal("host_operation_unsettled", (await SwitchAsync(path, host, "a")).Reason);
+        var operation = Assert.IsType<HostMutation>(host.Delayed);
+        var different = changedBinding switch
+        {
+            "id" => operation with { Id = Guid.NewGuid() },
+            "epoch" => operation with { Epoch = operation.Epoch + 1 },
+            "kind" => operation with { Kind = HostMutationKind.Stop },
+            "engine" => operation with { Engine = "b" },
+            "target" => operation with { Target = "different.model" },
+            "profile" => operation with { Profile = "different" },
+            "plan" => operation with { PlanDigest = new string('B', 64) },
+            _ => throw new ArgumentOutOfRangeException(nameof(changedBinding)),
+        };
+        host.ReportReconciliation = new HostMutationOutcome(different, HostMutationStatus.RejectedBeforeIssue);
+        host.Calls.Clear();
+
+        Assert.Equal("host_operation_unsettled", (await SwitchAsync(path, host, "b")).Reason);
+
+        Assert.Equal(["reconcile"], host.Calls);
+        using var reservation = HostReservation.Open(path);
+        Assert.Equal(new HostReservationState(1, "a", operation, HostMutationPhase.Dispatching), reservation.State);
+    }
+
+    [Fact(Timeout = 20_000)]
+    public async Task AnAppliedStopReceiptMustConfirmTheExactInstance()
+    {
+        var path = CreateReservation("shared");
+        var incumbent = new HostResident("old", "old-instance");
+        var host = new FakeHost { Resident = incumbent, LoseResponse = HostMutationKind.Stop };
+        Assert.Equal("host_operation_unsettled", (await SwitchAsync(path, host, "a")).Reason);
+        var operation = Assert.IsType<HostMutation>(host.Delayed);
+        host.ReportReconciliation = new HostMutationOutcome(operation, HostMutationStatus.Applied, "other-instance");
+        host.Calls.Clear();
+
+        Assert.Equal("host_operation_unsettled", (await SwitchAsync(path, host, "b")).Reason);
+
+        Assert.Equal(["reconcile"], host.Calls);
+        Assert.Equal(incumbent, host.Resident);
+        using var reservation = HostReservation.Open(path);
+        Assert.Equal(new HostReservationState(1, "a", operation, HostMutationPhase.Dispatching), reservation.State);
     }
 
     [Fact(Timeout = 20_000)]
@@ -221,8 +419,21 @@ public sealed class HostLifecycleCoordinatorTests : IDisposable
 
         host.Readiness = null;
         host.Calls.Clear();
+        using (var reservation = HostReservation.Open(path))
+        {
+            Assert.Equal(HostMutationPhase.LaunchApplied, reservation.State.Phase);
+            Assert.Equal("a-1", reservation.State.LaunchedContainerId);
+        }
+
+        host.Resident = new HostResident("a", "replacement");
+        Assert.Equal("host_occupancy_unproven", (await SwitchAsync(path, host, "b")).Reason);
+        Assert.Equal(["observe"], host.Calls);
+        Assert.Empty(host.Stops);
+
+        host.Resident = new HostResident("a", "a-1");
+        host.Calls.Clear();
         Assert.True((await SwitchAsync(path, host, "b")).Succeeded);
-        Assert.Equal(["observe", "preflight", "drain", "preflight", "observe", "stop", "observe", "launch", "ready"], host.Calls);
+        Assert.Equal(["observe", "drain", "observe", "ready", "observe", "preflight", "drain", "preflight", "observe", "stop", "observe", "launch", "ready"], host.Calls);
         Assert.Equal("a-1", Assert.Single(host.Stops).Target);
         Assert.Equal("b", host.Resident?.Engine);
     }
@@ -345,7 +556,7 @@ public sealed class HostLifecycleCoordinatorTests : IDisposable
         using (var reservation = HostReservation.Open(path))
         {
             var epoch = reservation.Grant("previous");
-            reservation.Begin(epoch, HostMutationKind.Launch, "previous", "original.model");
+            reservation.Begin(epoch, HostMutationKind.Launch, "previous", "original.model", planDigest: FixturePlanDigest);
         }
 
         Assert.Throws<IOException>(() => HostReservation.ProvisionNew(path));
@@ -466,6 +677,49 @@ public sealed class HostLifecycleCoordinatorTests : IDisposable
         return start;
     }
 
+    private static async Task<string?> RunReservationProbeAsync(string path, string mode, string engine)
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        using var process = Process.Start(CreateWorkerProbe(path, mode, engine)) ??
+            throw new InvalidOperationException("Could not start the host reservation probe.");
+        try
+        {
+            var result = await process.StandardOutput.ReadLineAsync(timeout.Token);
+            await process.WaitForExitAsync(timeout.Token);
+            Assert.Equal(0, process.ExitCode);
+            return result;
+        }
+        finally
+        {
+            if (!process.HasExited) process.Kill();
+            await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(5));
+        }
+    }
+
+    private static ProcessStartInfo CreateWorkerProbe(string path, string mode, string engine)
+    {
+        var start = CreateReservationProbe(path);
+        start.ArgumentList.Add(mode);
+        start.ArgumentList.Add(engine);
+        return start;
+    }
+
+    private async Task<HostMutation[]> ReadProbeOperationsAsync(string name)
+    {
+        var lines = await File.ReadAllLinesAsync(Path.Combine(_directory.FullName, name));
+        return lines.Select(ParseProbeOperation).ToArray();
+    }
+
+    private static HostMutation ParseProbeOperation(string line)
+    {
+        using var document = JsonDocument.Parse(line);
+        var operation = document.RootElement;
+        return new HostMutation(operation.GetProperty("Epoch").GetInt64(), operation.GetProperty("Id").GetGuid(),
+            (HostMutationKind)operation.GetProperty("Kind").GetInt32(), operation.GetProperty("Engine").GetString()!,
+            operation.GetProperty("Target").GetString()!, operation.GetProperty("Profile").GetString(),
+            operation.GetProperty("PlanDigest").GetString());
+    }
+
     private static ValueTask<LifecycleResult> SwitchAsync(
         string path, FakeHost host, string engine, CancellationToken ct = default)
     {
@@ -547,6 +801,8 @@ public sealed class HostLifecycleCoordinatorTests : IDisposable
             return ValueTask.FromResult(Mutate(operation));
         }
 
+        public string GetLaunchPlanDigest(LifecycleTarget target) => FixturePlanDigest;
+
         public ValueTask<HostMutationOutcome> LaunchAsync(HostMutation operation, LifecycleTarget target, CancellationToken ct)
         {
             Calls.Add("launch");
@@ -554,6 +810,7 @@ public sealed class HostLifecycleCoordinatorTests : IDisposable
             Assert.Equal(target.EngineName, operation.Engine);
             Assert.Equal(target.Model, operation.Target);
             Assert.Equal("default", operation.Profile);
+            Assert.Equal(FixturePlanDigest, operation.PlanDigest);
             return ValueTask.FromResult(Mutate(operation));
         }
 
@@ -563,11 +820,12 @@ public sealed class HostLifecycleCoordinatorTests : IDisposable
             return ValueTask.FromResult(ReportReconciliation ?? _terminal.GetValueOrDefault(operation.Id));
         }
 
-        public async ValueTask<LifecycleResult> VerifyReadyAsync(LifecycleTarget target, string containerId, CancellationToken ct)
+        public async ValueTask<LifecycleResult> VerifyReadyAsync(HostMutation launch, string containerId, CancellationToken ct)
         {
             Calls.Add("ready");
             Assert.True(AdmissionClosed);
-            Assert.Equal(new HostResident(target.EngineName, containerId), Resident);
+            Assert.Equal(new HostResident(launch.Engine, containerId), Resident);
+            Assert.Equal(FixturePlanDigest, launch.PlanDigest);
             if (Readiness is { } ready) await ready(ct);
             return LifecycleResult.Ok();
         }
@@ -597,14 +855,14 @@ public sealed class HostLifecycleCoordinatorTests : IDisposable
                 Assert.Equal(new HostResident(operation.Engine, operation.Target), Resident);
                 Resident = null;
                 OnStop?.Invoke();
-                outcome = new HostMutationOutcome(operation.Id, HostMutationStatus.Applied);
+                outcome = new HostMutationOutcome(operation, HostMutationStatus.Applied, operation.Target);
             }
             else
             {
                 Assert.Null(Resident);
                 var containerId = $"{operation.Engine}-{operation.Epoch}";
                 Resident = new HostResident(operation.Engine, containerId);
-                outcome = new HostMutationOutcome(operation.Id, HostMutationStatus.Applied, containerId);
+                outcome = new HostMutationOutcome(operation, HostMutationStatus.Applied, containerId);
             }
             _terminal.Add(operation.Id, outcome);
             return outcome;

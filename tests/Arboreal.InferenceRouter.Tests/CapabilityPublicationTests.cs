@@ -42,9 +42,9 @@ public sealed class CapabilityPublicationTests
         public Task AnsweredAsync => _answered.Task;
         public Func<CancellationToken, Task>? BeforeProps { get; init; }
         public string? ModelsBody { get; init; }
-        private string _propsBody = """{"total_slots": 4, "n_ctx": 8192}""";
+        private string? _propsBody = """{"total_slots": 4, "n_ctx": 8192}""";
 
-        public void SetProps(string body) => Volatile.Write(ref _propsBody, body);
+        public void SetProps(string? body) => Volatile.Write(ref _propsBody, body);
 
         /// <summary>Arm once: the next <c>/models</c> request takes its answer as if the engine had replied,
         /// announces that it is in flight, and then waits to be released. The answer it eventually writes
@@ -96,7 +96,7 @@ public sealed class CapabilityPublicationTests
             {
                 var body = Volatile.Read(ref _propsBody);
                 if (BeforeProps is { } beforeProps) await beforeProps(ct).ConfigureAwait(false);
-                return Ok(body);
+                return body is null ? new HttpResponseMessage(HttpStatusCode.ServiceUnavailable) : Ok(body);
             }
             return new HttpResponseMessage(HttpStatusCode.NotFound) { Content = new StringContent("{}") };
         }
@@ -384,6 +384,329 @@ public sealed class CapabilityPublicationTests
     }
 
     [Theory(Timeout = 40_000)]
+    [InlineData("same", "pending", false)]
+    [InlineData("expect", "pending", false)]
+    [InlineData("missing", "pending", true)]
+    [InlineData("malformed", "pending", true)]
+    [InlineData("unavailable", "pending", true)]
+    [InlineData("wider", "pending", true)]
+    [InlineData("narrower", "pending", true)]
+    [InlineData("slots", "pending", true)]
+    [InlineData("same", "restored", false)]
+    [InlineData("expect", "restored", false)]
+    [InlineData("missing", "restored", true)]
+    [InlineData("malformed", "restored", true)]
+    [InlineData("unavailable", "restored", true)]
+    [InlineData("wider", "restored", true)]
+    [InlineData("narrower", "restored", true)]
+    [InlineData("slots", "restored", true)]
+    [InlineData("narrower", "successor", true)]
+    public async Task SameClaimStateOnlyContradictionControlsIncumbentCapacity(
+        string response, string phase, bool contradicted)
+    {
+        const string initialState = """{"ready":true,"n_ctx":131072,"total_slots":4}""";
+        var enteredPreflight = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var preflight = new TaskCompletionSource<LifecycleResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var enteredState = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseState = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var holdState = 0;
+        var bootstrap = true;
+        var refused = LifecycleResult.Fail("image_missing", "fixture");
+        using var handler = new ProbeHandler("m")
+        {
+            ContextWindows = new Dictionary<string, long> { ["m"] = 131_072 },
+            BeforeProps = token =>
+            {
+                if (Interlocked.Exchange(ref holdState, 0) == 0) return Task.CompletedTask;
+                enteredState.TrySetResult();
+                return releaseState.Task.WaitAsync(token);
+            },
+        };
+        handler.SetProps(initialState);
+        var provider = new RecordingLifecycleProvider
+        {
+            Kind = "docker",
+            PreflightHandler = () =>
+            {
+                if (bootstrap || preflight.Task.IsCompleted) return ValueTask.FromResult(LifecycleResult.Ok());
+                enteredPreflight.TrySetResult();
+                return new ValueTask<LifecycleResult>(preflight.Task);
+            },
+        };
+        var feed = new EventRing();
+        var polls = ObserveHealthPolls(feed);
+        var def = Def(new HealthProbeDefinition
+        {
+            Path = "/props", Expect = "ready", IntervalMs = 3_600_000, TimeoutMs = 20_000,
+        }, "meta.n_ctx");
+        using var budget = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        var ct = budget.Token;
+        using var loop = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        var nudges = 0;
+        await using var engine = new EngineRuntime(def, new RouterConfig(), feed, handler,
+            lifecycle: provider, dispatchHint: () => Interlocked.Increment(ref nudges));
+        var commits = Channel.CreateUnbounded<bool>();
+        engine.AfterEndCommitForTests = held => commits.Writer.TryWrite(held);
+        var profile = Profile("incumbent", 131_072);
+        Assert.True((await engine.WaitForProfileAsync("m", profile, TimeSpan.FromSeconds(10), ct)).IsReady);
+        Assert.False(await commits.Reader.ReadAsync(ct));
+        var incumbent = engine.Capability;
+        Assert.NotNull(incumbent.SwitchProof);
+        bootstrap = false;
+        provider.Calls.Clear();
+        Assert.True(engine.IsReadyFor("m", profile));
+        Assert.Equal(4, incumbent.Serving.TotalSlots);
+        Assert.Equal(131_072, incumbent.ModelContextWindows["m"]);
+
+        var pending = engine.WaitForModelAsync("extra", TimeSpan.FromSeconds(10), ct);
+        try
+        {
+            await enteredPreflight.Task.WaitAsync(ct);
+            var claim = engine.Capability;
+            Assert.Equal("extra", claim.SwitchingToward);
+            Assert.True(claim.HealthFromClaim);
+            var beforeObservation = Volatile.Read(ref nudges);
+            var late = phase != "pending";
+            handler.SetProps(response switch
+            {
+                "expect" => """{"ready":false,"n_ctx":131072,"total_slots":4}""",
+                "missing" => """{"ready":true,"total_slots":4}""",
+                "malformed" => "invalid JSON",
+                "unavailable" => null,
+                "wider" => """{"ready":true,"n_ctx":256000,"total_slots":4}""",
+                "narrower" => """{"ready":true,"n_ctx":65536,"total_slots":4}""",
+                "slots" => """{"ready":true,"n_ctx":131072,"total_slots":2}""",
+                _ => initialState,
+            });
+            if (late) Volatile.Write(ref holdState, 1);
+            engine.StartHealthLoop(loop.Token);
+            if (late)
+                await enteredState.Task.WaitAsync(ct);
+            else
+                Assert.Null((await polls.ReadAsync(ct)).Reason);
+            await loop.CancelAsync();
+            Assert.Same(claim, engine.Capability);
+            Assert.Equal(beforeObservation, Volatile.Read(ref nudges));
+
+            preflight.SetResult(refused);
+            Assert.Equal("launch_failed", (await pending).Detail);
+            Assert.False(await commits.Reader.ReadAsync(ct));
+            var restored = engine.Capability;
+            Assert.Equal(claim.Version + 1, restored.Version);
+            Assert.Equal(late || !contradicted ? incumbent.Serving : default, restored.Serving);
+            Assert.Same(late || !contradicted ? incumbent.SwitchProof : null, restored.SwitchProof);
+            Assert.Equal(beforeObservation + 1, Volatile.Read(ref nudges));
+            Assert.Equal(["ownership", "preflight"], provider.Calls);
+
+            if (phase == "successor")
+            {
+                handler.SetModels("second");
+                handler.SetProps(initialState);
+                Assert.True((await engine.WaitForProfileAsync("second", profile, TimeSpan.FromSeconds(5), ct)).IsReady);
+                Assert.False(await commits.Reader.ReadAsync(ct));
+                var successor = engine.Capability;
+                Assert.NotNull(successor.SwitchProof);
+                var successorNudges = Volatile.Read(ref nudges);
+                releaseState.SetResult();
+                Assert.Null((await polls.ReadAsync(ct)).Reason);
+                Assert.Same(successor, engine.Capability);
+                Assert.Equal(successorNudges, Volatile.Read(ref nudges));
+                return;
+            }
+
+            if (late)
+            {
+                releaseState.SetResult();
+                Assert.Null((await polls.ReadAsync(ct)).Reason);
+            }
+            var final = engine.Capability;
+            Assert.Equal(restored.Version + (late && contradicted ? 1 : 0), final.Version);
+            Assert.Equal(beforeObservation + 1 + (late && contradicted ? 1 : 0), Volatile.Read(ref nudges));
+            Assert.Same(incumbent.ModelRoster, final.ModelRoster);
+            Assert.Same(incumbent.ModelContextWindows, final.ModelContextWindows);
+            Assert.Equal(contradicted ? default : incumbent.Serving, final.Serving);
+            Assert.Same(contradicted ? null : incumbent.SwitchProof, final.SwitchProof);
+            Assert.True(engine.IsReadyFor("m", null));
+            Assert.Equal(!contradicted, engine.IsReadyFor("m", profile));
+        }
+        finally
+        {
+            releaseState.TrySetResult();
+            preflight.TrySetResult(refused);
+            await loop.CancelAsync();
+        }
+    }
+
+    [Theory(Timeout = 60_000)]
+    [InlineData("roster", true, null)]
+    [InlineData("503", true, null)]
+    [InlineData("roster", false, null)]
+    [InlineData("503", false, null)]
+    [InlineData("different-state", true, null)]
+    [InlineData("matching-state", true, null)]
+    [InlineData("roster", true, "switch")]
+    [InlineData("roster", false, "switch")]
+    [InlineData("503", true, "poll")]
+    public async Task LatePollsReconcileOnlyTheirOwnRestoredIncumbent(
+        string secondEvidence, bool stateFirst, string? interveningPublication)
+    {
+        const string incumbentState = """{"n_ctx":131072,"total_slots":4}""";
+        var enteredPreflight = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var preflight = new TaskCompletionSource<LifecycleResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var enteredState = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseState = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var refusal = LifecycleResult.Fail("image_missing", "fixture");
+        var bootstrap = true;
+        var holdState = 0;
+        using var handler = new ProbeHandler("m")
+        {
+            ContextWindows = new Dictionary<string, long> { ["m"] = 131_072, ["second"] = 131_072 },
+            HeldProbeStatus = secondEvidence == "503" ? 503 : 200,
+            BeforeProps = ct =>
+            {
+                if (Interlocked.Exchange(ref holdState, 0) == 0) return Task.CompletedTask;
+                enteredState.TrySetResult();
+                return releaseState.Task.WaitAsync(ct);
+            },
+        };
+        handler.SetProps(incumbentState);
+        var provider = new RecordingLifecycleProvider
+        {
+            Kind = "docker",
+            PreflightHandler = () =>
+            {
+                if (bootstrap || preflight.Task.IsCompleted) return ValueTask.FromResult(LifecycleResult.Ok());
+                enteredPreflight.TrySetResult();
+                return new ValueTask<LifecycleResult>(preflight.Task);
+            },
+        };
+        var def = Def(new HealthProbeDefinition
+        {
+            Path = "/props", IntervalMs = 3_600_000, TimeoutMs = 30_000,
+        }, "meta.n_ctx");
+        using var budget = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        var ct = budget.Token;
+        using var stateLoop = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        using var modelsLoop = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        var feed = new EventRing();
+        var polls = ObserveHealthPolls(feed);
+        var commits = Channel.CreateUnbounded<bool>();
+        var nudges = 0;
+        await using var engine = new EngineRuntime(def, new RouterConfig(), feed, handler, lifecycle: provider,
+            dispatchHint: () => Interlocked.Increment(ref nudges));
+        engine.AfterEndCommitForTests = held => commits.Writer.TryWrite(held);
+        var limit = TimeSpan.FromSeconds(20);
+        var profile = Profile("incumbent", 131_072);
+        var modelContradiction = secondEvidence is "roster" or "503";
+
+        async Task FinishPollAsync(bool statePoll)
+        {
+            if (statePoll) releaseState.TrySetResult();
+            else handler.ReleaseProbe();
+            var observed = await polls.ReadAsync(ct);
+            var failed = !statePoll && secondEvidence == "503";
+            Assert.Equal(failed ? "models endpoint 503" : null, observed.Reason);
+            Assert.Equal(failed ? 0d : 1d, observed.Value);
+        }
+
+        try
+        {
+            Assert.True((await engine.WaitForProfileAsync("m", profile, limit, ct)).IsReady);
+            Assert.False(await commits.Reader.ReadAsync(ct));
+            var incumbent = engine.Capability;
+            bootstrap = false;
+            var wait = engine.WaitForModelAsync("extra", limit, ct);
+            await enteredPreflight.Task.WaitAsync(ct);
+            var claim = engine.Capability;
+            Assert.Equal("extra", claim.SwitchingToward);
+
+            // Both loops capture the same claim. Hold one after reading its matching roster and
+            // the other inside /models so neither can publish before refusal restores the incumbent.
+            handler.SetProps("""{"n_ctx":65536,"total_slots":4}""");
+            Volatile.Write(ref holdState, 1);
+            engine.StartHealthLoop(stateLoop.Token);
+            await enteredState.Task.WaitAsync(ct);
+            await stateLoop.CancelAsync();
+
+            if (secondEvidence == "roster") handler.SetModels("different");
+            handler.SetProps(secondEvidence == "matching-state"
+                ? incumbentState : """{"n_ctx":32768,"total_slots":4}""");
+            handler.HoldNextProbe();
+            engine.StartHealthLoop(modelsLoop.Token);
+            await handler.EnteredAsync.WaitAsync(ct);
+            await modelsLoop.CancelAsync();
+            Assert.Same(claim, engine.Capability);
+
+            var beforeRefusal = Volatile.Read(ref nudges);
+            preflight.SetResult(refusal);
+            Assert.Equal("launch_failed", (await wait.WaitAsync(ct)).Detail);
+            Assert.False(await commits.Reader.ReadAsync(ct));
+            var restored = engine.Capability;
+            Assert.Equal(claim.Version + 1, restored.Version);
+            Assert.Equal(incumbent.Serving, restored.Serving);
+            Assert.True(engine.IsReadyFor("m", profile));
+            Assert.Equal(beforeRefusal + 1, Volatile.Read(ref nudges));
+
+            await FinishPollAsync(stateFirst);
+            var first = engine.Capability;
+            Assert.Equal(restored.Version + 1, first.Version);
+            AssertWithdrawn(incumbent, first, healthy: stateFirst);
+            Assert.Equal(beforeRefusal + 2, Volatile.Read(ref nudges));
+
+            if (interveningPublication == "switch")
+            {
+                handler.SetModels("second");
+                handler.SetProps(incumbentState);
+                Assert.True((await engine.WaitForProfileAsync("second", profile, limit, ct)).IsReady);
+                Assert.False(await commits.Reader.ReadAsync(ct));
+            }
+            else if (interveningPublication == "poll")
+            {
+                handler.SetModels("m");
+                handler.SetProps(incumbentState);
+                await PollOnceAsync(engine, polls, ct);
+                Assert.True(engine.IsReadyFor("m", profile));
+            }
+
+            var beforeSecond = engine.Capability;
+            var nudgesBeforeSecond = Volatile.Read(ref nudges);
+            await FinishPollAsync(statePoll: !stateFirst);
+            var final = engine.Capability;
+            if (stateFirst && modelContradiction && interveningPublication is null)
+            {
+                Assert.Equal(first.Version + 1, final.Version);
+                AssertWithdrawn(incumbent, final, healthy: false);
+                Assert.Equal(nudgesBeforeSecond + 1, Volatile.Read(ref nudges));
+            }
+            else
+            {
+                Assert.Same(beforeSecond, final);
+                Assert.Equal(nudgesBeforeSecond, Volatile.Read(ref nudges));
+                if (interveningPublication == "switch") Assert.True(engine.IsReadyFor("second", profile));
+            }
+        }
+        finally
+        {
+            releaseState.TrySetResult();
+            handler.ReleaseProbe();
+            preflight.TrySetResult(refusal);
+            await stateLoop.CancelAsync();
+            await modelsLoop.CancelAsync();
+        }
+
+        void AssertWithdrawn(EngineCapability incumbent, EngineCapability current, bool healthy)
+        {
+            Assert.Equal(healthy, current.Healthy);
+            Assert.Same(incumbent.ModelRoster, current.ModelRoster);
+            if (healthy) Assert.Same(incumbent.ModelContextWindows, current.ModelContextWindows);
+            else Assert.Empty(current.ModelContextWindows);
+            Assert.Equal(default, current.Serving);
+            Assert.Equal(healthy, engine.IsReadyFor("m", null));
+            Assert.False(engine.IsReadyFor("m", profile));
+        }
+    }
+
+    [Theory(Timeout = 40_000)]
     [InlineData(131_072, true)]
     [InlineData(32_768, false)]
     public async Task ReadOnlyRefusalRestoresDiscoveryOnlyWhenTheCurrentObservationAgrees(int observedWindow, bool restored)
@@ -444,6 +767,7 @@ public sealed class CapabilityPublicationTests
             Assert.Same(incumbent.ModelRoster, after.ModelRoster);
             if (restored) Assert.Same(incumbent.ModelContextWindows, after.ModelContextWindows);
             else Assert.Empty(after.ModelContextWindows);
+            Assert.Equal(restored ? incumbent.Serving : default, after.Serving);
             Assert.Equal(["ownership", "preflight"], provider.Calls);
         }
         finally
@@ -517,6 +841,7 @@ public sealed class CapabilityPublicationTests
             Assert.Equal("launch_failed", (await pending).Detail);
             Assert.True(engine.IsReadyFor("m", null));
             Assert.Same(incumbent.ModelContextWindows, engine.Capability.ModelContextWindows);
+            Assert.Equal(incumbent.Serving, engine.Capability.Serving);
 
             if (ordering == "successor")
             {
@@ -540,6 +865,7 @@ public sealed class CapabilityPublicationTests
                 Assert.False(afterLatePoll.Healthy);
                 Assert.False(engine.IsReadyFor("m", null));
                 Assert.Empty(afterLatePoll.ModelContextWindows);
+                Assert.Equal(default, afterLatePoll.Serving);
                 Assert.Same(incumbent.ModelRoster, afterLatePoll.ModelRoster);
                 Assert.Equal(beforeLatePoll.Version + 1, afterLatePoll.Version);
             }

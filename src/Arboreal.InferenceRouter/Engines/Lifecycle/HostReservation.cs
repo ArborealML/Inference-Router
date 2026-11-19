@@ -5,13 +5,18 @@ using System.Text.Json.Serialization;
 namespace Arboreal.InferenceRouter.Lifecycle;
 
 internal enum HostMutationKind { Stop, Launch }
+internal enum HostMutationPhase { None, Prepared, Dispatching, LaunchApplied }
 
-/// <summary>A stop names the immutable container ID. A launch names the canonical model and
-/// resolved profile, and the provider binds its launch to this operation ID.</summary>
+/// <summary>A stop names the immutable container ID. A launch binds the canonical model,
+/// resolved profile, and complete provider plan digest to the epoch and operation ID.</summary>
 internal sealed record HostMutation(
-    long Epoch, Guid Id, HostMutationKind Kind, string Engine, string Target, string? Profile);
+    long Epoch, Guid Id, HostMutationKind Kind, string Engine, string Target, string? Profile, string? PlanDigest)
+{
+    public static bool IsPlanDigest(string? value) => value is { Length: 64 } && value.All(char.IsAsciiHexDigit);
+}
 
-internal sealed record HostReservationState(long Epoch, string? Owner, HostMutation? Pending);
+internal sealed record HostReservationState(long Epoch, string? Owner, HostMutation? Pending,
+    HostMutationPhase Phase = HostMutationPhase.None, string? LaunchedContainerId = null);
 
 [JsonSerializable(typeof(HostReservationState))]
 internal sealed partial class HostReservationJsonContext : JsonSerializerContext;
@@ -68,25 +73,46 @@ internal sealed class HostReservation : IDisposable
         return epoch;
     }
 
-    public HostMutation Begin(long epoch, HostMutationKind kind, string engine, string target, string? profile = null)
+    public HostMutation Begin(long epoch, HostMutationKind kind, string engine, string target,
+        string? profile = null, string? planDigest = null)
     {
         RequireUsable();
         if (epoch <= 0 || epoch != State.Epoch || State.Pending is not null ||
             kind == HostMutationKind.Launch && !string.Equals(State.Owner, engine, StringComparison.Ordinal))
             throw new InvalidOperationException("The host reservation cannot authorize this operation.");
 
-        var operation = new HostMutation(epoch, Guid.NewGuid(), kind, engine, target, profile);
-        Record(State with { Pending = operation });
+        var operation = new HostMutation(epoch, Guid.NewGuid(), kind, engine, target, profile, planDigest);
+        Record(State with { Pending = operation, Phase = HostMutationPhase.Prepared });
         return operation;
+    }
+
+    public void MarkDispatching(HostMutation operation)
+    {
+        RequirePending(operation);
+        if (State.Phase != HostMutationPhase.Prepared)
+            throw new InvalidOperationException("Only a prepared host operation can begin dispatch.");
+        Record(State with { Phase = HostMutationPhase.Dispatching });
+    }
+
+    public void RecordAppliedLaunch(HostMutation operation, string containerId)
+    {
+        RequirePending(operation);
+        if (State.Phase != HostMutationPhase.Dispatching || operation.Kind != HostMutationKind.Launch)
+            throw new InvalidOperationException("Only a dispatched launch can record an instance.");
+        Record(State with { Phase = HostMutationPhase.LaunchApplied, LaunchedContainerId = containerId });
     }
 
     public void Settle(HostMutation operation)
     {
+        RequirePending(operation);
+        Record(State with { Pending = null, Phase = HostMutationPhase.None, LaunchedContainerId = null });
+    }
+
+    private void RequirePending(HostMutation operation)
+    {
         RequireUsable();
         if (State.Pending != operation)
             throw new InvalidOperationException("The host operation does not match the durable intent.");
-
-        Record(State with { Pending = null });
     }
 
     private static HostReservationState ReadState(FileStream file)
@@ -114,17 +140,35 @@ internal sealed class HostReservation : IDisposable
 
     private static HostReservationState Validate(HostReservationState? state)
     {
-        if (state is { Epoch: 0, Owner: null, Pending: null }) return state;
+        if (state is { Epoch: 0, Owner: null, Pending: null, Phase: HostMutationPhase.None, LaunchedContainerId: null })
+            return state;
+        if (state is { Epoch: > 0 } && !string.IsNullOrWhiteSpace(state.Owner) && HasValidOperation(state))
+            return state;
 
-        if (state is null || state.Epoch <= 0 || string.IsNullOrWhiteSpace(state.Owner) ||
-            state.Pending is { } operation && (operation.Epoch != state.Epoch || operation.Id == Guid.Empty ||
-                operation.Kind is not HostMutationKind.Stop and not HostMutationKind.Launch ||
-                string.IsNullOrWhiteSpace(operation.Engine) ||
-                string.IsNullOrWhiteSpace(operation.Target) ||
-                operation.Kind == HostMutationKind.Launch && !string.Equals(state.Owner, operation.Engine, StringComparison.Ordinal)))
-            throw new IOException("The host reservation record has an invalid owner or operation.");
+        throw new IOException("The host reservation record has an invalid owner or operation.");
+    }
 
-        return state;
+    private static bool HasValidOperation(HostReservationState state)
+    {
+        if (state.Pending is not { } operation)
+            return state is { Phase: HostMutationPhase.None, LaunchedContainerId: null };
+        if (operation.Epoch != state.Epoch || operation.Id == Guid.Empty ||
+            string.IsNullOrWhiteSpace(operation.Engine) || string.IsNullOrWhiteSpace(operation.Target))
+            return false;
+
+        var validPlan = operation.Kind switch
+        {
+            HostMutationKind.Stop => operation is { Profile: null, PlanDigest: null },
+            HostMutationKind.Launch => state.Owner == operation.Engine && HostMutation.IsPlanDigest(operation.PlanDigest),
+            _ => false,
+        };
+        return validPlan && (state.Phase switch
+        {
+            HostMutationPhase.Prepared or HostMutationPhase.Dispatching => state.LaunchedContainerId is null,
+            HostMutationPhase.LaunchApplied => operation.Kind == HostMutationKind.Launch &&
+                !string.IsNullOrWhiteSpace(state.LaunchedContainerId),
+            _ => false,
+        });
     }
 
     private void Record(HostReservationState state)

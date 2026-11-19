@@ -70,6 +70,83 @@ public sealed class QueueDispatchTests
         await shallowHead.CompletionTask.WaitAsync(TimeSpan.FromSeconds(5));
     }
 
+    [Theory(Timeout = 20_000)]
+    [InlineData(0L, "a")]
+    [InlineData(8_192L, "b")]
+    public async Task EqualInflightPressureChangesTheOrdinaryTwoEngineRoute(long firstPressure, string winner)
+    {
+        using var firstHandler = new FakeEngineHandler { LoadedModels = ["m"] };
+        using var secondHandler = new FakeEngineHandler { LoadedModels = ["m"] };
+        using var stop = new CancellationTokenSource();
+        await using var router = new RouterCore(new RouterConfig
+        {
+            AutoSwitch = true,
+            Scheduler = new SchedulerConfig { PrefillCostAlpha = 1 },
+            Engines = new Dictionary<string, EngineDefinition>(StringComparer.Ordinal)
+            {
+                ["a"] = new() { Name = "a", Endpoint = new Uri("http://a.invalid/v1/") },
+                ["b"] = new() { Name = "b", Endpoint = new Uri("http://b.invalid/v1/") },
+            },
+            HttpHandlerFactory = engine => engine.Name == "a" ? firstHandler : secondHandler,
+        });
+        var first = router.Engines["a"];
+        var second = router.Engines["b"];
+        var firstObserved = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var secondObserved = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        void Observe(RouterEvent entry)
+        {
+            if (entry.Kind != "engine.health") return;
+            if (entry.Engine == first.Name) firstObserved.TrySetResult();
+            if (entry.Engine == second.Name) secondObserved.TrySetResult();
+        }
+
+        router.Events.Subscribe(Observe);
+        try
+        {
+            // Publish both rosters without starting the background dispatch loop.
+            first.StartHealthLoop(stop.Token);
+            second.StartHealthLoop(stop.Token);
+            await Task.WhenAll(firstObserved.Task, secondObserved.Task).WaitAsync(TimeSpan.FromSeconds(5));
+        }
+        finally
+        {
+            router.Events.Unsubscribe(Observe);
+            stop.Cancel();
+        }
+
+        Assert.True(first.IsReadyFor("m", null));
+        Assert.True(second.IsReadyFor("m", null));
+        first.BeginRequest(firstPressure);
+        second.BeginRequest(0);
+        try
+        {
+            Assert.Equal(1, first.Inflight);
+            Assert.Equal(first.Inflight, second.Inflight);
+            Assert.True(first.HasCapacity);
+            Assert.True(second.HasCapacity);
+            Assert.Equal(firstPressure, first.InflightTokenProxy);
+            Assert.Equal(0L, second.InflightTokenProxy);
+            var ticket = await router.EnqueueAsync("pressure", Request("m", context: 32));
+
+            Assert.True(router.TryDispatchOnce());
+
+            var selection = Assert.Single(router.Events.Replay(0), entry => entry.Kind == "request.selected");
+            Assert.Equal(ticket.Id, selection.TicketId);
+            Assert.Equal(winner, selection.Engine);
+            Assert.Equal(0, router.GetStats().QueueDepths["m"]);
+            await ticket.CompletionTask.WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.Equal(TicketState.Completed, ticket.State);
+            Assert.Equal(winner == "a" ? 1 : 0, firstHandler.CompletionCalls);
+            Assert.Equal(winner == "b" ? 1 : 0, secondHandler.CompletionCalls);
+        }
+        finally
+        {
+            first.EndRequest(firstPressure);
+            second.EndRequest(0);
+        }
+    }
+
     [Fact]
     public async Task DispatchDeadlineUsesElapsedTimeWhenTheWallClockMoves()
     {

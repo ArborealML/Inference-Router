@@ -26,6 +26,7 @@ public sealed class EngineRuntimeInfo
     public long ActiveContextWindow { get; init; }
     /// <summary>Serving-profile ladder declared for the candidate request's model (empty = no ladder).</summary>
     public IReadOnlyList<ServingProfile> ServingProfiles { get; init; } = Array.Empty<ServingProfile>();
+    internal SwitchServingProof? SwitchProof { get; init; }
 }
 
 /// <summary>Decision: engine name (null = wait) or rejection.</summary>

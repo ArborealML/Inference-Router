@@ -74,12 +74,14 @@ public sealed class ModelQueue
     }
 
     /// <summary>Take only the request the scheduler evaluated, while it is still first admissible.</summary>
-    internal bool TryTakeExact(QueueDispatchCandidate candidate, Func<RouterThread, bool> admission)
+    internal bool TryTakeExact(QueueDispatchCandidate candidate, Func<RouterThread, bool> admission,
+                               Func<bool>? observationIsCurrent = null)
     {
         lock (_lock)
         {
             var index = FirstAdmissibleIndex(admission);
             if (index < 0 || !ReferenceEquals(_heap[index], candidate.Request)) return false;
+            if (observationIsCurrent is not null && !observationIsCurrent()) return false;
             _heap.RemoveAt(index);
             return true;
         }
