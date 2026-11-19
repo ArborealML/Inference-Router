@@ -9,7 +9,7 @@ internal sealed record HostEngineEnrollment(string RouterId, string Engine, Host
 internal sealed record HostStagedRuntimeFixture(
     Func<HostClosedRouteStage, CancellationToken, Task<HostStagedReadiness?>> ReadAsync,
     Action? AfterStageInstalled = null, Action<SwitchServingProof>? AfterProof = null, Action? AfterComplete = null,
-    Action? AfterRun = null);
+    Action? AfterRun = null, Action<HostStagedSwitchResult>? AfterHostResult = null);
 
 public sealed partial class EngineRuntime
 {

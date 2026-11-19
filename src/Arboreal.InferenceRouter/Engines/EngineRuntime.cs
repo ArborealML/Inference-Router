@@ -1529,6 +1529,7 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
             {
                 var staged = await SwitchStagedHostAsync(stagedEnrollment.Controller, fixture, state, target, ct)
                     .ConfigureAwait(false);
+                fixture.AfterHostResult?.Invoke(staged);
                 // The guarded verdict owns the outcome even when delivery, cleanup or Open refuses.
                 if (staged.Decision.Verdict != HostStagedVerdict.Refused || Volatile.Read(ref _stopped)) return;
                 report = new(staged.Result, RefusedBeforeMutation: false);
