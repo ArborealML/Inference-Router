@@ -1,11 +1,11 @@
 ---
 id: TASK-110
 title: Coordinate model engines that share one host with exclusive residency
-status: In Progress
+status: Waiting
 assignee:
-  - '@gpt-6.2-sol-lifecycle'
+  - '@gpt-6.2-astra'
 created_date: '2026-11-18T18:13:00Z'
-updated_date: '2026-11-19T08:23:00Z'
+updated_date: '2026-11-19T08:36:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -19,7 +19,7 @@ ordinal: 108000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-The lifecycle implementer is revising the offline host-drain fixture to distinguish grant revocation and independently observed backend completion.
+Hosted CI and independent review of the corrected offline drain witness wake integration.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -42,5 +42,5 @@ At 7ec1c20 use a real controller child, a surviving issuer and an independent ba
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-The checkpoint and synthetic effect ledger landed in [PR #6](https://github.com/ArborealML/Inference-Router/pull/6). [PR #9](https://github.com/ArborealML/Inference-Router/pull/9) qualified full predecessor, stop-effect and vacancy checks. [PR #14](https://github.com/ArborealML/Inference-Router/pull/14) at 52fe225 is CI-green with all seven fixture and project blobs identical to reviewed 47ab322 (2 drain and 18 affected vacancy cases passed locally). Review confirmed restart fencing and seal-plus-ack ordering. Correct two evidence gaps: show the same eligible grant can write when open and is refused after closure; construct the terminal from backend-owned channel/request identity and reject a mismatched backend-authored terminal. Limit serving-incarnation claims to fixture self-consistency. Independent production attestation remains with host and verified dispatch. Runtime enrollment and issuer-crash recovery remain separate.
+[PR #6](https://github.com/ArborealML/Inference-Router/pull/6) landed the checkpoint and synthetic ledger; [PR #9](https://github.com/ArborealML/Inference-Router/pull/9) landed predecessor, exact stop-effect and fresh vacancy checks. Review of 47ab322 confirmed restart fencing and identified two weak observations. [PR #14](https://github.com/ArborealML/Inference-Router/pull/14) at c2db0ee passed all four affected Release cases with the probe rebuilt. The open control sends exact bytes with one use; closure denies an otherwise eligible grant. An independently backend-authored wrong grant retains the use after seal and blocks mutation. Matching acknowledgment permits retirement. Serving-process authenticity remains fixture-local. Independent correction review dispatched. Production enforcement and runtime admission remain separate.
 <!-- SECTION:NOTES:END -->
