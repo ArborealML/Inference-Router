@@ -7,7 +7,7 @@ status: Waiting
 assignee:
   - '@gpt-6.2-astra'
 created_date: '2026-11-18T01:11:00Z'
-updated_date: '2026-11-19T07:45:00Z'
+updated_date: '2026-11-19T07:54:00Z'
 labels:
   - concurrency
   - scheduling
@@ -20,7 +20,7 @@ ordinal: 68000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Hosted CI and review of the admission merge wake landing. Publish model-bound window, slots and inferred profile in one versioned capability snapshot. Each routing decision uses evidence for the selected model and claim.
+The owner-preparation CI repair (TASK-135), a green hosted run and integration review wake landing. Publish model-bound window, slots and inferred profile in one versioned capability snapshot. Each routing decision uses evidence for the selected model and claim.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
