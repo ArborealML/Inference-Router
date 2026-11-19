@@ -1,11 +1,11 @@
 ---
 id: TASK-126
 title: Bound an individual readiness probe by the remaining switch deadline
-status: In Progress
+status: Waiting
 assignee:
   - '@gpt-6.2-sol-shutdown'
 created_date: '2026-11-18T20:43:00Z'
-updated_date: '2026-11-19T10:26:00Z'
+updated_date: '2026-11-19T10:27:00Z'
 labels: []
 milestone: m-4
 dependencies: []
@@ -16,7 +16,7 @@ ordinal: 124000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Shutdown is correcting same-engine readiness after a staged route remains closed.
+The corrected staged host child wakes Shutdown for integration of the post-open notification change.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -41,5 +41,5 @@ Use one monotonic readiness budget across state headers and body, model discover
 <!-- SECTION:NOTES:BEGIN -->
 Legacy readiness and local HTTP cleanup landed in [PR #4](https://github.com/ArborealML/Inference-Router/pull/4). The two-ticket control in [PR #8](https://github.com/ArborealML/Inference-Router/pull/8) passed both rows: the stopped engine granted neither ticket a send, and the open engine accepted one exact POST. For the offline enrolled case, Lifecycle owns coordinator, staging and the single recovered-launch fixture. Shutdown owns EngineRuntime and its host lifecycle partial. Build on the exact host child, reuse its launch-owned deadline and the existing guarded CAS and delivery signal, and consume the typed terminal outcome before generic launch failure. Preserve production capacity gates.
 
-Runtime review of df9fdef confirmed a same-engine caller can reuse committed readiness after Open refuses or completion fails. Fence current route use until confirmed Open; preserve historical waiter outcomes and successor proof. Exercise refusal and fresh recovery on the same engine. Lifecycle supplies the final opening result. The synchronous host callback already takes host admission before the runtime transition gate; confine the store to that call. The recovered deadline case passed 1/1 at 8af4cdd: the completion wake was closed, only Open permitted minting, and expiry produced no open wake. Preserve post-open notification errors separately; retrying a wake must never replay lifecycle effects.
+Runtime review of df9fdef found Ready survives a refused Open. Preserve that historical result: withdrawing its proof can send a woken waiter back to retry. The offline issuer checks exact open authority at mint and first write. Production RouterCore supplies no enrollment. Require both checks when integrating enrolled dispatch and admission. Synchronous Open already takes host admission before transition; recheck the host correction. At 8af4cdd the deadline fixture passed 1/1 with a closed completion hint, an open hint on success and zero permits on expiry. Child 5503e97 preserves a thrown post-open hint separately from committed readiness and actual Open.
 <!-- SECTION:NOTES:END -->
