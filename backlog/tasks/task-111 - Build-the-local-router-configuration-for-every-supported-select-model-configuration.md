@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@gpt-6.2-sol-config'
 created_date: '2026-11-18T18:15:00Z'
-updated_date: '2026-11-19T08:53:00Z'
+updated_date: '2026-11-19T09:05:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -19,7 +19,7 @@ ordinal: 109000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Implement offline Docker health-check projection for GLM 32k, 256k and the default 1m tier on the landed MiniMax base.
+Repair the GLM health-check test literal so the focused payload, parser and refusal cases can execute.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -47,4 +47,6 @@ Single-device profiles require one explicit index and paired profiles two distin
 PR #16 merged at 0418440 after hosted CI and independent PASS on ee6e0f5. The review confirmed the resource-free IPC payload, separate entrypoint and command, legacy omission, and refusal before mutation.
 
 Plan review on 0418440 passed. Validate misplaced common probes in both formats explicitly, preserve unspecified Docker fields and distinguish default restart behavior from byte equivalence. The fingerprinted selector confirms the literal environment path. Offline implementation released.
+
+At b422d61 the pinned GLM config loaded and Linux x64 Native AOT passed with zero trim warnings. Focused Release compiled production but stopped at CS8998 in the case-shadowed command fixture; zero tests ran. Independent code review dispatched.
 <!-- SECTION:NOTES:END -->
