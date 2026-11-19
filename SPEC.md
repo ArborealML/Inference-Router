@@ -1928,8 +1928,10 @@ engine forks land; the scheduler interface will not change shape.
   failure carries: no sentence wrapped around it, because a caller branches on a name and not on prose it has to
   parse. **The set is a door, not a comment.** A failed answer is built either by naming a member at the call site or
   by handing over what the attempt recorded, and both doors reject a name outside the array, so an exit that invents a
-  phrase fails at the answer instead of reaching a caller as a sentence; the fallback to the catch-all name lives in
-  one arm of one expression, and the engine's own source is audited for a future `return` nobody walked. Each name is
+  phrase fails at the answer instead of reaching a caller as a sentence. The test parses `EngineRuntime.cs` and
+  checks factory calls, recorded-reason writes, and failed-result construction. It rejects `with` initializers
+  that write `Detail` or `Outcome` throughout that file, including clones of unrelated records. This syntax check
+  has no symbol or data-flow analysis. The runtime tests exercise the refusal exits. Each name is
   exactly one caller action — **fix the configuration** (`no_select_command`, `refresh_omits`, `window_too_small`),
   **retry later** (`launch_failed`, `health_timeout`, `refresh_unanswered`), **retry** (`switch_error`), **retry
   elsewhere** (`no_lifecycle_owner`) — and §6.1 carries the table an integrator reads. The measurements stay on the
@@ -1971,6 +1973,9 @@ engine forks land; the scheduler interface will not change shape.
   window mismatch on the trust path. Evidence first returned at or after the deadline cannot supply
   the diagnosis. Late reads cannot publish proof, change serving capacity in either attempt, or
   change the terminal outcome.
+  The readiness mapping defaults to **health_timeout** for `NeverHealthy` and any other miss kind
+  without an explicit arm. An attempt with a missing or empty recorded refusal reason defaults
+  to **switch_error** when the router builds the caller's answer.
   A stop under the claim guard wins while readiness is pending.
   An already committed readiness outcome is delivered to its own joined waiter after the outcome
   event, even if engine shutdown or the waiter's timeout wakes it first. Caller cancellation
