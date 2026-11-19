@@ -5,7 +5,7 @@ status: Waiting
 assignee:
   - '@gpt-6.2-astra'
 created_date: '2026-11-18T20:36:00Z'
-updated_date: '2026-11-19T16:12:00Z'
+updated_date: '2026-11-19T16:13:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -18,7 +18,7 @@ ordinal: 123000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Independent fixture reviews are the next gate. On November 19 the coordinator dispatched review of the pair fixture and its assertion correction. Focused Release passed all five cases on d022344 with zero skips. Each independently seeded direction delivered its exact request. Wrong image, model and profile each prevented delivery. The resolved pair passed config-only validation at 5047f8f. Live host enrollment remains open.
+Hosted checks and the independent review of the full fixture gate [PR #34](https://github.com/ArborealML/Inference-Router/pull/34). Accepted the d022344 assertion correction after verifying it compares the same image IDs and still recomputes the substituted plan digest. All five focused Release cases passed with zero skips. Each independently seeded direction delivered its exact request. Wrong image, model and profile each prevented delivery. The resolved pair passed config-only validation at 5047f8f. Live host enrollment remains open.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
