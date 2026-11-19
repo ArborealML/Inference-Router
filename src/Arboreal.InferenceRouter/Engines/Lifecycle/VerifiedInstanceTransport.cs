@@ -182,7 +182,7 @@ internal sealed class VerifiedInstanceTransport(
                 throw new HttpRequestException("The issuer returned a grant for a different invocation.");
 
             matchingTransfer = true;
-            stream = new FirstWriteStream(grant, issuer);
+            stream = new FirstWriteStream(grant, issuer, ct);
             await UseChannelAsync(stream, logical, body, authorization, operation, ct).ConfigureAwait(false);
         }
         catch (Exception error)
@@ -244,18 +244,27 @@ internal sealed class VerifiedInstanceTransport(
         };
         using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct)
             .ConfigureAwait(false);
+        stream.FinishHeaderRead();
         operation.PublishResponse(response);
         await operation.EndOfUse.ConfigureAwait(false);
     }
 
     // Leaving the inner stream open here keeps cleanup in the exchange owner, even when the
     // HTTP handler drops its wrapper after a failed send or closes it on end of response.
-    private sealed class FirstWriteStream(VerifiedInstanceGrant grant, IVerifiedInstanceStreamIssuer issuer) : Stream
+    private sealed class FirstWriteStream(VerifiedInstanceGrant grant, IVerifiedInstanceStreamIssuer issuer,
+                                          CancellationToken sendCancellation) : Stream
     {
         private int _connectorUsed;
         private int _authorizationStarted;
+        private CancellationToken _headerCancellation = sendCancellation;
         private Stream Inner => grant.ApplicationStream;
         internal IAsyncDisposable? PhysicalUse { get; private set; }
+
+        internal void FinishHeaderRead() => _headerCancellation = default;
+
+        // The HTTP/1.1 handler can read without a token and relies on disposal to interrupt a
+        // read. The issuer still owns channel closure, so pass the caller token through until headers.
+        private CancellationToken ReadCancellation(CancellationToken ct) => ct.CanBeCanceled ? ct : _headerCancellation;
 
         internal ValueTask<Stream> ConnectOnceAsync(SocketsHttpConnectionContext context, CancellationToken ct)
         {
@@ -288,9 +297,9 @@ internal sealed class VerifiedInstanceTransport(
         public override int Read(byte[] buffer, int offset, int count) => Inner.Read(buffer, offset, count);
         public override int Read(Span<byte> buffer) => Inner.Read(buffer);
         public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken) =>
-            Inner.ReadAsync(buffer, offset, count, cancellationToken);
+            Inner.ReadAsync(buffer, offset, count, ReadCancellation(cancellationToken));
         public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default) =>
-            Inner.ReadAsync(buffer, cancellationToken);
+            Inner.ReadAsync(buffer, ReadCancellation(cancellationToken));
 
         public override void Write(byte[] buffer, int offset, int count)
         {

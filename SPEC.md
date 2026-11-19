@@ -355,7 +355,7 @@ daemon transaction per engine. 137 tests green.
 - v0.12.81 — bind an offline admitted ticket's effective launch intent, final JSON and upstream
   credential policy to its verified resident and single-use stream. Separate logical outcome
   from issuer retirement, keep unsettled physical use counted and report independent
-  cleanup faults (§5.3.1, §5.5, §7.6).
+  cleanup faults. Caller cancellation interrupts the pending header read (§5.3.1, §5.5, §7.6).
 - v0.12.80 — offline Docker create projection supports a literal image entrypoint and host IPC
   for a native engine. Either declaration gates engine startup and Docker mutations (§5.3.1, §7).
 
@@ -1822,7 +1822,9 @@ captured requested spelling under the catalog's case-insensitive comparison. An 
 uses the captured resolution. The rewritten object must name the exact canonical model once.
 The offer admits only the bound Authorization and optional matching Host request headers and
 the exact application/json content type. A disagreement refuses before checkout. Only the
-frozen request values reach the verified serializer. The same transport worker exposes the primary result and typed terminal evidence.
+frozen request values reach the verified serializer. The same transport worker exposes the
+primary result and typed terminal evidence. Caller cancellation reaches the pending header
+read on the borrowed channel. The worker retains responsibility for grant and permit cleanup.
 A submitted use releases once after conclusive no-transfer, confirmed grant return or
 issuer-confirmed retirement, together with successful preparation cleanup. Ambiguous checkout,
 unconfirmed issuer retirement and failed preparation cleanup preserve the count even after
