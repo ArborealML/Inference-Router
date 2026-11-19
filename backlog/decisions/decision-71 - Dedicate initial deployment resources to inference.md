@@ -11,3 +11,7 @@ For the initial version, assume the system's resources are dedicated to inferenc
 ## Implementation interpretation
 
 SPEC §5.3 assigns a router-managed engine one lifecycle owner. Ordinary tools that start or stop its serving model must coordinate with that owner, so a second launcher cannot replace a model while AIR is serving it. The coordinator may proceed with offline implementation on that basis. The choice of a broker is an engineering proposal. The dedication assumption establishes neither verified host enforcement nor approval to alter current host permissions or interrupt the resident.
+
+## Resource limits
+
+Engine TOML owns per-container resource limits, including memory caps and GPU assignments. A serving profile may override the common settings where the schema supports it. For the first version, preserve the protections already used by the installed selector for the chosen profile. A general policy for sharing capacity with other workloads can wait. Dedicated-host operation still honors each configured limit.
