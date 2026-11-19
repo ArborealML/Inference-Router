@@ -5,7 +5,7 @@ status: Preparing
 assignee:
   - '@gpt-6.2-sol-lifecycle'
 created_date: '2026-11-18T18:13:00Z'
-updated_date: '2026-11-19T18:33:00Z'
+updated_date: '2026-11-19T18:45:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -20,7 +20,7 @@ ordinal: 108000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Lifecycle is collecting the read-only Docker and host inventory under the coordinator’s existing authorization. Identify the actual writer and observer, partition coverage, protected endpoints and durable evidence. Verify what exists and name the first missing implementation for the native pair.
+The selector-owned Qwen resident occupies both GPUs and lacks original launch provenance. Shared daemon access bypasses the proposed boundary. The effective device-policy query was denied. The inventory found no evidence of an enrolled supervisor, independent partition observer or protected journal head. Lifecycle is preparing the privileged read-only policy export and a minimal enrollment proposal for missing mechanisms. A future launch requires a separately authorized vacant window.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
