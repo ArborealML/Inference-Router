@@ -1,11 +1,11 @@
 ---
 id: TASK-126
 title: Bound an individual readiness probe by the remaining switch deadline
-status: Waiting
+status: In Progress
 assignee:
-  - '@chatswarm'
+  - '@gpt-6.2-sol-shutdown'
 created_date: '2026-11-18T20:43:00Z'
-updated_date: '2026-11-19T11:22:00Z'
+updated_date: '2026-11-19T11:30:00Z'
 labels: []
 milestone: m-4
 dependencies: []
@@ -16,7 +16,7 @@ ordinal: 124000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Independent review of 0a71565 wakes the coordinator for landing. All seven focused Release cases passed with zero skips. Capacity inputs exercise the staged observation boundary. The independent alternate served a ticket before the retired body was released, and the typed stop survived runtime cleanup.
+Shutdown is correcting the typed-stop test after review of 0a71565 (7/7 Release). Await the retired observation after releasing its late reply before checking final state. PR #23 supplies explicit named success. The separate contender acquires both gates through locking accessors while reservation exclusion holds. URI literals verified; slot inputs exercise fixture normalization.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -33,7 +33,7 @@ Independent review of 0a71565 wakes the coordinator for landing. All seven focus
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Review on 33debba approved five in-budget slot cases and two races. Supply omitted and numeric-zero observation inputs for explicit and real resolved-default calls; both normalize to zero. Keep binding and fitting window fixed. On default positive verify both short locks are independently acquirable during proof delivery under the reservation, then send after Open. Keep an independent healthy engine serving while the retired reply is held: same-engine recovery cannot prove alternate-engine progress. Capture the typed staged stop verdict before runtime branching and verify one cancelled terminal through late cleanup. Closed retry hints are allowed; preserve slot-refusal semantics and production gates. Reuse equality, named-positive and join receipts.
+Five slot cases and two races. Supply omitted and numeric-zero observation inputs for explicit and real resolved-default calls; both normalize to zero. Keep binding and fitting window fixed. On default positive verify both short locks are independently acquirable during proof delivery under the reservation, then send after Open. Keep an independent healthy engine serving while the retired reply is held: same-engine recovery cannot prove alternate-engine progress. Capture the typed staged stop verdict before runtime branching and verify one cancelled terminal through late cleanup. Closed retry hints are allowed; preserve slot-refusal semantics and production gates. Reuse equality, named-positive and join receipts.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
