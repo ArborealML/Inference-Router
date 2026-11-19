@@ -115,9 +115,8 @@ internal sealed class VerifiedInstanceTransport(
         }
     }
 
-    internal VerifiedTransportOperation SendVerified(
-        VerifiedInstanceInvocation invocation, ReadOnlyMemory<byte> body, string? authorization, CancellationToken ct) =>
-        Start(invocation, body, authorization, certified: true, ct);
+    internal VerifiedTransportOperation SendVerified(VerifiedDispatchEnvelope envelope, CancellationToken ct) =>
+        Start(envelope.Invocation, envelope.Body.AsMemory(), envelope.Credential.Authorization, certified: true, ct);
 
     private VerifiedTransportOperation Start(
         VerifiedInstanceInvocation invocation, ReadOnlyMemory<byte> body, string? authorization,

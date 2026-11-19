@@ -85,6 +85,7 @@ internal sealed class ExactTicketAdmission(
     internal object Gate { get; } = new();
     internal Func<Claim, Task>? BeforeSubmitForTests { get; set; }
     internal Func<Invocation, Task>? BeforeSendForTests { get; set; }
+    internal Action<HttpRequestMessage>? BeforeVerifiedOfferForTests { get; set; }
     internal Action<Claim, Exception?>? AfterPreparationCleanupForTests { get; set; }
     internal Action<Claim, bool>? AfterPreparationForTests { get; set; }
     internal Action<Claim, Exception>? AfterPreparationFaultForTests { get; set; }
@@ -573,6 +574,7 @@ internal sealed class ExactTicketAdmission(
                 }
                 else
                 {
+                    admission.BeforeVerifiedOfferForTests?.Invoke(request);
                     operation = await verifiedSender.StartAsync(request, credentialEpoch, ct).ConfigureAwait(false);
                     var response = await operation.Primary.ConfigureAwait(false);
                     await consume(response).ConfigureAwait(false);

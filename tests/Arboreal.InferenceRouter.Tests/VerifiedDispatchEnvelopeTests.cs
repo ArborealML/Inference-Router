@@ -6,7 +6,7 @@ namespace Arboreal.InferenceRouter.Tests;
 public sealed class VerifiedDispatchEnvelopeTests
 {
     private static readonly Uri Endpoint = new("https://fixture.invalid:8443/v1?scope=fixture");
-    private static readonly VerifiedDispatchTarget Target = new("fixture", "model.canonical", "wide", new string('A', 64));
+    private static readonly VerifiedDispatchTarget Target = new("fixture", "model.canonical", "wide", new string('A', 64), Endpoint);
     private static readonly VerifiedInstanceRoute Route = new("host", 1, Target.Engine, Target.PlanDigest,
         "fixture-container", "fixture-process", 2, 3);
     private const string Credential = "fixture-credential";
@@ -18,7 +18,7 @@ public sealed class VerifiedDispatchEnvelopeTests
     {
         var source = """{ "model": "alias", "messages": [{"content": "two  spaces"}] }"""u8.ToArray();
         var auth = Capture(bearer);
-        var prepared = VerifiedDispatchEnvelope.Freeze(Target, Route, Guid.NewGuid(), Endpoint, source, auth);
+        var prepared = VerifiedDispatchEnvelope.Freeze(Target, Route, Guid.NewGuid(), Endpoint, "alias", source, auth);
         Array.Fill(source, (byte)0);
 
         byte[] expected = """{"model":"model.canonical","messages":[{"content":"two  spaces"}]}"""u8.ToArray();
@@ -34,7 +34,7 @@ public sealed class VerifiedDispatchEnvelopeTests
     [Fact]
     public async Task CompletionWithOmittedModelBindsTheCanonicalModelAndLegacyPath()
     {
-        var prepared = VerifiedDispatchEnvelope.Freeze(Target, Route, Guid.NewGuid(), Endpoint,
+        var prepared = VerifiedDispatchEnvelope.Freeze(Target, Route, Guid.NewGuid(), Endpoint, "alias",
             """{"prompt":"legacy"}"""u8.ToArray(), Capture(bearer: false));
         byte[] expected = """{"prompt":"legacy","model":"model.canonical"}"""u8.ToArray();
         Assert.Equal(expected, prepared.Body.ToArray());
@@ -52,10 +52,11 @@ public sealed class VerifiedDispatchEnvelopeTests
     [InlineData("""{"Model":"fixture-secret"}""")]
     [InlineData("""{"model":{"name":"fixture-secret"}}""")]
     [InlineData("""{"model":" "}""")]
+    [InlineData("""{"model":"fixture-secret"}""")]
     public void RejectsMalformedDuplicateOrShadowedRawModel(string body)
     {
         var error = Assert.Throws<VerifiedDispatchBindingException>(() => VerifiedDispatchEnvelope.Freeze(
-            Target, Route, Guid.NewGuid(), Endpoint, Encoding.UTF8.GetBytes(body), Capture(bearer: false)));
+            Target, Route, Guid.NewGuid(), Endpoint, "alias", Encoding.UTF8.GetBytes(body), Capture(bearer: false)));
         Assert.Equal(VerifiedDispatchRefusal.Body, error.Refusal);
         Assert.DoesNotContain("fixture-secret", error.ToString(), StringComparison.Ordinal);
     }
@@ -120,7 +121,7 @@ public sealed class VerifiedDispatchEnvelopeTests
     [InlineData("invocation")]
     public async Task RefusesAnyChangedOfferedBinding(string change)
     {
-        var prepared = VerifiedDispatchEnvelope.Freeze(Target, Route, Guid.NewGuid(), Endpoint,
+        var prepared = VerifiedDispatchEnvelope.Freeze(Target, Route, Guid.NewGuid(), Endpoint, "alias",
             """{"model":"alias","prompt":"expected"}"""u8.ToArray(), Capture(bearer: true));
         var invocation = prepared.Invocation;
         var uri = new UriBuilder(invocation.LogicalUri);
@@ -177,9 +178,18 @@ public sealed class VerifiedDispatchEnvelopeTests
         })
         {
             var error = Assert.Throws<VerifiedDispatchBindingException>(() => VerifiedDispatchEnvelope.Freeze(
-                Target, route, Guid.NewGuid(), Endpoint, """{"prompt":"fixture"}"""u8.ToArray(), Capture(bearer: false)));
+                Target, route, Guid.NewGuid(), Endpoint, "alias", """{"prompt":"fixture"}"""u8.ToArray(), Capture(bearer: false)));
             Assert.Equal(VerifiedDispatchRefusal.Target, error.Refusal);
         }
+    }
+
+    [Fact]
+    public void RefusesAnEndpointOutsideTheCapturedTarget()
+    {
+        var error = Assert.Throws<VerifiedDispatchBindingException>(() => VerifiedDispatchEnvelope.Freeze(
+            Target, Route, Guid.NewGuid(), new Uri("https://fixture.invalid:8443/other/v1?scope=fixture"), "alias",
+            """{"model":"alias","prompt":"fixture"}"""u8.ToArray(), Capture(bearer: false)));
+        Assert.Equal(VerifiedDispatchRefusal.Target, error.Refusal);
     }
 
     private static VerifiedDispatchCredential Capture(bool bearer) =>

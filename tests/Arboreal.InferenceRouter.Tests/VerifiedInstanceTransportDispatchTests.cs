@@ -6,7 +6,7 @@ namespace Arboreal.InferenceRouter.Tests;
 public sealed partial class VerifiedInstanceTransportTests
 {
     private static readonly byte[] VerifiedBody = """{"model":"model.canonical","prompt":"two  spaces"}"""u8.ToArray();
-    private static readonly Uri VerifiedEndpoint = new("http://fixture.invalid:8123/prefix/v1?mode=exact");
+    private static readonly Uri VerifiedEndpoint = new("http://127.0.0.1:8123/prefix/v1?mode=exact");
 
     [Theory(Timeout = 20_000)]
     [InlineData(null, false, "resident")]
@@ -25,7 +25,7 @@ public sealed partial class VerifiedInstanceTransportTests
 
         var request = await response.WaitAsync(rig.Token);
         Assert.Contains("POST /prefix/v1/completions?mode=exact HTTP/1.1\r\n", request.Headers, StringComparison.Ordinal);
-        Assert.Contains("Host: fixture.invalid:8123\r\n", request.Headers, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Host: 127.0.0.1:8123\r\n", request.Headers, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("Content-Type: application/json\r\n", request.Headers, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("Authorization: Bearer fixture-key\r\n", request.Headers, StringComparison.OrdinalIgnoreCase);
         Assert.Equal(VerifiedBody, request.Body);
@@ -83,18 +83,32 @@ public sealed partial class VerifiedInstanceTransportTests
     [InlineData("body")]
     [InlineData("auth")]
     [InlineData("target")]
+    [InlineData("raw-model")]
+    [InlineData("unexpected-credential")]
+    [InlineData("content-encoding")]
+    [InlineData("endpoint")]
     public async Task PreparedVerifiedMismatchSettlesWithoutCheckoutOrQueueTimer(string change)
     {
-        await using var rig = new DispatchRig(runtimeKey: change == "auth" ? "other-key" : "fixture-key");
+        await using var rig = new DispatchRig(runtimeKey: change == "auth" ? "other-key" : "fixture-key",
+            runtimeEndpoint: change == "endpoint" ? new Uri("http://127.0.0.1:8123/other/v1?mode=exact") : null);
         using var prepared = new HeldCheckout();
-        var source = """{"model":"alias","prompt":"two  spaces"}"""u8.ToArray();
+        var source = change == "raw-model"
+            ? """{"model":"other-model","prompt":"two  spaces"}"""u8.ToArray()
+            : """{"model":"alias","prompt":"two  spaces"}"""u8.ToArray();
+        rig.Admission.BeforeVerifiedOfferForTests = offer =>
+        {
+            if (change == "unexpected-credential")
+                offer.Headers.TryAddWithoutValidation("X-Api-Key", "unexpected-fixture-credential");
+            if (change == "content-encoding")
+                offer.Content!.Headers.ContentEncoding.Add("gzip");
+        };
         rig.AfterPrepare = async (_, _) => await prepared.HoldAsync(rig.Token);
         rig.Publish(generation: 1, differentPlan: change == "target");
         var ticket = await rig.EnqueueAsync(source);
         rig.Start();
         try
         {
-            if (change != "target")
+            if (change is not ("target" or "raw-model"))
             {
                 await prepared.Reached.WaitAsync(rig.Token);
                 if (change == "body") source[^4] = (byte)'X';
@@ -107,7 +121,7 @@ public sealed partial class VerifiedInstanceTransportTests
             Assert.Equal(0, rig.OrdinarySends);
             Assert.Empty(rig.Daemon.Requests);
             Assert.Equal(1, rig.Terminals(ticket));
-            Assert.Equal(change == "target" ? 0 : 1, rig.Selected.Length);
+            Assert.Equal(change is "target" or "raw-model" ? 0 : 1, rig.Selected.Length);
         }
         finally
         {
@@ -334,9 +348,9 @@ public sealed partial class VerifiedInstanceTransportTests
         private Task _dispatcher = Task.CompletedTask;
         private int _preparations;
 
-        internal DispatchRig(string? tier = null, bool switches = false, string runtimeKey = "fixture-key")
+        internal DispatchRig(string? tier = null, bool switches = false, string runtimeKey = "fixture-key", Uri? runtimeEndpoint = null)
         {
-            var parsed = VerifiedDispatchTargetTests.Load();
+            var parsed = VerifiedDispatchTargetTests.Load(endpoint: VerifiedEndpoint.AbsoluteUri);
             Daemon = new FakeDockerDaemonHandler();
             _projection = new DockerLifecycleProvider(parsed.Docker!, parsed.Name, Daemon);
             _resolver = new VerifiedDispatchTargetResolver(parsed, _projection);
@@ -344,7 +358,7 @@ public sealed partial class VerifiedInstanceTransportTests
             // This runtime is inert and separate from the parsed, resource-bearing target configuration.
             var engine = new EngineDefinition
             {
-                Name = parsed.Name, Endpoint = VerifiedEndpoint, Remote = true, Catalog = parsed.Catalog, ApiKey = runtimeKey,
+                Name = parsed.Name, Endpoint = runtimeEndpoint ?? VerifiedEndpoint, Remote = true, Catalog = parsed.Catalog, ApiKey = runtimeKey,
             };
             Admission = new ExactTicketAdmission(
                 static (_, _) => throw new InvalidOperationException("A verified route requires its prepared sender."),

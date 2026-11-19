@@ -76,6 +76,9 @@ public sealed class DockerLifecycleProvider : IEngineLifecycleProvider, IDisposa
 
     public string Kind => ProviderKind;
 
+    internal bool ProjectsCapturedConfig(string engineName, DockerLifecycleConfig configuration) =>
+        ReferenceEquals(_cfg, configuration) && string.Equals(_scope.EngineName, engineName, StringComparison.Ordinal);
+
     internal void ValidateScope(string engineName, DockerLifecycleConfig expected)
     {
         if (!string.Equals(_scope.EngineName, engineName, StringComparison.Ordinal))

@@ -34,13 +34,14 @@ internal sealed class VerifiedPreparedSender : IAsyncDisposable
         string backendRoute, Func<ValueTask>? cleanup = null)
     {
         var resident = claim.Resident ?? throw new VerifiedDispatchBindingException(VerifiedDispatchRefusal.Target);
-        var selected = resolver.Resolve(claim.Request.OriginalModel ?? claim.Ticket.Model, claim.Target.Profile,
-            claim.SwitchRequired ? null : resident.Target.Tier, configuration, backendRoute);
+        var requestedSpelling = claim.Request.OriginalModel ?? claim.Ticket.Model;
+        var selected = resolver.Resolve(requestedSpelling, claim.Target.Profile,
+            claim.SwitchRequired ? null : resident.Target, configuration, backendRoute);
         if (selected != resident.Target)
             throw new VerifiedDispatchBindingException(VerifiedDispatchRefusal.Target);
 
         var frozen = VerifiedDispatchEnvelope.Freeze(selected, resident.Route, Guid.NewGuid(), resident.Endpoint,
-            claim.Request.Request.Body, resident.Credential);
+            requestedSpelling, claim.Request.Request.Body, resident.Credential);
         return new VerifiedPreparedSender(claim, frozen, resident.Issuer, cleanup);
     }
 
@@ -51,7 +52,7 @@ internal sealed class VerifiedPreparedSender : IAsyncDisposable
         HttpRequestMessage request, long credentialEpoch, CancellationToken ct)
     {
         await _envelope.CheckOfferAsync(_envelope.Invocation, request, credentialEpoch, ct).ConfigureAwait(false);
-        return _transport.SendVerified(_envelope.Invocation, _envelope.Body.AsMemory(), _envelope.Credential.Authorization, ct);
+        return _transport.SendVerified(_envelope, ct);
     }
 
     public ValueTask DisposeAsync() => _cleanup?.Invoke() ?? ValueTask.CompletedTask;

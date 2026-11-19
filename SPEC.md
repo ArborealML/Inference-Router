@@ -1778,17 +1778,22 @@ retirement.
 **Offline verified dispatch (TASK-118).** An injected resident proof binds the committed
 route generation, exact instance and serving incarnation, launch epoch, captured configuration
 and effective Docker plan, canonical model and tier, measured window and slots. Parsed Docker
-create settings and the image manifest/platform pin describe launch intent. The independently
-verified fixture resident supplies matching instance evidence and measured capacity. A retired
+create settings and the image manifest/platform pin describe launch intent. Projection uses
+the captured config and binds its effective endpoint. The independently verified fixture resident
+supplies matching instance evidence and measured capacity. Resident reuse requires the same
+engine and canonical model as well as the resident's exact tier. A retired
 generation stays closed. Only a fresh verified availability publication can rearm a spent
 transient preparation and wake dispatch. The issuer orders closure against authorization for the
 first nonempty application write. An authorization that wins remains counted through retirement.
 
 The exact ticket's preparation freezes the method, effective URI, JSON media type, rewritten
-UTF-8 body and upstream credential policy including its epoch. Validation rejects malformed or
-duplicate and case-shadowed model fields before rewriting, then requires one canonical model
-field in the rewritten object. An offer that disagrees with the frozen request refuses before
-checkout. The same transport worker exposes the primary result and typed terminal evidence.
+UTF-8 body and upstream credential policy including its epoch. Validation rejects malformed,
+duplicate and case-shadowed model fields before rewriting. A present raw model must match the
+captured requested spelling under the catalog's case-insensitive comparison. An omitted model
+uses the captured resolution. The rewritten object must name the exact canonical model once.
+The offer admits only the bound Authorization and optional matching Host request headers and
+the exact application/json content type. A disagreement refuses before checkout. Only the
+frozen request values reach the verified serializer. The same transport worker exposes the primary result and typed terminal evidence.
 A submitted use releases once after conclusive no-transfer, confirmed grant return or
 issuer-confirmed retirement, together with successful preparation cleanup. Ambiguous checkout
 and unconfirmed cleanup preserve the count even after logical failure. Stream close and permit

@@ -4,7 +4,7 @@ using Arboreal.InferenceRouter.Lifecycle;
 
 namespace Arboreal.InferenceRouter;
 
-internal sealed record VerifiedDispatchTarget(string Engine, string Model, string Tier, string PlanDigest)
+internal sealed record VerifiedDispatchTarget(string Engine, string Model, string Tier, string PlanDigest, Uri Endpoint)
 {
     internal bool Matches(VerifiedInstanceRoute route) =>
         string.Equals(Engine, route.Engine, StringComparison.Ordinal) &&
@@ -21,6 +21,7 @@ internal sealed class VerifiedDispatchTargetResolver
     private readonly string _engine;
     private readonly DockerTargetPlans _plans;
     private readonly DockerImageIdentity _image;
+    private readonly Uri _endpoint;
     private readonly int _readinessTimeoutMs;
     private readonly DockerLifecycleProvider _projection;
     private readonly Dictionary<string, EngineModelDefinition> _spellings = new(StringComparer.OrdinalIgnoreCase);
@@ -29,8 +30,10 @@ internal sealed class VerifiedDispatchTargetResolver
     {
         _engine = engine.Name;
         _projection = projection;
-        if (engine.Docker is not { TargetPlans: { } plans, ImageIdentity: { } image, WaitTimeoutMs: > 0 } docker)
+        if (engine.Docker is not { TargetPlans: { } plans, ImageIdentity: { } image, WaitTimeoutMs: > 0 } docker ||
+            !projection.ProjectsCapturedConfig(engine.Name, docker) || !VerifiedDispatchEnvelope.IsHttpEndpoint(engine.Endpoint))
             throw new VerifiedDispatchBindingException(VerifiedDispatchRefusal.Target);
+        _endpoint = engine.Endpoint;
         _plans = plans;
         _image = image;
         _readinessTimeoutMs = docker.WaitTimeoutMs;
@@ -60,13 +63,19 @@ internal sealed class VerifiedDispatchTargetResolver
 
     // Use the resident tier only for ordinary reuse. A null tier with no resident selects the launch default.
     internal VerifiedDispatchTarget Resolve(
-        string requestedModel, string? selectedTier, string? residentTier, string configuration, string backendRoute)
+        string requestedModel, string? selectedTier, VerifiedDispatchTarget? resident, string configuration, string backendRoute)
     {
         if (!_spellings.TryGetValue(requestedModel, out var model) ||
             string.IsNullOrWhiteSpace(configuration) || string.IsNullOrWhiteSpace(backendRoute))
             throw new VerifiedDispatchBindingException(VerifiedDispatchRefusal.Target);
 
-        var tierName = selectedTier ?? residentTier;
+        if (selectedTier is null && resident is not null &&
+            (!string.Equals(resident.Engine, _engine, StringComparison.Ordinal) ||
+             !string.Equals(resident.Model, model.Name, StringComparison.Ordinal) ||
+             !VerifiedDispatchEnvelope.SameEffectiveUri(_endpoint, resident.Endpoint)))
+            throw new VerifiedDispatchBindingException(VerifiedDispatchRefusal.Target);
+
+        var tierName = selectedTier ?? resident?.Tier;
         var tier = tierName is null ? null : model.ServingProfiles
             .FirstOrDefault(profile => string.Equals(profile.Name, tierName, StringComparison.Ordinal));
         if (tierName is not null && tier is null)
@@ -90,8 +99,8 @@ internal sealed class VerifiedDispatchTargetResolver
             throw new VerifiedDispatchBindingException(VerifiedDispatchRefusal.Target);
 
         var plan = new HostCheckpointPlan(_engine, launch.Model, launch.Profile, configuration, _readinessTimeoutMs,
-            backendRoute, DigestSettings(create, _image));
-        return new VerifiedDispatchTarget(_engine, launch.Model, launch.Profile, plan.Digest());
+            backendRoute, DigestSettings(create, _image, _endpoint));
+        return new VerifiedDispatchTarget(_engine, launch.Model, launch.Profile, plan.Digest(), _endpoint);
     }
 
     private bool MatchesProjection(DockerCreateRequest create, DockerTargetLaunch launch) =>
@@ -100,7 +109,7 @@ internal sealed class VerifiedDispatchTargetResolver
         string.Equals(create.Labels.GetValueOrDefault(DockerLifecycleProvider.LabelModel), launch.Model, StringComparison.Ordinal) &&
         string.Equals(create.Labels.GetValueOrDefault(DockerLifecycleProvider.LabelProfile), launch.Profile, StringComparison.Ordinal);
 
-    private static string DigestSettings(DockerCreateRequest create, DockerImageIdentity image)
+    private static string DigestSettings(DockerCreateRequest create, DockerImageIdentity image, Uri endpoint)
     {
         // Freeze the mutable projection as a single structured payload before computing its identity.
         using var buffer = new MemoryStream();
@@ -110,6 +119,7 @@ internal sealed class VerifiedDispatchTargetResolver
             JsonSerializer.Serialize(writer, create, DockerJsonContext.Default.DockerCreateRequest);
             writer.WriteStringValue(image.RepoDigest);
             writer.WriteStringValue(image.Platform);
+            writer.WriteStringValue(endpoint.AbsoluteUri);
             writer.WriteEndArray();
         }
         return Convert.ToHexString(SHA256.HashData(buffer.GetBuffer().AsSpan(0, checked((int)buffer.Length))));

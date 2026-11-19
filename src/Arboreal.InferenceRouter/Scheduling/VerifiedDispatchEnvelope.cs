@@ -84,17 +84,17 @@ internal sealed class VerifiedDispatchEnvelope
 
     internal static VerifiedDispatchEnvelope Freeze(
         VerifiedDispatchTarget target, VerifiedInstanceRoute route, Guid invocationId, Uri endpoint,
-        ReadOnlyMemory<byte> rawBody, VerifiedDispatchCredential credential)
+        string requestedSpelling, ReadOnlyMemory<byte> rawBody, VerifiedDispatchCredential credential)
     {
-        if (!target.Matches(route) || invocationId == Guid.Empty || !IsHttpEndpoint(endpoint))
+        if (!target.Matches(route) || invocationId == Guid.Empty || !SameEffectiveUri(target.Endpoint, endpoint))
             throw new VerifiedDispatchBindingException(VerifiedDispatchRefusal.Target);
 
         // Validate and rewrite the same owned source bytes.
         var source = rawBody.ToArray();
-        ValidateModel(source, canonical: null);
+        ValidateModel(source, requestedSpelling, StringComparison.OrdinalIgnoreCase, requireMember: false);
         var suffix = RouterCore.LooksLikeCompletion(source) ? "completions" : "chat/completions";
         var rewritten = ModelRewriter.Rewrite(source, target.Model);
-        ValidateModel(rewritten, target.Model);
+        ValidateModel(rewritten, target.Model, StringComparison.Ordinal, requireMember: true);
 
         var uri = EngineRuntime.Combine(endpoint, suffix);
         return new VerifiedDispatchEnvelope(new VerifiedInstanceInvocation(route, invocationId, uri),
@@ -109,8 +109,8 @@ internal sealed class VerifiedDispatchEnvelope
             !SameEffectiveUri(Invocation.LogicalUri, invocation.LogicalUri) ||
             !SameEffectiveUri(Invocation.LogicalUri, offer.RequestUri) ||
             !string.Equals(offer.Method.Method, "POST", StringComparison.Ordinal) ||
-            (offer.Headers.Host is { } host && !string.Equals(host, Invocation.LogicalUri.Authority, StringComparison.Ordinal)) ||
-            offer.Content is not { } content || !MatchesHeader(content.Headers, "Content-Type", JsonContentType))
+            !MatchesRequestHeaders(offer.Headers, Invocation.LogicalUri.Authority) ||
+            offer.Content is not { } content || !MatchesContentHeaders(content.Headers))
             throw new VerifiedDispatchBindingException(VerifiedDispatchRefusal.OfferedRequest);
 
         if (credentialEpoch != Credential.Epoch ||
@@ -131,6 +131,27 @@ internal sealed class VerifiedDispatchEnvelope
             throw new VerifiedDispatchBindingException(VerifiedDispatchRefusal.OfferedRequest);
     }
 
+    private static bool MatchesRequestHeaders(HttpRequestHeaders headers, string authority)
+    {
+        foreach (var header in headers.NonValidated)
+        {
+            if (string.Equals(header.Key, "Authorization", StringComparison.OrdinalIgnoreCase)) continue;
+            if (!string.Equals(header.Key, "Host", StringComparison.OrdinalIgnoreCase) ||
+                header.Value.Count != 1 ||
+                !string.Equals(header.Value.ToString(), authority, StringComparison.Ordinal))
+                return false;
+        }
+        return true;
+    }
+
+    private static bool MatchesContentHeaders(HttpContentHeaders headers)
+    {
+        foreach (var header in headers.NonValidated)
+            if (!string.Equals(header.Key, "Content-Type", StringComparison.OrdinalIgnoreCase))
+                return false;
+        return MatchesHeader(headers, "Content-Type", JsonContentType);
+    }
+
     private static bool MatchesHeader(HttpHeaders headers, string name, string? expected)
     {
         if (!headers.NonValidated.TryGetValues(name, out var values)) return expected is null;
@@ -138,17 +159,17 @@ internal sealed class VerifiedDispatchEnvelope
             string.Equals(values.ToString(), expected, StringComparison.Ordinal);
     }
 
-    private static bool IsHttpEndpoint(Uri? uri) =>
+    internal static bool IsHttpEndpoint(Uri? uri) =>
         uri is { IsAbsoluteUri: true, Scheme: "http" or "https", UserInfo.Length: 0, Fragment.Length: 0 };
 
-    private static bool SameEffectiveUri(Uri expected, Uri? offer) =>
-        offer is not null && IsHttpEndpoint(offer) &&
+    internal static bool SameEffectiveUri(Uri expected, Uri? offer) =>
+        offer is not null && IsHttpEndpoint(offer) && IsHttpEndpoint(expected) &&
         string.Equals(expected.Scheme, offer.Scheme, StringComparison.Ordinal) &&
         string.Equals(expected.Authority, offer.Authority, StringComparison.Ordinal) &&
         string.Equals(expected.PathAndQuery, offer.PathAndQuery, StringComparison.Ordinal);
 
     // Enumerate the original members so duplicate and case-shadowed spellings cannot collapse in lookup.
-    private static void ValidateModel(ReadOnlyMemory<byte> body, string? canonical)
+    private static void ValidateModel(ReadOnlyMemory<byte> body, string expected, StringComparison comparison, bool requireMember)
     {
         try
         {
@@ -163,12 +184,11 @@ internal sealed class VerifiedDispatchEnvelope
                 if (found || !member.NameEquals("model") || member.Value.ValueKind != JsonValueKind.String)
                     throw new VerifiedDispatchBindingException(VerifiedDispatchRefusal.Body);
                 var model = member.Value.GetString();
-                if (string.IsNullOrWhiteSpace(model) ||
-                    (canonical is not null && !string.Equals(model, canonical, StringComparison.Ordinal)))
+                if (string.IsNullOrWhiteSpace(model) || !string.Equals(model, expected, comparison))
                     throw new VerifiedDispatchBindingException(VerifiedDispatchRefusal.Body);
                 found = true;
             }
-            if (canonical is not null && !found)
+            if (requireMember && !found)
                 throw new VerifiedDispatchBindingException(VerifiedDispatchRefusal.Body);
         }
         catch (JsonException)

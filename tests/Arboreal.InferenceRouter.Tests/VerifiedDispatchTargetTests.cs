@@ -10,6 +10,7 @@ public sealed class VerifiedDispatchTargetTests
     private const string OtherRepoDigest = "example/fixture@sha256:3333333333333333333333333333333333333333333333333333333333333333";
     private const string Configuration = "fixture-config";
     private const string BackendRoute = "fixture-route";
+    private const string DefaultEndpoint = "http://127.0.0.1:18021/v1";
 
     [Fact]
     public void CanonicalAliasAndExplicitDefaultShareAPlanWhileResidentReuseKeepsItsTier()
@@ -23,11 +24,10 @@ public sealed class VerifiedDispatchTargetTests
         Assert.Equal("wide", canonical.Tier);
         Assert.Equal(canonical, resolver.Resolve("ALIAS", null, null, Configuration, BackendRoute));
         Assert.Equal(canonical, resolver.Resolve("alias", "wide", null, Configuration, BackendRoute));
-        Assert.Equal(canonical, resolver.Resolve("alias", "wide", "resident", Configuration, BackendRoute));
-
-        var resident = resolver.Resolve("alias", null, "resident", Configuration, BackendRoute);
+        var resident = resolver.Resolve("model.canonical", "resident", null, Configuration, BackendRoute);
+        Assert.Equal(canonical, resolver.Resolve("alias", "wide", resident, Configuration, BackendRoute));
         Assert.Equal("resident", resident.Tier);
-        Assert.Equal(resident, resolver.Resolve("model.canonical", "resident", null, Configuration, BackendRoute));
+        Assert.Equal(resident, resolver.Resolve("alias", null, resident, Configuration, BackendRoute));
         Assert.NotEqual(canonical.PlanDigest, resident.PlanDigest);
         Assert.Empty(daemon.Requests);
     }
@@ -79,6 +79,7 @@ public sealed class VerifiedDispatchTargetTests
     [InlineData("platform")]
     [InlineData("configuration")]
     [InlineData("route")]
+    [InlineData("endpoint")]
     public void DifferentEffectiveInputsChangeTheDigestWithIdenticalTierAndCapacity(string change)
     {
         var baseline = Load();
@@ -87,7 +88,8 @@ public sealed class VerifiedDispatchTargetTests
             mount: change == "mount" ? "/fixture/other" : "/fixture/weights",
             memory: change == "memory" ? 8_388_608 : 6_291_456,
             digest: change == "manifest" ? OtherRepoDigest : RepoDigest,
-            platform: change == "platform" ? "linux/arm64" : "linux/amd64");
+            platform: change == "platform" ? "linux/arm64" : "linux/amd64",
+            endpoint: change == "endpoint" ? "http://127.0.0.1:18021/other/v1" : DefaultEndpoint);
         using var daemon = new FakeDockerDaemonHandler();
         using var originalProjection = new DockerLifecycleProvider(baseline.Docker!, baseline.Name, daemon);
         using var changedProjection = new DockerLifecycleProvider(changed.Docker!, changed.Name, daemon);
@@ -107,7 +109,7 @@ public sealed class VerifiedDispatchTargetTests
         // Independently observe the projection and the equal-JSON image pin controls.
         var oldCreate = CreateBytes(originalProjection, baseline, oldTier);
         var newCreate = CreateBytes(changedProjection, changed, newTier);
-        if (change is "manifest" or "platform" or "configuration" or "route")
+        if (change is "manifest" or "platform" or "configuration" or "route" or "endpoint")
             Assert.Equal(oldCreate, newCreate);
         else
             Assert.False(oldCreate.AsSpan().SequenceEqual(newCreate));
@@ -116,6 +118,48 @@ public sealed class VerifiedDispatchTargetTests
             "fixture-container", "fixture-incarnation", 2, 3);
         Assert.True(original.Matches(oldProof));
         Assert.False(candidate.Matches(oldProof));
+        Assert.Empty(daemon.Requests);
+    }
+
+    [Theory]
+    [InlineData("engine")]
+    [InlineData("model")]
+    public void RefusesForeignResidentReuseEvenWhenTheTierNameMatches(string foreign)
+    {
+        var engine = Load();
+        using var daemon = new FakeDockerDaemonHandler();
+        using var projection = new DockerLifecycleProvider(engine.Docker!, engine.Name, daemon);
+        var resolver = new VerifiedDispatchTargetResolver(engine, projection);
+        var resident = resolver.Resolve("alias", "resident", null, Configuration, BackendRoute);
+        var wrong = foreign == "engine" ? resident with { Engine = "other-engine" } : resident with { Model = "other-model" };
+
+        var error = Assert.Throws<VerifiedDispatchBindingException>(
+            () => resolver.Resolve("alias", null, wrong, Configuration, BackendRoute));
+
+        Assert.Equal(VerifiedDispatchRefusal.Target, error.Refusal);
+        Assert.Equal("wide", resolver.Resolve("alias", null, null, Configuration, BackendRoute).Tier);
+        Assert.Empty(daemon.Requests);
+    }
+
+    [Fact]
+    public void RefusesProjectionFromADifferentConfigWithTheSameLabelsAndImage()
+    {
+        var captured = Load();
+        var other = Load(mode: "different");
+        using var daemon = new FakeDockerDaemonHandler();
+        using var expected = new DockerLifecycleProvider(captured.Docker!, captured.Name, daemon);
+        using var foreign = new DockerLifecycleProvider(other.Docker!, other.Name, daemon);
+        using var expectedJson = JsonDocument.Parse(CreateBytes(expected, captured,
+            captured.Catalog["model.canonical"].ServingProfiles[0]));
+        using var foreignJson = JsonDocument.Parse(CreateBytes(foreign, other,
+            other.Catalog["model.canonical"].ServingProfiles[0]));
+        Assert.True(JsonElement.DeepEquals(expectedJson.RootElement.GetProperty("Labels"), foreignJson.RootElement.GetProperty("Labels")));
+        Assert.True(JsonElement.DeepEquals(expectedJson.RootElement.GetProperty("Image"), foreignJson.RootElement.GetProperty("Image")));
+        Assert.False(JsonElement.DeepEquals(expectedJson.RootElement.GetProperty("Env"), foreignJson.RootElement.GetProperty("Env")));
+
+        var error = Assert.Throws<VerifiedDispatchBindingException>(() => new VerifiedDispatchTargetResolver(captured, foreign));
+
+        Assert.Equal(VerifiedDispatchRefusal.Target, error.Refusal);
         Assert.Empty(daemon.Requests);
     }
 
@@ -128,7 +172,7 @@ public sealed class VerifiedDispatchTargetTests
 
     internal static EngineDefinition Load(
         string mode = "normal", string mount = "/fixture/weights", long memory = 6_291_456, string digest = RepoDigest,
-        string platform = "linux/amd64", string alias = "alias", bool singleton = false)
+        string platform = "linux/amd64", string alias = "alias", bool singleton = false, string endpoint = DefaultEndpoint)
     {
         const string residentTier = """
             [[engine.fixture.catalog."model.canonical".serving]]
@@ -144,9 +188,10 @@ public sealed class VerifiedDispatchTargetTests
         return RouterConfigLoader.Load($$"""
             [engine.fixture]
             kind = "openai-compatible"
-            endpoint = "http://fixture.invalid/v1"
+            endpoint = "{{endpoint}}"
             lifecycle_owner = "router"
             [engine.fixture.docker]
+            socket = "unix:///var/run/docker.sock"
             image = "{{ImageId}}"
             image_id = "{{ImageId}}"
             image_repo_digest = "{{digest}}"
