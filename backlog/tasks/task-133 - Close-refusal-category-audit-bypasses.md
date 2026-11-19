@@ -1,11 +1,11 @@
 ---
 id: TASK-133
 title: Close refusal-category audit bypasses
-status: In Progress
+status: Waiting
 assignee:
-  - '@gpt-6.2-sol-shutdown'
+  - '@gpt-6.2-astra'
 created_date: '2026-11-19T06:27:00Z'
-updated_date: '2026-11-19T07:13:00Z'
+updated_date: '2026-11-19T18:37:00Z'
 labels: []
 dependencies: []
 priority: medium
@@ -15,7 +15,7 @@ ordinal: 131000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Audit individual failure expressions in EngineRuntime so record clones, same-line calls and compound writes cannot hide unclassified caller-facing reasons.
+The hosted CI result and independent correction verdict wake [PR #10](https://github.com/ArborealML/Inference-Router/pull/10) for disposition. The tested head 1bf1263 checks failed-result initializers and direct ref/out FailureReason writes. All 41 focused Release cases passed with zero skips, including three new bypass controls. Bounded review was dispatched November 19.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
