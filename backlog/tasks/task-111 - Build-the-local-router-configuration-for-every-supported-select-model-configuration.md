@@ -3,11 +3,11 @@ id: TASK-111
 title: >-
   Build the local router configuration for every supported select-model
   configuration
-status: Waiting
+status: In Progress
 assignee:
-  - '@chatswarm'
+  - '@gpt-6.2-sol-config'
 created_date: '2026-11-18T18:15:00Z'
-updated_date: '2026-11-19T12:17:00Z'
+updated_date: '2026-11-19T12:26:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -19,7 +19,7 @@ ordinal: 109000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-The independent single-GPU tier plan review dispatched November 19 wakes Config. [PR #27](https://github.com/ArborealML/Inference-Router/pull/27) merged at 8d8482f after the correction review and hosted checks passed. Its eight paired-GPU projections bring landed offline coverage to 57 of 75. The model-level placement correction rejected all eight previously accepted invalid inputs and retained both valid controls. Live daemon image, logging, restart and peer authority remain unqualified.
+Config is implementing six single-GPU HyperQwen target projections on the paired-policy landing. [PR #27](https://github.com/ArborealML/Inference-Router/pull/27) brought offline coverage to 57/75. The six targets span two models and three tiers; aliases and device choices do not increase that count.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -32,7 +32,7 @@ The independent single-GPU tier plan review dispatched November 19 wakes Config.
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-For six single-GPU targets, review an optional one-index tier override of the common NVIDIA device request. Check inheritance, HIP conflicts, projection without common resources, zero writes, paired payload identity on returning to the default, and digest changes for device ID alone. Preserve paired environment order. Twelve parking targets remain separate.
+The plan review on c36b8e8 passed. Freeze one canonical device index per opted tier; omission inherits ordered common IDs or all. Account for the effective request at both provider early returns. Validate common inputs and reject common HIP devices with a tier NVIDIA override. Reject misplaced GPU at engine Docker, model, model Docker without tiers, or serving-row root; retain valid common resources. Use one dual-format six-target fixture, paired return bytes, representative malformed inputs, copied arrays, a device-ID-only digest change and engine-wide zero-write refusal. Host verification must establish physical mapping, driver, capacity and instance authority before activation.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
