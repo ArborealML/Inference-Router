@@ -34,6 +34,7 @@ public sealed class RouterCore : IInferenceRouter
     private long _seq;
     private readonly CancellationTokenSource _shutdown = new();
     internal Action? BeforeCostCommitForTests;
+    internal TimeProvider ResponseTimeoutClockForTests = TimeProvider.System;
 
     public RouterCore(RouterConfig config, IRequestScheduler? scheduler = null, EventRing? events = null)
         : this(config, scheduler, events, TimeProvider.System)
@@ -683,11 +684,21 @@ public sealed class RouterCore : IInferenceRouter
                 ticket.StreamChannel ??= Channel.CreateUnbounded<ReadOnlyMemory<byte>>(
                     new UnboundedChannelOptions { SingleReader = true, SingleWriter = true });
             }
+            var ownsForward = false;
             try
             {
                 using var cts = CancellationTokenSource.CreateLinkedTokenSource(_shutdown.Token, execCts.Token);
                 var body = ModelRewriter.Rewrite(candidate.Request.Body, engine.CanonicalModel(ticket.Model) ?? ticket.Model);
                 var suffix = LooksLikeCompletion(candidate.Request.Body) ? "completions" : "chat/completions";
+
+                if (!engine.TryBeginForward(cts.Token))
+                {
+                    Fail(ticket, "cancelled", "cancelled");
+                    return;
+                }
+                ownsForward = true;
+                if (engine.AfterForwardAdmissionForTests is { } afterAdmission)
+                    await afterAdmission().ConfigureAwait(false);
 
                 // The cap bounds the wait for the engine to *answer*: the whole response body for a
                 // non-stream call, the first byte of the body for a stream. Response headers are not an
@@ -708,7 +719,7 @@ public sealed class RouterCore : IInferenceRouter
                     // delay, Task.WhenAny would report the delay as the winner, and a caller who hung up
                     // would be answered `engine_timeout` instead of `cancelled`. It runs on its own source,
                     // which is disarmed when the request ends or when the engine delivers what it owed.
-                    using var gate = new ResponseGate(responseTimeout.Value);
+                    using var gate = new ResponseGate(responseTimeout.Value, ResponseTimeoutClockForTests);
                     var delay = Task.Delay(Timeout.Infinite, gate.Token);
                     var send = SendAsync(engine, body, suffix, ticket.Model, servingProof, cts.Token);
                     HttpResponseMessage? res = null;
@@ -744,11 +755,8 @@ public sealed class RouterCore : IInferenceRouter
                         res?.Dispose();
                         if (res is null)
                         {
-                            _ = send.ContinueWith(static t =>
-                            {
-                                if (t.Status == TaskStatus.RanToCompletion) { t.Result.Dispose(); }
-                                else { _ = t.Exception; }
-                            }, TaskScheduler.Default);
+                            ownsForward = false;
+                            _ = DisposeLateForwardAsync(engine, send);
                         }
                     }
 
@@ -773,6 +781,7 @@ public sealed class RouterCore : IInferenceRouter
             }
             finally
             {
+                if (ownsForward) engine.EndForward();
                 engine.RecordPrefix(candidate.Messages());
             }
         }
@@ -791,6 +800,23 @@ public sealed class RouterCore : IInferenceRouter
             ticket.ExecCts?.Dispose();
             ticket.ExecCts = null;
             DecrementOnce();
+        }
+    }
+
+    private static async Task DisposeLateForwardAsync(EngineRuntime engine, Task<HttpResponseMessage> send)
+    {
+        try
+        {
+            using var response = await send.ConfigureAwait(false);
+        }
+        catch (Exception)
+        {
+            // The logical ticket already owns the timeout/error outcome. Observe this late
+            // send and retain the local client through response disposal.
+        }
+        finally
+        {
+            engine.EndForward();
         }
     }
 
@@ -858,7 +884,7 @@ public sealed class RouterCore : IInferenceRouter
         private readonly CancellationTokenSource _cts;
         private int _passed;
 
-        public ResponseGate(TimeSpan dueIn) => _cts = new CancellationTokenSource(dueIn);
+        public ResponseGate(TimeSpan dueIn, TimeProvider clock) => _cts = new CancellationTokenSource(dueIn, clock);
         public CancellationToken Token => _cts.Token;
         public void Pass() { Interlocked.Exchange(ref _passed, 1); _cts.Cancel(); }
         public bool Tripped => Volatile.Read(ref _passed) == 0 && _cts.IsCancellationRequested;
