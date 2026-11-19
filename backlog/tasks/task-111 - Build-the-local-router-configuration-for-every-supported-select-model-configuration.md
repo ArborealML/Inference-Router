@@ -3,11 +3,11 @@ id: TASK-111
 title: >-
   Build the local router configuration for every supported select-model
   configuration
-status: Preparing
+status: Waiting
 assignee:
-  - '@gpt-6.2-sol-config'
+  - '@chatswarm'
 created_date: '2026-11-18T18:15:00Z'
-updated_date: '2026-11-19T07:52:00Z'
+updated_date: '2026-11-19T07:57:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -19,7 +19,7 @@ ordinal: 109000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Build a usable machine-local router configuration from the installed primary-host selector. Cover each valid model, alias, profile, default and supported option combination. Validate against the installed selector and router loader, and identify any missing router representation explicitly. Decision-68 authorizes local engine qualification. TASK-125 supplies the first pair while full parity proceeds.
+Independent plan review of MiniMax 32k entrypoint and IPC wakes the next offline implementation. Build the local configuration from the installed selector and verify all valid models, aliases, profiles, defaults and options. Decision-68 authorizes local qualification; TASK-125 carries the first live pair.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -32,7 +32,7 @@ Build a usable machine-local router configuration from the installed primary-hos
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Implement the reviewed offline tier-memory projection on the landed target table. At serving[].docker accept memory_bytes and memory_swap_bytes as exact 64-bit byte counts. If both fields are omitted, inherit the entire engine pair. If both are supplied, replace it. RAM alone is valid only without common swap. Swap alone refuses. Share the 6 MiB minimum and total-at-least-RAM validation. Omitted swap leaves Docker defaults. Freeze the resolved pair per named target and serialize absent fields by omission, including when common resources are absent. Preserve other resources, legacy parsing and configuration-wide activation refusal. Reject duplicate, null, shadowed or unknown opted-in fields. Compare repeated named 512k and 768k projections through one provider against exact selector bytes, check inheritance and invalid boundaries, mutation isolation and memory-only zero writes. Reuse existing controls for unchanged behavior. Include the redacted selector coverage report.
+For one dedicated MiniMax engine, project a literal absolute executable into Docker Entrypoint, preserve the separate Cmd array and project explicit host IPC into HostConfig.IpcMode. IPC alone needs HostConfig; entrypoint alone does not. Detect both options before raw ancestry and authority fields can be shadowed. Preserve absent-field behavior and keep each option behind startup and pre-mutation gates for every model on that engine. Compare the exact serving payload through fake projection, with isolated options, invalid input and zero-write controls. Verify the private config with the loader. Keep other selector gaps independent.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
@@ -42,7 +42,9 @@ Selector inventory at fingerprint 8af827d3c375efda08cad8a5b9b7fd862b44a2f5a74820
 
 [PR #7](https://github.com/ArborealML/Inference-Router/pull/7) corrects shadowed ownership and selector fields, common Docker key casing and template substitution. Review of 7eda8ad accepted the correction subject to verification. At 6505ea1 all 108 focused tests, the pinned pair config and server Native AOT passed. The CLI separately refused a sibling select/Select pair and a duplicate common env key at the expected paths. Integration head 3af5f10 preserves both SPEC revisions. Continue offline comparison for remaining targets. Before activation, bind receipts and labels to the same canonical model, tier and serving instance.
 
-Offline comparison covered 36 Strata, 26 HyperQwen and 13 Maya targets. MiniMax 32k requires host IPC and an entrypoint override. Qwen 768k and 1m require profile-specific memory and total swap. At 606961f all 127 focused Docker target/resource tests passed. The pinned Defiant config loaded and the linux-x64 server Native AOT publish had zero trim warnings. The landing preserves the vacancy and transport revisions. Other gaps include profile aliases, GPU ordering, shared memory, runtime policy, nested mounts and health settings.
+Offline comparison covered 36 Strata, 26 HyperQwen and 13 Maya targets. MiniMax 32k requires host IPC and an entrypoint override. Qwen 768k and 1m require profile-specific memory and total swap. At 606961f all 127 focused Docker target/resource tests passed. The pinned Defiant config loaded and the linux-x64 server Native AOT publish had zero trim warnings.  Other gaps include profile aliases, GPU ordering, shared memory, runtime policy, nested mounts and health settings.
 
-[PR #12](https://github.com/ArborealML/Inference-Router/pull/12) landed at 5992c4e with SPEC v0.12.78 after hosted Release, Native AOT and smoke passed on 7133401. Review accepted supplied-profile projection. Config-only controls accepted either common RAM key spelling alone and refused both together as duplicate. Automatic profile selection and live activation remain separate. Prepare the MiniMax IPC and entrypoint plan.
+[PR #12](https://github.com/ArborealML/Inference-Router/pull/12) landed at 5992c4e with SPEC v0.12.78 after hosted Release, Native AOT and smoke passed on 7133401. Review accepted supplied-profile projection. Config-only controls accepted either common RAM key spelling alone and refused both together as duplicate. Automatic profile selection and live activation remain separate.
+
+MiniMax 32k offline IPC and entrypoint plan review dispatched against 5992c4e on November 19.
 <!-- SECTION:NOTES:END -->
