@@ -1,11 +1,11 @@
 ---
 id: TASK-110
 title: Coordinate model engines that share one host with exclusive residency
-status: Preparing
+status: Waiting
 assignee:
-  - '@gpt-6.2-sol-lifecycle'
+  - '@gpt-6.2-astra'
 created_date: '2026-11-18T18:13:00Z'
-updated_date: '2026-11-19T08:48:00Z'
+updated_date: '2026-11-19T08:52:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -19,7 +19,7 @@ ordinal: 108000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Prepare the Defiant closed-route staging and disposal check. After a declined publication, the exact launch remains recoverable and neither generation can mint a permit.
+Independent plan review of closed-route staging on the landed host-drain base wakes implementation.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -36,7 +36,7 @@ Prepare the Defiant closed-route staging and disposal check. After a declined pu
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Trace the landed coordinator and guard. Identify the smallest offline slice for retained launch ID, closed staging and explicit same-generation open, including a refusal or deadline followed by disposal. Qualify actual mint authority and a fresh-open positive. Coordinate dispatch and switch ownership with TASK-118 and TASK-25; production activation remains gated.
+Exercise the common launch-completion entry through an injected staged guard. Retain the exact LaunchApplied operation, instance, epoch and plan through refusal and disposal. Verify old and staged authority cannot mint or write. A new coordinator revalidates that same instance with one create total, stages a fresh generation and completes while closed. Only explicit matching Open permits the exact send. Keep fallible storage before visibility. Runtime deadlines, enrolled dispatch and production authority remain separate. Independent review dispatched against 3160a11.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
