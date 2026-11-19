@@ -1,11 +1,11 @@
 ---
 id: TASK-110
 title: Coordinate model engines that share one host with exclusive residency
-status: Waiting
+status: In Progress
 assignee:
-  - '@gpt-6.2-astra'
+  - '@gpt-6.2-sol-lifecycle'
 created_date: '2026-11-18T18:13:00Z'
-updated_date: '2026-11-19T09:47:00Z'
+updated_date: '2026-11-19T10:00:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -19,7 +19,7 @@ ordinal: 108000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Shutdown completed its source readback. The independent deadline-plan verdict wakes the coordinator for disposition.
+Implement the fixture-only staged host and original timeout handoff for the enrolled deadline pair.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -36,7 +36,7 @@ Shutdown completed its source readback. The independent deadline-plan verdict wa
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-On 6177f17 the enrolled writer receives no deadline. Reserve the exact closed route generation before bound reads. Start the validated launch-owned budget before post-drain identity observation; include complete reads, staging and retries. Changing caller fallback preserves the recorded digest. After installation, under host admission then transition, settle once immediately before proof CAS and closed-authority commit. A typed witness carries handled stop, expiry or committed outcome past generic failure. Never decline after successful CAS. Preserve synthetic acceptance separately. Deliver hooks and Complete outside both locks while retaining reservation/drain. After cleanup, Open checks live engine stop and exact committed generation without resampling expiry. Fence early wakes and signal outside locks after Open. Bridge a real RunSwitchAsync claim to staged publication by fixture injection. Retain production capacity guards. Drive qualifying evidence at 99 ms, then equality after staging with timers withheld. Require exactly one health_timeout, zero duplicate launch_failed, proof, Complete, permits or bytes, retained launch and fresh same-ID recovery. Independent review dispatched; implementation awaits disposition.
+Review on 6177f17 confirmed the fake plan uses 1000 ms, ordinary enrollment settles before guard, and the staged bool fixture bypasses runtime. Persist a validated 100 ms B plan, independently vary caller wait. Lifecycle starts one original-policy budget before post-drain identity and reserves the exact closed generation before bound reads. Hand a pinned child to Shutdown for a fixture-scoped real RunSwitchAsync claim. Under host then transition check stop, identity and deadline before CAS; retry with unchanged budget. Commit proof, closed authority and terminal together. Return handled expiry or committed witness through later faults. Keep callbacks outside locks. Preserve completion/feed ordering with minting closed; after cleanup Open checks committed generation and live stop, then wakes outside locks. Check t99 success, withheld-timer t100 expiry with one health_timeout and no publication or duplicate failure, retained B and fresh same-ID recovery without duplicate effects. Production enrollment and capacity guards stay closed.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
