@@ -72,15 +72,12 @@ public sealed partial class SelectorDifferentialTests
         })
         {
             WriteHyperQwenInputs(raw, extra.Shape);
-            var jsonEngine = LoadJson(raw, HyperQwen);
-            using var jsonProvider = new DockerLifecycleProvider(jsonEngine.Docker!, jsonEngine.Name, deny);
-            CompareHyperQwen(jsonProvider, jsonEngine, extra.Row, extra.Shape, keys);
+            CompareSingleHyperQwen(LoadJson(raw, HyperQwen), deny, extra.Row, extra.Shape, keys);
             if (extra.CompareToml)
             {
                 var toml = TomlSerializer.Serialize(raw, ConfigTomlDocumentContext.Default.TomlTable);
                 var tomlEngine = RouterConfigLoader.Load(toml).Engines[HyperQwen];
-                using var tomlProvider = new DockerLifecycleProvider(tomlEngine.Docker!, tomlEngine.Name, deny);
-                CompareHyperQwen(tomlProvider, tomlEngine, extra.Row, extra.Shape, keys: null);
+                CompareSingleHyperQwen(tomlEngine, deny, extra.Row, extra.Shape, keys: null);
                 mixedParserChecks++;
             }
         }
@@ -95,6 +92,13 @@ public sealed partial class SelectorDifferentialTests
         using var wrongDocument = JsonDocument.Parse(wrong.ToJsonString());
         Assert.Equal("$.HostConfig.ShmSize", Difference(wrongDocument.RootElement, actual, "$"));
         Match(parked.Create, actual, parked.Key);
+    }
+
+    private static void CompareSingleHyperQwen(EngineDefinition engine, NoHttp deny, Row row,
+        Shape shape, HashSet<CaseKey>? keys)
+    {
+        using var provider = new DockerLifecycleProvider(engine.Docker!, engine.Name, deny);
+        CompareHyperQwen(provider, engine, row, shape, keys);
     }
 
     private static string CompareHyperQwen(DockerLifecycleProvider provider, EngineDefinition engine, Row row,
