@@ -41,7 +41,13 @@ public sealed class DockerCreateRequest
     [JsonPropertyName("Healthcheck")] public DockerCreateHealthcheck? Healthcheck { get; set; }
     [JsonPropertyName("Labels")] public required Dictionary<string, string> Labels { get; set; }
     [JsonPropertyName("StopTimeout")] public int? StopTimeoutSeconds { get; set; }
+    [JsonPropertyName("ExposedPorts")] public Dictionary<string, DockerExposedPort>? ExposedPorts { get; set; }
     [JsonPropertyName("HostConfig")] public DockerHostConfig? HostConfig { get; set; }
+}
+
+// Docker represents each exposed port as an empty object.
+public sealed class DockerExposedPort
+{
 }
 
 public sealed class DockerCreateHealthcheck
@@ -58,6 +64,9 @@ public sealed class DockerHostConfig
     [JsonPropertyName("PortBindings")] public Dictionary<string, DockerPortBinding[]>? PortBindings { get; set; }
     [JsonPropertyName("NetworkMode")] public string? NetworkMode { get; set; }
     [JsonPropertyName("IpcMode")] public string? IpcMode { get; set; }
+    [JsonPropertyName("Init")] public bool? Init { get; set; }
+    [JsonPropertyName("RestartPolicy")] public DockerRestartPolicy? RestartPolicy { get; set; }
+    [JsonPropertyName("LogConfig")] public DockerLogConfig? LogConfig { get; set; }
     [JsonPropertyName("Devices")] public DockerDeviceMapping[]? Devices { get; set; }
     [JsonPropertyName("DeviceRequests")] public DockerDeviceRequest[]? DeviceRequests { get; set; }
     [JsonPropertyName("Mounts")] public DockerMount[]? Mounts { get; set; }
@@ -67,6 +76,14 @@ public sealed class DockerHostConfig
     [JsonPropertyName("ShmSize")] public long? ShmSize { get; set; }
     [JsonPropertyName("Ulimits")] public DockerLimit[]? Ulimits { get; set; }
 }
+
+public sealed record DockerRestartPolicy(
+    [property: JsonPropertyName("Name")] string Name,
+    [property: JsonPropertyName("MaximumRetryCount")] int MaximumRetryCount);
+
+public sealed record DockerLogConfig(
+    [property: JsonPropertyName("Type")] string Type,
+    [property: JsonPropertyName("Config")] Dictionary<string, string> Config);
 
 public sealed record DockerDeviceMapping(
     [property: JsonPropertyName("PathOnHost")] string HostPath,

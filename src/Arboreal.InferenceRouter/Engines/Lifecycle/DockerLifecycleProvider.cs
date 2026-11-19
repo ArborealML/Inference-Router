@@ -140,7 +140,9 @@ public sealed class DockerLifecycleProvider : IEngineLifecycleProvider, IDisposa
                 "serving-tier Docker targets are available for offline configuration checks only; use an externally managed engine until target qualification is available");
         if (_cfg.HasUnqualifiedLaunchOptions)
             return LifecycleResult.Fail("docker_launch_options_not_qualified",
-                "remove docker.entrypoint and docker.ipc_mode for native startup or use an externally managed engine until launch options are qualified");
+                _cfg.ContainerPolicy is null
+                    ? "remove docker.entrypoint and docker.ipc_mode for native startup or use an externally managed engine until launch options are qualified"
+                    : "Docker container policy options are available for offline configuration checks only");
         return _cfg.Resources is null ? null : LifecycleResult.Fail("docker_resources_not_qualified",
             "native Docker resources are available for offline configuration checks only; leave this target under external management until host qualification is available");
     }
@@ -397,22 +399,36 @@ public sealed class DockerLifecycleProvider : IEngineLifecycleProvider, IDisposa
         var binds = launch?.Binds ?? resources?.BindMounts ?? [];
         var memory = launch is null ? resources?.MemoryBytes : launch.MemoryBytes;
         var memorySwap = launch is null ? resources?.MemorySwapBytes : launch.MemorySwapBytes;
-        if (_cfg.HostPort is null && _cfg.NetworkMode is null && _cfg.IpcMode is null && resources is null && binds.IsEmpty &&
-            memory is null && memorySwap is null) return body;
+        var policy = _cfg.ContainerPolicy;
+        if (_cfg.HostPort is null && _cfg.NetworkMode is null && _cfg.IpcMode is null && policy is null &&
+            resources is null && binds.IsEmpty && memory is null && memorySwap is null) return body;
 
         var host = new DockerHostConfig
         {
             NetworkMode = _cfg.NetworkMode,
             IpcMode = _cfg.IpcMode,
+            Init = policy?.Init,
+            RestartPolicy = policy?.Restart is { } restart ? new DockerRestartPolicy(restart, 0) : null,
+            LogConfig = policy?.LogRotation is { } rotation ? new DockerLogConfig("", new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["max-size"] = rotation.MaxSize,
+                ["max-file"] = rotation.MaxFiles.ToString(CultureInfo.InvariantCulture),
+            }) : null,
             Memory = memory,
             MemorySwap = memorySwap,
         };
         body.HostConfig = host;
         if (_cfg.HostPort is { } port)
         {
+            var containerPort = $"{_cfg.ContainerPort}/tcp";
+            if (policy is not null)
+                body.ExposedPorts = new Dictionary<string, DockerExposedPort>(StringComparer.Ordinal)
+                {
+                    [containerPort] = new DockerExposedPort(),
+                };
             host.PortBindings = new Dictionary<string, DockerPortBinding[]>(StringComparer.Ordinal)
             {
-                [$"{_cfg.ContainerPort}/tcp"] = [new DockerPortBinding
+                [containerPort] = [new DockerPortBinding
                 {
                     // Docker interprets an empty HostIp as every interface.
                     HostIp = _cfg.HostIp,

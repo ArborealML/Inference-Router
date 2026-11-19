@@ -5,7 +5,7 @@ The inspected reference selector accepted 169 of 506 explicit model/profile spel
 | Backend family | Normalized targets | Launch settings that still need representation or verification |
 | --- | ---: | --- |
 | Strata | 36 | Offline projection supports per-tier environment and data/model binds, memory plus swap for capped Qwen profiles, and the `max-4` alias for `256k-4`. |
-| HyperQwen | 26 | Different profiles and options change the ordered GPU request and shared-memory limit. Parking derives shared memory from its 1–48 GiB RAM cache. Init, restart policy and log settings also need representation. Shared wire IDs need exact checkpoint and serving-instance proof. |
+| HyperQwen | 26 | Eight ordinary paired-GPU targets have offline launch projections. Six single-GPU targets need tier-specific device IDs, and twelve parking targets need tier-specific shared memory. Shared wire IDs need exact checkpoint and serving-instance proof. |
 | Maya | 13 | MiniMax `32k`, the three GLM tiers and Maya-XS `32k` have qualified offline projections. Per-tier literal commands express the eight general DeepSeek launch payloads. |
 
 The environment and bind projection merged in [PR #7](https://github.com/ArborealML/Inference-Router/pull/7). It composes settings for offline validation and keeps target-enabled startup and native Docker writes gated. [Configuration and lifecycle contract](../SPEC.md#7-configuration-toml)
@@ -62,7 +62,26 @@ One engine holds all eight canonical tiers. Each tier supplies a literal
 same decimal. The `max` default passes `1048576` while the `32k` tier passes `32768`.
 The independent payload check covers the nine ordered mounts, the existing loopback port,
 the resource limits and the literal probe for every tier. The three selector model spellings
-resolve to the same canonical serving model, covering 24 explicit model and profile pairs.
+span 24 explicit spelling and tier pairs. The AIR fixture also checks the canonical model ID
+at every tier, for 32 resolution checks per config format. The eight profiles brought landed
+offline coverage to 49 of 75.
 
-Qualification and landing add eight to the 41 previously covered offline. The inventory
-remains at 75 targets. Qwen and Swift remain the first native swap pair on one host.
+## HyperQwen paired-GPU container policy
+
+One engine projects the `max`, `max-2`, `128k-2` and `32k` tiers for each of the
+Swift and Classic checkpoints. These eight targets share the ordered GPU request, 2 GiB of
+shared memory, a 60-second stop timeout and a loopback port binding. The `max` tier remains
+the default in both catalogs. The `32k` payload requests four sequences per data-parallel
+replica. The projection does not establish global admission capacity.
+
+Docker init, `unless-stopped` restart policy and log rotation at `20m` with three files are
+common to the eight payloads. The daemon selects its default log driver. An opted-in published
+port includes its matching TCP exposure. The dual-format fixture uses distinct synthetic image
+identity fields and compares both formats to one redacted full payload. Before activation,
+verify that the daemon's effective log driver supports both rotation options and refuse if its
+identity or option support is unknown or incompatible. Defiant's current image association, restart authority
+and peer ownership require host verification. Swift and Classic share a wire model ID, so
+activation also requires exact checkpoint and serving-instance binding.
+
+This slice would bring qualified offline coverage to 57 of 75 targets on landing. The first
+native swap pair remains Qwen and Swift on one host.

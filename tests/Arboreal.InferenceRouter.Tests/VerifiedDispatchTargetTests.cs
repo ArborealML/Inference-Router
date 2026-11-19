@@ -96,6 +96,7 @@ public sealed class VerifiedDispatchTargetTests
     [Theory]
     [InlineData("env")]
     [InlineData("command")]
+    [InlineData("init")]
     [InlineData("mount")]
     [InlineData("memory")]
     [InlineData("manifest")]
@@ -109,6 +110,7 @@ public sealed class VerifiedDispatchTargetTests
         var changed = Load(
             mode: change == "env" ? "changed" : "normal",
             tierCommand: change == "command" ? "65536" : null,
+            withInit: change == "init",
             mount: change == "mount" ? "/fixture/other" : "/fixture/weights",
             memory: change == "memory" ? 8_388_608 : 6_291_456,
             digest: change == "manifest" ? OtherRepoDigest : RepoDigest,
@@ -146,6 +148,23 @@ public sealed class VerifiedDispatchTargetTests
             Assert.Equal(before.RootElement.EnumerateObject().Count(), after.RootElement.EnumerateObject().Count());
             foreach (var item in before.RootElement.EnumerateObject())
                 if (!item.NameEquals("Cmd"))
+                    Assert.True(JsonElement.DeepEquals(item.Value, after.RootElement.GetProperty(item.Name)), item.Name);
+        }
+
+        if (change == "init")
+        {
+            using var before = JsonDocument.Parse(oldCreate);
+            using var after = JsonDocument.Parse(newCreate);
+            var oldHost = before.RootElement.GetProperty("HostConfig");
+            var newHost = after.RootElement.GetProperty("HostConfig");
+            Assert.False(oldHost.TryGetProperty("Init", out _));
+            Assert.True(newHost.GetProperty("Init").GetBoolean());
+            Assert.Equal(oldHost.EnumerateObject().Count() + 1, newHost.EnumerateObject().Count());
+            foreach (var item in oldHost.EnumerateObject())
+                Assert.True(JsonElement.DeepEquals(item.Value, newHost.GetProperty(item.Name)), item.Name);
+            Assert.Equal(before.RootElement.EnumerateObject().Count(), after.RootElement.EnumerateObject().Count());
+            foreach (var item in before.RootElement.EnumerateObject())
+                if (!item.NameEquals("HostConfig"))
                     Assert.True(JsonElement.DeepEquals(item.Value, after.RootElement.GetProperty(item.Name)), item.Name);
         }
 
@@ -237,7 +256,7 @@ public sealed class VerifiedDispatchTargetTests
     internal static EngineDefinition Load(
         string mode = "normal", string mount = "/fixture/weights", long memory = 6_291_456, string digest = RepoDigest,
         string platform = "linux/amd64", string alias = "alias", bool singleton = false, string endpoint = DefaultEndpoint,
-        string? healthcheckCommand = null, bool withProfileAlias = false, string? tierCommand = null)
+        string? healthcheckCommand = null, bool withProfileAlias = false, string? tierCommand = null, bool withInit = false)
     {
         var residentTier = $$"""
             [[engine.fixture.catalog."model.canonical".serving]]
@@ -267,6 +286,7 @@ public sealed class VerifiedDispatchTargetTests
             image_platform = "{{platform}}"
             router_id = "fixture-router"
             {{command}}
+            {{(withInit ? "init = true" : "")}}
             [engine.fixture.catalog."model.canonical"]
             aliases = ["{{alias}}"]
             {{defaultField}}

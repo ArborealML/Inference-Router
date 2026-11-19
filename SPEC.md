@@ -354,6 +354,8 @@ daemon transaction per engine. 137 tests green.
   not proven.
 - v0.12.89 — engine shutdown withdraws current health and readiness even when idle and retains
   the last observed model roster (§5.5).
+- v0.12.88 — project Docker init, unless-stopped restart, daemon-default log rotation and matching
+  exposed ports offline for eight paired-GPU HyperQwen targets (§7).
 - v0.12.87 — offline Docker serving tiers can replace the common container command with literal
   arguments. General DeepSeek projects eight numeric context arguments without changing tier names (§7).
 - v0.12.86 — qualify original-launch deadline equality, exact proof binding and guarded Open in
@@ -2592,8 +2594,27 @@ IPC modes are invalid. Omission of either option leaves its Docker defaults in e
 
 JSON and TOML reject explicit nulls or duplicate launch options. JSON also rejects shadowed
 opt-in ancestry and ownership fields, and requires canonical field casing for opted-in engines.
-Both options are available for offline projection only, even when the engine has no resources
+These options are available for offline projection only, even when the engine has no resources
 or per-tier launch declarations.
+
+For the paired-GPU HyperQwen launch options, set engine-wide Docker `init = true`,
+`restart = "unless-stopped"` and `log_rotation = { max_size = "20m", max_files = 3 }`
+independently. The create payload uses `HostConfig.Init`, `RestartPolicy` with a zero retry
+count, and `LogConfig` with an empty driver type. The daemon selects its default driver.
+The rotation size is a canonical positive Int32 decimal followed by lowercase `m`. The
+file count is a positive Int32. Both rotation fields are required. A supplied init or restart
+value must match the form above. Omitted options leave their fields absent from the payload.
+These keys belong in the engine's Docker block. A model-level Docker table containing any of
+them is invalid.
+
+On this offline policy path, a configured `host_port` adds the corresponding container TCP
+port to the root `ExposedPorts` object with an empty object value. The existing port binding
+supplies the host address and port. Each option gates startup and mutation across the engine,
+with the existing serving-tier, launch-option, then resource refusal order. Docker policy
+describes create intent. Before activation, verify that the effective daemon log driver supports
+both `max-size` and `max-file`. Refuse activation if the driver or its support for either option
+is unknown or incompatible. Restart authority, image association and authenticated serving-instance
+admission also require host verification.
 
 **Optional Docker resources.** Use `[engine.<name>.docker.resources]` or the
 equivalent JSON object to validate a resource request offline. Keep the table omitted in

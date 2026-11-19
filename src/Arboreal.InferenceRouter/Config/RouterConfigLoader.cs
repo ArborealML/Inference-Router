@@ -223,12 +223,14 @@ public static class RouterConfigLoader
         }
 
         var hasTargetDocker = DockerTargetPlans.IsDeclared(e);
-        var hasLaunchOptions = e.Docker is { Entrypoint: not null } or { IpcMode: not null };
+        var hasContainerPolicy = e.Docker?.HasContainerPolicy == true;
+        var hasLaunchOptions = hasContainerPolicy || e.Docker is { Entrypoint: not null } or { IpcMode: not null };
         if ((hasTargetDocker || hasLaunchOptions) && (e.Docker is null || e.Remote == true ||
             e.LifecycleOwner is not (null or "router") ||
             e.Lifecycle is { } targetLifecycle && !targetLifecycle.Trim().Equals("docker", StringComparison.OrdinalIgnoreCase)))
         {
-            var fields = hasTargetDocker ? "serving-tier Docker" : "docker.entrypoint or docker.ipc_mode";
+            var fields = hasTargetDocker ? "serving-tier Docker" : hasContainerPolicy
+                ? "docker.init, docker.restart or docker.log_rotation" : "docker.entrypoint or docker.ipc_mode";
             throw new RouterConfigException($"engine.{name}: {fields} requires a native Docker engine");
         }
 
@@ -268,6 +270,7 @@ public static class RouterConfigLoader
                 Command = d.Command ?? [],
                 Entrypoint = ParseDockerEntrypoint(d.Entrypoint, name),
                 IpcMode = d.IpcMode,
+                ContainerPolicy = hasContainerPolicy ? DockerContainerPolicy.Parse(d, $"engine.{name}.docker") : null,
                 Env = d.Env ?? [],
                 StopTimeoutMs = d.StopTimeoutMs ?? 30_000,
                 HostPort = d.HostPort,
