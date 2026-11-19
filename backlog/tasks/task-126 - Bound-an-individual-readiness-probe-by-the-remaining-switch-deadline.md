@@ -1,11 +1,11 @@
 ---
 id: TASK-126
 title: Bound an individual readiness probe by the remaining switch deadline
-status: Waiting
+status: In Progress
 assignee:
   - '@gpt-6.2-sol-shutdown'
 created_date: '2026-11-18T20:43:00Z'
-updated_date: '2026-11-19T10:03:00Z'
+updated_date: '2026-11-19T10:08:00Z'
 labels: []
 milestone: m-4
 dependencies: []
@@ -16,7 +16,7 @@ ordinal: 124000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Lifecycle’s pinned host change with the typed publication result wakes Shutdown to integrate the enrolled engine path.
+Integrate the enrolled engine deadline and terminal decision on the pinned staged host change.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -40,4 +40,6 @@ Use one monotonic readiness budget across state headers and body, model discover
 
 <!-- SECTION:NOTES:BEGIN -->
 Legacy readiness and local HTTP cleanup landed in [PR #4](https://github.com/ArborealML/Inference-Router/pull/4). The two-ticket control in [PR #8](https://github.com/ArborealML/Inference-Router/pull/8) passed both rows: the stopped engine granted neither ticket a send, and the open engine accepted one exact POST. For the offline enrolled case, Lifecycle owns coordinator, staging and the single recovered-launch fixture. Shutdown owns EngineRuntime and its host lifecycle partial. Build on the exact host child, reuse its launch-owned deadline and the existing guarded CAS and delivery signal, and consume the typed terminal outcome before generic launch failure. Preserve production capacity gates.
+
+Host commit 046ea91 on 17c0f5d is available. Integrate the runtime consumer and qualify the single recovered-launch pair with Lifecycle.
 <!-- SECTION:NOTES:END -->
