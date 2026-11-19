@@ -7,7 +7,7 @@ status: Waiting
 assignee:
   - '@chatswarm'
 created_date: '2026-11-18T18:56:00Z'
-updated_date: '2026-11-19T08:20:00Z'
+updated_date: '2026-11-19T08:22:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -41,10 +41,14 @@ Independent review of the single-host dispatch plan wakes implementation. Carry 
 
 <!-- SECTION:PLAN:BEGIN -->
 Drive one real selected ticket through exact take and the verified issuer. Bind its effective target, final rewritten bytes and credential policy. Publish one immutable fake resident tuple containing the exact route, process, epoch, generation, config, plan, canonical model, effective tier, measured window and total slots. Named and resolved-default tiers, including ordinary reuse of a named resident, require a fitting positive window and positive measured slots. Public gauges and roster can veto only. After retirement require a fresh generation. Serialize issuer closure against first nonempty write; hold the write with caller and router tokens live and verify closure prevents bytes. Release accounting only on typed no-issue or confirmed retirement; retain unknown use even after a pre-header failure. Treat parsed Docker projections and digest as offline intent paired with a separate inert resident. Preserve startup and mutation guards. Engine-stop integration requires an explicit issuer bridge.
+
+Publish one immutable sender with the ready preparation. Its exact invocation borrows it and retains the existing cancel/submit decision. Before headers the single transport worker exposes independent primary and terminal outcomes. End response borrowing in finally; finish preparation on every path. Release submitted capacity once only after conclusive no-use or retirement and successful preparation cleanup. After exact peer receipt, hold retirement through a pre-header failure: one primary terminal, zero successor bytes; failed retirement emits one redacted cleanup fault and retains use, confirmed cleanup releases once. Preserve standalone transport behavior. A permanent binding refusal settles only the current exact ticket once without relying on a timer; stale preparation cannot settle a replacement.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
 Plan and three bounded peer corrections dispatched for independent review against fe005df. Implementation starts after disposition. Per-family attestation, the engine-stop bridge, durable production issuance, host publication and activation remain separate.
+
+The pre-header ownership and permanent refusal interface is included in independent review.
 <!-- SECTION:NOTES:END -->
