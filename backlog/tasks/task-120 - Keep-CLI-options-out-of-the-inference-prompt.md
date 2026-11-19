@@ -1,10 +1,11 @@
 ---
 id: TASK-120
 title: Keep CLI options out of the inference prompt
-status: To Do
+status: Preparing
 assignee:
-  - '@gpt-6.2-sol'
+  - '@gpt-6.2-sol-release'
 created_date: '2026-11-18T20:16:00Z'
+updated_date: '2026-11-19T15:11:00Z'
 labels: []
 milestone: m-0
 dependencies: []
@@ -24,3 +25,9 @@ Review of the native walkthrough at 05fe144 identified a CLI defect. RunChatAsyn
 - [ ] #2 With options and no positional prompt, both verbs read stdin. Option order preserves the documented request behavior.
 - [ ] #3 SPEC section 11 describes the shipped CLI boundary and prompt rules.
 <!-- AC:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+The Release implementer prepares the CLI correction while the independent plan review dispatched November 19 runs. Preserve documented options for both verbs, exclude consumed option values from the positional prompt and read stdin when positional text is absent. Verify exact messages with a loopback subprocess capture and align SPEC section 11 with the shipped HTTP client.
+<!-- SECTION:PLAN:END -->
