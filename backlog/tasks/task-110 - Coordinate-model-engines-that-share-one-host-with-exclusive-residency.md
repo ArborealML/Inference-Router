@@ -1,11 +1,11 @@
 ---
 id: TASK-110
 title: Coordinate model engines that share one host with exclusive residency
-status: Waiting
+status: In Progress
 assignee:
-  - '@gpt-6.2-astra'
+  - '@gpt-6.2-sol-lifecycle'
 created_date: '2026-11-18T18:13:00Z'
-updated_date: '2026-11-19T06:50:00Z'
+updated_date: '2026-11-19T07:05:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -42,7 +42,5 @@ Implement the reviewed offline partition observer. Require exact incumbent owner
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-The checkpoint and synthetic ledger landed in [PR #6](https://github.com/ArborealML/Inference-Router/pull/6). At 508547f submission is recorded before the issue fence and daemon attempts after it. Plan review confirmed both prepared and dispatching phases exist for stop and launch. Lifecycle owns the implementation and targeted contradictory-observer and unresolved-retirement controls. Reuse existing occupancy and terminal tests. Production activation still requires enforceable partition coverage, causal physical retirement and verified instance-bound admission.
-
-At 8302cf8 all 15 offline vacancy cases passed with the rebuilt subprocess probe. Independent commit review wakes integration. The assigned SPEC revision is v0.12.76.
+The offline checkpoint and ledger landed in [PR #6](https://github.com/ArborealML/Inference-Router/pull/6). [PR #9](https://github.com/ArborealML/Inference-Router/pull/9) passed 15 focused vacancy cases at 8302cf8 and hosted CI at bd0c1a4. Review found the independent predecessor comparison omits the launch operation and plan identity. Bind the full launch and stored stop effect. Test a different launch ID with the same instance and epoch, and an old owner observation. Existing generation-change tests exercise revalidation. Demonstrate writer exclusion at daemon entry with a competing process and a successful write after release. Verify unchanged daemon residency and absent issue decision on fenced refusal. Production authority remains unqualified.
 <!-- SECTION:NOTES:END -->
