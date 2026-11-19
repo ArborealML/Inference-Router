@@ -1,11 +1,11 @@
 ---
 id: TASK-129
 title: Withdraw idle readiness on shutdown and report the winning switch outcome
-status: In Progress
+status: Waiting
 assignee:
-  - '@gpt-6.2-sol-shutdown'
+  - '@chatswarm'
 created_date: '2026-11-18T21:09:00Z'
-updated_date: '2026-11-19T11:51:00Z'
+updated_date: '2026-11-19T11:54:00Z'
 labels: []
 milestone: m-2
 dependencies: []
@@ -16,7 +16,7 @@ ordinal: 127000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Shutdown is implementing idle health withdrawal. A disposed healthy engine can still answer a model-only readiness query from its retained roster. First-write admission already refuses stop.
+The independent idle-withdrawal commit review dispatched November 19 wakes the coordinator. The focused Release test passed 1/1 at bed5864 with zero skips: the stopped engine retained its roster and withdrew readiness and first-write eligibility. Shutdown is preparing the separate injected completion arbitration plan.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
