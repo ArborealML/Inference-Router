@@ -74,9 +74,14 @@ internal sealed class VerifiedTransportOperation
 
     internal static Exception? CleanupFailure(VerifiedTerminal terminal)
     {
-        var cleanup = terminal.PermitFailure ?? terminal.StreamCloseFailure;
-        return terminal.ResponseCleanupFailure is { } response && cleanup is not null
-            ? new AggregateException(response, cleanup) : terminal.ResponseCleanupFailure ?? cleanup;
+        if (terminal is { ResponseCleanupFailure: null, StreamCloseFailure: null, PermitFailure: null })
+            return null;
+
+        var failures = new List<Exception>(3);
+        if (terminal.ResponseCleanupFailure is { } response) failures.Add(response);
+        if (terminal.StreamCloseFailure is { } close) failures.Add(close);
+        if (terminal.PermitFailure is { } permit) failures.Add(permit);
+        return failures.Count == 1 ? failures[0] : new AggregateException(failures);
     }
 }
 
@@ -197,7 +202,9 @@ internal sealed class VerifiedInstanceTransport(
                     try { await permit.DisposeAsync().ConfigureAwait(false); }
                     catch (Exception error) { permitFailure = error; }
                 }
-                if (matchingTransfer && closeFailure is null && permitFailure is null && responseCleanup is null)
+                // Response disposal has its own outcome. Only the issuer's grant and permit
+                // cleanup establish whether this exact channel is retired.
+                if (matchingTransfer && closeFailure is null && permitFailure is null)
                     retirement = stream?.PhysicalUse is null ? VerifiedRetirement.NoUse : VerifiedRetirement.Confirmed;
             }
             stream?.Dispose();

@@ -86,6 +86,7 @@ internal sealed class ExactTicketAdmission(
     internal Func<Claim, Task>? BeforeSubmitForTests { get; set; }
     internal Func<Invocation, Task>? BeforeSendForTests { get; set; }
     internal Action<HttpRequestMessage>? BeforeVerifiedOfferForTests { get; set; }
+    internal Action<HttpResponseMessage>? AfterVerifiedConsumeForTests { get; set; }
     internal Action<Claim, Exception?>? AfterPreparationCleanupForTests { get; set; }
     internal Action<Claim, bool>? AfterPreparationForTests { get; set; }
     internal Action<Claim, Exception>? AfterPreparationFaultForTests { get; set; }
@@ -578,6 +579,7 @@ internal sealed class ExactTicketAdmission(
                     operation = await verifiedSender.StartAsync(request, credentialEpoch, ct).ConfigureAwait(false);
                     var response = await operation.Primary.ConfigureAwait(false);
                     await consume(response).ConfigureAwait(false);
+                    admission.AfterVerifiedConsumeForTests?.Invoke(response);
                 }
             }
             catch (Exception ex)
@@ -649,7 +651,7 @@ internal sealed class ExactTicketAdmission(
                 if (Interlocked.CompareExchange(ref _state, Released, Submitting) == Submitting)
                     ReleasePhysicalUse();
             }
-            else
+            if (!terminal.Conclusive || preparationFailure is not null || terminal.ResponseCleanupFailure is not null)
             {
                 List<string> faults = [];
                 if (terminal.StreamCloseFailure is not null) faults.Add("stream close");
@@ -658,7 +660,7 @@ internal sealed class ExactTicketAdmission(
                 if (preparationFailure is not null) faults.Add("preparation cleanup");
                 if (faults.Count == 0) faults.Add("issuer outcome");
                 admission._reportCleanupFailure?.Invoke(claim,
-                    new InvalidOperationException($"Verified request cleanup could not be confirmed: {string.Join(", ", faults)}."));
+                    new InvalidOperationException($"Verified request cleanup failed: {string.Join(", ", faults)}."));
             }
         }
 

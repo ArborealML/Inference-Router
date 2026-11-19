@@ -256,6 +256,101 @@ public sealed partial class VerifiedInstanceTransportTests
         }
     }
 
+    [Theory(Timeout = 25_000)]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task PreparedVerifiedResponseDisposalFaultUsesIssuerAndPreparationEvidence(bool preparationFails)
+    {
+        await using var rig = new DispatchRig();
+        using var original = await LoopbackPair.OpenAsync(rig.Token);
+        using var successorPeer = await LoopbackPair.OpenAsync(rig.Token);
+        using var retiring = new HeldCheckout();
+        rig.Issuer.Channels.Enqueue(original.Client.GetStream());
+        rig.Issuer.Channels.Enqueue(successorPeer.Client.GetStream());
+        rig.Issuer.BeforeRetire = ordinal => ordinal == 1 ? retiring.HoldAsync(rig.Token) : Task.CompletedTask;
+        var grantCloses = 0;
+        rig.Issuer.AfterClose = _ => Interlocked.Increment(ref grantCloses);
+        var consumed = 0;
+        var responseDisposals = 0;
+        rig.Admission.AfterVerifiedConsumeForTests = response =>
+        {
+            if (Interlocked.Increment(ref consumed) != 1) return;
+            response.Content = new ResponseDisposalProbe(response.Content, () =>
+            {
+                Interlocked.Increment(ref responseDisposals);
+                throw new InvalidOperationException("fixture-private-response-failure");
+            });
+        };
+        var preparationDisposals = 0;
+        rig.PreparationCleanup = () =>
+        {
+            if (Interlocked.Increment(ref preparationDisposals) == 1 && preparationFails)
+                throw new InvalidOperationException("fixture-private-preparation-failure");
+            return ValueTask.CompletedTask;
+        };
+        rig.Publish(generation: 1);
+        var cleanup = rig.WaitForCleanupFault();
+        var first = await rig.EnqueueAsync();
+        rig.Start();
+
+        try
+        {
+            var peer = original.Server.GetStream();
+            Assert.Equal(VerifiedBody, (await ReadAsync(peer, rig.Token, VerifiedBody.Length)).Body);
+            await peer.WriteAsync("HTTP/1.1 200 Fixture\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}"u8.ToArray(), rig.Token);
+            Assert.Equal("{}"u8.ToArray(), await first.CompletionTask.WaitAsync(rig.Token));
+            await retiring.Reached.WaitAsync(rig.Token);
+            Assert.Equal(1, Volatile.Read(ref responseDisposals));
+            Assert.Equal(1, Volatile.Read(ref grantCloses));
+            Assert.Equal(1, rig.Admission.PhysicalUses);
+            Assert.Equal(0, rig.Admission.Releases);
+
+            var successor = await rig.EnqueueAsync();
+            Assert.Equal(1, rig.Issuer.Checkouts);
+            Assert.Equal(0, successorPeer.Server.Available);
+            Assert.False(successor.CompletionTask.IsCompleted);
+            var allReleased = preparationFails ? Task.CompletedTask : rig.WaitForRelease(expected: 2);
+
+            retiring.Release();
+            var fault = await cleanup.WaitAsync(rig.Token);
+            Assert.Equal(first.Id, fault.TicketId);
+            Assert.Contains("response cleanup", fault.Reason, StringComparison.Ordinal);
+            Assert.DoesNotContain("fixture-private", fault.Reason, StringComparison.Ordinal);
+            Assert.Equal(1, rig.Issuer.Releases);
+            Assert.Equal(1, Volatile.Read(ref preparationDisposals));
+            if (preparationFails)
+            {
+                Assert.Contains("preparation cleanup", fault.Reason, StringComparison.Ordinal);
+                Assert.Equal(1, rig.Admission.PhysicalUses);
+                Assert.Equal(0, rig.Admission.Releases);
+                Assert.Equal(1, rig.Issuer.Checkouts);
+                Assert.Equal(0, successorPeer.Server.Available);
+                Assert.False(successor.CompletionTask.IsCompleted);
+            }
+            else
+            {
+                Assert.Equal("Verified request cleanup failed: response cleanup.", fault.Reason);
+                Assert.Equal(1, rig.Admission.Releases);
+                var next = await RespondAsync(successorPeer.Server.GetStream(), HttpStatusCode.OK, null, rig.Token, VerifiedBody.Length);
+                Assert.Equal(VerifiedBody, next.Body);
+                await successor.CompletionTask.WaitAsync(rig.Token);
+                await allReleased.WaitAsync(rig.Token);
+                Assert.Equal(2, rig.Issuer.Checkouts);
+                Assert.Equal(2, rig.Issuer.Releases);
+                Assert.Equal(2, rig.Admission.Releases);
+                Assert.Equal(0, rig.Admission.PhysicalUses);
+                Assert.Equal(2, Volatile.Read(ref preparationDisposals));
+                Assert.Equal(1, rig.Terminals(successor));
+            }
+            Assert.Equal(1, rig.Terminals(first));
+            Assert.Single(rig.Router.Events.Replay(0), row => row.Kind == "request.cleanup_failed");
+        }
+        finally
+        {
+            retiring.Release();
+        }
+    }
+
     [Theory(Timeout = 20_000)]
     [InlineData("no-transfer", true)]
     [InlineData("retired", true)]
@@ -337,6 +432,17 @@ public sealed partial class VerifiedInstanceTransportTests
         finally
         {
             oldPreparation.Release();
+        }
+    }
+
+    private sealed class ResponseDisposalProbe(HttpContent borrowed, Action onDispose) : ByteArrayContent([])
+    {
+        protected override void Dispose(bool disposing)
+        {
+            base.Dispose(disposing);
+            if (!disposing) return;
+            borrowed.Dispose();
+            onDispose();
         }
     }
 

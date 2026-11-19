@@ -354,7 +354,8 @@ daemon transaction per engine. 137 tests green.
   not proven.
 - v0.12.81 — bind an offline admitted ticket's effective launch intent, final JSON and upstream
   credential policy to its verified resident and single-use stream. Separate logical outcome
-  from issuer retirement and keep unsettled physical use counted (§5.3.1, §5.5, §7.6).
+  from issuer retirement, keep unsettled physical use counted and report independent
+  cleanup faults (§5.3.1, §5.5, §7.6).
 - v0.12.80 — offline Docker create projection supports a literal image entrypoint and host IPC
   for a native engine. Either declaration gates engine startup and Docker mutations (§5.3.1, §7).
 
@@ -1823,11 +1824,15 @@ The offer admits only the bound Authorization and optional matching Host request
 the exact application/json content type. A disagreement refuses before checkout. Only the
 frozen request values reach the verified serializer. The same transport worker exposes the primary result and typed terminal evidence.
 A submitted use releases once after conclusive no-transfer, confirmed grant return or
-issuer-confirmed retirement, together with successful preparation cleanup. Ambiguous checkout
-and unconfirmed cleanup preserve the count even after logical failure. Stream close and permit
-retirement are observed separately. The verified path reports one redacted cleanup event for
-unconfirmed retirement and preserves the original terminal. Engine-local stop authority has
-no issuer bridge in this fixture.
+issuer-confirmed retirement, together with successful preparation cleanup. Ambiguous checkout,
+unconfirmed issuer retirement and failed preparation cleanup preserve the count even after
+logical failure. Stream close and permit retirement independently contribute issuer evidence.
+A response-disposal failure is reported even when issuer retirement is confirmed. When
+preparation cleanup succeeds, the use still releases.
+The verified path reports one redacted cleanup event for faults or unconfirmed retirement
+and preserves the original logical result. Standalone exchanges preserve each observed
+cleanup exception alongside any primary send failure. Engine-local stop authority has no
+issuer bridge in this fixture.
 
 **Production evidence.** The raw Docker inventory can report known foreign containers. Even an
 empty inventory leaves vacancy unproven, and raw Docker supplies no terminal receipt for an
