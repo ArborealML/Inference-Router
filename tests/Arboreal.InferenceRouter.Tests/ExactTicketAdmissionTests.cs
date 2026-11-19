@@ -883,6 +883,8 @@ public sealed class ExactTicketAdmissionTests
     {
         using var preparation = new AdmissionFixtureBarrier();
         using var arm = new AdmissionFixtureBarrier();
+        using var beforeRetake = new AdmissionFixtureBarrier();
+        using var beforeSend = new AdmissionFixtureBarrier();
         using var preparationLifetime = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         var intendedBranch = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         var expectedFault = new InvalidOperationException("The staged owner's preparation failed.");
@@ -934,7 +936,14 @@ public sealed class ExactTicketAdmissionTests
             if (deferred is null)
                 await arm.Reached.WaitAsync(rig.Token);
             else
+            {
                 waiter = await deferred.WaitAsync(rig.Token);
+                rig.Router.BeforeAdmissionCommitForTests = ticket =>
+                {
+                    if (ReferenceEquals(ticket, joiner)) rig.Hold(beforeRetake);
+                };
+                rig.Admission.BeforeSendForTests = _ => beforeSend.HoldAsync(rig.Token);
+            }
 
             Assert.False(rig.CanJoinerTake(joiner));
             Assert.False(await rig.SendStagedOwnerAsync(owner).WaitAsync(rig.Token));
@@ -948,10 +957,29 @@ public sealed class ExactTicketAdmissionTests
             Assert.False(preparationLifetime.IsCancellationRequested);
             if (throws) Assert.Same(expectedFault, observedFault);
             else Assert.Null(observedFault);
+            if (waiter is not null)
+            {
+                // The failure wakes dispatch before it reports preparation completion to the fixture.
+                await waiter.WaitAsync(rig.Token);
+                await beforeRetake.Reached.WaitAsync(rig.Token);
+            }
             Assert.True(rig.CanJoinerTake(joiner),
-                "The failed owner preparation must release its reservation before waking the joiner.");
-            if (waiter is not null) await waiter.WaitAsync(rig.Token);
+                "The failed owner preparation must release the reservation before the joiner takes it.");
+            Assert.Equal(0, rig.Admission.PhysicalUses);
+            Assert.Empty(rig.Selected);
             arm.Release();
+            beforeRetake.Release();
+
+            if (waiter is not null)
+            {
+                // The same capacity check is false once the joiner owns the last slot.
+                await beforeSend.Reached.WaitAsync(rig.Token);
+                Assert.Equal(joiner.Id, Assert.Single(rig.Selected).TicketId);
+                Assert.Equal(1, rig.Admission.PhysicalUses);
+                Assert.False(rig.CanJoinerTake(joiner));
+                Assert.Equal(0, rig.Sink.Calls);
+                beforeSend.Release();
+            }
 
             await joiner.CompletionTask.WaitAsync(rig.Token);
             Assert.Equal(joiner.Id, Assert.Single(rig.Selected).TicketId);
@@ -967,6 +995,8 @@ public sealed class ExactTicketAdmissionTests
         {
             preparation.Release();
             arm.Release();
+            beforeRetake.Release();
+            beforeSend.Release();
         }
     }
 
