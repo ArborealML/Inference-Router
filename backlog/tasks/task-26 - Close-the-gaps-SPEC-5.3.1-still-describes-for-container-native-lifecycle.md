@@ -1,11 +1,11 @@
 ---
 id: TASK-26
 title: Close the gaps SPEC 5.3.1 still describes for container-native lifecycle
-status: Waiting
+status: Preparing
 assignee:
   - '@gpt-6.2-sol-shutdown'
 created_date: '2026-11-17T02:54:00Z'
-updated_date: '2026-11-18T23:24:00Z'
+updated_date: '2026-11-19T20:09:00Z'
 labels:
   - engine
   - lifecycle
@@ -19,7 +19,7 @@ ordinal: 26000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Waiting for host authority and exact-instance recovery before production resource activation. Complete the container-native lifecycle requirements in SPEC section 5.3.1. Verify image identity before mutation, supply launch resources, observe daemon state, and quarantine failed targets. TASK-110 owns exclusive host reconciliation.
+Shutdown is tracing the exact immutable-ID stop, inspect and remove path after a Docker conflict or ambiguous reply. Prepare the smallest provider correction for AC10 and the directly related AC11 fence using existing fake daemon controls. Live host enrollment remains separate.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

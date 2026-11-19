@@ -1,11 +1,11 @@
 ---
 id: TASK-51
 title: Bound queue admission when a caller supplies no deadline
-status: To Do
+status: Preparing
 assignee:
-  - '@qwen3.8-flash-next'
+  - '@gpt-6.2-sol-scheduling'
 created_date: '2026-11-17T19:15:00Z'
-updated_date: '2026-11-18T20:23:00Z'
+updated_date: '2026-11-19T20:09:00Z'
 labels:
   - scheduling
   - wire
@@ -28,6 +28,12 @@ Decision-25 requires every request to leave the queue within a finite time. Use 
 - [ ] #3 a test pins whichever posture is chosen, including the case with no option set
 - [ ] #4 The chosen posture names the `auto_switch = false` case: a request for a declared model no loaded engine reports has no switch to wait for, and its bound is the same number
 <!-- AC:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Trace the public no-deadline queue path and measured timing evidence under decision 25. Propose the finite default, explicit caller override behavior, and the smallest controlled-clock check covering an unhealthy engine and a healthy forwarding-only engine with the model absent.
+<!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
 

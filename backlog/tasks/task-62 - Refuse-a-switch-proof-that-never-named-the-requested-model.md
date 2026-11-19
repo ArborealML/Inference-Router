@@ -1,11 +1,11 @@
 ---
 id: TASK-62
 title: Refuse a switch proof that never named the requested model
-status: To Do
+status: Preparing
 assignee:
-  - '@qwen3.8-flash-next'
+  - '@gpt-6.2-sol-config'
 created_date: '2026-11-17T23:07:00Z'
-updated_date: '2026-11-18T20:24:00Z'
+updated_date: '2026-11-19T20:09:00Z'
 labels:
   - concurrency
   - wire
@@ -40,7 +40,7 @@ This row owns the shape of the refusal the owner ordered (decision-27): a reason
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-The eight bounded refusal categories, including no_lifecycle_owner, are exercised by RefusalCategoryTests and the TASK-94 taxonomy. Verify the HTTP response in WireHarness and preserve the wait_health=false fairness scenario. Check limits before interpolating model identifiers into event text.
+Compare the remaining HTTP refusal and fairness criteria with landed wire and scheduling fixtures on current main. Identify exact existing evidence and propose only the missing observable control if needed. Preserve the adopted refusal categories.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
