@@ -3,11 +3,11 @@ id: TASK-68
 title: >-
   Bind the serving gauges to a capability epoch, so a stale window cannot
   authorise a profile the engine cannot serve
-status: In Progress
+status: Waiting
 assignee:
-  - '@gpt-6.2-sol-scheduling'
+  - '@gpt-6.2-astra'
 created_date: '2026-11-18T01:11:00Z'
-updated_date: '2026-11-19T07:04:00Z'
+updated_date: '2026-11-19T07:09:00Z'
 labels:
   - concurrency
   - scheduling
@@ -48,5 +48,5 @@ Publish the immutable serving tuple with EngineCapability. Convert scheduler, en
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Serving publication and restoration landed in PRs #2 and #3. [PR #8](https://github.com/ArborealML/Inference-Router/pull/8) passed 96 focused checks, both joint rows and hosted CI. Review of 29cb7d5 confirmed winner and joined-waiter floor checks. Bound first semaphore acquisition and new idle claims by the original deadline. Until enrolled readiness supplies bound capacity, refuse positive-window switches before mutation. Test different floors on the scan head and ranked winner.
+Serving publication and restoration landed in PRs #2 and #3. [PR #8](https://github.com/ArborealML/Inference-Router/pull/8) passed 96 focused checks and both joint rows. At 1dbd4d0 all 13 correction cases passed: first-acquisition expiry, pre-mutation refusal when enrolled capacity is unavailable, opposite ranked-ticket floors and joint send controls. Hosted CI and independent correction review wake integration.
 <!-- SECTION:NOTES:END -->
