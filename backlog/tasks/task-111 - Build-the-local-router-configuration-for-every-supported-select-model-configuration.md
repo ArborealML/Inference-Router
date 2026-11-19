@@ -3,11 +3,11 @@ id: TASK-111
 title: >-
   Build the local router configuration for every supported select-model
   configuration
-status: Waiting
+status: In Progress
 assignee:
-  - '@chatswarm'
+  - '@gpt-6.2-sol-config'
 created_date: '2026-11-18T18:15:00Z'
-updated_date: '2026-11-19T07:57:00Z'
+updated_date: '2026-11-19T08:10:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -19,7 +19,7 @@ ordinal: 109000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Independent plan review of MiniMax 32k entrypoint and IPC wakes the next offline implementation. Build the local configuration from the installed selector and verify all valid models, aliases, profiles, defaults and options. Decision-68 authorizes local qualification; TASK-125 carries the first live pair.
+Implement the reviewed offline MiniMax 32k entrypoint and IPC projection. Qualify each selector target against its actual serving launch. TASK-125 carries the first live pair; other families remain separate.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -32,7 +32,7 @@ Independent plan review of MiniMax 32k entrypoint and IPC wakes the next offline
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-For one dedicated MiniMax engine, project a literal absolute executable into Docker Entrypoint, preserve the separate Cmd array and project explicit host IPC into HostConfig.IpcMode. IPC alone needs HostConfig; entrypoint alone does not. Detect both options before raw ancestry and authority fields can be shadowed. Preserve absent-field behavior and keep each option behind startup and pre-mutation gates for every model on that engine. Compare the exact serving payload through fake projection, with isolated options, invalid input and zero-write controls. Verify the private config with the loader. Keep other selector gaps independent.
+Add engine-wide entrypoint and ipc_mode. Encode one literal clean absolute in-image Linux executable in Docker Entrypoint; preserve Cmd separately. Validate path segments, controls, slashes and whitespace without host lookup or template expansion. Only exact host IPC qualifies for offline projection. IPC alone creates HostConfig; entrypoint alone does not. Omit both for legacy payloads. Detect either option before deserialization, including shadowed ancestors, casing, null and ownership/selector conflicts. Validate direct DTO input. Limit strictness to opted engines. Refuse startup before binding any default, injected or enrolled provider. For provider mutation preserve target refusal first, then launch-options refusal, resources, then image/daemon checks. Test each option alone across the engine. Reuse fake payload and refusal fixtures, the redacted MiniMax payload, a private config-only load and one server Native AOT check.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
@@ -46,5 +46,5 @@ Offline comparison covered 36 Strata, 26 HyperQwen and 13 Maya targets. MiniMax 
 
 [PR #12](https://github.com/ArborealML/Inference-Router/pull/12) landed at 5992c4e with SPEC v0.12.78 after hosted Release, Native AOT and smoke passed on 7133401. Review accepted supplied-profile projection. Config-only controls accepted either common RAM key spelling alone and refused both together as duplicate. Automatic profile selection and live activation remain separate.
 
-MiniMax 32k offline IPC and entrypoint plan review dispatched against 5992c4e on November 19.
+Review at 5992c4e accepted the offline scope with explicit parser, resource-free payload and refusal-precedence controls.
 <!-- SECTION:NOTES:END -->
