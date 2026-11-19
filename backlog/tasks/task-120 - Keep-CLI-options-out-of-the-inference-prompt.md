@@ -1,11 +1,11 @@
 ---
 id: TASK-120
 title: Keep CLI options out of the inference prompt
-status: In Progress
+status: Waiting
 assignee:
-  - '@gpt-6.2-sol-release'
+  - '@gpt-6.2-astra'
 created_date: '2026-11-18T20:16:00Z'
-updated_date: '2026-11-19T15:23:00Z'
+updated_date: '2026-11-19T15:27:00Z'
 labels: []
 milestone: m-0
 dependencies: []
@@ -16,7 +16,7 @@ ordinal: 118000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Release owns implementation of the approved CLI prompt fix. Both chat and complete currently collect option values as positional text. A server address can bypass stdin, and a system instruction can also enter the user message.
+Hosted CI and the independent commit review dispatched November 19 on [PR #33](https://github.com/ArborealML/Inference-Router/pull/33) wake the coordinator. Exact bf35e24 passed 44/44 Release CLI process cases with zero skips. Four captured outgoing requests verify chat and complete with positional input and stdin, including separation of system and user text. The shared parser fix and SPEC section 11 correction are qualified on the PR branch.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
