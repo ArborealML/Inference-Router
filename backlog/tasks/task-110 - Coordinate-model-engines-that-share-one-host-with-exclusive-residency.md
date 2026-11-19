@@ -1,11 +1,11 @@
 ---
 id: TASK-110
 title: Coordinate model engines that share one host with exclusive residency
-status: Waiting
+status: In Progress
 assignee:
-  - '@chatswarm'
+  - '@gpt-6.2-sol-lifecycle'
 created_date: '2026-11-18T18:13:00Z'
-updated_date: '2026-11-19T07:38:00Z'
+updated_date: '2026-11-19T07:52:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -19,7 +19,7 @@ ordinal: 108000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Independent review of the causal-drain fixture plan wakes implementation. Establish exclusive residency for cooperating engines sharing one host and reconcile uncertain mutations after restart.
+Implement the offline single-host drain witness before issuing a prepared incumbent stop. Production enforcement and ingress integration remain separate.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -36,11 +36,13 @@ Independent review of the causal-drain fixture plan wakes implementation. Establ
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Use combined base 7ec1c20 for one offline handoff. Hold an authorized application write before backend delivery. Close submission and capture the full use set under the same ordering. A logical timeout and an expired drain leave one physical use and zero stop or create. Restart only the controller. Query the surviving issuer and backend; reject mismatched generation, local close and incomplete cleanup. Bind terminal evidence to the invocation, full predecessor, process, route generation and closed set. Retire once after exact terminal and cleanup. A newly authorized drain may then issue the exact stop and frozen successor create through existing ledgers. Keep successor ingress closed. Dispatch and production authority have separate prerequisites.
+At 7ec1c20 use a real controller child, a surviving issuer and an independent backend terminal acknowledgment. Persist the exact stop and frozen successor before closing ingress. Serialize close and first-write, revoke prepared grants and account for every live incumbent route or prove there is only one. Bind the closed set to full launch, process, route, close ID and exact invocations/grants. Hold an authorized write before backend receipt. Count one issuer use; logical timeout is synthetic. Require both successful channel sealing and exact backend terminal evidence. Failed close, attempted disposal, mismatched acknowledgment and guard disposal grant nothing. Include one small terminal-first control alongside cleanup-first. Kill the controller, verify a new process and fresh nonce, and retain StopPrepared with zero stop/create ledger entries at every boundary while unresolved. Publish the immutable retired set under the issue fence without reopening. Recheck independent ownership and witness before dispatch; require fresh vacancy before one frozen successor create. Keep successor ingress closed.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
 The checkpoint and synthetic ledger landed in [PR #6](https://github.com/ArborealML/Inference-Router/pull/6). [PR #9](https://github.com/ArborealML/Inference-Router/pull/9) at b7a9ac9 passed 18 offline vacancy cases with the subprocess probe rebuilt. Review corrections bind the full predecessor and checkpoint stop effect, detect mismatched operation identity and stale owner evidence, and hold a competing facts writer through daemon entry. Merged at 47eaced after green hosted CI and independent review. Early owner refusals prove zero submission; downstream decision and terminal counts are separately pinned at the daemon-entry guard. Prepare the causal-drain and physical-retirement plan for the single host. Enforced host coverage, physical retirement and instance-bound admission remain prerequisites for production activation.
+
+Plan review accepted the subprocess ownership split with corrections to the complete use set, two independent retirement conditions, restart ordering and issue-time checks. Direct transport exercises one physical owner. Runtime ticket accounting and issuer-crash recovery remain outside this increment.
 <!-- SECTION:NOTES:END -->
