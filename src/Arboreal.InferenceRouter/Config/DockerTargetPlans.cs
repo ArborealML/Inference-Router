@@ -190,16 +190,24 @@ internal sealed class DockerTargetPlans
         }
     }
 
-    private static IEnumerable<JsonProperty> Properties(JsonElement value) =>
-        value.ValueKind == JsonValueKind.Object ? value.EnumerateObject() : [];
+    private static IEnumerable<JsonProperty> Properties(JsonElement value)
+    {
+        if (value.ValueKind != JsonValueKind.Object) yield break;
+        foreach (var property in value.EnumerateObject())
+            yield return property;
+    }
 
-    private static IEnumerable<JsonProperty> Members(JsonElement value, string name) =>
-        Properties(value).Where(property => string.Equals(property.Name, name, StringComparison.OrdinalIgnoreCase));
+    private static IEnumerable<JsonProperty> Members(JsonElement value, string name, bool exactKey = false)
+    {
+        foreach (var property in Properties(value))
+            if (exactKey ? property.NameEquals(name) : string.Equals(property.Name, name, StringComparison.OrdinalIgnoreCase))
+                yield return property;
+    }
 
     private static void CheckMember(JsonElement value, string name, string path, bool exactKey = false)
     {
         var seen = false;
-        foreach (var property in exactKey ? Properties(value).Where(property => property.NameEquals(name)) : Members(value, name))
+        foreach (var property in Members(value, name, exactKey))
         {
             if (seen || !property.NameEquals(name))
                 throw new RouterConfigException($"{path} is duplicated or uses noncanonical JSON casing");

@@ -1,6 +1,6 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.70)
+Status: draft, continuously revised (v0.12.74)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
@@ -352,7 +352,7 @@ daemon transaction per engine. 137 tests green.
   that answers no `upload_url`, an upload that dies or answers no asset id, an asset name listed twice on
   the release, and a tag that moves after the first resolve. No tag has run the gate: still configured,
   not proven.
-- v0.12.70 — native Docker configuration resolves per-serving-profile environment and mounts for
+- v0.12.74 — native Docker configuration resolves per-serving-profile environment and mounts for
   offline create projection (§5.3.1, §7). Canonical model and profile select immutable launch
   inputs. Engines with these declarations require separate host qualification before activation.
 
