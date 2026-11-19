@@ -191,7 +191,8 @@ The run used fixture manifest SHA-256
 TRX is held outside the repository, SHA-256
 `36cd0311fef7a61fec6af13f8e5fc98622ada3326fa3c24a7461a1463a16d882`. The standalone
 smoke passed 1/1 with zero skips on `fb1620030dd7d3a0f20c44a0589affa205475394`.
-The intervening changes only corrected two assertions inside the opt-in sweep.
+The two intervening test-only commits corrected three parking lane assertions and
+the expected raw JSON refusal for zero shared memory.
 
 ### Reference provenance
 
