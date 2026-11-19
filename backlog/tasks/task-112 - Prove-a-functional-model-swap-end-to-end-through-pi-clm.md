@@ -5,7 +5,7 @@ status: Waiting
 assignee:
   - '@gpt-6.2-astra'
 created_date: '2026-11-18T18:15:00Z'
-updated_date: '2026-11-19T03:35:00Z'
+updated_date: '2026-11-19T03:42:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -34,5 +34,5 @@ Wake: TASK-125 qualifies the native pair and the listed host and delivery prereq
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-On the primary host, one Pi process with the installed CLM extension streamed five text deltas from Qwen and four from Swift through AIR. Both tickets recorded first token and completion on the selected engine. Independent backend reads measured 256000 context tokens and four slots for Qwen, then 262144 and one slot for Swift. The installed selector changed residency between turns. A private adapter directed the client to AIR. Repeat with router-triggered activation and qualify the installed launcher path.
+Two same-session Pi/CLM runs passed on the primary host. The first used a temporary AIR listener. The repeat used the existing listener and preserved its process. Each run streamed five text deltas from Qwen and four from Swift, with completed tickets for both models. Before the repeat switch, the queue and all four Qwen slots were idle. The installed selector changed residency. Independent inference confirmed Qwen at 256000 context tokens and four slots, then Swift at 262144 and one slot. The listener finished healthy and drained. A private adapter routed the installed client runtime through AIR. The remaining proof requires router-triggered activation and an AIR mode in the installed launcher.
 <!-- SECTION:NOTES:END -->
