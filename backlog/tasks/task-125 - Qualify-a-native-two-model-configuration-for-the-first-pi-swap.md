@@ -1,11 +1,11 @@
 ---
 id: TASK-125
 title: Qualify a native two-model configuration for the first pi swap
-status: Preparing
+status: Waiting
 assignee:
-  - '@gpt-6.2-sol-config'
+  - '@chatswarm'
 created_date: '2026-11-18T20:36:00Z'
-updated_date: '2026-11-19T15:41:00Z'
+updated_date: '2026-11-19T15:46:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -18,7 +18,7 @@ ordinal: 123000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Config is preparing the offline Qwen and Swift pair evidence. Native operation awaits a trusted launch record and both readiness reads bound to the same serving process. The historical operator-launched Qwen instance has no participating controller journal.
+The bounded offline pair plan review dispatched November 19 on 5047f8f wakes the coordinator. Scope is configuration-only validation of the existing resolved pair and fake-provider evidence for explicit Qwen 256k-4 and Swift max. A native swap still awaits a trusted launch record and independently observed readiness bound to the serving instance. The manual Qwen launch had no participating controller journal.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -31,7 +31,7 @@ Config is preparing the offline Qwen and Swift pair evidence. Native operation a
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Reconcile the existing config-only receipts and frozen target identities against the landed projection. Identify which bidirectional fake-provider assertions already cover this pair and which are missing, including wrong image, model and profile. Return the evidence map and a bounded plan for any uncovered assertion. No live host action.
+Validate the hash-pinned pair using the config verb once. Bind the redacted pair to current create digests and distinguish the stale pre-port projection. Seed each direction independently through the staged coordinator. Observe one exact send after matching Open and zero delivery for wrong image-backed digest, wrong model and incompatible valid tier. Preserve the applied-launch recovery guard. The two fake directions provide no serial same-controller or live-swap evidence. Reuse generic controls and the existing selector sweep.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
