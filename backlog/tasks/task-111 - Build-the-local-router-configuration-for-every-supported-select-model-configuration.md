@@ -3,11 +3,11 @@ id: TASK-111
 title: >-
   Build the local router configuration for every supported select-model
   configuration
-status: Waiting
+status: Preparing
 assignee:
-  - '@gpt-6.2-astra'
+  - '@gpt-6.2-sol-config'
 created_date: '2026-11-18T18:15:00Z'
-updated_date: '2026-11-19T09:10:00Z'
+updated_date: '2026-11-19T09:13:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -19,7 +19,7 @@ ordinal: 109000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Hosted CI completion or an independent review verdict on PR #18 wakes the coordinator for landing or correction.
+Prepare the Strata max-4 alias plan covering six selector spellings across three existing targets. PR #18 awaits hosted checks and fixture review.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -44,9 +44,7 @@ The installed selector has 169 valid and 337 invalid spellings across 75 distinc
 
 Single-device profiles require one explicit index and paired profiles two distinct indices. Utilization is 0.50–0.95 (default 0.90), parking 1–48 GiB (default 32), variable lanes 1–8. The selector has no supported suffix-cache launch.
 
-PR #16 merged at 0418440 after hosted CI and independent PASS on ee6e0f5. The review confirmed the resource-free IPC payload, separate entrypoint and command, legacy omission, and refusal before mutation.
+PR #16 merged at 0418440 after hosted CI and independent review.
 
-Plan review on 0418440 passed. Validate misplaced common probes in both formats explicitly, preserve unspecified Docker fields and distinguish default restart behavior from byte equivalence. The fingerprinted selector confirms the literal environment path. Offline implementation released.
-
-[PR #18](https://github.com/ArborealML/Inference-Router/pull/18) passed 51 focused Release cases at 0b02a4e after correcting a test literal. The production-identical parent b422d61 loaded the pinned config and published Linux x64 Native AOT with zero trim warnings.
+[PR #18](https://github.com/ArborealML/Inference-Router/pull/18) projects the GLM health check offline. Review passed the supplied b422d61 production diff. GitHub now serves that exact parent. Its fixture failed compilation; the published one-line child 0b02a4e passed 51 focused Release cases. Parent config load and zero-trim Linux x64 Native AOT cover unchanged production. Fixture-only review dispatched. Before live qualification verify the image shell and router readiness budget independently of Docker’s start period.
 <!-- SECTION:NOTES:END -->
