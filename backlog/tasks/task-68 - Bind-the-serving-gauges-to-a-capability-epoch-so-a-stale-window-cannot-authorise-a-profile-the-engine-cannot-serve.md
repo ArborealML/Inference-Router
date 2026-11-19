@@ -3,11 +3,11 @@ id: TASK-68
 title: >-
   Bind the serving gauges to a capability epoch, so a stale window cannot
   authorise a profile the engine cannot serve
-status: In Progress
+status: Waiting
 assignee:
-  - '@gpt-6.2-sol-scheduling'
+  - '@gpt-6.2-astra'
 created_date: '2026-11-18T01:11:00Z'
-updated_date: '2026-11-19T07:35:00Z'
+updated_date: '2026-11-19T07:45:00Z'
 labels:
   - concurrency
   - scheduling
@@ -20,7 +20,7 @@ ordinal: 68000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Publish model-bound window, slots and inferred profile in one versioned capability snapshot. Each routing and readiness decision must use capacity evidence for the selected model and claim.
+Hosted CI and review of the admission merge wake landing. Publish model-bound window, slots and inferred profile in one versioned capability snapshot. Each routing decision uses evidence for the selected model and claim.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -48,5 +48,5 @@ Publish the immutable serving tuple with EngineCapability. Convert scheduler, en
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Serving publication and restoration landed in PRs #2 and #3. [PR #8](https://github.com/ArborealML/Inference-Router/pull/8) passed 96 focused checks and both joint rows. At 1dbd4d0 all 13 correction cases passed. Review identified an active-claim join after the unclaimed deadline. At 2266cb5 both deadline cases passed: expiry before first observation refuses attachment; committed delivery stays ordered for an existing waiter. Independent review dispatched. Scheduling is reconciling PR #5 conflicts in router dispatch, switch-cost tests and SPEC. Qualify the merged ticket-floor and admission paths before landing.
+Publication and restoration landed in PRs #2 and #3. [PR #8](https://github.com/ArborealML/Inference-Router/pull/8) at 2266cb5 passed both deadline rows. Review accepted the under-gate stop, cancellation and deadline checks before first observation; immediate Ready, joined delivery and semaphore release remain intact. Additional stop/cancel permutations are deferred unless those paths change. Revisit the one-second acquisition margin if CI shows a stall. Reconciled head bfc9767 passed 14 focused admission, floor and delivery rows plus the new ordinary exact-take expiry row. Review is scoped to integration changes.
 <!-- SECTION:NOTES:END -->
