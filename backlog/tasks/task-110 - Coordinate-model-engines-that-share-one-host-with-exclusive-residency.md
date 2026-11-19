@@ -1,11 +1,11 @@
 ---
 id: TASK-110
 title: Coordinate model engines that share one host with exclusive residency
-status: Preparing
+status: Waiting
 assignee:
-  - '@gpt-6.2-sol-lifecycle'
+  - '@gpt-6.2-astra'
 created_date: '2026-11-18T18:13:00Z'
-updated_date: '2026-11-19T06:29:00Z'
+updated_date: '2026-11-19T06:33:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -36,11 +36,13 @@ Implement exclusive residency for cooperating managed engines sharing a physical
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Configure an explicit physical host group and share one host-local arbiter across managed engines in that group. Persist the last admitted owner and epoch before side effects. Reconcile with authoritative provider observations after restart. Define how the sole mutation authority fences stale callers during outstanding provider operations. Separate occupied, vacant, foreign and unknown states. Hold the reservation across verified drain, stop, release, launch and readiness. Exercise restart at every external call boundary, delayed effects, unavailable storage and competing hosts with deterministic fakes. Coordinate admission and drain with TASK-25 and TASK-64.
+Wait for the dispatched independent review of the single-host vacancy plan. In the offline fixture verify exact incumbent ownership and retired use before stop. After StopApplied, obtain new independent evidence covering the enrolled partition and frozen successor. Recheck ownership, coverage and vacancy under the create fence. Distinguish refusal before submission from refusal before effect. On restart require a fresh query for an unsent successor and exact reconciliation of a dispatch that may already have taken effect. Production activation remains gated on enforced coverage, retirement and instance-bound admission.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
 The checkpoint and offline effect ledger are in [PR #6](https://github.com/ArborealML/Inference-Router/pull/6). At 4c0ceb1 the corrected 36-case ledger suite passed. Review accepted independent installed residency for launch, fenced rejection recovery and staged publication for trusted subprocess fixtures. The landing branch preserved the six reviewed C# files. Stop recovery checks its terminal evidence. Before real successor creation the host must independently establish vacancy and causal retirement. Unknown effects may remain pending after process death. Power-loss durability, hostile storage, and real serving authority remain unqualified. Existing terminal equality rejects noncanonical records. Further staging permutations are deferred until that protocol changes. Lifecycle is preparing the next single-host authority step.
+
+The checkpoint and ledger landed at 508547f. Plan review dispatched against that merge; its verdict wakes the coordinator.
 <!-- SECTION:NOTES:END -->
