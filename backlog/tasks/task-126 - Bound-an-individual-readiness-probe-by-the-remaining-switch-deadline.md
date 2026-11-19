@@ -1,11 +1,11 @@
 ---
 id: TASK-126
 title: Bound an individual readiness probe by the remaining switch deadline
-status: Ready for Review
+status: Waiting
 assignee:
-  - '@gpt-6.2-sol-shutdown'
+  - '@gpt-6.2-astra'
 created_date: '2026-11-18T20:43:00Z'
-updated_date: '2026-11-18T23:21:00Z'
+updated_date: '2026-11-19T06:28:00Z'
 labels: []
 milestone: m-4
 dependencies: []
@@ -39,5 +39,5 @@ Use one monotonic readiness budget across state headers and body, model discover
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-The standalone monotonic deadline helper passed 16 focused Release cases with zero skips. Independent review is pending. Consumer integration still requires observation-only serving readers and guarded same-claim terminal settlement. In the proposed legacy trust fixture a named claim remains pending at 39 ms and fails at its 40 ms state cap inside a 100 ms overall budget. Late disposal must leave publication and events unchanged. The model-only control proves fresh roster identity with zero state reads. These runtime cases await execution. Enrolled named tiers require a sufficient model-bound window and positive measured total slots.
+Legacy readiness and local HTTP cleanup landed in [PR #4](https://github.com/ArborealML/Inference-Router/pull/4) after hosted CI passed. Waiting for per-ticket context-floor composition and enrolled host readiness to exercise the remaining criteria. TASK-133 carries the separate source-audit follow-up.
 <!-- SECTION:NOTES:END -->

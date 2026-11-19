@@ -368,11 +368,36 @@ public class RefusalCategoryTests
         Assert.NotNull(path);
         var source = File.ReadAllText(path!);
 
+        // Provider failure and the exception path record constants directly. Readiness commits the
+        // category computed by ReadinessFailure.Reason, so follow that producer to its switch arms.
+        var recordedReasons = Regex.Matches(source, @"\b[A-Za-z_]\w*\.FailureReason\s*=\s*(?<reason>[^;]+);")
+            .Select(match => match.Groups["reason"].Value.Trim())
+            .ToArray();
+        Assert.Single(recordedReasons, reason => reason == "failure.Reason");
+        foreach (var reason in recordedReasons)
+        {
+            if (reason == "failure.Reason") continue;
+            Assert.Matches(@"^SwitchReason\.[A-Za-z]+$", reason);
+            Assert.Contains(reason["SwitchReason.".Length..], NamedMembers);
+        }
+
+        var readinessMapping = Regex.Match(source,
+            @"\brecord struct ReadinessFailure\([^{}]*\)\s*\{\s*public string Reason => Miss switch\s*" +
+            @"\{(?<arms>[^{}]+)\};\s*\}");
+        Assert.True(readinessMapping.Success, "The recorded readiness reason must come from the audited mapping.");
+        var readinessArms = readinessMapping.Groups["arms"].Value
+            .Split('\n', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        Assert.Contains("_ => SwitchReason.HealthTimeout,", readinessArms);
+        foreach (var arm in readinessArms)
+        {
+            var category = Regex.Match(arm, @"^(?:ReadinessMiss\.[A-Za-z]+|_) => SwitchReason\.(?<name>[A-Za-z]+),$");
+            Assert.True(category.Success, $"Uncategorized readiness reason: {arm}");
+            Assert.Contains(category.Groups["name"].Value, NamedMembers);
+        }
+
         foreach (var raw in source.Split('\n'))
         {
             var line = raw.Trim();
-            if (line.StartsWith("state.FailureReason =", StringComparison.Ordinal))
-                Assert.Contains("SwitchReason.", line);
             if (line.Contains("SwitchResult.Failed(", StringComparison.Ordinal) &&
                 !line.StartsWith("///", StringComparison.Ordinal))
                 Assert.Matches(@"SwitchResult\.Failed\(SwitchReason\.[A-Za-z]+\)", line);

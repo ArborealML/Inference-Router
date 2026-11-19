@@ -1,11 +1,11 @@
 ---
 id: TASK-125
 title: Qualify a native two-model configuration for the first pi swap
-status: Preparing
+status: In Progress
 assignee:
   - '@gpt-6.2-sol-config'
 created_date: '2026-11-18T20:36:00Z'
-updated_date: '2026-11-19T02:53:00Z'
+updated_date: '2026-11-19T06:09:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -31,7 +31,5 @@ Qualify the first two-model pair within the primary-host configuration being bui
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Read-only peer inventory found both Ternary Bonsai 27B and Qwen3.5 2B Q4 artifacts. A prior single-lane HIP Qwen run exited 0 with all correctness and strict format checks passing. Its recorded Linux amd64 image ID and named manifest digest matched current Docker inspection. Bonsai previously completed a resident pi turn. This peer pair is a candidate for cluster qualification; it still requires native launch binding and host enrollment. The local selector inventory is separately authoritative for TASK-111.
-
-The successful Qwen run recorded 4056 document tokens, a 32768-token server context and one lane. Its archived create settings map two AMD character devices and two read-only mounts, limit CPU to three cores, set memory and total memory-plus-swap to 16 GiB, and disable core dumps. Bonsai’s launch script uses the same resources with a different server executable and Q8 KV settings. The inspected 8192 run has no completion record. Preserve the distinction when comparing resolved create payloads.
+Both local models served real Pi turns through AIR across selector transitions. Offline target configuration and pure create projection are cleared for implementation with reviewed safeguards for alias/default resolution, literal environment composition, bind collisions, opt-in parsing, and refusal before mutation. TASK-112 retains the native client-driven swap proof.
 <!-- SECTION:NOTES:END -->

@@ -7,7 +7,7 @@ status: Ready for Review
 assignee:
   - '@gpt-6.2-astra'
 created_date: '2026-11-17T23:07:00Z'
-updated_date: '2026-11-19T04:05:00Z'
+updated_date: '2026-11-19T06:23:00Z'
 labels:
   - scheduling
   - architecture
@@ -43,5 +43,5 @@ Carry the final ranked ticket and its route generation through preparation. Rele
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-The combined injected admission implementation passed 71 focused Release cases on 3ea5a79. Six failure cases cover null and throwing preparation before, during and after the joiner registers for a wake. Two generation-replacement cases verify that late cleanup preserves the successor reservation. Review the combined change before integration. Preserve queue order, bounded preparation and retirement, cancellation arbitration and exact-ticket commitment. TASK-25 owns production switch-owner admission and physical late cleanup.
+The exact-ticket admission feature is in [PR #5](https://github.com/ArborealML/Inference-Router/pull/5). A competing dispatcher cannot steal the pending owner’s preparation slot. The corrected shutdown-token lifetime passed 17 targeted Release checks, including the prior teardown failure. Hosted CI and the independent feature review precede integration. Production host admission remains separate.
 <!-- SECTION:NOTES:END -->

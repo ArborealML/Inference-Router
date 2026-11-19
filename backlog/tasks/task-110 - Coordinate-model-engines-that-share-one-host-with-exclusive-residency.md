@@ -1,11 +1,11 @@
 ---
 id: TASK-110
 title: Coordinate model engines that share one host with exclusive residency
-status: In Progress
+status: Preparing
 assignee:
   - '@gpt-6.2-sol-lifecycle'
 created_date: '2026-11-18T18:13:00Z'
-updated_date: '2026-11-19T02:34:00Z'
+updated_date: '2026-11-19T06:29:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -42,5 +42,5 @@ Configure an explicit physical host group and share one host-local arbiter acros
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Injected host coordination passed 133 focused and 475 Release tests plus server Native AOT. Offline restart integration passed 563 Release tests and Native AOT. The separate diagnostic correction passed 57 focused tests. The reviewed receipt fixtures passed 38 host tests. After publication and a lost acknowledgment, re-entry requested a stop of the exact incumbent; the fake refused before issuing it. The active offline slice installs a single authoritative checkpoint under a stable lock. It retains the incumbent, exact stop operation and frozen successor across restart. An ambiguous install fences the current handle. Reopen validates the installed record. Retaining the incumbent after a certified pre-issue abort grants no serving authority. Production still requires independent effect identity, causal upstream retirement, enforced occupancy and incarnation-bound admission. Live operations remain parked.
+The checkpoint and offline effect ledger are in [PR #6](https://github.com/ArborealML/Inference-Router/pull/6). At 4c0ceb1 the corrected 36-case ledger suite passed. Review accepted independent installed residency for launch, fenced rejection recovery and staged publication for trusted subprocess fixtures. The landing branch preserved the six reviewed C# files. Stop recovery checks its terminal evidence. Before real successor creation the host must independently establish vacancy and causal retirement. Unknown effects may remain pending after process death. Power-loss durability, hostile storage, and real serving authority remain unqualified. Existing terminal equality rejects noncanonical records. Further staging permutations are deferred until that protocol changes. Lifecycle is preparing the next single-host authority step.
 <!-- SECTION:NOTES:END -->
