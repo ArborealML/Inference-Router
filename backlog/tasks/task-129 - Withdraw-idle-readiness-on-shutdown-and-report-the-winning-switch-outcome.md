@@ -1,11 +1,11 @@
 ---
 id: TASK-129
 title: Withdraw idle readiness on shutdown and report the winning switch outcome
-status: Waiting
+status: Done
 assignee:
   - '@gpt-6.2-astra'
 created_date: '2026-11-18T21:09:00Z'
-updated_date: '2026-11-19T12:44:00Z'
+updated_date: '2026-11-19T12:48:00Z'
 labels: []
 milestone: m-2
 dependencies: []
@@ -16,13 +16,13 @@ ordinal: 127000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Hosted checks on [PR #28](https://github.com/ArborealML/Inference-Router/pull/28) wake the coordinator for landing. The independent review of 945720a passed: the actual proof store and stop are ordered under the transition lock while readiness remains a separate decision. Four Release cases passed on the head, and the misplaced-store control failed at the expected assertion. This contract assumes an infallible synchronous in-memory store under the host guard. Production host authority remains gated. Idle disposal landed in [PR #26](https://github.com/ArborealML/Inference-Router/pull/26).
+Idle disposal withdraws current readiness while retaining the roster ([PR #26](https://github.com/ArborealML/Inference-Router/pull/26)). The injected immediate host orders its acceptance store against shutdown and arbitrates readiness separately ([PR #28](https://github.com/ArborealML/Inference-Router/pull/28), merge 66a506b). All four focused Release cases and hosted checks passed. The negative control reproduced a late host acceptance after stop. Production enrollment remains a separate host obligation.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [x] #1 Dispose a healthy idle runtime. Its previous model can remain listed, but IsReadyFor returns false and the runtime cannot issue a serving grant.
-- [ ] #2 Pause after proof publication, let shutdown win settlement and resume. Observe one stopped outcome, zero switch-completed events and no admitted request under the retired proof.
+- [x] #2 Pause after proof publication, let shutdown win settlement and resume. Observe one stopped outcome, zero switch-completed events and no admitted request under the retired proof.
 <!-- AC:END -->
 
 ## Implementation Plan
