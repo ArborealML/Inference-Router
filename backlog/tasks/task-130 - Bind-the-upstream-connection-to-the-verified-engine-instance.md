@@ -5,7 +5,7 @@ status: Preparing
 assignee:
   - '@gpt-6.2-sol-release'
 created_date: '2026-11-18T22:19:00Z'
-updated_date: '2026-11-18T22:27:00Z'
+updated_date: '2026-11-19T02:27:00Z'
 labels: []
 milestone: m-4
 dependencies: []
@@ -29,5 +29,5 @@ Implement the transport used between host readiness verification and the first u
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Trace the current first upstream write and route lifetime. Prepare a bounded transport plan and fake original/replacement listeners that measure bytes received across rebinding and retirement. Review the plan before implementing.
+Transport plan review requires revision. Freeze the enrollment, instance, epoch and route incarnation for each one-use exchange. Specify which layer authenticates TLS and where the HTTP serializer writes its first byte. Assign the stream, response and physical permit one cleanup owner through late completion. Use separate original and replacement sinks to check retirement, redirects and replay before runtime integration.
 <!-- SECTION:PLAN:END -->

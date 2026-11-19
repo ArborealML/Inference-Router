@@ -7,7 +7,7 @@ status: Preparing
 assignee:
   - '@gpt-6.2-sol-release'
 created_date: '2026-11-17T23:07:00Z'
-updated_date: '2026-11-18T23:11:00Z'
+updated_date: '2026-11-19T02:27:00Z'
 labels:
   - scheduling
   - architecture
@@ -43,5 +43,5 @@ Carry the final ranked ticket and its route generation through preparation. Rele
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Scheduling and lifecycle dispositions agree on host-first commitment. Independent plan review is pending. Use an injected sink to count bytes and physical permits. Check both close-first and authorization-first interleavings, cancellation before submission, and progress on an independent ticket during stalled preparation. TASK-25 owns the uncounted switch owner and physical late cleanup under decision-67. TASK-130 owns verified-instance transport.
+Admission plan review requires revision. Preserve first-admissible order within each model queue while allowing other queue heads to progress. Bound preparation and retirement, and arm then recheck the wake revision before parking. Race cancellation against submission with a single winner. Propose first claim on reopened capacity for the eligible switch owner and immediate handoff if it expires or cancels. TASK-25 owns physical cleanup. Qualify with an injected sink before runtime integration.
 <!-- SECTION:NOTES:END -->
