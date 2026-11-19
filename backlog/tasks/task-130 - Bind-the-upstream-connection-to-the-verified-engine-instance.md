@@ -1,11 +1,11 @@
 ---
 id: TASK-130
 title: Bind the upstream connection to the verified engine instance
-status: Preparing
+status: Waiting
 assignee:
   - '@gpt-6.2-sol-release'
 created_date: '2026-11-18T22:19:00Z'
-updated_date: '2026-11-19T02:27:00Z'
+updated_date: '2026-11-19T02:33:00Z'
 labels: []
 milestone: m-4
 dependencies: []
@@ -16,7 +16,9 @@ ordinal: 128000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Implement the transport used between host readiness verification and the first upstream write. The [internal host enrollment seam](https://github.com/ArborealML/Inference-Router/commit/ad1790e) supports offline work now. TASK-118 integrates this transport with profile resolution and dispatch. TASK-25 and TASK-64 own counted admission and drain.
+The TASK-64 implementation handoff wakes this approved offline transport slice.
+
+Bind the first upstream write to the verified engine instance. The [internal host enrollment seam](https://github.com/ArborealML/Inference-Router/commit/ad1790e) supports fake-issuer qualification. TASK-118 integrates this transport with profile resolution and dispatch. TASK-25 and TASK-64 own counted admission and drain.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -29,5 +31,5 @@ Implement the transport used between host readiness verification and the first u
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Transport plan review requires revision. Freeze the enrollment, instance, epoch and route incarnation for each one-use exchange. Specify which layer authenticates TLS and where the HTTP serializer writes its first byte. Assign the stream, response and physical permit one cleanup owner through late completion. Use separate original and replacement sinks to check retirement, redirects and replay before runtime integration.
+Use one authenticated application stream per invocation. Freeze the enrollment, process, route incarnation and launch epoch. Serialize HTTP/1.1 above the authenticated stream. Keep the exchange and physical permit owned through terminal cleanup. Exercise redirects, retries, stale grants, first-write races and late responses against independently observable original and replacement sinks.
 <!-- SECTION:PLAN:END -->

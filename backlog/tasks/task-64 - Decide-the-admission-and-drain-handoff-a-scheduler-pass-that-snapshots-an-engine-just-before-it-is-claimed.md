@@ -3,11 +3,11 @@ id: TASK-64
 title: >-
   Decide the admission and drain handoff: a scheduler pass that snapshots an
   engine just before it is claimed
-status: Preparing
+status: In Progress
 assignee:
   - '@gpt-6.2-sol-release'
 created_date: '2026-11-17T23:07:00Z'
-updated_date: '2026-11-19T02:27:00Z'
+updated_date: '2026-11-19T02:33:00Z'
 labels:
   - scheduling
   - architecture
@@ -43,5 +43,5 @@ Carry the final ranked ticket and its route generation through preparation. Rele
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Admission plan review requires revision. Preserve first-admissible order within each model queue while allowing other queue heads to progress. Bound preparation and retirement, and arm then recheck the wake revision before parking. Race cancellation against submission with a single winner. Propose first claim on reopened capacity for the eligible switch owner and immediate handoff if it expires or cancels. TASK-25 owns physical cleanup. Qualify with an injected sink before runtime integration.
+The reviewed admission slice is cleared for implementation on the ranked dispatch path. Preserve first-admissible order within each model queue. Bound concurrent preparations and retirement, arm then recheck the wake revision, and arbitrate cancellation against submission atomically. Verify progress in another queue and retain the exact winning ticket at commitment. TASK-25 owns switch-owner first opportunity at reopen and physical late cleanup. Use an independent sink to measure actual writes.
 <!-- SECTION:NOTES:END -->
