@@ -1,11 +1,11 @@
 ---
 id: TASK-120
 title: Keep CLI options out of the inference prompt
-status: Waiting
+status: In Progress
 assignee:
-  - '@chatswarm'
+  - '@gpt-6.2-sol-release'
 created_date: '2026-11-18T20:16:00Z'
-updated_date: '2026-11-19T15:13:00Z'
+updated_date: '2026-11-19T15:23:00Z'
 labels: []
 milestone: m-0
 dependencies: []
@@ -16,7 +16,7 @@ ordinal: 118000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-The independent CLI prompt plan review dispatched November 19 wakes the coordinator. Release has prepared the isolated change on 914768d. Both chat and complete currently collect option values as positional text. A server address can bypass stdin, and a system instruction can also enter the user message.
+Release owns implementation of the approved CLI prompt fix. Both chat and complete currently collect option values as positional text. A server address can bypass stdin, and a system instruction can also enter the user message.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -29,5 +29,5 @@ The independent CLI prompt plan review dispatched November 19 wakes the coordina
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Release will preserve first valid option values and aliases, consume repeated recognized option values and the existing inert since option, and retain positional order and trimmed stdin fallback. Reuse the existing CLI subprocess and loopback HTTP fixture for both verbs with positional or stdin input. Verify exact system and user messages, flags and routing headers. Update SPEC section 11. Qualify only CliCompletionProcessTests.
+Limit the correction to prompt extraction. Exclude all eligible operands of recognized chat options, including duplicates and the inert since option. Preserve first valid lookup, option flags and positional order. Read trimmed stdin only when positional text is absent. Verify both verbs through the real CLI and a loopback capture; cover option interleaving, duplicates, missing operands, default streaming and exact messages. Align SPEC section 11 with the actual HTTP path.
 <!-- SECTION:PLAN:END -->
