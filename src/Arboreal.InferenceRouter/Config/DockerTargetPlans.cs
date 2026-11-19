@@ -146,7 +146,7 @@ internal sealed partial class DockerTargetPlans
             _ => engine,
         });
 
-    [GeneratedRegex(@"\{\{(?:model|profile|endpoint)\}\}", RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"\{\{(?:model|profile|endpoint)\}\}", RegexOptions.CultureInvariant, matchTimeoutMilliseconds: 1_000)]
     private static partial Regex TargetPlaceholders();
 
     // Walk each occurrence before STJ can discard a shadowed opt-in. Only ancestors of an
