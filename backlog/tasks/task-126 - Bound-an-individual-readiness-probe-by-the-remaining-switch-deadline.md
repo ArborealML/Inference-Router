@@ -1,11 +1,11 @@
 ---
 id: TASK-126
 title: Bound an individual readiness probe by the remaining switch deadline
-status: In Progress
+status: Waiting
 assignee:
-  - '@gpt-6.2-sol-shutdown'
+  - '@gpt-6.2-astra'
 created_date: '2026-11-18T20:43:00Z'
-updated_date: '2026-11-19T06:09:00Z'
+updated_date: '2026-11-19T06:16:00Z'
 labels: []
 milestone: m-4
 dependencies: []
@@ -39,5 +39,5 @@ Use one monotonic readiness budget across state headers and body, model discover
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Legacy deadline and engine-local stop changes passed combined Release checks. The final cleanup correction passed 21 targeted cases and independent review. The implementer is composing the accepted change on the merged main base. Enrolled readiness and two-ticket context-floor verification remain outstanding.
+The reviewed legacy readiness and local HTTP cleanup changes are in [PR #4](https://github.com/ArborealML/Inference-Router/pull/4). Five integration cases passed locally. The hosted refusal-category audit failed on a propagated failure reason. Green CI after the TASK-132 repair wakes integration. Enrolled readiness and the two-ticket context-floor criterion remain open.
 <!-- SECTION:NOTES:END -->
