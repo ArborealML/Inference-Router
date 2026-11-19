@@ -12,9 +12,9 @@ public sealed class QueuedRequest
     internal bool QueueExpired(TimeProvider clock) => Request.Options?.MaxQueueTime is { } window &&
         clock.GetElapsedTime(EnqueuedAtTimestamp) > window;
     public required long PromptChars { get; init; }
-    /// <summary>Context tokens the request must be served under (client hint or char estimate).
-    /// Drives serving-profile escalation in the scheduler (§7.6).</summary>
+    /// <summary>Context demand for tier selection, from the client minimum or the prompt estimate (§7.6).</summary>
     public long RequiredContextTokens { get; init; }
+    internal long ExplicitContextMinimum => Math.Max(0L, Request.Options?.RequiredContext ?? 0);
 }
 
 internal readonly record struct QueueDispatchCandidate(int Depth, int BaselineOrdinal, QueuedRequest? Request);

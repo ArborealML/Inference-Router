@@ -8,6 +8,7 @@ public sealed class QueueDispatchTests
         using var handler = new FakeEngineHandler();
         var scheduler = new RecordingScheduler();
         await using var router = CreateRouter(handler, scheduler);
+        await PublishServingWindowAsync(router, handler, "a", 128);
         var blocked = router.RegisterThread("blocked", ThreadPriority.High());
         blocked.IncrementInflight();
         var head = await router.EnqueueAsync("blocked", Request("a", context: 32));
@@ -28,6 +29,7 @@ public sealed class QueueDispatchTests
         using var handler = new FakeEngineHandler();
         var scheduler = new RecordingScheduler();
         await using var router = CreateRouter(handler, scheduler);
+        await PublishServingWindowAsync(router, handler, "a", 128);
         var first = await router.EnqueueAsync("first", Request("a", context: 32));
         var remaining = await router.EnqueueAsync("remaining", Request("a", context: 96));
         await router.EnqueueAsync("other", Request("b", context: 32));
@@ -58,10 +60,10 @@ public sealed class QueueDispatchTests
         var scheduler = new RecordingScheduler();
         await using var router = CreateRouter(handler, scheduler);
         router.RegisterThread("priority", ThreadPriority.High());
-        var deeperHead = await router.EnqueueAsync("priority", Request("a", context: 32));
-        await router.EnqueueAsync("priority", Request("a", context: 32));
-        var shallowHead = await router.EnqueueAsync("normal", Request("b", context: 32));
-        await router.EnqueueAsync("later-queue", Request("c", context: 32));
+        var deeperHead = await router.EnqueueAsync("priority", Request("a", context: null));
+        await router.EnqueueAsync("priority", Request("a", context: null));
+        var shallowHead = await router.EnqueueAsync("normal", Request("b", context: null));
+        await router.EnqueueAsync("later-queue", Request("c", context: null));
 
         Assert.True(router.TryDispatchOnce());
         Assert.Same(shallowHead, Assert.Single(scheduler.Seen).Ticket);
@@ -127,7 +129,7 @@ public sealed class QueueDispatchTests
             Assert.True(second.HasCapacity);
             Assert.Equal(firstPressure, first.InflightTokenProxy);
             Assert.Equal(0L, second.InflightTokenProxy);
-            var ticket = await router.EnqueueAsync("pressure", Request("m", context: 32));
+            var ticket = await router.EnqueueAsync("pressure", Request("m", context: null));
 
             Assert.True(router.TryDispatchOnce());
 
@@ -145,6 +147,97 @@ public sealed class QueueDispatchTests
             first.EndRequest(firstPressure);
             second.EndRequest(0);
         }
+    }
+
+    [Theory(Timeout = 20_000)]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task OnlyAnExplicitMinimumRequiresAMeasuredModelOnlyWindow(bool explicitMinimum)
+    {
+        using var handler = new FakeEngineHandler();
+        await using var router = CreateRouter(handler, scheduler: null);
+        await PublishServingWindowAsync(router, handler, "a", 0);
+        const long minimum = 4;
+        var request = Request("a", context: explicitMinimum ? minimum : null);
+        Assert.Equal(minimum, RouterCore.EstimateContextTokens(RouterCore.PromptCharsProbe(request.Body), 4));
+        var ticket = await router.EnqueueAsync("context", request);
+
+        if (explicitMinimum)
+        {
+            Assert.False(router.TryDispatchOnce());
+            Assert.Equal(TicketState.Queued, ticket.State);
+            Assert.Equal(0, handler.CompletionCalls);
+            await PublishServingWindowAsync(router, handler, "a", minimum);
+        }
+
+        Assert.True(router.TryDispatchOnce());
+        Assert.Equal(ticket.Id, SelectedTicket(router));
+        await ticket.CompletionTask.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal(1, handler.CompletionCalls);
+    }
+
+    [Fact(Timeout = 20_000)]
+    public async Task AWindowShrinkBeforeExactTakeLeavesTheExplicitTicketQueued()
+    {
+        using var handler = new FakeEngineHandler();
+        var scheduler = new RecordingScheduler();
+        await using var router = CreateRouter(handler, scheduler);
+        await PublishServingWindowAsync(router, handler, "a", 32);
+        var ticket = await router.EnqueueAsync("context", Request("a", context: 32));
+        var before = router.Engines["fake"].Capability;
+        var selecting = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        scheduler.OnSelect = _ =>
+        {
+            selecting.TrySetResult();
+            release.Task.WaitAsync(TimeSpan.FromSeconds(5)).GetAwaiter().GetResult();
+        };
+
+        var dispatch = Task.Run(router.TryDispatchOnce);
+        try
+        {
+            await selecting.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            await PublishServingWindowAsync(router, handler, "a", 31);
+            var after = router.Engines["fake"].Capability;
+            Assert.Same(before.ModelRoster, after.ModelRoster);
+            Assert.Equal(31L, after.Serving.WindowFor("a"));
+        }
+        finally
+        {
+            scheduler.OnSelect = null;
+            release.TrySetResult();
+            await dispatch.WaitAsync(TimeSpan.FromSeconds(5));
+        }
+
+        Assert.Equal(TicketState.Queued, ticket.State);
+        Assert.DoesNotContain(router.Events.Replay(0), entry => entry.Kind == "request.selected");
+        Assert.False(router.TryDispatchOnce());
+        Assert.Equal(0, handler.CompletionCalls);
+
+        await PublishServingWindowAsync(router, handler, "a", 32);
+        Assert.True(router.TryDispatchOnce());
+        Assert.Equal(ticket.Id, SelectedTicket(router));
+        await ticket.CompletionTask.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal(1, handler.CompletionCalls);
+    }
+
+    [Fact(Timeout = 20_000)]
+    public async Task OrdinaryExactTakeRejectsExpiryDuringSelection()
+    {
+        using var handler = new FakeEngineHandler();
+        var scheduler = new RecordingScheduler();
+        var clock = new ManualClock();
+        await using var router = CreateRouter(handler, scheduler, clock);
+        await PublishServingWindowAsync(router, handler, "a", 32);
+        var ticket = await router.EnqueueAsync("context", Request("a", context: 32, maxQueueTime: TimeSpan.FromHours(1)));
+        scheduler.OnSelect = _ => clock.Timestamp = TimeSpan.FromHours(2).Ticks;
+
+        Assert.False(router.TryDispatchOnce());
+
+        var error = await Assert.ThrowsAsync<RouterRequestException>(() => ticket.CompletionTask);
+        Assert.Equal("deadline_exceeded", error.Code);
+        Assert.DoesNotContain(router.Events.Replay(0), entry => entry.Kind == "request.selected");
+        Assert.Equal(0, handler.CompletionCalls);
     }
 
     [Fact]
@@ -172,19 +265,54 @@ public sealed class QueueDispatchTests
     private static string? SelectedTicket(RouterCore router) =>
         Assert.Single(router.Events.Replay(0), entry => entry.Kind == "request.selected").TicketId;
 
-    private static RouterCore CreateRouter(FakeEngineHandler handler, IRequestScheduler scheduler,
+    private static async Task PublishServingWindowAsync(RouterCore router, FakeEngineHandler handler,
+                                                        string model, long window)
+    {
+        using var stop = new CancellationTokenSource();
+        var observed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        void Observe(RouterEvent entry)
+        {
+            if (entry.Kind == "engine.health" && entry.Engine == "fake") observed.TrySetResult();
+        }
+
+        handler.LoadedModels = [model];
+        handler.NCtx = window;
+        router.Events.Subscribe(Observe);
+        try
+        {
+            router.Engines["fake"].StartHealthLoop(stop.Token);
+            await observed.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        }
+        finally
+        {
+            router.Events.Unsubscribe(Observe);
+            stop.Cancel();
+        }
+    }
+
+    private static RouterCore CreateRouter(FakeEngineHandler handler, IRequestScheduler? scheduler,
                                            TimeProvider? clock = null) =>
         new(new RouterConfig
         {
             AutoSwitch = false,
             Engines = new Dictionary<string, EngineDefinition>(StringComparer.Ordinal)
             {
-                ["fake"] = new() { Name = "fake", Endpoint = new Uri("http://engine.invalid/v1/") },
+                ["fake"] = new()
+                {
+                    Name = "fake",
+                    Endpoint = new Uri("http://engine.invalid/v1/"),
+                    Health = new HealthProbeDefinition { Path = "/props", IntervalMs = 3_600_000 },
+                    Catalog = new Dictionary<string, EngineModelDefinition>(StringComparer.Ordinal)
+                    {
+                        ["a"] = new() { Name = "a" },
+                        ["b"] = new() { Name = "b" },
+                    },
+                },
             },
             HttpHandlerFactory = _ => handler,
         }, scheduler, events: null, clock: clock ?? TimeProvider.System);
 
-    private static InferenceRequest Request(string model, long context, TimeSpan? maxQueueTime = null) =>
+    private static InferenceRequest Request(string model, long? context, TimeSpan? maxQueueTime = null) =>
         new()
         {
             Model = model,

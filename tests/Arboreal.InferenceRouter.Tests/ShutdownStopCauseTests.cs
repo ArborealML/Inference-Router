@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using Arboreal.InferenceRouter.Lifecycle;
 
 namespace Arboreal.InferenceRouter.Tests;
@@ -609,10 +610,157 @@ public sealed class ShutdownStopCauseTests
         }
     }
 
-    private sealed class AlwaysSwitchScheduler(string engine) : IRequestScheduler
+    [Theory(Timeout = 60_000)]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task JoinedTicketsKeepTheirOwnReadinessVerdictsAndRequireAnOpenEngineToSend(bool stopBeforeSend)
+    {
+        const long measuredWindow = 32_768;
+        var profile = new ServingProfile { Name = "wide", MaxContext = measuredWindow };
+        var provider = new HeldProvider();
+        using var handler = new CapturingCompletionHandler { LoadedModels = [Model], NCtx = measuredWindow };
+        var def = new EngineDefinition
+        {
+            Name = "fake",
+            Kind = EngineKind.OpenAiCompatible,
+            Endpoint = new Uri("http://localhost/v1"),
+            Lifecycle = EngineLifecycleKind.Docker,
+            Docker = new DockerLifecycleConfig { Image = "fixture", RouterId = "test" },
+            Health = new HealthProbeDefinition { Path = "/props" },
+            Catalog = new Dictionary<string, EngineModelDefinition>
+            {
+                [Model] = new() { Name = Model, ServingProfiles = [profile] },
+            },
+        };
+        var config = new RouterConfig
+        {
+            AutoSwitch = true,
+            Scheduler = new SchedulerConfig { MaxInflightPerEngine = 2, SwitchWaitTimeoutMs = 30_000 },
+            Engines = new Dictionary<string, EngineDefinition> { [def.Name] = def },
+            HttpHandlerFactory = _ => handler,
+        };
+        var heldOutcome = new Pause();
+        var heldStop = new Pause();
+        var feed = new EventRing();
+        feed.Subscribe(e =>
+        {
+            if (e.Kind == "engine.switch_completed") heldOutcome.Enter();
+        });
+        // Fix the selection to the same tier so both real ticket continuations exercise one claim.
+        await using var router = new RouterCore(config, new AlwaysSwitchScheduler(def.Name, profile.Name), feed,
+            TimeProvider.System, lifecycleFactory: _ => provider);
+        var engine = router.Engines[def.Name];
+        var firstWaiting = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var secondWaiting = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var waiters = 0;
+        engine.SwitchWaitTimeForTests = deadline =>
+        {
+            // The launch is still held. Each caller has selected the installed state and released the switch lock.
+            var arrival = Interlocked.Increment(ref waiters);
+            if (arrival == 1) firstWaiting.TrySetResult();
+            if (arrival == 2) secondWaiting.TrySetResult();
+            return deadline - HoldLimit;
+        };
+        engine.AfterStopDecisionForTests = heldStop.Enter;
+        var normalWakes = 0;
+        engine.AfterReadyWaitForTests = cancelled =>
+        {
+            if (!cancelled) Interlocked.Increment(ref normalWakes);
+        };
+        var acceptedClaims = 0;
+        engine.AfterForwardAdmissionForTests = () =>
+        {
+            Interlocked.Increment(ref acceptedClaims);
+            return Task.CompletedTask;
+        };
+        var verdicts = new ConcurrentQueue<(string TicketId, EngineRuntime.SwitchOutcome Outcome)>();
+        router.AfterModelReadinessForTests = (id, outcome) => verdicts.Enqueue((id, outcome));
+        using var caller = new CancellationTokenSource();
+        using var starterCancel = new CancellationTokenSource();
+        var body = """{"model":"extra","messages":[{"role":"user","content":"joined switch"}]}"""u8.ToArray();
+        ValueTask<RouterTicket> Enqueue(string threadId, long minimum) => router.EnqueueAsync(threadId,
+            new InferenceRequest { Model = Model, Body = body, Options = new() { RequiredContext = minimum } },
+            caller.Token);
+
+        var stopping = Task.CompletedTask;
+        try
+        {
+            var starter = engine.EnsureLoadedAsync(Model, profile, Timeout.InfiniteTimeSpan,
+                queue: null, ct: starterCancel.Token);
+            await provider.Launched.WaitAsync(Limit);
+            var fitting = await Enqueue("fitting", measuredWindow);
+            Assert.True(router.TryDispatchOnce());
+            await firstWaiting.Task.WaitAsync(Limit);
+            var stricter = await Enqueue("stricter", measuredWindow + 1);
+            Assert.True(router.TryDispatchOnce());
+            await secondWaiting.Task.WaitAsync(Limit);
+
+            // Retire the starter's wait. The transaction belongs to the engine and both tickets have joined it.
+            await starterCancel.CancelAsync();
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => starter.WaitAsync(Limit));
+            provider.Release(LifecycleResult.Ok());
+            await heldOutcome.Entered.WaitAsync(Limit);
+            Assert.Equal(measuredWindow, engine.Capability.Serving.WindowFor(Model));
+            if (stopBeforeSend)
+            {
+                // Hold disposal before linked cancellation and HTTP close. The outcome wakes both callers.
+                stopping = Task.Run(async () => await engine.DisposeAsync(), CancellationToken.None);
+                await heldStop.Entered.WaitAsync(Limit);
+                Assert.Equal(0L, engine.Capability.Serving.WindowFor(Model));
+            }
+
+            Assert.Equal(TicketState.WaitingForModel, fitting.State);
+            Assert.Equal(TicketState.WaitingForModel, stricter.State);
+            Assert.Empty(verdicts);
+            Assert.Equal(0, Volatile.Read(ref acceptedClaims));
+            Assert.Equal(0, handler.WriteInvocations);
+            heldOutcome.Release();
+
+            var fittingFailure = await Record.ExceptionAsync(() => fitting.CompletionTask.WaitAsync(Limit));
+            var stricterFailure = await Record.ExceptionAsync(() => stricter.CompletionTask.WaitAsync(Limit));
+            Assert.Collection(verdicts.OrderBy(verdict => verdict.TicketId == stricter.Id),
+                verdict => Assert.Equal((fitting.Id, EngineRuntime.SwitchOutcome.Ready), verdict),
+                verdict => Assert.Equal((stricter.Id, stopBeforeSend ? EngineRuntime.SwitchOutcome.RouterStopped
+                    : EngineRuntime.SwitchOutcome.Failed), verdict));
+            Assert.Equal(2, Volatile.Read(ref normalWakes));
+            Assert.Equal(stopBeforeSend ? 0 : 1, Volatile.Read(ref acceptedClaims));
+            Assert.Equal(stopBeforeSend ? 0 : 1, handler.WriteInvocations);
+            Assert.False(caller.IsCancellationRequested);
+            if (stopBeforeSend)
+            {
+                Assert.False(stopping.IsCompleted);
+                Assert.Equal("cancelled", Assert.IsType<RouterRequestException>(fittingFailure).Code);
+                Assert.Equal("cancelled", Assert.IsType<RouterRequestException>(stricterFailure).Code);
+                Assert.Null(handler.WrittenBody);
+            }
+            else
+            {
+                Assert.Null(fittingFailure);
+                var refusal = Assert.IsType<RouterRequestException>(stricterFailure);
+                Assert.Equal("switch_failed", refusal.Code);
+                Assert.Contains($"({SwitchReason.WindowTooSmall})", refusal.Message, StringComparison.Ordinal);
+                Assert.Equal(body, Assert.IsType<byte[]>(handler.WrittenBody));
+            }
+
+            var events = feed.Replay(0);
+            Assert.Single(events, e => e.Kind == "engine.switch_started");
+            var terminal = Assert.Single(events, e => e.Kind is "engine.switch_completed" or "engine.switch_failed");
+            Assert.Equal("engine.switch_completed", terminal.Kind);
+            Assert.Equal("profile=wide", terminal.Reason);
+        }
+        finally
+        {
+            provider.Release(LifecycleResult.Fail("cleanup", "the test released the fake launch"));
+            heldOutcome.Release();
+            heldStop.Release();
+            await stopping.WaitAsync(Limit);
+        }
+    }
+
+    private sealed class AlwaysSwitchScheduler(string engine, string? profile = null) : IRequestScheduler
     {
         public SchedulerDecision SelectNext(QueuedRequest request, SchedulerView view, RouterConfig config) =>
-            new() { Engine = engine, SwitchRequired = true };
+            new() { Engine = engine, SwitchRequired = true, TargetProfile = profile };
     }
 
     private sealed class CapturingCompletionHandler : FakeEngineHandler

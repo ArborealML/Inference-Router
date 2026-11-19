@@ -103,6 +103,202 @@ public sealed class SwitchClaimTests
         return new EngineRuntime(def, config, feed ?? new EventRing(), models, lifecycle: provider, dispatchHint: dispatchHint);
     }
 
+    [Theory(Timeout = 30_000)]
+    [InlineData(false, 8)]
+    [InlineData(true, 1)]
+    public async Task LostClaimReleasesBothLocksAndStopsAtTheCountOrOriginalDeadline(bool deadlineWins, int expectedLosses)
+    {
+        var provider = new GatedProvider();
+        using var reported = Reports("m");
+        var feed = new EventRing();
+        await using var engine = Engine(provider, feed, models: reported);
+        var offers = 0;
+        if (deadlineWins) engine.SwitchWaitTimeForTests = deadline => deadline;
+
+        void SupersedeOffer()
+        {
+            var offer = ++offers;
+            Assert.InRange(offer, 1, 8);
+            if (offer == 2)
+            {
+                // This other caller must acquire both locks while the retry is outside them.
+                engine.BeforeSwitchWaitForTests = null;
+                try
+                {
+                    var other = Task.Run(() => engine.WaitForModelAsync("undeclared", TimeSpan.FromSeconds(5),
+                        CancellationToken.None));
+                    var refusal = other.WaitAsync(TimeSpan.FromSeconds(5)).GetAwaiter().GetResult();
+                    Assert.Equal(SwitchReason.NoSelectCommand, refusal.Detail);
+                }
+                finally
+                {
+                    engine.BeforeSwitchWaitForTests = SupersedeOffer;
+                }
+            }
+
+            using var stop = new CancellationTokenSource();
+            var observed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            void Observe(RouterEvent entry)
+            {
+                if (entry.Kind == "engine.health") observed.TrySetResult();
+            }
+
+            var before = engine.Capability;
+            reported.NCtx = 128 + offer;
+            feed.Subscribe(Observe);
+            try
+            {
+                engine.StartHealthLoop(stop.Token);
+                observed.Task.WaitAsync(TimeSpan.FromSeconds(5)).GetAwaiter().GetResult();
+            }
+            finally
+            {
+                feed.Unsubscribe(Observe);
+                stop.Cancel();
+            }
+            Assert.NotSame(before, engine.Capability);
+            Assert.Null(engine.SwitchingToward);
+        }
+
+        engine.BeforeSwitchWaitForTests = SupersedeOffer;
+        var result = await engine.WaitForModelAsync("extra", TimeSpan.FromSeconds(20), CancellationToken.None);
+
+        Assert.Equal(expectedLosses, offers);
+        Assert.Equal(deadlineWins ? EngineRuntime.SwitchOutcome.TimedOut : EngineRuntime.SwitchOutcome.Failed,
+            result.Outcome);
+        Assert.Equal(deadlineWins ? null : SwitchReason.SwitchError, result.Detail);
+        Assert.Empty(provider.Launches);
+        Assert.Empty(engine.SwitchHistory);
+        Assert.Null(engine.SwitchingToward);
+        Assert.DoesNotContain(feed.Replay(0), entry => entry.Kind == "engine.switch_started");
+        Assert.Equal(deadlineWins ? 0 : 1, feed.Replay(0).Count(entry =>
+            entry.Kind == "engine.switch_failed" && entry.Model == "extra"));
+    }
+
+    [Fact(Timeout = 20_000)]
+    public async Task FirstAcquisitionExpiresWhileAnotherClaimStillHoldsBothLocks()
+    {
+        var provider = new GatedProvider();
+        using var reported = Reports("extra");
+        var feed = new EventRing();
+        await using var engine = Engine(provider, feed, models: reported);
+        var claimed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var limit = TimeSpan.FromSeconds(5);
+        engine.AfterClaimForTests = () =>
+        {
+            claimed.TrySetResult();
+            release.Task.WaitAsync(limit).GetAwaiter().GetResult();
+        };
+
+        var first = Task.Run(() => engine.WaitForModelAsync("extra", Timeout.InfiniteTimeSpan, CancellationToken.None));
+        try
+        {
+            await claimed.Task.WaitAsync(limit);
+            var offers = 0;
+            engine.BeforeSwitchWaitForTests = () => Interlocked.Increment(ref offers);
+            var second = await engine.WaitForModelAsync("second", TimeSpan.FromMilliseconds(100), CancellationToken.None)
+                .WaitAsync(TimeSpan.FromSeconds(2));
+
+            Assert.Equal(EngineRuntime.SwitchOutcome.TimedOut, second.Outcome);
+            Assert.Null(second.Detail);
+            Assert.Equal(1, Volatile.Read(ref offers));
+            Assert.False(first.IsCompleted);
+            Assert.Equal("extra", engine.SwitchingToward);
+            Assert.Empty(provider.Launches);
+        }
+        finally
+        {
+            release.TrySetResult();
+        }
+
+        Assert.True((await first.WaitAsync(limit)).IsReady);
+        Assert.Equal("extra", Assert.Single(provider.Launches));
+        Assert.DoesNotContain(feed.Replay(0), entry => entry.Model == "second" && entry.Kind == "engine.switch_started");
+    }
+
+    [Fact(Timeout = 30_000)]
+    public async Task WaiterExpiredBeforeFirstClaimObservationCannotJoinCommittedReadiness()
+    {
+        var provider = new GatedProvider();
+        using var reported = Reports("extra");
+        await using var engine = Engine(provider, models: reported);
+        var proofCommitted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var deliver = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var acquired = new TaskCompletionSource<DateTimeOffset>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var observeClaim = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var attachedToDelivery = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var limit = TimeSpan.FromSeconds(10);
+        engine.AfterSwitchProofForTests = () =>
+        {
+            proofCommitted.TrySetResult();
+            deliver.Task.WaitAsync(limit).GetAwaiter().GetResult();
+        };
+        engine.AfterOutcomeDeliveryWaitForTests = _ => attachedToDelivery.TrySetResult();
+
+        var first = engine.WaitForModelAsync("extra", Timeout.InfiniteTimeSpan, CancellationToken.None);
+        try
+        {
+            await proofCommitted.Task.WaitAsync(limit);
+            engine.AfterSwitchLockAcquiredForTests = deadline =>
+            {
+                Assert.True(DateTimeOffset.UtcNow < deadline);
+                acquired.TrySetResult(deadline);
+                observeClaim.Task.WaitAsync(limit).GetAwaiter().GetResult();
+            };
+            var second = Task.Run(() => engine.WaitForModelAsync("extra", TimeSpan.FromSeconds(1), CancellationToken.None));
+            var originalDeadline = await acquired.Task.WaitAsync(limit);
+            // The barriers hold both the committed delivery and the new caller's first claim read.
+            for (var remaining = originalDeadline - DateTimeOffset.UtcNow; remaining > TimeSpan.Zero;
+                 remaining = originalDeadline - DateTimeOffset.UtcNow)
+                await Task.Delay(remaining + TimeSpan.FromMilliseconds(1));
+
+            Assert.False(first.IsCompleted);
+            Assert.False(second.IsCompleted);
+            Assert.Equal("extra", engine.SwitchingToward);
+            observeClaim.TrySetResult();
+
+            var outcome = await Task.WhenAny(second, attachedToDelivery.Task).WaitAsync(limit);
+            Assert.Same(second, outcome);
+            var expired = await second;
+            Assert.Equal(EngineRuntime.SwitchOutcome.TimedOut, expired.Outcome);
+            Assert.Null(expired.Detail);
+            Assert.False(attachedToDelivery.Task.IsCompleted);
+            Assert.False(first.IsCompleted);
+            Assert.Equal("extra", Assert.Single(provider.Launches));
+        }
+        finally
+        {
+            observeClaim.TrySetResult();
+            deliver.TrySetResult();
+        }
+
+        Assert.True((await first.WaitAsync(limit)).IsReady);
+    }
+
+    [Fact(Timeout = 20_000)]
+    public async Task ExpiredIdleOfferKeepsImmediateReadyButStartsNoSwitch()
+    {
+        var provider = new GatedProvider();
+        using var reported = Reports("extra");
+        await using var engine = Engine(provider, models: reported);
+
+        var idle = engine.Capability;
+        var expired = await engine.WaitForModelAsync("extra", TimeSpan.Zero, CancellationToken.None);
+        Assert.Equal(EngineRuntime.SwitchOutcome.TimedOut, expired.Outcome);
+        Assert.Same(idle, engine.Capability);
+        Assert.Empty(provider.Launches);
+
+        var loaded = await engine.WaitForModelAsync("extra", TimeSpan.FromSeconds(5), CancellationToken.None);
+        Assert.True(loaded.IsReady);
+        var current = engine.Capability;
+
+        var immediate = await engine.WaitForModelAsync("extra", TimeSpan.Zero, CancellationToken.None);
+        Assert.True(immediate.IsReady);
+        Assert.Same(current, engine.Capability);
+        Assert.Equal("extra", Assert.Single(provider.Launches));
+    }
+
     private static async Task WaitUntil(Func<bool> condition)
     {
         for (var i = 0; i < 400 && !condition(); i++) await Task.Delay(5);

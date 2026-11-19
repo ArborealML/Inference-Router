@@ -54,6 +54,42 @@ public sealed class HostLifecycleCoordinatorTests : IDisposable
     }
 
     [Theory(Timeout = 20_000)]
+    [InlineData(32_768L, null, false)]
+    [InlineData(0L, "wide", true)]
+    [InlineData(0L, "default", false)]
+    public async Task EnrolledCapacityRequirementRefusesBeforeAnyHostEffect(
+        long explicitMinimum, string? tierName, bool selectTier)
+    {
+        var path = CreateReservation("shared");
+        var host = new FakeHost();
+        var events = new EventRing();
+        var tier = tierName is null ? null : new ServingProfile { Name = tierName, MaxContext = 32_768 };
+        using var endpoint = new FakeDockerDaemonHandler { TransportFails = true };
+        await using var engine = CreateEnrolledRuntime(path, host, events, endpoint, tier);
+        var before = engine.Capability;
+        var result = await engine.EnsureLoadedAsync("alias", selectTier ? tier : null, TimeSpan.FromSeconds(5),
+            queue: null, CancellationToken.None, explicitContextMinimum: explicitMinimum);
+
+        Assert.Equal(EngineRuntime.SwitchOutcome.Failed, result.Result.Outcome);
+        Assert.Equal("window_too_small", result.Result.Detail);
+        Assert.Null(result.Proof);
+        Assert.Same(before, engine.Capability);
+        Assert.Empty(engine.SwitchHistory);
+        Assert.Empty(host.Calls);
+        Assert.Empty(host.Stops);
+        Assert.Null(host.Resident);
+        Assert.Null(host.CommittedProof);
+        Assert.False(host.AdmissionClosed);
+        Assert.Empty(endpoint.Requests);
+        using var reservation = HostReservation.Open(path);
+        Assert.Equal(0L, reservation.State.Epoch);
+        Assert.Null(reservation.State.Pending);
+        var refusal = Assert.Single(events.Replay(0));
+        Assert.Equal("engine.switch_failed", refusal.Kind);
+        Assert.Equal("enrolled.model", refusal.Model);
+    }
+
+    [Theory(Timeout = 20_000)]
     [InlineData(true)]
     [InlineData(false)]
     public async Task EnrolledRuntimeRefusesForeignAndUnknownOccupancyWithoutFallback(bool foreign)
@@ -645,7 +681,8 @@ public sealed class HostLifecycleCoordinatorTests : IDisposable
         return path;
     }
 
-    private static EngineRuntime CreateEnrolledRuntime(string path, FakeHost host, EventRing events, HttpMessageHandler endpoint)
+    private static EngineRuntime CreateEnrolledRuntime(
+        string path, FakeHost host, EventRing events, HttpMessageHandler endpoint, ServingProfile? tier = null)
     {
         var definition = new EngineDefinition
         {
@@ -656,7 +693,11 @@ public sealed class HostLifecycleCoordinatorTests : IDisposable
             Docker = new DockerLifecycleConfig { Image = "fixture", RouterId = "test" },
             Catalog = new Dictionary<string, EngineModelDefinition>
             {
-                ["enrolled.model"] = new() { Name = "enrolled.model", Profile = "default", Aliases = ["alias"] },
+                ["enrolled.model"] = new()
+                {
+                    Name = "enrolled.model", Profile = "default", Aliases = ["alias"],
+                    ServingProfiles = tier is null ? [] : [tier],
+                },
             },
         };
         var enrollment = new HostEngineEnrollment("test", definition.Name, new HostLifecycleCoordinator(path, host));

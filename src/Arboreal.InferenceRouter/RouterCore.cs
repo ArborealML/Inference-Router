@@ -38,6 +38,7 @@ public sealed class RouterCore : IInferenceRouter
     // for their waits while retaining cancellation and source ownership in the router.
     private readonly CancellationToken _shutdownToken;
     internal Action? BeforeCostCommitForTests;
+    internal Action<string, EngineRuntime.SwitchOutcome>? AfterModelReadinessForTests;
     internal Action<RouterTicket>? BeforeAdmissionCommitForTests;
     internal Action<RouterTicket>? BeforeAdmissionPreparationForTests;
     internal Action<bool>? BeforeDispatchParkForTests;
@@ -472,17 +473,22 @@ public sealed class RouterCore : IInferenceRouter
 
             var candidate = selection.Head.Candidate.Request!;
             var engine = _engines[selection.Decision.Engine!];
-            if (!(comparison?.Observation.HasCapacity ?? engine.HasCapacity)) continue;
-            var proof = selection.Decision.SwitchRequired
-                ? null
-                : infos.FirstOrDefault(info => info.Name == engine.Name)?.SwitchProof;
+            var observation = comparison?.Observation ?? FindDispatchObservation(infos, engine.Name);
+            var explicitMinimum = candidate.ExplicitContextMinimum;
+            var profile = engine.GetProfile(candidate.Ticket.Model, selection.Decision.TargetProfile);
+            var requiredWindow = EngineRuntime.RequiredWindow(profile, explicitMinimum);
+            var needsCurrentObservation = comparison is not null || requiredWindow > 0 ||
+                selection.Decision.TargetProfile is not null ||
+                (candidate.RequiredContextTokens > 0 && engine.ProfilesForModel(candidate.Ticket.Model).Count > 0);
+            EngineRuntime.DispatchObservation? expected = needsCurrentObservation ? observation : null;
+            if (!(expected?.HasCapacity ?? engine.HasCapacity)) continue;
+            var proof = selection.Decision.SwitchRequired ? null : observation.Capability.SwitchProof;
 
             AdmissionTake take;
             if (_admission is { } admission)
             {
                 var route = new ExactTicketAdmission.Route(engine.Name, candidate.Ticket.Model, selection.Decision.TargetProfile);
-                var explicitContext = Math.Max(0, candidate.Request.Options?.RequiredContext ?? 0);
-                if (admission.Capture(candidate, route, selection.Decision.SwitchRequired, explicitContext) is not { } claim)
+                if (admission.Capture(candidate, route, selection.Decision.SwitchRequired, explicitMinimum) is not { } claim)
                     continue;
                 if (compared) BeforeCostCommitForTests?.Invoke();
                 if (candidate.QueueExpired(_clock))
@@ -503,18 +509,25 @@ public sealed class RouterCore : IInferenceRouter
                 BeforeAdmissionCommitForTests?.Invoke(candidate.Ticket);
                 lock (admission.Gate)
                 {
-                    take = TryTake(selection, engine, comparison, claim);
+                    take = TryTake(selection, engine, expected, requiredWindow, claim);
                 }
             }
             else
             {
                 if (compared) BeforeCostCommitForTests?.Invoke();
-                take = TryTake(selection, engine, comparison, claim: null);
+                if (requiredWindow > 0 &&
+                    observation.Capability.Serving.WindowFor(candidate.Ticket.Model) < requiredWindow &&
+                    !WillWaitForModel(selection.Decision.SwitchRequired, profile))
+                {
+                    MaybeFailDeadline(candidate);
+                    continue;
+                }
+                take = TryTake(selection, engine, expected, requiredWindow, claim: null);
             }
 
             if (take.Result == TakeResult.Taken)
             {
-                StartSelected(candidate, engine, selection.Decision, proof, take.Invocation);
+                StartSelected(candidate, engine, selection.Decision.SwitchRequired, profile, proof, take.Invocation);
                 return DispatchResult.Dispatched;
             }
             if (take.Result == TakeResult.Expired) MaybeFailDeadline(candidate);
@@ -523,8 +536,8 @@ public sealed class RouterCore : IInferenceRouter
         return DispatchResult.Parked;
     }
 
-    private AdmissionTake TryTake(Selection selection, EngineRuntime engine, SwitchComparison? comparison,
-                                  ExactTicketAdmission.Claim? claim)
+    private AdmissionTake TryTake(Selection selection, EngineRuntime engine, EngineRuntime.DispatchObservation? expected,
+                                  long requiredWindow, ExactTicketAdmission.Claim? claim)
     {
         var head = selection.Head;
         var candidate = head.Candidate.Request!;
@@ -551,14 +564,14 @@ public sealed class RouterCore : IInferenceRouter
                         return new(TakeResult.Ineligible);
                     window = observation.Capability.Serving.WindowFor(candidate.Ticket.Model);
                 }
-                if (window < stamped.ExplicitContext || !admission.CanTake(stamped, observation))
+                if (window < requiredWindow || !admission.CanTake(stamped, observation))
                     return new(TakeResult.Ineligible);
             }
 
-            if (comparison is { } cost && !engine.IsDispatchObservationCurrent(cost.Observation))
+            if (expected is { } observationAtSelection && !engine.IsDispatchObservationCurrent(observationAtSelection))
                 return new(TakeResult.Changed);
             if (!engine.HasCapacity) return new(TakeResult.Ineligible);
-            if (claim is not null && candidate.QueueExpired(_clock)) return new(TakeResult.Expired);
+            if (candidate.QueueExpired(_clock)) return new(TakeResult.Expired);
             if (!head.Queue.TryTakeExact(head.Candidate, HasThreadCapacity)) return new(TakeResult.Changed);
 
             var invocation = claim is { } exact ? _admission!.Authorize(exact) : null;
@@ -568,14 +581,15 @@ public sealed class RouterCore : IInferenceRouter
         }
     }
 
-    private void StartSelected(QueuedRequest candidate, EngineRuntime engine, SchedulerDecision decision,
-                               SwitchServingProof? servingProof, ExactTicketAdmission.Invocation? invocation)
+    private void StartSelected(QueuedRequest candidate, EngineRuntime engine, bool requiresSwitch,
+                               ServingProfile? targetProfile, SwitchServingProof? servingProof,
+                               ExactTicketAdmission.Invocation? invocation)
     {
         var ticket = candidate.Ticket;
         try
         {
             var selectedAt = _clock.GetTimestamp();
-            var switchRequired = invocation is null && decision.SwitchRequired;
+            var switchRequired = invocation is null && requiresSwitch;
             if (candidate.Request.Stream && ticket.StreamChannel is null)
             {
                 // Publish the channel with the state change: a listener that sees Executing must be
@@ -597,7 +611,7 @@ public sealed class RouterCore : IInferenceRouter
             // No cancellation token on Task.Run here: with an already-cancelled token Task.Run hands
             // back a task that never runs the delegate, which would strand the thread slot and the
             // engine slot reserved at pop. ExecuteAsync links its own CTS to _shutdown.
-            _ = Task.Run(() => ExecuteAsync(candidate, engine, switchRequired, decision.TargetProfile, servingProof, selectedAt, invocation));
+            _ = Task.Run(() => ExecuteAsync(candidate, engine, switchRequired, targetProfile, servingProof, selectedAt, invocation));
         }
         catch (Exception)
         {
@@ -686,6 +700,16 @@ public sealed class RouterCore : IInferenceRouter
         }
     }
 
+    private bool WillWaitForModel(bool switchRequired, ServingProfile? profile) =>
+        _config.AutoSwitch && (switchRequired || profile is not null);
+
+    private static EngineRuntime.DispatchObservation FindDispatchObservation(EngineRuntimeInfo[] infos, string engine)
+    {
+        foreach (var info in infos)
+            if (info.Name == engine) return info.DispatchObservation;
+        throw new InvalidOperationException("The selected engine is missing from the scheduler view.");
+    }
+
     private EngineRuntimeInfo[] BuildEngineInfos(QueuedRequest head, SwitchComparison? comparison = null)
     {
         var messages = head.Messages();
@@ -711,7 +735,7 @@ public sealed class RouterCore : IInferenceRouter
                 MatchedPrefixChars = e.MatchedPrefixChars(messages),
                 ActiveContextWindow = cap.Serving.WindowFor(head.Ticket.Model),
                 ServingProfiles = e.ProfilesForModel(head.Ticket.Model),
-                SwitchProof = cap.SwitchProof,
+                DispatchObservation = observation,
             });
         }
         return list.ToArray();
@@ -745,12 +769,11 @@ public sealed class RouterCore : IInferenceRouter
     // ── execution ───────────────────────────────────────────────────────────
 
     private async Task ExecuteAsync(QueuedRequest candidate, EngineRuntime engine, bool switchRequired,
-                                    string? targetProfileName, SwitchServingProof? servingProof, long selectedAt,
+                                    ServingProfile? targetProfile, SwitchServingProof? servingProof, long selectedAt,
                                     ExactTicketAdmission.Invocation? invocation)
     {
         var ticket = candidate.Ticket;
         var thread = candidate.Thread;
-        var targetProfile = engine.GetProfile(ticket.Model, targetProfileName);
         var execCts = ticket.ExecCts ??= new CancellationTokenSource();
         var decremented = false;
         var ended = false;
@@ -769,7 +792,7 @@ public sealed class RouterCore : IInferenceRouter
         try
         {
 
-            if (invocation is null && (switchRequired || targetProfile is not null) && _config.AutoSwitch)
+            if (invocation is null && WillWaitForModel(switchRequired, targetProfile))
             {
                 ticket.State = TicketState.WaitingForModel;
                 // A ticket's own deadline bounds only its time in the queue, so the wait for a model
@@ -781,8 +804,10 @@ public sealed class RouterCore : IInferenceRouter
                 // The caller's token bounds only its own wait: the switch transaction runs on the engine's
                 // token, so giving up here never leaves the engine half-switched with nothing loaded.
                 var observed = await engine.EnsureLoadedAsync(ticket.Model, targetProfile, switchWait,
-                    new SwitchQueueTiming(candidate.EnqueuedAtTimestamp, selectedAt), execCts.Token).ConfigureAwait(false);
+                    new SwitchQueueTiming(candidate.EnqueuedAtTimestamp, selectedAt), execCts.Token,
+                    explicitContextMinimum: candidate.ExplicitContextMinimum).ConfigureAwait(false);
                 var switchResult = observed.Result;
+                AfterModelReadinessForTests?.Invoke(ticket.Id, switchResult.Outcome);
                 if (switchResult.Outcome == EngineRuntime.SwitchOutcome.RouterStopped)
                 {
                     Fail(ticket, "cancelled", "cancelled");
