@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@gpt-6.2-sol-scheduling'
 created_date: '2026-11-18T01:11:00Z'
-updated_date: '2026-11-19T07:27:00Z'
+updated_date: '2026-11-19T07:35:00Z'
 labels:
   - concurrency
   - scheduling
@@ -48,5 +48,5 @@ Publish the immutable serving tuple with EngineCapability. Convert scheduler, en
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Serving publication and restoration landed in PRs #2 and #3. [PR #8](https://github.com/ArborealML/Inference-Router/pull/8) passed 96 focused checks and both joint rows. At 1dbd4d0 all 13 correction cases passed: first-acquisition expiry, pre-mutation refusal when enrolled capacity is unavailable, opposite ranked-ticket floors and joint send controls. Review confirmed those fixes. A new caller can still first observe an active claim after its deadline because only the idle branch checks expiry under the transition gate. Check stop, caller cancellation and original expiry before the fresh join decision. Pin the acquisition-to-observation race and preserve delivery to timely joiners.
+Serving publication and restoration landed in PRs #2 and #3. [PR #8](https://github.com/ArborealML/Inference-Router/pull/8) passed 96 focused checks and both joint rows. At 1dbd4d0 all 13 correction cases passed. Review identified an active-claim join after the unclaimed deadline. At 2266cb5 both deadline cases passed: expiry before first observation refuses attachment; committed delivery stays ordered for an existing waiter. Independent review dispatched. Scheduling is reconciling PR #5 conflicts in router dispatch, switch-cost tests and SPEC. Qualify the merged ticket-floor and admission paths before landing.
 <!-- SECTION:NOTES:END -->
