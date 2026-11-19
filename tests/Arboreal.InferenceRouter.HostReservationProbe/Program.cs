@@ -1,6 +1,14 @@
 using Arboreal.InferenceRouter;
 using Arboreal.InferenceRouter.Lifecycle;
 
+if (args is ["--causal-drain", var causalPath, var causalMode, var causalTarget])
+{
+    Console.WriteLine(new HostEffectLedgerProbe(causalPath, requirePartitionProof: true, requireCausalDrain: true)
+        .Run(causalMode, causalTarget));
+    if (causalMode == "hold-after-refusal") _ = Console.ReadLine();
+    return 0;
+}
+
 if (args is ["--successor-vacancy", var vacancyPath, var vacancyMode, var vacancyTarget])
 {
     Console.WriteLine(new HostEffectLedgerProbe(vacancyPath, requirePartitionProof: true).Run(vacancyMode, vacancyTarget));

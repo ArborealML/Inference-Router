@@ -355,6 +355,9 @@ daemon transaction per engine. 137 tests green.
 - v0.12.80 — offline Docker create projection supports a literal image entrypoint and host IPC
   for a native engine. Either declaration gates engine startup and Docker mutations (§5.3.1, §7).
 
+- v0.12.79 — Exercise closed-generation physical retirement across controller death in the
+  offline host fixture. The exact backend terminal and successful write seal both precede a
+  successor stop (§5.3.1, TASK-110).
 - v0.12.78 — offline Docker create projection resolves memory and total memory plus swap per
   serving tier. The two values inherit or replace as a pair, and target-enabled mutation remains
   gated (§5.3.1, §7).
@@ -1780,6 +1783,22 @@ it withholds. In the substitution fixture, the issuer explicitly revokes and clo
 original grant, and the peer observes EOF with zero bytes. Production enrollment still requires
 frozen request body and authorization binding, durable issuance and authoritative physical
 retirement.
+
+The offline causal-drain fixture uses the verified transport and a surviving issuer with one
+generation. The issuer orders closure and first-write authorization under one gate and revokes
+an otherwise authorizable prepared grant. The open control sends its exact bytes with one permit.
+Closing first sends zero bytes, acquires no permit and seals the granted channel. An authorized
+write paused before backend delivery remains a physical use after the synthetic caller timeout.
+The fake backend authors terminal evidence from the delivered request and its independently seeded
+channel identity. A backend-authored grant mismatch cannot release the permit. The successful
+no-more-write seal and matching terminal retire the use once. A fresh controller
+queries the surviving issuer after its predecessor dies. Unresolved retirement leaves the exact
+stop prepared and issues nothing. Before dispatch and at daemon entry the fixture checks the
+installed closed-frontier witness and independent owner evidence. After the stop it still needs
+fresh vacancy to create the frozen successor. The replacement route remains closed. Serving process
+identity is checked for consistency within the issuer's fixture binding. Independent process
+attestation remains a production host and verified-dispatch requirement. Enrolled admission, issuer
+crash recovery and live host authority remain outside this qualification.
 
 **Production evidence.** The raw Docker inventory can report known foreign containers. Even an
 empty inventory leaves vacancy unproven, and raw Docker supplies no terminal receipt for an

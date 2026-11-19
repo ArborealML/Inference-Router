@@ -38,6 +38,12 @@ internal sealed partial class HostEffectLedgerProbe
         using var fence = TryOpenFence();
         if (fence is null) return "worker-busy";
         var prior = Read(PartitionPath, Json.PartitionFacts);
+        if (_requireCausalDrain && scenario == "vacant-retired")
+        {
+            if (prior is null) throw new IOException("The partition actor has no established scope.");
+            WritePartitionFacts(prior with { Resident = null, Retirement = null });
+            return "observed-facts-installed";
+        }
         var ownerGeneration = (prior?.OwnerGeneration ?? 0) + 1;
         var coverageGeneration = (prior?.CoverageGeneration ?? 0) + 1;
         var scope = scenario switch
@@ -52,7 +58,7 @@ internal sealed partial class HostEffectLedgerProbe
         if (scenario is "owned-wrong-launch" or "vacant-wrong-launch")
             incumbent = incumbent with { Operation = incumbent.Operation with { Id = Guid.NewGuid() } };
         const long ingressGeneration = 7;
-        var retirement = scenario == "owned-unretired" ? null : new PartitionRetirement(incumbent, scope, ownerGeneration,
+        var retirement = _requireCausalDrain || scenario == "owned-unretired" ? null : new PartitionRetirement(incumbent, scope, ownerGeneration,
             scenario == "owned-stale-retirement" ? ingressGeneration - 1 : ingressGeneration);
         var coverage = scenario == "vacant-partial" ? PartitionCoverage.Devices : PartitionCoverage.Complete;
         var facts = new PartitionFacts(scope, coverageGeneration, ownerGeneration, ingressGeneration, coverage,
@@ -63,7 +69,8 @@ internal sealed partial class HostEffectLedgerProbe
         return "observed-facts-installed";
     }
 
-    private PartitionProof? ObservePartition(HostEffectCheckpointState checkpoint, bool vacant, string mode)
+    private PartitionProof? ObservePartition(HostEffectCheckpointState checkpoint, bool vacant, string mode,
+        CausalRetirementWitness? requestedRetirement = null)
     {
         var incumbent = checkpoint.AppliedLaunch!;
         var transition = checkpoint.Transition!;
@@ -74,12 +81,14 @@ internal sealed partial class HostEffectLedgerProbe
         WriteOperation("partition-queries", query.Nonce, query, Json.PartitionQuery, mode);
         var lastPath = Path.Combine(_root, vacant ? "last-vacancy-proof.json" : "last-owner-proof.json");
         var facts = Read(PartitionPath, Json.PartitionFacts);
+        var frontier = _requireCausalDrain ? Read(CurrentFrontierPath, Json.CausalRetirementWitness) : null;
+        if (_requireCausalDrain && (frontier is null || (!vacant && frontier != requestedRetirement))) return null;
         var replay = vacant ? mode == "replay-vacancy" : mode == "replay-owner";
         var proof = replay
             ? Read(lastPath, Json.PartitionProof)
-            : facts is { Available: true } ? new PartitionProof(query, facts) : null;
+            : facts is { Available: true } ? new PartitionProof(query, facts, frontier) : null;
 
-        if (proof is null || proof.Query != query || !ProvesPartition(query, proof.Facts)) return null;
+        if (proof is null || proof.Query != query || !ProvesPartition(proof)) return null;
         Publish(lastPath, proof, Json.PartitionProof, "partition-proof", mode, replace: true);
         return proof;
     }
@@ -88,7 +97,8 @@ internal sealed partial class HostEffectLedgerProbe
     {
         // Submit holds the same worker fence used by every modeled writer through daemon entry.
         if (proof is null || ReadOperation("partition-queries", proof.Query.Nonce, Json.PartitionQuery) != proof.Query ||
-            Read(PartitionPath, Json.PartitionFacts) != proof.Facts || !ProvesPartition(proof.Query, proof.Facts)) return false;
+            Read(PartitionPath, Json.PartitionFacts) != proof.Facts || !ProvesPartition(proof)) return false;
+        if (_requireCausalDrain && Read(CurrentFrontierPath, Json.CausalRetirementWitness) != proof.Frontier) return false;
 
         var query = proof.Query;
         if (command.Group != query.Scope.Group || command.Enrollment != query.Scope.Enrollment ||
@@ -103,15 +113,19 @@ internal sealed partial class HostEffectLedgerProbe
             effect.Command.Incumbent == query.Previous && effect.Command.Plan == query.Previous.Plan;
     }
 
-    private static bool ProvesPartition(PartitionQuery query, PartitionFacts facts) =>
-        query.Nonce != Guid.Empty && query.Stop.Kind == HostMutationKind.Stop && query.Stop.Id != Guid.Empty && query.Previous.IsValid() &&
-        query.Stop.Epoch == query.Epoch && query.Previous.Operation.Epoch < query.Epoch && query.Stop.Engine == query.Previous.Operation.Engine &&
-        query.Stop.Target == query.Previous.InstanceId && query.Successor.IsValid() &&
-        (query.Vacant ? query.StopEffect?.Matches(query.Stop, query.Previous) == true : query.StopEffect is null) &&
-        query.Scope == EnrolledScope && facts.Scope == query.Scope && facts.Available && facts.OwnerKnown && !facts.Foreign &&
-        facts.Coverage == PartitionCoverage.Complete && facts.CoverageGeneration > 0 && facts.OwnerGeneration > 0 &&
-        facts.IngressGeneration > 0 && (query.Vacant ? facts.Resident is null : facts.Resident == query.Previous) &&
-        facts.Retirement == new PartitionRetirement(query.Previous, query.Scope, facts.OwnerGeneration, facts.IngressGeneration);
+    private bool ProvesPartition(PartitionProof proof)
+    {
+        var (query, facts, frontier) = proof;
+        return query.Nonce != Guid.Empty && query.Stop.Kind == HostMutationKind.Stop && query.Stop.Id != Guid.Empty && query.Previous.IsValid() &&
+            query.Stop.Epoch == query.Epoch && query.Previous.Operation.Epoch < query.Epoch && query.Stop.Engine == query.Previous.Operation.Engine &&
+            query.Stop.Target == query.Previous.InstanceId && query.Successor.IsValid() &&
+            (query.Vacant ? query.StopEffect?.Matches(query.Stop, query.Previous) == true : query.StopEffect is null) &&
+            query.Scope == EnrolledScope && facts.Scope == query.Scope && facts.Available && facts.OwnerKnown && !facts.Foreign &&
+            facts.Coverage == PartitionCoverage.Complete && facts.CoverageGeneration > 0 && facts.OwnerGeneration > 0 &&
+            facts.IngressGeneration > 0 && (query.Vacant ? facts.Resident is null : facts.Resident == query.Previous) &&
+            (_requireCausalDrain ? WitnessMatches(query, facts, frontier)
+                : facts.Retirement == new PartitionRetirement(query.Previous, query.Scope, facts.OwnerGeneration, facts.IngressGeneration));
+    }
 
     private void RotatePartitionBeforeIssue(string mode)
     {
@@ -167,4 +181,4 @@ internal sealed record PartitionFacts(PartitionScope Scope, long CoverageGenerat
     PartitionCoverage Coverage, bool Available, bool OwnerKnown, bool Foreign, HostCheckpointLaunchEffect? Resident, PartitionRetirement? Retirement);
 internal sealed record PartitionQuery(Guid Nonce, PartitionScope Scope, long Epoch, HostMutation Stop, HostCheckpointPlan Successor,
     HostCheckpointLaunchEffect Previous, HostCheckpointStopEffect? StopEffect, bool Vacant);
-internal sealed record PartitionProof(PartitionQuery Query, PartitionFacts Facts);
+internal sealed record PartitionProof(PartitionQuery Query, PartitionFacts Facts, CausalRetirementWitness? Frontier = null);
