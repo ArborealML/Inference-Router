@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@gpt-6.2-sol-scheduling'
 created_date: '2026-11-18T18:56:00Z'
-updated_date: '2026-11-19T09:16:00Z'
+updated_date: '2026-11-19T09:21:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -23,7 +23,7 @@ ordinal: 116000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Diagnose the standalone cancellation case when both stream closure and permit retirement fail.
+Prepare the verified dispatch landing on current main while the pending-header cancellation correction is reviewed.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -48,5 +48,5 @@ Publish one immutable sender with the ready preparation. Its exact invocation bo
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Binding review passed on 1bd351d with 118 Release cases and Linux x64 Native AOT. Runtime review identified accounting and fault preservation defects. On e05f5c9 both response-disposal accounting rows and four standalone rows passed. Only the cancelled primary with simultaneous close and permit failures returned TaskCanceledException at the ten-second wait instead of the expected aggregate. Scheduling owns the diagnosis. Independent review of the cleanup correction dispatched. Hold landing until the failing row and review findings are resolved.
+Binding at 1bd351d passed review, 118 Release cases and Linux x64 Native AOT. Cleanup review verified e05f5c9 releases once after conclusive retirement and successful preparation, reports response-disposal faults independently and retains concurrent exceptions. Six of seven parent cases passed; cancellation hung on a silent peer. Child 9e1a9df passed both differential cases with the watchdog live, caller cancellation observed and cleanup joined. Child review dispatched. Preserve GLM .81 and lifecycle .82 when integrating dispatch .83.
 <!-- SECTION:NOTES:END -->
