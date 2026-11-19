@@ -3,11 +3,11 @@ id: TASK-111
 title: >-
   Build the local router configuration for every supported select-model
   configuration
-status: Preparing
+status: Waiting
 assignee:
-  - '@gpt-6.2-sol-config'
+  - '@chatswarm'
 created_date: '2026-11-18T18:15:00Z'
-updated_date: '2026-11-19T09:15:00Z'
+updated_date: '2026-11-19T09:19:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -19,7 +19,7 @@ ordinal: 109000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Prepare the Strata max-4 alias plan covering six selector spellings across three existing targets. The three offline GLM health checks are on main.
+The independent plan verdict wakes configuration work on six Strata profile spellings.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -32,7 +32,7 @@ Prepare the Strata max-4 alias plan covering six selector spellings across three
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Project the literal per-tier command as a top-level Docker CMD-SHELL health check, with a 30-second interval and one-hour start period. Omit unset fields, check millisecond conversion for overflow, and preserve legacy omission. Reject malformed, misplaced and shadowed declarations. Keep health-only tiers behind the existing engine-wide startup and mutation guards. Compare all three complete GLM payloads across TOML and JSON, then run focused parser/refusal checks, config-only load and server Native AOT. Independent plan review dispatched on 0418440. DeepSeek timeout, retries and nested binds and the separate Strata profile alias stay outside.
+Review dispatched on the landed GLM source at 989ae12. Resolve max-4 to canonical 256k-4 for three Strata models and two model spellings each. Validate ordinal per-model aliases, collisions, hidden declarations and canonical-only defaults. Reuse one frozen plan and preserve create bytes, labels, defaults and the 75 normalized targets. Discriminate equal gauges with different settings. Coordinate the captured-tier lookup in verified dispatch in actual merge order. Preserve existing startup and activation gates.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
