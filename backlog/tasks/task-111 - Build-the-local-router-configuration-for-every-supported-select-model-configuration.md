@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@gpt-6.2-sol-config'
 created_date: '2026-11-18T18:15:00Z'
-updated_date: '2026-11-19T14:26:00Z'
+updated_date: '2026-11-19T14:29:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -19,7 +19,7 @@ ordinal: 109000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Config owns the fixed-lane verifier correction. At fb16200 the Release smoke passed 1/1, clearing CA2000. The same-build opt-in sweep stopped in 2.55 seconds at the parking lane minimum assertion: expected 1, observed 4. Distinguish fixed counts from the variable parked tier before measuring vector totals. Driver and disposal reviews dispatched November 19. [PR #30](https://github.com/ArborealML/Inference-Router/pull/30) landed 75 normalized defaults. Dedicated topology, alternate configuration, protected credential bind, published ports and host authority remain open. Public shared-memory inputs and the tier DTO reject explicit null; the older common DTO preserves omission.
+Config is recording the measured offline selector comparison on 80febe5. Release built with zero warnings; the opt-in sweep passed 1/1 in 9.54 seconds wall time. It compared 10,150 distinct positive vectors, 169 spellings, 22 omitted profiles and 78 parser-equivalence cases, with five AIR refusals, one deliberate SHM mismatch and 52 device choices across 26 tiers. Emitted inputs matched the manifest. No selector execution. Bounded reviews dispatched November 19. [PR #30](https://github.com/ArborealML/Inference-Router/pull/30) landed all 75 defaults. Unified topology, alternate reconfiguration, credential bind, published ports and host authority remain open.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
