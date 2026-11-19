@@ -5,7 +5,8 @@ using System.Text.Json.Serialization;
 namespace Arboreal.InferenceRouter.Lifecycle;
 
 internal sealed record HostStagedPublication(
-    Guid ClaimId, Func<HostClosedRouteStage, bool> TryPublishState, Action<HostClosedRouteStage> Complete);
+    Guid ClaimId, Func<HostClosedRouteStage, bool> TryPublishState, Action<HostClosedRouteStage> Complete,
+    Action? AfterStageInstalledForTests = null, Action? AfterStateAcceptedForTests = null);
 
 internal sealed record HostClosedRouteStage(int Version, Guid ClaimId, HostCheckpointLaunchEffect Launch, VerifiedInstanceRoute Route);
 
@@ -79,6 +80,7 @@ internal sealed class HostClosedRouteStaging(
 
             var stage = new HostClosedRouteStage(1, publication.ClaimId, launch, route);
             HostClosedRouteStageFile.Install(reservationPath, stage);
+            publication.AfterStageInstalledForTests?.Invoke();
             ct.ThrowIfCancellationRequested();
             lock (authority._gate)
             {
@@ -88,6 +90,7 @@ internal sealed class HostClosedRouteStaging(
                 if (!publication.TryPublishState(stage) || authority._owner != this || authority._stage != stage) return false;
             }
 
+            publication.AfterStateAcceptedForTests?.Invoke();
             ct.ThrowIfCancellationRequested();
             publication.Complete(stage);
             lock (authority._gate)

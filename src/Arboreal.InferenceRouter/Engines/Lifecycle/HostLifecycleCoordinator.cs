@@ -95,6 +95,8 @@ internal sealed class HostLifecycleCoordinator(string reservationPath, IHostLife
                     reservation.State.LaunchedContainerId is not { } stagedContainerId || !MatchesRequest(pending, target))
                     return PendingOperation();
 
+                // The saved launch already superseded the old route, even if occupancy cannot prove it now.
+                staged.Close();
                 return await RecoverLaunchAsync(reservation, pending, stagedContainerId, target, null, staged, ct)
                     .ConfigureAwait(false);
             }
@@ -191,7 +193,6 @@ internal sealed class HostLifecycleCoordinator(string reservationPath, IHostLife
     {
         var instance = new HostResident(launch.Engine, containerId);
         if (!await IsCurrentInstanceAsync(instance, ct).ConfigureAwait(false)) return OccupancyRefusal();
-        staged?.Close();
         using var drain = await provider.CloseAndDrainAsync(instance, ct).ConfigureAwait(false);
         if (!drain.Result.Succeeded) return drain.Result;
         if (!await IsCurrentInstanceAsync(instance, ct).ConfigureAwait(false)) return OccupancyRefusal();

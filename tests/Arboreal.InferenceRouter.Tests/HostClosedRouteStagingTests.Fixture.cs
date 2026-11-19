@@ -14,18 +14,22 @@ public sealed partial class HostClosedRouteStagingTests
         public int Creates { get; private set; }
         public int Disposals { get; private set; }
         public bool Draining { get; private set; }
+        public LifecycleResult Preflight { private get; set; } = LifecycleResult.Ok();
+        public Func<Guid, CancellationToken, ValueTask<HostOccupancy>>? OnObserve { private get; set; }
+        public Action? OnDrainDispose { private get; set; }
 
         public HostCheckpointLaunchEffect? FindLaunch(HostMutation operation) => _applied?.Operation == operation ? _applied : null;
 
         public ValueTask<HostOccupancy> ObserveAsync(Guid queryId, CancellationToken ct)
         {
             Observations++;
+            if (OnObserve is { } observe) return observe(queryId, ct);
             return ValueTask.FromResult(_resident is null ? new HostOccupancy(queryId, HostOccupancyKind.Vacant)
                 : new HostOccupancy(queryId, HostOccupancyKind.Owned, _resident));
         }
 
         public ValueTask<LifecycleResult> PreflightAsync(LifecycleTarget target, CancellationToken ct) =>
-            ValueTask.FromResult(LifecycleResult.Ok());
+            ValueTask.FromResult(Preflight);
 
         public string GetLaunchPlanDigest(LifecycleTarget target) => Plan(target).Digest();
 
@@ -58,13 +62,18 @@ public sealed partial class HostClosedRouteStagingTests
         {
             Assert.True(Draining);
             Assert.Null(_resident);
-            var plan = Plan(target);
-            Assert.True(plan.Matches(operation, operation.Epoch));
             Creates++;
             var instance = $"instance-{operation.Engine}-{operation.Id:N}";
+            SetAppliedLaunch(operation, target, instance);
+            return ValueTask.FromResult(new HostMutationOutcome(operation, HostMutationStatus.Applied, instance));
+        }
+
+        public void SetAppliedLaunch(HostMutation operation, LifecycleTarget target, string instance)
+        {
+            var plan = Plan(target);
+            Assert.True(plan.Matches(operation, operation.Epoch));
             _resident = new HostResident(operation.Engine, instance);
             _applied = new HostCheckpointLaunchEffect(operation, plan, instance);
-            return ValueTask.FromResult(new HostMutationOutcome(operation, HostMutationStatus.Applied, instance));
         }
 
         public ValueTask<HostMutationOutcome> ReconcileAsync(HostMutation operation, CancellationToken ct) =>
@@ -96,6 +105,7 @@ public sealed partial class HostClosedRouteStagingTests
             {
                 host.Disposals++;
                 host.Draining = false;
+                host.OnDrainDispose?.Invoke();
             }
         }
     }

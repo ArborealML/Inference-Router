@@ -1805,14 +1805,17 @@ identity is checked for consistency within the issuer's fixture binding. Indepen
 attestation remains a production host and verified-dispatch requirement. Enrolled admission, issuer
 crash recovery and live host authority remain outside this qualification.
 
-The offline host coordinator fixture installs a closed route stage against the exact applied
-launch and its original plan. It keeps the applied launch record after publication refusal and
-after success. The guarded state decision runs with minting closed. Completion runs outside the
-short guard, and drain disposal grants no mint authority. A new coordinator can reverify the same
-launch and stage a fresh generation without another stop or create. Only explicit Open of the
-still-current completed generation enables the test issuer to grant a permit and send. The old
-and declined generations stay closed. Enrolled runtime, deadline enforcement and production
-activation remain outside this qualification.
+The offline host coordinator fixture can start a fresh switch or recover a matching applied
+launch. A fresh switch preserves the old route through untouched preflight. Exact applied-launch
+recovery closes the old route before the first occupancy query, including when that query cannot
+prove the replacement. The fixture stages a closed route against the applied launch and its
+original plan. The guarded state decision runs with minting closed, and completion runs outside
+the short guard. Publication refusal, cancellation, staging I/O failure, failed completion or
+failed drain disposal leaves the routes closed and retains the applied launch. A new coordinator
+can reverify that launch and stage a fresh generation without another stop or create. Only
+explicit Open of the still-current completed generation enables the test issuer to grant a permit
+and send. The applied record remains after success. Enrolled runtime, deadline enforcement and
+production activation remain outside this qualification.
 
 **Production evidence.** The raw Docker inventory can report known foreign containers. Even an
 empty inventory leaves vacancy unproven, and raw Docker supplies no terminal receipt for an
