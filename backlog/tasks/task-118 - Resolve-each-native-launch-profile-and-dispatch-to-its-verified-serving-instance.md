@@ -3,11 +3,11 @@ id: TASK-118
 title: >-
   Resolve each native launch profile and dispatch to its verified serving
   instance
-status: Waiting
+status: Preparing
 assignee:
-  - '@gpt-6.2-astra'
+  - '@gpt-6.2-sol-scheduling'
 created_date: '2026-11-18T18:56:00Z'
-updated_date: '2026-11-19T09:41:00Z'
+updated_date: '2026-11-19T09:46:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -23,7 +23,7 @@ ordinal: 116000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Hosted checks and review of the final SPEC reconciliation wake the coordinator to land PR #20.
+Map remaining Defiant verified-dispatch criteria against the landed offline path.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -48,5 +48,7 @@ Publish one immutable sender with the ready preparation. Its exact invocation bo
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Binding review, 118 Release cases and Linux x64 AOT passed on 1bd351d. Cleanup review passed e05f5c9; six cases passed, one silent-peer cancellation timed out. Fix 9e1a9df passed both cancellation rows and review. [PR #20](https://github.com/ArborealML/Inference-Router/pull/20) at 0e6343a passed integration review, the focused health-check test and hosted CI. Changing only the command invalidates the prior route with zero daemon calls. Published ceed1b6 merges PR #19 with all 17 affected project/test blobs unchanged from their respective parents. SPEC resolution review dispatched; hosted CI requested. Production enrollment stays closed.
+Binding review, 118 Release cases and Linux x64 AOT passed on 1bd351d. Cleanup review passed e05f5c9; six cases passed, one silent-peer cancellation timed out. Fix 9e1a9df passed both cancellation rows and review. [PR #20](https://github.com/ArborealML/Inference-Router/pull/20) at 0e6343a passed integration review, the focused health-check test and hosted CI. Changing only the command invalidates the prior route with zero daemon calls.
+
+[PR #20](https://github.com/ArborealML/Inference-Router/pull/20) merged at 4537b1a after hosted CI and final SPEC reconciliation review passed. All 17 affected source and test blobs retained their qualified identities. Production enrollment remains separate.
 <!-- SECTION:NOTES:END -->
