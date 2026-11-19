@@ -5,9 +5,9 @@ title: >-
   configuration
 status: Waiting
 assignee:
-  - '@gpt-6.2-astra'
+  - '@chatswarm'
 created_date: '2026-11-18T18:15:00Z'
-updated_date: '2026-11-19T12:12:00Z'
+updated_date: '2026-11-19T12:17:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -19,7 +19,7 @@ ordinal: 109000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Hosted checks on [PR #27](https://github.com/ArborealML/Inference-Router/pull/27) wake the coordinator for landing. The parser correction review passed. Eight invalid inputs failed to raise errors on the parent; the corrected parser passed all ten differential controls and loaded the pinned config. The landing preserves both qualified runtime changes and the idle shutdown fixture. Offline coverage is 49/75 on main and reaches 57/75 on merge. The single-GPU plan follows that landing.
+The independent single-GPU tier plan review dispatched November 19 wakes Config. [PR #27](https://github.com/ArborealML/Inference-Router/pull/27) merged at 8d8482f after the correction review and hosted checks passed. Its eight paired-GPU projections bring landed offline coverage to 57 of 75. The model-level placement correction rejected all eight previously accepted invalid inputs and retained both valid controls. Live daemon image, logging, restart and peer authority remain unqualified.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -32,7 +32,7 @@ Hosted checks on [PR #27](https://github.com/ArborealML/Inference-Router/pull/27
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Separate selector locator, named digest, platform manifest, config digest, daemon-local identity and platform by evidence source. Mark missing bindings unavailable; synthetic fixture identities must be explicit. Preserve four sequences per replica without claiming global capacity. Project common Docker init, unless-stopped restart and log rotation with the daemon-selected driver. On this gated projection derive ExposedPorts from the existing published port. Pin four paired-device tiers on Swift and Classic with one independent payload, eight row comparisons, option-only refusal, raw/DTO validation and a policy-only digest change. Preserve legacy payloads and zero writes. Qualify the config and AOT once. Image association, restart authority, physical admission and same-wire-ID process binding remain activation dependencies. Six single-GPU and twelve parking targets remain separate.
+For six single-GPU targets, review an optional one-index tier override of the common NVIDIA device request. Check inheritance, HIP conflicts, projection without common resources, zero writes, paired payload identity on returning to the default, and digest changes for device ID alone. Preserve paired environment order. Twelve parking targets remain separate.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
