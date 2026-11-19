@@ -1,11 +1,11 @@
 ---
 id: TASK-136
 title: Restore hosted SDK installation for Release CI
-status: Preparing
+status: Waiting
 assignee:
-  - '@gpt-6.2-sol-release'
+  - '@gpt-6.2-astra'
 created_date: '2026-11-19T08:34:00Z'
-updated_date: '2026-11-19T08:38:00Z'
+updated_date: '2026-11-19T08:39:00Z'
 labels: []
 dependencies: []
 priority: high
@@ -15,7 +15,7 @@ ordinal: 134000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Main 2d7ae36 stopped before tests in the Ubuntu SDK installation step. The installer could not locate a Linux x64 SDK for the 11.0 preview channel. Check the setup inputs against the repository SDK pin. [Failed main run](https://github.com/ArborealML/Inference-Router/actions/runs/44488247949).
+Independent plan review wakes the two-line hosted SDK repair. [Main CI](https://github.com/ArborealML/Inference-Router/actions/runs/44488247949) on 2d7ae36 failed in Ubuntu SDK installation before restore, build and tests.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -27,11 +27,13 @@ Main 2d7ae36 stopped before tests in the Ubuntu SDK installation step. The insta
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Inspect both workflows and installer logs. Preserve the SDK pin, identify the smallest workflow correction and verify it on hosted CI.
+Remove dotnet-quality: preview from CI and release. Keep setup-dotnet, the shared global.json input, 11.0.100 and latestFeature. Verify only those two lines changed, check parity and record the actual SDK and Release build/test and AOT in hosted CI. Do not dispatch a release or tag.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
 The [cancelled merge run](https://github.com/ArborealML/Inference-Router/actions/runs/44488195633) on b6f2ecf also failed the SDK-install step before cancellation, with the identical Linux x64 preview-channel error. Both runs track this one incident.
+
+Plan on ed0a603 dispatched for review. The action translates latestFeature into the 11.0 channel; the failed SDK lookup explicitly requested preview quality.
 <!-- SECTION:NOTES:END -->
