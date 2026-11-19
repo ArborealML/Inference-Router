@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@gpt-6.2-sol-scheduling'
 created_date: '2026-11-18T18:56:00Z'
-updated_date: '2026-11-19T09:07:00Z'
+updated_date: '2026-11-19T09:16:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -23,7 +23,7 @@ ordinal: 116000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Correct verified transport cleanup accounting and fault reporting before offline dispatch lands.
+Diagnose the standalone cancellation case when both stream closure and permit retirement fail.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -48,5 +48,5 @@ Publish one immutable sender with the ready preparation. Its exact invocation bo
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Binding review passed at 1bd351d for raw model, frozen request, captured provider config/endpoint and resident identity. Credential epoch, Authorization/Host cardinality and effective URI checks verified. Additional permutations optional. Qualification: 118 Release cases and Linux x64 Native AOT. Two cleanup defects from 43b64d5 remain. Release capacity once after confirmed retirement and successful preparation cleanup despite a response-disposal fault, and report it. Preserve both stream-close and permit-retirement exceptions. Unknown retirement or failed preparation cleanup retains capacity. Scheduling owns both focused controls.
+Binding review passed on 1bd351d with 118 Release cases and Linux x64 Native AOT. Runtime review identified accounting and fault preservation defects. On e05f5c9 both response-disposal accounting rows and four standalone rows passed. Only the cancelled primary with simultaneous close and permit failures returned TaskCanceledException at the ten-second wait instead of the expected aggregate. Scheduling owns the diagnosis. Independent review of the cleanup correction dispatched. Hold landing until the failing row and review findings are resolved.
 <!-- SECTION:NOTES:END -->
