@@ -1,11 +1,11 @@
 ---
 id: TASK-126
 title: Bound an individual readiness probe by the remaining switch deadline
-status: In Progress
+status: Waiting
 assignee:
-  - '@gpt-6.2-sol-shutdown'
+  - '@chatswarm'
 created_date: '2026-11-18T20:43:00Z'
-updated_date: '2026-11-19T11:15:00Z'
+updated_date: '2026-11-19T11:22:00Z'
 labels: []
 milestone: m-4
 dependencies: []
@@ -16,7 +16,7 @@ ordinal: 124000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Shutdown is implementing the remaining capacity, alternate-engine and typed-stop controls.
+Independent review of 0a71565 wakes the coordinator for landing. All seven focused Release cases passed with zero skips. Capacity inputs exercise the staged observation boundary. The independent alternate served a ticket before the retired body was released, and the typed stop survived runtime cleanup.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -39,7 +39,7 @@ Review on 33debba approved five in-budget slot cases and two races. Supply omitt
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Held state and models probes stayed pending at 99 ms and settled once at 100 ms before release. All three rows passed on 90c5449 and 4bc9a0a. Legacy readiness and local HTTP cleanup landed in [PR #4](https://github.com/ArborealML/Inference-Router/pull/4). The two-ticket control in [PR #8](https://github.com/ArborealML/Inference-Router/pull/8) passed both rows: the stopped engine granted neither ticket a send, and the open engine accepted one exact POST. For the offline enrolled case, Lifecycle owns coordinator, staging and the single recovered-launch fixture. Shutdown owns EngineRuntime and its host lifecycle partial. Build on the exact host child, reuse its launch-owned deadline and the existing guarded CAS and delivery signal, and consume the typed terminal outcome before generic launch failure. Preserve production capacity gates.
+Held state and models probes stayed pending at 99 ms and settled once at 100 ms before release. All three rows passed on 90c5449 and 4bc9a0a. Legacy readiness and local HTTP cleanup landed in [PR #4](https://github.com/ArborealML/Inference-Router/pull/4). The two-ticket control in [PR #8](https://github.com/ArborealML/Inference-Router/pull/8) passed both rows: the stopped engine granted neither ticket a send, and the open engine accepted one exact POST. Production enrollment and capacity gates remain closed.
 
 Runtime review of df9fdef found Ready survives a refused Open. Preserve that historical result: withdrawing its proof can send a woken waiter back to retry. The offline issuer checks exact open authority at mint and first write. Production RouterCore supplies no enrollment. Require both checks when integrating enrolled dispatch and admission. Synchronous Open takes host admission before transition. At 8af4cdd the deadline fixture passed 1/1 with a closed completion hint, an open hint on success and zero permits on expiry. [PR #23](https://github.com/ArborealML/Inference-Router/pull/23) includes the post-Open notification change. Its fault control passed on a99b91c, preserving committed readiness, actual opening and the original exception.
 <!-- SECTION:NOTES:END -->
