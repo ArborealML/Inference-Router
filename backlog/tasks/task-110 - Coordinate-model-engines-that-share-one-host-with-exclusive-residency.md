@@ -1,11 +1,11 @@
 ---
 id: TASK-110
 title: Coordinate model engines that share one host with exclusive residency
-status: Waiting
+status: In Progress
 assignee:
-  - '@gpt-6.2-astra'
+  - '@gpt-6.2-sol-lifecycle'
 created_date: '2026-11-18T18:13:00Z'
-updated_date: '2026-11-19T09:22:00Z'
+updated_date: '2026-11-19T09:27:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -19,7 +19,7 @@ ordinal: 108000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Hosted CI completion or the independent closed-route staging verdict wakes the coordinator for PR #19.
+Close stale route authority before the first occupancy probe in staged recovery and qualify cancellation and cleanup failures.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -48,5 +48,5 @@ Fence wrong target or missing publication before legacy recovery can settle or g
 
 Plan review on 3160a11 identified the legacy wrong-target recovery fallback and required a discriminating old grant and fresh-open positive. All four findings incorporated; lifecycle released to implement.
 
-Closed-route staging at 6ef4723 passed its paired Release case (1/1). Refusal retained LaunchApplied and kept grants closed after disposal. Recovery reopened a fresh completed generation for one exact send with one create and one stop overall. Bounded commit review dispatched. [PR #19](https://github.com/ArborealML/Inference-Router/pull/19) at ae393b4 preserves all four tested C# blobs. Its SPEC .82 entry follows the landed GLM .81 entry.
+[PR #19](https://github.com/ArborealML/Inference-Router/pull/19) passed hosted CI at ae393b4 and preserves the 1/1 paired case at 6ef4723. Review found exact applied-launch recovery probes occupancy before closing the incumbent. Close before the probe and verify old grants fail during and after an unsuccessful observation. Add focused cancellation after staging and after guarded publication, completion failure, stage I/O failure and drain-disposal failure controls. Verify refusal retains the exact applied launch, with no permits, bytes or repeated mutation on recovery. The injected path supports fresh switching and recovers only applied launches.
 <!-- SECTION:NOTES:END -->
