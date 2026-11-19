@@ -1,11 +1,11 @@
 ---
 id: TASK-125
 title: Qualify a native two-model configuration for the first pi swap
-status: Preparing
+status: Waiting
 assignee:
   - '@gpt-6.2-sol-config'
 created_date: '2026-11-18T20:36:00Z'
-updated_date: '2026-11-19T23:21:09Z'
+updated_date: '2026-11-19T23:29:31Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -18,7 +18,7 @@ ordinal: 123000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Config is qualifying the newly selected DeepSeek V4.1 Flash 1017 and Qwen 3.8 Flash Next pair. Identify supported profiles, image and topology constraints from the installed selector. The prior Qwen/Swift bidirectional fake receipt and configuration readback remain historical evidence for that pair. Live qualification requires enrolled host authority and independent observation.
+Waiting for independent review of the selected DeepSeek V4.1 Flash 1017 IQ2-XXS 32k (32768 context, one slot) and Qwen 3.8 Flash Next IQ3_S 256k-4 (256000 context, four slots) plan on 98db2b2. The verdict wakes Config. Each dedicated configuration can be qualified offline. ValidateLifecycleTopology rejects explicit router ownership with multiple engines even on distinct listeners. One-router live qualification depends on managed peer fencing under TASK-110, a separately reviewed enrolled topology path and verified serving dispatch under TASK-118.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -31,7 +31,7 @@ Config is qualifying the newly selected DeepSeek V4.1 Flash 1017 and Qwen 3.8 Fl
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Prepare the smallest offline readback of the captured targets and both handoff directions. Exercise the real topology guard, keep exact identifiers and effective settings, and report any unsupported composition before changing behavior. Keep the host untouched.
+Prepare the smallest offline readback of the captured targets and both handoff directions. Verify that the derived DeepSeek inference URL resolves to the installed /v1/chat/completions handler and the readiness probe uses its intended path. Exercise the real topology guard, keep exact identifiers and effective settings, and report any unsupported composition before changing behavior. Keep the host untouched.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
