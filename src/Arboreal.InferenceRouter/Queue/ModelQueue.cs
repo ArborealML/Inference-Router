@@ -5,6 +5,7 @@ public sealed class QueuedRequest
 {
     public required RouterTicket Ticket { get; init; }
     public required InferenceRequest Request { get; init; }
+    internal string? OriginalModel { get; init; }
     public required PrioritizedRequest PriorityNode { get; init; }
     public required RouterThread Thread { get; init; }
     public required long EnqueuedSeq { get; init; }

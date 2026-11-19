@@ -126,7 +126,7 @@ public sealed class VerifiedDispatchTargetTests
             DockerJsonContext.Default.DockerCreateRequest);
     }
 
-    private static EngineDefinition Load(
+    internal static EngineDefinition Load(
         string mode = "normal", string mount = "/fixture/weights", long memory = 6_291_456, string digest = RepoDigest,
         string platform = "linux/amd64", string alias = "alias", bool singleton = false)
     {

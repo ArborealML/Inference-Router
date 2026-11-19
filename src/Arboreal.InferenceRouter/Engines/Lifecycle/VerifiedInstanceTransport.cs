@@ -24,6 +24,62 @@ internal interface IVerifiedInstanceStreamIssuer
     IAsyncDisposable? TryAuthorizeFirstWrite(VerifiedInstanceGrant grant);
 }
 
+internal enum VerifiedCheckoutDisposition { Unknown, NoTransfer, ConfirmedRetired, Transferred }
+
+internal readonly record struct VerifiedCheckout(VerifiedCheckoutDisposition Disposition, VerifiedInstanceGrant? Grant = null);
+
+/// <summary>The fixture issuer certifies no usable transfer or retirement for its exact invocation.</summary>
+internal interface IVerifiedDispatchIssuer : IVerifiedInstanceStreamIssuer
+{
+    ValueTask<VerifiedCheckout> CheckoutVerifiedAsync(VerifiedInstanceInvocation invocation, CancellationToken ct);
+}
+
+internal enum VerifiedRetirement { Unconfirmed, NoUse, Confirmed }
+
+internal readonly record struct VerifiedTerminal(VerifiedRetirement Retirement,
+    Exception? StreamCloseFailure = null, Exception? PermitFailure = null, Exception? ResponseCleanupFailure = null)
+{
+    internal bool Conclusive => Retirement != VerifiedRetirement.Unconfirmed;
+}
+
+internal sealed class VerifiedTransportOperation
+{
+    private readonly TaskCompletionSource<HttpResponseMessage> _primary = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly TaskCompletionSource _endOfUse = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly TaskCompletionSource<VerifiedTerminal> _terminal = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    internal Task<HttpResponseMessage> Primary => _primary.Task;
+    internal Task<VerifiedTerminal> Terminal => _terminal.Task;
+    internal Task EndOfUse => _endOfUse.Task;
+
+    internal void PublishResponse(HttpResponseMessage response) => _primary.SetResult(response);
+
+    internal void PublishFailure(Exception error)
+    {
+        if (error is OperationCanceledException canceled)
+            _primary.TrySetCanceled(canceled.CancellationToken);
+        else
+            _primary.TrySetException(error);
+    }
+
+    internal void EndBorrow() => _endOfUse.TrySetResult();
+    internal void Complete(VerifiedTerminal terminal) => _terminal.SetResult(terminal);
+
+    internal async Task EndStandaloneAsync()
+    {
+        EndBorrow();
+        var terminal = await Terminal.ConfigureAwait(false);
+        if (CleanupFailure(terminal) is { } error) ExceptionDispatchInfo.Throw(error);
+    }
+
+    internal static Exception? CleanupFailure(VerifiedTerminal terminal)
+    {
+        var cleanup = terminal.PermitFailure ?? terminal.StreamCloseFailure;
+        return terminal.ResponseCleanupFailure is { } response && cleanup is not null
+            ? new AggregateException(response, cleanup) : terminal.ResponseCleanupFailure ?? cleanup;
+    }
+}
+
 internal sealed class VerifiedInstanceGrant(
     VerifiedInstanceInvocation invocation, Stream applicationStream, Func<ValueTask> closeApplicationStream)
 {
@@ -44,69 +100,115 @@ internal sealed class VerifiedInstanceTransport(
     internal async Task<VerifiedInstanceExchange> SendAsync(
         VerifiedInstanceInvocation invocation, ReadOnlyMemory<byte> body, string? authorization, CancellationToken ct)
     {
-        if (expected != invocation || invocation.Id == Guid.Empty)
-            throw new InvalidOperationException("The invocation does not match the verified serving route.");
-        var logical = invocation.LogicalUri;
-        if (logical is null || !logical.IsAbsoluteUri || logical.Scheme is not ("http" or "https"))
-            throw new ArgumentException("The verified invocation requires an HTTP or HTTPS origin.", nameof(invocation));
-        if (Interlocked.Exchange(ref _started, 1) != 0)
-            throw new InvalidOperationException("The verified invocation has already been used.");
-
-        var grant = await issuer.CheckoutAsync(invocation, ct).ConfigureAwait(false)
-            ?? throw new HttpRequestException("The verified route did not issue a stream.");
-        var responseReady = new TaskCompletionSource<HttpResponseMessage>(
-            TaskCreationOptions.RunContinuationsAsynchronously);
-        var endOfUse = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var cleanup = RunExchangeAsync(issuer, invocation, grant, body, authorization, responseReady, endOfUse.Task, ct);
-        var response = await responseReady.Task.ConfigureAwait(false);
-        return new VerifiedInstanceExchange(response, endOfUse, cleanup);
-    }
-
-    private static async Task RunExchangeAsync(
-        IVerifiedInstanceStreamIssuer issuer, VerifiedInstanceInvocation invocation, VerifiedInstanceGrant grant,
-        ReadOnlyMemory<byte> body, string? authorization, TaskCompletionSource<HttpResponseMessage> responseReady,
-        Task endOfUse, CancellationToken ct)
-    {
-        using var stream = new FirstWriteStream(grant, issuer);
-        Exception? error = null;
+        var operation = Start(invocation, body, authorization, certified: false, ct);
         try
         {
+            return new VerifiedInstanceExchange(await operation.Primary.ConfigureAwait(false), operation);
+        }
+        catch (Exception error)
+        {
+            operation.EndBorrow();
+            var terminal = await operation.Terminal.ConfigureAwait(false);
+            if (VerifiedTransportOperation.CleanupFailure(terminal) is { } cleanup)
+                throw new AggregateException(error, cleanup);
+            throw;
+        }
+    }
+
+    internal VerifiedTransportOperation SendVerified(
+        VerifiedInstanceInvocation invocation, ReadOnlyMemory<byte> body, string? authorization, CancellationToken ct) =>
+        Start(invocation, body, authorization, certified: true, ct);
+
+    private VerifiedTransportOperation Start(
+        VerifiedInstanceInvocation invocation, ReadOnlyMemory<byte> body, string? authorization,
+        bool certified, CancellationToken ct)
+    {
+        var operation = new VerifiedTransportOperation();
+        _ = RunExchangeAsync(operation, invocation, body, authorization, certified, ct);
+        return operation;
+    }
+
+    private async Task RunExchangeAsync(
+        VerifiedTransportOperation operation, VerifiedInstanceInvocation invocation, ReadOnlyMemory<byte> body,
+        string? authorization, bool certified, CancellationToken ct)
+    {
+        VerifiedInstanceGrant? grant = null;
+        FirstWriteStream? stream = null;
+        var retirement = VerifiedRetirement.NoUse;
+        var matchingTransfer = false;
+        Exception? responseCleanup = null;
+        Exception? closeFailure = null;
+        Exception? permitFailure = null;
+        try
+        {
+            if (expected != invocation || invocation.Id == Guid.Empty)
+                throw new InvalidOperationException("The invocation does not match the verified serving route.");
+            var logical = invocation.LogicalUri;
+            if (logical is null || !logical.IsAbsoluteUri || logical.Scheme is not ("http" or "https"))
+                throw new ArgumentException("The verified invocation requires an HTTP or HTTPS origin.", nameof(invocation));
+            if (Interlocked.Exchange(ref _started, 1) != 0)
+                throw new InvalidOperationException("The verified invocation has already been used.");
+
+            if (certified) ct.ThrowIfCancellationRequested();
+            retirement = VerifiedRetirement.Unconfirmed;
+            if (certified)
+            {
+                var checkedOut = await ((IVerifiedDispatchIssuer)issuer).CheckoutVerifiedAsync(invocation, ct)
+                    .ConfigureAwait(false);
+                grant = checkedOut.Grant;
+                if (grant is null)
+                {
+                    retirement = checkedOut.Disposition switch
+                    {
+                        VerifiedCheckoutDisposition.NoTransfer => VerifiedRetirement.NoUse,
+                        VerifiedCheckoutDisposition.ConfirmedRetired => VerifiedRetirement.Confirmed,
+                        _ => VerifiedRetirement.Unconfirmed,
+                    };
+                }
+                if (checkedOut.Disposition != VerifiedCheckoutDisposition.Transferred)
+                    throw new HttpRequestException("The verified route did not issue a stream.");
+            }
+            else
+            {
+                grant = await issuer.CheckoutAsync(invocation, ct).ConfigureAwait(false);
+            }
+            if (grant is null)
+                throw new HttpRequestException("The verified route did not issue a stream.");
             if (grant.Invocation != invocation)
                 throw new HttpRequestException("The issuer returned a grant for a different invocation.");
 
-            await UseChannelAsync(stream, invocation.LogicalUri, body, authorization, responseReady, endOfUse, ct)
-                .ConfigureAwait(false);
+            matchingTransfer = true;
+            stream = new FirstWriteStream(grant, issuer);
+            await UseChannelAsync(stream, logical, body, authorization, operation, ct).ConfigureAwait(false);
         }
-        catch (Exception ex)
+        catch (Exception error)
         {
-            error = ex;
+            if (operation.Primary.IsCompletedSuccessfully) responseCleanup = error;
+            else operation.PublishFailure(error);
         }
-
-        try
+        finally
         {
-            // A physical permit represents issuer-confirmed retirement. Closing the
-            // application stream is a separate step and does not itself release the permit.
-            try { await grant.CloseAsync().ConfigureAwait(false); }
-            finally
+            if (grant is not null)
             {
-                if (stream.PhysicalUse is { } permit)
-                    await permit.DisposeAsync().ConfigureAwait(false);
-            }
-        }
-        catch (Exception ex)
-        {
-            error = error is null ? ex : new AggregateException(error, ex);
-        }
+                try { await grant.CloseAsync().ConfigureAwait(false); }
+                catch (Exception error) { closeFailure = error; }
 
-        if (error is OperationCanceledException canceled && responseReady.TrySetCanceled(canceled.CancellationToken))
-            return;
-        if (error is not null && !responseReady.TrySetException(error))
-            ExceptionDispatchInfo.Throw(error);
+                if (stream?.PhysicalUse is { } permit)
+                {
+                    try { await permit.DisposeAsync().ConfigureAwait(false); }
+                    catch (Exception error) { permitFailure = error; }
+                }
+                if (matchingTransfer && closeFailure is null && permitFailure is null && responseCleanup is null)
+                    retirement = stream?.PhysicalUse is null ? VerifiedRetirement.NoUse : VerifiedRetirement.Confirmed;
+            }
+            stream?.Dispose();
+            operation.Complete(new VerifiedTerminal(retirement, closeFailure, permitFailure, responseCleanup));
+        }
     }
 
     private static async Task UseChannelAsync(
         FirstWriteStream stream, Uri logical, ReadOnlyMemory<byte> body, string? authorization,
-        TaskCompletionSource<HttpResponseMessage> responseReady, Task endOfUse, CancellationToken ct)
+        VerifiedTransportOperation operation, CancellationToken ct)
     {
         // The stream is above any issuer TLS. HTTP on this synthetic URI selects only the
         // serializer; the single-use ConnectCallback supplies its only possible connection.
@@ -136,8 +238,8 @@ internal sealed class VerifiedInstanceTransport(
         };
         using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct)
             .ConfigureAwait(false);
-        responseReady.SetResult(response);
-        await endOfUse.ConfigureAwait(false);
+        operation.PublishResponse(response);
+        await operation.EndOfUse.ConfigureAwait(false);
     }
 
     // Leaving the inner stream open here keeps cleanup in the exchange owner, even when the
@@ -214,14 +316,15 @@ internal sealed class VerifiedInstanceTransport(
 
 
 /// <summary>Holds borrowed response access until disposing signals the owning exchange worker.</summary>
-internal sealed class VerifiedInstanceExchange(
-    HttpResponseMessage response, TaskCompletionSource endOfUse, Task cleanup) : IAsyncDisposable
+internal sealed class VerifiedInstanceExchange(HttpResponseMessage response, VerifiedTransportOperation operation) : IAsyncDisposable
 {
+    private readonly object _gate = new();
+    private Task? _cleanup;
+
     internal HttpResponseMessage Response { get; } = response;
 
     public ValueTask DisposeAsync()
     {
-        endOfUse.TrySetResult();
-        return new ValueTask(cleanup);
+        lock (_gate) return new ValueTask(_cleanup ??= operation.EndStandaloneAsync());
     }
 }
