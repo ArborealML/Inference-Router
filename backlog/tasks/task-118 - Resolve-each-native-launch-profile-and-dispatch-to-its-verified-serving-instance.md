@@ -7,7 +7,7 @@ status: Waiting
 assignee:
   - '@chatswarm'
 created_date: '2026-11-18T18:56:00Z'
-updated_date: '2026-11-19T08:17:00Z'
+updated_date: '2026-11-19T08:20:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -40,11 +40,11 @@ Independent review of the single-host dispatch plan wakes implementation. Carry 
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Use one real selected ticket, its captured catalog, exact admission and the existing issuer. Freeze the effective target, rewritten bytes and credential policy outside locks. At commitment recheck the ticket, route, deadline and capacity. Reject changed inputs before checkout. On submission retain the same physical use through confirmed exchange cleanup. Qualify explicit selection and fitting resident inference, stale identity, body or credential mismatch, and a held retirement against independent sinks. Use an injected resident with zero lifecycle mutations.
+Drive one real selected ticket through exact take and the verified issuer. Bind its effective target, final rewritten bytes and credential policy. Publish one immutable fake resident tuple containing the exact route, process, epoch, generation, config, plan, canonical model, effective tier, measured window and total slots. Named and resolved-default tiers, including ordinary reuse of a named resident, require a fitting positive window and positive measured slots. Public gauges and roster can veto only. After retirement require a fresh generation. Serialize issuer closure against first nonempty write; hold the write with caller and router tokens live and verify closure prevents bytes. Release accounting only on typed no-issue or confirmed retirement; retain unknown use even after a pre-header failure. Treat parsed Docker projections and digest as offline intent paired with a separate inert resident. Preserve startup and mutation guards. Engine-stop integration requires an explicit issuer bridge.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Plan dispatched for independent review against fe005df. Implementation starts after disposition. Family-specific readiness, durable production issuance and host activation remain separate. Confirm effective-plan identity, cleanup ownership and the mutation boundary with the assigned peers.
+Plan and three bounded peer corrections dispatched for independent review against fe005df. Implementation starts after disposition. Per-family attestation, the engine-stop bridge, durable production issuance, host publication and activation remain separate.
 <!-- SECTION:NOTES:END -->
