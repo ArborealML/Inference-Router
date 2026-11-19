@@ -1,11 +1,11 @@
 ---
 id: TASK-110
 title: Coordinate model engines that share one host with exclusive residency
-status: Blocked
+status: Preparing
 assignee:
   - '@gpt-6.2-sol-lifecycle'
 created_date: '2026-11-18T18:13:00Z'
-updated_date: '2026-11-19T19:54:00Z'
+updated_date: '2026-11-19T19:58:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -21,7 +21,7 @@ ordinal: 108000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Blocked on Claire’s delegated mutation decision in TASK-140. [PR #35](https://github.com/ArborealML/Inference-Router/pull/35) qualifies the sequential synthetic receipt. The privileged export is complete. Broker-only delegated mutation permits offline implementation of the protected pair. Continued unrestricted access defers enrollment. Cutover and a vacant trial require separate approval.
+Lifecycle is preparing the first implementable host enrollment increment under [decision 71](../decisions/decision-71%20-%20Dedicate%20initial%20deployment%20resources%20to%20inference.md). Assume dedicated inference resources and one coordinated switch path for router-managed models. Document the initial deployment assumption in SPEC §5.3. The reviewed first step is offline; actual host enforcement remains unverified.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
