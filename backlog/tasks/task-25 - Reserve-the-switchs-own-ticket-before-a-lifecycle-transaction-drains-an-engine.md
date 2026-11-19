@@ -3,11 +3,11 @@ id: TASK-25
 title: >-
   Reserve the switch's own ticket before a lifecycle transaction drains an
   engine
-status: Preparing
+status: Waiting
 assignee:
   - '@gpt-6.2-sol-scheduling'
 created_date: '2026-11-17T02:41:00Z'
-updated_date: '2026-11-19T19:36:00Z'
+updated_date: '2026-11-19T19:49:00Z'
 labels:
   - engine
   - lifecycle
@@ -20,7 +20,7 @@ ordinal: 25000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Scheduling is tracing the live switch ticket through queue admission, logical inflight accounting and physical-use retirement. Prepare the smallest change that reserves the triggering ticket before draining the incumbent. Reuse landed admission and verified dispatch evidence. Identify which integration can land independently of host enrollment and which requires an enrolled writer or observer. The native switch must avoid waiting for its own ticket during drain.
+The independent plan verdict will wake Scheduling. The November 19 plan review covers the queued native switch owner and logical accounting on b25c259. Production sources still match that base after PR #35. The reviewer is checking whether a provisional reservation changes a reachable decision before host enrollment and which existing controls can cover it.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -32,6 +32,12 @@ Scheduling is tracing the live switch ticket through queue admission, logical in
 - [ ] #5 Pause a waiter after Ready and begin a competing switch. Its request reaches only the instance its reservation authorizes, or returns to admission before any upstream write.
 - [ ] #6 Hold an upstream send past caller timeout. Verify one caller terminal, a released logical slot, and zero stop or rebind operations through drain expiry. After late-response disposal, a fresh authorized drain can proceed.
 <!-- AC:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Propose carrying the selected ticket and its single existing logical charge into readiness. Attach the owner only when that ticket installs the switch claim. Preserve direct starters, independent joiners, cancellation, terminal delivery and eventual release. Reuse the held fake-native provider for exact send and cancellation controls. Enrolled closure, authoritative physical drain, protected Ready-to-send promotion and ambiguous effects remain open.
+<!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
 
