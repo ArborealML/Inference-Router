@@ -3,11 +3,11 @@ id: TASK-111
 title: >-
   Build the local router configuration for every supported select-model
   configuration
-status: In Progress
+status: Waiting
 assignee:
-  - '@gpt-6.2-sol-config'
+  - '@chatswarm'
 created_date: '2026-11-18T18:15:00Z'
-updated_date: '2026-11-19T08:53:00Z'
+updated_date: '2026-11-19T09:19:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -19,7 +19,7 @@ ordinal: 109000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Implement offline Docker health-check projection for GLM 32k, 256k and the default 1m tier on the landed MiniMax base.
+The independent plan verdict wakes configuration work on six Strata profile spellings.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -32,7 +32,7 @@ Implement offline Docker health-check projection for GLM 32k, 256k and the defau
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Project the literal per-tier command as a top-level Docker CMD-SHELL health check, with a 30-second interval and one-hour start period. Omit unset fields, check millisecond conversion for overflow, and preserve legacy omission. Reject malformed, misplaced and shadowed declarations. Keep health-only tiers behind the existing engine-wide startup and mutation guards. Compare all three complete GLM payloads across TOML and JSON, then run focused parser/refusal checks, config-only load and server Native AOT. Independent plan review dispatched on 0418440. DeepSeek timeout, retries and nested binds and the separate Strata profile alias stay outside.
+Review dispatched on the landed GLM source at 989ae12. Resolve max-4 to canonical 256k-4 for three Strata models and two model spellings each. Validate ordinal per-model aliases, collisions, hidden declarations and canonical-only defaults. Reuse one frozen plan and preserve create bytes, labels, defaults and the 75 normalized targets. Discriminate equal gauges with different settings. Coordinate the captured-tier lookup in verified dispatch in actual merge order. Preserve existing startup and activation gates.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
@@ -44,7 +44,7 @@ The installed selector has 169 valid and 337 invalid spellings across 75 distinc
 
 Single-device profiles require one explicit index and paired profiles two distinct indices. Utilization is 0.50–0.95 (default 0.90), parking 1–48 GiB (default 32), variable lanes 1–8. The selector has no supported suffix-cache launch.
 
-PR #16 merged at 0418440 after hosted CI and independent PASS on ee6e0f5. The review confirmed the resource-free IPC payload, separate entrypoint and command, legacy omission, and refusal before mutation.
+PR #16 merged at 0418440 after hosted CI and independent review.
 
-Plan review on 0418440 passed. Validate misplaced common probes in both formats explicitly, preserve unspecified Docker fields and distinguish default restart behavior from byte equivalence. The fingerprinted selector confirms the literal environment path. Offline implementation released.
+[PR #18](https://github.com/ArborealML/Inference-Router/pull/18) projects the GLM health check offline. Review passed the supplied b422d61 production diff. GitHub now serves that exact parent. Its fixture failed compilation; the published one-line child 0b02a4e passed 51 focused Release cases. Parent config load and zero-trim Linux x64 Native AOT cover unchanged production. The fixture review confirmed distinct TOML keys. All hosted checks passed and PR #18 merged at 989ae12. Before live qualification verify the image shell and router readiness budget independently of Docker’s start period.
 <!-- SECTION:NOTES:END -->

@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@gpt-6.2-sol-scheduling'
 created_date: '2026-11-18T18:56:00Z'
-updated_date: '2026-11-19T09:03:00Z'
+updated_date: '2026-11-19T09:21:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -23,7 +23,7 @@ ordinal: 116000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Correct verified transport cleanup accounting and fault reporting before offline dispatch lands.
+Prepare the verified dispatch landing on current main while the pending-header cancellation correction is reviewed.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -48,5 +48,5 @@ Publish one immutable sender with the ready preparation. Its exact invocation bo
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-At 1bd351d the four envelope/target binding corrections passed 118 distinct Release cases and Linux x64 Native AOT. Binding correction review dispatched. Runtime review of 43b64d5 found two defects still present on 1bd351d. A response-disposal fault with confirmed issuer retirement and successful preparation cleanup must release capacity once and independently report one redacted fault. Preserve concurrent stream-close and permit-retirement exceptions for standalone callers. Unknown issuer retirement or failed preparation cleanup retains the charge. Hold landing for both focused controls.
+Binding at 1bd351d passed review, 118 Release cases and Linux x64 Native AOT. Cleanup review verified e05f5c9 releases once after conclusive retirement and successful preparation, reports response-disposal faults independently and retains concurrent exceptions. Six of seven parent cases passed; cancellation hung on a silent peer. Child 9e1a9df passed both differential cases with the watchdog live, caller cancellation observed and cleanup joined. Child review dispatched. Preserve GLM .81 and lifecycle .82 when integrating dispatch .83.
 <!-- SECTION:NOTES:END -->

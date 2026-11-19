@@ -6,7 +6,10 @@ using Arboreal.InferenceRouter.Lifecycle;
 namespace Arboreal.InferenceRouter;
 
 internal sealed record DockerTargetLaunch(string Model, string Profile, ImmutableArray<string> Command,
-    ImmutableArray<string> Env, ImmutableArray<DockerBind> Binds, long? MemoryBytes, long? MemorySwapBytes);
+    ImmutableArray<string> Env, ImmutableArray<DockerBind> Binds, long? MemoryBytes, long? MemorySwapBytes,
+    DockerTargetHealthcheck? Healthcheck);
+
+internal sealed record DockerTargetHealthcheck(string Command, long? IntervalNs, long? StartPeriodNs);
 
 /// <summary>Immutable Docker create inputs. They describe launch intent, not a verified serving instance.</summary>
 internal sealed partial class DockerTargetPlans
@@ -93,8 +96,8 @@ internal sealed partial class DockerTargetPlans
         if (tier?.Unknown is { Count: > 0 } unknown)
             throw new RouterConfigException($"{path}.docker.{unknown.Keys.First()} is not a target setting");
         if (tier is { MemoryBytes: null, MemorySwapBytes: null } &&
-            tier.Env is not { Length: > 0 } && tier.BindMounts is not { Length: > 0 })
-            throw new RouterConfigException($"{path}.docker must contain environment assignments, bind mounts or memory settings");
+            tier.Env is not { Length: > 0 } && tier.BindMounts is not { Length: > 0 } && tier.Healthcheck is null)
+            throw new RouterConfigException($"{path}.docker must contain environment assignments, bind mounts, memory settings or a health check");
 
         var command = ImmutableArray.CreateBuilder<string>();
         foreach (var value in docker.Command ?? [])
@@ -111,7 +114,9 @@ internal sealed partial class DockerTargetPlans
         var additions = DockerLaunchResources.ParseBinds(tier?.BindMounts, bindPath);
         var binds = DockerLaunchResources.CombineTargetBinds(common?.BindMounts ?? [], additions, bindPath);
         var (memory, memorySwap) = ResolveMemory(tier, common, $"{path}.docker");
-        return new DockerTargetLaunch(model, profile, command.ToImmutable(), env.ToImmutable(), binds, memory, memorySwap);
+        var healthcheck = tier?.Healthcheck is { } probe ? ParseHealthcheck(probe, $"{path}.docker.healthcheck") : null;
+        return new DockerTargetLaunch(model, profile, command.ToImmutable(), env.ToImmutable(), binds, memory, memorySwap,
+            healthcheck);
 
         void AddEnv(string? value)
         {
@@ -123,6 +128,27 @@ internal sealed partial class DockerTargetPlans
                 throw new RouterConfigException($"{path}.docker.env repeats an effective environment name");
             env.Add(value);
         }
+    }
+
+    private static DockerTargetHealthcheck ParseHealthcheck(DockerHealthcheckDto probe, string path)
+    {
+        if (probe.Unknown is { Count: > 0 } unknown)
+            throw new RouterConfigException($"{path}.{unknown.Keys.First()} is not a health check setting");
+        var command = probe.Command;
+        if (string.IsNullOrWhiteSpace(command) || command.Any(char.IsControl))
+            throw new RouterConfigException($"{path}.command must be a nonblank control-free string");
+        return new DockerTargetHealthcheck(command,
+            Nanoseconds(probe.IntervalMs, $"{path}.interval_ms"),
+            Nanoseconds(probe.StartPeriodMs, $"{path}.start_period_ms"));
+    }
+
+    private static long? Nanoseconds(long? milliseconds, string path)
+    {
+        const long nanosecondsPerMillisecond = 1_000_000;
+        if (milliseconds is not { } value) return null;
+        if (value <= 0 || value > long.MaxValue / nanosecondsPerMillisecond)
+            throw new RouterConfigException($"{path} must be a positive millisecond duration that fits in Int64 nanoseconds");
+        return checked(value * nanosecondsPerMillisecond);
     }
 
     private static (long? Memory, long? MemorySwap) ResolveMemory(DockerTargetDto? tier,
@@ -199,10 +225,11 @@ internal sealed partial class DockerTargetPlans
                     CheckMember(tier, "name", $"{tierPath}.name");
                     CheckMember(tier, "max_context", $"{tierPath}.max_context");
                     CheckMember(tier, "max_slots", $"{tierPath}.max_slots");
-                    DockerLaunchResources.CheckJsonTree(tier, tierPath);
                     var target = tier.GetProperty("docker");
                     if (target.ValueKind != JsonValueKind.Object)
                         throw new RouterConfigException($"{tierPath}.docker must be an object");
+                    CheckHealthcheckJson(target, $"{tierPath}.docker.healthcheck");
+                    DockerLaunchResources.CheckJsonTree(tier, tierPath);
                     CheckCommonDocker(engine.Value, enginePath);
                 }
                 index++;
@@ -216,14 +243,45 @@ internal sealed partial class DockerTargetPlans
         foreach (var engine in Properties(engines.Value))
         foreach (var docker in Members(engine.Value, "docker"))
         {
-            if (!Members(docker.Value, "entrypoint").Any() && !Members(docker.Value, "ipc_mode").Any()) continue;
             var path = $"engine.{engine.Name}";
+            if (Members(docker.Value, "healthcheck").Any())
+                throw new RouterConfigException($"{path}.docker.healthcheck is only supported inside a serving-tier docker block");
+            if (!Members(docker.Value, "entrypoint").Any() && !Members(docker.Value, "ipc_mode").Any()) continue;
             CheckMember(root, "engine", "engine");
             CheckMember(engines.Value, engine.Name, path, exactKey: true);
             CheckCommonDocker(engine.Value, path);
             CheckMember(engine.Value, "catalog", $"{path}.catalog");
             _ = engine.Value.TryGetProperty("catalog", out var catalog);
             CheckAuthority(engine.Value, catalog, path);
+        }
+    }
+
+    private static void CheckHealthcheckJson(JsonElement target, string path)
+    {
+        CheckMember(target, "healthcheck", path);
+        if (!target.TryGetProperty("healthcheck", out var healthcheck)) return;
+        if (healthcheck.ValueKind != JsonValueKind.Object)
+            throw new RouterConfigException($"{path} must be an object");
+
+        CheckMember(healthcheck, "command", $"{path}.command");
+        CheckMember(healthcheck, "interval_ms", $"{path}.interval_ms");
+        CheckMember(healthcheck, "start_period_ms", $"{path}.start_period_ms");
+        foreach (var field in healthcheck.EnumerateObject())
+        {
+            switch (field.Name)
+            {
+                case "command":
+                    if (field.Value.ValueKind != JsonValueKind.String)
+                        throw new RouterConfigException($"{path}.command must be a string");
+                    break;
+                case "interval_ms":
+                case "start_period_ms":
+                    if (field.Value.ValueKind != JsonValueKind.Number || !field.Value.TryGetInt64(out _))
+                        throw new RouterConfigException($"{path}.{field.Name} must be an Int64 integer");
+                    break;
+                default:
+                    throw new RouterConfigException($"{path}.{field.Name} is not a health check setting");
+            }
         }
     }
 

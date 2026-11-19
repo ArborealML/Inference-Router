@@ -365,6 +365,12 @@ public sealed class DockerLifecycleProvider : IEngineLifecycleProvider, IDisposa
         {
             Image = image.Id,
             Entrypoint = _cfg.Entrypoint is { } executable ? [executable] : null,
+            Healthcheck = launch?.Healthcheck is { } probe ? new DockerCreateHealthcheck
+            {
+                Test = ["CMD-SHELL", probe.Command],
+                Interval = probe.IntervalNs,
+                StartPeriod = probe.StartPeriodNs,
+            } : null,
             Labels = new Dictionary<string, string>(StringComparer.Ordinal)
             {
                 [LabelRouter] = _scope.RouterId,

@@ -121,6 +121,35 @@ public sealed class VerifiedDispatchTargetTests
         Assert.Empty(daemon.Requests);
     }
 
+    [Fact]
+    public void ChangedDockerHealthcheckRejectsPriorVerifiedTarget()
+    {
+        var baseline = Load(healthcheckCommand: "fixture-check first");
+        var changed = Load(healthcheckCommand: "fixture-check second");
+        using var daemon = new FakeDockerDaemonHandler();
+        using var baselineProjection = new DockerLifecycleProvider(baseline.Docker!, baseline.Name, daemon);
+        using var changedProjection = new DockerLifecycleProvider(changed.Docker!, changed.Name, daemon);
+        var baselineTier = baseline.Catalog["model.canonical"].ServingProfiles.Single(p => p.Name == "wide");
+        var changedTier = changed.Catalog["model.canonical"].ServingProfiles.Single(p => p.Name == "wide");
+        Assert.Equal(baselineTier, changedTier);
+
+        var previous = new VerifiedDispatchTargetResolver(baseline, baselineProjection)
+            .Resolve("alias", "wide", null, Configuration, BackendRoute);
+        var candidate = new VerifiedDispatchTargetResolver(changed, changedProjection)
+            .Resolve("alias", "wide", null, Configuration, BackendRoute);
+        Assert.Equal(previous with { PlanDigest = candidate.PlanDigest }, candidate);
+
+        using var baselineCreate = JsonDocument.Parse(CreateBytes(baselineProjection, baseline, baselineTier));
+        using var changedCreate = JsonDocument.Parse(CreateBytes(changedProjection, changed, changedTier));
+        Assert.Equal("fixture-check first", baselineCreate.RootElement.GetProperty("Healthcheck").GetProperty("Test")[1].GetString());
+        Assert.Equal("fixture-check second", changedCreate.RootElement.GetProperty("Healthcheck").GetProperty("Test")[1].GetString());
+        var previousRoute = new VerifiedInstanceRoute("host", 1, previous.Engine, previous.PlanDigest,
+            "fixture-container", "fixture-incarnation", 2, 3);
+        Assert.True(previous.Matches(previousRoute));
+        Assert.False(candidate.Matches(previousRoute));
+        Assert.Empty(daemon.Requests);
+    }
+
     [Theory]
     [InlineData("engine")]
     [InlineData("model")]
@@ -172,7 +201,8 @@ public sealed class VerifiedDispatchTargetTests
 
     internal static EngineDefinition Load(
         string mode = "normal", string mount = "/fixture/weights", long memory = 6_291_456, string digest = RepoDigest,
-        string platform = "linux/amd64", string alias = "alias", bool singleton = false, string endpoint = DefaultEndpoint)
+        string platform = "linux/amd64", string alias = "alias", bool singleton = false, string endpoint = DefaultEndpoint,
+        string? healthcheckCommand = null)
     {
         const string residentTier = """
             [[engine.fixture.catalog."model.canonical".serving]]
@@ -185,6 +215,8 @@ public sealed class VerifiedDispatchTargetTests
         var memoryLiteral = memory.ToString(System.Globalization.CultureInfo.InvariantCulture);
         const string command = """command = ["serve", "{{model}}", "{{profile}}"]""";
         var defaultField = singleton ? "" : "default_profile = \"wide\"";
+        var healthcheck = healthcheckCommand is null ? "" :
+            $"healthcheck = {{ command = \"{healthcheckCommand}\", interval_ms = 1000, start_period_ms = 2000 }}";
         return RouterConfigLoader.Load($$"""
             [engine.fixture]
             kind = "openai-compatible"
@@ -209,6 +241,7 @@ public sealed class VerifiedDispatchTargetTests
             env = ["SETTING={{mode}}"]
             bind_mounts = [{ source = "{{mount}}", target = "/weights", read_only = true }]
             memory_bytes = {{memoryLiteral}}
+            {{healthcheck}}
             {{(singleton ? "" : residentTier)}}
             [engine.fixture.catalog."model.unprojected"]
             """).Engines["fixture"];

@@ -28,6 +28,33 @@ public sealed class HostLifecycleCoordinatorTests : IDisposable
         Assert.Empty(endpoint.Requests);
     }
 
+    [Fact]
+    public async Task HealthcheckRefusesEnrolledStartup()
+    {
+        var config = RouterConfigLoader.Load("""
+            [engine.enrolled]
+            kind = "openai-compatible"
+            endpoint = "http://127.0.0.1/v1"
+            lifecycle_owner = "router"
+            [engine.enrolled.docker]
+            image = "fixture"
+            router_id = "test"
+            [engine.enrolled.catalog."enrolled.model"]
+            serving = [{ name = "checked", max_context = 100, docker = { healthcheck = { command = "probe" } } }]
+            """);
+        var path = CreateReservation("shared");
+        var host = new FakeHost();
+        using var endpoint = new FakeDockerDaemonHandler { TransportFails = true };
+        var error = await Assert.ThrowsAsync<RouterConfigException>(async () =>
+        {
+            await using var engine = CreateEnrolledRuntime(path, host, new EventRing(), endpoint,
+                docker: config.Engines["enrolled"].Docker);
+        });
+        Assert.Contains("serving-tier Docker targets require host qualification", error.Message, StringComparison.Ordinal);
+        Assert.Empty(host.Calls);
+        Assert.Empty(endpoint.Requests);
+    }
+
     [Theory(Timeout = 20_000)]
     [InlineData(true)]
     [InlineData(false)]

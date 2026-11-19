@@ -1,11 +1,11 @@
 ---
 id: TASK-110
 title: Coordinate model engines that share one host with exclusive residency
-status: In Progress
+status: Waiting
 assignee:
-  - '@gpt-6.2-sol-lifecycle'
+  - '@gpt-6.2-astra'
 created_date: '2026-11-18T18:13:00Z'
-updated_date: '2026-11-19T08:59:00Z'
+updated_date: '2026-11-19T09:22:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -19,7 +19,7 @@ ordinal: 108000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Implement offline host-route staging through the common coordinator. A declined publication retains the exact applied launch and leaves both routes closed after disposal.
+Hosted CI completion or the independent closed-route staging verdict wakes the coordinator for PR #19.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -44,11 +44,9 @@ Fence wrong target or missing publication before legacy recovery can settle or g
 <!-- SECTION:NOTES:BEGIN -->
 [PR #6](https://github.com/ArborealML/Inference-Router/pull/6) landed the checkpoint and synthetic ledger; [PR #9](https://github.com/ArborealML/Inference-Router/pull/9) landed predecessor, exact stop-effect and fresh vacancy checks. Review of 47ab322 confirmed restart fencing and identified two weak observations. [PR #14](https://github.com/ArborealML/Inference-Router/pull/14) at c2db0ee passed all four affected Release cases with the probe rebuilt. The open control sends exact bytes with one use; closure denies an otherwise eligible grant. An independently backend-authored wrong grant retains the use after seal and blocks mutation. Matching acknowledgment permits retirement. Serving-process authenticity remains fixture-local. Independent correction review dispatched. Production enforcement and runtime admission remain separate.
 
-Independent review of c2db0ee accepted all three dispositions, and hosted CI passed. GitHub refused the merge after MiniMax landed; merge-tree identified only SPEC.md. Retain the .80 header and ordered .80/.79 entries. Verify identical fixture blobs before advancing the PR.
-
-Published df6174e preserves all seven reviewed project and fixture blobs from c2db0ee. Against its main parent the SPEC adds only the .79 entry and corrected scope under the existing .80 header. Both parent diff checks passed.
-
 [PR #14](https://github.com/ArborealML/Inference-Router/pull/14) merged at 3160a11 after the reconciled df6174e passed hosted CI. This qualifies offline causal retirement with a surviving issuer and independent backend acknowledgment.
 
 Plan review on 3160a11 identified the legacy wrong-target recovery fallback and required a discriminating old grant and fresh-open positive. All four findings incorporated; lifecycle released to implement.
+
+Closed-route staging at 6ef4723 passed its paired Release case (1/1). Refusal retained LaunchApplied and kept grants closed after disposal. Recovery reopened a fresh completed generation for one exact send with one create and one stop overall. Bounded commit review dispatched. [PR #19](https://github.com/ArborealML/Inference-Router/pull/19) at ae393b4 preserves all four tested C# blobs. Its SPEC .82 entry follows the landed GLM .81 entry.
 <!-- SECTION:NOTES:END -->

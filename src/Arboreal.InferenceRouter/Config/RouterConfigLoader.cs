@@ -239,6 +239,7 @@ public static class RouterConfigLoader
         }
         if (e.Docker is { } d)
         {
+            d.RejectMisplacedHealthcheck($"engine.{name}.docker");
             lifecycle = EngineLifecycleKind.Docker;
             if (d.CallTimeoutMs is { } callMs && callMs < 100)
                 throw new RouterConfigException(
