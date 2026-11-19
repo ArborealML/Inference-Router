@@ -203,7 +203,7 @@ public sealed partial class SelectorDifferentialTests
         var target = (TomlTable)parked["docker"]!;
         var goodShm = target["shm_size_bytes"];
         target["shm_size_bytes"] = 0L;
-        Refuses(() => LoadJson(hyper, HyperQwen), "shm_size_bytes must be positive");
+        Refuses(() => LoadJson(hyper, HyperQwen), "shm_size_bytes must be a positive Int64 integer");
         target["shm_size_bytes"] = goodShm;
         var engine = LoadJson(hyper, HyperQwen);
         Refuses(() => engine.Docker!.TargetPlans!.Resolve(HyperQwen, "swift-27b", "absent"),
