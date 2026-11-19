@@ -4,7 +4,10 @@ using Arboreal.InferenceRouter.Lifecycle;
 namespace Arboreal.InferenceRouter;
 
 internal sealed record HostEngineEnrollment(string RouterId, string Engine, HostLifecycleCoordinator Controller,
-    HostStagedRuntimeFixture? StagedForTests = null);
+    HostStagedRuntimeFixture? StagedForTests = null, HostImmediateRuntimeFixture? ImmediateForTests = null);
+
+internal sealed record HostImmediateRuntimeFixture(Action? BeforeComplete = null, Action<LifecycleResult>? AfterResult = null,
+    Action? AfterRun = null);
 
 internal sealed record HostStagedRuntimeFixture(
     Func<HostClosedRouteStage, CancellationToken, Task<HostStagedReadiness?>> ReadAsync,
@@ -16,24 +19,86 @@ public sealed partial class EngineRuntime
 {
     private readonly HostEngineEnrollment? _hostEnrollment;
 
-    private async ValueTask<EngineLifecycleCoordinator.SwitchReport> SwitchEnrolledHostAsync(
+    private async ValueTask RunImmediateHostSwitchAsync(
         HostEngineEnrollment enrollment, SwitchState state, LifecycleTarget target, CancellationToken ct)
     {
-        var publication = new HostSwitchPublication(
-            proof => TryPublishProof(state, new ModelsObservation(ImmutableList.Create(proof.Target.Model),
-                ImmutableDictionary<string, long>.Empty)),
-            () =>
-            {
-                Emit("engine.switch_completed", model: target.Model,
-                    reason: state.Profile is null ? null : $"profile={WireText.Ident(state.Profile)}",
-                    value: _clock.GetElapsedTime(state.Timing!.StartedAt).TotalMilliseconds);
-                EndSwitch(state, true);
-            });
+        var delivery = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        SwitchServingProof? provisional = null;
+        var publication = new HostSwitchPublication(TryPublish, Complete);
         var result = await enrollment.Controller.SwitchAsync(target, ct, publication).ConfigureAwait(false);
+        enrollment.ImmediateForTests?.AfterResult?.Invoke(result);
 
-        // This slice carries no incumbent instance proof to restore. Physical preflight refusal
-        // still leaves the incumbent running, and the legacy path retains its own restoration check.
-        return new EngineLifecycleCoordinator.SwitchReport(result, RefusedBeforeMutation: false);
+        // The controller can return an I/O refusal after completion. Only a pending claim can fail.
+        if (!result.Succeeded && TrySelect(ready: false)) Deliver(result);
+
+        bool TryPublish(HostServingProof hostProof)
+        {
+            var observation = new ModelsObservation(ImmutableList.Create(hostProof.Target.Model),
+                EngineCapability.NoModelContextWindows);
+            lock (_transitionGate)
+            {
+                if (!PendingClaim() || !WindowFits(0, state.RequiredWindow) ||
+                    !TryPublishClaimProof(state, observation, default, deadline: null, out _)) return false;
+                provisional = state.Proof;
+            }
+
+            AfterSwitchProofForTests?.Invoke();
+            lock (_transitionGate) return PendingClaim() && HasCurrentProof();
+        }
+
+        void Complete()
+        {
+            // The coordinator enters this callback only after the host's acceptance call returns.
+            enrollment.ImmediateForTests?.BeforeComplete?.Invoke();
+            if (TrySelect(ready: true)) Deliver(refusal: null);
+        }
+
+        bool TrySelect(bool ready)
+        {
+            lock (_transitionGate)
+            {
+                if (!PendingClaim() || (ready && !HasCurrentProof())) return false;
+                if (!ready) state.FailureReason = SwitchReason.LaunchFailed;
+                state.ReadinessOutcomeDelivered = delivery;
+                state.End = ready ? SwitchEnd.Ready : SwitchEnd.Failed;
+                return true;
+            }
+        }
+
+        // Both checks describe one claim under the transition lock.
+        bool PendingClaim() => !_stopped && ReferenceEquals(_switchState, state) && state.End == SwitchEnd.Pending;
+
+        bool HasCurrentProof() => provisional is not null && ReferenceEquals(state.Proof, provisional) &&
+            ReferenceEquals(Capability.SwitchProof, provisional);
+
+        void Deliver(LifecycleResult? refusal)
+        {
+            try
+            {
+                // The host has returned from its admission callback before either notification.
+                if (refusal is null)
+                {
+                    Emit("engine.switch_completed", model: target.Model,
+                        reason: state.Profile is null ? null : $"profile={WireText.Ident(state.Profile)}",
+                        value: _clock.GetElapsedTime(state.Timing!.StartedAt).TotalMilliseconds);
+                }
+                else
+                {
+                    try { Emit("engine.switch_failed", model: target.Model, reason: DescribeLaunchFailure(refusal)); }
+                    finally
+                    {
+                        // The immediate host path supplies no incumbent proof to restore.
+                        var unknown = PublishUnknown();
+                        AfterFailedMutationUnknownForTests?.Invoke(unknown);
+                    }
+                }
+            }
+            finally
+            {
+                try { EndSwitch(state, ready: refusal is null); }
+                finally { delivery.TrySetResult(); }
+            }
+        }
     }
 
     private ValueTask<HostStagedSwitchResult> SwitchStagedHostAsync(

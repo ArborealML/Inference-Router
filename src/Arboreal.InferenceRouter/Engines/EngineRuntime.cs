@@ -401,25 +401,6 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
     private static bool ContradictsIncumbent(EngineCapability incumbent, ModelsObservation? observation) =>
         observation is not { } answered || CompareModelsObservation(incumbent, answered) != (true, true);
 
-    /// <summary>Publish a switch's readiness proof: the reported list and the health that came with it, in
-    /// one snapshot, while the switch marker is still up. Health is part of the proof, not a fact for the
-    /// next poll to supply: a switch that proved an engine healthy and left it reading unhealthy would be
-    /// skipped by the scheduler anyway, and the whole point of the proof is to remove that skip. The marker
-    /// is cleared only after this, so no snapshot ever reads "not switching and does not have it" for a
-    /// model that was in fact being loaded (§5.5).</summary>
-    private bool TryPublishProof(SwitchState state, ModelsObservation observation, ServingCapacity serving = default)
-    {
-        lock (_transitionGate)
-        {
-            if (_stopped || !ReferenceEquals(_switchState, state) || state.End != SwitchEnd.Pending)
-                return false;
-            if (!WindowFits(serving.WindowFor(state.Model!), state.RequiredWindow)) return false;
-            if (!TryPublishClaimProof(state, observation, serving, deadline: null, out _)) return false;
-        }
-        AfterSwitchProofForTests?.Invoke();
-        return true;
-    }
-
     // Callers hold the transition gate and have checked that this claim is current and pending.
     private bool TryPublishClaimProof(SwitchState state, ModelsObservation observation, ServingCapacity serving,
         ReadinessDeadline? deadline, out ReadinessStepOutcome settlement)
@@ -1532,25 +1513,20 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
                 if (staged.Decision.Verdict != HostStagedVerdict.Refused || Volatile.Read(ref _stopped)) return;
                 report = new(staged.Result, RefusedBeforeMutation: false);
             }
+            else if (_hostEnrollment is { } enrollment)
+            {
+                await RunImmediateHostSwitchAsync(enrollment, state, target, ct).ConfigureAwait(false);
+                return;
+            }
             else
             {
-                report = _hostEnrollment is { } enrollment
-                    ? await SwitchEnrolledHostAsync(enrollment, state, target, ct).ConfigureAwait(false)
-                    : await lifecycle.SwitchWithReportAsync(target, timing, state.IncumbentProof?.SwitchProof, ct)
-                        .ConfigureAwait(false);
+                report = await lifecycle.SwitchWithReportAsync(target, timing, state.IncumbentProof?.SwitchProof, ct)
+                    .ConfigureAwait(false);
             }
             var launched = report.Result;
             if (!launched.Succeeded)
             {
-                // The short reason goes on the feed for grepping; the provider's one actionable sentence
-                // rides along so the operator reading /admin/events does not have to go find a log.
-                // Both halves are bounded before they reach the feed: the ring caps entries, not characters,
-                // and a provider is free to answer with a sentence of any length.
-                var why = WireText.Bound(launched.Reason ?? "lifecycle_failed", ProviderReasonChars);
-                var detail = launched.Action is { Length: > 0 } action
-                    ? $"{why} — {WireText.Bound(action, ProviderActionChars)}"
-                    : why;
-                Emit("engine.switch_failed", model: model, reason: detail);
+                Emit("engine.switch_failed", model: model, reason: DescribeLaunchFailure(launched));
                 // The provider's own words stay on the feed; the caller is told only the category.
                 state.FailureReason = SwitchReason.LaunchFailed;
                 // An attempted stop or launch can invalidate the earlier proof even when it returns failure.
@@ -1595,10 +1571,20 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
             // machine closes itself here: resolve the waiters, and put the engine back to "not switching"
             // if this attempt is still the current one.
             try { EndSwitch(state, false); }
-            finally { _hostEnrollment?.StagedForTests?.AfterRun?.Invoke(); }
+            finally
+            {
+                if (_hostEnrollment?.StagedForTests is { } stagedFixture) stagedFixture.AfterRun?.Invoke();
+                else _hostEnrollment?.ImmediateForTests?.AfterRun?.Invoke();
+            }
         }
     }
 
+    private static string DescribeLaunchFailure(LifecycleResult result)
+    {
+        // Bound the reason and the operator's action independently before they reach the feed.
+        var why = WireText.Bound(result.Reason ?? "lifecycle_failed", ProviderReasonChars);
+        return result.Action is { Length: > 0 } action ? $"{why} — {WireText.Bound(action, ProviderActionChars)}" : why;
+    }
 
     private readonly record struct ReadinessFailure(
         ReadinessMiss Miss = ReadinessMiss.NeverHealthy, IReadOnlyList<string>? Reported = null,
