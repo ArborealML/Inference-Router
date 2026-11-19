@@ -1,11 +1,11 @@
 ---
 id: TASK-125
 title: Qualify a native two-model configuration for the first pi swap
-status: In Progress
+status: Waiting
 assignee:
-  - '@gpt-6.2-sol-config'
+  - '@gpt-6.2-astra'
 created_date: '2026-11-18T20:36:00Z'
-updated_date: '2026-11-19T16:10:00Z'
+updated_date: '2026-11-19T16:12:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -18,7 +18,7 @@ ordinal: 123000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Config owns a fixture analyzer correction at f6e59a8. Focused Release qualification stopped before test discovery on xUnit2000: the constant expected image ID must be the first inequality argument. Independent review of the two-file fixture diff was dispatched November 19. The resolved pair passed config-only validation at 5047f8f. Directional fake delivery and live host authority remain open.
+Independent fixture reviews are the next gate. On November 19 the coordinator dispatched review of the pair fixture and its assertion correction. Focused Release passed all five cases on d022344 with zero skips. Each independently seeded direction delivered its exact request. Wrong image, model and profile each prevented delivery. The resolved pair passed config-only validation at 5047f8f. Live host enrollment remains open.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
