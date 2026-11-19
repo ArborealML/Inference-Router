@@ -1,11 +1,11 @@
 ---
 id: TASK-136
 title: Restore hosted SDK installation for Release CI
-status: In Progress
+status: Waiting
 assignee:
-  - '@gpt-6.2-sol-release'
+  - '@gpt-6.2-astra'
 created_date: '2026-11-19T08:34:00Z'
-updated_date: '2026-11-19T08:45:00Z'
+updated_date: '2026-11-19T08:46:00Z'
 labels: []
 dependencies: []
 priority: high
@@ -15,7 +15,7 @@ ordinal: 134000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Remove the preview-quality restriction in the two workflow setup steps to restore installation of a supported SDK. [Main CI](https://github.com/ArborealML/Inference-Router/actions/runs/44488247949) failed before tests at 2d7ae36.
+Hosted CI and independent review of PR #17 wake landing. Main 2d7ae36 failed before tests while installing the SDK on Ubuntu.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -33,9 +33,5 @@ Delete only dotnet-quality: preview in CI and release; preserve the action and g
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-The [cancelled merge run](https://github.com/ArborealML/Inference-Router/actions/runs/44488195633) on b6f2ecf also failed the SDK-install step before cancellation, with the identical Linux x64 preview-channel error. Both runs track this one incident.
-
-Plan on ed0a603 dispatched for review. The action translates latestFeature into the 11.0 channel; the failed SDK lookup explicitly requested preview quality.
-
-Independent review of the plan on ed0a603 passed. Accepted the distinction between the SDK installed by setup and the SDK selected by a later CLI invocation. Implementation released.
+[Failed main run](https://github.com/ArborealML/Inference-Router/actions/runs/44488247949) and [cancelled merge run](https://github.com/ArborealML/Inference-Router/actions/runs/44488195633) both failed to resolve the Linux x64 11.0 preview SDK. Plan review accepted the GA selection and installed-versus-selected evidence boundary. [PR #17](https://github.com/ArborealML/Inference-Router/pull/17) at 3422493 removes one preview-quality input per workflow. Both setup blocks match and global.json matches the failing baseline byte for byte. Independent commit review dispatched. Record the actual hosted installation and downstream checks.
 <!-- SECTION:NOTES:END -->
