@@ -9,7 +9,8 @@ internal sealed record HostEngineEnrollment(string RouterId, string Engine, Host
 internal sealed record HostStagedRuntimeFixture(
     Func<HostClosedRouteStage, CancellationToken, Task<HostStagedReadiness?>> ReadAsync,
     Action? AfterStageInstalled = null, Action<SwitchServingProof>? AfterProof = null, Action? AfterComplete = null,
-    Action? AfterRun = null);
+    Action? AfterRun = null, Action<HostStagedSwitchResult>? AfterHostResult = null,
+    Action<Task>? CaptureReadinessCleanup = null);
 
 public sealed partial class EngineRuntime
 {
@@ -46,7 +47,8 @@ public sealed partial class EngineRuntime
         var timing = state.Timing!;
         var publication = new HostStagedDeadlinePublication(claimId, timing.Id, timing.Target, ReadinessClockForTests, fixture.ReadAsync,
             Settle, Deliver, TryOpen, NotifyOpened,
-            fixture.AfterStageInstalled is { } installed ? _ => installed() : null);
+            fixture.AfterStageInstalled is { } installed ? _ => installed() : null,
+            fixture.CaptureReadinessCleanup);
         return controller.SwitchStagedAsync(target, publication, stop);
 
         bool MatchesClaim(HostClosedRouteStage binding) =>
