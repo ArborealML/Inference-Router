@@ -5,7 +5,7 @@ The inspected reference selector accepted 169 of 506 explicit model/profile spel
 | Backend family | Normalized targets | Launch settings that still need representation or verification |
 | --- | ---: | --- |
 | Strata | 36 | Offline projection supports per-tier environment and data/model binds, memory plus swap for capped Qwen profiles, and the `max-4` alias for `256k-4`. |
-| HyperQwen | 26 | Eight paired-GPU and six single-GPU targets have offline launch projections. Twelve parking targets need tier-specific shared memory. Shared wire IDs need exact checkpoint and serving-instance proof. |
+| HyperQwen | 26 | Eight paired-GPU, six single-GPU and twelve default parking vectors have offline launch projections. Shared wire IDs need exact checkpoint and serving-instance proof. |
 | Maya | 13 | MiniMax `32k`, the three GLM tiers and Maya-XS `32k` have qualified offline projections. Per-tier literal commands express the eight general DeepSeek launch payloads. |
 
 The environment and bind projection merged in [PR #7](https://github.com/ArborealML/Inference-Router/pull/7). It composes settings for offline validation and keeps target-enabled startup and native Docker writes gated. [Configuration and lifecycle contract](../SPEC.md#7-configuration-toml)
@@ -98,5 +98,19 @@ other two use `CTX=long` and three draft tokens. Configured sequence counts desc
 launch intent. Device-index mapping, toolkit compatibility, serving fit and host authority
 require independent verification before activation.
 
-Qualification and landing would bring offline coverage to 63 of 75 targets. The first
+The single-GPU slice brought landed offline coverage to 63 of 75 targets.
+
+## HyperQwen parking shared memory
+
+Swift and Classic each have six parking tiers. Their default vectors request 32 GiB of
+application cache and 36 GiB of Docker shared memory, or 38,654,705,664 bytes. Ordinary
+tiers inherit the common 2-GiB size. The selector's cache endpoints of 1 and 48 GiB map
+to 5 and 52 GiB of Docker shared memory. The `parked` tier defaults to two sequences
+and allows one through eight when re-resolved. The other five parking tiers keep their
+named sequence counts. Other choices require separate configuration of the resolved vector.
+
+Qualification and landing would bring coverage to 75 of 75 normalized offline target
+defaults. This measures launch projection. Effective shared memory, available host RAM
+of at least cache plus 10 GiB after the predecessor stops, device and logging compatibility,
+readiness and host authority require independent verification before activation. The first
 native swap pair remains Qwen and Swift on one host.

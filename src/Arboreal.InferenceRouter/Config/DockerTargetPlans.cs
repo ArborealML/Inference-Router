@@ -7,7 +7,7 @@ namespace Arboreal.InferenceRouter;
 
 internal sealed record DockerTargetLaunch(string Model, string Profile, ImmutableArray<string> Command,
     ImmutableArray<string> Env, ImmutableArray<DockerBind> Binds, long? MemoryBytes, long? MemorySwapBytes,
-    DockerTargetHealthcheck? Healthcheck, DockerGpu? Gpu);
+    DockerTargetHealthcheck? Healthcheck, DockerGpu? Gpu, long? ShmSizeBytes);
 
 internal sealed record DockerTargetHealthcheck(string Command, long? IntervalNs, long? StartPeriodNs,
     long? TimeoutNs, int? Retries);
@@ -122,7 +122,8 @@ internal sealed partial class DockerTargetPlans
     }
 
     private static bool HasLaunchSettings(DockerTargetDto target) =>
-        target.Gpu is not null || target.Command is not null || target.MemoryBytes is not null || target.MemorySwapBytes is not null ||
+        target.Gpu is not null || target.ShmSizeBytes is not null || target.Command is not null ||
+        target.MemoryBytes is not null || target.MemorySwapBytes is not null ||
         target.Env is { Length: > 0 } || target.BindMounts is { Length: > 0 } || target.Healthcheck is not null;
 
     private static DockerTargetLaunch Compose(string engine, string model, string profile, DockerDto docker,
@@ -131,7 +132,7 @@ internal sealed partial class DockerTargetPlans
         if (tier?.Unknown is { Count: > 0 } unknown)
             throw new RouterConfigException($"{path}.docker.{unknown.Keys.First()} is not a target setting");
         if (tier is not null && !HasLaunchSettings(tier))
-            throw new RouterConfigException($"{path}.docker must contain a command, environment assignments, bind mounts, memory settings, a health check or a GPU request");
+            throw new RouterConfigException($"{path}.docker must contain a command, environment assignments, bind mounts, memory settings, a health check, a GPU request or shared memory");
 
         ImmutableArray<string> command = tier?.Command is { } literal
             ? FreezeTierCommand(literal, $"{path}.docker.command")
@@ -149,8 +150,10 @@ internal sealed partial class DockerTargetPlans
         var (memory, memorySwap) = ResolveMemory(tier, common, $"{path}.docker");
         var healthcheck = tier?.Healthcheck is { } probe ? ParseHealthcheck(probe, $"{path}.docker.healthcheck") : null;
         var gpu = tier?.Gpu is { } device ? ParseTierGpu(device, common, $"{path}.docker.gpu") : common?.Gpu;
+        var shm = tier?.ShmSizeBytes ?? common?.ShmSizeBytes;
+        DockerLaunchResources.ValidateSharedMemory(shm, $"{path}.docker.shm_size_bytes");
         return new DockerTargetLaunch(model, profile, command, env.ToImmutable(), binds, memory, memorySwap,
-            healthcheck, gpu);
+            healthcheck, gpu, shm);
 
         void AddEnv(string? value)
         {
@@ -256,7 +259,7 @@ internal sealed partial class DockerTargetPlans
             var enginePath = $"engine.{engine.Name}";
             var modelPath = $"{enginePath}.catalog.{model.Name}";
             RejectMisplacedContainerPolicyJson(serving.Value, $"{modelPath}.serving");
-            RejectMisplacedGpuJson(serving.Value, $"{modelPath}.serving");
+            RejectMisplacedTierResourceJson(serving.Value, $"{modelPath}.serving");
             if (serving.Value.ValueKind == JsonValueKind.Object &&
                 (HasTierDeclaration(serving.Value) || Members(serving.Value, "command").Any()))
                 throw new RouterConfigException($"{modelPath}.serving must be an array of serving tiers");
@@ -266,7 +269,7 @@ internal sealed partial class DockerTargetPlans
             {
                 var tierPath = $"{modelPath}.serving[{index}]";
                 RejectMisplacedContainerPolicyJson(tier, tierPath);
-                RejectMisplacedGpuJson(tier, tierPath);
+                RejectMisplacedTierResourceJson(tier, tierPath);
                 foreach (var tierDocker in Members(tier, "docker"))
                     RejectMisplacedContainerPolicyJson(tierDocker.Value, $"{tierPath}.docker");
                 if (Members(tier, "command").Any())
@@ -297,6 +300,7 @@ internal sealed partial class DockerTargetPlans
                     CheckHealthcheckJson(target, $"{tierPath}.docker.healthcheck");
                     CheckTierBindsJson(target, $"{tierPath}.docker.bind_mounts");
                     CheckTierGpuJson(target, $"{tierPath}.docker.gpu");
+                    CheckSharedMemoryJson(target, $"{tierPath}.docker.shm_size_bytes");
                     DockerLaunchResources.CheckJsonTree(tier, tierPath);
                     CheckCommonDocker(engine.Value, enginePath);
                     if (engine.Value.TryGetProperty("docker", out var common))
@@ -336,28 +340,35 @@ internal sealed partial class DockerTargetPlans
         {
             var path = $"engine.{engine.Name}";
             RejectMisplacedContainerPolicyJson(engine.Value, path);
-            RejectMisplacedGpuJson(engine.Value, path);
+            RejectMisplacedTierResourceJson(engine.Value, path);
             foreach (var catalogOccurrence in Members(engine.Value, "catalog"))
             foreach (var model in Properties(catalogOccurrence.Value))
             {
                 var modelPath = $"{path}.catalog.{model.Name}";
                 RejectMisplacedContainerPolicyJson(model.Value, modelPath);
-                RejectMisplacedGpuJson(model.Value, modelPath);
+                RejectMisplacedTierResourceJson(model.Value, modelPath);
                 foreach (var modelDocker in Members(model.Value, "docker"))
                 {
                     RejectMisplacedContainerPolicyJson(modelDocker.Value, $"{modelPath}.docker");
-                    RejectMisplacedGpuJson(modelDocker.Value, $"{modelPath}.docker");
+                    RejectMisplacedTierResourceJson(modelDocker.Value, $"{modelPath}.docker");
                 }
             }
             foreach (var docker in Members(engine.Value, "docker"))
             {
                 var dockerPath = $"{path}.docker";
                 RejectMisplacedTargetOptionsJson(docker.Value, dockerPath);
-                RejectMisplacedGpuJson(docker.Value, dockerPath);
+                RejectMisplacedTierResourceJson(docker.Value, dockerPath);
                 foreach (var resources in Members(docker.Value, "resources"))
                 {
-                    RejectMisplacedTargetOptionsJson(resources.Value, $"{dockerPath}.resources");
-                    RejectMisplacedContainerPolicyJson(resources.Value, $"{dockerPath}.resources");
+                    var resourcePath = $"{dockerPath}.resources";
+                    RejectMisplacedTargetOptionsJson(resources.Value, resourcePath);
+                    RejectMisplacedContainerPolicyJson(resources.Value, resourcePath);
+                    if (!Members(resources.Value, "shm_size_bytes").Any()) continue;
+                    CheckMember(root, "engine", "engine");
+                    CheckMember(engines.Value, engine.Name, path, exactKey: true);
+                    CheckMember(engine.Value, "docker", dockerPath);
+                    CheckMember(docker.Value, "resources", resourcePath);
+                    CheckSharedMemoryJson(resources.Value, $"{resourcePath}.shm_size_bytes");
                 }
                 var hasPolicy = ContainerPolicyFields.Any(field => Members(docker.Value, field).Any());
                 if (!hasPolicy && !Members(docker.Value, "entrypoint").Any() && !Members(docker.Value, "ipc_mode").Any()) continue;

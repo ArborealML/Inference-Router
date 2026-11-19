@@ -13,6 +13,7 @@ public sealed class DockerTargetDto
     private DockerBindDto[]? _bindMounts;
     private long? _memoryBytes;
     private long? _memorySwapBytes;
+    private long? _shmSizeBytes;
     private DockerHealthcheckDto? _healthcheck;
     private DockerTargetGpuDto? _gpu;
 
@@ -68,6 +69,17 @@ public sealed class DockerTargetDto
         {
             if (_memorySwapBytes.HasValue) throw new RouterConfigException("duplicate serving-tier docker.memory_swap_bytes");
             _memorySwapBytes = value ?? throw new RouterConfigException("serving-tier docker.memory_swap_bytes cannot be null");
+        }
+    }
+
+    [JsonPropertyName("shm_size_bytes")][TomlPropertyName("shm_size_bytes")]
+    public long? ShmSizeBytes
+    {
+        get => _shmSizeBytes;
+        set
+        {
+            if (_shmSizeBytes.HasValue) throw new RouterConfigException("duplicate serving-tier docker.shm_size_bytes");
+            _shmSizeBytes = value ?? throw new RouterConfigException("serving-tier docker.shm_size_bytes cannot be null");
         }
     }
 

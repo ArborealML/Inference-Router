@@ -400,9 +400,10 @@ public sealed class DockerLifecycleProvider : IEngineLifecycleProvider, IDisposa
         var memory = launch is null ? resources?.MemoryBytes : launch.MemoryBytes;
         var memorySwap = launch is null ? resources?.MemorySwapBytes : launch.MemorySwapBytes;
         var gpu = launch is null ? resources?.Gpu : launch.Gpu;
+        var shm = launch is null ? resources?.ShmSizeBytes : launch.ShmSizeBytes;
         var policy = _cfg.ContainerPolicy;
         if (_cfg.HostPort is null && _cfg.NetworkMode is null && _cfg.IpcMode is null && policy is null &&
-            resources is null && binds.IsEmpty && memory is null && memorySwap is null && gpu is null) return body;
+            resources is null && binds.IsEmpty && memory is null && memorySwap is null && gpu is null && shm is null) return body;
 
         var host = new DockerHostConfig
         {
@@ -417,6 +418,7 @@ public sealed class DockerLifecycleProvider : IEngineLifecycleProvider, IDisposa
             }) : null,
             Memory = memory,
             MemorySwap = memorySwap,
+            ShmSize = shm,
         };
         body.HostConfig = host;
         if (_cfg.HostPort is { } port)
@@ -447,7 +449,6 @@ public sealed class DockerLifecycleProvider : IEngineLifecycleProvider, IDisposa
         if (!resources.DevicePaths.IsEmpty)
             host.Devices = [.. resources.DevicePaths.Select(path => new DockerDeviceMapping(path, path, "rwm"))];
         host.NanoCpus = resources.NanoCpus;
-        host.ShmSize = resources.ShmSizeBytes;
         if (!resources.Ulimits.IsEmpty)
             host.Ulimits = [.. resources.Ulimits.Select(limit => new DockerLimit(limit.Name, limit.Soft, limit.Hard))];
 

@@ -228,7 +228,8 @@ public sealed partial class DockerResourceProjectionTests
         return $"/srv/hyperqwen/cache/{family}/{selectorProfile}";
     }
 
-    private static EngineDefinition LoadHyperQwen(bool isJson, string? singleGpu = null)
+    private static EngineDefinition LoadHyperQwen(bool isJson, string? singleGpu = null,
+        int? parkingCacheGiB = null, int parkedSequences = 2)
     {
         const string commonEnv = """
             "HOME=/cache","MODEL=/app/models","PREPARE=0","VERIFY=0","HOST=0.0.0.0","PORT=8000"
@@ -238,7 +239,7 @@ public sealed partial class DockerResourceProjectionTests
             var catalog = string.Join(',', HyperQwenModels.Select(model => $$$$"""
                 "{{{{model.Model}}}}":{
                   "aliases":["{{{{model.Alias}}}}"],"default_profile":"max",
-                  "serving":[{{{{HyperQwenRows(model.Model, model.Family, isJson: true, singleGpu: singleGpu)}}}}]
+                  "serving":[{{{{HyperQwenRows(model.Model, model.Family, isJson: true, singleGpu, parkingCacheGiB, parkedSequences)}}}}]
                 }
                 """));
             return RouterConfigLoader.Load($$$$"""
@@ -261,7 +262,7 @@ public sealed partial class DockerResourceProjectionTests
             [engine.hyperqwen.catalog."{{model.Model}}"]
             aliases = ["{{model.Alias}}"]
             default_profile = "max"
-            {{HyperQwenRows(model.Model, model.Family, isJson: false, singleGpu: singleGpu)}}
+            {{HyperQwenRows(model.Model, model.Family, isJson: false, singleGpu, parkingCacheGiB, parkedSequences)}}
             """));
         return RouterConfigLoader.Load($$"""
             [engine.hyperqwen]
@@ -290,15 +291,23 @@ public sealed partial class DockerResourceProjectionTests
             """).Engines["hyperqwen"];
     }
 
-    private static string HyperQwenRows(string model, string family, bool isJson, string? singleGpu)
+    private static string HyperQwenRows(string model, string family, bool isJson, string? singleGpu,
+        int? parkingCacheGiB, int parkedSequences)
     {
         var tiers = singleGpu is null ? HyperQwenTiers : HyperQwenTiers.Concat(HyperQwenSingleGpuTiers);
+        if (parkingCacheGiB is not null)
+            tiers = tiers.Concat(HyperQwenParkingTiers);
         return string.Join(isJson ? ",\n" : "\n", tiers.Select(tier =>
         {
             var context = tier.Context.ToString(CultureInfo.InvariantCulture);
-            var sequences = tier.Sequences.ToString(CultureInfo.InvariantCulture);
+            var sequences = (tier.Name == "parked" ? parkedSequences : tier.Sequences).ToString(CultureInfo.InvariantCulture);
             var args = JsonEncodedText.Encode(tier.Args + VisionAndTemplate);
-            var cache = HyperQwenCache(family, tier.Name);
+            var parkingCache = Array.Exists(HyperQwenParkingTiers, row => row.Name == tier.Name) ? parkingCacheGiB : null;
+            var cache = parkingCache is not null ? $"/srv/hyperqwen/parking-cache/{family}" : HyperQwenCache(family, tier.Name);
+            var shm = parkingCache is { } ram ? ((ram + 4L) * (1L << 30)).ToString(CultureInfo.InvariantCulture) : null;
+            var parkingEnv = parkingCache is not null ? FormattableString.Invariant($"""
+                "KV_OFFLOAD_GB={parkingCache}","PTH_FA=0","FA2_FP8KV=0","REQ_METRICS=1","REQ_METRICS_DETAILED=0","PREFIX_RETENTION=",
+                """) : "";
             var fast = tier.Name == "single-64k";
             var targetGpu = tier.Name.StartsWith("single-", StringComparison.Ordinal) ? singleGpu : null;
             var env = $$"""
@@ -306,15 +315,18 @@ public sealed partial class DockerResourceProjectionTests
                  "MAX_LEN={{context}}","MAX_SEQS={{sequences}}","GPU_UTIL=0.90",
                  "TOOLS=1","PREFIX_CACHE=1","VISION=1","API_SERVERS=1","HF_HUB_OFFLINE=1","TRANSFORMERS_OFFLINE=1",
                  "PYTORCH_CUDA_ALLOC_CONF=expandable_segments:False","CUDA_DEVICE_ORDER=PCI_BUS_ID","NCCL_IB_DISABLE=1",
+                 {{parkingEnv}}
                  "EXTRA_ARGS={{args}}"]
                 """;
             if (isJson)
             {
                 var slots = tier.Name == "32k" ? "" : $"\"max_slots\":{sequences},";
                 var gpu = targetGpu is null ? "" : $$""" "gpu":{"device_ids":["{{targetGpu}}"]}, """;
+                var jsonShm = shm is null ? "" : $"\"shm_size_bytes\":{shm},";
                 return $$$"""
                     {"name":"{{{tier.Name}}}","max_context":{{{context}}},{{{slots}}}"docker":{
                       {{{gpu}}}
+                      {{{jsonShm}}}
                       "env":{{{env}}},
                       "bind_mounts":[
                         {"source":"/srv/hyperqwen/checkpoints/{{{family}}}","target":"/app/models","read_only":true},
@@ -327,6 +339,7 @@ public sealed partial class DockerResourceProjectionTests
             }
             var tomlSlots = tier.Name == "32k" ? "" : $"max_slots = {sequences}";
             var tomlGpu = targetGpu is null ? "" : $$"""gpu = { device_ids = ["{{targetGpu}}"] }""";
+            var tomlShm = shm is null ? "" : $"shm_size_bytes = {shm}";
             var table = $"engine.hyperqwen.catalog.\"{model}\".serving";
             return $$"""
                 [[{{table}}]]
@@ -335,6 +348,7 @@ public sealed partial class DockerResourceProjectionTests
                 {{tomlSlots}}
                 [{{table}}.docker]
                 {{tomlGpu}}
+                {{tomlShm}}
                 env = {{env}}
                 bind_mounts = [
                   { source = "/srv/hyperqwen/checkpoints/{{family}}", target = "/app/models", read_only = true },

@@ -98,6 +98,7 @@ public sealed class VerifiedDispatchTargetTests
     [InlineData("command")]
     [InlineData("init")]
     [InlineData("gpu")]
+    [InlineData("shm")]
     [InlineData("mount")]
     [InlineData("memory")]
     [InlineData("manifest")]
@@ -108,12 +109,14 @@ public sealed class VerifiedDispatchTargetTests
     public void DifferentEffectiveInputsChangeTheDigestWithIdenticalTierAndCapacity(string change)
     {
         var baseline = Load(tierCommand: change == "command" ? "32768" : null,
-            withInit: change == "gpu", tierGpu: change == "gpu" ? "0" : null);
+            withInit: change is "gpu" or "shm", tierGpu: change == "gpu" ? "0" : null,
+            tierShm: change == "shm" ? 5_368_709_120L : null);
         var changed = Load(
             mode: change == "env" ? "changed" : "normal",
             tierCommand: change == "command" ? "65536" : null,
-            withInit: change is "init" or "gpu",
+            withInit: change is "init" or "gpu" or "shm",
             tierGpu: change == "gpu" ? "1" : null,
+            tierShm: change == "shm" ? 55_834_574_848L : null,
             mount: change == "mount" ? "/fixture/other" : "/fixture/weights",
             memory: change == "memory" ? 8_388_608 : 6_291_456,
             digest: change == "manifest" ? OtherRepoDigest : RepoDigest,
@@ -179,6 +182,16 @@ public sealed class VerifiedDispatchTargetTests
             const string newIds = "\"DeviceIDs\":[\"1\"]";
             Assert.Contains(oldIds, before, StringComparison.Ordinal);
             Assert.Equal(before.Replace(oldIds, newIds, StringComparison.Ordinal), after);
+        }
+
+        if (change == "shm")
+        {
+            var before = System.Text.Encoding.UTF8.GetString(oldCreate);
+            var after = System.Text.Encoding.UTF8.GetString(newCreate);
+            const string oldShm = "\"ShmSize\":5368709120";
+            const string newShm = "\"ShmSize\":55834574848";
+            Assert.Contains(oldShm, before, StringComparison.Ordinal);
+            Assert.Equal(before.Replace(oldShm, newShm, StringComparison.Ordinal), after);
         }
 
         var oldProof = new VerifiedInstanceRoute("host", 1, original.Engine, original.PlanDigest,
@@ -269,7 +282,8 @@ public sealed class VerifiedDispatchTargetTests
     internal static EngineDefinition Load(
         string mode = "normal", string mount = "/fixture/weights", long memory = 6_291_456, string digest = RepoDigest,
         string platform = "linux/amd64", string alias = "alias", bool singleton = false, string endpoint = DefaultEndpoint,
-        string? healthcheckCommand = null, bool withProfileAlias = false, string? tierCommand = null, bool withInit = false, string? tierGpu = null)
+        string? healthcheckCommand = null, bool withProfileAlias = false, string? tierCommand = null,
+        bool withInit = false, string? tierGpu = null, long? tierShm = null)
     {
         var residentTier = $$"""
             [[engine.fixture.catalog."model.canonical".serving]]
@@ -287,6 +301,7 @@ public sealed class VerifiedDispatchTargetTests
             $"healthcheck = {{ command = \"{healthcheckCommand}\", interval_ms = 1000, start_period_ms = 2000 }}";
         var literalCommand = tierCommand is null ? "" : $"command = [\"serve\", \"{tierCommand}\"]";
         var gpu = tierGpu is null ? "" : $$"""gpu = { device_ids = ["{{tierGpu}}"] }""";
+        var shm = tierShm is null ? "" : FormattableString.Invariant($"shm_size_bytes = {tierShm}");
         return RouterConfigLoader.Load($$"""
             [engine.fixture]
             kind = "openai-compatible"
@@ -311,6 +326,7 @@ public sealed class VerifiedDispatchTargetTests
             [engine.fixture.catalog."model.canonical".serving.docker]
             {{literalCommand}}
             {{gpu}}
+            {{shm}}
             env = ["SETTING={{mode}}"]
             bind_mounts = [{ source = "{{mount}}", target = "/weights", read_only = true }]
             memory_bytes = {{memoryLiteral}}
