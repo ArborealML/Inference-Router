@@ -6,6 +6,26 @@ namespace Arboreal.InferenceRouter.Tests;
 
 public sealed class ExactTicketAdmissionTests
 {
+    [Fact(Timeout = 20_000)]
+    public async Task DispatchParkCanObserveShutdownAfterTheRouterDisposesItsCancellationSource()
+    {
+        using var parked = new AdmissionFixtureBarrier();
+        await using var rig = new Rig();
+        rig.Router.AfterDispatchParkForTests = _ => rig.Hold(parked);
+        rig.StartDispatcher();
+        try
+        {
+            await parked.Reached.WaitAsync(rig.Token);
+            // Enter the final wait only after RouterCore has cancelled and disposed its source.
+            await rig.StopRouterAsync().WaitAsync(rig.Token);
+        }
+        finally
+        {
+            parked.Release();
+        }
+        // Rig disposal joins the real loop and propagates any unexpected dispatcher fault.
+    }
+
     [Theory(Timeout = 20_000)]
     [InlineData(false)]
     [InlineData(true)]
@@ -990,6 +1010,7 @@ public sealed class ExactTicketAdmissionTests
     {
         private readonly CancellationTokenSource _deadline = new(TimeSpan.FromSeconds(10));
         private Task _dispatcher = Task.CompletedTask;
+        private Task? _routerDisposal;
         private readonly FakeEngineHandler _discovery;
 
         internal Rig(Func<ExactTicketAdmission.Claim, CancellationToken, ValueTask<IAsyncDisposable?>>? prepare = null,
@@ -1184,11 +1205,13 @@ public sealed class ExactTicketAdmissionTests
 
         internal void StartDispatcher() => _dispatcher = Task.Run(Router.DispatchLoop, Token);
 
+        internal Task StopRouterAsync() => _routerDisposal ??= Router.DisposeAsync().AsTask();
+
         public async ValueTask DisposeAsync()
         {
             try
             {
-                await Router.DisposeAsync();
+                await StopRouterAsync();
                 await _dispatcher.WaitAsync(Token);
             }
             finally

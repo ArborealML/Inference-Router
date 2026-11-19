@@ -1,6 +1,6 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.70)
+Status: draft, continuously revised (v0.12.72)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
@@ -352,10 +352,11 @@ daemon transaction per engine. 137 tests green.
   that answers no `upload_url`, an upload that dies or answers no asset id, an asset name listed twice on
   the release, and a tag that moves after the first resolve. No tag has run the gate: still configured,
   not proven.
-- v0.12.70 — qualify exact-ticket admission with an offline sender and bounded preparation.
+- v0.12.72 — qualify exact-ticket admission with an offline sender and bounded preparation.
   A retirement wake revisits deferred staged preparation before an ordinary route can reserve
   the freed slot. Repeated aborts share retirement completion, and a submitted use stays counted
-  if disposal fails (§5.5, TASK-64).
+  if disposal fails. A dispatcher entering its wait during teardown uses the router's already
+  captured shutdown token (§5.5, TASK-64).
 - v0.12.69 — read-only switch refusal restores an incumbent's serving tuple only while its exact
   claim has no serving contradiction. Late evidence from that claim can first withdraw serving
   capacity and then withdraw roster health on a model contradiction (§5.5, TASK-68).
@@ -1748,7 +1749,8 @@ engine forks land; the scheduler interface will not change shape.
   the greater of two and the engine count at construction, shared by preparing, ready and
   retiring work. Cancellation, expiry, supersession and shutdown signal retirement. Work
   that ignores cancellation still occupies its preparation slot until it settles. A parked
-  scan wakes on published state and checks its revision after arming.
+  scan wakes on published state and checks its revision after arming. Its wait uses the
+  captured shutdown token even if teardown has already disposed the source.
   Closing the route fences authorization. An authorized invocation counts before its first
   byte. Cancellation can release it early only by atomically preventing submission. The
   injected invocation owns the response through consumption and disposal, then finishes

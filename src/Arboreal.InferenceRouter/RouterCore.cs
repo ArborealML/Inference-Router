@@ -34,6 +34,9 @@ public sealed class RouterCore : IInferenceRouter
     private readonly object _gate = new();
     private long _seq;
     private readonly CancellationTokenSource _shutdown = new();
+    // Consumers can resume after shutdown cancels and disposes its source. Keep the token
+    // for their waits while retaining cancellation and source ownership in the router.
+    private readonly CancellationToken _shutdownToken;
     internal Action? BeforeCostCommitForTests;
     internal Action<RouterTicket>? BeforeAdmissionCommitForTests;
     internal Action<RouterTicket>? BeforeAdmissionPreparationForTests;
@@ -50,6 +53,7 @@ public sealed class RouterCore : IInferenceRouter
                         ExactTicketAdmission? admission = null)
     {
         config.ValidateLifecycleTopology();
+        _shutdownToken = _shutdown.Token;
         _config = config;
         _clock = clock;
         _wakeOnEngineState = WakeOnEngineState;
@@ -74,13 +78,14 @@ public sealed class RouterCore : IInferenceRouter
 
     public void Start()
     {
+        var shutdownToken = _shutdown.Token;
         foreach (var e in _engines.Values)
         {
-            e.StartHealthLoop(_shutdown.Token);
+            e.StartHealthLoop(shutdownToken);
             _events.Append(new RouterEvent { Kind = "engine.registered", Engine = e.Name });
         }
         _events.Subscribe(_wakeOnEngineState);
-        _ = Task.Run(DispatchLoop, _shutdown.Token);
+        _ = Task.Run(DispatchLoop, shutdownToken);
     }
 
     /// <summary>Dispatch must be level-triggered on engine state, not only edge-triggered by a new
@@ -386,7 +391,7 @@ public sealed class RouterCore : IInferenceRouter
 
     internal async Task DispatchLoop()
     {
-        while (!_shutdown.IsCancellationRequested)
+        while (!_shutdownToken.IsCancellationRequested)
         {
             var revision = _dispatchWake.Revision;
             if (DispatchOnce() == DispatchResult.Dispatched) continue;
@@ -398,7 +403,7 @@ public sealed class RouterCore : IInferenceRouter
             AfterDispatchParkForTests?.Invoke(wake);
             try
             {
-                await wake.WaitAsync(_shutdown.Token).ConfigureAwait(false);
+                await wake.WaitAsync(_shutdownToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
@@ -525,7 +530,7 @@ public sealed class RouterCore : IInferenceRouter
         lock (_gate)
         lock (head.Queue.Gate)
         {
-            if (_shutdown.IsCancellationRequested) return new(TakeResult.Ineligible);
+            if (_shutdownToken.IsCancellationRequested) return new(TakeResult.Ineligible);
             if (claim is { } stamped && _admission is { } admission)
             {
                 if (!admission.IsOpen(stamped) || !admission.IsPrepared(stamped)) return new(TakeResult.Ineligible);
@@ -802,7 +807,7 @@ public sealed class RouterCore : IInferenceRouter
             }
             try
             {
-                using var cts = CancellationTokenSource.CreateLinkedTokenSource(_shutdown.Token, execCts.Token);
+                using var cts = CancellationTokenSource.CreateLinkedTokenSource(_shutdownToken, execCts.Token);
                 var body = ModelRewriter.Rewrite(candidate.Request.Body, engine.CanonicalModel(ticket.Model) ?? ticket.Model);
                 var suffix = LooksLikeCompletion(candidate.Request.Body) ? "completions" : "chat/completions";
 
@@ -883,7 +888,7 @@ public sealed class RouterCore : IInferenceRouter
                     if (silent)
                     {
                         cts.Cancel();          // release the connection to the engine that never answered
-                        if (execCts.IsCancellationRequested || _shutdown.IsCancellationRequested)
+                        if (execCts.IsCancellationRequested || _shutdownToken.IsCancellationRequested)
                         {
                             // Somebody upstream gave up before the ceiling did, and their reason is the
                             // honest one: a request the caller abandoned stays `cancelled` even when the
