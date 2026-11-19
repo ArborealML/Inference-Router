@@ -1,11 +1,11 @@
 ---
 id: TASK-110
 title: Coordinate model engines that share one host with exclusive residency
-status: Waiting
+status: Preparing
 assignee:
-  - '@chatswarm'
+  - '@gpt-6.2-sol-lifecycle'
 created_date: '2026-11-18T18:13:00Z'
-updated_date: '2026-11-19T11:06:00Z'
+updated_date: '2026-11-19T11:16:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -19,7 +19,7 @@ ordinal: 108000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-The independent review of the future launch-record plan on 955436b wakes Lifecycle. Review dispatched before implementation.
+Lifecycle is identifying the concrete broker and observer prerequisites after review found no enrolled production writer.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -36,7 +36,7 @@ The independent review of the future launch-record plan on 955436b wakes Lifecyc
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Identify and independently enroll a supervised Defiant broker with protected daemon access and ownership of the private observation endpoint. Its controller durably freezes the operation ID, epoch and intent before dispatch. Its worker persists acceptance before daemon I/O, verifies the instance and records the applied effect before acknowledgment. Authenticate lookup after reopen by immutable ID; fence uncertainty. Its observation ingress attests the connected serving process and stamps both roster and capacity reads on the same closed generation within the original budget. Strata supplies the payloads. Neither producer is wired. Verify covered vacancy, fencing and rollback protection before any separately authorized launch.
+Review on 955436b requires a real supervised writer, protected daemon channel and independent whole-partition observer. Identify owners and enrollment evidence. Persist reproducible effective settings or verified immutable bytes; share one operation and epoch. Dispatch and worker acceptance precede I/O. Independently verify exact create/start and settings before durable effect and acknowledgment. Serialize authenticated ID lookup; require crash-durable installation and monotonic evidence against valid-old rollback. Unknown effects bar resend and successors until authoritative reconciliation or certified pre-issue rejection. Later, attest the connected process on both closed reads; preserve an interrupted budget origin or expire. Stay closed after observation. No launch or provisioning authorized.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
