@@ -5,7 +5,7 @@ status: Waiting
 assignee:
   - '@chatswarm'
 created_date: '2026-11-18T21:09:00Z'
-updated_date: '2026-11-19T11:54:00Z'
+updated_date: '2026-11-19T11:56:00Z'
 labels: []
 milestone: m-2
 dependencies: []
@@ -16,7 +16,7 @@ ordinal: 127000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-The independent idle-withdrawal commit review dispatched November 19 wakes the coordinator. The focused Release test passed 1/1 at bed5864 with zero skips: the stopped engine retained its roster and withdrew readiness and first-write eligibility. Shutdown is preparing the separate injected completion arbitration plan.
+The independent idle-withdrawal commit verdict and the immediate host arbitration plan verdict wake the coordinator. Both reviews were dispatched November 19. The idle-disposal Release control passed 1/1 at bed5864 with zero skips.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -29,6 +29,8 @@ The independent idle-withdrawal commit review dispatched November 19 wakes the c
 
 <!-- SECTION:PLAN:BEGIN -->
 Reuse the existing capability withdrawal field set in the retrying versioned stop publication. Clear health and claim provenance while retaining roster and marker. One offline test starts with a successful idle probe, disposes the runtime, and checks the version, roster, withdrawn capability, model-only readiness and first-write refusal using a live token.
+
+For the older injected host path, review exact claim and proof revalidation after the provisional publication hook, followed by terminal arbitration under the transition lock after host acceptance. Deliver the winning event outside the lock. Check whether the proposed single held-hook case distinguishes both stop intervals and observes full unwind.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
