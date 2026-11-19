@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@gpt-6.2-sol-config'
 created_date: '2026-11-18T20:36:00Z'
-updated_date: '2026-11-19T06:09:00Z'
+updated_date: '2026-11-19T09:52:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -31,5 +31,5 @@ Qualify the first two-model pair within the primary-host configuration being bui
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Both local models served real Pi turns through AIR across selector transitions. Offline target configuration and pure create projection are cleared for implementation with reviewed safeguards for alias/default resolution, literal environment composition, bind collisions, opt-in parsing, and refusal before mutation. TASK-112 retains the native client-driven swap proof.
+Both local models served Pi turns through AIR across selector transitions. The last saved reverse transition recorded Qwen 256k-4 at 256,000 tokens and four total slots; current residency is unverified. For one existing resident, identify the issuer/controller evidence producer for the applied launch and canonical full plan, exact container, independently attested serving process and connected peer, and roster/window/slots observed over that binding while inference stays closed. Missing provenance or a changed peer leaves authority unproven. Keep the selector receipt as historical evidence. TASK-112 retains the native client-driven swap proof.
 <!-- SECTION:NOTES:END -->
