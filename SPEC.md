@@ -1,6 +1,6 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.77)
+Status: draft, continuously revised (v0.12.78)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
@@ -352,6 +352,10 @@ daemon transaction per engine. 137 tests green.
   that answers no `upload_url`, an upload that dies or answers no asset id, an asset name listed twice on
   the release, and a tag that moves after the first resolve. No tag has run the gate: still configured,
   not proven.
+- v0.12.78 — offline Docker create projection resolves memory and total memory plus swap per
+  serving tier. The two values inherit or replace as a pair, and target-enabled mutation remains
+  gated (§5.3.1, §7).
+
 - v0.12.77 — qualify offline one-shot transport over a host-issued, preauthenticated serving
   stream. First write requires the exact issued grant and its verified route and invocation.
   The single-host issuer refuses reuse, and the exchange retains its permit through
@@ -1578,10 +1582,11 @@ effective resource inspection, artifact and live instance identity, and reconcil
 an uncertain create while the host reservation is held. It also requires verification of
 read-only bind enforcement for nested mounts.
 
-Native serving tiers can also declare literal environment and mounts for offline create projection.
-Any such declaration gates engine activation and all native mutations, including env-only and
-bind-only targets and requests for other models on the same engine. The Docker provider refuses
-with `docker_target_not_qualified` before any write. A coordinated switch may first read ownership.
+Native serving tiers can also declare literal environment, mounts and memory limits for offline
+create projection. Any such declaration gates engine activation and all native mutations,
+including env-only, bind-only and memory-only targets and requests for other models on the same
+engine. The Docker provider refuses with `docker_target_not_qualified` before any write.
+A coordinated switch may first read ownership.
 The resolved payload describes launch intent. Serving readiness, host authority and exact-instance
 request delivery require separate proof.
 
@@ -2476,7 +2481,7 @@ duplicated resource fields and explicit JSON nulls. Bind sources are literal pat
 on the Docker host. The create request uses structured binds with source creation disabled.
 
 **Offline Docker settings per serving tier.** A structured serving entry on a native Docker engine
-can add at least one environment assignment or bind. TOML inline and nested tables and JSON
+can declare environment assignments, binds or memory limits. TOML inline and nested tables and JSON
 objects use the same fields.
 
 ```toml
@@ -2503,7 +2508,19 @@ common assignments in the payload. Assignments use a portable
 Common mounts precede target mounts. Destinations in the combined list must be distinct and
 may not overlap. Effective sources and destinations cannot cover protected control directories.
 These checks are lexical. Host qualification verifies the actual mounted paths and access modes.
-Device requests, image pins, network bindings and limits remain engine-wide.
+Device requests, image pins, network bindings and other resource limits remain engine-wide.
+
+A tier's `docker.memory_bytes` and `docker.memory_swap_bytes` are exact 64-bit byte counts.
+Memory must be at least 6 MiB. `memory_swap_bytes` is total memory plus swap, at least the memory
+limit. Equal values permit no additional swap. The loader resolves the pair as follows.
+
+- With neither field, inherit the engine's entire memory pair.
+- With both fields, replace the entire engine pair.
+- With memory alone, set that memory limit and omit Docker's total only if the engine has no total.
+- A tier with only a total is invalid.
+
+Omitted values are absent from the Docker create request. Leave engine memory limits absent when
+some tiers need no explicit cap. Docker applies its defaults to omitted values.
 
 For engines using tier Docker declarations, JSON requires canonical casing for recognized
 common Docker fields and rejects shadowed ownership settings, delegated selectors and target

@@ -380,9 +380,12 @@ public sealed class DockerLifecycleProvider : IEngineLifecycleProvider, IDisposa
 
         var resources = _cfg.Resources;
         var binds = launch?.Binds ?? resources?.BindMounts ?? [];
-        if (_cfg.HostPort is null && _cfg.NetworkMode is null && resources is null && binds.IsEmpty) return body;
+        var memory = launch is null ? resources?.MemoryBytes : launch.MemoryBytes;
+        var memorySwap = launch is null ? resources?.MemorySwapBytes : launch.MemorySwapBytes;
+        if (_cfg.HostPort is null && _cfg.NetworkMode is null && resources is null && binds.IsEmpty &&
+            memory is null && memorySwap is null) return body;
 
-        var host = new DockerHostConfig { NetworkMode = _cfg.NetworkMode };
+        var host = new DockerHostConfig { NetworkMode = _cfg.NetworkMode, Memory = memory, MemorySwap = memorySwap };
         body.HostConfig = host;
         if (_cfg.HostPort is { } port)
         {
@@ -406,8 +409,6 @@ public sealed class DockerLifecycleProvider : IEngineLifecycleProvider, IDisposa
         if (!resources.DevicePaths.IsEmpty)
             host.Devices = [.. resources.DevicePaths.Select(path => new DockerDeviceMapping(path, path, "rwm"))];
         host.NanoCpus = resources.NanoCpus;
-        host.Memory = resources.MemoryBytes;
-        host.MemorySwap = resources.MemorySwapBytes;
         host.ShmSize = resources.ShmSizeBytes;
         if (!resources.Ulimits.IsEmpty)
             host.Ulimits = [.. resources.Ulimits.Select(limit => new DockerLimit(limit.Name, limit.Soft, limit.Hard))];

@@ -10,6 +10,8 @@ public sealed class DockerTargetDto
 {
     private string[]? _env;
     private DockerBindDto[]? _bindMounts;
+    private long? _memoryBytes;
+    private long? _memorySwapBytes;
 
     [JsonPropertyName("env")][TomlPropertyName("env")]
     public string[]? Env
@@ -30,6 +32,28 @@ public sealed class DockerTargetDto
         {
             if (_bindMounts is not null) throw new RouterConfigException("serving-tier docker.bind_mounts appears more than once");
             _bindMounts = value ?? throw new RouterConfigException("serving-tier docker.bind_mounts cannot be null");
+        }
+    }
+
+    [JsonPropertyName("memory_bytes")][TomlPropertyName("memory_bytes")]
+    public long? MemoryBytes
+    {
+        get => _memoryBytes;
+        set
+        {
+            if (_memoryBytes.HasValue) throw new RouterConfigException("duplicate serving-tier docker.memory_bytes");
+            _memoryBytes = value ?? throw new RouterConfigException("serving-tier docker.memory_bytes cannot be null");
+        }
+    }
+
+    [JsonPropertyName("memory_swap_bytes")][TomlPropertyName("memory_swap_bytes")]
+    public long? MemorySwapBytes
+    {
+        get => _memorySwapBytes;
+        set
+        {
+            if (_memorySwapBytes.HasValue) throw new RouterConfigException("duplicate serving-tier docker.memory_swap_bytes");
+            _memorySwapBytes = value ?? throw new RouterConfigException("serving-tier docker.memory_swap_bytes cannot be null");
         }
     }
 
