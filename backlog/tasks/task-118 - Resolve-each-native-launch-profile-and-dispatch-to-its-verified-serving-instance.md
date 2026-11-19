@@ -3,11 +3,11 @@ id: TASK-118
 title: >-
   Resolve each native launch profile and dispatch to its verified serving
   instance
-status: Preparing
+status: Waiting
 assignee:
-  - '@gpt-6.2-sol-scheduling'
+  - '@chatswarm'
 created_date: '2026-11-18T18:56:00Z'
-updated_date: '2026-11-19T09:51:00Z'
+updated_date: '2026-11-19T09:54:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -23,7 +23,7 @@ ordinal: 116000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Prepare the active-claim joiner check across two captured configurations. Review the single-resident Defiant authority prerequisite separately.
+The independent admission-plan verdict wakes Scheduling. The active readiness claim still has no reachable second configuration on this base.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -40,7 +40,7 @@ Prepare the active-claim joiner check across two captured configurations. Review
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Hold a claim under configuration A. Offer a joiner under B with a different default and effective setting at equal public capacity. Verify the join binds A or refuses before checkout. A fresh B claim must select the B digest. Identify the actual join and snapshot entry points before pre-code review. For Defiant, start with one existing resident of the verified pair. Bind the canonical full plan and launch receipt to immutable container and serving-process identity, then observe roster, measured context and total slots on the issuer-bound channel. Lifecycle owns closed-generation publication, issue and retirement. Owner drain/promotion and exact stop/ambiguous-effect fencing remain prerequisites to a managed swap.
+Plan dispatched on 084e3e0. At verified admission, hold an A-stamped ticket before submit with spare capacity; offer another A-stamped ticket through resolver B. Vary the default or effective settings at equal gauges. Require a typed target refusal and zero checkout before A sends; after retirement a fresh B must send under digest B. Review whether existing tests already establish this and remove redundant cases. This can qualify the offline admission generation only. AC2 remains open for an actual active readiness claim across snapshots. No reload or alias changes. For first-host qualification bind one existing resident to the launch receipt, serving process and peer, and measured capacity over the issuer-bound channel before managed switching.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
