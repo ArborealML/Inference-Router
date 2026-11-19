@@ -82,8 +82,8 @@ public sealed class PrefixAwareScheduler : IRequestScheduler
                 target = SmallestFittingProfile(e.ServingProfiles, request.RequiredContextTokens);
                 if (target is null) continue;   // ladder exists but nothing fits: wrong engine
             }
-            var needsEscalation = target is not null && e.ActiveContextWindow > 0 &&
-                                  e.ActiveContextWindow < target.MaxContext;
+            if (loaded && target is not null && e.ActiveContextWindow <= 0) continue;
+            var needsEscalation = target is not null && e.ActiveContextWindow < target.MaxContext;
 
             var affinity = AffinityScore(e);
             var busy = BusyScore(e, request, config);

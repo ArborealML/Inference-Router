@@ -194,13 +194,25 @@ public class SchedulerTests
     }
 
     [Fact]
-    public void Never_Escalates_When_Window_Unreported()
+    public void WaitsForWindowEvidenceWhenAProfileIsRequired()
     {
         var view = new SchedulerView(
             new[] { Info("a", ["m1"], ["m1"], activeContextWindow: 0, profiles: Ladder) },
             DateTimeOffset.UtcNow);
         var decision = new PrefixAwareScheduler().SelectNext(
             Make("m1", ThreadPriority.Normal(), 1, requiredContext: 200_000), view, Config());
+        Assert.Null(decision.Engine);
+        Assert.False(decision.SwitchRequired);
+    }
+
+    [Fact]
+    public void RoutesLoadedModelsWithoutARequiredProfileWhenWindowIsUnreported()
+    {
+        var view = new SchedulerView(
+            new[] { Info("a", ["m1"], ["m1"], activeContextWindow: 0, profiles: Ladder) },
+            DateTimeOffset.UtcNow);
+        var decision = new PrefixAwareScheduler().SelectNext(
+            Make("m1", ThreadPriority.Normal(), 1, requiredContext: 0), view, Config());
         Assert.Equal("a", decision.Engine);
         Assert.False(decision.SwitchRequired);
     }

@@ -1,6 +1,6 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.65)
+Status: draft, continuously revised (v0.12.66)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
@@ -352,6 +352,9 @@ daemon transaction per engine. 137 tests green.
   that answers no `upload_url`, an upload that dies or answers no asset id, an asset name listed twice on
   the release, and a tag that moves after the first resolve. No tag has run the gate: still configured,
   not proven.
+- v0.12.66 — ordinary model and serving-state probes publish one versioned capability. A profile
+  needs a current window bound to its model. Missing state withdraws capacity without withdrawing
+  a healthy roster (§5.5, §7.6, TASK-68).
 - v0.12.65 — load typed native Docker resources and verify the exact create payload offline.
   Docker resource settings share `HostConfig` with networking. Resource-bearing lifecycle
   mutations remain gated on host and serving-instance qualification (§5.3.1, §7).
@@ -1758,8 +1761,8 @@ engine forks land; the scheduler interface will not change shape.
   **Claiming a switch is a mutation:** the marker and `Healthy = false` go out together *before* the switch state is
   installed, because dispatch and the admission refusal read the snapshot and not the runtime's private claim; the
   reported list stays as history while the marker is up, and what is withdrawn is the entitlement to use it.
-  **A probe is fenced, not merely ordered:** it records the snapshot version before it awaits and re-checks that
-  version inside every publish retry, abandoning the publication if it moved, so a fetch that began before a switch
+  **A probe is fenced, not merely ordered:** it captures the snapshot before it awaits and exchanges against that
+  exact reference, abandoning the publication if it moved, so a fetch that began before a switch
   cannot land after it and overwrite what the switch proved — and, in the other direction, so a poll that **failed**
   before that switch cannot withdraw the proof afterwards. The negative answer withdraws health and model-window proof
   under the same version and the same drop rule, which is what stops one unreachable-tick poll from costing a working engine
@@ -1768,8 +1771,12 @@ engine forks land; the scheduler interface will not change shape.
   future ticks. An in-flight fetch keeps its own timeout and publication fences, so a failed response can
   still withdraw the proof of its own generation. Cancellation attributable to the loop token, timeout setup,
   diagnostics, event delivery, serving-state and readiness work, gauges and timer faults carry no such authority.
-  The serving-state probe still feeds the window and slot gauges. Its `health.expect` rule determines whether a
-  **switch** counts as ready. The fence
+  After `/models` succeeds, the ordinary round reads the configured serving-state endpoint. It publishes the
+  roster, discovery, health and serving capacity together. Missing or malformed state yields unknown capacity
+  for the unavailable values while the roster remains healthy. A failed `health.expect` can coexist with valid
+  gauges. The rule determines whether a **switch** counts as ready. `engine.health` reports the completed poll
+  after the publication decision, including a stale round. Runtime shutdown suppresses late poll telemetry.
+  A successful switch reports its profile and nudges dispatch after clearing the marker. The fence
   orders *publications*, not the engine: an engine restarted outside the router's sight, with no visible
   discontinuity, evades it. Ordinary polls publish neither a positive nor a negative while the switch marker is set.
   The immutable model-window observations used for discovery (§6) are published with the same roster and version.
@@ -2298,13 +2305,18 @@ Semantics:
   `scheduler.max_inflight_per_engine` and the slots it reports (`total_slots`);
   until the gauge is known the configured ceiling alone applies. A profile
   switch therefore lowers admission as soon as the engine reports fewer slots.
-- **Escalation**: when `required > engine.active_context_window` (only when the engine
-  reports a window — a blind engine is never escalated), the scheduler selects the
-  *smallest* profile with `max_context >= required`, emits `TargetProfile`, and the ticket
-  waits for a lifecycle switch to that profile when `auto_switch = true`. An engine whose ladder
-  has no fitting tier is skipped for the request. A failed switch returns `switch_failed` (§5.5, §6).
-- **Observability**: `engine.profile` events fire when the inferred active profile changes;
-  `EngineStats` carries `active_profile` / `active_context_window` / `active_slots`.
+- **Escalation**: the scheduler selects the *smallest* profile with `max_context >= required`.
+  A loaded model needs an observed window that meets that tier. A smaller reported window can
+  trigger a switch when `auto_switch = true`. An unknown window on a loaded model leaves a
+  capacity-dependent request waiting for evidence. A healthy loaded model can still serve a
+  request with no required profile. An engine whose ladder has no fitting tier is skipped.
+  A failed switch returns `switch_failed` (§5.5, §6).
+- **Binding**: an engine-wide context window binds to a single non-alias, loaded roster row
+  that matches a canonical catalog key case-insensitively. An additional upstream row with a
+  string ID makes the window unbound. Total slots can still be reported. The inferred profile
+  requires a unique matching tier in the bound model and serves as a display label.
+- **Observability**: `engine.profile` events report committed positive window or inferred-profile
+  changes. `EngineStats` reads `active_profile` / `active_context_window` / `active_slots` from one snapshot.
 - **Non-goal for now**: automatic *de*-escalation (shrinking a window when big-context
   demand goes away). Escalation is demand-driven; release policy is an open question (§15).
 

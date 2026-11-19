@@ -687,7 +687,7 @@ public class EndToEndTests
         File.WriteAllText(windowFile, "131072");
         try
         {
-            using var fake = new FakeEngineHandler { NCtxFile = windowFile, TotalSlots = 2 };
+            using var fake = new FakeEngineHandler { LoadedModels = ["test-model"], NCtxFile = windowFile, TotalSlots = 2 };
             var cfg = new RouterConfig
             {
                 DefaultModel = "test-model",
@@ -731,11 +731,12 @@ public class EndToEndTests
             await WaitHealthyAsync(router);
 
             // Small request first: served on the existing profile, no switch.
+            Assert.Equal(131_072, router.Engines["fake"].ActiveContextWindow);
             var small = await router.EnqueueAsync("t-small", Request("ping-small", requiredContext: 1_000));
             await small.CompletionTask.WaitAsync(TimeSpan.FromSeconds(10));
-            Assert.Equal(131_072, router.Engines["fake"].ActiveContextWindow);
             Assert.Equal("small", router.Engines["fake"].ActiveProfile);
             Assert.False(router.Engines["fake"].Switching);
+            Assert.DoesNotContain(router.Events.Replay(0), e => e.Kind == "engine.switch_started");
 
             // Oversized request: must escalate before executing.
             var big = await router.EnqueueAsync("t-big", Request("ping-big", requiredContext: 200_000));

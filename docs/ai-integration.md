@@ -101,8 +101,11 @@ router adds:
 
 Send `X-Inference-Required-Context: 24000` to give the scheduler a context requirement in
 tokens for choosing a profile or requesting a switch. Without the header, AIR estimates
-demand from prompt characters. [Verifying context fit against the active model and profile](../backlog/tasks/task-68%20-%20Bind-the-serving-gauges-to-a-capability-epoch-so-a-stale-window-cannot-authorise-a-profile-the-engine-cannot-serve.md)
-is still in progress. A scheduler decision can use a serving gauge that is stale or missing.
+demand from prompt characters. When the built-in scheduler selects a required profile, a loaded
+model needs a matching observed window to serve it. If the window is unknown, the request waits
+for capacity evidence. A request with no required profile can still use a healthy loaded model.
+Fit checks through dispatch and switch restoration are still in progress.
+[Serving gauge verification](../backlog/tasks/task-68%20-%20Bind-the-serving-gauges-to-a-capability-epoch-so-a-stale-window-cannot-authorise-a-profile-the-engine-cannot-serve.md)
 
 ## What to call when something goes wrong
 

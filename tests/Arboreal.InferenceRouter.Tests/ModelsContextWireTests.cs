@@ -177,12 +177,13 @@ public sealed class ModelsContextWireTests
               {"id":"missing"},
               {"id":"valid","status":{"value":"loaded"},"meta":{"n_ctx":49152}}
             ]}
-            """);
+            """, servingState: """{"n_ctx":65536,"total_slots":4}""");
         var (app, address) = await StartAsync(engine);
         await using var _ = app;
         using var http = new HttpClient { BaseAddress = address };
         var runtime = app.Services.GetRequiredService<RouterCore>().Engines["first"];
-        await WaitForAsync(() => runtime.ActiveContextWindow == 65_536);
+        Assert.Equal(4, runtime.ActiveSlots);
+        Assert.Equal(0, runtime.ActiveContextWindow);
 
         using var response = await http.GetAsync("/v1/models");
         using var doc = JsonDocument.Parse(await response.Content.ReadAsByteArrayAsync());
@@ -319,7 +320,7 @@ public sealed class ModelsContextWireTests
         while (!observed()) await Task.Delay(10, timeout.Token);
     }
 
-    private sealed class ModelsHandler(string models) : HttpMessageHandler
+    private sealed class ModelsHandler(string models, string servingState = """{"n_ctx":65536}""") : HttpMessageHandler
     {
         private string _models = models;
         private bool _failed;
@@ -338,7 +339,7 @@ public sealed class ModelsContextWireTests
             var status = isModels && Volatile.Read(ref _failed) ? HttpStatusCode.ServiceUnavailable : HttpStatusCode.OK;
             return Task.FromResult(new HttpResponseMessage(status)
             {
-                Content = new StringContent(isModels ? Volatile.Read(ref _models) : """{"n_ctx":65536}""",
+                Content = new StringContent(isModels ? Volatile.Read(ref _models) : servingState,
                     Encoding.UTF8, "application/json"),
             });
         }

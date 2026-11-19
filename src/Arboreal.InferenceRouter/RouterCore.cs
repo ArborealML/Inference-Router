@@ -229,16 +229,20 @@ public sealed class RouterCore : IInferenceRouter
     {
         lock (_gate)
         {
-            var engines = _engines.Values.Select(e => new EngineStats
+            var engines = _engines.Values.Select(e =>
             {
-                Engine = e.Name,
-                Healthy = e.Healthy,
-                LoadedModels = e.LoadedModels,
-                Inflight = e.Inflight,
-                SwitchingToward = e.SwitchingToward,
-                ActiveProfile = e.ActiveProfile,
-                ActiveContextWindow = e.ActiveContextWindow,
-                ActiveSlots = e.ActiveSlots,
+                var cap = e.Capability;
+                return new EngineStats
+                {
+                    Engine = e.Name,
+                    Healthy = cap.Healthy,
+                    LoadedModels = cap.LoadedModels,
+                    Inflight = e.Inflight,
+                    SwitchingToward = cap.SwitchingToward,
+                    ActiveProfile = cap.Serving.Profile,
+                    ActiveContextWindow = cap.Serving.ContextWindow,
+                    ActiveSlots = cap.Serving.TotalSlots,
+                };
             }).ToArray();
             var queues = _queues.Values.ToDictionary(q => q.Model, q => q.Depth, StringComparer.Ordinal);
             var threads = _threads.Values.Select(t => new ThreadStats
@@ -490,7 +494,7 @@ public sealed class RouterCore : IInferenceRouter
                 Healthy = cap.Healthy,
                 Switching = cap.SwitchingToward is not null,
                 MatchedPrefixChars = e.MatchedPrefixChars(messages),
-                ActiveContextWindow = e.ActiveContextWindow,
+                ActiveContextWindow = cap.Serving.WindowFor(head.Ticket.Model),
                 ServingProfiles = e.ProfilesForModel(head.Ticket.Model),
             });
         }
