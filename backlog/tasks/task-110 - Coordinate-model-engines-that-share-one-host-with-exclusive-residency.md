@@ -1,26 +1,22 @@
 ---
 id: TASK-110
 title: Coordinate model engines that share one host with exclusive residency
-status: Preparing
+status: Blocked
 assignee:
   - '@gpt-6.2-sol-lifecycle'
 created_date: '2026-11-18T18:13:00Z'
-updated_date: '2026-11-19T19:48:00Z'
+updated_date: '2026-11-19T19:54:00Z'
 labels: []
 milestone: m-4
 dependencies:
-  - TASK-69
-  - TASK-25
-  - TASK-64
-  - TASK-118
-  - TASK-137
+  - TASK-140
 ordinal: 108000
 ---
 
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Lifecycle is mapping the first enforceable step from the verified offline receipt to production enrollment. [PR #35](https://github.com/ArborealML/Inference-Router/pull/35) landed at 7b4c626 after correction review accepted 7ba85bd. Its eleven focused cases and [1,476 hosted Release cases](https://github.com/ArborealML/Inference-Router/actions/runs/44600860457) passed with zero skips. Sequential synthetic evidence leaves physical exclusion, authenticated durability and concurrent policy enforcement open.
+Blocked on Claire’s delegated mutation decision in TASK-140. [PR #35](https://github.com/ArborealML/Inference-Router/pull/35) qualifies the sequential synthetic receipt. The privileged export is complete. Broker-only delegated mutation permits offline implementation of the protected pair. Continued unrestricted access defers enrollment. Cutover and a vacant trial require separate approval.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
