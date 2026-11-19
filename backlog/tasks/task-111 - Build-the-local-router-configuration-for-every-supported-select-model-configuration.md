@@ -3,11 +3,11 @@ id: TASK-111
 title: >-
   Build the local router configuration for every supported select-model
   configuration
-status: Preparing
+status: Waiting
 assignee:
-  - '@gpt-6.2-sol-config'
+  - '@chatswarm'
 created_date: '2026-11-18T18:15:00Z'
-updated_date: '2026-11-19T09:51:00Z'
+updated_date: '2026-11-19T09:56:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -19,7 +19,7 @@ ordinal: 109000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Identify the smallest remaining Defiant selector gap and count newly representable targets.
+The independent plan verdict wakes Config for one offline DeepSeek Maya-XS 32k projection.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -32,7 +32,7 @@ Identify the smallest remaining Defiant selector gap and count newly representab
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Plan review on 989ae12 identified four required corrections. Validate alias presence before Docker-only parsing, including direct DTO null and sole alias-only declarations. Require native ownership and a valid Docker block on that row. Trigger raw shadow checks on Docker or aliases, including hidden ancestors, malformed serving and overwritten alias-only tiers. Preserve single mixed-case TOML behavior and reject twins. Register all canonical tier names before ordinal aliases, retaining canonical-only defaults and immutable plan identity. Feed original requested spellings directly into the resolver in tests. Compare same-snapshot references and cross-format create bytes, preserve six pairs, defaults and 75 targets, and discriminate differing settings. The second feature to land owns canonicalization and one verified-dispatch digest control. Keep activation closed.
+Plan dispatched on 5643b27. Complete the sole/default Maya-XS tier with numeric 32768 serve/probe arguments. Add optional checked probe timeout and positive retry count, omitting unspecified fields. Permit explicit read-only child binds only with a validated earlier read-only parent in the full effective mount list. Preserve the 11 ordered mounts, including two declared children and the unrelated writable log. Refuse undeclared, protected, writable or ambiguous overlaps and malformed/shadowed input. Compare one redacted complete payload across formats, reuse existing refusal controls and preserve startup gates. Qualify config-only and Native AOT once. Current offline coverage is 40/75; this target would make 41/75. General DeepSeek command mapping and HyperQwen remain separate. The first live pair remains Qwen and Swift.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
