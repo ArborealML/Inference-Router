@@ -5,7 +5,7 @@ status: Waiting
 assignee:
   - '@chatswarm'
 created_date: '2026-11-18T21:09:00Z'
-updated_date: '2026-11-19T11:58:00Z'
+updated_date: '2026-11-19T12:03:00Z'
 labels: []
 milestone: m-2
 dependencies: []
@@ -16,12 +16,12 @@ ordinal: 127000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Hosted checks on [PR #26](https://github.com/ArborealML/Inference-Router/pull/26) and the verdict on the immediate host arbitration plan dispatched November 19 wake the coordinator. Idle withdrawal passed its bounded review and the named Release control passed 1/1 at bed5864. The reviewed diff matches the published commit.
+The verdict on the immediate host arbitration plan dispatched November 19 wakes the coordinator. Idle shutdown landed in [PR #26](https://github.com/ArborealML/Inference-Router/pull/26) at 9f42570. Its named Release control passed 1/1 and all hosted checks passed. The older injected completion ordering remains open.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Dispose a healthy idle runtime. Its previous model can remain listed, but IsReadyFor returns false and the runtime cannot issue a serving grant.
+- [x] #1 Dispose a healthy idle runtime. Its previous model can remain listed, but IsReadyFor returns false and the runtime cannot issue a serving grant.
 - [ ] #2 Pause after proof publication, let shutdown win settlement and resume. Observe one stopped outcome, zero switch-completed events and no admitted request under the retired proof.
 <!-- AC:END -->
 
