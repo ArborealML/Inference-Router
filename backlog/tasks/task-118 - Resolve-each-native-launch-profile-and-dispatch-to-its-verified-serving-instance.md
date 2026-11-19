@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@gpt-6.2-sol-scheduling'
 created_date: '2026-11-18T18:56:00Z'
-updated_date: '2026-11-19T09:03:00Z'
+updated_date: '2026-11-19T09:07:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -48,5 +48,5 @@ Publish one immutable sender with the ready preparation. Its exact invocation bo
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-At 1bd351d the four envelope/target binding corrections passed 118 distinct Release cases and Linux x64 Native AOT. Binding correction review dispatched. Runtime review of 43b64d5 found two defects still present on 1bd351d. A response-disposal fault with confirmed issuer retirement and successful preparation cleanup must release capacity once and independently report one redacted fault. Preserve concurrent stream-close and permit-retirement exceptions for standalone callers. Unknown issuer retirement or failed preparation cleanup retains the charge. Hold landing for both focused controls.
+Binding review passed at 1bd351d for raw model, frozen request, captured provider config/endpoint and resident identity. Credential epoch, Authorization/Host cardinality and effective URI checks verified. Additional permutations optional. Qualification: 118 Release cases and Linux x64 Native AOT. Two cleanup defects from 43b64d5 remain. Release capacity once after confirmed retirement and successful preparation cleanup despite a response-disposal fault, and report it. Preserve both stream-close and permit-retirement exceptions. Unknown retirement or failed preparation cleanup retains capacity. Scheduling owns both focused controls.
 <!-- SECTION:NOTES:END -->
