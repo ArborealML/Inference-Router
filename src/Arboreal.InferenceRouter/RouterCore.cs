@@ -34,6 +34,7 @@ public sealed class RouterCore : IInferenceRouter
     private long _seq;
     private readonly CancellationTokenSource _shutdown = new();
     internal Action? BeforeCostCommitForTests;
+    internal Action<string, EngineRuntime.SwitchOutcome>? AfterModelReadinessForTests;
     internal TimeProvider ResponseTimeoutClockForTests = TimeProvider.System;
 
     public RouterCore(RouterConfig config, IRequestScheduler? scheduler = null, EventRing? events = null)
@@ -665,6 +666,7 @@ public sealed class RouterCore : IInferenceRouter
                     new SwitchQueueTiming(candidate.EnqueuedAtTimestamp, selectedAt), execCts.Token,
                     explicitContextMinimum: candidate.ExplicitContextMinimum).ConfigureAwait(false);
                 var switchResult = observed.Result;
+                AfterModelReadinessForTests?.Invoke(ticket.Id, switchResult.Outcome);
                 if (switchResult.Outcome == EngineRuntime.SwitchOutcome.RouterStopped)
                 {
                     Fail(ticket, "cancelled", "cancelled");
