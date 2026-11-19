@@ -3,11 +3,11 @@ id: TASK-64
 title: >-
   Decide the admission and drain handoff: a scheduler pass that snapshots an
   engine just before it is claimed
-status: In Progress
+status: Waiting
 assignee:
-  - '@gpt-6.2-sol-release'
+  - '@gpt-6.2-astra'
 created_date: '2026-11-17T23:07:00Z'
-updated_date: '2026-11-19T07:55:00Z'
+updated_date: '2026-11-19T08:03:00Z'
 labels:
   - scheduling
   - architecture
@@ -20,7 +20,7 @@ ordinal: 64000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Implement the single offline completion/open test on the admission path landed in PR #5. Synthetic notifications traverse the real router subscription; the matching route opening must send the retained ticket exactly once. Production host integration consumes this evidence separately.
+Hosted CI and independent review of the single completion/open fixture wake landing. Synthetic notifications traverse the real router subscription; matching route open sends the retained ticket once. Production host integration consumes this evidence separately.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -46,4 +46,6 @@ Use public Router.Start once. Hold the boot probe and omit the queue timer. Prep
 
 <!-- SECTION:NOTES:BEGIN -->
 At ac8b118, 149 focused checks covered retained cleanup, engine-wide final-slot reservation, two-slot progress and exact take after close, expiry or window changes. [PR #5](https://github.com/ArborealML/Inference-Router/pull/5) merged at 1061d70 after green hosted CI. Review of 374af08 verified inline selection precedes execution scheduling and the held backend registers cancellation before signalling entry. Both orderings produce one terminal and return engine inflight to zero. Release cardinality, thread count at quiescence and every pre-send window are outside those assertions. Revisit when the release ordering or event delivery changes.
+
+[PR #13](https://github.com/ArborealML/Inference-Router/pull/13) at f755292 passed the single focused Release case. Each event produced a separate park with zero submissions, and matching open sent the original stamp and body once. Independent fixture review dispatched.
 <!-- SECTION:NOTES:END -->
