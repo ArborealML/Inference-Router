@@ -5,7 +5,7 @@ status: Waiting
 assignee:
   - '@chatswarm'
 created_date: '2026-11-18T18:13:00Z'
-updated_date: '2026-11-19T11:02:00Z'
+updated_date: '2026-11-19T11:06:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -36,7 +36,7 @@ The independent review of the future launch-record plan on 955436b wakes Lifecyc
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Review the first real launch-record producer on Defiant. A future enrolled single writer freezes operation, epoch and plan before dispatch, persists acceptance before daemon I/O, independently verifies the exact applied instance and records the effect before acknowledgment. Reopen and authenticate a lookup by immutable container ID. Reuse checkpoint validation; an uncertain effect remains fenced. The subsequent observation issuer must attest one connected serving process for both roster and capacity reads on a closed generation within the original budget. Establish enforcement, covered vacancy and crash/rollback guarantees before live launch. Existing selector residency has no original controller record.
+Identify and independently enroll a supervised Defiant broker with protected daemon access and ownership of the private observation endpoint. Its controller durably freezes the operation ID, epoch and intent before dispatch. Its worker persists acceptance before daemon I/O, verifies the instance and records the applied effect before acknowledgment. Authenticate lookup after reopen by immutable ID; fence uncertainty. Its observation ingress attests the connected serving process and stamps both roster and capacity reads on the same closed generation within the original budget. Strata supplies the payloads. Neither producer is wired. Verify covered vacancy, fencing and rollback protection before any separately authorized launch.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
