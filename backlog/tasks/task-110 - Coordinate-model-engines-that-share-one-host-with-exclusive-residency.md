@@ -19,7 +19,7 @@ ordinal: 108000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Lifecycle is identifying the next read-only prerequisite for attesting one existing Defiant resident.
+Lifecycle is identifying the launch-record producer and observation issuer for a future authorized Defiant launch.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

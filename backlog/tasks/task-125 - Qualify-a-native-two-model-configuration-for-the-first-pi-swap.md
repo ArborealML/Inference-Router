@@ -18,7 +18,7 @@ ordinal: 123000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-The selector launch operator’s lookup result wakes this task. The original operation, epoch, frozen plan and immutable instance must come from an authenticated launch-time record. If unavailable, this Qwen instance cannot qualify. A matching record still requires both readiness reads on the same attested process.
+A trusted launch-record producer and an issuer that binds both readiness reads to the same serving process wake native qualification. The operator confirmed the manual Qwen launch had no participating controller journal. This historical instance is ineligible.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -31,5 +31,5 @@ The selector launch operator’s lookup result wakes this task. The original ope
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Both models served Pi turns through AIR during operator selector transitions. The last saved Qwen 256k-4 observation reported 256,000 context and four slots. Current residency remains unverified. Config and the resolver supply native intent, the selector supplies historical logs and artifact receipts, Docker supplied historical container/image identity, and Strata supplied direct roster and capacity. None binds the applied operation, epoch and full plan to the current serving process. Look up an original authenticated record by immutable container ID and return unavailable if absent. An observation-only issuer must attest the connected peer and bind both replies to the same serving process while inference admission is closed. TASK-112 retains the native client-driven swap proof.
+Both models served Pi turns through AIR during operator selector transitions. The last saved Qwen 256k-4 observation reported 256,000 context and four slots. Current residency remains unverified. Config and the resolver supply native intent, the selector supplies historical logs and artifact receipts, Docker supplied historical container/image identity, and Strata supplied direct roster and capacity. None binds the applied operation, epoch and full plan to the current serving process. A future authorized launch must record the original operation, epoch, frozen plan and immutable instance at launch time. An observation-only issuer must attest the connected peer and bind both replies to the same serving process while inference admission is closed. TASK-112 retains the native client-driven swap proof.
 <!-- SECTION:NOTES:END -->
