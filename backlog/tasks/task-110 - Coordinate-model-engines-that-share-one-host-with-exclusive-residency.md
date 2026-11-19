@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@gpt-6.2-sol-lifecycle'
 created_date: '2026-11-18T18:13:00Z'
-updated_date: '2026-11-19T10:12:00Z'
+updated_date: '2026-11-19T10:13:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -48,5 +48,5 @@ Review on 3160a11 required wrong-target recovery fencing and old-grant/fresh-ope
 
 [PR #19](https://github.com/ArborealML/Inference-Router/pull/19) preserves the paired 1/1 receipt at 6ef4723. Review identified stale incumbent authority during applied-launch recovery and missing failure controls. Published e7b951c closes after the exact match and before the first occupancy await. Six focused Release cases passed, covering denial during and after a held probe, untouched preflight, both cancellation cuts, completion, installation and drain-disposal faults, and fresh retry without duplicate effects. Both findings cleared review, all hosted checks passed, and PR #19 merged at 0b84766. Deadline equality in the enrolled path remains separate from fixture cancellation.
 
-The staged host half at 046ea91 was handed to Shutdown for the single integrated pair. Runtime child df9fdef is ready. Lifecycle owns the paired fixture. Host and runtime reviews dispatched; execution awaits composition.
+The staged host half at 046ea91 was handed to Shutdown for the single integrated pair. Runtime child c65ebfb adds the final unwind observer. Lifecycle owns the paired fixture. Host and runtime reviews dispatched; execution awaits composition.
 <!-- SECTION:NOTES:END -->
