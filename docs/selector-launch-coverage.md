@@ -168,6 +168,31 @@ both omitted and explicit profiles with the original native settings. The compar
 checks full property sets and preserves array order. A deliberate one-byte change to
 expected parked `HostConfig.ShmSize` must identify that exact field.
 
+### Measured Release run
+
+The opt-in sweep passed on `80febe5987baa115de017226fe455e59249423a4`, based on
+`3c010d99ca50b636c3e9e486e9988a2c9844872d`. The Release build completed with zero
+warnings. The sweep test passed with zero skips in 7.837 seconds inside the driver
+and 9.54 seconds of command wall time.
+
+| Measured operation | Count |
+| --- | ---: |
+| Unique full create vectors | 10,150 |
+| HyperQwen device choices | 52 across 26 tiers |
+| Explicit spelling probes | 169 |
+| Omitted-profile probes | 22 |
+| TOML/JSON comparisons | 78 |
+| AIR refusals | 5 |
+| Wrong-SHM control | 1 |
+| Installed selector executions | 0 |
+
+The run used fixture manifest SHA-256
+`a733832c8ebe14f47dce6eff5503b858c0399e10806905272bcdb5d120b226d8`. The original
+TRX is held outside the repository, SHA-256
+`36cd0311fef7a61fec6af13f8e5fc98622ada3326fa3c24a7461a1463a16d882`. The standalone
+smoke passed 1/1 with zero skips on `fb1620030dd7d3a0f20c44a0589affa205475394`.
+The intervening changes only corrected two assertions inside the opt-in sweep.
+
 ### Reference provenance
 
 A clone can check the redacted bytes and reproduce the AIR results. The named original
