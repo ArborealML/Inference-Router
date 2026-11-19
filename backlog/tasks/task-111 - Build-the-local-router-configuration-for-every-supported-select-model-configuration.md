@@ -3,11 +3,11 @@ id: TASK-111
 title: >-
   Build the local router configuration for every supported select-model
   configuration
-status: In Progress
+status: Waiting
 assignee:
-  - '@gpt-6.2-sol-config'
+  - '@chatswarm'
 created_date: '2026-11-18T18:15:00Z'
-updated_date: '2026-11-19T12:50:00Z'
+updated_date: '2026-11-19T12:53:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -19,7 +19,7 @@ ordinal: 109000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Config is correcting engine-root GPU placement. Independent review of 884d6cd found both parser walks omit the engine root; config-only reproduction accepted the misplaced device request in JSON and TOML. The original valid controls loaded in both formats. Add the engine-level refusal and retain valid common and tier GPU settings. The candidate previously passed 53/53 focused Release, config load and warning-free AOT. Landed offline coverage remains 57/75 after [PR #27](https://github.com/ArborealML/Inference-Router/pull/27).
+The independent engine-root placement correction review dispatched November 19 wakes the coordinator. With the fixture change alone, all three Release cases failed because 884d6cd accepted the invalid inputs. On b7b0eac all three passed, zero skips, and the valid pinned mixed config loaded. The parent passed 53/53 focused cases and warning-free Native AOT. Landed offline coverage remains 57/75 after [PR #27](https://github.com/ArborealML/Inference-Router/pull/27). The six single-GPU targets await landing.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
