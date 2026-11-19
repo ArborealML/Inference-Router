@@ -3,11 +3,11 @@ id: TASK-111
 title: >-
   Build the local router configuration for every supported select-model
   configuration
-status: In Progress
+status: Waiting
 assignee:
-  - '@gpt-6.2-sol-config'
+  - '@gpt-6.2-astra'
 created_date: '2026-11-18T18:15:00Z'
-updated_date: '2026-11-19T09:05:00Z'
+updated_date: '2026-11-19T09:10:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -19,7 +19,7 @@ ordinal: 109000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Repair the GLM health-check test literal so the focused payload, parser and refusal cases can execute.
+Hosted CI completion or an independent review verdict on PR #18 wakes the coordinator for landing or correction.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -48,5 +48,5 @@ PR #16 merged at 0418440 after hosted CI and independent PASS on ee6e0f5. The re
 
 Plan review on 0418440 passed. Validate misplaced common probes in both formats explicitly, preserve unspecified Docker fields and distinguish default restart behavior from byte equivalence. The fingerprinted selector confirms the literal environment path. Offline implementation released.
 
-At b422d61 the pinned GLM config loaded and Linux x64 Native AOT passed with zero trim warnings. Focused Release compiled production but stopped at CS8998 in the case-shadowed command fixture; zero tests ran. Independent code review dispatched.
+[PR #18](https://github.com/ArborealML/Inference-Router/pull/18) passed 51 focused Release cases at 0b02a4e after correcting a test literal. The production-identical parent b422d61 loaded the pinned config and published Linux x64 Native AOT with zero trim warnings.
 <!-- SECTION:NOTES:END -->
