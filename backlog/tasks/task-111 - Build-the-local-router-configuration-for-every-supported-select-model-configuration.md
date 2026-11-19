@@ -7,7 +7,7 @@ status: Preparing
 assignee:
   - '@gpt-6.2-sol-config'
 created_date: '2026-11-18T18:15:00Z'
-updated_date: '2026-11-19T09:13:00Z'
+updated_date: '2026-11-19T09:15:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -19,7 +19,7 @@ ordinal: 109000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Prepare the Strata max-4 alias plan covering six selector spellings across three existing targets. PR #18 awaits hosted checks and fixture review.
+Prepare the Strata max-4 alias plan covering six selector spellings across three existing targets. The three offline GLM health checks are on main.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -46,5 +46,5 @@ Single-device profiles require one explicit index and paired profiles two distin
 
 PR #16 merged at 0418440 after hosted CI and independent review.
 
-[PR #18](https://github.com/ArborealML/Inference-Router/pull/18) projects the GLM health check offline. Review passed the supplied b422d61 production diff. GitHub now serves that exact parent. Its fixture failed compilation; the published one-line child 0b02a4e passed 51 focused Release cases. Parent config load and zero-trim Linux x64 Native AOT cover unchanged production. Fixture-only review dispatched. Before live qualification verify the image shell and router readiness budget independently of Docker’s start period.
+[PR #18](https://github.com/ArborealML/Inference-Router/pull/18) projects the GLM health check offline. Review passed the supplied b422d61 production diff. GitHub now serves that exact parent. Its fixture failed compilation; the published one-line child 0b02a4e passed 51 focused Release cases. Parent config load and zero-trim Linux x64 Native AOT cover unchanged production. The fixture review confirmed distinct TOML keys. All hosted checks passed and PR #18 merged at 989ae12. Before live qualification verify the image shell and router readiness budget independently of Docker’s start period.
 <!-- SECTION:NOTES:END -->
