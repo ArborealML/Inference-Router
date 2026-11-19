@@ -1,11 +1,11 @@
 ---
 id: TASK-125
 title: Qualify a native two-model configuration for the first pi swap
-status: Waiting
+status: In Progress
 assignee:
-  - '@chatswarm'
+  - '@gpt-6.2-sol-config'
 created_date: '2026-11-18T20:36:00Z'
-updated_date: '2026-11-19T15:46:00Z'
+updated_date: '2026-11-19T16:03:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -18,7 +18,7 @@ ordinal: 123000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-The bounded offline pair plan review dispatched November 19 on 5047f8f wakes the coordinator. Scope is configuration-only validation of the existing resolved pair and fake-provider evidence for explicit Qwen 256k-4 and Swift max. A native swap still awaits a trusted launch record and independently observed readiness bound to the serving instance. The manual Qwen launch had no participating controller journal.
+Config owns the reviewed offline pair fixture on 5047f8f. A freshly built Release CLI validated the unchanged resolved pair and its input hash matched before and after. This proves config loading. The explicit Qwen 256k-4 and Swift max projections, pair correspondence and fake directional delivery still require qualification. The historical manual Qwen launch has no trusted controller journal.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -31,7 +31,7 @@ The bounded offline pair plan review dispatched November 19 on 5047f8f wakes the
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Validate the hash-pinned pair using the config verb once. Bind the redacted pair to current create digests and distinguish the stale pre-port projection. Seed each direction independently through the staged coordinator. Observe one exact send after matching Open and zero delivery for wrong image-backed digest, wrong model and incompatible valid tier. Preserve the applied-launch recovery guard. The two fake directions provide no serial same-controller or live-swap evidence. Reuse generic controls and the existing selector sweep.
+Audit private versus redacted selected settings under an explicit role mapping. Compare independently derived typed checkpoint digests with each resolved target. Use two separately seeded directions, preserve exact pending applied launches, and bind the intended target digest at staged acceptance, checkout and first write. Observe exact bytes only after matching Open. Exercise an internally consistent wrong-image digest, wrong model, valid Swift max-2 and stale pre-port evidence. Separate fixture enforcement from production host authority. Run only the pair fixture; retain the existing config readback.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
