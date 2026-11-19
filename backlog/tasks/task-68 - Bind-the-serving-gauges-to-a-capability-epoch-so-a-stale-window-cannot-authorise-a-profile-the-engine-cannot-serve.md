@@ -7,7 +7,7 @@ status: Ready for Review
 assignee:
   - '@gpt-6.2-sol-config'
 created_date: '2026-11-18T01:11:00Z'
-updated_date: '2026-11-18T23:19:00Z'
+updated_date: '2026-11-19T02:48:00Z'
 labels:
   - concurrency
   - scheduling
@@ -48,5 +48,5 @@ Publish the immutable serving tuple with EngineCapability. Convert scheduler, en
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-On fcff3ea a 256000-token discovery value authorized a required profile despite a missing or withdrawn serving window and a static 131072 ceiling. Model-only dispatch remained eligible. Marker-held proof landed in [the prerequisite](https://github.com/ArborealML/Inference-Router/commit/fcff3ea). Ordinary capacity publication passed 125 focused Release cases. Restoration passed 25 focused and 142 broader cases. Independent review is pending. Named host proof and exact-ticket commitment remain open.
+Ordinary publication is in [PR #2](https://github.com/ArborealML/Inference-Router/pull/2) for integration CI after 125 focused Release cases. The original failure on fcff3ea allowed a discovery window to authorize a required profile despite missing serving evidence. Model-only dispatch remained eligible. For restoration, the unfixed parent failed both capacity-then-roster and capacity-then-503 controls. The repaired lineage passed all nine controls, 34 focused tests, and independent review. Timing-proof invalidation has separate combined qualification. Explicit ticket floors, named host proof and final commitment remain open.
 <!-- SECTION:NOTES:END -->
