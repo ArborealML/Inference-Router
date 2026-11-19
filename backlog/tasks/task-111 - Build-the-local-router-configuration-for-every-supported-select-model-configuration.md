@@ -3,11 +3,11 @@ id: TASK-111
 title: >-
   Build the local router configuration for every supported select-model
   configuration
-status: In Progress
+status: Preparing
 assignee:
   - '@gpt-6.2-sol-config'
 created_date: '2026-11-18T18:15:00Z'
-updated_date: '2026-11-19T07:01:00Z'
+updated_date: '2026-11-19T07:08:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -41,4 +41,6 @@ Inventory the selector and each delegated validator from a fixed source fingerpr
 Selector inventory at fingerprint 8af827d3c375efda08cad8a5b9b7fd862b44a2f5a7482042c5255623a891a030 found 169 valid and 337 invalid spellings, 75 distinct targets, 12 spellings requiring one explicit GPU, 22 omitted defaults, and 1,248 parking combinations. Single-device profiles require one explicit index; paired profiles require two distinct indices. GPU utilization accepts 0.50–0.95, default 0.90. Parking accepts 1–48 GiB, default 32, and 1–8 variable lanes. Suffix-cache launch has no supported mechanism. TASK-26 covers resources, TASK-114 cold starts and TASK-125 the first live pair.
 
 [PR #7](https://github.com/ArborealML/Inference-Router/pull/7) corrects shadowed ownership and selector fields, common Docker key casing and template substitution. Review of 7eda8ad accepted the correction subject to verification. At 6505ea1 all 108 focused tests, the pinned pair config and server Native AOT passed. The CLI separately refused a sibling select/Select pair and a duplicate common env key at the expected paths. Integration head 3af5f10 preserves both SPEC revisions. Continue offline comparison for remaining targets. Before activation, bind receipts and labels to the same canonical model, tier and serving instance.
+
+Offline comparison covered 36 Strata, 26 HyperQwen and 13 Maya targets. MiniMax 32k requires host IPC and an entrypoint override. Qwen 768k and 1m require profile-specific memory and total swap. Plan review dispatched for 512k→768k→512k projection; prepare redacted coverage evidence. Other gaps include profile aliases, GPU ordering, shared memory, runtime policy, nested mounts and health settings.
 <!-- SECTION:NOTES:END -->
