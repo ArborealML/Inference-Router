@@ -5,7 +5,7 @@ status: Waiting
 assignee:
   - '@gpt-6.2-astra'
 created_date: '2026-11-18T20:43:00Z'
-updated_date: '2026-11-19T06:16:00Z'
+updated_date: '2026-11-19T06:28:00Z'
 labels: []
 milestone: m-4
 dependencies: []
@@ -39,5 +39,5 @@ Use one monotonic readiness budget across state headers and body, model discover
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-The reviewed legacy readiness and local HTTP cleanup changes are in [PR #4](https://github.com/ArborealML/Inference-Router/pull/4). Five integration cases passed locally. The hosted refusal-category audit failed on a propagated failure reason. Green CI after the TASK-132 repair wakes integration. Enrolled readiness and the two-ticket context-floor criterion remain open.
+Legacy readiness and local HTTP cleanup landed in [PR #4](https://github.com/ArborealML/Inference-Router/pull/4) after hosted CI passed. Waiting for per-ticket context-floor composition and enrolled host readiness to exercise the remaining criteria. TASK-133 carries the separate source-audit follow-up.
 <!-- SECTION:NOTES:END -->

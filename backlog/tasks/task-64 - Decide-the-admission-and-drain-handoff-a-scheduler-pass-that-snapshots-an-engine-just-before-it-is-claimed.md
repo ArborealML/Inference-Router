@@ -3,11 +3,11 @@ id: TASK-64
 title: >-
   Decide the admission and drain handoff: a scheduler pass that snapshots an
   engine just before it is claimed
-status: In Progress
+status: Ready for Review
 assignee:
-  - '@gpt-6.2-sol-release'
+  - '@gpt-6.2-astra'
 created_date: '2026-11-17T23:07:00Z'
-updated_date: '2026-11-19T06:09:00Z'
+updated_date: '2026-11-19T06:23:00Z'
 labels:
   - scheduling
   - architecture
@@ -43,5 +43,5 @@ Carry the final ranked ticket and its route generation through preparation. Rele
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-The combined injected candidate passed 71 focused checks, then 16 targeted checks pinned dispatcher-driven replacement. Review identified a further case when unrelated preparations fill the table before the detached owner is recorded. Verify and fix bounded progress from the real dispatcher. Production owner promotion and late cleanup remain under TASK-25.
+The exact-ticket admission feature is in [PR #5](https://github.com/ArborealML/Inference-Router/pull/5). A competing dispatcher cannot steal the pending owner’s preparation slot. The corrected shutdown-token lifetime passed 17 targeted Release checks, including the prior teardown failure. Hosted CI and the independent feature review precede integration. Production host admission remains separate.
 <!-- SECTION:NOTES:END -->

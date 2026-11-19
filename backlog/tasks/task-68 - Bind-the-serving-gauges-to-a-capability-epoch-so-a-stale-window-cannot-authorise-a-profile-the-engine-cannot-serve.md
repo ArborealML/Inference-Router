@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@gpt-6.2-sol-scheduling'
 created_date: '2026-11-18T01:11:00Z'
-updated_date: '2026-11-19T06:09:00Z'
+updated_date: '2026-11-19T06:28:00Z'
 labels:
   - concurrency
   - scheduling
@@ -49,4 +49,6 @@ Publish the immutable serving tuple with EngineCapability. Convert scheduler, en
 
 <!-- SECTION:NOTES:BEGIN -->
 Model-bound serving publication landed in [PR #2](https://github.com/ArborealML/Inference-Router/pull/2). Claim-scoped restoration and timing-proof invalidation landed in [PR #3](https://github.com/ArborealML/Inference-Router/pull/3). The scheduling implementer now carries the explicit minimum from the actual winning ticket through selection, commit and fresh readiness, and qualifies bounded re-entry. Coordinate the readiness splice with TASK-126.
+
+Readiness landed in PR #4. Compose ticket floors and bounded retries on merge 5e345cc using SPEC v0.12.75.
 <!-- SECTION:NOTES:END -->
