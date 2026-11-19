@@ -76,18 +76,19 @@ internal sealed class VerifiedDispatchTargetResolver
             throw new VerifiedDispatchBindingException(VerifiedDispatchRefusal.Target);
 
         var tierName = selectedTier ?? resident?.Tier;
-        var tier = tierName is null ? null : model.ServingProfiles
-            .FirstOrDefault(profile => string.Equals(profile.Name, tierName, StringComparison.Ordinal));
-        if (tierName is not null && tier is null)
-            throw new VerifiedDispatchBindingException(VerifiedDispatchRefusal.Target);
-
-        var requested = new LifecycleTarget(_engine, requestedModel, tier, model);
         DockerTargetLaunch launch;
         DockerCreateRequest create;
         try
         {
-            launch = _plans.Resolve(requested)
+            launch = _plans.Resolve(_engine, requestedModel, tierName)
                 ?? throw new VerifiedDispatchBindingException(VerifiedDispatchRefusal.Target);
+            var tier = model.ServingProfiles.FirstOrDefault(
+                profile => string.Equals(profile.Name, launch.Profile, StringComparison.Ordinal));
+            if (tier is null || (selectedTier is null && resident is not null &&
+                !string.Equals(launch.Profile, resident.Tier, StringComparison.Ordinal)))
+                throw new VerifiedDispatchBindingException(VerifiedDispatchRefusal.Target);
+
+            var requested = new LifecycleTarget(_engine, launch.Model, tier, model);
             create = _projection.BuildCreateRequest(requested, _image);
         }
         catch (RouterConfigException)

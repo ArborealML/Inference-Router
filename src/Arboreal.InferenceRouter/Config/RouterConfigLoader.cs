@@ -37,6 +37,8 @@ public static class RouterConfigLoader
             }
             else
             {
+                if (TomlSerializer.Deserialize(text, ConfigTomlDocumentContext.Default.TomlTable) is { } document)
+                    DockerTargetPlans.CheckTargetDeclarationsToml(document);
                 dto = TomlSerializer.Deserialize(text, ConfigTomlContext.Default.ConfigDto)
                       ?? throw new RouterConfigException("config: empty document");
             }
@@ -181,6 +183,9 @@ public static class RouterConfigLoader
                     {
                         var s = serving[i] ??
                             throw new RouterConfigException($"engine.{name}.catalog.{modelName}.serving[{i}] must be an object");
+                        if (s.Aliases is { } profileAliases)
+                            DockerTargetPlans.ValidateProfileAliases(profileAliases, s.Docker,
+                                $"engine.{name}.catalog.{modelName}.serving[{i}]");
                         if (s.Name is not { Length: > 0 } sname)
                             throw new RouterConfigException($"engine.{name}.catalog.{modelName}.serving[{i}].name is required");
                         if (s.MaxContext is not { } mc || mc <= 0)

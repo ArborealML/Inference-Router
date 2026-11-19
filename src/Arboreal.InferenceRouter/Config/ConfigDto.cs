@@ -178,10 +178,22 @@ public sealed class ModelDto
 public sealed class ServingDto
 {
     private DockerTargetDto? _docker;
+    private string[]? _aliases;
 
     [JsonPropertyName("name")][TomlPropertyName("name")] public string? Name { get; set; }
     [JsonPropertyName("max_context")][TomlPropertyName("max_context")] public long? MaxContext { get; set; }
     [JsonPropertyName("max_slots")][TomlPropertyName("max_slots")] public int? MaxSlots { get; set; }
+    [JsonPropertyName("aliases")][TomlPropertyName("aliases")]
+    public string[]? Aliases
+    {
+        get => _aliases;
+        set
+        {
+            if (_aliases is not null) throw new RouterConfigException("duplicate serving-tier aliases");
+            _aliases = value ?? throw new RouterConfigException("serving-tier aliases cannot be null");
+        }
+    }
+
     [JsonPropertyName("docker")][TomlPropertyName("docker")]
     public DockerTargetDto? Docker
     {
@@ -210,6 +222,9 @@ public sealed class SelectDto
 [TomlSerializable(typeof(EngineDto))]
 [TomlSerializable(typeof(ServingDto))]
 internal sealed partial class ConfigTomlContext : TomlSerializerContext;
+
+[TomlSerializable(typeof(TomlTable))]
+internal sealed partial class ConfigTomlDocumentContext : TomlSerializerContext;
 
 /// <summary>JSON twin parser (same DTOs, STJ source generation).</summary>
 [JsonSourceGenerationOptions(GenerationMode = JsonSourceGenerationMode.Metadata)]

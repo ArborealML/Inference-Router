@@ -296,15 +296,18 @@ public sealed partial class DockerTargetProjectionTests
     }
 
     [Theory]
-    [InlineData("""env = ["FAMILY=qwen"]""", false, false)]
-    [InlineData("""bind_mounts = [{ source = "/srv/model", target = "/models", read_only = true }]""", true, false)]
-    [InlineData("memory_bytes = 57982058496, memory_swap_bytes = 62277025792", false, true)]
-    [InlineData("""healthcheck = { command = "probe" }""", false, false)]
-    public async Task TargetDeclarationRefusesEveryLivePathEvenForAnotherModel(string fields, bool hasMount, bool hasMemory)
+    [InlineData("""env = ["FAMILY=qwen"]""", false, false, false)]
+    [InlineData("""bind_mounts = [{ source = "/srv/model", target = "/models", read_only = true }]""", true, false, false)]
+    [InlineData("memory_bytes = 57982058496, memory_swap_bytes = 62277025792", false, true, false)]
+    [InlineData("""healthcheck = { command = "probe" }""", false, false, false)]
+    [InlineData("""env = ["FAMILY=qwen"]""", false, false, true)]
+    public async Task TargetDeclarationRefusesEveryLivePathEvenForAnotherModel(
+        string fields, bool hasMount, bool hasMemory, bool hasAlias)
     {
+        var aliases = hasAlias ? """aliases = ["max-4"], """ : "";
         var engine = LoadToml($$$"""
             [engine.strata.catalog.qwen]
-            serving = [{ name = "tier", max_context = 256000, docker = { {{{fields}}} } }]
+            serving = [{ name = "tier", max_context = 256000, {{{aliases}}}docker = { {{{fields}}} } }]
             [engine.strata.catalog.other]
             """);
         using var daemon = new FakeDockerDaemonHandler
@@ -314,7 +317,10 @@ public sealed partial class DockerTargetProjectionTests
         };
         using var provider = new DockerLifecycleProvider(engine.Docker!, "strata", daemon);
         using var coordinator = new EngineLifecycleCoordinator(provider);
-        var projection = provider.BuildCreateRequest(Selection(engine, "qwen"), engine.Docker!.ImageIdentity!);
+        var selected = Selection(engine, "qwen", "tier");
+        if (hasAlias) selected = selected with { Profile = selected.Profile! with { Name = "max-4" } };
+        var projection = provider.BuildCreateRequest(selected, engine.Docker!.ImageIdentity!);
+        Assert.Equal("tier", projection.Labels[DockerLifecycleProvider.LabelProfile]);
         Assert.Equal(hasMount || hasMemory, projection.HostConfig is not null);
         if (hasMount) Assert.Equal("/models", Assert.Single(projection.HostConfig!.Mounts!).Target);
         if (hasMemory)
