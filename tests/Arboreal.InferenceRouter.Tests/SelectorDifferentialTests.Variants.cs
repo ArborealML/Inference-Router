@@ -5,6 +5,7 @@ using System.Text.Json.Nodes;
 using Arboreal.InferenceRouter.Lifecycle;
 using Tomlyn;
 using Tomlyn.Model;
+using Xunit.Sdk;
 
 namespace Arboreal.InferenceRouter.Tests;
 
@@ -12,7 +13,8 @@ public sealed partial class SelectorDifferentialTests
 {
     private static readonly string[] OtherEngines = ["minimax", "glm", "maya_xs", "deepseek", HyperQwen];
 
-    private static void CheckHyperQwen(Row[] rows, HashSet<CaseKey> keys, NoHttp deny, out int mixedParserChecks)
+    private static (int MixedParserChecks, int WrongShm) CheckHyperQwen(
+        Row[] rows, HashSet<CaseKey> keys, NoHttp deny, Specimen specimen)
     {
         Assert.Equal(26, rows.Length);
         var deviceCoverage = new HashSet<(string Key, string Devices)>();
@@ -30,7 +32,7 @@ public sealed partial class SelectorDifferentialTests
             Assert.Equal(variable ? 2 : row.SelectorLanes, parking.GetProperty("lanes_default").GetInt32());
         }
 
-        var raw = ParseToml(FixtureText(HyperQwen));
+        var raw = ParseToml(specimen.Text);
         for (var cache = 1; cache <= 48; cache++)
         for (var lanes = 1; lanes <= 8; lanes++)
         for (var device = 0; device < 2; device++)
@@ -62,7 +64,7 @@ public sealed partial class SelectorDifferentialTests
         var paired = rows.Single(row => row.Model == "swift" && row.Tier == "max-2");
         var single = rows.Single(row => row.Model == "qwen-3.8-27b" && row.Tier == "single-64k");
         var parked = rows.Single(row => row.Model == "swift" && row.Tier == "parked");
-        mixedParserChecks = 0;
+        var mixedParserChecks = 0;
         foreach (var extra in new (Row Row, Shape Shape, bool CompareToml)[]
         {
             (paired, new Shape(32, 2, true, "0.873"), true),
@@ -84,15 +86,19 @@ public sealed partial class SelectorDifferentialTests
         }
 
         // Compare a deliberately wrong reference to a real, unchanged production projection.
-        var baseline = RouterConfigLoader.Load(FixtureText(HyperQwen)).Engines[HyperQwen];
+        var baseline = specimen.Engine;
         using var baselineProvider = new DockerLifecycleProvider(baseline.Docker!, baseline.Name, deny);
         var definition = baseline.Catalog[parked.Model];
         var actual = Create(baselineProvider, baseline, definition, parked.Model, FindTier(definition, parked.Tier));
         var wrong = JsonNode.Parse(parked.Create.GetRawText())!;
         wrong["HostConfig"]!["ShmSize"] = 36 * GiB + 1;
         using var wrongDocument = JsonDocument.Parse(wrong.ToJsonString());
-        Assert.Equal("$.HostConfig.ShmSize", Difference(wrongDocument.RootElement, actual, "$"));
+        var wrongShm = 0;
+        var rejection = Assert.Throws<FailException>(() => Match(wrongDocument.RootElement, actual, parked.Key));
+        Assert.Contains($"{parked.Key}: mismatch at $.HostConfig.ShmSize. Expected ", rejection.Message, StringComparison.Ordinal);
+        wrongShm++;
         Match(parked.Create, actual, parked.Key);
+        return (mixedParserChecks, wrongShm);
     }
 
     private static void CompareSingleHyperQwen(EngineDefinition engine, NoHttp deny, Row row,
@@ -186,10 +192,10 @@ public sealed partial class SelectorDifferentialTests
         }
     }
 
-    private static int CheckRefusals()
+    private static int CheckRefusals(Dictionary<string, Specimen> specimens)
     {
         var count = 0;
-        var hyper = ParseToml(FixtureText(HyperQwen));
+        var hyper = ParseToml(specimens[HyperQwen].Text);
         var hyperDocker = (TomlTable)RawEngine(hyper, HyperQwen)["docker"]!;
         var resources = (TomlTable)hyperDocker["resources"]!;
         var gpu = (TomlTable)resources["gpu"]!;
@@ -209,7 +215,7 @@ public sealed partial class SelectorDifferentialTests
         Refuses(() => engine.Docker!.TargetPlans!.Resolve(HyperQwen, "swift-27b", "absent"),
             "profile is not in the captured catalog");
 
-        var strata = ParseToml(FixtureText("strata"));
+        var strata = ParseToml(specimens["strata"].Text);
         var strataResources = (TomlTable)((TomlTable)RawEngine(strata, "strata")["docker"]!)["resources"]!;
         var keyMount = TableRows(strataResources["bind_mounts"]).First();
         keyMount["target"] = "/run/fixture-token";
@@ -218,7 +224,7 @@ public sealed partial class SelectorDifferentialTests
 
         // Combine all six already valid engine tables without downgrading their authority.
         foreach (var name in OtherEngines)
-            ((TomlTable)strata["engine"]!).Add(name, RawEngine(ParseToml(FixtureText(name)), name));
+            ((TomlTable)strata["engine"]!).Add(name, RawEngine(ParseToml(specimens[name].Text), name));
         Refuses(() => LoadJson(strata, "strata"), "requires a dedicated single-engine configuration");
         return count;
 

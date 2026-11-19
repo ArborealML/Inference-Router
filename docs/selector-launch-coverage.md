@@ -128,8 +128,11 @@ pins the six original specimen hashes, the redacted hashes in their committed LF
 hashes and the original receipt hashes. The [selector reference](../tests/Arboreal.InferenceRouter.Tests/SelectorFixtures/selector-reference.json)
 contains the expected create document, accepted spellings, default, capacity and applicable
 device choices for each row. Its expected values were transcribed from the original
-records and serving branches. The verifier never uses the AIR specimens, production
-serialization or another AIR golden to derive those expectations.
+records and serving branches. Alternate expected payloads are derived from those
+archived selector rules. The original receipts identify the individual launches
+captured. Both the smoke check and the opt-in sweep validate the embedded
+inputs against the manifest and check the target inventory before any projection.
+The smoke check also verifies that this validation rejects a one-byte reference change.
 
 Run the cheap check used by default CI.
 
@@ -158,15 +161,21 @@ The five fixed-lane profiles retain their named counts. Each projection comes fr
 native config resolved through the production loader. AIR takes explicit effective
 settings in config, so different vectors require generating and loading different settings.
 
-The driver reports the 169 explicit spelling probes, 22 omitted-profile probes, 78
-format comparisons and the executed AIR refusals independently of that vector count.
-It verifies actual catalog `MaxContext` and `MaxSlots` separately from the backend command
-and environment. The HyperQwen DP2 `32k` declaration omits global `max_slots`, so AIR
-loads a default of one while `MAX_SEQS=4` applies per replica. MiniMax uses the production
-catalog lookup to resolve the original spelling and loaded `32k` default, then projects
-both omitted and explicit profiles with the original native settings. The comparator
-checks full property sets and preserves array order. A deliberate one-byte change to
-expected parked `HostConfig.ShmSize` must identify that exact field.
+The driver reports 169 unique explicit spelling probes, 22 unique omitted-profile
+probes, 78 format comparisons, two cross-format spelling readbacks and five executed
+AIR refusals independently of the create vector count. The cross-format readbacks use
+the recorded Qwen model alias with a tier alias and with an omitted profile. Catalog
+checks cover the target inventory, declared capacity and defaults, and the recorded
+model and tier spellings. Payload comparisons cover full property sets and ordered
+arrays. The HyperQwen DP2 `32k` declaration omits global `max_slots`, so AIR loads a
+default of one while `MAX_SEQS=4` applies per replica.
+
+MiniMax has no tier-specific Docker plan. The offline probe canonicalizes the original
+spelling, reads the configured `32k` default, and looks up that tier by name because
+`GetProfile` returns null for an omitted name. It compares omitted and explicit profile
+arguments using the original native Docker settings. This covers catalog lookup and
+create projection. The deliberately wrong parked `HostConfig.ShmSize` must fail through
+the same comparator as the valid payloads and identify that exact field.
 
 ### Measured Release run
 
