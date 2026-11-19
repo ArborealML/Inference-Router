@@ -1,11 +1,11 @@
 ---
 id: TASK-110
 title: Coordinate model engines that share one host with exclusive residency
-status: In Progress
+status: Waiting
 assignee:
-  - '@gpt-6.2-sol-lifecycle'
+  - '@gpt-6.2-astra'
 created_date: '2026-11-18T18:13:00Z'
-updated_date: '2026-11-19T09:27:00Z'
+updated_date: '2026-11-19T09:33:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -19,7 +19,7 @@ ordinal: 108000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Close stale route authority before the first occupancy probe in staged recovery and qualify cancellation and cleanup failures.
+Hosted CI and independent review of the PR #19 correction wake the coordinator for landing.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -48,5 +48,5 @@ Fence wrong target or missing publication before legacy recovery can settle or g
 
 Plan review on 3160a11 identified the legacy wrong-target recovery fallback and required a discriminating old grant and fresh-open positive. All four findings incorporated; lifecycle released to implement.
 
-[PR #19](https://github.com/ArborealML/Inference-Router/pull/19) passed hosted CI at ae393b4 and preserves the 1/1 paired case at 6ef4723. Review found exact applied-launch recovery probes occupancy before closing the incumbent. Close before the probe and verify old grants fail during and after an unsuccessful observation. Add focused cancellation after staging and after guarded publication, completion failure, stage I/O failure and drain-disposal failure controls. Verify refusal retains the exact applied launch, with no permits, bytes or repeated mutation on recovery. The injected path supports fresh switching and recovers only applied launches.
+[PR #19](https://github.com/ArborealML/Inference-Router/pull/19) preserves the paired 1/1 receipt at 6ef4723. Review identified stale incumbent authority during applied-launch recovery and missing failure controls. Published e7b951c closes after the exact match and before the first occupancy await. Six focused Release cases passed, covering denial during and after a held probe, untouched preflight, both cancellation cuts, completion, installation and drain-disposal faults, and fresh retry without duplicate effects. Correction review dispatched.
 <!-- SECTION:NOTES:END -->
