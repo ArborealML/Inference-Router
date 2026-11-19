@@ -5,9 +5,9 @@ title: >-
   engine just before it is claimed
 status: Waiting
 assignee:
-  - '@gpt-6.2-astra'
+  - '@chatswarm'
 created_date: '2026-11-17T23:07:00Z'
-updated_date: '2026-11-19T07:31:00Z'
+updated_date: '2026-11-19T07:42:00Z'
 labels:
   - scheduling
   - architecture
@@ -20,7 +20,7 @@ ordinal: 64000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-The injected admission path landed in PR #5. The release implementer’s transport handoff wakes preparation of the remaining completion/open check. Use injected callbacks to consume completion and profile wakes while closed, retain the exact queued ticket, then authorize one send after matching open. Production host integration consumes this evidence separately.
+Independent plan review of the single completion/open fixture wakes implementation. The injected admission path landed in PR #5. Production host integration consumes this evidence separately.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -39,7 +39,7 @@ The injected admission path landed in PR #5. The release implementer’s transpo
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Carry the final ranked ticket and its route generation through preparation. Release the router lock after selection. At first-write authorization take host admission, router and queue locks in that order. Recheck the exact ticket, model-bound capacity, free permits, thread room and original deadline. An explicit minimum context survives independently of tier inference. Count the physical use before releasing the guard and retain it through cleanup. Closed generations advance or park. Preserve the first candidate beyond the ranked group and publish reopen or capacity changes before waking dispatch outside locks.
+Use public Router.Start with the startup health probe held. Prepare one real ticket, close its generation, and observe an initially parked dispatcher. Deliver switch completion and profile separately through the event ring. After each, require a distinct rescan and repark of the same prepared ticket with zero grants, calls and bytes. Publish matching Open once. Require the original ticket, stamp and exact body once, one terminal and one release. Isolate startup, preparation and timer wakes. Reuse existing observers, injected sink and existing closure, owner and retirement controls.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
