@@ -19,7 +19,7 @@ ordinal: 108000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Lifecycle is binding the committed proof to its exact staged claim before delivery.
+Lifecycle is preparing the v0.12.86 landing with the qualified proof-binding correction.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -48,5 +48,5 @@ Review on 3160a11 required wrong-target recovery fencing and old-grant/fresh-ope
 
 [PR #19](https://github.com/ArborealML/Inference-Router/pull/19) preserves the paired 1/1 receipt at 6ef4723. Review identified stale incumbent authority during applied-launch recovery and missing failure controls. Published e7b951c closes after the exact match and before the first occupancy await. Six focused Release cases passed, covering denial during and after a held probe, untouched preflight, both cancellation cuts, completion, installation and drain-disposal faults, and fresh retry without duplicate effects. Both findings cleared review, all hosted checks passed, and PR #19 merged at 0b84766. Deadline equality in the enrolled path remains separate from fixture cancellation.
 
-Deadline fixture passed review and 1/1 at 8af4cdd. Combined 8b6a919 passed 7/7. Review of 0f6245a confirmed a foreign attempt with matching model/tier passes validation. Bind the exact attempt, target and staged claim before delivery. Reject substitutions with zero delivery, Open and permits. Check a throwing post-Open notification preserves Committed, actual Open and its error. Retain synchronous one-use stores, rollback under lock and closure before mismatched recovery. Historical readiness survives closed routes; mint and first write require exact Open.
+Deadline fixture passed review and 1/1 at 8af4cdd. Combined 8b6a919 passed 7/7. Review of 0f6245a found foreign proofs accepted on matching model/tier. Correction a99b91c passed 5/5: attempt, target and returned-proof substitutions refused before delivery; post-Open notification failure retained the committed decision, actual opening and original exception; recovered deadline passed. Independent correction review dispatched. Preserve historical readiness; mint and first write require exact Open.
 <!-- SECTION:NOTES:END -->
