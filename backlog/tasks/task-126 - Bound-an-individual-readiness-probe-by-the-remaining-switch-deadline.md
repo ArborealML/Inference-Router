@@ -1,11 +1,11 @@
 ---
 id: TASK-126
 title: Bound an individual readiness probe by the remaining switch deadline
-status: Waiting
+status: In Progress
 assignee:
-  - '@chatswarm'
+  - '@gpt-6.2-sol-shutdown'
 created_date: '2026-11-18T20:43:00Z'
-updated_date: '2026-11-19T10:59:00Z'
+updated_date: '2026-11-19T11:15:00Z'
 labels: []
 milestone: m-4
 dependencies: []
@@ -16,7 +16,7 @@ ordinal: 124000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-The independent review of the remaining readiness controls wakes Shutdown for implementation.
+Shutdown is implementing the remaining capacity, alternate-engine and typed-stop controls.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -33,7 +33,7 @@ The independent review of the remaining readiness controls wakes Shutdown for im
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Pre-code review dispatched on 33debba. Hold the retired response on A until an independent healthy engine B finishes a request. Exercise typed enrolled refusal through real runtime unwind after stop wins. Use five in-budget slot inputs: omitted and zero for explicit and resolved-default tiers, plus resolved-default positive. Fix the verified route and fitting window. During the default positive proof hook, witness independent acquisition of both short locks while the outer reservation remains held. Reuse existing named success, equality and joined delivery evidence.
+Review on 33debba approved five in-budget slot cases and two races. Supply omitted and numeric-zero observation inputs for explicit and real resolved-default calls; both normalize to zero. Keep binding and fitting window fixed. On default positive verify both short locks are independently acquirable during proof delivery under the reservation, then send after Open. Keep an independent healthy engine serving while the retired reply is held: same-engine recovery cannot prove alternate-engine progress. Capture the typed staged stop verdict before runtime branching and verify one cancelled terminal through late cleanup. Closed retry hints are allowed; preserve slot-refusal semantics and production gates. Reuse equality, named-positive and join receipts.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
