@@ -282,7 +282,7 @@ public sealed class QueueDispatchTests
                 {
                     Name = "fake",
                     Endpoint = new Uri("http://engine.invalid/v1/"),
-                    Health = new HealthProbeDefinition { IntervalMs = 3_600_000 },
+                    Health = new HealthProbeDefinition { Path = "/props", IntervalMs = 3_600_000 },
                     Catalog = new Dictionary<string, EngineModelDefinition>(StringComparer.Ordinal)
                     {
                         ["a"] = new() { Name = "a" },
