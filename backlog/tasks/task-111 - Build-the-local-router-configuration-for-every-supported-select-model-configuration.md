@@ -3,11 +3,11 @@ id: TASK-111
 title: >-
   Build the local router configuration for every supported select-model
   configuration
-status: Waiting
+status: Preparing
 assignee:
-  - '@gpt-6.2-astra'
+  - '@gpt-6.2-sol-config'
 created_date: '2026-11-18T18:15:00Z'
-updated_date: '2026-11-19T13:31:00Z'
+updated_date: '2026-11-19T13:34:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -19,7 +19,7 @@ ordinal: 109000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Hosted checks on [PR #30](https://github.com/ArborealML/Inference-Router/pull/30) wake the coordinator. The parking feature passed bounded static review, 67 focused Release cases, the mixed config load and warning-free AOT. Landed coverage is 63/75 until merge. Public config input rejects explicit null shared memory; the new tier DTO rejects it directly. The pre-existing common DTO treats direct null assignment as omission and is outside the tier change. The broader comparison and redacted closure criteria remain open.
+Config is preparing the comparison of alternate selector settings. [PR #30](https://github.com/ArborealML/Inference-Router/pull/30) merged at 316899c after review and hosted CI passed. Twelve parking defaults bring landed offline launch coverage to all 75 normalized targets across nine models. The parking change passed 67 focused Release cases, the mixed config load and warning-free Native AOT. Public files and the new tier DTO reject explicit null shared memory. Direct null assignment to the older common DTO retains its omission semantics.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -32,7 +32,7 @@ Hosted checks on [PR #30](https://github.com/ArborealML/Inference-Router/pull/30
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Freeze positive Int64 tier SHM or inherit common SHM. Validate superseded common settings and project before both provider early returns. Reject misplaced or shadowed declarations in both formats, including engine-only and model-only inputs. Use one mixed fixture for twelve defaults, per-model cache and environment order, max-to-parked-to-max byte identity, cache/sequence boundaries, zero-write refusal and a SHM-only digest difference. Run focused Release, config-only validation and Native AOT. Live parking requires independent host RAM verification including the 10 GiB reserve after predecessor stop.
+Establish whether a single nine-model configuration can represent the inventoried defaults and pass a config-only load. Compare effective launch settings across alternate cache sizes, lane counts, device choices and utilization using the existing selector matrix. Identify combinations that require a config change or lack representation. Update the redacted coverage report from those comparisons. Live parking still requires independent post-stop host RAM verification including the 10 GiB reserve.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
