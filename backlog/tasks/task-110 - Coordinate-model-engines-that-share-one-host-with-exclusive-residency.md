@@ -1,11 +1,11 @@
 ---
 id: TASK-110
 title: Coordinate model engines that share one host with exclusive residency
-status: Preparing
+status: Waiting
 assignee:
-  - '@gpt-6.2-sol-lifecycle'
+  - '@chatswarm'
 created_date: '2026-11-18T18:13:00Z'
-updated_date: '2026-11-19T07:27:00Z'
+updated_date: '2026-11-19T07:38:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -19,7 +19,7 @@ ordinal: 108000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Implement exclusive residency for cooperating managed engines sharing a physical host group. The host mutation path retains authority through readiness and reconciles every uncertain provider operation after restart.
+Independent review of the causal-drain fixture plan wakes implementation. Establish exclusive residency for cooperating engines sharing one host and reconcile uncertain mutations after restart.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -36,7 +36,7 @@ Implement exclusive residency for cooperating managed engines sharing a physical
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Implement the reviewed offline partition observer. Require exact incumbent ownership and generation-bound retirement before stop. Bind each fresh observation to the full resource partition, owner and enrollment revisions, query, epoch, predecessor and frozen successor. Fence every modeled writer through create entry. Test a revision change followed by restoration of the original visible state. Missing preflight proof leaves zero successor sends, acceptances, attempts or effects. Refusal after submission may retain a send and acceptance but leaves zero attempts, effects or applied result. Reopen prepared stops and launches with fresh evidence and the original identities. Reconcile dispatching operations only by exact evidence. A recovered stop requires fresh vacancy before successor submission. A recovered launch requires its exact receipt and effect.
+Use combined base 7ec1c20 for one offline handoff. Hold an authorized application write before backend delivery. Close submission and capture the full use set under the same ordering. A logical timeout and an expired drain leave one physical use and zero stop or create. Restart only the controller. Query the surviving issuer and backend; reject mismatched generation, local close and incomplete cleanup. Bind terminal evidence to the invocation, full predecessor, process, route generation and closed set. Retire once after exact terminal and cleanup. A newly authorized drain may then issue the exact stop and frozen successor create through existing ledgers. Keep successor ingress closed. Dispatch and production authority have separate prerequisites.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
