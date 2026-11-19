@@ -12,6 +12,8 @@ public partial class RefusalCategoryTests
     private const string ReadinessWrite = "state.FailureReason = failure.Reason;";
     private const string ReadinessDefault = "_ => SwitchReason.HealthTimeout,";
     private const string RecordedDefault = "Failed(recorded is { Length: > 0 } why ? why : SwitchReason.SwitchError)";
+    private const string FailedInitializer =
+        """new SwitchResult(SwitchOutcome.Ready, null) { Outcome = SwitchOutcome.Failed, Detail = "free prose" }""";
 
     private static readonly ExpressionSyntax RecordedFallback =
         SyntaxFactory.ParseExpression(RecordedDefault);
@@ -57,6 +59,10 @@ public partial class RefusalCategoryTests
         nameof(ViolationKind.RecordedWrite), "state.FailureReason += SwitchReason.LaunchFailed")]
     [InlineData(ProviderWrite, "state.FailureReason ??= SwitchReason.LaunchFailed;",
         nameof(ViolationKind.RecordedWrite), "state.FailureReason ??= SwitchReason.LaunchFailed")]
+    [InlineData(ProviderWrite, """Interlocked.Exchange(ref state.FailureReason, SwitchReason.LaunchFailed + "!");""",
+        nameof(ViolationKind.RecordedWrite), "ref state.FailureReason")]
+    [InlineData(ProviderWrite, """_ = new Dictionary<int, string> { [0] = SwitchReason.LaunchFailed + "!" }.TryGetValue(0, out state.FailureReason);""",
+        nameof(ViolationKind.RecordedWrite), "out state.FailureReason")]
     [InlineData(ProviderWrite, ReadinessWrite, nameof(ViolationKind.RecordedWrite), "state.FailureReason = failure.Reason")]
     [InlineData(ReadinessWrite, ReadinessWrite + " " + ReadinessWrite,
         nameof(ViolationKind.RecordedWrite), "state.FailureReason = failure.Reason")]
@@ -64,6 +70,8 @@ public partial class RefusalCategoryTests
         nameof(ViolationKind.FailedConstructor), """new SwitchResult(SwitchOutcome.Failed, "free prose")""")]
     [InlineData(DirectExit, """return new(new(SwitchOutcome.Failed, "free prose"));""",
         nameof(ViolationKind.FailedConstructor), """new(SwitchOutcome.Failed, "free prose")""")]
+    [InlineData(DirectExit, "return new(canonical.Length == 0 ? " + FailedInitializer +
+        " : SwitchResult.Failed(SwitchReason.NoLifecycleOwner));", nameof(ViolationKind.FailedConstructor), FailedInitializer)]
     [InlineData(DirectExit, "return new(SwitchResult.Failed(SwitchReason.Unknown));",
         nameof(ViolationKind.ReasonReference), "SwitchReason.Unknown")]
     [InlineData(RecordedDefault, "Failed(recorded is { Length: > 0 } why ? why : SwitchReason.HealthTimeout)",
@@ -167,6 +175,11 @@ public partial class RefusalCategoryTests
                     SyntaxName(assignment.Left) is "Detail" or "Outcome":
                     Reject(ViolationKind.CloneWrite, assignment);
                     break;
+                case ArgumentSyntax argument when
+                    (argument.RefKindKeyword.Kind() is SyntaxKind.RefKeyword or SyntaxKind.OutKeyword) &&
+                    WritesRecordedReason(argument.Expression):
+                    Reject(ViolationKind.RecordedWrite, argument);
+                    break;
                 case AssignmentExpressionSyntax assignment when WritesRecordedReason(assignment.Left):
                     if (SyntaxFactory.AreEquivalent(assignment, MappedWrite, topLevel: false) &&
                         assignment.Ancestors().OfType<MethodDeclarationSyntax>().FirstOrDefault()?.Span == finishReadiness?.Span &&
@@ -234,10 +247,15 @@ public partial class RefusalCategoryTests
     {
         if (creation is ObjectCreationExpressionSyntax explicitCreation && SyntaxName(explicitCreation.Type) != "SwitchResult")
             return false;
-        // For target-typed new, inspect its own arguments and leave nested creations to their own visit.
-        return creation.ArgumentList?.DescendantNodes(node => node is not BaseObjectCreationExpressionSyntax)
-            .OfType<MemberAccessExpressionSyntax>().Any(reference => MemberOf(reference, "SwitchOutcome") == "Failed") == true;
+        return ContainsFailedOutcome(creation.ArgumentList) ||
+            creation.Initializer?.Expressions.OfType<AssignmentExpressionSyntax>()
+                .Any(write => SyntaxName(write.Left) == "Outcome" && ContainsFailedOutcome(write.Right)) == true;
     }
+
+    // Leave nested creations to their own visit, including when their type is implicit.
+    private static bool ContainsFailedOutcome(SyntaxNode? expression) =>
+        expression?.DescendantNodesAndSelf(node => node is not BaseObjectCreationExpressionSyntax)
+            .OfType<MemberAccessExpressionSyntax>().Any(reference => MemberOf(reference, "SwitchOutcome") == "Failed") == true;
 
     private static bool WritesRecordedReason(ExpressionSyntax left) => left switch
     {
@@ -261,6 +279,7 @@ public partial class RefusalCategoryTests
             return;
         }
 
+        // The behavior tests pin which category each named miss produces.
         var defaults = 0;
         foreach (var arm in mapping.Arms)
         {
