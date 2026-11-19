@@ -7,7 +7,7 @@ status: Waiting
 assignee:
   - '@gpt-6.2-sol-scheduling'
 created_date: '2026-11-17T02:41:00Z'
-updated_date: '2026-11-19T19:49:00Z'
+updated_date: '2026-11-19T19:59:00Z'
 labels:
   - engine
   - lifecycle
@@ -20,7 +20,7 @@ ordinal: 25000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-The independent plan verdict will wake Scheduling. The November 19 plan review covers the queued native switch owner and logical accounting on b25c259. Production sources still match that base after PR #35. The reviewer is checking whether a provisional reservation changes a reachable decision before host enrollment and which existing controls can cover it.
+A production enrollment path that can close admission and drain the incumbent before stop will wake this task. Defer the owner-only change. Review on b25c259 confirmed that selection already charges the ticket once and only the successful installer owns the switch. Attaching an identity alone changes no drain, stop or first-send outcome.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -36,7 +36,7 @@ The independent plan verdict will wake Scheduling. The November 19 plan review c
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Propose carrying the selected ticket and its single existing logical charge into readiness. Attach the owner only when that ticket installs the switch claim. Preserve direct starters, independent joiners, cancellation, terminal delivery and eventual release. Reuse the held fake-native provider for exact send and cancellation controls. Enrolled closure, authoritative physical drain, protected Ready-to-send promotion and ambiguous effects remain open.
+Deliver the reservation with its first production consumer. Preserve the selected ticket’s single logical charge and keep direct/admin switches ownerless. Before native stop, close admission and exclude the triggering provisional owner from the drain while accounting for outstanding physical inference uses. Local HTTP uses include health traffic and cannot prove backend retirement. Coordinate the interface with host enrollment, avoiding a circular prerequisite. Reuse existing held-provider and cancellation evidence when qualifying the combined behavior.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
