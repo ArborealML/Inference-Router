@@ -1,11 +1,11 @@
 ---
 id: TASK-129
 title: Withdraw idle readiness on shutdown and report the winning switch outcome
-status: Waiting
+status: In Progress
 assignee:
-  - '@chatswarm'
+  - '@gpt-6.2-sol-shutdown'
 created_date: '2026-11-18T21:09:00Z'
-updated_date: '2026-11-19T12:03:00Z'
+updated_date: '2026-11-19T12:11:00Z'
 labels: []
 milestone: m-2
 dependencies: []
@@ -16,7 +16,7 @@ ordinal: 127000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-The verdict on the immediate host arbitration plan dispatched November 19 wakes the coordinator. Idle shutdown landed in [PR #26](https://github.com/ArborealML/Inference-Router/pull/26) at 9f42570. Its named Release control passed 1/1 and all hosted checks passed. The older injected completion ordering remains open.
+Shutdown is implementing terminal arbitration for the older injected host callback. Idle shutdown landed in [PR #26](https://github.com/ArborealML/Inference-Router/pull/26); its focused test and hosted checks passed.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -28,15 +28,11 @@ The verdict on the immediate host arbitration plan dispatched November 19 wakes 
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Reuse the existing capability withdrawal field set in the retrying versioned stop publication. Clear health and claim provenance while retaining roster and marker. One offline test starts with a successful idle probe, disposes the runtime, and checks the version, roster, withdrawn capability, model-only readiness and first-write refusal using a live token.
-
-For the older injected host path, review exact claim and proof revalidation after the provisional publication hook, followed by terminal arbitration under the transition lock after host acceptance. Deliver the winning event outside the lock. Check whether the proposed single held-hook case distinguishes both stop intervals and observes full unwind.
+After the provisional proof hook, revalidate the exact pending claim and proof under transition. After host acceptance, select Ready and install its delivery signal together under transition. Deliver outside the lock; release waiters through cleanup even on exceptions. Serialize selection of Failed on a still-pending immediate-host refusal with stop. Preserve any selected stop or Ready when host I/O errors become failed return values. Exercise stop before acceptance, stop after acceptance before Complete, and converted cleanup failure after Ready. Await full unwind before final assertions.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-The independent plan review on dd44ca5 passed the idle fix. Historical waiter results use the committed window and delivery barrier independently of current health. Existing PRs #4, #8, #23 and #25 cover the legacy and staged winner orderings. Criterion 2 remains open for the older injected host path: it publishes proof while pending, then can emit completion after stop seals cancellation. Shutdown owns the separate follow-up plan for arbitration and a deterministic held-proof test. Ordinary RouterCore supplies no enrollment.
-
-Idle review confirmed the unconditional stop publication fences older snapshots and leaves claim-owned terminal results intact. The single idle case discriminates the stale model-only answer. Broader disposal race coverage was outside this change. The immediate host plan also accounts for cleanup exceptions converted to ordinary failed results after terminal selection.
+Independent plan review on 087d5b9 confirmed the provisional callback returns before host acceptance, and Complete is separate. The earlier single test could only witness the first interval. Use distinct host proof expectations for the two stop orders. A cleanup IOException can become a normal failed report after Ready; exception filters alone cannot preserve the winner. Reuse existing admitted/refused evidence. Ordinary RouterCore supplies no enrollment.
 <!-- SECTION:NOTES:END -->
