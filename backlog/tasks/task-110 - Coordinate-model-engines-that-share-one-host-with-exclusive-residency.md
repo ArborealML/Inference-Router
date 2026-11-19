@@ -1,11 +1,11 @@
 ---
 id: TASK-110
 title: Coordinate model engines that share one host with exclusive residency
-status: Waiting
+status: In Progress
 assignee:
-  - '@gpt-6.2-astra'
+  - '@gpt-6.2-sol-lifecycle'
 created_date: '2026-11-18T18:13:00Z'
-updated_date: '2026-11-19T08:52:00Z'
+updated_date: '2026-11-19T08:59:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -19,7 +19,7 @@ ordinal: 108000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Independent plan review of closed-route staging on the landed host-drain base wakes implementation.
+Implement offline host-route staging through the common coordinator. A declined publication retains the exact applied launch and leaves both routes closed after disposal.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -36,7 +36,7 @@ Independent plan review of closed-route staging on the landed host-drain base wa
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Exercise the common launch-completion entry through an injected staged guard. Retain the exact LaunchApplied operation, instance, epoch and plan through refusal and disposal. Verify old and staged authority cannot mint or write. A new coordinator revalidates that same instance with one create total, stages a fresh generation and completes while closed. Only explicit matching Open permits the exact send. Keep fallible storage before visibility. Runtime deadlines, enrolled dispatch and production authority remain separate. Independent review dispatched against 3160a11.
+Fence wrong target or missing publication before legacy recovery can settle or grant. Bind original launch-owned plan, operation, instance and epoch. Finish fallible staging while closed. Retain the applied record through refusal and success. Disposal grants nothing. Only successful completion followed by explicit Open of the still-current generation authorizes inference. In one paired fixture first send on the eligible old route and hold another unused grant. Decline a valid publication and verify zero new permits/bytes, then probe wrong target without relaunch. Recover with a new coordinator, verify no mint through Complete or stale Open, and send once after fresh matching Open with one create total. Keep injection internal; runtime deadline, dispatch, admission and production activation remain separate.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
@@ -49,4 +49,6 @@ Independent review of c2db0ee accepted all three dispositions, and hosted CI pas
 Published df6174e preserves all seven reviewed project and fixture blobs from c2db0ee. Against its main parent the SPEC adds only the .79 entry and corrected scope under the existing .80 header. Both parent diff checks passed.
 
 [PR #14](https://github.com/ArborealML/Inference-Router/pull/14) merged at 3160a11 after the reconciled df6174e passed hosted CI. This qualifies offline causal retirement with a surviving issuer and independent backend acknowledgment.
+
+Plan review on 3160a11 identified the legacy wrong-target recovery fallback and required a discriminating old grant and fresh-open positive. All four findings incorporated; lifecycle released to implement.
 <!-- SECTION:NOTES:END -->
