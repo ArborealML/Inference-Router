@@ -3,11 +3,11 @@ id: TASK-111
 title: >-
   Build the local router configuration for every supported select-model
   configuration
-status: Waiting
+status: In Progress
 assignee:
-  - '@gpt-6.2-astra'
+  - '@gpt-6.2-sol-config'
 created_date: '2026-11-18T18:15:00Z'
-updated_date: '2026-11-19T14:37:00Z'
+updated_date: '2026-11-19T14:39:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -19,7 +19,7 @@ ordinal: 109000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-The verifier review and hosted build and test job on [PR #31](https://github.com/ArborealML/Inference-Router/pull/31) wake the coordinator. Independent review accepted the docs-only wording on bb8d4ac: three lane assertions and one raw zero-SHM refusal expectation changed. Its board and release-gate checks passed. The sweep at 80febe5 measured 10,150 distinct vectors, and the smoke passed at fb16200. Disposal, fixed-lane and raw refusal reviews passed. [PR #30](https://github.com/ArborealML/Inference-Router/pull/30) landed 75 normalized defaults. Unified configuration, alternate reconfiguration, protected credential bind, published ports and host authority remain open.
+Config owns one verifier correction on [PR #31](https://github.com/ArborealML/Inference-Router/pull/31). Review of 63ea6db confirmed that the wrong-SHM control bypasses the positive comparison assertion and a standalone sweep skips fixture hash checks. The 10,150-vector receipt stays attributed to 80febe5; its wording passed at bb8d4ac. Unified topology, per-option reconfiguration, protected credential bind, published ports and host authority remain open.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -32,7 +32,7 @@ The verifier review and hosted build and test job on [PR #31](https://github.com
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Use one opt-in direct sweep targeting 10,150 distinct positive keys. Keep recurring CI to a cheap fixture check. Verify device choices and key uniqueness. Track redacted selector-derived expectations, reviewable rule provenance, permitted substitutions and hashes. Distinguish clone reproducibility from original source authentication. Canonicalize MiniMax model spelling, read its configured 32k profile, look up that named tier and project omitted and explicit forms against the independent reference. Label selector invalids by source, original receipt or execution; count AIR probes separately. Compare complete payloads and capacity, pin a wrong-SHM control, and report measured counts, elapsed time and exact discrepancies on the qualified revision.
+Exercise the real comparison assertion with wrong SHM and count the observed failure. Verify manifest hashes and inventory before projection, reject tampering and allowlist eight embedded resources. Count distinct original spelling keys and require five AIR refusals. Compare representative alias/default resolution across formats and bound catalog claims to measured fields. Retain the approved MiniMax canonical/default common projection and distinguish derived selector expectations from captured launches. Qualify one correction with the cheap smoke and opt-in sweep.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
