@@ -1,11 +1,11 @@
 ---
 id: TASK-110
 title: Coordinate model engines that share one host with exclusive residency
-status: Preparing
+status: In Progress
 assignee:
   - '@gpt-6.2-sol-lifecycle'
 created_date: '2026-11-18T18:13:00Z'
-updated_date: '2026-11-19T23:37:38Z'
+updated_date: '2026-11-19T23:47:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -21,7 +21,7 @@ ordinal: 108000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Lifecycle is amending the closed-receipt plan after review on 98db2b2. Exercise owner-only recovery through the receipt entry and both switch wrappers with original and competing intent. Establish the slot and current enrollment from independent provenance. Verify the local checkpoint under issue exclusion at both worker acceptance and issue, including rollback after coordinator loss. After Applied, distinguish exact historical lookup from fresh closed-ingress authorization when owner or ingress authority changes. Reuse existing controls and keep serving and host activation outside this increment.
+Lifecycle is implementing the reviewed internal initial-launch receipt and refusal path on ac4d2be. The amended plan passed independent review on 942d220. Fence owner-only recovery and competing requests through both legacy switch wrappers and the receipt entry. Verify enrollment from trusted scope and actual checkpoint freshness at worker acceptance and issue. After Applied, historical lookup may return the original bytes; a fresh closed-ingress receipt also requires current owner and ingress authority. SPEC .96 is reserved.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
