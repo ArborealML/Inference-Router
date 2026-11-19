@@ -3,11 +3,11 @@ id: TASK-111
 title: >-
   Build the local router configuration for every supported select-model
   configuration
-status: Waiting
+status: Preparing
 assignee:
-  - '@chatswarm'
+  - '@gpt-6.2-sol-config'
 created_date: '2026-11-18T18:15:00Z'
-updated_date: '2026-11-19T13:36:00Z'
+updated_date: '2026-11-19T13:53:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -19,7 +19,7 @@ ordinal: 109000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-The independent selector comparison plan review dispatched November 19 wakes the coordinator. All 75 normalized model and tier defaults have landed across nine models, including twelve parking defaults in [PR #30](https://github.com/ArborealML/Inference-Router/pull/30). The dedicated-engine topology guard requires six native configurations. Both remaining criteria stay open. Public shared-memory inputs and the tier DTO reject explicit null; the existing common DTO treats direct null assignment as omission.
+Config is revising the offline comparison plan following review on 316899c. [PR #30](https://github.com/ArborealML/Inference-Router/pull/30) completed 75 normalized defaults across nine models. Six dedicated inputs preserve native ownership. The topology guard rules out a unified native input. Both remaining criteria stay open. Public shared-memory inputs and the tier DTO reject explicit null; the older common DTO treats direct null assignment as omission.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -32,7 +32,7 @@ The independent selector comparison plan review dispatched November 19 wakes the
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Review the smallest defensible offline comparison of actual Docker create payloads with independent selector expectations. Proposed batch covers 10,148 projections including utilization spelling, cache, lane and ordered device choices. Assess factoring independent dimensions and structural evidence for continuous utilization. Preserve explicit router ownership and identify credential mount, published port, per-option reconfiguration and host qualification gaps in the report before tooling.
+Specify a portable redacted comparison using pinned selector-derived expectations independent of AIR. Resolve spellings and omitted defaults through AIR and compare catalog capacity and complete serialized create fields, preserving order, omissions and ownership differences. Pin wrong-field detection, parser equivalence, range boundaries and utilization formatting. Verify device cardinality. Factor the finite sweep only where both implementations demonstrate independence and mixed corners agree; compare costs against one batched sweep. Report six config loads, variant reconfiguration, credential bind and published-port discrepancies separately. Host evidence remains with the activation dependencies.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
