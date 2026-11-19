@@ -3,9 +3,9 @@ id: TASK-126
 title: Bound an individual readiness probe by the remaining switch deadline
 status: Waiting
 assignee:
-  - '@gpt-6.2-astra'
+  - '@gpt-6.2-sol-shutdown'
 created_date: '2026-11-18T20:43:00Z'
-updated_date: '2026-11-19T06:57:00Z'
+updated_date: '2026-11-19T10:03:00Z'
 labels: []
 milestone: m-4
 dependencies: []
@@ -16,7 +16,7 @@ ordinal: 124000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-The readiness loop checks its deadline before calling the state and model endpoints. A pending HTTP call can outlive the remaining budget. Preserve external cancellation and fail the attempt through its existing terminal policy.
+Lifecycle’s pinned host change with the typed publication result wakes Shutdown to integrate the enrolled engine path.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -39,5 +39,5 @@ Use one monotonic readiness budget across state headers and body, model discover
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Legacy readiness and local HTTP cleanup landed in [PR #4](https://github.com/ArborealML/Inference-Router/pull/4). The reviewed two-ticket fixture in [PR #8](https://github.com/ArborealML/Inference-Router/pull/8#issuecomment-7002124407) passed both targeted Release rows. The stopped engine granted neither ticket a send, and the open engine accepted one exact POST. Enrolled readiness remains open. PR #8 integration and the enrolled host splice wake further qualification.
+Legacy readiness and local HTTP cleanup landed in [PR #4](https://github.com/ArborealML/Inference-Router/pull/4). The two-ticket control in [PR #8](https://github.com/ArborealML/Inference-Router/pull/8) passed both rows: the stopped engine granted neither ticket a send, and the open engine accepted one exact POST. For the offline enrolled case, Lifecycle owns coordinator, staging and the single recovered-launch fixture. Shutdown owns EngineRuntime and its host lifecycle partial. Build on the exact host child, reuse its launch-owned deadline and the existing guarded CAS and delivery signal, and consume the typed terminal outcome before generic launch failure. Preserve production capacity gates.
 <!-- SECTION:NOTES:END -->
