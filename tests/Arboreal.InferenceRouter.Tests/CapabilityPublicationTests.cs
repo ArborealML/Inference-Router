@@ -208,6 +208,38 @@ public sealed class CapabilityPublicationTests
     private static ServingProfile Profile(string name, long window) =>
         new() { Name = name, MaxContext = window };
 
+    [Fact]
+    public async Task IdleDisposalWithdrawsReadinessAndPreservesTheRoster()
+    {
+        using var handler = new ProbeHandler("m")
+        {
+            ContextWindows = new Dictionary<string, long> { ["m"] = 131_072 },
+        };
+        await using var engine = NewEngine(Def(modelContextPath: "meta.n_ctx"), new ScriptedProvider(), handler);
+
+        Assert.True(await engine.ProbeHealthOnceAsync(CancellationToken.None));
+        var live = engine.Capability;
+        Assert.True(live.Healthy);
+        Assert.Null(live.SwitchingToward);
+        Assert.True(engine.IsReadyFor("m", null));
+        Assert.Equal(131_072, live.ModelContextWindows["m"]);
+        Assert.Equal(8_192, live.Serving.WindowFor("m"));
+
+        await engine.DisposeAsync();
+
+        var stopped = engine.Capability;
+        Assert.Equal(live.Version + 1, stopped.Version);
+        Assert.Equal(live.LoadedModels, stopped.LoadedModels);
+        Assert.Null(stopped.SwitchingToward);
+        Assert.False(stopped.Healthy);
+        Assert.False(stopped.HealthFromClaim);
+        Assert.Empty(stopped.ModelContextWindows);
+        Assert.Equal(default, stopped.Serving);
+        Assert.Null(stopped.SwitchProof);
+        Assert.False(engine.IsReadyFor("m", null));
+        Assert.False(engine.TryBeginForward(CancellationToken.None));
+    }
+
     private static async Task WaitUntil(Func<bool> condition, int timeoutMs = 10_000)
     {
         var deadline = DateTimeOffset.UtcNow + TimeSpan.FromMilliseconds(timeoutMs);

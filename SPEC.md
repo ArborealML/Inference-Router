@@ -1,6 +1,6 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.87)
+Status: draft, continuously revised (v0.12.89)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
@@ -352,6 +352,8 @@ daemon transaction per engine. 137 tests green.
   that answers no `upload_url`, an upload that dies or answers no asset id, an asset name listed twice on
   the release, and a tag that moves after the first resolve. No tag has run the gate: still configured,
   not proven.
+- v0.12.89 — engine shutdown withdraws current health and readiness even when idle and retains
+  the last observed model roster (§5.5).
 - v0.12.87 — offline Docker serving tiers can replace the common container command with literal
   arguments. General DeepSeek projects eight numeric context arguments without changing tier names (§7).
 - v0.12.86 — qualify original-launch deadline equality, exact proof binding and guarded Open in
@@ -2295,8 +2297,10 @@ Temporary capacity loss parks the ticket. A definitive refusal settles once with
   the latch before joining or claiming a switch. Shutdown records `RouterStopped` for the installed attempt under that
   gate, then settles readiness and cancels the engine's switch token after releasing the gate. The linked tokens
   release callers waiting for the switch lock as well as for readiness. Either wake-up yields the same recorded
-  switch outcome. The transaction keeps its marker until it unwinds and clears the marker itself. A proof that has
-  not committed when shutdown wins is withdrawn before the marker clears. If readiness or failure committed first,
+  switch outcome. Shutdown also publishes a newer capability snapshot with health, health provenance,
+  windows, serving capacity and proof withdrawn. It retains the last reported model roster as history.
+  An idle engine stops answering model-only readiness as soon as this snapshot is published.
+  The transaction keeps its marker until it unwinds and clears the marker itself. If readiness or failure committed first,
   that outcome remains available to its waiter under the ordinary resume rules. At expiry the same gate answers from
   those rules first. A caller that would still need another claim then receives `RouterStopped` if shutdown has
   latched, even if the foreign attempt it waited on has already finished. The public switching flag is derived

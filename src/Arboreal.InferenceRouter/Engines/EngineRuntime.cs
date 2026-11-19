@@ -510,18 +510,12 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
 
     private void WithdrawDiscoveryOnStop()
     {
-        // A committed switch can still owe its waiter Ready. Retire discovery and fence in-flight
-        // polls here while keeping the health evidence needed to deliver that outcome.
+        // Fence in-flight polls even if the snapshot is already unknown. The retained roster
+        // is historical, and a committed switch delivers its own outcome from the claim.
         while (true)
         {
             var cur = Capability;
-            var retired = cur with
-            {
-                Version = cur.Version + 1,
-                ModelContextWindows = EngineCapability.NoModelContextWindows,
-                Serving = default,
-                SwitchProof = null,
-            };
+            var retired = WithoutProbeProof(cur);
             if (Interlocked.CompareExchange(ref _cap, retired, cur) == cur) return;
         }
     }
