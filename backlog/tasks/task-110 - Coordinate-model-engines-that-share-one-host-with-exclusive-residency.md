@@ -1,11 +1,11 @@
 ---
 id: TASK-110
 title: Coordinate model engines that share one host with exclusive residency
-status: In Progress
+status: Preparing
 assignee:
   - '@gpt-6.2-sol-lifecycle'
 created_date: '2026-11-18T18:13:00Z'
-updated_date: '2026-11-19T07:05:00Z'
+updated_date: '2026-11-19T07:27:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -42,5 +42,5 @@ Implement the reviewed offline partition observer. Require exact incumbent owner
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-The offline checkpoint and ledger landed in [PR #6](https://github.com/ArborealML/Inference-Router/pull/6). [PR #9](https://github.com/ArborealML/Inference-Router/pull/9) passed 15 focused vacancy cases at 8302cf8 and hosted CI at bd0c1a4. Review found the independent predecessor comparison omits the launch operation and plan identity. Bind the full launch and stored stop effect. Test a different launch ID with the same instance and epoch, and an old owner observation. Existing generation-change tests exercise revalidation. Demonstrate writer exclusion at daemon entry with a competing process and a successful write after release. Verify unchanged daemon residency and absent issue decision on fenced refusal. Production authority remains unqualified.
+The checkpoint and synthetic ledger landed in [PR #6](https://github.com/ArborealML/Inference-Router/pull/6). [PR #9](https://github.com/ArborealML/Inference-Router/pull/9) at b7a9ac9 passed 18 offline vacancy cases with the subprocess probe rebuilt. Review corrections bind the full predecessor and checkpoint stop effect, detect mismatched operation identity and stale owner evidence, and hold a competing facts writer through daemon entry. Merged at 47eaced after green hosted CI and independent review. Early owner refusals prove zero submission; downstream decision and terminal counts are separately pinned at the daemon-entry guard. Prepare the causal-drain and physical-retirement plan for the single host. Enforced host coverage, physical retirement and instance-bound admission remain prerequisites for production activation.
 <!-- SECTION:NOTES:END -->

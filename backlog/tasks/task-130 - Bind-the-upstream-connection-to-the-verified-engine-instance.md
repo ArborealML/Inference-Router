@@ -1,11 +1,11 @@
 ---
 id: TASK-130
 title: Bind the upstream connection to the verified engine instance
-status: Preparing
+status: In Progress
 assignee:
   - '@gpt-6.2-sol-release'
 created_date: '2026-11-18T22:19:00Z'
-updated_date: '2026-11-19T07:06:00Z'
+updated_date: '2026-11-19T07:27:00Z'
 labels: []
 milestone: m-4
 dependencies: []
@@ -16,9 +16,7 @@ ordinal: 128000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-The TASK-64 implementation handoff wakes this approved offline transport slice.
-
-Bind the first upstream write to the verified engine instance. The [internal host enrollment seam](https://github.com/ArborealML/Inference-Router/commit/ad1790e) supports fake-issuer qualification. TASK-118 integrates this transport with profile resolution and dispatch. TASK-25 and TASK-64 own counted admission and drain.
+Prepare the reviewed offline instance transport for landing. Bind the first upstream write to the exact verified instance and grant. TASK-118 integrates profile resolution and dispatch. TASK-25 and TASK-64 own counted admission and drain.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -38,5 +36,5 @@ Use one authenticated application stream per invocation. Freeze the enrollment, 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-The accepted admission handoff releases the single-host fixture work. Consolidate existing verified transport receipts and qualify the remaining issuer and first-write binding on the preserved candidate. Production enrollment remains gated.
+Exact-grant first-write validation at 0059208 passed 26 focused Release cases and server Native AOT with zero trim warnings. The substitute grant reaches the write check and yields zero bytes; the matching grant sends the exact body. Two transport objects share one fake issuer and cannot reuse an invocation. The same-container restart control passed. Review accepted the shared-issuer behavior. Add a distinct grant wrapping the same stream and invocation to isolate object identity. The issuer owns cleanup of the withheld original. The half-close proves absence of buffered bytes only. Prepare the offline landing on current main. Reserve SPEC v0.12.77. Production body and authentication binding, durable issuance and physical retirement remain open.
 <!-- SECTION:NOTES:END -->
