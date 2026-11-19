@@ -5,7 +5,7 @@ status: Waiting
 assignee:
   - '@gpt-6.2-astra'
 created_date: '2026-11-18T20:43:00Z'
-updated_date: '2026-11-19T06:28:00Z'
+updated_date: '2026-11-19T06:57:00Z'
 labels: []
 milestone: m-4
 dependencies: []
@@ -25,7 +25,7 @@ The readiness loop checks its deadline before calling the state and model endpoi
 - [ ] #2 A delayed successful reply after timeout cannot publish readiness or revive a retired attempt. A healthy alternate can still make progress.
 - [ ] #3 Return an enrolled refusal through RunSwitchAsync after expiry or shutdown has won. The caller retains the original terminal cause and the feed records one terminal event, with no second capability change, completion, or dispatch wake.
 - [ ] #4 Exercise successful guarded publication with hooks that verify both short locks are released. A joined waiter woken by shutdown or expiry receives its committed result only after the outcome event is delivered.
-- [ ] #5 Hold the committed outcome event and stop the engine with two joined waiters on the same tier. After event delivery only the waiter whose minimum fits the committed measured window receives Ready. Neither waiter can dispatch.
+- [x] #5 Hold the committed outcome event and stop the engine with two joined waiters on the same tier. After event delivery only the waiter whose minimum fits the committed measured window receives Ready. Neither waiter can dispatch.
 - [ ] #6 For explicit named and resolved-default enrolled tiers, test a fitting window on the verified instance and route in budget. Omitted or zero measured total slots refuse publication; positive measured total slots on that binding permit readiness.
 - [ ] #7 At absolute deadline equality, present otherwise qualifying window and positive slot evidence. The guard refuses publication, completion and permits. In the in-budget success control the hook receives the committed proof outside both short locks under the retained reservation.
 <!-- AC:END -->
@@ -39,5 +39,5 @@ Use one monotonic readiness budget across state headers and body, model discover
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Legacy readiness and local HTTP cleanup landed in [PR #4](https://github.com/ArborealML/Inference-Router/pull/4) after hosted CI passed. Waiting for per-ticket context-floor composition and enrolled host readiness to exercise the remaining criteria. TASK-133 carries the separate source-audit follow-up.
+Legacy readiness and local HTTP cleanup landed in [PR #4](https://github.com/ArborealML/Inference-Router/pull/4). The reviewed two-ticket fixture in [PR #8](https://github.com/ArborealML/Inference-Router/pull/8#issuecomment-7002124407) passed both targeted Release rows. The stopped engine granted neither ticket a send, and the open engine accepted one exact POST. Enrolled readiness remains open. PR #8 integration and the enrolled host splice wake further qualification.
 <!-- SECTION:NOTES:END -->

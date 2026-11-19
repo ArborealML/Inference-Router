@@ -31,6 +31,7 @@ public static class RouterConfigLoader
                     AllowTrailingCommas = true,
                 });
                 DockerLaunchResources.CheckJson(doc.RootElement);
+                DockerTargetPlans.CheckJson(doc.RootElement);
                 dto = JsonSerializer.Deserialize<ConfigDto>(doc, ConfigJsonContext.Default.ConfigDto)
                       ?? throw new RouterConfigException("config: empty document");
             }
@@ -178,7 +179,8 @@ public static class RouterConfigLoader
                     var ladder = new ServingProfile[serving.Count];
                     for (var i = 0; i < serving.Count; i++)
                     {
-                        var s = serving[i];
+                        var s = serving[i] ??
+                            throw new RouterConfigException($"engine.{name}.catalog.{modelName}.serving[{i}] must be an object");
                         if (s.Name is not { Length: > 0 } sname)
                             throw new RouterConfigException($"engine.{name}.catalog.{modelName}.serving[{i}].name is required");
                         if (s.MaxContext is not { } mc || mc <= 0)
@@ -215,6 +217,12 @@ public static class RouterConfigLoader
             }
         }
 
+        var hasTargetDocker = DockerTargetPlans.IsDeclared(e);
+        if (hasTargetDocker && (e.Docker is null || e.Remote == true ||
+            e.LifecycleOwner is not (null or "router") ||
+            e.Lifecycle is { } targetLifecycle && !targetLifecycle.Trim().Equals("docker", StringComparison.OrdinalIgnoreCase)))
+            throw new RouterConfigException($"engine.{name}: serving-tier Docker requires a native Docker engine");
+
         var lifecycle = EngineLifecycleKind.Delegated;
         DockerLifecycleConfig? docker = null;
         if (e.Lifecycle is { Length: > 0 } lcText)
@@ -234,11 +242,13 @@ public static class RouterConfigLoader
             if (string.IsNullOrWhiteSpace(d.Image))
                 throw new RouterConfigException(
                     $"engine.{name}.docker.image is required: the router starts an image that is already on the host and never pulls one itself");
+            var commonResources = d.Resources is { } resources ? DockerLaunchResources.Parse(resources, name) : null;
             docker = new DockerLifecycleConfig
             {
                 Image = d.Image!,
                 ImageIdentity = ParseDockerImageIdentity(d, name),
-                Resources = d.Resources is { } resources ? DockerLaunchResources.Parse(resources, name) : null,
+                Resources = commonResources,
+                TargetPlans = hasTargetDocker ? DockerTargetPlans.Parse(name, e.Catalog!, d, commonResources) : null,
                 Socket = d.Socket ?? "unix:///var/run/docker.sock",
                 ApiVersion = d.ApiVersion ?? "v1.44",
                 RouterId = d.RouterId ?? throw new RouterConfigException(

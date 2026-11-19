@@ -1,11 +1,11 @@
 ---
 id: TASK-110
 title: Coordinate model engines that share one host with exclusive residency
-status: Waiting
+status: In Progress
 assignee:
-  - '@gpt-6.2-astra'
+  - '@gpt-6.2-sol-lifecycle'
 created_date: '2026-11-18T18:13:00Z'
-updated_date: '2026-11-19T06:33:00Z'
+updated_date: '2026-11-19T07:05:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -36,13 +36,11 @@ Implement exclusive residency for cooperating managed engines sharing a physical
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Wait for the dispatched independent review of the single-host vacancy plan. In the offline fixture verify exact incumbent ownership and retired use before stop. After StopApplied, obtain new independent evidence covering the enrolled partition and frozen successor. Recheck ownership, coverage and vacancy under the create fence. Distinguish refusal before submission from refusal before effect. On restart require a fresh query for an unsent successor and exact reconciliation of a dispatch that may already have taken effect. Production activation remains gated on enforced coverage, retirement and instance-bound admission.
+Implement the reviewed offline partition observer. Require exact incumbent ownership and generation-bound retirement before stop. Bind each fresh observation to the full resource partition, owner and enrollment revisions, query, epoch, predecessor and frozen successor. Fence every modeled writer through create entry. Test a revision change followed by restoration of the original visible state. Missing preflight proof leaves zero successor sends, acceptances, attempts or effects. Refusal after submission may retain a send and acceptance but leaves zero attempts, effects or applied result. Reopen prepared stops and launches with fresh evidence and the original identities. Reconcile dispatching operations only by exact evidence. A recovered stop requires fresh vacancy before successor submission. A recovered launch requires its exact receipt and effect.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-The checkpoint and offline effect ledger are in [PR #6](https://github.com/ArborealML/Inference-Router/pull/6). At 4c0ceb1 the corrected 36-case ledger suite passed. Review accepted independent installed residency for launch, fenced rejection recovery and staged publication for trusted subprocess fixtures. The landing branch preserved the six reviewed C# files. Stop recovery checks its terminal evidence. Before real successor creation the host must independently establish vacancy and causal retirement. Unknown effects may remain pending after process death. Power-loss durability, hostile storage, and real serving authority remain unqualified. Existing terminal equality rejects noncanonical records. Further staging permutations are deferred until that protocol changes. Lifecycle is preparing the next single-host authority step.
-
-The checkpoint and ledger landed at 508547f. Plan review dispatched against that merge; its verdict wakes the coordinator.
+The offline checkpoint and ledger landed in [PR #6](https://github.com/ArborealML/Inference-Router/pull/6). [PR #9](https://github.com/ArborealML/Inference-Router/pull/9) passed 15 focused vacancy cases at 8302cf8 and hosted CI at bd0c1a4. Review found the independent predecessor comparison omits the launch operation and plan identity. Bind the full launch and stored stop effect. Test a different launch ID with the same instance and epoch, and an old owner observation. Existing generation-change tests exercise revalidation. Demonstrate writer exclusion at daemon entry with a competing process and a successful write after release. Verify unchanged daemon residency and absent issue decision on fenced refusal. Production authority remains unqualified.
 <!-- SECTION:NOTES:END -->

@@ -1,11 +1,11 @@
 ---
 id: TASK-130
 title: Bind the upstream connection to the verified engine instance
-status: Waiting
+status: Preparing
 assignee:
   - '@gpt-6.2-sol-release'
 created_date: '2026-11-18T22:19:00Z'
-updated_date: '2026-11-19T03:39:00Z'
+updated_date: '2026-11-19T07:06:00Z'
 labels: []
 milestone: m-4
 dependencies: []
@@ -34,3 +34,9 @@ Bind the first upstream write to the verified engine instance. The [internal hos
 <!-- SECTION:PLAN:BEGIN -->
 Use one authenticated application stream per invocation. Freeze the enrollment, process, route incarnation and launch epoch. Serialize HTTP/1.1 above the authenticated stream. Keep the exchange and physical permit owned through terminal cleanup. Exercise redirects, retries, stale grants, first-write races and late responses against independently observable original and replacement sinks.
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+The accepted admission handoff releases the single-host fixture work. Consolidate existing verified transport receipts and qualify the remaining issuer and first-write binding on the preserved candidate. Production enrollment remains gated.
+<!-- SECTION:NOTES:END -->
