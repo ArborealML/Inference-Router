@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@gpt-6.2-sol-lifecycle'
 created_date: '2026-11-18T18:13:00Z'
-updated_date: '2026-11-19T10:15:00Z'
+updated_date: '2026-11-19T10:16:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -19,7 +19,7 @@ ordinal: 108000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Fix the staged switch parameter order so the combined recovered-launch fixture can compile and run.
+Correct staged guard validity, actual opening and stale recovery authority alongside the staged switch signature.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -48,5 +48,5 @@ Review on 3160a11 required wrong-target recovery fencing and old-grant/fresh-ope
 
 [PR #19](https://github.com/ArborealML/Inference-Router/pull/19) preserves the paired 1/1 receipt at 6ef4723. Review identified stale incumbent authority during applied-launch recovery and missing failure controls. Published e7b951c closes after the exact match and before the first occupancy await. Six focused Release cases passed, covering denial during and after a held probe, untouched preflight, both cancellation cuts, completion, installation and drain-disposal faults, and fresh retry without duplicate effects. Both findings cleared review, all hosted checks passed, and PR #19 merged at 0b84766. Deadline equality in the enrolled path remains separate from fixture cancellation.
 
-Combined 5a6c350 includes host 046ea91, runtime df9fdef and unwind observer c65ebfb. Release stopped before execution on CA1068 at SwitchStagedAsync. Lifecycle owns the token-last signature and sole caller correction, then repeat only the recovered-launch case. Host, runtime and paired fixture reviews dispatched.
+Combined 5a6c350 hit CA1068 before execution. Lifecycle owns the token-last fix and sole caller. Review of 046ea91 found malformed committed verdicts can be delivered as success. Validate proof and closed binding before delivery; preserve valid winners on later faults. Enforce synchronous exact Open, signal only actual opening, handle delivery faults through retained launch and fresh authorized recovery. Close stale incumbent authority on durable applied recovery even for mismatched requests. Shutdown verifies wake progress. Runtime and paired-fixture reviews continue.
 <!-- SECTION:NOTES:END -->
