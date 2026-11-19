@@ -6,16 +6,37 @@ internal sealed partial class HostEffectLedgerProbe
 {
     private static readonly PartitionScope EnrolledScope = new(Group, Enrollment, 4, 9, 12);
     private string PartitionPath => Path.Combine(_root, "partition-facts.json");
+    private string PartitionSeedPath => Path.Combine(_root, "partition-seed.json");
+
+    private string InstallPartitionSeed(Guid operationId)
+    {
+        // The parent gives the independent fixture actor the prepared A identity before daemon I/O.
+        // The actor subsequently reads only this seed and its own partition record.
+        using var fence = OpenFence();
+        Publish(PartitionSeedPath, FixtureLaunch("a", operationId), Json.HostCheckpointLaunchEffect, "partition-seed", "partition");
+        return "partition-seed-installed";
+    }
+
+    private string WriteObservationFacts(string mode, string scenario)
+    {
+        var result = InstallObservationFacts(scenario);
+        if (mode != "pause-writer-blocked" || result != "worker-busy") return result;
+
+        Park(mode, "writer-blocked");
+        return InstallObservationFacts(scenario);
+    }
 
     private string InstallObservationFacts(string scenario)
     {
         if (scenario is not ("owned-retired" or "owned-unretired" or "owned-stale-retirement" or "vacant-retired" or
+            "owned-wrong-launch" or "vacant-wrong-launch" or
             "vacant-old-enrollment" or "vacant-old-controller" or "vacant-old-worker" or "vacant-partial" or
             "vacant-unavailable" or "vacant-unknown-owner" or "vacant-foreign"))
             throw new ArgumentException("Unknown partition facts scenario.", nameof(scenario));
 
         // This fixture actor sets partition facts independently of both the checkpoint and daemon state.
-        using var fence = OpenFence();
+        using var fence = TryOpenFence();
+        if (fence is null) return "worker-busy";
         var prior = Read(PartitionPath, Json.PartitionFacts);
         var ownerGeneration = (prior?.OwnerGeneration ?? 0) + 1;
         var coverageGeneration = (prior?.CoverageGeneration ?? 0) + 1;
@@ -26,7 +47,10 @@ internal sealed partial class HostEffectLedgerProbe
             "vacant-old-worker" => EnrolledScope with { WorkerGeneration = EnrolledScope.WorkerGeneration - 1 },
             _ => EnrolledScope,
         };
-        var incumbent = new PartitionResident("a", "partition-a-1", 1);
+        var incumbent = Read(PartitionSeedPath, Json.HostCheckpointLaunchEffect)
+            ?? throw new IOException("The independent partition actor has no launch seed.");
+        if (scenario is "owned-wrong-launch" or "vacant-wrong-launch")
+            incumbent = incumbent with { Operation = incumbent.Operation with { Id = Guid.NewGuid() } };
         const long ingressGeneration = 7;
         var retirement = scenario == "owned-unretired" ? null : new PartitionRetirement(incumbent, scope, ownerGeneration,
             scenario == "owned-stale-retirement" ? ingressGeneration - 1 : ingressGeneration);
@@ -44,13 +68,14 @@ internal sealed partial class HostEffectLedgerProbe
         var incumbent = checkpoint.AppliedLaunch!;
         var transition = checkpoint.Transition!;
         var query = new PartitionQuery(Guid.NewGuid(), EnrolledScope, checkpoint.Epoch, transition.Stop!, transition.Plan,
-            new PartitionResident(incumbent.Operation.Engine, incumbent.InstanceId, incumbent.Operation.Epoch), vacant);
+            incumbent, transition.StopEffect, vacant);
 
         using var fence = OpenFence();
         WriteOperation("partition-queries", query.Nonce, query, Json.PartitionQuery, mode);
         var lastPath = Path.Combine(_root, vacant ? "last-vacancy-proof.json" : "last-owner-proof.json");
         var facts = Read(PartitionPath, Json.PartitionFacts);
-        var proof = mode == "replay-vacancy" && vacant
+        var replay = vacant ? mode == "replay-vacancy" : mode == "replay-owner";
+        var proof = replay
             ? Read(lastPath, Json.PartitionProof)
             : facts is { Available: true } ? new PartitionProof(query, facts) : null;
 
@@ -69,21 +94,20 @@ internal sealed partial class HostEffectLedgerProbe
         if (command.Group != query.Scope.Group || command.Enrollment != query.Scope.Enrollment ||
             command.Operation.Epoch != query.Epoch) return false;
 
-        if (!query.Vacant)
-            return command.Operation == query.Stop && command.Incumbent is { } incumbent &&
-                query.Previous == new PartitionResident(incumbent.Operation.Engine, incumbent.InstanceId, incumbent.Operation.Epoch);
+        if (!query.Vacant) return command.Operation == query.Stop && command.Incumbent == query.Previous;
 
         var effect = ReadOperation("effects", query.Stop.Id, Json.LedgerEffect);
         return command.Plan == query.Successor && query.Successor.Matches(command.Operation, query.Epoch) &&
-            effect is { Stop: { } stopped } && effect.Command.Group == query.Scope.Group &&
-            effect.Command.Enrollment == query.Scope.Enrollment && effect.Command.Operation == query.Stop && stopped.Operation == query.Stop &&
-            query.Previous == new PartitionResident(stopped.IncumbentLaunch.Engine, stopped.InstanceId, stopped.IncumbentLaunch.Epoch);
+            effect is { Stop: { } stopped } && stopped == query.StopEffect && effect.Command.Group == query.Scope.Group &&
+            effect.Command.Enrollment == query.Scope.Enrollment && effect.Command.Operation == query.Stop &&
+            effect.Command.Incumbent == query.Previous && effect.Command.Plan == query.Previous.Plan;
     }
 
     private static bool ProvesPartition(PartitionQuery query, PartitionFacts facts) =>
-        query.Nonce != Guid.Empty && query.Stop.Kind == HostMutationKind.Stop && query.Stop.Id != Guid.Empty &&
-        query.Stop.Epoch == query.Epoch && query.Previous.LaunchEpoch < query.Epoch && query.Stop.Engine == query.Previous.Engine &&
+        query.Nonce != Guid.Empty && query.Stop.Kind == HostMutationKind.Stop && query.Stop.Id != Guid.Empty && query.Previous.IsValid() &&
+        query.Stop.Epoch == query.Epoch && query.Previous.Operation.Epoch < query.Epoch && query.Stop.Engine == query.Previous.Operation.Engine &&
         query.Stop.Target == query.Previous.InstanceId && query.Successor.IsValid() &&
+        (query.Vacant ? query.StopEffect?.Matches(query.Stop, query.Previous) == true : query.StopEffect is null) &&
         query.Scope == EnrolledScope && facts.Scope == query.Scope && facts.Available && facts.OwnerKnown && !facts.Foreign &&
         facts.Coverage == PartitionCoverage.Complete && facts.CoverageGeneration > 0 && facts.OwnerGeneration > 0 &&
         facts.IngressGeneration > 0 && (query.Vacant ? facts.Resident is null : facts.Resident == query.Previous) &&
@@ -105,13 +129,32 @@ internal sealed partial class HostEffectLedgerProbe
         var owner = facts.OwnerGeneration + 2;
         WritePartitionFacts(facts with
         {
-            Foreign = true, OwnerGeneration = owner - 1, Resident = new PartitionResident("other", "foreign-instance", 1),
+            Foreign = true, OwnerGeneration = owner - 1, Resident = FixtureLaunch("other", Guid.NewGuid()),
         });
         WritePartitionFacts(facts with { OwnerGeneration = owner, Retirement = facts.Retirement! with { OwnerGeneration = owner } });
     }
 
     private void WritePartitionFacts(PartitionFacts facts) =>
         Publish(PartitionPath, facts, Json.PartitionFacts, "partition-facts", "partition", replace: true);
+
+    private string PoisonStoppedLaunch(Guid stopId)
+    {
+        // Deliberately contradict the already validated checkpoint effect without changing the observed partition.
+        using var fence = OpenFence();
+        var effect = ReadOperation("effects", stopId, Json.LedgerEffect);
+        if (effect is not { Stop: { } stopped }) throw new InvalidOperationException("The fixture has no applied stop to poison.");
+        var changed = stopped with { IncumbentLaunch = stopped.IncumbentLaunch with { Id = Guid.NewGuid() } };
+        Publish(Path.Combine(_root, "effects", $"{stopId:N}.json"), effect with { Stop = changed }, Json.LedgerEffect,
+            "effects", "partition", replace: true);
+        return "stopped-launch-poisoned";
+    }
+
+    private static HostCheckpointLaunchEffect FixtureLaunch(string engine, Guid operationId)
+    {
+        var plan = Plan(engine);
+        return new HostCheckpointLaunchEffect(
+            new HostMutation(1, operationId, HostMutationKind.Launch, engine, plan.Model, plan.Tier, plan.Digest()), plan, $"partition-{engine}-1");
+    }
 }
 
 [Flags]
@@ -119,10 +162,9 @@ internal enum PartitionCoverage { Devices = 1, Daemon = 2, Ingress = 4, Complete
 
 internal sealed record PartitionScope(string Group, string Enrollment, long EnrollmentGeneration, long ControllerGeneration,
     long WorkerGeneration);
-internal sealed record PartitionResident(string Engine, string InstanceId, long LaunchEpoch);
-internal sealed record PartitionRetirement(PartitionResident Resident, PartitionScope Scope, long OwnerGeneration, long IngressGeneration);
+internal sealed record PartitionRetirement(HostCheckpointLaunchEffect Resident, PartitionScope Scope, long OwnerGeneration, long IngressGeneration);
 internal sealed record PartitionFacts(PartitionScope Scope, long CoverageGeneration, long OwnerGeneration, long IngressGeneration,
-    PartitionCoverage Coverage, bool Available, bool OwnerKnown, bool Foreign, PartitionResident? Resident, PartitionRetirement? Retirement);
+    PartitionCoverage Coverage, bool Available, bool OwnerKnown, bool Foreign, HostCheckpointLaunchEffect? Resident, PartitionRetirement? Retirement);
 internal sealed record PartitionQuery(Guid Nonce, PartitionScope Scope, long Epoch, HostMutation Stop, HostCheckpointPlan Successor,
-    PartitionResident Previous, bool Vacant);
+    HostCheckpointLaunchEffect Previous, HostCheckpointStopEffect? StopEffect, bool Vacant);
 internal sealed record PartitionProof(PartitionQuery Query, PartitionFacts Facts);

@@ -8,6 +8,7 @@ public sealed class HostSuccessorVacancyTests : IDisposable
 {
     private readonly DirectoryInfo _directory = Directory.CreateTempSubdirectory("air-vacancy-");
     private string CheckpointPath => Path.Combine(_directory.FullName, "controller.lock");
+    private string DaemonPath => Path.Combine(_directory.FullName, "daemon-residency.json");
 
     [Theory(Timeout = 45_000)]
     [InlineData("vacant-unavailable")]
@@ -41,6 +42,7 @@ public sealed class HostSuccessorVacancyTests : IDisposable
         var stopped = await ApplyStopWithoutVacancyAsync();
         await InstallFactsAsync("vacant-retired");
         var oldFacts = ReadJson("partition-facts.json");
+        var vacantDaemon = File.ReadAllBytes(DaemonPath);
 
         Assert.Equal("pending", await RunAsync(rotation, "c"));
         var pending = ReadCheckpoint();
@@ -54,14 +56,13 @@ public sealed class HostSuccessorVacancyTests : IDisposable
         Assert.Equal(oldFacts.GetProperty("Foreign").GetBoolean(), restored.GetProperty("Foreign").GetBoolean());
         Assert.Equal(oldFacts.GetProperty("Resident").ValueKind, restored.GetProperty("Resident").ValueKind);
         Assert.Equal(oldFacts.GetProperty(generationProperty).GetInt64() + 2, restored.GetProperty(generationProperty).GetInt64());
-        Assert.Equal(new LedgerCounts(1, 1, 0, 0), Counts(launch.Id));
-        Assert.False(HasTerminal(launch.Id));
+        AssertNoDaemonEntry(launch.Id, vacantDaemon);
 
         var queries = CountQueries();
         Assert.Equal("pending", await RunAsync("normal", "c"));
         Assert.Equal(pending, ReadCheckpoint());
         Assert.Equal(queries, CountQueries());
-        Assert.Equal(new LedgerCounts(1, 1, 0, 0), Counts(launch.Id));
+        AssertNoDaemonEntry(launch.Id, vacantDaemon);
     }
 
     [Fact(Timeout = 45_000)]
@@ -74,6 +75,13 @@ public sealed class HostSuccessorVacancyTests : IDisposable
         var preparedTransition = Assert.IsType<HostCheckpointTransition>(prepared.Transition);
         var stop = preparedTransition.Stop!;
         var oldQuery = LastQuery("owner").GetProperty("Nonce").GetGuid();
+        var queries = CountQueries();
+
+        Assert.Equal("pending", await RunAsync("replay-owner", "c"));
+        Assert.Equal(prepared, ReadCheckpoint());
+        Assert.Equal(queries + 1, CountQueries());
+        Assert.Equal(oldQuery, LastQuery("owner").GetProperty("Nonce").GetGuid());
+        Assert.Equal(new LedgerCounts(0, 0, 0, 0), Counts(stop.Id));
 
         foreach (var facts in new[] { "owned-unretired", "owned-stale-retirement" })
         {
@@ -94,6 +102,113 @@ public sealed class HostSuccessorVacancyTests : IDisposable
         Assert.NotEqual(oldQuery, LastQuery("owner").GetProperty("Nonce").GetGuid());
         Assert.Equal(new LedgerCounts(1, 1, 1, 1), Counts(stop.Id));
         Assert.Equal(new LedgerCounts(2, 2, 2, 2), Counts());
+    }
+
+    [Fact(Timeout = 45_000)]
+    public async Task SameInstanceWithWrongLaunchIdCannotAuthorizeStopOrSuccessor()
+    {
+        await InitializeAAsync();
+        var a = Assert.IsType<HostCheckpointLaunchEffect>(ReadCheckpoint().AppliedLaunch);
+        await InstallFactsAsync("owned-wrong-launch");
+        var owner = ReadJson("partition-facts.json").GetProperty("Resident");
+        AssertWrongLaunchId(owner, a);
+
+        Assert.Equal("pending", await RunAsync("normal", "b"));
+        var prepared = ReadCheckpoint();
+        Assert.Equal(HostCheckpointPhase.StopPrepared, prepared.Phase);
+        var stop = prepared.Transition!.Stop!;
+        Assert.Equal(new LedgerCounts(0, 0, 0, 0), Counts(stop.Id));
+        Assert.Equal(new LedgerCounts(1, 1, 1, 1), Counts());
+
+        await InstallFactsAsync("owned-retired");
+        Assert.Equal("pending", await RunAsync("normal", "c"));
+        var stopped = ReadCheckpoint();
+        Assert.Equal(HostCheckpointPhase.StopApplied, stopped.Phase);
+        Assert.Equal(stop, stopped.Transition!.Stop);
+        await InstallFactsAsync("vacant-wrong-launch");
+        var retired = ReadJson("partition-facts.json").GetProperty("Retirement").GetProperty("Resident");
+        AssertWrongLaunchId(retired, a);
+        Assert.Equal("pending", await RunAsync("normal", "c"));
+        Assert.Equal(stopped, ReadCheckpoint());
+        Assert.Equal(new LedgerCounts(2, 2, 2, 2), Counts());
+
+        await InstallFactsAsync("vacant-retired");
+        Assert.Equal("resident:b", await RunAsync("normal", "c"));
+        AssertSuccessor(stopped);
+    }
+
+    [Fact(Timeout = 45_000)]
+    public async Task ChangedPriorLaunchInInstalledStopEffectCannotAuthorizeDaemonEntry()
+    {
+        await InitializeAAsync();
+        var stopped = await ApplyStopWithoutVacancyAsync();
+        var stoppedTransition = Assert.IsType<HostCheckpointTransition>(stopped.Transition);
+        var stop = stoppedTransition.Stop!;
+        var effectPath = Path.Combine("effects", $"{stop.Id:N}.json");
+        var predecessor = ReadJson(effectPath).GetProperty("Stop").GetProperty("IncumbentLaunch");
+        var a = Assert.IsType<HostCheckpointLaunchEffect>(stopped.AppliedLaunch);
+        Assert.Equal(a.Operation.Id, predecessor.GetProperty("Id").GetGuid());
+        await InstallFactsAsync("vacant-retired");
+        Assert.Equal("stopped-launch-poisoned", await RunAsync("poison-stopped-launch", stop.Id.ToString("D")));
+        var changed = ReadJson(effectPath).GetProperty("Stop").GetProperty("IncumbentLaunch");
+        Assert.NotEqual(a.Operation.Id, changed.GetProperty("Id").GetGuid());
+        Assert.Equal(a.Operation.Engine, changed.GetProperty("Engine").GetString());
+        Assert.Equal(a.Operation.Epoch, changed.GetProperty("Epoch").GetInt64());
+        Assert.Equal(a.InstanceId, ReadJson(effectPath).GetProperty("Stop").GetProperty("InstanceId").GetString());
+        var vacantDaemon = File.ReadAllBytes(DaemonPath);
+
+        Assert.Equal("pending", await RunAsync("normal", "c"));
+        var pending = ReadCheckpoint();
+        Assert.Equal(HostCheckpointPhase.LaunchDispatching, pending.Phase);
+        var transition = Assert.IsType<HostCheckpointTransition>(pending.Transition);
+        Assert.Equal(stoppedTransition.StopEffect, transition.StopEffect);
+        Assert.Equal(stoppedTransition.Plan, transition.Plan);
+        Assert.Equal(stopped.Epoch, pending.Epoch);
+        var b = Assert.IsType<HostMutation>(transition.Launch);
+        AssertNoDaemonEntry(b.Id, vacantDaemon);
+    }
+
+    [Fact(Timeout = 45_000)]
+    public async Task IndependentFactsWriterIsExcludedUntilDaemonEntryReleasesTheFence()
+    {
+        await InitializeAAsync();
+        var stopped = await ApplyStopWithoutVacancyAsync();
+        await InstallFactsAsync("vacant-retired");
+        var factsPath = Path.Combine(_directory.FullName, "partition-facts.json");
+        var factsBefore = File.ReadAllBytes(factsPath);
+        var coverage = ReadJson("partition-facts.json").GetProperty("CoverageGeneration").GetInt64();
+        var vacantDaemon = File.ReadAllBytes(DaemonPath);
+        using var controller = Start("pause-attempt", "c");
+        try
+        {
+            Assert.Equal("attempt", await ReadLineAsync(controller));
+            var acceptancePath = Assert.Single(Directory.GetFiles(Path.Combine(_directory.FullName, "acceptances"), "*.json"),
+                file => ReadJson(file).GetProperty("Operation").GetProperty("Engine").GetString() == "b");
+            var operationId = Guid.ParseExact(Path.GetFileNameWithoutExtension(acceptancePath), "N");
+            Assert.Equal(new LedgerCounts(1, 1, 1, 0), Counts(operationId));
+            Assert.Equal(1, Count("decisions", operationId));
+
+            using var writer = Start("pause-writer-blocked", "vacant-partial");
+            try
+            {
+                Assert.Equal("writer-blocked", await ReadLineAsync(writer));
+                Assert.Equal(factsBefore, File.ReadAllBytes(factsPath));
+                Assert.Equal(vacantDaemon, File.ReadAllBytes(DaemonPath));
+                Assert.Equal(new LedgerCounts(1, 1, 1, 0), Counts(operationId));
+                await controller.StandardInput.WriteLineAsync("continue");
+                Assert.Equal("resident:b", await ReadExitAsync(controller));
+                AssertSuccessor(stopped);
+
+                await writer.StandardInput.WriteLineAsync("continue");
+                Assert.Equal("observed-facts-installed", await ReadExitAsync(writer));
+            }
+            finally { await TerminateAsync(writer); }
+        }
+        finally { await TerminateAsync(controller); }
+
+        Assert.Equal(coverage + 1, ReadJson("partition-facts.json").GetProperty("CoverageGeneration").GetInt64());
+        Assert.Equal(1, ReadJson("partition-facts.json").GetProperty("Coverage").GetInt32());
+        AssertSuccessor(stopped);
     }
 
     [Fact(Timeout = 45_000)]
@@ -138,6 +253,10 @@ public sealed class HostSuccessorVacancyTests : IDisposable
         Assert.Equal(stop, stopped.Transition!.Stop);
         var observed = LastQuery("vacancy");
         Assert.Equal(stop.Id, observed.GetProperty("Stop").GetProperty("Id").GetGuid());
+        var incumbent = Assert.IsType<HostCheckpointLaunchEffect>(stopped.AppliedLaunch);
+        Assert.Equal(incumbent.Operation.Id, observed.GetProperty("StopEffect").GetProperty("IncumbentLaunch").GetProperty("Id").GetGuid());
+        Assert.Equal(incumbent.Operation.PlanDigest,
+            observed.GetProperty("Previous").GetProperty("Operation").GetProperty("PlanDigest").GetString());
         Assert.Equal(stopped.Epoch, observed.GetProperty("Epoch").GetInt64());
         Assert.Equal("b", observed.GetProperty("Successor").GetProperty("Engine").GetString());
         var oldQuery = observed.GetProperty("Nonce").GetGuid();
@@ -205,6 +324,8 @@ public sealed class HostSuccessorVacancyTests : IDisposable
     {
         HostEffectCheckpoint.ProvisionNew(CheckpointPath);
         Assert.Equal("initialized", await RunAsync("initialize", "a"));
+        var operationId = Assert.IsType<string>(await RunAsync("prepare-initial", "a"));
+        Assert.Equal("partition-seed-installed", await RunAsync("partition-seed", operationId));
         Assert.Equal("resident:a", await RunAsync("normal", "a"));
         await InstallFactsAsync("owned-retired");
     }
@@ -235,6 +356,25 @@ public sealed class HostSuccessorVacancyTests : IDisposable
 
     private async Task InstallFactsAsync(string facts) =>
         Assert.Equal("observed-facts-installed", await RunAsync("partition", facts));
+
+    private static void AssertWrongLaunchId(JsonElement resident, HostCheckpointLaunchEffect expected)
+    {
+        var operation = resident.GetProperty("Operation");
+        Assert.NotEqual(expected.Operation.Id, operation.GetProperty("Id").GetGuid());
+        Assert.Equal(expected.Operation.Engine, operation.GetProperty("Engine").GetString());
+        Assert.Equal(expected.Operation.Epoch, operation.GetProperty("Epoch").GetInt64());
+        Assert.Equal(expected.InstanceId, resident.GetProperty("InstanceId").GetString());
+        Assert.Equal(expected.Operation.PlanDigest, operation.GetProperty("PlanDigest").GetString());
+    }
+
+    private void AssertNoDaemonEntry(Guid launchId, byte[] expectedDaemon)
+    {
+        Assert.Equal(new LedgerCounts(1, 1, 0, 0), Counts(launchId));
+        Assert.Equal(0, Count("decisions", launchId));
+        Assert.Equal(0, Count("effects", launchId));
+        Assert.False(HasTerminal(launchId));
+        Assert.Equal(expectedDaemon, File.ReadAllBytes(DaemonPath));
+    }
 
     private HostEffectCheckpointState ReadCheckpoint()
     {
@@ -291,15 +431,22 @@ public sealed class HostSuccessorVacancyTests : IDisposable
     private async Task<string?> RunAsync(string mode, string target)
     {
         using var process = Start(mode, target);
-        try
-        {
-            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-            var result = await process.StandardOutput.ReadLineAsync(timeout.Token);
-            await process.WaitForExitAsync(timeout.Token);
-            Assert.Equal(0, process.ExitCode);
-            return result;
-        }
+        try { return await ReadExitAsync(process); }
         finally { await TerminateAsync(process); }
+    }
+
+    private static async Task<string?> ReadLineAsync(Process process)
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        return await process.StandardOutput.ReadLineAsync(timeout.Token);
+    }
+
+    private static async Task<string?> ReadExitAsync(Process process)
+    {
+        var result = await ReadLineAsync(process);
+        await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal(0, process.ExitCode);
+        return result;
     }
 
     private static async Task TerminateAsync(Process process)

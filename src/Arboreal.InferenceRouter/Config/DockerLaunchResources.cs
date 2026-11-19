@@ -80,7 +80,7 @@ internal sealed record DockerLaunchResources(
         return [.. values];
     }
 
-    private static ImmutableArray<DockerBind> ParseBinds(DockerBindDto[]? values, string path)
+    internal static ImmutableArray<DockerBind> ParseBinds(DockerBindDto[]? values, string path)
     {
         if (values is null) return [];
         if (values.Length == 0) throw new RouterConfigException($"{path} must be nonempty");
@@ -94,14 +94,30 @@ internal sealed record DockerLaunchResources(
             var target = CheckBindPath(item.Target, $"{itemPath}.target");
             if (item.ReadOnly is not { } readOnly)
                 throw new RouterConfigException($"{itemPath}.read_only must explicitly specify true or false");
-            foreach (var prior in binds)
-            {
-                if (Within(target, prior.Target) || Within(prior.Target, target))
-                    throw new RouterConfigException($"{itemPath}.target overlaps another bind target");
-            }
+            CheckBindOverlap(binds, target, $"{itemPath}.target");
             binds.Add(new DockerBind(source, target, readOnly));
         }
         return binds.MoveToImmutable();
+    }
+
+    internal static ImmutableArray<DockerBind> CombineTargetBinds(ImmutableArray<DockerBind> common,
+        ImmutableArray<DockerBind> additions, string path)
+    {
+        foreach (var bind in additions)
+            CheckBindOverlap(common, bind.Target, path);
+
+        var combined = common.AddRange(additions);
+        foreach (var bind in combined)
+            if (ControlPaths.Any(control => Within(control, bind.Source) || Within(control, bind.Target)))
+                throw new RouterConfigException($"{path} cannot mount a parent of a control directory");
+        return combined;
+    }
+
+    private static void CheckBindOverlap(IEnumerable<DockerBind> binds, string target, string path)
+    {
+        foreach (var prior in binds)
+            if (Within(target, prior.Target) || Within(prior.Target, target))
+                throw new RouterConfigException($"{path} overlaps another bind target");
     }
 
     private static string CheckBindPath(string? value, string path)
@@ -186,7 +202,7 @@ internal sealed record DockerLaunchResources(
             throw new RouterConfigException($"{path} appears more than once");
     }
 
-    private static void CheckJsonTree(JsonElement value, string path)
+    internal static void CheckJsonTree(JsonElement value, string path)
     {
         if (value.ValueKind == JsonValueKind.Null)
             throw new RouterConfigException($"{path} cannot be null");

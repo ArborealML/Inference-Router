@@ -30,7 +30,17 @@ internal sealed partial class HostEffectLedgerProbe(string checkpointPath, bool 
 
     private string RunCommand(string mode, string target)
     {
-        if (_requirePartitionProof && mode == "partition") return InstallObservationFacts(target);
+        if (_requirePartitionProof)
+        {
+            if (mode == "prepare-initial")
+            {
+                using var checkpoint = HostEffectCheckpoint.Open(_checkpointPath);
+                return checkpoint.PrepareInitialLaunch(Plan(target)).Id.ToString("D");
+            }
+            if (mode == "partition-seed") return InstallPartitionSeed(Guid.Parse(target));
+            if (mode == "poison-stopped-launch") return PoisonStoppedLaunch(Guid.Parse(target));
+            if (mode is "partition" or "pause-writer-blocked") return WriteObservationFacts(mode, target);
+        }
         switch (mode)
         {
             case "initialize":
@@ -394,4 +404,5 @@ internal readonly record struct LedgerSubmission(string Disposition, HostMutatio
 [JsonSerializable(typeof(PartitionFacts))]
 [JsonSerializable(typeof(PartitionQuery))]
 [JsonSerializable(typeof(PartitionProof))]
+[JsonSerializable(typeof(HostCheckpointLaunchEffect))]
 internal sealed partial class HostEffectLedgerJsonContext : JsonSerializerContext;
