@@ -1,6 +1,6 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.82)
+Status: draft, continuously revised (v0.12.83)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
@@ -352,6 +352,10 @@ daemon transaction per engine. 137 tests green.
   that answers no `upload_url`, an upload that dies or answers no asset id, an asset name listed twice on
   the release, and a tag that moves after the first resolve. No tag has run the gate: still configured,
   not proven.
+- v0.12.83 — bind an offline admitted ticket's effective launch intent, final JSON and upstream
+  credential policy to its verified resident and single-use stream. Separate logical outcome
+  from issuer retirement, keep unsettled physical use counted and report independent
+  cleanup faults. Caller cancellation interrupts the pending header read (§5.3.1, §5.5, §7.6).
 - v0.12.82 — qualify closed-route staging through verified publication refusal, drain disposal
   and explicit fresh-generation open in the offline host coordinator fixture (§5.3.1, TASK-110).
 - v0.12.81 — offline Docker create projection supports literal serving-tier health checks and
@@ -1817,6 +1821,38 @@ explicit Open of the still-current completed generation enables the test issuer 
 and send. The applied record remains after success. Enrolled runtime, deadline enforcement and
 production activation remain outside this qualification.
 
+**Offline verified dispatch (TASK-118).** An injected resident proof binds the committed
+route generation, exact instance and serving incarnation, launch epoch, captured configuration
+and effective Docker plan, canonical model and tier, measured window and slots. Parsed Docker
+create settings and the image manifest/platform pin describe launch intent. Projection uses
+the captured config and binds its effective endpoint. The independently verified fixture resident
+supplies matching instance evidence and measured capacity. Resident reuse requires the same
+engine and canonical model as well as the resident's exact tier. A retired
+generation stays closed. Only a fresh verified availability publication can rearm a spent
+transient preparation and wake dispatch. The issuer orders closure against authorization for the
+first nonempty application write. An authorization that wins remains counted through retirement.
+
+The exact ticket's preparation freezes the method, effective URI, JSON media type, rewritten
+UTF-8 body and upstream credential policy including its epoch. Validation rejects malformed,
+duplicate and case-shadowed model fields before rewriting. A present raw model must match the
+captured requested spelling under the catalog's case-insensitive comparison. An omitted model
+uses the captured resolution. The rewritten object must name the exact canonical model once.
+The offer admits only the bound Authorization and optional matching Host request headers and
+the exact application/json content type. A disagreement refuses before checkout. Only the
+frozen request values reach the verified serializer. The same transport worker exposes the
+primary result and typed terminal evidence. Caller cancellation reaches the pending header
+read on the borrowed channel. The worker retains responsibility for grant and permit cleanup.
+A submitted use releases once after conclusive no-transfer, confirmed grant return or
+issuer-confirmed retirement, together with successful preparation cleanup. Ambiguous checkout,
+unconfirmed issuer retirement and failed preparation cleanup preserve the count even after
+logical failure. Stream close and permit retirement independently contribute issuer evidence.
+A response-disposal failure is reported even when issuer retirement is confirmed. When
+preparation cleanup succeeds, the use still releases.
+The verified path reports one redacted cleanup event for faults or unconfirmed retirement
+and preserves the original logical result. Standalone exchanges preserve each observed
+cleanup exception alongside any primary send failure. Engine-local stop authority has no
+issuer bridge in this fixture.
+
 **Production evidence.** The raw Docker inventory can report known foreign containers. Even an
 empty inventory leaves vacancy unproven, and raw Docker supplies no terminal receipt for an
 unacknowledged router operation ID. Positive authority requires independently verified enrollment,
@@ -1883,6 +1919,10 @@ to a different thread's affinity — details are deliberately unspecified until
 engine forks land; the scheduler interface will not change shape.
 
 ### 5.5 Queue semantics
+
+The offline verified binding revalidates the still-current exact preparation and route generation
+before removing a ticket on a strict binding refusal. A stale result cannot settle its replacement.
+Temporary capacity loss parks the ticket. A definitive refusal settles once without a queue timer.
 
 - One global priority queue per (model-alias). Dispatch scans model queues by increasing
   observed depth, retaining queue order at equal depths. Each scheduler call evaluates the
@@ -2662,7 +2702,11 @@ Semantics:
   minimum to the measured result, including when it receives a committed verdict after
   shutdown. A same-target waiter whose minimum exceeds the committed window cannot use
   that proof to forward. A tier label, static configuration and prompt estimates alone
-  supply no measured capacity. The injected host path can attest to exact-instance roster
+  supply no measured capacity. Offline verified dispatch requires a fitting positive measured
+  window and positive reported slots on an explicitly selected, resolved-default or reused
+  named resident profile. Public gauges and roster can veto eligibility. They supply no
+  additional authority. An ordinary request can reuse a fitting verified resident tier
+  independently of the catalog's launch default. The injected host path can attest to exact-instance roster
   readiness today. A switch with an explicit minimum, selected named tier or a resolved
   named default requires bound capacity evidence and refuses before entering the host
   transaction until that evidence is supported.

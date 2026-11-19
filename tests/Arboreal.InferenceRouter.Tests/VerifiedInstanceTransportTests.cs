@@ -473,6 +473,146 @@ public sealed partial class VerifiedInstanceTransportTests
         Assert.Equal(1, issuer.StreamCloses);
     }
 
+    [Theory(Timeout = 20_000)]
+    [InlineData("headers", true, true)]
+    [InlineData("headers", true, false)]
+    [InlineData("headers", false, true)]
+    [InlineData("failed", true, true)]
+    public async Task StandalonePreservesEveryCleanupFailure(string primaryOutcome, bool closeFails, bool permitFails)
+    {
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        using var pair = await LoopbackPair.OpenAsync(deadline.Token);
+        var invocation = Invocation(new Uri("http://localhost/turn"));
+        var closeError = new InvalidOperationException("grant close failed");
+        var permitError = new IOException("permit retirement failed");
+        var permitAttempts = 0;
+        var issuer = new FakeIssuer(invocation, () => ValueTask.FromResult<Stream>(pair.Client.GetStream()))
+        {
+            AfterStreamClose = () =>
+            {
+                if (closeFails) throw closeError;
+            },
+            BeforeRelease = () =>
+            {
+                Interlocked.Increment(ref permitAttempts);
+                return permitFails ? Task.FromException(permitError) : Task.CompletedTask;
+            },
+        };
+        var sending = new VerifiedInstanceTransport(invocation, issuer)
+            .SendAsync(invocation, Payload, authorization: null, deadline.Token);
+        var peer = pair.Server.GetStream();
+        Exception? cleanup;
+        if (primaryOutcome == "headers")
+        {
+            Assert.Equal(Payload, (await RespondAsync(peer, HttpStatusCode.OK, null, deadline.Token)).Body);
+            var exchange = await sending.WaitAsync(deadline.Token);
+            var status = exchange.Response.StatusCode;
+            var disposal = exchange.DisposeAsync().AsTask();
+            Assert.Same(disposal, exchange.DisposeAsync().AsTask());
+            cleanup = await Record.ExceptionAsync(() => disposal.WaitAsync(deadline.Token));
+            Assert.Equal(HttpStatusCode.OK, status);
+        }
+        else
+        {
+            Assert.Equal(Payload, (await ReadAsync(peer, deadline.Token)).Body);
+            pair.Server.Client.Shutdown(SocketShutdown.Send);
+
+            var failure = await Assert.ThrowsAsync<AggregateException>(() => sending.WaitAsync(deadline.Token));
+            Assert.Equal(2, failure.InnerExceptions.Count);
+            Assert.IsType<HttpRequestException>(failure.InnerExceptions[0]);
+            cleanup = failure.InnerExceptions[1];
+        }
+
+        if (closeFails && permitFails)
+        {
+            var failures = Assert.IsType<AggregateException>(cleanup);
+            Assert.Collection(failures.InnerExceptions, error => Assert.Same(closeError, error),
+                error => Assert.Same(permitError, error));
+        }
+        else
+        {
+            Assert.Same(closeFails ? (Exception)closeError : permitError, cleanup);
+        }
+        Assert.Equal(1, issuer.Checkouts);
+        Assert.Equal(1, issuer.Authorizations);
+        Assert.Equal(1, issuer.StreamCloses);
+        Assert.Equal(1, Volatile.Read(ref permitAttempts));
+        Assert.Equal(permitFails ? 0 : 1, issuer.Releases);
+    }
+
+    [Theory(Timeout = 20_000)]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task StandaloneCallerCancellationInterruptsPendingHeadersAndJoinsCleanup(bool cleanupFails)
+    {
+        using var watchdog = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        using var caller = new CancellationTokenSource();
+        using var pair = await LoopbackPair.OpenAsync(watchdog.Token);
+        using var observed = new HeaderReadProbe(pair.Client.Client);
+        using var retiring = new HeldCheckout();
+        var invocation = Invocation(new Uri("http://localhost/turn"));
+        var closeError = new InvalidOperationException("grant close failed");
+        var permitError = new IOException("permit retirement failed");
+        var permitAttempts = 0;
+        var issuer = new FakeIssuer(invocation, () => ValueTask.FromResult<Stream>(observed))
+        {
+            AfterStreamClose = () =>
+            {
+                if (cleanupFails) throw closeError;
+            },
+            BeforeRelease = async () =>
+            {
+                Interlocked.Increment(ref permitAttempts);
+                await retiring.HoldAsync(watchdog.Token);
+                if (cleanupFails) throw permitError;
+            },
+        };
+        var sending = new VerifiedInstanceTransport(invocation, issuer)
+            .SendAsync(invocation, Payload, authorization: null, caller.Token);
+
+        try
+        {
+            Assert.Equal(Payload, (await ReadAsync(pair.Server.GetStream(), watchdog.Token)).Body);
+            await observed.PendingRead.Task.WaitAsync(watchdog.Token);
+            caller.Cancel();
+            Assert.Equal(caller.Token, await observed.ReadCancellation.Task.WaitAsync(watchdog.Token));
+
+            await retiring.Reached.WaitAsync(watchdog.Token);
+            Assert.False(watchdog.IsCancellationRequested);
+            Assert.False(sending.IsCompleted);
+            Assert.Equal(1, issuer.StreamCloses);
+            Assert.Equal(1, Volatile.Read(ref permitAttempts));
+            Assert.Equal(1, issuer.PhysicalUses);
+            Assert.Equal(0, issuer.Releases);
+        }
+        finally
+        {
+            retiring.Release();
+        }
+
+        if (cleanupFails)
+        {
+            var failure = await Assert.ThrowsAsync<AggregateException>(() => sending.WaitAsync(watchdog.Token));
+            Assert.Equal(2, failure.InnerExceptions.Count);
+            Assert.Equal(caller.Token,
+                Assert.IsAssignableFrom<OperationCanceledException>(failure.InnerExceptions[0]).CancellationToken);
+            var cleanup = Assert.IsType<AggregateException>(failure.InnerExceptions[1]);
+            Assert.Collection(cleanup.InnerExceptions, error => Assert.Same(closeError, error),
+                error => Assert.Same(permitError, error));
+        }
+        else
+        {
+            var failure = await Assert.ThrowsAnyAsync<OperationCanceledException>(() => sending.WaitAsync(watchdog.Token));
+            Assert.True(sending.IsCanceled);
+            Assert.Equal(caller.Token, failure.CancellationToken);
+        }
+        Assert.False(watchdog.IsCancellationRequested);
+        Assert.Equal(1, issuer.StreamCloses);
+        Assert.Equal(1, Volatile.Read(ref permitAttempts));
+        Assert.Equal(cleanupFails ? 0 : 1, issuer.Releases);
+        Assert.Equal(cleanupFails ? 1 : 0, issuer.PhysicalUses);
+    }
+
     private static VerifiedInstanceInvocation Invocation(Uri uri) => new(
         new VerifiedInstanceRoute("host", 1, "engine", "model/profile", "container", "process-1", 1, 1),
         Guid.NewGuid(), uri);
@@ -509,6 +649,24 @@ public sealed partial class VerifiedInstanceTransportTests
         return (text, body);
     }
 
+    private sealed class HeaderReadProbe(Socket socket) : NetworkStream(socket, ownsSocket: true)
+    {
+        internal TaskCompletionSource PendingRead { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        internal TaskCompletionSource<CancellationToken> ReadCancellation { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            var read = base.ReadAsync(buffer, cancellationToken);
+            if (!read.IsCompleted) PendingRead.TrySetResult();
+            try { return await read.ConfigureAwait(false); }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                ReadCancellation.TrySetResult(cancellationToken);
+                throw;
+            }
+        }
+    }
+
     private sealed class FakeIssuer(
         VerifiedInstanceInvocation? grantIdentity, Func<ValueTask<Stream>> connect) : IVerifiedInstanceStreamIssuer
     {
@@ -524,6 +682,7 @@ public sealed partial class VerifiedInstanceTransportTests
         private int _streamCloses;
         internal int StreamCloses => Volatile.Read(ref _streamCloses);
         internal Func<Task>? BeforeRelease { get; init; }
+        internal Action? AfterStreamClose { get; init; }
         internal Action<VerifiedInstanceGrant>? BeforeAuthorization { get; init; }
         internal VerifiedInstanceGrant? SubstituteGrant { get; init; }
 
@@ -558,6 +717,7 @@ public sealed partial class VerifiedInstanceTransportTests
             {
                 await stream.DisposeAsync();
                 Interlocked.Increment(ref _streamCloses);
+                AfterStreamClose?.Invoke();
             });
             lock (_gate)
             {

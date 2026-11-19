@@ -71,7 +71,7 @@ public sealed class RouterCore : IInferenceRouter
             _threads[id] = new RouterThread(id, td.Priority, td.Weight, td.ModelAffinity);
         _capabilitySources = [.. _engines.Values];
         _admission = admission;
-        admission?.Attach(_engines.Count, _clock, SignalDispatch, ReportAdmissionCleanupFailure);
+        admission?.Attach(_engines.Count, _clock, SignalDispatch, ReportAdmissionCleanupFailure, RejectVerifiedBinding);
     }
 
     public EventRing Events => _events;
@@ -160,6 +160,7 @@ public sealed class RouterCore : IInferenceRouter
         {
             Ticket = ticket,
             Request = request,
+            OriginalModel = requestedModel,
             PriorityNode = node,
             Thread = thread,
             EnqueuedSeq = node.Sequence,
@@ -498,7 +499,14 @@ public sealed class RouterCore : IInferenceRouter
                 }
 
                 bool prepared;
-                lock (admission.Gate) prepared = admission.IsPrepared(claim) && admission.IsOpen(claim);
+                lock (admission.Gate)
+                {
+                    if (claim.Resident is not null &&
+                        (!admission.IsOpen(claim) || !VerifiedCapacityFits(claim, observation.Capability, requiredWindow) ||
+                         !admission.CanTake(claim, engine.ReadDispatchObservation())))
+                        continue;
+                    prepared = admission.IsPrepared(claim) && admission.IsOpen(claim);
+                }
                 if (!prepared)
                 {
                     BeforeAdmissionPreparationForTests?.Invoke(candidate.Ticket);
@@ -555,16 +563,8 @@ public sealed class RouterCore : IInferenceRouter
                     !engine.CanServeModel(candidate.Ticket.Model, observation.Capability))
                     return new(TakeResult.Ineligible);
 
-                // The fake supplies a route proof for a switch winner without running lifecycle.
-                // Loaded dispatch uses the engine's live, model-bound observation.
-                var window = admission.Window(stamped);
-                if (!stamped.SwitchRequired)
-                {
-                    if (!observation.Capability.ModelRoster.Contains(candidate.Ticket.Model, StringComparer.OrdinalIgnoreCase))
-                        return new(TakeResult.Ineligible);
-                    window = observation.Capability.Serving.WindowFor(candidate.Ticket.Model);
-                }
-                if (window < requiredWindow || !admission.CanTake(stamped, observation))
+                if (!AdmissionWindowFits(admission, stamped, observation.Capability, requiredWindow) ||
+                    !admission.CanTake(stamped, observation))
                     return new(TakeResult.Ineligible);
             }
 
@@ -579,6 +579,46 @@ public sealed class RouterCore : IInferenceRouter
             engine.BeginRequest(candidate.PromptChars);
             return new(TakeResult.Taken, invocation);
         }
+    }
+
+    private static bool AdmissionWindowFits(ExactTicketAdmission admission, ExactTicketAdmission.Claim claim,
+                                            EngineCapability capability, long requiredWindow)
+    {
+        if (claim.Resident is not null) return VerifiedCapacityFits(claim, capability, requiredWindow);
+        if (claim.SwitchRequired) return admission.Window(claim) >= requiredWindow;
+        return capability.ModelRoster.Contains(claim.Ticket.Model, StringComparer.OrdinalIgnoreCase) &&
+            capability.Serving.WindowFor(claim.Ticket.Model) >= requiredWindow;
+    }
+
+    private static bool VerifiedCapacityFits(ExactTicketAdmission.Claim claim, EngineCapability capability,
+                                            long requiredWindow)
+    {
+        var resident = claim.Resident!;
+        var window = capability.Serving.WindowFor(resident.Target.Model);
+        // Current engine observations can veto but cannot supply a missing instance proof.
+        return capability.Healthy && capability.SwitchingToward is null &&
+            capability.ModelRoster.Contains(resident.Target.Model, StringComparer.OrdinalIgnoreCase) &&
+            resident.Fits(requiredWindow) && (window <= 0 || window >= Math.Max(requiredWindow, resident.TierWindow));
+    }
+
+    private void RejectVerifiedBinding(ExactTicketAdmission.Claim claim, VerifiedDispatchRefusal refusal)
+    {
+        var admission = _admission!;
+        bool expired;
+        lock (admission.Gate)
+        lock (_gate)
+        {
+            if (_shutdownToken.IsCancellationRequested || !admission.IsCurrentBindingRefusal(claim) ||
+                !_queues.TryGetValue(claim.Ticket.Model, out var queue) || !queue.TryRemoveById(claim.Ticket.Id))
+                return;
+            expired = claim.Request.QueueExpired(_clock);
+            claim.Ticket.RevokeAdmission();
+        }
+        if (expired)
+            Fail(claim.Ticket, "deadline_exceeded", "The queued request expired before verified admission.");
+        else
+            Fail(claim.Ticket, "engine_unreachable", new VerifiedDispatchBindingException(refusal).Message);
+        SignalDispatch();
     }
 
     private void StartSelected(QueuedRequest candidate, EngineRuntime engine, bool requiresSwitch,
@@ -853,7 +893,7 @@ public sealed class RouterCore : IInferenceRouter
                     {
                         cts.Token.ThrowIfCancellationRequested();
                         return FinishWithResponseAsync(engine, ticket, response, candidate, gate: null, cts.Token);
-                    }, ReportExecutionFailure, cts.Token).ConfigureAwait(false);
+                    }, ReportExecutionFailure, cts.Token, invocation.VerifiedCredentialEpoch).ConfigureAwait(false);
                     return;
                 }
 

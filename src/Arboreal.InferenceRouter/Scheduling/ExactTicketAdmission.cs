@@ -1,4 +1,5 @@
 using System.Runtime.CompilerServices;
+using Arboreal.InferenceRouter.Lifecycle;
 
 namespace Arboreal.InferenceRouter;
 
@@ -8,11 +9,12 @@ namespace Arboreal.InferenceRouter;
 /// </summary>
 internal sealed class ExactTicketAdmission(
     Func<ExactTicketAdmission.Claim, CancellationToken, ValueTask<IAsyncDisposable?>> prepare,
-    Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> send)
+    Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> send,
+    Func<ExactTicketAdmission.Claim, CancellationToken, ValueTask<VerifiedPreparedSender?>>? prepareVerified = null)
 {
     internal readonly record struct Route(string Engine, string Model, string? Profile);
     internal readonly record struct Claim(QueuedRequest Request, Route Target, long Generation, bool SwitchRequired,
-                                          long ExplicitContext)
+                                          long ExplicitContext, VerifiedDispatchResident? Resident = null)
     {
         internal RouterTicket Ticket => Request.Ticket;
     }
@@ -24,6 +26,7 @@ internal sealed class ExactTicketAdmission(
         internal long Generation;
         internal bool Open;
         internal long Window;
+        internal VerifiedDispatchResident? Resident;
     }
 
     private sealed class EngineAdmissionState
@@ -44,6 +47,8 @@ internal sealed class ExactTicketAdmission(
     {
         internal Claim Claim { get; } = claim;
         internal bool Ready { get; set; }
+        internal VerifiedPreparedSender? VerifiedSender { get; set; }
+        internal bool Borrowed { get; set; }
         internal bool Retiring { get; set; }
         internal TaskCompletionSource CleanupRequested { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         internal TaskCompletionSource RetirementRequested { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -65,11 +70,13 @@ internal sealed class ExactTicketAdmission(
     }
 
     private readonly Dictionary<Route, RouteState> _routes = [];
+    private readonly Dictionary<string, RouteState> _verifiedRoutes = new(StringComparer.Ordinal);
     private readonly Dictionary<string, EngineAdmissionState> _engines = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<RouterTicket, Preparation> _preparations = [];
     private readonly ConditionalWeakTable<RouterTicket, Dictionary<Binding, long>> _spent = new();
     private Action? _wake;
     private Action<Claim, Exception>? _reportCleanupFailure;
+    private Action<Claim, VerifiedDispatchRefusal>? _rejectBinding;
     private TimeProvider _clock = TimeProvider.System;
     private int _preparationLimit;
     private int _releases;
@@ -78,6 +85,8 @@ internal sealed class ExactTicketAdmission(
     internal object Gate { get; } = new();
     internal Func<Claim, Task>? BeforeSubmitForTests { get; set; }
     internal Func<Invocation, Task>? BeforeSendForTests { get; set; }
+    internal Action<HttpRequestMessage>? BeforeVerifiedOfferForTests { get; set; }
+    internal Action<HttpResponseMessage>? AfterVerifiedConsumeForTests { get; set; }
     internal Action<Claim, Exception?>? AfterPreparationCleanupForTests { get; set; }
     internal Action<Claim, bool>? AfterPreparationForTests { get; set; }
     internal Action<Claim, Exception>? AfterPreparationFaultForTests { get; set; }
@@ -86,12 +95,16 @@ internal sealed class ExactTicketAdmission(
     internal int Releases { get { lock (Gate) return _releases; } }
     internal int PreparationCount { get { lock (Gate) return _preparations.Count; } }
 
-    internal void Attach(int engineCount, TimeProvider clock, Action wake, Action<Claim, Exception> reportCleanupFailure)
+    internal bool UsesVerifiedDispatch => prepareVerified is not null;
+
+    internal void Attach(int engineCount, TimeProvider clock, Action wake, Action<Claim, Exception> reportCleanupFailure,
+                         Action<Claim, VerifiedDispatchRefusal>? rejectBinding = null)
     {
         _preparationLimit = Math.Max(2, engineCount);
         _clock = clock;
         _wake = wake;
         _reportCleanupFailure = reportCleanupFailure;
+        _rejectBinding = rejectBinding;
     }
 
     internal void Publish(Route target, long generation, bool open, long window = 0)
@@ -122,18 +135,79 @@ internal sealed class ExactTicketAdmission(
         _wake?.Invoke();
     }
 
+    // Only the offline issuer adapter publishes these proofs. A replacement/availability event
+    // advances the generation and fences the old preparation without rearming a spent generation.
+    internal bool PublishVerified(VerifiedDispatchResident resident)
+    {
+        List<Preparation> cleanup = [];
+        lock (Gate)
+        {
+            if (_stopped || !UsesVerifiedDispatch || !resident.Target.Matches(resident.Route)) return false;
+            var engineName = resident.Route.Engine;
+            if (!_verifiedRoutes.TryGetValue(engineName, out var route))
+            {
+                if (!_engines.TryGetValue(engineName, out var engine))
+                    _engines.Add(engineName, engine = new());
+                _verifiedRoutes.Add(engineName, route = new(engine));
+            }
+            if (resident.Route.RouteIncarnation <= route.Generation) return false;
+
+            route.Generation = resident.Route.RouteIncarnation;
+            route.Resident = resident;
+            route.Open = true;
+            foreach (var entry in _preparations.Values)
+                if (entry.Claim.Resident is { } old &&
+                    string.Equals(old.Route.Engine, engineName, StringComparison.Ordinal) && Retire(entry))
+                    cleanup.Add(entry);
+        }
+        foreach (var entry in cleanup) entry.RequestRetirement();
+        _wake?.Invoke();
+        return true;
+    }
+
+    internal bool CloseVerified(VerifiedDispatchResident resident)
+    {
+        List<Preparation> cleanup = [];
+        lock (Gate)
+        {
+            if (_stopped || !_verifiedRoutes.TryGetValue(resident.Route.Engine, out var route) ||
+                !ReferenceEquals(route.Resident, resident) || !route.Open) return false;
+            route.Open = false;
+            foreach (var entry in _preparations.Values)
+                if (ReferenceEquals(entry.Claim.Resident, resident) && Retire(entry)) cleanup.Add(entry);
+        }
+        foreach (var entry in cleanup) entry.RequestRetirement();
+        _wake?.Invoke();
+        return true;
+    }
+
     // The dispatcher carries this immutable stamp across preparation and commit. It can never
     // authorize from a freshly looked-up stamp that it did not rank.
     internal Claim? Capture(QueuedRequest request, Route target, bool switchRequired, long explicitContext)
     {
         lock (Gate)
-            return !_stopped && _routes.TryGetValue(target, out var state)
-                ? new Claim(request, target, state.Generation, switchRequired, explicitContext)
-                : null;
+        {
+            if (_stopped) return null;
+            if (UsesVerifiedDispatch)
+            {
+                return _verifiedRoutes.TryGetValue(target.Engine, out var verified) &&
+                    verified.Resident is { } resident &&
+                    string.Equals(target.Model, resident.Target.Model, StringComparison.Ordinal)
+                    ? new Claim(request, target, verified.Generation, switchRequired, explicitContext, resident) : null;
+            }
+            return _routes.TryGetValue(target, out var state)
+                ? new Claim(request, target, state.Generation, switchRequired, explicitContext) : null;
+        }
     }
 
-    internal bool IsOpen(Claim claim) => !_stopped &&
-        _routes.TryGetValue(claim.Target, out var route) && route.Open && route.Generation == claim.Generation;
+    internal bool IsOpen(Claim claim) => !_stopped && StateFor(claim) is { Open: true } route &&
+        route.Generation == claim.Generation && ReferenceEquals(route.Resident, claim.Resident);
+
+    private RouteState? StateFor(Claim claim) => claim.Resident is null
+        ? _routes.GetValueOrDefault(claim.Target) : _verifiedRoutes.GetValueOrDefault(claim.Target.Engine);
+
+    internal bool IsCurrentBindingRefusal(Claim claim) => IsOpen(claim) && claim.Ticket.CanPrepareAdmission &&
+        _preparations.TryGetValue(claim.Ticket, out var current) && !current.Retiring && current.Claim == claim;
 
     internal long Window(Claim claim) => _routes[claim.Target].Window;
 
@@ -177,9 +251,10 @@ internal sealed class ExactTicketAdmission(
     // owner does not prevent ordinary use of additional free units.
     internal bool CanTake(Claim claim, EngineRuntime.DispatchObservation observation)
     {
-        var state = _routes[claim.Target].Engine;
+        var state = StateFor(claim)!.Engine;
         // Ordinary requests may occupy both counters. Charge the overlap only once.
-        var free = observation.SlotLimit - observation.Inflight - (state.PhysicalUses - state.LogicalOverlap);
+        var slots = claim.Resident is { } resident ? Math.Min(observation.SlotLimit, resident.TotalSlots) : observation.SlotLimit;
+        var free = slots - observation.Inflight - (state.PhysicalUses - state.LogicalOverlap);
         return free > 0 && (free > 1 || state.OpeningOwner is not { } owner || owner == claim ||
             !IsOpen(owner) || !OpeningOwnerEligible(owner, observation.Capability));
     }
@@ -204,7 +279,7 @@ internal sealed class ExactTicketAdmission(
         Preparation? cleanup = null;
         lock (Gate)
         {
-            if (_stopped || !CanPrepare(claim)) return;
+            if (_stopped || !CanPrepare(claim) || (claim.Resident is not null && !IsOpen(claim))) return;
             var ownerState = _routes.TryGetValue(claim.Target, out var route) && route.Engine.OpeningOwner == claim
                 ? route.Engine : null;
             if (_preparations.TryGetValue(claim.Ticket, out var current))
@@ -285,10 +360,15 @@ internal sealed class ExactTicketAdmission(
             // The worker receives and owns the prepared resource until retirement or execution
             // signals cleanup. Dispatch only transfers the counted invocation, not this resource.
             await using var resource = await AcquirePreparationAsync(entry.Claim, retirement.Token).ConfigureAwait(false);
+            var sender = resource as VerifiedPreparedSender;
+            var bindingMatches = entry.Claim.Resident is null || sender?.Matches(entry.Claim) == true;
+            if (!bindingMatches && resource is not null)
+                _rejectBinding?.Invoke(entry.Claim, VerifiedDispatchRefusal.Target);
             lock (Gate)
             {
-                published = resource is not null && !entry.Retiring && !_stopped &&
+                published = resource is not null && bindingMatches && !entry.Retiring && !_stopped &&
                     entry.Claim.Ticket.CanPrepareAdmission && !entry.Claim.Request.QueueExpired(_clock);
+                entry.VerifiedSender = published ? sender : null;
                 entry.Ready = published;
                 entry.Retiring = !published;
             }
@@ -323,7 +403,9 @@ internal sealed class ExactTicketAdmission(
             }
             else
             {
-                _reportCleanupFailure?.Invoke(entry.Claim, cleanupError);
+                if (!entry.Borrowed || entry.VerifiedSender is null)
+                    _reportCleanupFailure?.Invoke(entry.Claim, entry.Claim.Resident is null ? cleanupError :
+                        new InvalidOperationException("Verified preparation cleanup could not be confirmed."));
             }
 
             // A fault does not establish retirement. Keep a retiring entry or, after
@@ -346,7 +428,14 @@ internal sealed class ExactTicketAdmission(
     {
         try
         {
-            return await prepare(claim, ct).ConfigureAwait(false);
+            return claim.Resident is null
+                ? await prepare(claim, ct).ConfigureAwait(false)
+                : await prepareVerified!(claim, ct).ConfigureAwait(false);
+        }
+        catch (VerifiedDispatchBindingException error) when (claim.Resident is not null)
+        {
+            _rejectBinding?.Invoke(claim, error.Refusal);
+            return null;
         }
         catch (Exception ex)
         {
@@ -401,16 +490,18 @@ internal sealed class ExactTicketAdmission(
     internal Invocation Authorize(Claim claim, bool detachedOwner = false)
     {
         var prepared = _preparations[claim.Ticket];
+        prepared.Borrowed = true;
         _preparations.Remove(claim.Ticket);
-        var state = _routes[claim.Target].Engine;
+        var state = StateFor(claim)!.Engine;
         if (state.OpeningOwner == claim) state.ClearOpeningOwner();
         state.PhysicalUses++;
         if (!detachedOwner) state.LogicalOverlap++;
-        return new Invocation(this, claim, prepared.FinishAsync, detachedOwner);
+        return new Invocation(this, claim, prepared.FinishAsync, detachedOwner, prepared.VerifiedSender);
     }
 
     internal sealed class Invocation(ExactTicketAdmission admission, Claim claim,
-                                     Func<ValueTask> finishPreparation, bool detachedOwner)
+                                     Func<ValueTask> finishPreparation, bool detachedOwner,
+                                     VerifiedPreparedSender? verifiedSender)
     {
         private const int Authorized = 0;
         private const int Submitting = 1;
@@ -422,6 +513,8 @@ internal sealed class ExactTicketAdmission(
         private int _state;
         private int _owner;
         private bool _overlapsLogical = !detachedOwner; // guarded by the admission gate
+
+        internal long VerifiedCredentialEpoch => claim.Resident?.Credential.Epoch ?? 0;
 
         internal void EndOrdinaryUse(EngineRuntime engine, long promptChars)
         {
@@ -453,7 +546,7 @@ internal sealed class ExactTicketAdmission(
         }
 
         internal async Task RunAsync(HttpRequestMessage request, Func<HttpResponseMessage, Task> consume,
-                                     Action<Exception>? reportFailure, CancellationToken ct)
+                                     Action<Exception>? reportFailure, CancellationToken ct, long credentialEpoch = 0)
         {
             var owner = Interlocked.CompareExchange(ref _owner, ExecutionOwner, Unclaimed);
             if (owner == AbortOwner)
@@ -464,6 +557,7 @@ internal sealed class ExactTicketAdmission(
             }
             if (owner == ExecutionOwner)
                 throw new InvalidOperationException("The counted invocation is already owned by execution.");
+            VerifiedTransportOperation? operation = null;
             try
             {
                 using var cancellation = ct.UnsafeRegister(static value => ((Invocation)value!).CancelBeforeSubmit(), this);
@@ -474,18 +568,39 @@ internal sealed class ExactTicketAdmission(
                 if (admission.BeforeSendForTests is { } beforeSend)
                     await beforeSend(this).ConfigureAwait(false);
 
-                using var response = await admission.SendAsync(request, ct).ConfigureAwait(false);
-                await consume(response).ConfigureAwait(false);
+                if (verifiedSender is null)
+                {
+                    using var response = await admission.SendAsync(request, ct).ConfigureAwait(false);
+                    await consume(response).ConfigureAwait(false);
+                }
+                else
+                {
+                    admission.BeforeVerifiedOfferForTests?.Invoke(request);
+                    operation = await verifiedSender.StartAsync(request, credentialEpoch, ct).ConfigureAwait(false);
+                    var response = await operation.Primary.ConfigureAwait(false);
+                    await consume(response).ConfigureAwait(false);
+                    admission.AfterVerifiedConsumeForTests?.Invoke(response);
+                }
             }
             catch (Exception ex)
             {
                 // The injected logical result may settle while physical cleanup is still held.
+                if (verifiedSender is not null)
+                {
+                    // The transport's raw exception can include request or credential information.
+                    Exception safe = ex is OperationCanceledException
+                        ? new OperationCanceledException("The verified request was cancelled.", ct)
+                        : new HttpRequestException("The verified request could not be delivered.");
+                    reportFailure?.Invoke(safe);
+                    return;
+                }
                 reportFailure?.Invoke(ex);
                 throw;
             }
             finally
             {
-                await FinishOwnedAsync().ConfigureAwait(false);
+                if (verifiedSender is null) await FinishOwnedAsync().ConfigureAwait(false);
+                else await FinishVerifiedAsync(operation).ConfigureAwait(false);
             }
         }
 
@@ -502,7 +617,8 @@ internal sealed class ExactTicketAdmission(
         {
             try
             {
-                await FinishOwnedAsync().ConfigureAwait(false);
+                if (verifiedSender is null) await FinishOwnedAsync().ConfigureAwait(false);
+                else await FinishVerifiedAsync(operation: null).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
@@ -517,6 +633,35 @@ internal sealed class ExactTicketAdmission(
         {
             if (Interlocked.CompareExchange(ref _state, Released, Authorized) == Authorized)
                 ReleasePhysicalUse();
+        }
+
+        private async ValueTask FinishVerifiedAsync(VerifiedTransportOperation? operation)
+        {
+            operation?.EndBorrow();
+            CancelBeforeSubmit();
+            Exception? preparationFailure = null;
+            // Start preparation cleanup even while the issuer's terminal result is held.
+            try { await finishPreparation().ConfigureAwait(false); }
+            catch (Exception error) { preparationFailure = error; }
+            var terminal = operation is null ? new VerifiedTerminal(VerifiedRetirement.NoUse)
+                : await operation.Terminal.ConfigureAwait(false);
+
+            if (terminal.Conclusive && preparationFailure is null)
+            {
+                if (Interlocked.CompareExchange(ref _state, Released, Submitting) == Submitting)
+                    ReleasePhysicalUse();
+            }
+            if (!terminal.Conclusive || preparationFailure is not null || terminal.ResponseCleanupFailure is not null)
+            {
+                List<string> faults = [];
+                if (terminal.StreamCloseFailure is not null) faults.Add("stream close");
+                if (terminal.PermitFailure is not null) faults.Add("issuer permit retirement");
+                if (terminal.ResponseCleanupFailure is not null) faults.Add("response cleanup");
+                if (preparationFailure is not null) faults.Add("preparation cleanup");
+                if (faults.Count == 0) faults.Add("issuer outcome");
+                admission._reportCleanupFailure?.Invoke(claim,
+                    new InvalidOperationException($"Verified request cleanup failed: {string.Join(", ", faults)}."));
+            }
         }
 
         private async ValueTask FinishOwnedAsync()
