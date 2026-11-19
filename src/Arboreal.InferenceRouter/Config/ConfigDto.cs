@@ -141,9 +141,21 @@ public sealed class ModelDto
 /// Small windows buy more slots; a request needing more context queues behind a profile switch.</summary>
 public sealed class ServingDto
 {
+    private DockerTargetDto? _docker;
+
     [JsonPropertyName("name")][TomlPropertyName("name")] public string? Name { get; set; }
     [JsonPropertyName("max_context")][TomlPropertyName("max_context")] public long? MaxContext { get; set; }
     [JsonPropertyName("max_slots")][TomlPropertyName("max_slots")] public int? MaxSlots { get; set; }
+    [JsonPropertyName("docker")][TomlPropertyName("docker")]
+    public DockerTargetDto? Docker
+    {
+        get => _docker;
+        set
+        {
+            if (_docker is not null) throw new RouterConfigException("duplicate serving-tier docker");
+            _docker = value ?? throw new RouterConfigException("serving-tier docker cannot be null");
+        }
+    }
 }
 
 public sealed class SelectDto
@@ -166,4 +178,5 @@ internal sealed partial class ConfigTomlContext : TomlSerializerContext;
 /// <summary>JSON twin parser (same DTOs, STJ source generation).</summary>
 [JsonSourceGenerationOptions(GenerationMode = JsonSourceGenerationMode.Metadata)]
 [JsonSerializable(typeof(ConfigDto))]
+[JsonSerializable(typeof(DockerDto))]
 internal sealed partial class ConfigJsonContext : JsonSerializerContext;

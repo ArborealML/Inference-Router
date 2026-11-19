@@ -1,6 +1,6 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.73)
+Status: draft, continuously revised (v0.12.74)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
@@ -352,6 +352,10 @@ daemon transaction per engine. 137 tests green.
   that answers no `upload_url`, an upload that dies or answers no asset id, an asset name listed twice on
   the release, and a tag that moves after the first resolve. No tag has run the gate: still configured,
   not proven.
+- v0.12.74 — native Docker configuration resolves per-serving-profile environment and mounts for
+  offline create projection (§5.3.1, §7). Canonical model and profile select immutable launch
+  inputs. Engines with these declarations require separate host qualification before activation.
+
 - v0.12.73 — Add the standalone offline host successor checkpoint and effect ledger.
   The checkpoint retains exact launch, stop and frozen successor evidence across process death.
   The fake ledger verifies residency and separates send, acceptance, attempt and applied records
@@ -1562,6 +1566,13 @@ effective resource inspection, artifact and live instance identity, and reconcil
 an uncertain create while the host reservation is held. It also requires verification of
 read-only bind enforcement for nested mounts.
 
+Native serving tiers can also declare literal environment and mounts for offline create projection.
+Any such declaration gates engine activation and all native mutations, including env-only and
+bind-only targets and requests for other models on the same engine. The Docker provider refuses
+with `docker_target_not_qualified` before any write. A coordinated switch may first read ownership.
+The resolved payload describes launch intent. Serving readiness, host authority and exact-instance
+request delivery require separate proof.
+
 A preflight refusal leaves existing containers untouched and can retain a still-valid incumbent
 discovery proof (§5.5). The provider refuses unavailable or unauthorized daemon access without
 escalating. Once stop begins, a failure can leave some peers stopped or
@@ -2392,6 +2403,43 @@ an active native Docker configuration while resource-bearing activation is gated
 An explicit resource object must contain a setting. The loader refuses unknown or
 duplicated resource fields and explicit JSON nulls. Bind sources are literal paths
 on the Docker host. The create request uses structured binds with source creation disabled.
+
+**Offline Docker settings per serving tier.** A structured serving entry on a native Docker engine
+can add at least one environment assignment or bind. TOML inline and nested tables and JSON
+objects use the same fields.
+
+```toml
+[[engine.strata.catalog."example.chat-v1".serving]]
+name = "64k-2"
+max_context = 65536
+max_slots = 2
+
+[engine.strata.catalog."example.chat-v1".serving.docker]
+env = ["CONTEXT=65536", "PARALLEL=2"]
+bind_mounts = [{ source = "/srv/example/weights", target = "/models", read_only = true }]
+```
+
+For an engine using this feature, model IDs and aliases match case-insensitively and must
+identify one canonical model. An opted-in model's serving names must be distinct under ordinal
+comparison. Its omitted selection uses its declared default or its sole tier. Multiple tiers
+require a default, and `profile` and `default_profile` must agree if both are present.
+
+The loader freezes the effective inputs for each tier of an opted-in model. Only engine-wide
+`command` and `env` expand `{{model}}`, `{{profile}}` and `{{endpoint}}` in the original
+template. Replacements are literal identifiers. Tier assignments are literal and follow
+common assignments in the payload. Assignments use a portable
+`KEY=value` name and permit empty values. Duplicate names after common expansion are refused.
+Common mounts precede target mounts. Destinations in the combined list must be distinct and
+may not overlap. Effective sources and destinations cannot cover protected control directories.
+These checks are lexical. Host qualification verifies the actual mounted paths and access modes.
+Device requests, image pins, network bindings and limits remain engine-wide.
+
+For engines using tier Docker declarations, JSON requires canonical casing for recognized
+common Docker fields and rejects shadowed ownership settings, delegated selectors and target
+ancestry. It also rejects duplicate or unknown target members and explicit null values in a
+target tier. TOML uses the parser's existing case-insensitive property matching and rejects
+duplicate target members. Existing configurations without tier Docker declarations retain
+their previous behavior.
 
 Requirements: comments preserved for round-tripping is **not** required;
 schema errors fail fast at boot with path-precise messages; unknown engine
