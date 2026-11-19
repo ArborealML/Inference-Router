@@ -3,11 +3,11 @@ id: TASK-111
 title: >-
   Build the local router configuration for every supported select-model
   configuration
-status: Preparing
+status: Waiting
 assignee:
-  - '@gpt-6.2-sol-config'
+  - '@chatswarm'
 created_date: '2026-11-18T18:15:00Z'
-updated_date: '2026-11-19T13:34:00Z'
+updated_date: '2026-11-19T13:36:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -19,7 +19,7 @@ ordinal: 109000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Config is preparing the comparison of alternate selector settings. [PR #30](https://github.com/ArborealML/Inference-Router/pull/30) merged at 316899c after review and hosted CI passed. Twelve parking defaults bring landed offline launch coverage to all 75 normalized targets across nine models. The parking change passed 67 focused Release cases, the mixed config load and warning-free Native AOT. Public files and the new tier DTO reject explicit null shared memory. Direct null assignment to the older common DTO retains its omission semantics.
+The independent selector comparison plan review dispatched November 19 wakes the coordinator. All 75 normalized model and tier defaults have landed across nine models, including twelve parking defaults in [PR #30](https://github.com/ArborealML/Inference-Router/pull/30). The dedicated-engine topology guard requires six native configurations. Both remaining criteria stay open. Public shared-memory inputs and the tier DTO reject explicit null; the existing common DTO treats direct null assignment as omission.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -32,7 +32,7 @@ Config is preparing the comparison of alternate selector settings. [PR #30](http
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Establish whether a single nine-model configuration can represent the inventoried defaults and pass a config-only load. Compare effective launch settings across alternate cache sizes, lane counts, device choices and utilization using the existing selector matrix. Identify combinations that require a config change or lack representation. Update the redacted coverage report from those comparisons. Live parking still requires independent post-stop host RAM verification including the 10 GiB reserve.
+Review the smallest defensible offline comparison of actual Docker create payloads with independent selector expectations. Proposed batch covers 10,148 projections including utilization spelling, cache, lane and ordered device choices. Assess factoring independent dimensions and structural evidence for continuous utilization. Preserve explicit router ownership and identify credential mount, published port, per-option reconfiguration and host qualification gaps in the report before tooling.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
