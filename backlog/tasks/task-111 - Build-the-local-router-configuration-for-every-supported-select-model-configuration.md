@@ -3,11 +3,11 @@ id: TASK-111
 title: >-
   Build the local router configuration for every supported select-model
   configuration
-status: Waiting
+status: Preparing
 assignee:
-  - '@gpt-6.2-astra'
+  - '@gpt-6.2-sol-config'
 created_date: '2026-11-18T18:15:00Z'
-updated_date: '2026-11-19T11:03:00Z'
+updated_date: '2026-11-19T11:07:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -19,7 +19,7 @@ ordinal: 109000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Hosted CI and landing-delta review on [PR #24](https://github.com/ArborealML/Inference-Router/pull/24) wake the coordinator. Feature review passed on be35ab6. Existing raw-member guards cover optional casing-twin hardening. Corrected eeeea6a passed 40/40 focused Release, pinned config load and warning-free Native AOT. Landing source matches qualification.
+Config is preparing the next HyperQwen increment. Landed offline coverage is 49 of 75 targets. [PR #24](https://github.com/ArborealML/Inference-Router/pull/24) merged at 2683714 after independent feature and landing reviews and all hosted checks passed. Corrected eeeea6a passed 40/40, the pinned config load and warning-free Native AOT. The eight tiers cover 24 selector spelling pairs and 32 AIR checks including its canonical ID; clarify that distinction with the next coverage edit.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -32,7 +32,7 @@ Hosted CI and landing-delta review on [PR #24](https://github.com/ArborealML/Inf
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Plan review passed on 0abdbf5. An optional literal tier command replaces the whole argument array; omission inherits the validated common template. Preserve empty arguments, whitespace and token-shaped literals. Reject nulls, NULs, empty arrays, misplaced row keys, duplicates and casing shadows through raw parsing and direct DTO validation. Freeze the command, copy each projection, and include command-only tiers in alias and zero-write gates. Compare all eight commands, probes and common settings using one independent golden across formats. Select max explicitly when returning from a resident tier. Change only the command for the digest refusal. Qualify focused Release, private config and Native AOT. Reserve v0.12.87.
+Use the selector inventory to identify the smallest HyperQwen change that completes additional targets. Count newly expressible targets, identify shared wire-ID and launch-setting dependencies, and propose a bounded offline check for pre-code review. Preserve the live host and dispatch gates.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
@@ -48,5 +48,5 @@ Single-device profiles require one explicit index and paired profiles two distin
 
 [PR #21](https://github.com/ArborealML/Inference-Router/pull/21) at 6892695 passed 52 focused Release cases, the pinned Strata config load and zero-warning Linux x64 Native AOT. Merged at 5643b27 after hosted CI and static review passed. The hosted tree matched qualification; optional spelling permutations remain covered by general unknown-tier refusal.
 
-[PR #22](https://github.com/ArborealML/Inference-Router/pull/22) at edc8b1a passed 69 focused Release cases, pinned config-only load and warning-free Linux x64 Native AOT. Hosted CI passed. Review counterexample disproved: CLI accepted a clean second tier and rejected both misplaced annotation casings before launch. Merged at 0abdbf5; offline coverage is 41/75.
+[PR #22](https://github.com/ArborealML/Inference-Router/pull/22) at edc8b1a passed 69 focused Release cases, pinned config-only load and warning-free Linux x64 Native AOT. Hosted CI passed. Review counterexample disproved: CLI accepted a clean second tier and rejected both misplaced annotation casings before launch. Merged at 0abdbf5; offline coverage reached 41/75 at that landing.
 <!-- SECTION:NOTES:END -->
