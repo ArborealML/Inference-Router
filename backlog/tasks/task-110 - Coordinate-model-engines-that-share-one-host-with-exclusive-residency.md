@@ -1,11 +1,11 @@
 ---
 id: TASK-110
 title: Coordinate model engines that share one host with exclusive residency
-status: In Progress
+status: Waiting
 assignee:
-  - '@gpt-6.2-sol-lifecycle'
+  - '@gpt-6.2-astra'
 created_date: '2026-11-18T18:13:00Z'
-updated_date: '2026-11-19T19:10:00Z'
+updated_date: '2026-11-19T19:22:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -20,7 +20,7 @@ ordinal: 108000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Lifecycle owns one offline initial-launch and reopen fixture. Accepted the November 19 independent review for this slice. The live incumbent is foreign to enrollment. Its device filters allow both GPUs and shared Docker access remains. Independent host exclusion, route enforcement, authenticated observation and journal freshness remain unverified.
+Hosted CI and the independent review wake [PR #35](https://github.com/ArborealML/Inference-Router/pull/35). Exact b37b0ca passed nine focused offline initial-launch and reopen cases with zero skips. Review of the three-file candidate was dispatched November 19. The live incumbent remains foreign to enrollment. Shared Docker access, unverified host exclusion and journal freshness keep production gated.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
