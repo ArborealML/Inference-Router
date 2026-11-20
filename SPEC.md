@@ -2734,6 +2734,11 @@ the operator (`/admin/status` → `FeedSubscriberFaults`) rather than rethrown i
 that *blocks* blocks every producer that appends, because the append holds the ring lock: the feed is a diagnostic
 surface, not a hook, and an observer that must not slow a request replays it by sequence instead of subscribing live.
 
+Code that performs I/O on behalf of a subscription handles its own failures, unsubscribes,
+and cleans up outside the ring lock. The ring's catch protects the producer and increments
+`FeedSubscriberFaults` for each uncaught callback exception. Replay retains the original
+event and sequence without adding a fault record.
+
 The shipped error contract is one lowercase body on every surface —
 `{"error":{"type":"air_error","code":…,"message":…}}` — and the code picks the status:
 `invalid_request` 400, `not_found` 404, `deadline_exceeded` 408, `cancelled` 499, `queue_overflow`
