@@ -1,11 +1,11 @@
 ---
 id: TASK-81
 title: Answer a stopped switch the same way on the wire, the feed, and the stream
-status: Waiting
+status: Preparing
 assignee:
-  - '@gpt-6.2-sol-stream-delivery'
+  - '@gpt-6.2-sol-stream-frames'
 created_date: '2026-11-18T04:09:00Z'
-updated_date: '2026-11-20T19:15:00Z'
+updated_date: '2026-11-20T19:20:00Z'
 labels:
   - lifecycle
   - shutdown
@@ -18,7 +18,7 @@ ordinal: 81000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Wake: handoff of the subscriber-isolation audit releases Frames for a focused HTTP shutdown plan under decision 30. Source on b0f8255 predicts a cancelled ticket and feed event but no terminal bytes when shutdown interrupts a writable stream before the sentinel. Existing fixtures do not join a real HTTP response to that shutdown. Pin the complete delta, final bytes or EOF, absence of late output and exactly one cancelled result. The current finding is from source inspection.
+Frames is preparing the real HTTP shutdown test under decision 30. Source on b0f8255 predicts a cancelled ticket and feed event but no terminal bytes when shutdown interrupts a writable stream before the sentinel. Trace one complete delta, the terminal bytes or EOF, absence of late output and exactly one cancelled result. Distinguish downstream disconnect and an already committed upstream sentinel. The client-visible result still needs qualification.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

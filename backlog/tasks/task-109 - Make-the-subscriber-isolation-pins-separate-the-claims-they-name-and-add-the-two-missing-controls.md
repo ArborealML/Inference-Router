@@ -5,9 +5,9 @@ title: >-
   two missing controls
 status: Preparing
 assignee:
-  - '@gpt-6.2-sol-stream-frames'
+  - '@gpt-6.2-sol-stream-delivery'
 created_date: '2026-11-18T17:58:00Z'
-updated_date: '2026-11-20T19:15:00Z'
+updated_date: '2026-11-20T19:20:00Z'
 labels:
   - tests
   - events
@@ -20,7 +20,7 @@ ordinal: 107000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Frames is auditing the landed subscriber isolation tests against the current switch path and decision 7. Trace whether a throwing subscriber sees the terminal event recorded before either joined waiter resumes. Map existing assertions and receipts to the criteria, then identify the smallest uncovered control.
+Delivery is preparing the focused subscriber-isolation test plan. On ea9e2f0 the normal switch emits its completion before releasing joined waiters. The existing two-waiter fixture throws at switch start. Hold one launch with two pending callers, throw only on completion, and check that the same retained event sequence is visible at the producer commit and both normal wakes. The audit identified this missing witness by source inspection.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
