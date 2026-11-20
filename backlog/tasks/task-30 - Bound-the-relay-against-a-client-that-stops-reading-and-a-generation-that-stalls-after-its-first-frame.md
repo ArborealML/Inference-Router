@@ -3,11 +3,11 @@ id: TASK-30
 title: >-
   Bound the relay against a client that stops reading, and a generation that
   stalls after its first frame
-status: To Do
+status: Preparing
 assignee:
-  - '@qwen3.8-flash-next'
+  - '@gpt-6.2-sol-stream-backpressure'
 created_date: '2026-11-17T07:01:00Z'
-updated_date: '2026-11-18T19:29:00Z'
+updated_date: '2026-11-20T01:34:00Z'
 labels:
   - stream
   - transport
@@ -21,7 +21,9 @@ ordinal: 29000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Two halves of one gap, both on the response path after the first byte. (1) The stream channel is unbounded, so a caller that keeps the TCP connection open but stops reading does not stall the pump — it makes the router buffer that caller's tokens without limit while the engine slot stays held. (2) The response ceiling ends at the first frame on purpose, so an engine that sends one byte and then goes silent holds a slot and a connection indefinitely. Both are pre-existing, not new in v0.12.5: the v0.12.5 work made the first-frame boundary explicit, which is why they are now nameable. Neither is fixed in v0.12.6 because each needs a wire decision — a new error surface for a truncated generation, and a policy choice about whether the router or the caller owns a slow consumer. The review also suggested a stream_idle_timeout_ms key; not filed as a criterion yet because the key does not exist and SPEC would have to state its default — see the task note.
+Preparing the slow-reader and post-first-frame stall checks under the adopted limits.
+
+Two halves of one gap, both on the response path after the first byte. (1) The stream channel is unbounded, so a caller that keeps the TCP connection open but stops reading does not stall the pump — it makes the router buffer that caller's tokens without limit while the engine slot stays held. (2) The response ceiling ends at the first frame on purpose, so an engine that sends one byte and then goes silent holds a slot and a connection indefinitely. Both are pre-existing, not new in v0.12.5: the v0.12.5 work made the first-frame boundary explicit, which is why they are now nameable. Decision 16 sets the limits and qualification gates.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

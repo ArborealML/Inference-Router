@@ -1,11 +1,11 @@
 ---
 id: TASK-91
 title: Make one stream keepalive sequence monotonic, and prove the repeat is gone
-status: To Do
+status: Preparing
 assignee:
-  - '@qwen3.8-flash-next'
+  - '@gpt-6.2-sol-stream-evidence'
 created_date: '2026-11-18T07:51:00Z'
-updated_date: '2026-11-18T19:29:00Z'
+updated_date: '2026-11-20T01:34:00Z'
 labels:
   - wire
   - stream
@@ -18,6 +18,8 @@ ordinal: 90000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
+Comparing landed heartbeat evidence against the duplicate-sequence criteria before scheduling further tests.
+
 Measured live at 7d01520, twice, through the router fronting one OpenAI-shaped loopback upstream with auto_switch off: every streamed completion emits three keepalive frames — seq=0 status="queued model=…", then seq=1, then seq=0 status="queued model=…" again. SPEC 6 documents one keepalive sequence per stream, so the third frame is not a legal continuation: a client that reads seq for liveness, or drops duplicates by seq, sees a stream that stalled and restarted, and the repeat also lets an earlier phase restate its status. Reproduction: POST /v1/chat/completions with stream true against a running ServerApp that spends one queued phase. Source shows only two keepalive call sites sharing one counter (ServerApp.cs:191-208), so the third frame is not explained by the visible code: locate the writer before proposing a fix.
 <!-- SECTION:DESCRIPTION:END -->
 

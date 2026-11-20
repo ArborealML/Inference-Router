@@ -3,23 +3,26 @@ id: TASK-82
 title: >-
   Prove the stream relay preserves every frame when the upstream splits it at
   any byte
-status: To Do
+status: Preparing
 assignee:
-  - '@qwen3.8-flash-next'
+  - '@gpt-6.2-sol-stream-frames'
 created_date: '2026-11-18T04:09:00Z'
-updated_date: '2026-11-18T19:29:00Z'
+updated_date: '2026-11-20T01:34:00Z'
 labels:
   - stream
   - wire
   - tests
 milestone: m-1
 dependencies: []
+priority: high
 ordinal: 82000
 ---
 
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
+Preparing the remaining byte-split and truncated-event cases for independent plan review.
+
 The relay copies upstream bytes to the client as they arrive, so a frame can be split at **any** byte and the client must still see one identical event stream. Nothing pins that today: the streaming tests assert that keepalives and frames arrive, not that a frame split mid-token or mid-UTF-8-sequence survives the hop. The external evaluation of an open-source AI gateway (2026-11-18, `katanemo/plano`, borrowed pattern) pointed straight at this gap: their SSE tests replay one fixture across shifted 64-byte boundaries and assert identity, no loss and no duplication. That is the shape to copy — cheap, no new runtime, and it guards the one promise the router makes on `/v1` streaming: pass the answer through.
 <!-- SECTION:DESCRIPTION:END -->
 
