@@ -3,11 +3,11 @@ id: TASK-30
 title: >-
   Bound the relay against a client that stops reading, and a generation that
   stalls after its first frame
-status: Preparing
+status: Waiting
 assignee:
   - '@gpt-6.2-sol-stream-backpressure'
 created_date: '2026-11-17T07:01:00Z'
-updated_date: '2026-11-20T04:18:00Z'
+updated_date: '2026-11-20T04:25:00Z'
 labels:
   - stream
   - transport
@@ -21,7 +21,7 @@ ordinal: 29000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Stream Delivery is preparing the bounded relay against the landed frame-integrity and reload changes. Decision 76 pauses upstream at the byte limit and aborts a stalled pending write. Separate offline implementation and qualification from enabling the defaults, which still requires gap replay and a slow-reader soak.
+Wake: independent plan review of opt-in stalled-reader limits on the successful streaming path. Decision 76 requires pausing at the byte limit and aborting a stalled pending write. Enabling defaults still requires representative gap replay and a stopped-reader soak.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

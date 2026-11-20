@@ -3,11 +3,11 @@ id: TASK-101
 title: >-
   Read an upstream error body under a stated ceiling instead of buffering it
   whole
-status: Preparing
+status: Waiting
 assignee:
   - '@gpt-6.2-sol-stream-frames'
 created_date: '2026-11-18T11:29:00Z'
-updated_date: '2026-11-20T04:21:00Z'
+updated_date: '2026-11-20T04:25:00Z'
 labels: []
 milestone: m-1
 dependencies: []
@@ -17,7 +17,7 @@ ordinal: 100000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Frames is preparing a bounded upstream error-body read and a test that counts bytes consumed. The router currently buffers an upstream error response before taking its 256-byte diagnostic excerpt. The plan will distinguish the read ceiling from the size of the excerpt and exercise the production read path.
+Wake: independent plan review of the bounded upstream error-body read. The proposed check counts actual bytes consumed on the error path before the router takes its diagnostic excerpt. Stream Delivery coordinates shared disposal or admission edits with the stalled-reader work.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
