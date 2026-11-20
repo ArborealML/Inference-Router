@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Net;
 using System.Text;
+using System.Text.Json;
 
 namespace Arboreal.InferenceRouter.Tests;
 
@@ -33,7 +34,7 @@ public partial class ConfigLoaderTests
         Assert.Equal("total_slots>0", probe.Expect);
         Assert.Equal("default_generation_settings.n_ctx", probe.ContextPath);
         Assert.Equal("total_slots", probe.SlotsPath);
-        Assert.Equal(2, maya.Catalog.Count);
+        Assert.Equal(3, maya.Catalog.Count);
         Assert.Equal("glm-flash", Assert.Single(maya.Catalog[GlmCanonical].Aliases));
 
         var model = maya.Catalog[Hy4Canonical];
@@ -43,6 +44,7 @@ public partial class ConfigLoaderTests
         Assert.Null(model.Select);
         Assert.Null(maya.Catalog[GlmCanonical].Select);
         Assert.Equal(Hy4SampleTiers, model.ServingProfiles.Select(tier => (tier.Name, tier.MaxContext, tier.MaxSlots)));
+        AssertMiniMaxSample(maya);
     }
 
     private static RouterConfig ReadMayaSample()
@@ -94,35 +96,8 @@ public partial class ConfigLoaderTests
         Assert.Equal(2, mayaHttp.Forwards.Count);
         Assert.Equal(0, inert.CompletionCalls);
 
-        async Task<EngineCapability> PublishPhaseAsync(MayaPhase phase, bool start = false)
-        {
-            var previousVersion = runtime.Capability.Version;
-            var previousPair = mayaHttp.LastPair?.Number ?? 0;
-            var published = new TaskCompletionSource<(EngineCapability Capability, MayaProbePair Pair)>(TaskCreationOptions.RunContinuationsAsynchronously);
-            void OnEvent(RouterEvent item)
-            {
-                if (item.Kind != "engine.health" || item.Engine != maya.Name ||
-                    mayaHttp.LastPair is not { } pair || !ReferenceEquals(phase, pair.Phase) || pair.Number <= previousPair)
-                    return;
-
-                var observed = runtime.Capability;
-                if (observed.Version > previousVersion && MatchesMayaPhase(observed, phase))
-                    published.TrySetResult((observed, pair));
-            }
-
-            events.Subscribe(OnEvent);
-            try
-            {
-                mayaHttp.Select(phase);
-                if (start) router.Start();
-                var (snapshot, pair) = await published.Task.WaitAsync(ct);
-                AssertMayaReadback(maya, pair, phase);
-                Assert.True(snapshot.Version > previousVersion);
-                Assert.True(MatchesMayaPhase(snapshot, phase));
-                return snapshot;
-            }
-            finally { events.Unsubscribe(OnEvent); }
-        }
+        Task<EngineCapability> PublishPhaseAsync(MayaPhase phase, bool start = false) =>
+            PublishMayaPhaseAsync(runtime, mayaHttp, events, phase, start ? router.Start : null, ct);
 
         async Task RouteAsync(EngineCapability verified, string spelling, string canonical, bool forwards,
             long? minimum = null)
@@ -157,6 +132,37 @@ public partial class ConfigLoaderTests
             }
             Assert.Same(verified, runtime.Capability);
         }
+    }
+
+    private static async Task<EngineCapability> PublishMayaPhaseAsync(EngineRuntime runtime, SharedMayaHandler mayaHttp,
+        EventRing events, MayaPhase phase, Action? start, CancellationToken ct)
+    {
+        var previousVersion = runtime.Capability.Version;
+        var previousPair = mayaHttp.LastPair?.Number ?? 0;
+        var published = new TaskCompletionSource<(EngineCapability Capability, MayaProbePair Pair)>(TaskCreationOptions.RunContinuationsAsynchronously);
+        void OnEvent(RouterEvent item)
+        {
+            if (item.Kind != "engine.health" || item.Engine != runtime.Name ||
+                mayaHttp.LastPair is not { } pair || !ReferenceEquals(phase, pair.Phase) || pair.Number <= previousPair)
+                return;
+
+            var observed = runtime.Capability;
+            if (observed.Version > previousVersion && MatchesMayaPhase(observed, phase))
+                published.TrySetResult((observed, pair));
+        }
+
+        events.Subscribe(OnEvent);
+        try
+        {
+            mayaHttp.Select(phase);
+            start?.Invoke();
+            var (snapshot, pair) = await published.Task.WaitAsync(ct);
+            AssertMayaReadback(runtime.Definition, pair, phase);
+            Assert.True(snapshot.Version > previousVersion);
+            Assert.True(MatchesMayaPhase(snapshot, phase));
+            return snapshot;
+        }
+        finally { events.Unsubscribe(OnEvent); }
     }
 
     internal static async Task CheckHy4SampleProbeAsync(EngineDefinition maya, string tier, long expectedWindow, CancellationToken ct)
@@ -203,16 +209,23 @@ public partial class ConfigLoaderTests
         Assert.Same(phase, pair.Phase);
         Assert.Equal(new Uri(maya.Endpoint, "/v1/models"), pair.Discovery);
         Assert.Equal(new Uri(maya.Endpoint, "/props"), pair.Props);
+        using var models = JsonDocument.Parse(pair.DiscoveryBody);
+        var row = Assert.Single(models.RootElement.GetProperty("data").EnumerateArray());
+        Assert.Equal(phase.Model, row.GetProperty("id").GetString());
+        Assert.Equal(phase.Loaded ? "loaded" : "unloaded", row.GetProperty("status").GetProperty("value").GetString());
+        using var props = JsonDocument.Parse(pair.PropsBody);
+        Assert.Equal(phase.Window, props.RootElement.GetProperty("default_generation_settings").GetProperty("n_ctx").GetInt64());
+        Assert.Equal(1, props.RootElement.GetProperty("total_slots").GetInt32());
     }
 
     private sealed record MayaPhase(string Model, bool Loaded, long Window);
-    private sealed record MayaProbePair(MayaPhase Phase, Uri Discovery, Uri Props, int Number);
+    private sealed record MayaProbePair(MayaPhase Phase, Uri Discovery, string DiscoveryBody, Uri Props, string PropsBody, int Number);
     private sealed record MayaForward(HttpMethod Method, Uri Uri, byte[] Body);
 
     private sealed class SharedMayaHandler(Uri endpoint) : HttpMessageHandler
     {
         private MayaPhase? _selected;
-        private (MayaPhase Phase, Uri Discovery)? _discovery;
+        private (MayaPhase Phase, Uri Discovery, string Body)? _discovery;
         private MayaProbePair? _lastPair;
         private int _numbers;
 
@@ -234,17 +247,19 @@ public partial class ConfigLoaderTests
             {
                 Assert.Null(_discovery);
                 var phase = Assert.IsType<MayaPhase>(Volatile.Read(ref _selected));
-                _discovery = (phase, uri);
                 var status = phase.Loaded ? "loaded" : "unloaded";
-                return Json($$$"""{"data":[{"id":"{{{phase.Model}}}","status":{"value":"{{{status}}}"}}]}""");
+                var body = $$$"""{"data":[{"id":"{{{phase.Model}}}","status":{"value":"{{{status}}}"}}]}""";
+                _discovery = (phase, uri, body);
+                return Json(body);
             }
 
             Assert.Equal(new Uri(endpoint, "/props"), uri);
-            var (paired, modelsUri) = _discovery ?? throw new InvalidOperationException("No matching models GET preceded props.");
+            var (paired, modelsUri, modelsBody) = _discovery ?? throw new InvalidOperationException("No matching models GET preceded props.");
             _discovery = null;
-            Volatile.Write(ref _lastPair, new(paired, modelsUri, uri, ++_numbers));
-            return Json(FormattableString.Invariant(
-                $$$"""{"default_generation_settings":{"n_ctx":{{{paired.Window}}} },"total_slots":1}"""));
+            var propsBody = FormattableString.Invariant(
+                $$$"""{"default_generation_settings":{"n_ctx":{{{paired.Window}}} },"total_slots":1}""");
+            Volatile.Write(ref _lastPair, new(paired, modelsUri, modelsBody, uri, propsBody, ++_numbers));
+            return Json(propsBody);
         }
 
         private static HttpResponseMessage Json(string body) => new(HttpStatusCode.OK)
