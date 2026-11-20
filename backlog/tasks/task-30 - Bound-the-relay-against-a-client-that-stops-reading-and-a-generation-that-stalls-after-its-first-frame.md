@@ -3,11 +3,11 @@ id: TASK-30
 title: >-
   Bound the relay against a client that stops reading, and a generation that
   stalls after its first frame
-status: Testing
+status: Preparing
 assignee:
   - '@gpt-6.2-sol-stream-delivery'
 created_date: '2026-11-17T07:01:00Z'
-updated_date: '2026-11-20T13:00:00Z'
+updated_date: '2026-11-20T13:35:00Z'
 labels:
   - stream
   - transport
@@ -21,7 +21,7 @@ ordinal: 29000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Delivery is coordinating one exclusive 25-minute local stopped-reader measurement after the timed driver passed independent review. Eight short HTTP/1.1 and HTTP/2 cases and 19 ticket checks passed. Confirm the interval with every local seat and record host load before and during execution. Representative upstream replay and default selection remain open.
+Delivery is checking the archived traces for missing watchdog timing, ordering, one-byte writes and HTTP/2 idle evidence. Both limits remain opt-in. A repeat run requires separate release.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -42,9 +42,11 @@ Build against ba3c1cc. Exercise a stopped HTTP/1.1 reader and an HTTP/2 stream w
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-The [opt-in relay](https://github.com/ArborealML/Inference-Router/pull/45) passed 39 focused and 54 neighboring Release cases, named mutation controls, and warning-free server Native AOT. [Feature merge CI](https://github.com/ArborealML/Inference-Router/actions/runs/44682032652) failed one of 1,620 tests on a premature zero-byte assertion after logical relay exit. [The test-only correction](https://github.com/ArborealML/Inference-Router/pull/46) checks physical credit release separately, passed five focused rows and still detected the deliberate credit leak. The corrected merge ba3c1cc matches the reviewed tree and [passed all hosted jobs](https://github.com/ArborealML/Inference-Router/actions/runs/44683761424). Keep 262,144 bytes and 300,000 ms as proposed defaults pending both measurements.
+The [opt-in relay](https://github.com/ArborealML/Inference-Router/pull/45) passed 39 focused and 54 neighboring Release cases plus warning-free Native AOT. The [credit-release fixture correction](https://github.com/ArborealML/Inference-Router/pull/46) passed five focused rows and [hosted CI](https://github.com/ArborealML/Inference-Router/actions/runs/44683761424).
 
-The proposed soak needs a real stopped HTTP/1.1 socket and an HTTP/2 peer that withholds credit on one stream while another on the same connection stays healthy. The harness must observe reads, flushes, outstanding bytes and memory, and distinguish Kestrel timeouts from router action. The proposed 25-minute exclusive window is unreserved. At 83b43a8 the accessible records contained zero replay-usable streams. The downstream counting stream had no raw timing, four Pi turns had only first-token and terminal timings, and the benchmark had request aggregates. Replay needs authorized per-engine traces with ordered monotonic read gaps, timebase, attribution of pauses caused by downstream backpressure, representative workload counts, completeness and provenance. The soak can proceed independently.
+The exclusive November 20 run accounted for all 50 rows: 35 passed, one parity result, seven unproven and seven skipped. All ten stock saturation trials reported slow_consumer with causal admission of the fifth request. Full watchdog timing and ordering were demonstrated in two of five HTTP/1.1 and four of five HTTP/2 trials. Resume and caller abort passed on both protocols. The attempted one-byte writes were 49,152 and 4,096 bytes. HTTP/1.1 short-idle controls passed; the HTTP/2 pair was incomplete. The maximum observed relay credit was 262,144 bytes per ticket. The series completed without invalidation; raw traces and checksums are retained outside the repository.
+
+The soak criterion remains open. Representative replay still requires per-engine monotonic raw-read gaps with pause attribution, workload counts, completeness and provenance; the earlier inventory found zero replay-usable streams.
 <!-- SECTION:NOTES:END -->
 
 ## Comments
