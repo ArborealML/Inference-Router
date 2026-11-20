@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@gpt-6.2-sol-stream-frames'
 created_date: '2026-11-18T12:59:00Z'
-updated_date: '2026-11-20T22:58:00Z'
+updated_date: '2026-11-20T23:28:00Z'
 labels: []
 milestone: m-7
 dependencies:
@@ -37,5 +37,5 @@ Preserve immediate refusal responses. Add OperationId to the accepted 202 respon
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Opened by the board from the coding seat's finding at 14a01e2: their grep for this surface across the board returned nothing, and SPEC §15 carries the gap with no criteria attached. Their correction, accepted and on the record: TASK-65 is the commit-identity decision and does not cover this — the taxonomy commit cites TASK-77/87/94/103 only. Wire-adjacent, so its plan goes to the top reasoning tier before code. Criterion #4 came from the deep review of 14a01e2: the taxonomy answer today is a sentence with a parenthesised token at the end, which is text a client has to parse.
+At 53d2c61 the production/docs and wire fixture reviews passed, and the server Native AOT publish completed with zero warnings. The test build stopped on eight fixture errors. Child 3213760 edits the fixture for async and disposal diagnostics; focused results are pending. The HTTP/1.1 review found asynchronous socket checks could accept an early 29-second acknowledgment timeout. Require the registered deadline at exactly 30 seconds, observable absence of abort immediately before it, and an isolated 29-second control that fails at the deadline assertion. Preserve the real socket, original send task and retention checks. Frames owns the correction.
 <!-- SECTION:NOTES:END -->

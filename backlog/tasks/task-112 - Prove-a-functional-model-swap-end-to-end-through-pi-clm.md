@@ -1,11 +1,11 @@
 ---
 id: TASK-112
 title: Prove a functional model swap end to end through pi-clm
-status: Waiting
+status: Preparing
 assignee:
-  - '@gpt-6.2-sol-scheduling'
+  - '@gpt-6.2-sol-lifecycle'
 created_date: '2026-11-18T18:15:00Z'
-updated_date: '2026-11-20T04:18:00Z'
+updated_date: '2026-11-20T23:31:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -23,7 +23,7 @@ ordinal: 110000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Wake: TASK-110 and TASK-118 supply authenticated host enrollment and verified serving dispatch for a live DeepSeek/Qwen swap. The local-only Pi launcher already passed the isolated two-turn streaming test with history preserved. The deployed launcher and both live criteria remain open.
+Lifecycle is tracing the first primary-host queue-triggered DeepSeek/Qwen swap from the admission and lifecycle entry points against existing host records and Decisions 68 and 71. The isolated checkout was verified at 1b2c17f. The next handoff identifies the first failing precondition, cites the evidence, and identifies the smallest fix and a test that would demonstrate it. Both live Pi acceptance criteria remain open.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

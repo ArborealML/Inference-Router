@@ -1,11 +1,11 @@
 ---
 id: TASK-57
 title: Hand out an immutable capability snapshot, never the live model array
-status: Waiting
+status: To Do
 assignee:
-  - '@gpt-6.2-sol-release'
+  - '@gpt-6.2-astra'
 created_date: '2026-11-17T20:41:00Z'
-updated_date: '2026-11-20T22:48:00Z'
+updated_date: '2026-11-20T23:32:00Z'
 labels:
   - concurrency
 milestone: m-3
@@ -17,13 +17,13 @@ ordinal: 57000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Wake on independent review and [hosted CI](https://github.com/ArborealML/Inference-Router/actions/runs/44831695208) for the [allocation fixture](https://github.com/ArborealML/Inference-Router/pull/66) at 0a3d07d. In Release, 256 warmed snapshot and roster reads allocated zero managed bytes on the measuring thread. Forcing a roster copy produced 8,192 bytes and failed the assertion. Exact restoration passed. A separate scheduler Wait callback verified the same capability and roster references. The [landed mutation test](https://github.com/ArborealML/Inference-Router/blob/bbd8bb9/tests/Arboreal.InferenceRouter.Tests/CapabilityScanTests.cs#L9) covers constructor and initializer inputs, getter output and deconstruction. The [full run](https://github.com/ArborealML/Inference-Router/actions/runs/44816063374) passed 1,798/1,798. The runtime getter mutation also passed in the 122-case run at 4bc9a0a. The SPEC wording remains open.
+The remaining work is to reconcile SPEC §5.5 with the published immutable snapshot. [PR #66](https://github.com/ArborealML/Inference-Router/pull/66) landed the allocation fixture at a9a3c68. In Release, 256 warmed snapshot and roster reads allocated zero managed bytes on the measuring thread. A forced copy allocated 8,192 bytes; restoration returned to zero. A separate scheduler Wait callback verified the same capability and roster references. All three [post-merge checks](https://github.com/ArborealML/Inference-Router/actions/runs/44836939149) passed. The [landed mutation test](https://github.com/ArborealML/Inference-Router/blob/bbd8bb9/tests/Arboreal.InferenceRouter.Tests/CapabilityScanTests.cs#L9) covers constructor and initializer inputs, getter output and deconstruction.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [x] #1 no published capability array is reachable as a mutable array from any surface (an immutable collection inside the snapshot, nothing escaping it)
-- [ ] #2 the scheduler's per-decision snapshot read stays allocation-free, pinned by a test rather than asserted
+- [x] #2 the scheduler's per-decision snapshot read stays allocation-free, pinned by a test rather than asserted
 - [ ] #3 SPEC 5.5 names the snapshot as the only published capability shape, and calls it immutable only if it is one
 <!-- AC:END -->
 

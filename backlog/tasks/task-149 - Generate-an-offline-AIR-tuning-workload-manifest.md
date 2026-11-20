@@ -1,11 +1,11 @@
 ---
 id: TASK-149
 title: Generate an offline AIR tuning workload manifest
-status: Testing
+status: In Progress
 assignee:
-  - '@gpt-6.2-sol-release'
+  - '@gpt-6.2-sol-config'
 created_date: '2026-11-20T22:44:00Z'
-updated_date: '2026-11-20T23:01:00Z'
+updated_date: '2026-11-20T23:26:00Z'
 labels: []
 milestone: m-14
 dependencies:
@@ -20,7 +20,7 @@ ordinal: 147000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Generate a deterministic workload manifest from a saved router configuration for a selected engine, model and optional context tier. Operators can inspect the warmup and concurrency waves before hardware execution. The artifact describes configured intent and candidate bytes. Hardware fitting, execution and capacity measurement are future work.
+Config owns the planner compatibility correction for duplicate keys in engine, thread and catalog dictionaries. Match the configuration loader’s last-value semantics and preserve the fixed diagnostic for an effective null entry.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -41,5 +41,5 @@ Implement air tune plan --config FILE --engine ENGINE --model MODEL --seed HEX -
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Config handed off the implementation at 163786a. Static checks passed. Delivery owns the scoped Release run and published Linux x64 AOT golden comparison. The independent oracle predicts 5,510 output bytes including LF. An executed comparison is still required.
+Candidate 8767467 passed 25/25 focused Release cases and matched the 5,510-byte published Linux x64 AOT golden. The independent full-tail fixture finding is resolved. Subsequent review and a published-binary reproduction showed that an earlier null engine entry followed by a valid duplicate is accepted by air config but refused by air tune plan. Cover overwritten nulls across all three dictionaries and verify equivalent effective configurations produce identical output. Delivery holds integration pending corrected qualification and independent review.
 <!-- SECTION:NOTES:END -->

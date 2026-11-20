@@ -7,7 +7,7 @@ status: Waiting
 assignee:
   - '@gpt-6.2-sol-release'
 created_date: '2026-11-17T19:15:00Z'
-updated_date: '2026-11-20T23:03:00Z'
+updated_date: '2026-11-20T23:19:00Z'
 labels:
   - scheduling
   - wire
@@ -20,7 +20,7 @@ ordinal: 52000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Wake on independent review of the revised qualification plan. The admission proof uses explicit context demand and the configured tier ladder. A wider observed window cannot override an applicable nonfitting ladder in the built-in scheduler. An eligible engine without an applicable ladder precludes this fast refusal. Config handed off the amended plan for review.
+Wake on explicit implementation release when Config is available. The independently reviewed admission plan covers explicit context demand and the configured tier ladder. A wider observed window cannot override an applicable nonfitting ladder in the built-in scheduler. An eligible engine without an applicable ladder precludes this fast refusal.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -32,5 +32,5 @@ Wake on independent review of the revised qualification plan. The admission proo
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Plan review accepted the admission proof and requested stronger controls. Use the same body with and without the explicit header, with an estimate genuinely above the ceiling. Reload to add a distinct external engine declaring a wider tier, then require admission to reconsider the old proof. Cover a missing ladder, alternate-case lookup, no applicable ladders anywhere, exact fit, custom scheduling and a wider observed window. Submit the amended plan for independent review before implementation.
+Independent rereview passed the amended plan on 7ee853e. The same body distinguishes explicit demand above the ceiling, an estimate above the ceiling and exact fit. Reloading a wider external declarer forces reconsideration before allocating a ticket. Separate cases cover missing ladders, ordinal matching, custom scheduling and the observed 131072-token window. Relevant source remains unchanged through 1b2c17f. No tests have run for this plan. Revision allocation awaits release.
 <!-- SECTION:NOTES:END -->
