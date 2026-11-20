@@ -3,11 +3,11 @@ id: TASK-118
 title: >-
   Resolve each native launch profile and dispatch to its verified serving
   instance
-status: Preparing
+status: Waiting
 assignee:
   - '@gpt-6.2-sol-lifecycle'
 created_date: '2026-11-18T18:56:00Z'
-updated_date: '2026-11-20T00:15:00Z'
+updated_date: '2026-11-20T00:20:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -23,7 +23,7 @@ ordinal: 116000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Lifecycle is tracing the first consumer of a closed launch receipt for the selected DeepSeek and Qwen instances. Identify the smallest trusted way to bind the serving process and both readiness observations before opening inference, and any missing producer. The actual cross-configuration readiness join and enrolled dispatch checks remain open.
+Waiting for host enrollment to supply a GET-only channel that attests the connected serving process, including the backend leg of any proxy. Delivery of that producer wakes Lifecycle. Bind both readiness reads to the recorded launch, scope, route, immutable container and one serving incarnation while inference is closed. The receipt on 0f76243 identifies the container; its process can restart independently. Revalidate saved Applied evidence and read /v1/models and /props under the original readiness budget. A process restart between valid replies must refuse the combined measurement. Parser changes alone cannot qualify this path.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
