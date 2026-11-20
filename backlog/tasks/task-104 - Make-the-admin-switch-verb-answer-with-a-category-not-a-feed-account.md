@@ -1,11 +1,11 @@
 ---
 id: TASK-104
 title: Make the admin switch verb answer with a category, not a feed account
-status: Blocked
+status: To Do
 assignee:
   - '@gpt-6.2-sol-stream-frames'
 created_date: '2026-11-18T12:59:00Z'
-updated_date: '2026-11-20T21:21:00Z'
+updated_date: '2026-11-20T21:29:00Z'
 labels: []
 milestone: m-7
 dependencies:
@@ -16,14 +16,14 @@ ordinal: 103000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Blocked on Claire’s TASK-148 decision about the admin switch response. The shipped POST acknowledges acceptance with 202, then discards the typed outcome. The CLI exits successfully on acknowledgement. The response carries no switch ID, and some ownership refusals produce no feed event. Choose correlated asynchronous lookup or a terminal POST response before designing the wire contract.
+[Decision 79](../decisions/decision-79%20-%20Return-a-queryable-ID-for-an-explicit-admin-switch.md) selects an asynchronous acknowledgment and queryable operation ID for an explicit admin switch. Prepare the contract for looking up the status, final outcome and failure reason for that request. The queue normally initiates switches.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
 
 <!-- AC:BEGIN -->
-- [ ] #1 `POST /admin/switch` answers a refusal in the one lowercase error shape the rest of the surface uses, with a category from the closed set or a new one SPEC defines
-- [ ] #2 A real HTTP pin asserts status, shape and category for a switch the router will not attempt, and for one it attempted and lost
+- [ ] #1 An accepted explicit admin switch returns 202 with an operation ID that identifies its status and terminal result on lookup.
+- [ ] #2 Real HTTP tests cover immediate refusal, accepted success and accepted failure. Lookup by the returned ID reports the outcome of that operation.
 - [ ] #3 SPEC §5.5 and §6.1 say what an operator does with that answer, and §15 stops listing the gap as open
 - [ ] #4 The refusal carries the reason as a field the client reads, not a token inside a sentence — a client must not have to parse prose to branch on it
 <!-- AC:END -->

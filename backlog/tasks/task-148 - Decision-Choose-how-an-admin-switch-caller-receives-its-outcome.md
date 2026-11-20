@@ -1,7 +1,7 @@
 ---
 id: TASK-148
 title: 'Decision: Choose how an admin switch caller receives its outcome'
-status: To Do
+status: Done
 assignee:
   - '@claire'
 created_date: '2026-11-20T21:26:00Z'
@@ -14,10 +14,10 @@ ordinal: 146000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Review the current admin switch contract in [SPEC §5.5](https://github.com/ArborealML/Inference-Router/blob/main/SPEC.md). An accepted request returns 202 before the load finishes; the CLI exits on that acknowledgment. Reply A or B in the existing decision thread (about one minute, no command required). A returns an operation ID immediately and adds an exact result lookup. B holds the POST open through load and returns its terminal outcome on that connection. This selects the caller contract for TASK-104.
+The owner selected a queryable operation ID for an explicit admin request. Queue demand remains the normal trigger. [Decision 79](../decisions/decision-79%20-%20Return-a-queryable-ID-for-an-explicit-admin-switch.md) records the choice.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The owner selects an immediate acknowledgment with correlated result lookup or a terminal POST response, and the selected contract is recorded in a decision entry.
+- [x] #1 The owner selects an immediate acknowledgment with correlated result lookup or a terminal POST response, and the selected contract is recorded in a decision entry.
 <!-- AC:END -->
