@@ -5,7 +5,7 @@ status: Waiting
 assignee:
   - '@gpt-6.2-sol-release'
 created_date: '2026-11-18T02:37:00Z'
-updated_date: '2026-11-20T19:19:00Z'
+updated_date: '2026-11-20T20:11:00Z'
 labels:
   - lifecycle
   - scheduling
@@ -26,7 +26,7 @@ Waiting for TASK-110. Host coordination qualification wakes the managed-peer act
 <!-- AC:BEGIN -->
 - [x] #1 Config declares the inference endpoint and lifecycle owner independently. TOML and JSON tests pin legacy remote mapping for omitted, false and true.
 - [ ] #2 An engine the router can reach but cannot start is switchable by a lifecycle provider that speaks to that host
-- [ ] #3 The router never stops or launches an engine whose lifecycle it does not own, pinned
+- [x] #3 The router never stops or launches an engine whose lifecycle it does not own, pinned
 - [x] #4 SPEC documents which requests the inference endpoint can serve and which lifecycle actions each owner can authorize.
 - [x] #5 An omitted remote never grants load authority: ownership comes from a target-bound lifecycle provider, never from a hostname or from a missing key
 - [x] #6 A shipped sample engine with no lifecycle block still refuses to switch after the migration, pinned by the sample test
@@ -53,4 +53,6 @@ Integrated [lifecycle authority and incumbent recovery](https://github.com/Arbor
 Review of 87d7043 verified that native injection checks only kind; TASK-128 owns concrete provider scope. Exceptions in read-only ownership/preflight and in refusal-event delivery must preserve valid incumbent proof when no mutation was attempted. After attempted stop or launch, retain conservative withdrawal.
 
 The [shipped-sample test](https://github.com/ArborealML/Inference-Router/blob/7350f71f9c8690e813339f0240ef2e752865f5fe/tests/Arboreal.InferenceRouter.Tests/ConfigLoaderTests.cs#L458-L469) loads the [safe sample](https://github.com/ArborealML/Inference-Router/blob/7350f71f9c8690e813339f0240ef2e752865f5fe/samples/router.safe-smoke.toml#L12-L19), calls WaitForModelAsync, and observes no_lifecycle_owner with zero provider calls. Its named Release result passed at 6263b83 (9/9 overall). Both files matched the qualified blobs at landing and at d77b416.
+
+The [authority tests](https://github.com/ArborealML/Inference-Router/blob/2f04f2b/tests/Arboreal.InferenceRouter.Tests/LifecycleAuthorityTests.cs#L179) preserve resident readiness and refuse an unauthorized switch with zero provider operations. The qualified test blob also covers selectorless claims. [Docker provider tests](https://github.com/ArborealML/Inference-Router/blob/09a0d9b/tests/Arboreal.InferenceRouter.Tests/DockerLifecycleProviderTests.cs#L578) cover unowned peers, owned-only writes and exact-ID or label conflicts before removal. Those cases passed in [main CI](https://github.com/ArborealML/Inference-Router/actions/runs/44704425802).
 <!-- SECTION:NOTES:END -->

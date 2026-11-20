@@ -1,11 +1,11 @@
 ---
 id: TASK-81
 title: Answer a stopped switch the same way on the wire, the feed, and the stream
-status: Waiting
+status: In Progress
 assignee:
-  - '@gpt-6.2-sol-stream-delivery'
+  - '@gpt-6.2-sol-stream-frames'
 created_date: '2026-11-18T04:09:00Z'
-updated_date: '2026-11-20T19:42:00Z'
+updated_date: '2026-11-20T20:02:00Z'
 labels:
   - lifecycle
   - shutdown
@@ -18,7 +18,7 @@ ordinal: 81000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Wake: independent rereview of the active default HTTP shutdown plan. If core shutdown wins while an upstream read is pending, emit the existing cancellation error and one sentinel only on a writable stream at an acknowledged complete event boundary. Pin one exact delta, no late output or duplicate terminal, and a single cancelled ticket and feed result. Queue, switch, idle-only and credited paths remain outside this increment.
+Frames owns the reviewed active default HTTP shutdown increment. When core shutdown wins during an armed upstream read, emit the existing lowercase cancellation error and one sentinel only on a writable stream at a confirmed complete event boundary. Qualify exact downstream bytes, cancellation attribution and one terminal result over real HTTP. Verified-default callback wiring has source-only coverage. Queue, switch, idle-only and credited modes remain open.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
