@@ -504,7 +504,7 @@ public sealed class AdminSwitchOperationTests
     public async Task AdminSwitch_AckDeadlineRetiresStartedKestrelCompletionBeforeClosing(bool remainParked)
     {
         var gate = new AckGate();
-        var transport = new AckTransport();
+        using var transport = new AckTransport();
         await using var rig = await Fixture.StartAsync(ackGate: gate, transport: transport);
         using var peer = new TcpClient();
         try
@@ -556,7 +556,7 @@ public sealed class AdminSwitchOperationTests
             else
             {
                 continuation.Dispatch();
-                await original.WaitAsync(rig.Token).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+                await ObserveCompletionAsync(original, rig.Token);
                 Assert.True(original.IsCompleted);
                 await gate.Exited.Task.WaitAsync(rig.Token);
 
@@ -576,11 +576,21 @@ public sealed class AdminSwitchOperationTests
             if (gate.OriginalCompletion.Task.IsCompletedSuccessfully)
             {
                 using var cleanup = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-                await gate.OriginalCompletion.Task.Result.WaitAsync(cleanup.Token)
-                    .ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+                var original = await gate.OriginalCompletion.Task;
+                await ObserveCompletionAsync(original, cleanup.Token);
                 await gate.Exited.Task.WaitAsync(cleanup.Token);
             }
         }
+    }
+
+    private static async Task ObserveCompletionAsync(Task original, CancellationToken bound)
+    {
+        try { await original.WaitAsync(bound); }
+        catch (Exception) when (!bound.IsCancellationRequested && (original.IsFaulted || original.IsCanceled))
+        {
+            // After abort the transport can finish with a fault or cancellation.
+        }
+        bound.ThrowIfCancellationRequested();
     }
 
     private static async Task AssertPeerClosedAsync(Stream stream, CancellationToken ct)
@@ -646,11 +656,22 @@ public sealed class AdminSwitchOperationTests
 
     private static TaskCompletionSource Gate() => new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-    private sealed class Fixture(WebApplication app, DirectoryInfo directory, LaunchGate provider, TestClock clock,
-        HttpClient client, FakeEngineHandler models, FakeEngineHandler spectator, AckGate? ackGate,
-        ConcurrentDictionary<Guid, byte> exits) : IAsyncDisposable
+    private sealed class Fixture : IAsyncDisposable
     {
+        private readonly DirectoryInfo _directory = Directory.CreateTempSubdirectory("air-admin-switch-");
+        private readonly FakeEngineHandler _models = new() { LoadedModels = ["a"] };
+        private readonly FakeEngineHandler _spectator = new() { LoadedModels = ["spectator"] };
+        private readonly HttpClient _client = new();
         private readonly CancellationTokenSource _bound = new(TimeSpan.FromSeconds(45));
+        private readonly ConcurrentDictionary<Guid, byte> _exits = new();
+        private readonly AckGate? _ackGate;
+        private WebApplication? _app;
+
+        private Fixture(AckGate? ackGate)
+        {
+            _ackGate = ackGate;
+            Provider = new LaunchGate(_models);
+        }
 
         private const string Retained = """
             default_model = "a"
@@ -681,34 +702,42 @@ public sealed class AdminSwitchOperationTests
             """;
 
         internal CancellationToken Token => _bound.Token;
-        internal int Port => client.BaseAddress!.Port;
-        internal RouterCore Router => app.Services.GetRequiredService<RouterCore>();
+        internal int Port => _client.BaseAddress!.Port;
+        internal RouterCore Router => _app!.Services.GetRequiredService<RouterCore>();
         internal EngineRuntime Engine => Router.Engines["native"];
-        internal AdminSwitchOperations Operations => app.Services.GetRequiredService<AdminSwitchOperations>();
-        internal LaunchGate Provider => provider;
-        internal TestClock Clock => clock;
+        internal AdminSwitchOperations Operations => _app!.Services.GetRequiredService<AdminSwitchOperations>();
+        internal LaunchGate Provider { get; }
+        internal TestClock Clock { get; } = new();
 
-        private string PathToConfig => Path.Combine(directory.FullName, "router.toml");
+        private string PathToConfig => Path.Combine(_directory.FullName, "router.toml");
 
         internal static async Task<Fixture> StartAsync(bool external = false, AckGate? ackGate = null,
             AckTransport? transport = null)
         {
-            var dir = Directory.CreateTempSubdirectory("air-admin-switch-");
-            var path = Path.Combine(dir.FullName, "router.toml");
-            await File.WriteAllTextAsync(path, (external
-                ? Retained + "\nlifecycle_owner = \"external\"\n"
-                : Retained + "\n" + Managed + "\n") + Catalog + "\n" + Spectator);
+            var fixture = new Fixture(ackGate);
+            try
+            {
+                await fixture.StartHostAsync(external, transport);
+                return fixture;
+            }
+            catch
+            {
+                await fixture.DisposeAsync();
+                throw;
+            }
+        }
 
-            var models = new FakeEngineHandler { LoadedModels = ["a"] };
-            var spectator = new FakeEngineHandler { LoadedModels = ["spectator"] };
-            var provider = new LaunchGate(models);
-            var clock = new TestClock();
-            var exits = new ConcurrentDictionary<Guid, byte>();
+        private async Task StartHostAsync(bool external, AckTransport? transport)
+        {
+            await File.WriteAllTextAsync(PathToConfig, (external
+                ? Retained + "\nlifecycle_owner = \"external\"\n"
+                : Retained + "\n" + Managed + "\n") + Catalog + "\n" + Spectator, Token);
+
             string[] args = ["--urls", "http://127.0.0.1:0", "--Logging:LogLevel:Microsoft.AspNetCore.Server.Kestrel.Connections=Trace"];
-            var app = ServerApp.Build(args, path, null, TimeProvider.System,
-                lifecycleFactory: external ? null : _ => provider,
-                httpHandlerFactoryForTests: definition => definition.Name == "native" ? models : spectator,
-                reloadTokenForTests: "fixture", adminSwitchClockForTests: clock);
+            var app = _app = ServerApp.Build(args, PathToConfig, null, TimeProvider.System,
+                lifecycleFactory: external ? null : _ => Provider,
+                httpHandlerFactoryForTests: definition => definition.Name == "native" ? _models : _spectator,
+                reloadTokenForTests: "fixture", adminSwitchClockForTests: Clock);
 
             app.Use(async (HttpContext ctx, RequestDelegate next) =>
             {
@@ -718,7 +747,7 @@ public sealed class AdminSwitchOperationTests
                     return;
                 }
 
-                var gate = ctx.Request.Headers.ContainsKey("X-Test-Ack") ? ackGate : null;
+                var gate = ctx.Request.Headers.ContainsKey("X-Test-Ack") ? _ackGate : null;
                 var original = ctx.Features.Get<IHttpResponseBodyFeature>()!;
                 using var feature = new ObservedAckFeature(original, ctx, gate);
                 ctx.Features.Set<IHttpResponseBodyFeature>(feature);
@@ -726,7 +755,7 @@ public sealed class AdminSwitchOperationTests
                 finally
                 {
                     ctx.Features.Set(original);
-                    if (feature.Id is { } id) exits.TryAdd(id, 0);
+                    if (feature.Id is { } id) _exits.TryAdd(id, 0);
                     gate?.Exited.TrySetResult();
                 }
             });
@@ -746,24 +775,12 @@ public sealed class AdminSwitchOperationTests
                 app.Services.GetRequiredService<ILoggerFactory>().AddProvider(transport);
             }
 
-            var client = new HttpClient();
-            var fixture = new Fixture(app, dir, provider, clock, client, models, spectator, ackGate, exits);
-            try
-            {
-                await app.StartAsync(fixture.Token);
-                var addresses = app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!;
-                client.BaseAddress = plain is null
-                    ? new Uri(addresses.Addresses.Single())
-                    : new Uri($"http://127.0.0.1:{plain.IPEndPoint!.Port}");
-                await ConfigReloadWireTests.WaitUntilAsync(
-                    () => fixture.Router.Engines.Values.All(e => e.Healthy), fixture.Token);
-                return fixture;
-            }
-            catch
-            {
-                await fixture.DisposeAsync();
-                throw;
-            }
+            await app.StartAsync(Token);
+            var addresses = app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!;
+            _client.BaseAddress = plain is null
+                ? new Uri(addresses.Addresses.Single())
+                : new Uri($"http://127.0.0.1:{plain.IPEndPoint!.Port}");
+            await ConfigReloadWireTests.WaitUntilAsync(() => Router.Engines.Values.All(e => e.Healthy), Token);
         }
 
         internal async Task<HttpResponseMessage> PostAsync(string model, string? profile = null, bool gated = false)
@@ -774,21 +791,21 @@ public sealed class AdminSwitchOperationTests
             using var request = new HttpRequestMessage(HttpMethod.Post, "/admin/switch");
             request.Content = new StringContent(body, Encoding.UTF8, "application/json");
             if (gated) request.Headers.Add("X-Test-Ack", "1");
-            return await client.SendAsync(request, Token);
+            return await _client.SendAsync(request, Token);
         }
 
         internal async Task<Guid> PostReadyAsync()
         {
             using var reply = await PostAsync("a");
             var id = await AckAsync(reply, "a", Token);
-            await ConfigReloadWireTests.WaitUntilAsync(() => exits.ContainsKey(id), Token);
+            await ConfigReloadWireTests.WaitUntilAsync(() => _exits.ContainsKey(id), Token);
             await AwaitLookupAsync(id, "succeeded", null);
             return id;
         }
 
         private async Task<string> ReadLookupAsync(Guid id, string? reason, string? expectedStatus)
         {
-            using var reply = await client.GetAsync($"/admin/switch/{id:N}", Token);
+            using var reply = await _client.GetAsync($"/admin/switch/{id:N}", Token);
             Assert.Equal(HttpStatusCode.OK, reply.StatusCode);
             Assert.Equal("application/json", reply.Content.Headers.ContentType?.MediaType);
             Assert.True(reply.Headers.CacheControl?.NoStore == true);
@@ -817,7 +834,7 @@ public sealed class AdminSwitchOperationTests
 
         internal async Task AssertMissingAsync(string id)
         {
-            using var reply = await client.GetAsync($"/admin/switch/{id}", Token);
+            using var reply = await _client.GetAsync($"/admin/switch/{id}", Token);
             Assert.True(reply.Headers.CacheControl?.NoStore == true);
             await ErrorAsync(reply, HttpStatusCode.NotFound, "not_found", Token, "Switch operation not found.");
         }
@@ -840,7 +857,7 @@ public sealed class AdminSwitchOperationTests
             Assert.DoesNotContain("spectator", Router.Engines.Keys);
         }
 
-        private ValueTask<(ConfigReloadStatus Status, long Generation)> ApplyWithoutSpectatorAsync(long generation)
+        private Task<(ConfigReloadStatus Status, long Generation)> ApplyWithoutSpectatorAsync(long generation)
         {
             var candidate = RouterConfigLoader.LoadForReload(Retained + "\n" + Managed + "\n" + Catalog, PathToConfig);
             return Router.ApplyConfigurationAsync(candidate, generation, Token);
@@ -848,22 +865,25 @@ public sealed class AdminSwitchOperationTests
 
         public async ValueTask DisposeAsync()
         {
-            provider.Release.TrySetResult();
-            ackGate?.Release.TrySetResult();
-            ackGate?.CompletionRelease.TrySetResult();
-            client.Dispose();
+            Provider.Release.TrySetResult();
+            _ackGate?.Release.TrySetResult();
+            _ackGate?.CompletionRelease.TrySetResult();
+            _client.Dispose();
             _bound.Dispose();
             try
             {
-                using var cleanup = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-                try { await app.StopAsync(cleanup.Token); }
-                finally { await app.DisposeAsync().AsTask().WaitAsync(cleanup.Token); }
+                if (_app is { } app)
+                {
+                    using var cleanup = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                    try { await app.StopAsync(cleanup.Token); }
+                    finally { await app.DisposeAsync().AsTask().WaitAsync(cleanup.Token); }
+                }
             }
             finally
             {
-                models.Dispose();
-                spectator.Dispose();
-                directory.Delete(recursive: true);
+                _models.Dispose();
+                _spectator.Dispose();
+                _directory.Delete(recursive: true);
             }
         }
     }
