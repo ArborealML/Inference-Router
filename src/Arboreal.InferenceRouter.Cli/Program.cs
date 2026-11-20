@@ -38,6 +38,7 @@ public static class Program
             "switch" => await RunSwitchAsync(args[1..]).ConfigureAwait(false),
             "config" => await RunConfigCommandAsync(args[1..]).ConfigureAwait(false),
             "tickets" => await RunTicketAsync(args[1..]).ConfigureAwait(false),
+            "tune" => AirTuneCompare.Run(args.AsSpan(1), Console.Out, Console.Error),
             "help" or "-h" or "--help" => await RunHelpAsync().ConfigureAwait(false),
             _ => await RunHelpAsync().ConfigureAwait(false),
         };
@@ -62,6 +63,8 @@ public static class Program
               tickets <id> [-s server-url]              inspect one ticket
               config [--config path]                    validate a config file and print the plan
                                                       (no sockets, no lifecycle commands)
+              tune compare --baseline FILE --candidate FILE
+                                                      compare saved tuning summaries (Linux x64)
             """);
         return Task.FromResult(0);
     }

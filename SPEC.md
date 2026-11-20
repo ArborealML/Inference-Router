@@ -1,6 +1,6 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.110)
+Status: draft, continuously revised (v0.12.111)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
@@ -352,6 +352,8 @@ daemon transaction per engine. 137 tests green.
   that answers no `upload_url`, an upload that dies or answers no asset id, an asset name listed twice on
   the release, and a tag that moves after the first resolve. No tag has run the gate: still configured,
   not proven.
+- v0.12.111 — compare two saved short-grid tuning summaries offline with exact same-concurrency
+  matching, bounded versioned inputs and descriptor-based file admission on Linux x64 (§11.1).
 - v0.12.110 — add internal native Docker exec and finite log capture with bounded non-TTY framing,
   exact-ID ownership and independently inspected exec exit (§5.3.1).
 - v0.12.109 — apply the counted ingress body cap to `POST /admin/threads` and `POST /admin/switch`.
@@ -3401,6 +3403,7 @@ air events [--server url] [--since seq]
 air threads --id id [--priority high:200] [--server url]
 air tickets id [--server url]
 air config [--config f.toml]
+air tune compare --baseline FILE --candidate FILE
 ```
 
 `air serve` starts the router host in the CLI process. Client verbs construct HTTP requests and
@@ -3436,6 +3439,73 @@ or the original JSON body and exits 0.
 serving profiles. It opens no sockets and runs no lifecycle commands. `status` reports each
 engine's active profile, context window and slot count alongside health, loaded models and
 in-flight count.
+
+### 11.1 Offline tuning comparison
+
+`air tune compare` takes two operator-authored `near-window-text-v1` summaries via exactly
+one `--baseline` and one `--candidate`, in either order. It reads regular files on Linux x64
+with glibc, kernel `openat2` support and trusted procfs. It supports ext2/3/4, XFS, Btrfs,
+tmpfs and overlayfs by descriptor filesystem type. The operator chooses the storage.
+The command pins and checks each file before reopening its owned descriptor via procfs.
+Supported inputs have one hard link and direct paths without symlink components. The
+command verifies its native file access facilities before admitting either input.
+
+Each side is one case-sensitive UTF-8 JSON object of at most 65,536 bytes and depth 10.
+Members are required except where the tagged value or row shape omits them. Unknown or
+duplicate members, nulls, comments, trailing commas and a leading BOM are invalid.
+All strings are bounded ASCII tokens of at most 128 characters. The first character is
+alphanumeric and subsequent characters may also be `.`, `_`, `:`, `@`, `/`, `+` or `-`.
+Digests are lowercase 64-character SHA-256 hex. The seed uses the same hex syntax.
+IDs are redacted lowercase 32-character hex. Integer values use unsigned decimal syntax
+and fit `Int64`, or `Int32` for schema version, slots, cap and concurrency.
+
+Facts use `{"kind":"known","value":...}` or `{"kind":"unknown"}`. Limits use
+`{"kind":"finite","value":...}`, `{"kind":"unlimited"}` or `{"kind":"unknown"}`.
+The `value` member is present only for `known` and `finite`. Equal known unlimited limits
+can match. An unknown matching fact withholds a delta even when both sides are unknown.
+
+The root contains `schema_version` (1), `run_id` (ID), `instance_id` (ID fact), the `hardware`,
+`target` and `workload` objects, `cap` (1–8) and `levels` (exactly `cap` rows).
+
+| Object | Version 1 members |
+| --- | --- |
+| `hardware` | Byte-count facts `physical_ram_bytes` (positive when known) and `physical_swap_bytes`. Byte-count limits `ram_limit_bytes`, `ram_plus_swap_limit_bytes`, and `swap_only_limit_bytes`. Token facts `limit_source`, `cpu_model`, `os`, `driver`, `power`, `thermals`, and `background`. Digest fact `cpu_affinity_sha256`. `cpu_quota` is a limit with positive integer `quota_us` and `period_us` when finite. `gpus` is a fact containing 0–16 ordered entries when known, each with a unique token `id` and a positive byte-count fact `vram_bytes`. |
+| `target` | Token facts `model`, `tier`, `quantization`, and `runtime_build`. Digest facts `weights_sha256`, `executable_sha256`, `tokenizer_sha256`, `template_sha256`, `recipe_sha256`, `shared_settings_sha256`, `cache_policy_sha256`, `deadline_policy_sha256`, and `adapter_sha256`. Positive integer facts `nominal_context`, `observed_context`, `usable_context` and `configured_slots`. Nonnegative integer fact `observed_slots`. |
+| `workload` | Literal `id` of `near-window-text-v1`, token fact `generator`, and digest facts `generator_sha256`, `seed`, `warmup_corpus_sha256` and `warmup_body_sha256`. |
+| Level | `concurrency`, `status` and digest facts `corpus_sha256` and `body_sha256`. Each `passed` row includes `wave_output_tokens_per_second`, exactly three positive decimal rates with up to nine integral and nine fractional digits and no exponent. A `failed`, `inconclusive` or `untested` row instead includes `reason`, one of `preflight_refusal`, `prior_level_did_not_pass`, `budget_exhausted`, `workload_failure`, `insufficient_evidence` or `other`. |
+
+Each record starts at C=1 and proceeds in order through its cap. A passing prefix can end
+in one failed or inconclusive row followed by untested rows. All rows can be untested if
+preflight refused. Untested rows have unknown fingerprints. The reason
+`prior_level_did_not_pass` applies only to an untested row immediately after a nonpassing
+level. A cap must fit each known
+positive slot count. A zero observed slot count requires all rows to be untested. Known
+usable context must fit the known observed window. Levels above a side’s cap are shown as
+outside cap.
+
+Hash each generated user-text payload as exact UTF-8 before template rendering or JSON
+framing. Hash each final request body as sent. The two ordered fingerprints hash ASCII
+headers `air-tune/1/near-window-text-v1/corpus` and `air-tune/1/near-window-text-v1/body`,
+respectively, followed by the concurrency in canonical decimal and then the corresponding
+`3*C` leaf hashes in wave-major, worker-major order. Terminate each line with LF. Warmup
+uses `warmup-corpus` and `warmup-body` in those headers, one leaf hash and no level line.
+`cpu_affinity_sha256` hashes sorted unique CPU IDs in canonical decimal, one per ASCII
+LF-terminated line. Evidence and policy digests refer to exact retained, redacted evidence
+bytes. Keep run and instance IDs outside launch recipe identity.
+
+For each passing row the report uses the middle of the three rates, with the lowest
+concurrency winning a peak tie. Report peaks independently. A candidate-minus-baseline
+delta requires two passing rows at the same concurrency, matching level fingerprints,
+and known equal target, workload, effective limits, CPU and ordered GPU facts. Physical
+memory, run/instance IDs, limit source and recorded environmental changes provide
+context alongside the comparison. All results are unverified, operator-authored
+observations. The command supplies no measurement, live authority or profile changes.
+
+The report is assembled and checked against a 16,384 UTF-8 byte ceiling before writing
+stdout. Valid comparisons, including incomparable records, exit 0. File, platform and
+schema errors exit 1 with a fixed error category and empty stdout. Usage errors exit 2.
+Two synthetic example inputs exercise the contract. [Baseline](tests/Arboreal.InferenceRouter.Tests/AirTuneFixtures/baseline.json)
+· [Candidate](tests/Arboreal.InferenceRouter.Tests/AirTuneFixtures/candidate.json)
 
 ## 12. Future architecture commitments
 

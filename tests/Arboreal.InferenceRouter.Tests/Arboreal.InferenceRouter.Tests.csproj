@@ -6,6 +6,7 @@
     <Nullable>enable</Nullable>
     <IsAotCompatible>true</IsAotCompatible>
     <IsPackable>false</IsPackable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
   <ItemGroup>
@@ -19,6 +20,7 @@
 
   <ItemGroup>
     <Using Include="Xunit" />
+    <None Update="AirTuneFixtures/baseline.json;AirTuneFixtures/candidate.json" CopyToOutputDirectory="PreserveNewest" />
     <EmbeddedResource Include="SelectorFixtures/deepseek.toml;SelectorFixtures/glm.toml;
                                SelectorFixtures/hyperqwen.toml;SelectorFixtures/maya_xs.toml;
                                SelectorFixtures/minimax.toml;SelectorFixtures/strata.toml;
