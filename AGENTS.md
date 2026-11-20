@@ -244,6 +244,8 @@ integrates accepted work using the appropriate seat identity, checks CI and reco
 
 For a milestone released under decision 72, one Sol delivery manager owns the approved items through independent review, focused qualification, correction, hosted CI and routine offline merge. The lead retains priority, acceptance criteria, scope changes, live-host decisions and the shared board. Escalate unresolved findings. Keep one primary deliverable and at most one independent companion in implementation. Use the durable inbox to batch routine wakes at declared work boundaries. Pause and stop instructions have priority.
 
+Under decision 73, Delivery prepares the next ranked, dependency-free assignment while the current item is being qualified. A focused local pass and a pinned candidate with its evidence free the implementer to take that assignment immediately in a separate worktree. Delivery owns hosted CI, independent review and integration. A draft under those checks consumes no implementation slot. Route actionable findings back to the author with the exact failing check and commit; preserve the candidate while other work proceeds.
+
 Run each implementer as a long-lived GPT-6.2 Sol agent with high reasoning in its own named tmux session.
 The coordinator gives it one task and an isolated Git worktree with a single writer. The implementer owns
 preparation, implementation, test design, fixes and the evidence handoff described above. It reports each

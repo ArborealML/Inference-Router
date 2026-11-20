@@ -3,11 +3,11 @@ id: TASK-118
 title: >-
   Resolve each native launch profile and dispatch to its verified serving
   instance
-status: Waiting
+status: Preparing
 assignee:
-  - '@gpt-6.2-sol-scheduling'
+  - '@gpt-6.2-sol-lifecycle'
 created_date: '2026-11-18T18:56:00Z'
-updated_date: '2026-11-19T10:02:00Z'
+updated_date: '2026-11-20T00:15:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -23,7 +23,7 @@ ordinal: 116000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-An actual cross-configuration readiness join or an enrolled issuer for the single-resident dispatch path wakes the remaining work.
+Lifecycle is tracing the first consumer of a closed launch receipt for the selected DeepSeek and Qwen instances. Identify the smallest trusted way to bind the serving process and both readiness observations before opening inference, and any missing producer. The actual cross-configuration readiness join and enrolled dispatch checks remain open.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
