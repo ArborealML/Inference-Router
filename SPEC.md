@@ -1,6 +1,6 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.115)
+Status: draft, continuously revised (v0.12.116)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
@@ -352,6 +352,8 @@ daemon transaction per engine. 137 tests green.
   that answers no `upload_url`, an upload that dies or answers no asset id, an asset name listed twice on
   the release, and a tag that moves after the first resolve. No tag has run the gate: still configured,
   not proven.
+- v0.12.116 — declare seven MiniMax M3.1 Flash context tiers on the shared external Maya listener,
+  with explicit 32k fallback, 64k lowest normal selection and nominal 96k default (§7.6).
 - v0.12.115 — decline Windows Docker named-pipe transport and refuse router-owned pipe addresses
   before provider binding or I/O (§5.3.1, §7, §15).
 - v0.12.114 — report core shutdown on a writable default HTTP stream with one in-band
@@ -3203,7 +3205,8 @@ Semantics:
 - **Non-goal for now**: automatic *de*-escalation (shrinking a window when big-context
   demand goes away). Escalation is demand-driven; release policy is an open question (§15).
 
-The shipped Maya example keeps GLM and HY4 Flash in the same externally owned engine.
+The shipped Maya example keeps GLM, HY4 Flash and MiniMax M3.1 Flash in the same
+externally owned engine.
 It discovers loaded models through absolute `/v1/models` and reads the engine-reported
 window and slots at `/props.default_generation_settings.n_ctx` and `/props.total_slots`.
 HY4 uses canonical `hy4-flash` with request aliases `hy4` and `hy4-flash-maya-xs`.
@@ -3220,6 +3223,17 @@ distinct offline create projections and probe expectations. The selector's argum
 exclude `64k`, `96k` and `1024k`. Its HY4 profile map excludes all six wider tiers. Native launch
 projection remains gated. Host context fit, memory, artifact identity, exact-instance
 readiness and lifecycle authority need separate qualification.
+
+MiniMax uses canonical `minimax-m3.1-flash` with request aliases `minimax` and
+`minimax-maya-xs`. It declares the same seven one-slot context tiers as HY4. Its
+explicit safe fallback is `32k`, its lowest normal selection is `64k`, and the omitted
+launch tier resolves to nominal `96k` (98,304 tokens). The external owner selects the
+actual launch. AIR binds capacity to the loaded model and its observed window and
+slots. The archived MiniMax selector projection covers `32k` only. Wider launch
+settings and host fit require separate qualification. With the pinned Maya eight-token
+reserve, nominal 96k leaves 98,296 usable tokens and 32,760 output tokens after a
+65,536-token rendered prompt. The literal full split needs at least 98,312 nominal
+tokens on that path and separate workload qualification.
 
 ### 7.7 Runtime configuration reload
 
