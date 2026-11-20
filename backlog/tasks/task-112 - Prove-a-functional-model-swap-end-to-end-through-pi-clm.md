@@ -1,11 +1,11 @@
 ---
 id: TASK-112
 title: Prove a functional model swap end to end through pi-clm
-status: Waiting
+status: Preparing
 assignee:
   - '@gpt-6.2-sol-scheduling'
 created_date: '2026-11-18T18:15:00Z'
-updated_date: '2026-11-20T00:27:00Z'
+updated_date: '2026-11-20T00:34:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -23,7 +23,7 @@ ordinal: 110000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Waiting for the independent client plan verdict on 0b161d3; acceptance wakes Scheduling for implementation. The owner chose local Git for the temporary launcher. Use one Pi RPC process, a fake roster initially containing only the incumbent, exact model requests and retained conversation history. Keep the installed launcher in place and live swap criteria open.
+Scheduling is amending the offline Pi client plan. In Pi 1.3.0, RPC model selection and enumeration use the full available model snapshot. Restricting the cycling list alone leaves other providers eligible. Source ownership is settled: the temporary launcher lives in local Git. Live swap criteria remain open.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -35,7 +35,7 @@ Waiting for the independent client plan verdict on 0b161d3; acceptance wakes Sch
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Identify ownership of the launcher and its generated model catalog. Propose the minimum integration and evidence of two requested model IDs in successive turns through one AIR endpoint. Preserve direct-backend launch behavior and record actual host residency only during the separately gated live run.
+Prove the full eligible provider/model set in one isolated Pi RPC process. Check launcher arguments, credentials and resource isolation. Bound loopback redirection and observe outbound requests. Select both canonical model IDs in the same process and session; verify that the second request carries the previous user and assistant messages. Preserve ordinary launcher behavior.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
