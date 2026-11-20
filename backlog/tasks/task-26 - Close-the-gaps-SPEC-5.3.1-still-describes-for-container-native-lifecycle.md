@@ -1,11 +1,11 @@
 ---
 id: TASK-26
 title: Close the gaps SPEC 5.3.1 still describes for container-native lifecycle
-status: Waiting
+status: In Progress
 assignee:
-  - '@gpt-6.2-sol-release'
+  - '@gpt-6.2-sol-lifecycle'
 created_date: '2026-11-17T02:54:00Z'
-updated_date: '2026-11-20T17:45:00Z'
+updated_date: '2026-11-20T18:23:00Z'
 labels:
   - engine
   - lifecycle
@@ -19,7 +19,7 @@ ordinal: 26000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Wake: Delivery takes the preserved Docker exec and log plan on f3d2d20 through independent review. Lifecycle handed it off before taking the launch-record correction. The plan covers binary framing and inspected terminal exit via the inert provider fixture. [Selective reset](https://github.com/ArborealML/Inference-Router/pull/48) remains landed; daemon change detection, Windows transport and uncertain-start reconciliation stay open.
+Lifecycle owns criterion 3, Docker exec output and container logs through the internal provider and fake daemon. The approved plan applies on 0d62dc6. [Selective reset](https://github.com/ArborealML/Inference-Router/pull/48) is landed. Daemon change detection, Windows transport and uncertain-start reconciliation remain open.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -40,7 +40,7 @@ Wake: Delivery takes the preserved Docker exec and log plan on f3d2d20 through i
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Latch failure by exact engine, canonical model, effective profile and configuration. Keep probe publication fenced until the failed claim marker clears, and deliver each waiter its own recorded outcome. At operator reset, enforce explicit startup opt-in, credential and current process/generation ETag at the latch change. Verify a valid reload-only credential receives 404 before and after reload. Clear only the exact target; preserve uncertain-stop and host fences.
+Request stdout and stderr explicitly at exec creation and pin the start request. Verify immutable ownership and demultiplex binary frames with finite byte ceilings for output, metadata and errors. Require exact terminal inspect status and exit code. Start one deadline before acquiring the provider gate. Preserve unknown interrupted-exec handling, pending stop/removal fences and borrowed handler ownership. Use DockerNativeDiagnosticsTests to distinguish status, size, timeout, sends and disposal on the fake handler.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
