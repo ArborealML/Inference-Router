@@ -1,11 +1,11 @@
 ---
 id: TASK-144
 title: Plan hardware-specific qualification of stepped inference tiers
-status: To Do
+status: Preparing
 assignee:
-  - '@gpt-6.2-astra'
+  - '@gpt-6.2-sol-config'
 created_date: '2026-11-20T00:33:00Z'
-updated_date: '2026-11-20T00:54:00Z'
+updated_date: '2026-11-20T16:45:00Z'
 labels: []
 milestone: m-14
 dependencies: []
@@ -26,3 +26,9 @@ Design an operator-facing air tune command for one configured engine and model. 
 - [ ] #4 For each window, distinguish peak aggregate output tokens per second from single-stream decode speed. Record winning concurrency, prompt processing speed and time to first token with the workload and samples.
 - [ ] #5 Save separate comparable runs with physical RAM, effective memory and swap limits, CPU, assigned GPU identities and VRAM, model and runtime identity, effective settings and workload. Demonstrate comparing 64 GB and 128 GB configurations.
 <!-- AC:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Map existing CLI and engine configuration to a proposed hardware-specific tuning command. Define the workload, concurrency search, stopping rules, speed measurements and comparable hardware records. Submit the plan for review before implementation or measurement.
+<!-- SECTION:PLAN:END -->
