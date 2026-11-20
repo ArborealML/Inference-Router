@@ -49,15 +49,19 @@ public class StreamRelayTests
             streamBufferLimit: credit, streamIdleTimeoutMs: idle);
         await using var server = app;
         using var bound = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        var router = app.Services.GetRequiredService<RouterCore>();
+        var enqueued = new TaskCompletionSource<RouterTicket>(TaskCreationOptions.RunContinuationsAsynchronously);
+        router.BeforeEnqueueFeedForTests = ticket => enqueued.TrySetResult(ticket);
         using var client = new HttpClient { BaseAddress = new Uri($"http://127.0.0.1:{port}") };
         var (id, response) = await WireHarness.StartStreamAsync(client, "relay", Chat, bound.Token);
         using var stream = response;
         var wire = await stream.Content.ReadAsByteArrayAsync(bound.Token);
         Assert.Equal(expected, WithoutComments(wire));
-        var router = app.Services.GetRequiredService<RouterCore>();
-        var ticket = Assert.IsType<RouterTicket>(router.TryGetTicket(id));
+        var ticket = await enqueued.Task.WaitAsync(bound.Token);
+        Assert.Equal(id, ticket.Id);
         await ticket.CompletionTask.WaitAsync(bound.Token);
-        Assert.Equal(TicketState.Completed, ticket.State);
+        var snapshot = Assert.IsType<TicketSnapshot>(router.TryGetTicket(id));
+        Assert.Equal(nameof(TicketState.Completed), snapshot.State);
         if (credit > 0)
             Assert.Equal(0, Assert.IsType<HttpStreamDelivery>(ticket.HttpDelivery).ReservedBytes);
         else
@@ -161,9 +165,10 @@ public class StreamRelayTests
             using var stream = response;
             await body.ReadingLate.Task.WaitAsync(bound.Token);
             await UntilAsync(() => idle.ActiveTimers == 1, bound.Token);
-            var ticket = Assert.IsType<RouterTicket>(router.TryGetTicket(id));
             idle.AdvanceTo(299_999);
-            Assert.False(ticket.CompletionTask.IsCompleted);
+            var active = Assert.IsType<TicketSnapshot>(router.TryGetTicket(id));
+            Assert.Equal(nameof(TicketState.Executing), active.State);
+            Assert.Null(active.ErrorCode);
             idle.AdvanceTo(300_001);
             var wire = await stream.Content.ReadAsByteArrayAsync(bound.Token);
             var payload = WithoutComments(wire);
@@ -177,7 +182,9 @@ public class StreamRelayTests
                 Assert.EndsWith("\n\ndata: [DONE]\n\n", terminal, StringComparison.Ordinal);
                 Assert.DoesNotContain("staged partial", terminal, StringComparison.Ordinal);
             }
-            Assert.Equal("engine_timeout", ticket.ErrorCode);
+            var ended = Assert.IsType<TicketSnapshot>(router.TryGetTicket(id));
+            Assert.Equal(nameof(TicketState.Failed), ended.State);
+            Assert.Equal("engine_timeout", ended.ErrorCode);
             var engine = router.Engines["fake"];
             await UntilAsync(() => router.GetStats().Engines.Single().Inflight == 0, bound.Token);
             Assert.Equal(1, engine.HttpUsesForTests);
@@ -287,13 +294,14 @@ public class StreamRelayTests
         {
           "stream_buffer_limit_bytes": {{credit}},
           "engine": {
-            "fake": { "endpoint": "http://localhost:9/v1", "stream_idle_timeout_ms": {{idle}} }
+            "fake": { "kind": "openai-compatible", "endpoint": "http://localhost:9/v1", "stream_idle_timeout_ms": {{idle}} }
           }
         }
         """ : FormattableString.Invariant($"""
         stream_buffer_limit_bytes = {credit}
 
         [engine.fake]
+        kind = "openai-compatible"
         endpoint = "http://localhost:9/v1"
         stream_idle_timeout_ms = {idle}
         """);

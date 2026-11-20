@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Sockets;
 using Arboreal.InferenceRouter.Lifecycle;
 
 namespace Arboreal.InferenceRouter.Tests;
@@ -53,7 +54,6 @@ public sealed partial class VerifiedInstanceTransportTests
             idle.AdvanceTo(300_001);
             var error = await Assert.ThrowsAsync<RouterRequestException>(() => ticket.CompletionTask.WaitAsync(rig.Token));
             Assert.Equal("engine_timeout", error.Code);
-            await retiring.Reached.WaitAsync(rig.Token);
             while (rig.Router.GetStats().Engines.Single().Inflight != 0)
             {
                 rig.Token.ThrowIfCancellationRequested();
@@ -61,9 +61,20 @@ public sealed partial class VerifiedInstanceTransportTests
             }
             Assert.Equal(1, rig.Admission.PhysicalUses);
             Assert.Equal(0, rig.Admission.Releases);
+            Assert.False(retiring.Reached.IsCompleted);
             Assert.False(transportSettled.Task.IsCompleted);
             Assert.Equal(0, rig.Engine.MatchedPrefixChars([prompt]));
             Assert.False(await channel.Reader.WaitToReadAsync(rig.Token));
+
+            // The verified HTTP adapter can be blocked in a raw body read after its header
+            // cancellation fallback is cleared. Release that read independently of issuer retirement.
+            await remote.WriteAsync("data: late\n\n"u8.ToArray(), rig.Token);
+            peer.Server.Client.Shutdown(SocketShutdown.Send);
+            await retiring.Reached.WaitAsync(rig.Token);
+            Assert.Equal(1, rig.Admission.PhysicalUses);
+            Assert.Equal(0, rig.Admission.Releases);
+            Assert.False(transportSettled.Task.IsCompleted);
+            Assert.False(channel.Reader.TryRead(out _));
             retiring.Release();
             await released.WaitAsync(rig.Token);
             Assert.Equal(ticket.Id, await transportSettled.Task.WaitAsync(rig.Token));
