@@ -16,6 +16,7 @@ public sealed class ConfigDto
     [JsonPropertyName("switch_cooldown_ms")][TomlPropertyName("switch_cooldown_ms")] public int? SwitchCooldownMs { get; set; }
     [JsonPropertyName("max_event_subscribers")][TomlPropertyName("max_event_subscribers")] public int? MaxEventSubscribers { get; set; }
     [JsonPropertyName("max_request_body_bytes")][TomlPropertyName("max_request_body_bytes")] public int? MaxRequestBodyBytes { get; set; }
+    [JsonPropertyName("stream_buffer_limit_bytes")][TomlPropertyName("stream_buffer_limit_bytes")] public int? StreamBufferLimitBytes { get; set; }
     [JsonPropertyName("default_priority")][TomlPropertyName("default_priority")] public PriorityDto? DefaultPriority { get; set; }
     [JsonPropertyName("scheduler")][TomlPropertyName("scheduler")] public SchedulerDto? Scheduler { get; set; }
     [JsonPropertyName("threads")][TomlPropertyName("threads")] public Dictionary<string, ThreadDto>? Threads { get; set; }
@@ -58,6 +59,7 @@ public sealed class EngineDto
     public string? ModelsContextWindowPath { get; set; }
     [JsonPropertyName("loaded_requires_status_loaded")][TomlPropertyName("loaded_requires_status_loaded")] public bool? LoadedRequiresStatusLoaded { get; set; }
     [JsonPropertyName("response_timeout_ms")][TomlPropertyName("response_timeout_ms")] public int? ResponseTimeoutMs { get; set; }
+    [JsonPropertyName("stream_idle_timeout_ms")][TomlPropertyName("stream_idle_timeout_ms")] public int? StreamIdleTimeoutMs { get; set; }
     [JsonPropertyName("remote")][TomlPropertyName("remote")] public bool? Remote { get; set; }
     [JsonPropertyName("lifecycle_owner")][TomlPropertyName("lifecycle_owner")] public string? LifecycleOwner { get; set; }
     [JsonPropertyName("health_probe")][TomlPropertyName("health_probe")] public HealthProbeDto? HealthProbe { get; set; }

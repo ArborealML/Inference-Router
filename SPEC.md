@@ -1,6 +1,6 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.103)
+Status: draft, continuously revised (v0.12.104)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
@@ -352,6 +352,9 @@ daemon transaction per engine. 137 tests green.
   that answers no `upload_url`, an upload that dies or answers no asset id, an asset name listed twice on
   the release, and a tag that moves after the first resolve. No tag has run the gate: still configured,
   not proven.
+- v0.12.104 — add independent opt-in SSE buffer and upstream idle limits for HTTP completions.
+  Pause upstream reads at exhausted output credit, abort a continuously blocked write after 30 s,
+  and separate HTTP final-flush acknowledgment from upstream transport cleanup (§5.5, §6, §7, §14.1).
 - v0.12.103 — bound the upstream non-2xx diagnostic read to the first 256 body bytes
   or earlier EOF. Keep the existing error excerpt and apply the response deadline to that
   read when the gate is armed (§5.5, §10).
@@ -2582,9 +2585,8 @@ dispatching data events.
 The pump holds one unfinished block until its blank line, preserving LF, CRLF and bare CR across
 upstream read boundaries. The per-block limit is 1 MiB including all bytes on nonblank lines and their
 line endings. The blank delimiter contributes one or two bytes outside that limit. The read scratch is
-16 KiB and a single owned channel write can contain up to 1 MiB plus 16 KiB. Growing the staging array
-temporarily retains its old allocation during the copy. Queued output has its own pending backpressure
-work (TASK-30).
+16 KiB and one validated batch can contain up to 1 MiB plus 16 KiB. Growing the staging array
+temporarily retains its old allocation during the copy.
 
 EOF with an unfinished block and a block over the size limit both fail with `engine_error`. This
 includes an otherwise valid oversized event and an upstream `[DONE]` line without its blank delimiter.
@@ -2595,6 +2597,33 @@ followed by `data: [DONE]` before closing. Clean EOF at a block boundary adds no
 empty upstream or after complete blocks without a sentinel. A caller disconnect closes the relay
 without an extra terminal frame. The benchmark harness measured the time-to-first-token delay from
 the previous poll-based handoff (§14, `docs/benchmarks.md`).
+
+**Opt-in HTTP SSE limits.** A positive `stream_buffer_limit_bytes` caps outstanding output payload
+per stream, including queued bytes and the bytes still owned by a pending flush. The pump transfers
+one validated batch in order using credit-sized slices and pauses upstream reads at exhausted credit.
+The staging buffer, read scratch, validated batch and transport buffers have separate ownership.
+A continuously pending downstream write times out at 30 s without progress, even with one byte
+pending. The router aborts that HTTP exchange and records ticket code `slow_consumer` and a
+`request.failed` reason beginning with that token. An abnormal writer exit settles the exchange
+as `cancelled` unless another outcome already won. A pending write keeps its own reserved credit
+until the operation settles, even after the exchange ends and unrelated queued output is discarded.
+A successful flush restores credit. On clean
+upstream EOF, the router disarms the response timer and starts transport cleanup. The HTTP ticket
+succeeds after the last required successful flush, including the initial comment on an empty body
+and any upstream `[DONE]`. The first selected terminal outcome stands. Caller or shutdown
+cancellation observed before a watchdog or final acknowledgment claims the outcome is recorded
+as cancellation. A later cancellation leaves an already accepted final acknowledgment intact.
+Kestrel's flush acknowledgment describes relay progress.
+
+A positive per-engine `stream_idle_timeout_ms` starts a separate deadline on a pending raw read
+after the first positive read. Time waiting for output credit and HTTP keepalives do not run or
+reset this deadline. When upstream idle wins, the router cancels upstream, discards the unfinished
+tail and sends the existing in-band `engine_timeout` error and `[DONE]` after the complete prefix on
+a writable exchange. If that prefix includes an upstream sentinel, the idle outcome remains on the
+ticket and feed and no second terminal is appended. The logical slot is released once and physical
+transport ownership lasts through actual cleanup under §5.5. These settings apply independently to
+HTTP SSE. Direct library callers retain producer-side stream completion and may drain after
+awaiting `CompletionTask`.
 
 **Threading through HTTP**: clients convey thread + priority via headers:
 `X-Inference-Thread: agent-42`, `X-Inference-Priority: high:200`
@@ -2667,6 +2696,10 @@ bound on the wire. `docs/ai-integration.md` carries the same table for integrato
 
 The server loads its startup file before serving. A file-backed server can optionally apply changes
 from that same path as described in §7.7.
+For HTTP SSE, `stream_buffer_limit_bytes` is a top-level nonnegative byte count and
+`stream_idle_timeout_ms` is a nonnegative integer under `[engine.<name>]`. Each defaults to zero
+and independently disables its limit. Changes to the root limit or a retained engine's idle timeout
+require restart. A newly added eligible external engine may declare its own idle limit.
 `lifecycle_owner` accepts `external`, `delegated` and `router` in TOML and JSON. Remove `remote`
 when setting it, including `remote = false`. Explicit `external` requires no controller or selector.
 Explicit `delegated` requires a usable selector and no Docker controller. Explicit `router` requires
@@ -3644,7 +3677,7 @@ rather than assumed; dispatch progress that cannot spin or starve.
 | Bar item | State | Where / what is still open |
 |---|---|---|
 | 1 URI + proven readiness + dispatch progress | **closed** | `EngineRuntime.Combine` one join rule (§7.5, `UriCompositionTests`); a switch is proven by health + loaded-model + window-fit probes and fails loudly with one actionable message (§5.3.1); dispatch and the feed relay are signal-driven (`_dispatchSignal`, `WaitToReadAsync`) — no polling loop, and the 200 ms TTFT poll is gone (v0.8.4); and a request naming a model nothing in the configuration can serve is refused before it joins a queue at all with 503 `model_unavailable`, on a decision taken against one coherent capability snapshot, so no queue position is occupied and no torn read can refuse a servable model (v0.12.25, v0.12.27). **Still open:** a legitimately queued request whose caller set no `max_queue_time` has no ceiling of any kind, and a request admitted while capability was unknown is not reclassified when absence becomes known |
-| 2 transport discipline | **closed on the request side** | bounded bodies ✔ (`max_request_body_bytes`, 413 `request_body_too_large`, §6); cancellation reaches the engine ✔ (§5.5 wire tests); lifecycle phases are timed ✔ (`stop/wait/call_timeout_ms`, health `timeout_ms`); and every request-side wait now has its own ceiling ✔ (`switch_wait_timeout_ms` for a switch the request triggered — over the ceiling the request fails `switch_failed` with its slot handed back; per-engine `response_timeout_ms` for a turn at the engine — over the ceiling it fails `engine_timeout` 504 and the slot is released, or ends in band when the response had already started). `RequestPhaseTimeoutTests` pins all three outcomes, including that a caller's abort still reports `cancelled` and not a timeout, and that a switch survives the waiter that started it. **Still open:** a wedged *engine process* is noticed through health probes rather than through the request path (§5.3.2), a switch reserves an inference slot rather than its own lifecycle reservation (TASK-25), and once a stream's first frame is out there is no bound on a reader that stops consuming or on an engine that goes quiet again mid-generation — the relay buffers the former without limit and waits forever for the latter (TASK-30) |
+| 2 transport discipline | **closed on the request side** | bounded bodies ✔ (`max_request_body_bytes`, 413 `request_body_too_large`, §6); cancellation reaches the engine ✔ (§5.5 wire tests); lifecycle phases are timed ✔ (`stop/wait/call_timeout_ms`, health `timeout_ms`); and every request-side wait now has its own ceiling ✔ (`switch_wait_timeout_ms` for a switch the request triggered — over the ceiling the request fails `switch_failed` with its slot handed back; per-engine `response_timeout_ms` for a turn at the engine — over the ceiling it fails `engine_timeout` 504 and the slot is released, or ends in band when the response had already started). `RequestPhaseTimeoutTests` pins all three outcomes, including that a caller's abort still reports `cancelled` and not a timeout, and that a switch survives the waiter that started it. **Still open:** a wedged *engine process* is noticed through health probes rather than through the request path (§5.3.2), a switch reserves an inference slot rather than its own lifecycle reservation (TASK-25), the HTTP relay limits are opt-in (§6 and §7). Enabling 262,144 bytes and 300,000 ms by default requires the representative 10,000-stream per-engine gap replay with zero false idle expiries and a real HTTP/1.1 and HTTP/2 stopped-reader soak (TASK-30). RequestPhaseTimeoutTests and StreamRelayTests pin the configured timeout and output paths offline |
 | 3 switch serialization + error contract | **closed** | single-flight per engine with `_switchState` reset on every failure path (§5.3.1); error codes and casing pinned by `ErrorContractTests` against the §6.1 table |
 | 4 owned lifecycle | **partly open** | provider seam + coordinator + Docker provider shipped (§5.3.1, §15); request-side phase bounds now exist (§5.5), so a select command that hangs no longer parks traffic indefinitely — the waiting request fails at `switch_wait_timeout_ms` while the switch runs on; **open:** a switch still occupies an inference slot instead of its own lifecycle reservation (TASK-25), and the §5.3.1 non-claims — image identity pinning, mounts/GPU, in-place model mutation, latched failures (TASK-26) |
 | 5 security | **open by deployment posture** | no ingress auth/TLS/rate caps yet: admin is unauthenticated and binds loopback (§6.1), engine keys are per-engine config; this is the v0.1 ingress work, not a silent hole |

@@ -8,6 +8,139 @@ public sealed partial class VerifiedInstanceTransportTests
     private static readonly byte[] VerifiedBody = """{"model":"model.canonical","prompt":"two  spaces"}"""u8.ToArray();
     private static readonly Uri VerifiedEndpoint = new("http://127.0.0.1:8123/prefix/v1?mode=exact");
 
+    [Fact(Timeout = 20_000)]
+    public async Task OptInIdleReleasesLogicalSlotWhileVerifiedIssuerRetirementIsHeld()
+    {
+        const string prefix = "data: valid\n\n";
+        const string prompt = "verified relay prefix";
+        var requestBody = "{\"model\":\"alias\",\"messages\":[{\"role\":\"user\",\"content\":\"verified relay prefix\"}],\"stream\":true}"u8.ToArray();
+        await using var rig = new DispatchRig(streamIdleTimeoutMs: 300_000);
+        using var peer = await LoopbackPair.OpenAsync(rig.Token);
+        using var retiring = new HeldCheckout();
+        rig.Issuer.Channels.Enqueue(peer.Client.GetStream());
+        rig.Issuer.BeforeRetire = _ => retiring.HoldAsync(rig.Token);
+        rig.Publish(generation: 1);
+        var idle = new ReadinessDeadlineTests.ManualClock();
+        rig.Router.StreamIdleClockForTests = idle;
+        var transportSettled = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        rig.Router.AfterOptInTransportTaskForTests = id => transportSettled.TrySetResult(id);
+        Assert.True(await rig.Engine.ProbeHealthOnceAsync(rig.Token));
+        var ticket = await rig.Router.EnqueueHttpAsync("verified-stream", new InferenceRequest
+        {
+            Model = "ALIAS",
+            Stream = true,
+            Body = requestBody,
+            Options = new RouterRequestOptions { RequiredContext = 32_768 },
+        }, rig.Token);
+        var released = rig.WaitForRelease();
+        rig.Start();
+        try
+        {
+            var remote = peer.Server.GetStream();
+            var sent = ModelRewriter.Rewrite(requestBody, "model.canonical");
+            Assert.Equal(sent, (await ReadAsync(remote, rig.Token, sent.Length)).Body);
+            await remote.WriteAsync("HTTP/1.1 200 Fixture\r\nContent-Length: 1000\r\nConnection: close\r\n\r\ndata: valid\n\n"u8.ToArray(),
+                rig.Token);
+            var channel = Assert.IsAssignableFrom<System.Threading.Channels.Channel<ReadOnlyMemory<byte>>>(
+                await ticket.StreamReady.WaitAsync(rig.Token));
+            var accepted = await channel.Reader.ReadAsync(rig.Token);
+            Assert.Equal(prefix, System.Text.Encoding.UTF8.GetString(accepted.Span));
+            while (idle.ActiveTimers == 0)
+            {
+                rig.Token.ThrowIfCancellationRequested();
+                await Task.Yield();
+            }
+            idle.AdvanceTo(300_001);
+            var error = await Assert.ThrowsAsync<RouterRequestException>(() => ticket.CompletionTask.WaitAsync(rig.Token));
+            Assert.Equal("engine_timeout", error.Code);
+            while (rig.Router.GetStats().Engines.Single().Inflight != 0)
+            {
+                rig.Token.ThrowIfCancellationRequested();
+                await Task.Yield();
+            }
+            Assert.Equal(1, rig.Admission.PhysicalUses);
+            Assert.Equal(0, rig.Admission.Releases);
+            Assert.False(retiring.Reached.IsCompleted);
+            Assert.False(transportSettled.Task.IsCompleted);
+            Assert.Equal(0, rig.Engine.MatchedPrefixChars([prompt]));
+            Assert.False(await channel.Reader.WaitToReadAsync(rig.Token));
+
+            // The verified HTTP adapter can be blocked in a raw body read after its header
+            // cancellation fallback is cleared. A late payload releases that read independently
+            // of issuer retirement.
+            await remote.WriteAsync("data: late\n\n"u8.ToArray(), rig.Token);
+            await retiring.Reached.WaitAsync(rig.Token);
+            Assert.Equal(1, rig.Admission.PhysicalUses);
+            Assert.Equal(0, rig.Admission.Releases);
+            Assert.False(transportSettled.Task.IsCompleted);
+            Assert.False(channel.Reader.TryRead(out _));
+            retiring.Release();
+            await released.WaitAsync(rig.Token);
+            Assert.Equal(ticket.Id, await transportSettled.Task.WaitAsync(rig.Token));
+            Assert.Equal(0, rig.Admission.PhysicalUses);
+            Assert.Equal(1, rig.Admission.Releases);
+            Assert.True(rig.Engine.MatchedPrefixChars([prompt]) > 0);
+            Assert.Equal(1, rig.Terminals(ticket));
+        }
+        finally { retiring.Release(); }
+    }
+
+    [Theory(Timeout = 20_000)]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task OptInExactPreStartCleanupDoesNotRecordUnsentPrefix(bool cleanupFault)
+    {
+        const string prompt = "unsent verified relay prefix";
+        await using var rig = new DispatchRig(streamIdleTimeoutMs: 300_000);
+        using var beforeStart = new HeldCheckout();
+        using var preparation = new HeldCheckout();
+        rig.Publish(generation: 1);
+        rig.Router.BeforeOptInTransportStartForTests = _ => beforeStart.HoldAsync(rig.Token);
+        rig.PreparationCleanup = async () =>
+        {
+            await preparation.HoldAsync(rig.Token);
+            if (cleanupFault) throw new InvalidOperationException("scripted preparation cleanup fault");
+        };
+        var settled = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        rig.Router.AfterOptInTransportTaskForTests = id => settled.TrySetResult(id);
+        Assert.True(await rig.Engine.ProbeHealthOnceAsync(rig.Token));
+        var ticket = await rig.Router.EnqueueHttpAsync("unsent-stream", new InferenceRequest
+        {
+            Model = "ALIAS",
+            Stream = true,
+            Body = "{\"model\":\"alias\",\"messages\":[{\"role\":\"user\",\"content\":\"unsent verified relay prefix\"}],\"stream\":true}"u8.ToArray(),
+            Options = new RouterRequestOptions { RequiredContext = 32_768 },
+        }, rig.Token);
+        rig.Start();
+        try
+        {
+            await beforeStart.Reached.WaitAsync(rig.Token);
+            Assert.True(rig.Router.TryCancel(ticket.Id));
+            var error = await Assert.ThrowsAsync<RouterRequestException>(() => ticket.CompletionTask.WaitAsync(rig.Token));
+            Assert.Equal("cancelled", error.Code);
+            Assert.Equal(0, rig.Engine.MatchedPrefixChars([prompt]));
+
+            beforeStart.Release();
+            await preparation.Reached.WaitAsync(rig.Token);
+            Assert.Equal(0, rig.Issuer.Checkouts);
+            Assert.False(settled.Task.IsCompleted);
+            Assert.Equal(0, rig.Engine.MatchedPrefixChars([prompt]));
+            preparation.Release();
+
+            Assert.Equal(ticket.Id, await settled.Task.WaitAsync(rig.Token));
+            Assert.Equal(0, rig.Issuer.Checkouts);
+            Assert.Equal(0, rig.Engine.MatchedPrefixChars([prompt]));
+            Assert.Equal(1, rig.Terminals(ticket));
+            Assert.Equal(cleanupFault ? 1 : 0, rig.Router.Events.Replay(0)
+                .Count(row => row.TicketId == ticket.Id && row.Kind == "request.cleanup_failed"));
+        }
+        finally
+        {
+            beforeStart.Release();
+            preparation.Release();
+        }
+    }
+
     [Theory(Timeout = 20_000)]
     [InlineData(null, false, "resident")]
     [InlineData(null, true, "wide")]
@@ -454,7 +587,8 @@ public sealed partial class VerifiedInstanceTransportTests
         private Task _dispatcher = Task.CompletedTask;
         private int _preparations;
 
-        internal DispatchRig(string? tier = null, bool switches = false, string runtimeKey = "fixture-key", Uri? runtimeEndpoint = null)
+        internal DispatchRig(string? tier = null, bool switches = false, string runtimeKey = "fixture-key",
+            Uri? runtimeEndpoint = null, int streamIdleTimeoutMs = 0)
         {
             var parsed = VerifiedDispatchTargetTests.Load(endpoint: VerifiedEndpoint.AbsoluteUri);
             Daemon = new FakeDockerDaemonHandler();
@@ -465,6 +599,7 @@ public sealed partial class VerifiedInstanceTransportTests
             var engine = new EngineDefinition
             {
                 Name = parsed.Name, Endpoint = runtimeEndpoint ?? VerifiedEndpoint, Remote = true, Catalog = parsed.Catalog, ApiKey = runtimeKey,
+                StreamIdleTimeoutMs = streamIdleTimeoutMs,
             };
             Admission = new ExactTicketAdmission(
                 static (_, _) => throw new InvalidOperationException("A verified route requires its prepared sender."),

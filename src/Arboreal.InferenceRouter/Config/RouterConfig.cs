@@ -193,6 +193,8 @@ public sealed class EngineDefinition
     /// engine has started answering, a long generation is never cut off — this bounds a wedged
     /// engine, not a slow completion. Over the limit the ticket fails `engine_timeout` (504).</summary>
     public int ResponseTimeoutMs { get; init; } = 600_000;
+    /// <summary>HTTP SSE timeout on a pending upstream read after the first byte. Zero disables it.</summary>
+    public int StreamIdleTimeoutMs { get; init; }
     /// <summary>Legacy forward-only flag. A false value does not grant lifecycle authority.</summary>
     public bool Remote { get; init; }
     /// <summary>Configured lifecycle owner. Null uses the legacy provider declarations.</summary>
@@ -279,6 +281,8 @@ public sealed class RouterConfig
     /// (the router forwards them as bytes), so this is also the bound on what one request can make the
     /// process hold. A caller that lies about Content-Length is still cut off, because the copy counts.</summary>
     public int MaxRequestBodyBytes { get; set; } = 16 * 1024 * 1024;
+    /// <summary>Queued and pending-flush payload bytes per HTTP SSE stream. Zero disables the bounded relay.</summary>
+    public int StreamBufferLimitBytes { get; init; }
 
     /// <summary>How many live event-feed subscriptions the router will hold. Each one is a stream a
     /// client keeps open; the cap is what stops the admin feed from being the thing that runs the

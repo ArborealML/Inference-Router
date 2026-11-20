@@ -677,6 +677,7 @@ public sealed partial class RouterCore : IInferenceRouter
         var execCts = ticket.ExecCts ??= new CancellationTokenSource();
         var decremented = false;
         var ended = false;
+        var optInOwnsInvocation = false;
         void DecrementOnce()
         {
             if (decremented) return;
@@ -738,6 +739,13 @@ public sealed partial class RouterCore : IInferenceRouter
             {
                 ticket.StreamChannel ??= Channel.CreateUnbounded<ReadOnlyMemory<byte>>(
                     new UnboundedChannelOptions { SingleReader = true, SingleWriter = true });
+            }
+            if (ticket.IsHttpStream && (ticket.HttpDelivery is not null || engine.StreamIdleTimeout is not null))
+            {
+                optInOwnsInvocation = true;
+                await ExecuteOptInStreamAsync(candidate, engine, servingProof, invocation, execCts.Token)
+                    .ConfigureAwait(false);
+                return;
             }
             var ownsForward = false;
             try
@@ -859,7 +867,8 @@ public sealed partial class RouterCore : IInferenceRouter
         {
             try
             {
-                await AbortUnstartedInvocationAsync(ticket, invocation).ConfigureAwait(false);
+                if (!optInOwnsInvocation)
+                    await AbortUnstartedInvocationAsync(ticket, invocation).ConfigureAwait(false);
             }
             finally
             {
@@ -876,7 +885,8 @@ public sealed partial class RouterCore : IInferenceRouter
         void ReleaseLogical()
         {
             EndEngineOnce();
-            ReleaseExecutionCancellation(ticket);
+            if (!optInOwnsInvocation)
+                ReleaseExecutionCancellation(ticket);
             DecrementOnce();
             SignalDispatch();          // wake dispatch AFTER both capacity counts are released
         }
@@ -994,7 +1004,7 @@ public sealed partial class RouterCore : IInferenceRouter
     }
 
     private async Task<string?> PumpStreamAsync(EngineRuntime engine, RouterTicket ticket, HttpContent content,
-        Channel<ReadOnlyMemory<byte>> channel, ResponseGate? gate, CancellationToken ct)
+        Channel<ReadOnlyMemory<byte>> channel, ResponseGate? gate, CancellationToken ct, StreamReadLifetime? lifetime = null)
     {
         var firstToken = false;
         var sw = System.Diagnostics.Stopwatch.StartNew();
@@ -1009,15 +1019,22 @@ public sealed partial class RouterCore : IInferenceRouter
         // Stream acquisition is inside the ceiling too: with ResponseHeadersRead the content object exists
         // before any byte does, and a handler that builds the stream lazily must not be able to stall the
         // request before the first gated read happens.
-        using var stream = await content.ReadAsStreamAsync(firstReadCt).ConfigureAwait(false);
+        var stream = lifetime is null
+            ? await content.ReadAsStreamAsync(firstReadCt).ConfigureAwait(false)
+            : await lifetime.AcquireAsync(content, firstReadCt).ConfigureAwait(false);
+        using var ownedStream = lifetime is null ? stream : null;
+        var delivery = ticket.HttpDelivery;
         while (true)
         {
+            if (delivery is not null)
+                await delivery.WaitForSpaceAsync(ct).ConfigureAwait(false);
             int read;
             try
             {
-                read = firstToken
-                    ? await stream.ReadAsync(buffer, ct).ConfigureAwait(false)
-                    : await stream.ReadAsync(buffer, firstReadCt).ConfigureAwait(false);
+                var readToken = firstToken ? ct : firstReadCt;
+                read = lifetime is null
+                    ? await stream.ReadAsync(buffer, readToken).ConfigureAwait(false)
+                    : await lifetime.ReadAsync(stream, buffer, firstToken, readToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
@@ -1042,7 +1059,13 @@ public sealed partial class RouterCore : IInferenceRouter
             }
             var (complete, limitExceeded) = blocks.Append(buffer.AsSpan(0, read));
             if (!complete.IsEmpty)
-                await channel.Writer.WriteAsync(complete, ct).ConfigureAwait(false);
+            {
+                if (delivery is null)
+                    await channel.Writer.WriteAsync(complete, ct).ConfigureAwait(false);
+                else
+                    await delivery.PublishAsync(channel.Writer, complete, ct).ConfigureAwait(false);
+                lifetime?.ObservePublished(complete.Span);
+            }
             if (limitExceeded)
             {
                 ct.ThrowIfCancellationRequested();
@@ -1082,9 +1105,19 @@ public sealed partial class RouterCore : IInferenceRouter
         SignalDispatch();
     }
 
-    private void Fail(RouterTicket ticket, string code, string message)
+    private void Fail(RouterTicket ticket, string code, string message, bool suppressIdleTerminal = false)
     {
+        if (ticket.HttpDelivery is { } delivery)
+        {
+            if (ticket.IsTerminal) return;
+            var outcome = delivery.Decide(new HttpStreamOutcome(code, message, suppressIdleTerminal), execution: ticket.ExecCts);
+            if (outcome.Code is not { } chosenCode) return;
+            code = chosenCode;
+            message = outcome.Message;
+            suppressIdleTerminal = outcome.SuppressIdleTerminal;
+        }
         if (!ticket.TryEnterTerminal()) return;
+        ticket.SuppressIdleTerminal = suppressIdleTerminal;
         // One terminal path, one ceiling. From here the same string is three caller-visible things at once —
         // <c>ticket.Error</c>, the <see cref="RouterRequestException"/> the HTTP writer turns into an error body,
         // and the error frame of a stream that already committed its 200 — plus the feed reason below. Some of it
@@ -1405,7 +1438,7 @@ public static class ModelRewriter
     }
 }
 
-file static class QueuedRequestExtensions
+internal static class QueuedRequestExtensions
 {
     public static IReadOnlyList<string> Messages(this QueuedRequest q)
     {

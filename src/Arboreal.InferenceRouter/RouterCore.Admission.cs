@@ -127,7 +127,13 @@ public sealed partial class RouterCore
         }
     }
 
-    public ValueTask<RouterTicket> EnqueueAsync(string threadId, InferenceRequest request, CancellationToken ct = default)
+    public ValueTask<RouterTicket> EnqueueAsync(string threadId, InferenceRequest request, CancellationToken ct = default) =>
+        EnqueueAsync(threadId, request, httpStream: false, ct);
+
+    internal ValueTask<RouterTicket> EnqueueHttpAsync(string threadId, InferenceRequest request, CancellationToken ct) =>
+        EnqueueAsync(threadId, request, request.Stream, ct);
+
+    private ValueTask<RouterTicket> EnqueueAsync(string threadId, InferenceRequest request, bool httpStream, CancellationToken ct)
     {
         var opts = request.Options;
         var promptChars = PromptCharsProbe(request.Body);
@@ -165,7 +171,12 @@ public sealed partial class RouterCore
                 publishRegistration = thread is null;
                 thread ??= AddThread(threadId, opts?.Priority ?? generation.Settings.DefaultPriority, 1.0, null);
                 priority = opts?.Priority ?? thread.Priority;
-                var ticket = new RouterTicket(NewTicketId(), threadId, model, createdAt);
+                var bufferLimit = generation.Settings.StreamBufferLimitBytes;
+                var ticket = new RouterTicket(NewTicketId(), threadId, model, createdAt)
+                {
+                    IsHttpStream = httpStream,
+                    HttpDelivery = httpStream && bufferLimit > 0 ? new HttpStreamDelivery(bufferLimit, ct, _shutdownToken) : null,
+                };
                 var node = new PrioritizedRequest(ticket, priority, Interlocked.Increment(ref _seq));
                 queued = new QueuedRequest
                 {
@@ -346,11 +357,37 @@ public sealed partial class RouterCore
 
         var cts = ticket.ExecCts;
         if (cts is null) return false;
+        var delivery = ticket.HttpDelivery;
+        if (delivery is not null && delivery.Decide(HttpStreamOutcome.Cancelled).Code != "cancelled")
+            return false;
         try { cts.Cancel(); return true; }
-        catch (ObjectDisposedException) { return false; }
+        catch (ObjectDisposedException) { return delivery is not null; }
     }
 
     private enum QueueEndClaim { Absent, Deferred, Competing, Removed }
+
+    internal void FailSlowStream(RouterTicket ticket, CancellationToken caller)
+    {
+        if (ticket.IsTerminal || ticket.HttpDelivery is not { } delivery) return;
+        var execution = ticket.ExecCts;
+        BeforeSlowStreamDecisionForTests?.Invoke();
+        if (delivery.Decide(HttpStreamOutcome.SlowConsumer, execution, caller).Code != "slow_consumer") return;
+
+        switch (ClaimQueuedEnd(ticket, "slow_consumer"))
+        {
+            case QueueEndClaim.Deferred:
+            case QueueEndClaim.Competing:
+                return;
+            case QueueEndClaim.Removed:
+                SettleQueueEnd(ticket, "slow_consumer", null);
+                return;
+        }
+
+        if (execution is null) return;
+        // The dispatch owner settles an admitted ticket using the already selected outcome.
+        try { _ = execution.CancelAsync(); }
+        catch (ObjectDisposedException) { }
+    }
 
     private QueueEndClaim ClaimQueuedEnd(RouterTicket ticket, string code)
     {
@@ -377,7 +414,13 @@ public sealed partial class RouterCore
     private void SettleQueueEnd(RouterTicket ticket, string code, TimeSpan? window)
     {
         _admission?.Invalidate(ticket);
-        Fail(ticket, code, code == "cancelled" ? "cancelled while queued" : $"queue wait exceeded {window}");
+        var reason = code switch
+        {
+            "cancelled" => "cancelled while queued",
+            "slow_consumer" => HttpStreamOutcome.SlowConsumer.Message,
+            _ => $"queue wait exceeded {window}",
+        };
+        Fail(ticket, code, reason);
         ReleaseExecutionCancellation(ticket);
     }
 

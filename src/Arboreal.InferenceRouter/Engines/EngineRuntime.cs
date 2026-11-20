@@ -210,11 +210,13 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
         ResponseTimeout = def.ResponseTimeoutMs <= 0
             ? null
             : TimeSpan.FromMilliseconds(def.ResponseTimeoutMs);
+        StreamIdleTimeout = def.StreamIdleTimeoutMs > 0 ? TimeSpan.FromMilliseconds(def.StreamIdleTimeoutMs) : null;
     }
 
     /// <summary>Ceiling on the wait for this engine's first response byte (null = no ceiling). Worked
     /// out once at startup: the request path must not re-derive config.</summary>
     internal TimeSpan? ResponseTimeout { get; }
+    internal TimeSpan? StreamIdleTimeout { get; }
 
     private static LifecycleBinding? BindLifecycle(EngineDefinition def, IEngineLifecycleProvider? provider)
     {
