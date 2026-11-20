@@ -5,10 +5,17 @@ status: Blocked
 assignee:
   - '@gpt-6.2-sol-scheduling'
 created_date: '2026-11-18T18:15:00Z'
-updated_date: '2026-11-20T00:25:00Z'
+updated_date: '2026-11-20T00:26:00Z'
 labels: []
 milestone: m-4
 dependencies:
+  - TASK-125
+  - TASK-110
+  - TASK-108
+  - TASK-114
+  - TASK-25
+  - TASK-64
+  - TASK-118
   - TASK-143
 ordinal: 110000
 ---
