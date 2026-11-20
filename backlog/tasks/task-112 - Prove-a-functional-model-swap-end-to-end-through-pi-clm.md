@@ -1,11 +1,11 @@
 ---
 id: TASK-112
 title: Prove a functional model swap end to end through pi-clm
-status: Waiting
+status: Blocked
 assignee:
-  - '@gpt-6.2-astra'
+  - '@gpt-6.2-sol-scheduling'
 created_date: '2026-11-18T18:15:00Z'
-updated_date: '2026-11-19T03:42:00Z'
+updated_date: '2026-11-20T00:26:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -16,13 +16,14 @@ dependencies:
   - TASK-25
   - TASK-64
   - TASK-118
+  - TASK-143
 ordinal: 110000
 ---
 
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Wake: TASK-125 qualifies the native pair and the listed host and delivery prerequisites land. Prove the first end-to-end native model swap on the primary local host through a real pi-clm client. Both turns and observed model residencies must be on that same host. TASK-85 and TASK-89 established forwarding and client selection. Decision-68 authorizes running local selector engines. Demonstrate the primary-host swap before extending to the peer inventory.
+Blocked on Claire choosing the launcher source of record in TASK-143 before implementation. The independent client plan review on 0b161d3 can complete meanwhile. Exercise opt-in AIR selection with one Pi RPC process, a fake roster initially containing only the incumbent, exact model requests and retained conversation history. Keep live residency criteria open.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -30,6 +31,12 @@ Wake: TASK-125 qualifies the native pair and the listed host and delivery prereq
 - [ ] #1 Complete a pi-clm turn on model A, request model B through the router, and complete a streamed pi-clm turn on B.
 - [ ] #2 Correlate the switch with observed backend residency before and after and successful client completion. Record redacted evidence, router version and config revision.
 <!-- AC:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Identify ownership of the launcher and its generated model catalog. Propose the minimum integration and evidence of two requested model IDs in successive turns through one AIR endpoint. Preserve direct-backend launch behavior and record actual host residency only during the separately gated live run.
+<!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
 

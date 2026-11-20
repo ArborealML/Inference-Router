@@ -1,11 +1,11 @@
 ---
 id: TASK-110
 title: Coordinate model engines that share one host with exclusive residency
-status: Preparing
+status: Waiting
 assignee:
   - '@gpt-6.2-sol-lifecycle'
 created_date: '2026-11-18T18:13:00Z'
-updated_date: '2026-11-19T23:37:38Z'
+updated_date: '2026-11-20T00:18:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -21,7 +21,7 @@ ordinal: 108000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Lifecycle is amending the closed-receipt plan after review on 98db2b2. Exercise owner-only recovery through the receipt entry and both switch wrappers with original and competing intent. Establish the slot and current enrollment from independent provenance. Verify the local checkpoint under issue exclusion at both worker acceptance and issue, including rollback after coordinator loss. After Applied, distinguish exact historical lookup from fresh closed-ingress authorization when owner or ingress authority changes. Reuse existing controls and keep serving and host activation outside this increment.
+Waiting for Lifecycle’s correction to [PR #36](https://github.com/ArborealML/Inference-Router/pull/36); its handoff wakes Delivery. At 0f76243, 15 focused cases and hosted CI passed. An offline probe reproduced epoch allocation and a Dispatching rewrite from checksummed enrolled and empty JSON objects in a commissioned legacy slot. Require a genuine legacy record before grant. Exercise both switch entry points, unchanged storage, zero provider effects and a valid legacy control.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
