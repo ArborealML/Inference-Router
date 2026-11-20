@@ -73,7 +73,10 @@ internal static partial class AirTuneFile
             }
 
             var verified = directory;
+            // Ownership transfers to the returned handle. Disposing it here would close the result.
+#pragma warning disable IDISP003
             directory = null;
+#pragma warning restore IDISP003
             return verified;
         }
         finally
@@ -157,7 +160,10 @@ internal static partial class AirTuneFile
                 return null;
 
             var verified = data;
+            // Ownership transfers to the returned handle. Disposing it here would close the result.
+#pragma warning disable IDISP003
             data = null;
+#pragma warning restore IDISP003
             return verified;
         }
         finally
