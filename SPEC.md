@@ -1,6 +1,6 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.106)
+Status: draft, continuously revised (v0.12.107)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
@@ -352,6 +352,9 @@ daemon transaction per engine. 137 tests green.
   that answers no `upload_url`, an upload that dies or answers no asset id, an asset name listed twice on
   the release, and a tag that moves after the first resolve. No tag has run the gate: still configured,
   not proven.
+- v0.12.107 — produce and recover an offline supervised initial-launch receipt for the checked
+  DeepSeek/Qwen pair. Anchor full commissioning through issue and require independent wire and
+  effective-state evidence before recording an applied launch with ingress closed (§5.3.1).
 - v0.12.106 — latch the exact failed native switch target across dispatch wakes and unrelated
   reloads. Allow an authenticated, explicitly enabled reset of one latch (§5.3.1, §6, §7.7).
 - v0.12.105 — fence native Docker stop/removal uncertainty in the live provider and order
@@ -1884,6 +1887,19 @@ It returns before readiness, switch success, route publication, Open or any perm
 lookup can still return the original receipt after authority changes. A fresh acknowledgement requires
 current owner, policy and closed ingress. These code paths are exercised with fake authority only.
 Public enrollment remains disabled.
+
+The internal supervised producer uses this same closed-receipt entry for DeepSeek `32k` or Qwen
+`256k-4`. The enrolled coordinator assigns the operation and epoch. The writer anchors the full
+commissioned head and member mapping with the frozen intent, then anchors acceptance and exclusive
+possible issue before entering the typed create port. It compares independently read current
+commissioning against the original at acceptance, issue, start and fresh acknowledgment. An
+independent observation binds the exact wire bytes to the operation, epoch and daemon. The producer
+records their digest only after the bytes match the approval and separately observed effective image,
+process, resource and route settings agree. An exact running-instance observation qualifies Applied.
+Contradictory evidence keeps the installed effect fenced. Historical lookup reads the original bytes
+from the anchored journal and does not grant fresh authority. The producer is qualified with offline
+ports and a modeled independent head. Service deployment, durable host commissioning, authenticated
+live readiness and serving require separate authority and evidence.
 
 The successor ledger fixture records submissions, worker acceptances, daemon attempts and applied
 records in separate journals. These are synthetic evidence roles and can share a fixture process.
