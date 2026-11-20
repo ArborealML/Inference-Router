@@ -63,17 +63,18 @@ internal sealed class AirTuneRecord
             return false;
         }
 
-        var stopped = false;
+        var previousDidNotPass = false;
         for (var index = 0; index < Levels.Length; index++)
         {
             var level = Levels[index];
             if (level.Concurrency != index + 1 || !level.IsValid() ||
-                (stopped || Target.ObservedSlots.Value == 0) && level.Status != "untested")
+                (previousDidNotPass || Target.ObservedSlots.Value == 0) && level.Status != "untested" ||
+                level.Reason == "prior_level_did_not_pass" && (!previousDidNotPass || level.Status != "untested"))
             {
                 return false;
             }
 
-            stopped = level.Status != "passed";
+            previousDidNotPass = level.Status != "passed";
         }
 
         return true;

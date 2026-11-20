@@ -162,6 +162,7 @@ public sealed partial class AirTuneCompareOfflineTests : IDisposable
     [InlineData("required")]
     [InlineData("row")]
     [InlineData("after-failure")]
+    [InlineData("failed-with-prior-nonpass-reason")]
     [InlineData("wave-count")]
     [InlineData("zero-rate")]
     [InlineData("size")]
@@ -360,6 +361,9 @@ public sealed partial class AirTuneCompareOfflineTests : IDisposable
                 return Encoding.UTF8.GetBytes(Candidate.Replace("        10,\n        8,", "        1e0,\n        8,", StringComparison.Ordinal));
             case "raw-integer":
                 return Encoding.UTF8.GetBytes(Candidate.Replace("\"value\": 8589934592", "\"value\": -0", StringComparison.Ordinal));
+            case "failed-with-prior-nonpass-reason":
+                return Encoding.UTF8.GetBytes(Baseline.Replace("\"reason\": \"workload_failure\"",
+                    "\"reason\": \"prior_level_did_not_pass\"", StringComparison.Ordinal));
             case "size":
                 return Encoding.UTF8.GetBytes(Candidate.PadRight(AirTuneRecord.MaxBytes + 1));
             case "utf8":

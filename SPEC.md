@@ -3476,7 +3476,9 @@ The root contains `schema_version` (1), `run_id` (ID), `instance_id` (ID fact), 
 
 Each record starts at C=1 and proceeds in order through its cap. A passing prefix can end
 in one failed or inconclusive row followed by untested rows. All rows can be untested if
-preflight refused. Untested rows have unknown fingerprints. A cap must fit each known
+preflight refused. Untested rows have unknown fingerprints. The reason
+`prior_level_did_not_pass` applies only to an untested row immediately after a nonpassing
+level. A cap must fit each known
 positive slot count. A zero observed slot count requires all rows to be untested. Known
 usable context must fit the known observed window. Levels above a side’s cap are shown as
 outside cap.
