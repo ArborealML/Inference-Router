@@ -44,7 +44,7 @@ that adjacency is why this stays a separate task rather than growing a fifth cri
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-**Closed at 20a06fa** (AC #2, #3): CapabilityScanTests pins the coherence rule deterministically, and the capability read is one Volatile.Read(ref _cap) per engine per decision (Engines/EngineRuntime.cs:104-110). **Wire-visible posture, correct wherever it is restated:** an unservable model is refused 503 model_unavailable, not 429, and the feed carries one queue.rejected with reason model_unavailable and no request.enqueued. Queue overflow keeps 429 queue_overflow; the defect that overflow also emits request.enqueued is TASK-56, not this one.
+**Closed at 20a06fa** (AC #2, #3): CapabilityScanTests pins the coherence rule deterministically, and the capability read is one Volatile.Read(ref _cap) per engine per decision (Engines/EngineRuntime.cs:104-110). **Wire-visible posture, correct wherever it is restated:** an unservable model is refused 503 model_unavailable, not 429, and the feed carries one queue.rejected with reason model_unavailable and no request.enqueued. Queue overflow keeps 429 queue_overflow; reload admission fixed the historical duplicate enqueue; TASK-56 retains the exact overflow replay and reason check.
 
 **Wording this half has to get right (from the plan review of TASK-55):** at the head of a queue the hopeless-model decision
 uses CapabilityScan.DefinitelyHopeless, not the scheduler's internal no_available_engine reason; and a ticket already queued

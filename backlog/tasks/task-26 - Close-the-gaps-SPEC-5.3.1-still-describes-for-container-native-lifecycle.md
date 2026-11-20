@@ -1,11 +1,11 @@
 ---
 id: TASK-26
 title: Close the gaps SPEC 5.3.1 still describes for container-native lifecycle
-status: Testing
+status: Waiting
 assignee:
-  - '@gpt-6.2-sol-lifecycle'
+  - '@gpt-6.2-sol-release'
 created_date: '2026-11-17T02:54:00Z'
-updated_date: '2026-11-20T20:28:00Z'
+updated_date: '2026-11-20T20:48:00Z'
 labels:
   - engine
   - lifecycle
@@ -19,7 +19,7 @@ ordinal: 26000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Lifecycle is diagnosing the [failed Ubuntu build and test job](https://github.com/ArborealML/Inference-Router/actions/runs/44811649803) on [the observation change](https://github.com/ArborealML/Inference-Router/pull/57) at 5de04d7. Eight of 1,798 failed in the refusal audit: baseline, one mutation and six benign controls. The audit still expects FinishLegacyReadiness after the sole recorded write moved to CommitLegacyReadiness. Its mapping check also rejects the Error-or-NativeObservation arm. Preserve the single-write location check and the allowed reason mappings. Require the full refusal-category filter, affected observation tests and green hosted CI on the reviewed correction. Terminal ordering and SPEC integration passed review; 174 focused tests passed before this finding. The offline pre-Start hold at 449ff58 passed review, 31 focused cases and server AOT. Delivery will integrate it after the observation change. The Windows transport amendment is separate. [Docker diagnostics](https://github.com/ArborealML/Inference-Router/pull/53) landed at b0f8255. Full change detection and uncertain-start reconciliation remain open.
+Wake on the bounded correction review. The [replacement hosted run](https://github.com/ArborealML/Inference-Router/actions/runs/44814438821) passed all three jobs for [the observation change](https://github.com/ArborealML/Inference-Router/pull/57) at 49e84d2. The [original Ubuntu test job](https://github.com/ArborealML/Inference-Router/actions/runs/44811649803) failed eight refusal-audit cases at 5de04d7. The correction retains the single recorded-write location and allowed readiness mappings. All 215 focused Release cases passed with zero skips, including 41 refusal-category and 29 observation cases. The offline pre-Start hold at 449ff58 passed review, 31 focused cases and server AOT. Delivery will integrate it after the observation change. The Windows transport amendment is separate. [Docker diagnostics](https://github.com/ArborealML/Inference-Router/pull/53) landed at b0f8255. Full change detection and uncertain-start reconciliation remain open.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

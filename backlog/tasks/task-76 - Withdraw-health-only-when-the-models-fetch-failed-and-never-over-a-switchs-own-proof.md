@@ -3,11 +3,11 @@ id: TASK-76
 title: >-
   Withdraw health only when the /models fetch failed, and never over a switch's
   own proof
-status: Preparing
+status: In Progress
 assignee:
   - '@gpt-6.2-sol-shutdown'
 created_date: '2026-11-18T02:36:00Z'
-updated_date: '2026-11-20T20:37:00Z'
+updated_date: '2026-11-20T20:52:00Z'
 labels:
   - concurrency
 milestone: m-2
@@ -20,7 +20,7 @@ ordinal: 76000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Shutdown is preparing the post-refusal inference test plan from the existing audit on 8f84480. After B fails preflight, send one ordinary completion request to A and verify its response with no intervening probe, daemon write or switch. Existing uncertain-mutation tests cover withdrawal.
+Shutdown has the reviewed fixture-only implementation on 2233c5a. After B fails preflight, send one ordinary completion request to A and verify its response with no intervening probe, daemon write or switch. Existing uncertain-mutation tests cover withdrawal.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -31,6 +31,12 @@ Shutdown is preparing the post-refusal inference test plan from the existing aud
 - [x] #4 The failed-exit pin asserts the snapshot between the unknown publication and the marker clear, with an exact version check, so leaving the provenance bit set at the exit fails a pin.
 - [ ] #5 A preflight refusal before mutation preserves the incumbent’s valid proof and permits a subsequent inference on it. An uncertain mutating operation withdraws readiness pending fresh proof.
 <!-- AC:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Extend the existing native preflight refusal test. Capture the incumbent proof, refuse the competing target, then dispatch one fresh completion to the incumbent. Assert the exact application POST and response with no new probe, switch or daemon write. Preserve the additional exact-inspect reply when composing with the pending observation change. Run this method, reverse the native restoration decision to demonstrate the intended failure, then restore it and rerun. Use the landed uncertain-withdrawal controls for the other outcome.
+<!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
 
