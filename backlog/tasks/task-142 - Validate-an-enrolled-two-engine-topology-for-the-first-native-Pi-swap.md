@@ -1,11 +1,11 @@
 ---
 id: TASK-142
 title: Validate an enrolled two-engine topology for the first native Pi swap
-status: Waiting
+status: Preparing
 assignee:
   - '@gpt-6.2-sol-shutdown'
 created_date: '2026-11-20T00:12:00Z'
-updated_date: '2026-11-20T00:49:00Z'
+updated_date: '2026-11-20T00:58:00Z'
 labels: []
 milestone: m-4
 dependencies: []
@@ -16,7 +16,7 @@ ordinal: 140000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Waiting for independent review of the unchanged revised topology plan on 0b161d3. The prior request produced no verdict; one replacement was submitted. Its verdict wakes Shutdown. The internal check requires exact current enrollment for both engines and their shared devices and routes. Public startup remains refused until a real producer supplies that evidence.
+Shutdown is amending the topology plan after rereview on 0b161d3. The public startup guard, current-head validation and closed descriptor design passed review. At the combined configuration-text checker, vary only the candidate configuration identity in one case and only its backend route in another. Keep trusted evidence and every other input fixed. Each mismatch must refuse before projection can use trusted values and conceal the difference. Delivery will submit this delta for review.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
