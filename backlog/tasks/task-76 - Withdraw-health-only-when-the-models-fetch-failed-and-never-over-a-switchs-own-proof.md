@@ -20,7 +20,7 @@ ordinal: 76000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Lifecycle is auditing landed refusal-path evidence for the incumbent readiness criterion in a separate checkout at 207ccd6. The next handoff identifies which observations cover later inference and uncertain mutation, and any remaining gap. The models-fetch failure boundary, marker protection and failed-switch provenance are integrated. TASK-68 can proceed on the verified marker criterion.
+Lifecycle is checking the health observation rule and its reversal evidence. The native refusal audit found that the existing test ends at restored incumbent readiness. Delivery is assigning a fixture plan to Shutdown. After B fails preflight, send one ordinary completion request to A and verify its response with no intervening probe, daemon write or switch. Existing uncertain-mutation tests cover withdrawal.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

@@ -3,11 +3,11 @@ id: TASK-109
 title: >-
   Make the subscriber-isolation pins separate the claims they name, and add the
   two missing controls
-status: To Do
+status: Ready for Review
 assignee:
   - '@gpt-6.2-sol-stream-delivery'
 created_date: '2026-11-18T17:58:00Z'
-updated_date: '2026-11-20T20:14:00Z'
+updated_date: '2026-11-20T20:26:00Z'
 labels:
   - tests
   - events
@@ -20,7 +20,7 @@ ordinal: 107000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-The [joined-waiter test](https://github.com/ArborealML/Inference-Router/pull/55) landed at 2c43490. It records the same completion sequence at the producer commit and both wakes, with one gated launch, two pending callers and exactly one matching subscriber fault. Ordering, fanout and counter mutations produced 1, 2 and 4 intended failures. All 19 focused cases passed after restoration and [main CI](https://github.com/ArborealML/Inference-Router/actions/runs/44808078550) passed all three jobs. Observer I/O documentation and the per-run load measurement remain open.
+The approved subscriber I/O documentation plan produced 9eac602, a SPEC §6.1 paragraph awaiting review and integration. The [joined-waiter test](https://github.com/ArborealML/Inference-Router/pull/55) landed at 2c43490. It records the same completion sequence at the producer commit and both wakes, with one gated launch, two pending callers and exactly one matching subscriber fault. Ordering, fanout and counter mutations produced 1, 2 and 4 intended failures. All 19 focused cases passed after restoration and [main CI](https://github.com/ArborealML/Inference-Router/actions/runs/44808078550) passed all three jobs. Observer I/O documentation and the per-run load measurement remain open.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
