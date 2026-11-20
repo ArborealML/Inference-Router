@@ -21,7 +21,7 @@ namespace Arboreal.InferenceRouter.Lifecycle;
 /// it back.</item>
 /// </list>
 /// </remarks>
-public sealed class DockerLifecycleProvider : IEngineLifecycleProvider, IDisposable
+public sealed partial class DockerLifecycleProvider : IEngineLifecycleProvider, IDisposable
 {
     public const string ProviderKind = "docker";
 
@@ -420,12 +420,15 @@ public sealed class DockerLifecycleProvider : IEngineLifecycleProvider, IDisposa
         if (inspect.Status == 404) return NativeStopDisposition.Absent;
 
         var observed = TryRead(inspect.Body, DockerJsonContext.Default.DockerContainerInspectResponse);
-        return observed is { Config.Labels: { } labels } && observed.Id == id
-            && labels.TryGetValue(LabelRouter, out var router) && router == _scope.RouterId
-            && labels.TryGetValue(LabelEngine, out var engine) && engine == _scope.EngineName
-            && observed.State is { Status: "exited", Running: false, Restarting: false, Paused: false, Dead: false }
+        return MatchesOwnedContainer(observed?.Id, observed?.Config?.Labels, id)
+            && observed?.State is { Status: "exited", Running: false, Restarting: false, Paused: false, Dead: false }
             ? NativeStopDisposition.AlreadyStopped : NativeStopDisposition.Unconfirmed;
     }
+
+    private bool MatchesOwnedContainer(string? observedId, Dictionary<string, string>? labels, string id) =>
+        labels is not null && observedId == id
+        && labels.TryGetValue(LabelRouter, out var router) && router == _scope.RouterId
+        && labels.TryGetValue(LabelEngine, out var engine) && engine == _scope.EngineName;
 
     public async ValueTask<LifecycleResult> LaunchAsync(LifecycleTarget target, CancellationToken ct)
     {

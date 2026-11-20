@@ -149,6 +149,42 @@ public sealed class DockerCreateResponse
     [JsonPropertyName("Warnings")] public string[]? Warnings { get; set; }
 }
 
+internal sealed class DockerDiagnosticContainerResponse
+{
+    [JsonPropertyName("Id")] public string? Id { get; set; }
+    [JsonPropertyName("Config")] public DockerDiagnosticContainerConfig? Config { get; set; }
+}
+
+internal sealed class DockerDiagnosticContainerConfig
+{
+    [JsonPropertyName("Labels")] public Dictionary<string, string>? Labels { get; set; }
+    [JsonPropertyName("Tty")] public bool? Tty { get; set; }
+}
+
+internal sealed record DockerExecCreateRequest(
+    [property: JsonPropertyName("Cmd")] string[] Command)
+{
+    [JsonPropertyName("AttachStdout")] public bool AttachStdout { get; } = true;
+    [JsonPropertyName("AttachStderr")] public bool AttachStderr { get; } = true;
+    [JsonPropertyName("AttachStdin")] public bool AttachStdin { get; }
+    [JsonPropertyName("Tty")] public bool Tty { get; }
+    [JsonPropertyName("Privileged")] public bool Privileged { get; }
+}
+
+internal sealed class DockerExecStartRequest
+{
+    [JsonPropertyName("Detach")] public bool Detach { get; }
+    [JsonPropertyName("Tty")] public bool Tty { get; }
+}
+
+internal sealed class DockerExecInspectResponse
+{
+    [JsonPropertyName("ID")] public string? Id { get; set; }
+    [JsonPropertyName("ContainerID")] public string? ContainerId { get; set; }
+    [JsonPropertyName("Running")] public bool? Running { get; set; }
+    [JsonPropertyName("ExitCode")] public int? ExitCode { get; set; }
+}
+
 [JsonSourceGenerationOptions(DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
 [JsonSerializable(typeof(DockerVersionResponse))]
 [JsonSerializable(typeof(DockerImageInspectResponse))]
@@ -156,6 +192,10 @@ public sealed class DockerCreateResponse
 [JsonSerializable(typeof(DockerContainerInspectResponse))]
 [JsonSerializable(typeof(DockerCreateRequest))]
 [JsonSerializable(typeof(DockerCreateResponse))]
+[JsonSerializable(typeof(DockerDiagnosticContainerResponse))]
+[JsonSerializable(typeof(DockerExecCreateRequest))]
+[JsonSerializable(typeof(DockerExecStartRequest))]
+[JsonSerializable(typeof(DockerExecInspectResponse))]
 [JsonSerializable(typeof(DockerListFilter))]
 internal sealed partial class DockerJsonContext : JsonSerializerContext
 {
