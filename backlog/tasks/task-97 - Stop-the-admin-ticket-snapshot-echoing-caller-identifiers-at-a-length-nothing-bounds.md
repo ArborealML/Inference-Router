@@ -7,7 +7,7 @@ status: Preparing
 assignee:
   - '@gpt-6.2-sol-stream-frames'
 created_date: '2026-11-18T10:57:00Z'
-updated_date: '2026-11-20T17:31:00Z'
+updated_date: '2026-11-20T17:40:00Z'
 labels: []
 milestone: m-1
 dependencies: []
@@ -31,9 +31,14 @@ Frames is checking current admission, admin snapshot and body-reader behavior ag
 - [ ] #6 The refusal is OpenAI-shaped on `/v1` (`invalid_request`, `param: model`, no reflected value), and the audit of every body consumer decides whether SPEC's "on any surface" survives or becomes "on body-consuming endpoints"
 <!-- AC:END -->
 
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Prepare a bounded plan to reuse the existing counted body reader on POST /admin/threads and POST /admin/switch. Pin declared and streamed oversized requests returning the existing 413 before registration or switch effects, plus valid requests at the configured ceiling. Correct the SPEC snapshot sizing claim while preserving whole identities. Seek independent review before implementation.
+<!-- SECTION:PLAN:END -->
+
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-The top-tier plan review landed REVISE with numbers, adopted here as **provisional**: a named `MaxStoredIdentifierUtf8Bytes = 2048` enforced on the decoded `model` and `X-Inference-Thread` before any ticket or thread state is mutated, and a `MaxAdminTicketSnapshotJsonBytes = 65536` checked before emission with a lossless round trip of every field — never a truncated or routinely-failing snapshot. Admin POSTs reuse `/v1`'s bounded reader on actual streamed bytes, rejecting cap+1 before side effects. Both a domain check on the header and explicit transport header limits. Retention stays 4096; two 2048-byte identities across it is 16 MiB of raw identifier bytes, so no new eviction rule. One SPEC+code+tests commit.
-This seat's own compatibility check, which the reviewer could not run: the long-identifier fixtures are 405 (`CapabilityPublicationTests.cs:1033`, `EventRingTests.cs:261-262,351-352`) and 300 characters, all far under 2048, so no existing pin breaks; SPEC §6 carries no bar on a new admission refusal. The reviewer read no local tree — it could not see SPEC §§6/11.2, all routes, or the full DTO — so those audits are criteria here, not settled facts. Wake satisfied; implementation waits behind TASK-94 and TASK-87.
+Source on 3fb1981 shows both handlers copy the entire body before parsing. Inference and authorized reset already use the bounded reader; reload accepts no body. A thread header can itself exceed the inference body budget, and JSON escaping also affects the serialized snapshot. Decision 45 retains complete snapshot identities. A new identity limit, fixed snapshot ceiling and refusal fields remain proposals outside this increment.
 <!-- SECTION:NOTES:END -->

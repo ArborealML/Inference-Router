@@ -1,11 +1,11 @@
 ---
 id: TASK-144
 title: Plan hardware-specific qualification of stepped inference tiers
-status: In Progress
+status: Waiting
 assignee:
-  - '@gpt-6.2-sol-config'
+  - '@gpt-6.2-sol-release'
 created_date: '2026-11-20T00:33:00Z'
-updated_date: '2026-11-20T17:25:00Z'
+updated_date: '2026-11-20T17:40:00Z'
 labels: []
 milestone: m-14
 dependencies: []
@@ -15,7 +15,7 @@ ordinal: 142000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Config is publishing the independently reviewed hardware tuning design under docs/. The amendment covers a long decode with output-clamp detection, independent hardware and process evidence, owned concurrent requests with bounded drain, and native attempt, token and reuse accounting. Missing evidence makes the level inconclusive. The 64 GB and 128 GB comparison is illustrative. Close the five design criteria once the public document lands.
+Wake: exact document review and hosted qualification for [the proposed air tune design](https://github.com/ArborealML/Inference-Router/pull/51). Delivery verified the published one-file head ede35d0. After landing, check the five design criteria against the main document. The hardware comparison is illustrative; implementation, benchmarking and default selection are separate.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
