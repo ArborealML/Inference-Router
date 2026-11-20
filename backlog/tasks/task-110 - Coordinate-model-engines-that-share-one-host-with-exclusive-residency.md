@@ -5,7 +5,7 @@ status: Waiting
 assignee:
   - '@gpt-6.2-sol-lifecycle'
 created_date: '2026-11-18T18:13:00Z'
-updated_date: '2026-11-20T00:31:00Z'
+updated_date: '2026-11-20T00:43:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -21,7 +21,7 @@ ordinal: 108000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Waiting for independent correction review and exact-head CI on [PR #36](https://github.com/ArborealML/Inference-Router/pull/36). The verdict wakes Delivery. The reservation-format repair at 15b722c passed three focused cases. Integrated head a60c477 preserves both SPEC sections and passed 23 receipt and DeepSeek/Qwen cases. Serving and live enrollment remain open.
+Waiting for the supervised enrollment producer and independent current host evidence; their availability wakes live integration. [PR #36](https://github.com/ArborealML/Inference-Router/pull/36) landed durable Applied receipt recovery with inference ingress closed and refusal of wrong legacy record shapes. The format correction passed 3/3; integrated receipt and pair tests passed 23/23. Independent review accepted a60c477 and [hosted checks](https://github.com/ArborealML/Inference-Router/actions/runs/44646215079) passed. Merge 98ee267 preserves the qualified tree. Public enrollment, connected-peer readiness reads, physical retirement and live serving remain open.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
