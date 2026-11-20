@@ -133,7 +133,7 @@ path = "/v1/models"
 [engine.hyperqwen.catalog."qwen-3.8-27b"]
 aliases = ["qwen-27b"]
 
-# ── glm: shared Maya listener for externally selected GLM or HY4 ────────────
+# ── glm: shared Maya listener for externally selected GLM, HY4 or MiniMax ─────
 [engine.glm]
 kind = "openai-compatible"
 endpoint = "http://127.0.0.1:18060/v1"
@@ -152,6 +152,20 @@ aliases = ["glm-flash"]
 
 [engine.glm.catalog."hy4-flash"]
 aliases = ["hy4", "hy4-flash-maya-xs"]
+default_profile = "96k"
+serving = [
+  { name = "32k",   max_context = 32768,   max_slots = 1 },
+  { name = "64k",   max_context = 65536,   max_slots = 1 },
+  { name = "96k",   max_context = 98304,   max_slots = 1 },
+  { name = "128k",  max_context = 131072,  max_slots = 1 },
+  { name = "256k",  max_context = 262144,  max_slots = 1 },
+  { name = "512k",  max_context = 524288,  max_slots = 1 },
+  { name = "1024k", max_context = 1048576, max_slots = 1 },
+]
+
+[engine.glm.catalog."minimax-m3.1-flash"]
+aliases = ["minimax", "minimax-maya-xs"]
+# Normal choices start at 64k. Choose 32k explicitly as the fallback.
 default_profile = "96k"
 serving = [
   { name = "32k",   max_context = 32768,   max_slots = 1 },

@@ -52,8 +52,9 @@ engine or profile.
 ### HY4 Flash on the shared Maya listener
 
 Use the existing Maya engine catalog, shown as `engine.glm` in
-[samples/router.toml](../samples/router.toml). Its listener can serve either GLM
-or HY4 Flash. Supply the deployment’s authorized upstream credential if required.
+[samples/router.toml](../samples/router.toml). The operator selects GLM, HY4 Flash
+or MiniMax M3.1 Flash for this listener. Supply the deployment’s authorized upstream
+credential if required.
 Ask for `hy4-flash`, `hy4` or `hy4-flash-maya-xs` when Maya reports the canonical
 `hy4-flash` row as loaded.
 
@@ -63,6 +64,23 @@ tokens. Choose 32k explicitly for a smaller launch. The installed selector still
 accepts and defaults to 32k. AIR's 96k default requires selector support and host
 qualification before it can launch. AIR forwards against the measured window for
 the loaded model. The operator retains control of which model and tier Maya loads.
+
+### MiniMax M3.1 Flash on the shared Maya listener
+
+Use the same external `engine.glm` listener. Ask AIR for `minimax-m3.1-flash`,
+`minimax` or `minimax-maya-xs` when Maya reports the canonical `minimax-m3.1-flash`
+row loaded. The sample declares one slot per tier at 32k, 64k, 96k, 128k, 256k,
+512k and 1024k, using 1,024 tokens per k. Choose 32k explicitly as the safe fallback.
+Normal choices start at 64k. The omitted launch tier is **nominal 96k** (98,304
+tokens). The operator controls the external launch. AIR forwards against the
+model-bound window it observes, so a loaded 32k model may serve smaller requests
+and refuses a 65,536-token floor on this listener.
+
+The archived MiniMax selector projection covers 32k only. Wider launches require
+selector support and host qualification. With the pinned Maya eight-token reserve,
+nominal 96k leaves 98,296 usable tokens and 32,760 output tokens after a 65,536-token
+rendered prompt. The full 65,536 plus 32,768 split needs at least 98,312 nominal
+tokens on that path and separate workload qualification. [Historical launch projection](selector-launch-coverage.md#minimax-32k-launch-options) · [Maya context envelope](hardware-tuning-design.md#qualify-the-normal-use-context-budget)
 
 ## Thread identity: how an agent gets its share
 
