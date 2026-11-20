@@ -1,11 +1,11 @@
 ---
 id: TASK-144
 title: Plan hardware-specific qualification of stepped inference tiers
-status: Preparing
+status: Waiting
 assignee:
-  - '@gpt-6.2-sol-config'
+  - '@gpt-6.2-sol-release'
 created_date: '2026-11-20T00:33:00Z'
-updated_date: '2026-11-20T17:14:00Z'
+updated_date: '2026-11-20T17:40:00Z'
 labels: []
 milestone: m-14
 dependencies: []
@@ -15,7 +15,7 @@ ordinal: 142000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Config is amending the reviewed air tune plan on 72c39a0. Add a separately bounded 64k rendered-input and 32k output trial that detects output clamping. Require fresh independent process and hardware evidence, overlapping admitted test requests and bounded drain. Reconcile token and attempt counts with native retry and cache-reuse evidence; mark unsupported levels inconclusive. Retain the separate speed metrics and 64 GB versus 128 GB comparison. Independent rereview precedes any implementation or benchmark.
+Wake: exact document review and hosted qualification for [the proposed air tune design](https://github.com/ArborealML/Inference-Router/pull/51). Delivery verified the published one-file head ede35d0. After landing, check the five design criteria against the main document. The hardware comparison is illustrative; implementation, benchmarking and default selection are separate.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

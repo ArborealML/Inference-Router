@@ -3,11 +3,11 @@ id: TASK-118
 title: >-
   Resolve each native launch profile and dispatch to its verified serving
   instance
-status: Waiting
+status: Preparing
 assignee:
-  - '@gpt-6.2-sol-lifecycle'
+  - '@gpt-6.2-sol-shutdown'
 created_date: '2026-11-18T18:56:00Z'
-updated_date: '2026-11-20T00:20:00Z'
+updated_date: '2026-11-20T17:38:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -23,7 +23,7 @@ ordinal: 116000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Waiting for host enrollment to supply a GET-only channel that attests the connected serving process, including the backend leg of any proxy. Delivery of that producer wakes Lifecycle. Bind both readiness reads to the recorded launch, scope, route, immutable container and one serving incarnation while inference is closed. The receipt on 0f76243 identifies the container; its process can restart independently. Revalidate saved Applied evidence and read /v1/models and /props under the original readiness budget. A process restart between valid replies must refuse the combined measurement. Parser changes alone cannot qualify this path.
+Shutdown owns the host-enrollment authority contract plan. The [launch receipt](https://github.com/ArborealML/Inference-Router/pull/49) identifies a container, while both readiness replies need independent evidence of the same connected serving process. Reserve a closed generation and bind original probe paths, credentials, receipt and one monotonic budget to both reads and conclusive retirement. Include the actual backend connection behind a proxy. Historical lookup grants no fresh authority. Reader implementation waits for this producer.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

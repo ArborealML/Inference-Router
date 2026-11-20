@@ -1,6 +1,6 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.108)
+Status: draft, continuously revised (v0.12.107)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
@@ -352,7 +352,7 @@ daemon transaction per engine. 137 tests green.
   that answers no `upload_url`, an upload that dies or answers no asset id, an asset name listed twice on
   the release, and a tag that moves after the first resolve. No tag has run the gate: still configured,
   not proven.
-- v0.12.108 — report model and engine identifiers at reporting length in SSE keepalive comments.
+- v0.12.107 — report model and engine identifiers at reporting length in SSE keepalive comments.
   Specify encoded byte ceilings for keepalives, HTTP error JSON and the committed-stream error
   and completion pair (§6, §6.1).
 - v0.12.106 — latch the exact failed native switch target across dispatch wakes and unrelated
