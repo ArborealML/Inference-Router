@@ -7,7 +7,7 @@ status: Waiting
 assignee:
   - '@gpt-6.2-sol-stream-delivery'
 created_date: '2026-11-18T17:42:00Z'
-updated_date: '2026-11-20T03:16:00Z'
+updated_date: '2026-11-20T03:37:00Z'
 labels:
   - config
   - lifecycle
@@ -21,7 +21,7 @@ ordinal: 105000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Wake: independent review findings or hosted CI for [PR #43](https://github.com/ArborealML/Inference-Router/pull/43). Delivery owns integration and routes any correction to the implementer. Existing streams and switches keep their starting configuration. External engine additions and removals require router-wide idle. Selective native quarantine reset remains open.
+Wake: independent code and fixture reviews of the qualified reload correction at 95dbdd6. Delivery owns disposition and integration. Selective native quarantine reset remains open.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -45,7 +45,5 @@ Require the expected process identity and configuration generation on apply. Val
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-TASK-83 covers accepted config keys and runtime handlers. Decision-56 requires native engine selection. Review a portable admin preview/apply with expected generation; classify live, drain and restart-only settings. Keep streams and switches on their starting generation, reject stranded queues, and verify redaction and access. Consider 409 for stale generation and 422 for invalid changes, preserving the old config. Decide the wire contract in review before implementation. A delegated implementer delivers the diff and raw checks; the coordinator integrates. Socket-based proofs require a runner that can bind loopback.
-
-At e5d4576 the Release build passed with zero warnings, 347 focused tests passed, and server Native AOT produced zero trim warnings. Only SPEC required reconciliation with b7d9375. The implementation and SPEC reconciliation are under independent review.
+The original [PR #43](https://github.com/ArborealML/Inference-Router/pull/43) head e5d4576 passed 347 focused Release tests and [hosted CI](https://github.com/ArborealML/Inference-Router/actions/runs/44666394509). Review accepted the SPEC reconciliation and requested corrections for pending queue entries blocking eligible peers, concurrent disposal waiting for the same cleanup, and routing and event ordering under races. The correction at 95dbdd6 passed 210 focused Release tests with a warning-free build and zero server Native AOT trim warnings. Hosted results remain attributed to the original head.
 <!-- SECTION:NOTES:END -->
