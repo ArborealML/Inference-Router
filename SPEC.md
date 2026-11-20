@@ -356,6 +356,9 @@ daemon transaction per engine. 137 tests green.
   through an authenticated file-backed apply. Keep admitted streams and switches on their starting
   configuration, keep detached inference counted through cleanup, and preserve the current
   generation on refusal (§5.5, §6, §7.7).
+- v0.12.101 — verify an exact owned container's exit or absence after a native Docker stop
+  conflict before allowing replacement. Cleanup after a verified exit uses non-force removal
+  and conflict-derived observations do not train shutdown timing (§5.3.1).
 - v0.12.100 — relay complete SSE blocks byte-for-byte and discard an unfinished block before a terminal
   error. Apply the same block-boundary check after an upstream-only read cancellation. Bound one block
   to 1 MiB before its delimiter. HTTP keepalives continue until a complete block or terminal result,
@@ -1716,11 +1719,20 @@ resource enforcement requires daemon inspection under the host authority. A crea
 or a mismatch in inspected resources must prevent start and keep the fence through exact-ID
 cleanup. A lost create response requires reconciliation before a successor can mutate.
 
-**Target error handling.** `404` from inspect means *absent* and nothing else. `ENOENT`,
-`ECONNREFUSED`, `EACCES`, TLS and timeout failures mean *daemon unavailable* — never
-“the container is gone”, because acting on that confusion deletes other people's
-containers. `409` is surfaced as a conflict, `304` treated as idempotent success, and an
-uncertain outcome is re-inspected by immutable id.
+**Shipped Docker stop-conflict handling.** The ordinary stop acknowledgments are `204` (stopped),
+`304` (already stopped) and `404` (absent). After a stop returns `409`, the provider inspects the
+original full 64-hex container ID on the same daemon and pinned API. Inspect `200` must report the
+exact ID, both bound ownership labels and an explicit exited state with running, restarting, paused
+and dead all false. Inspect `404` proves absence and skips DELETE. After a verified exit,
+`remove_stopped = true` uses non-force DELETE and accepts `204` or `404`. A restart conflict, an
+unavailable or invalid observation, or an unexpected stop, inspect or removal response refuses
+replacement in that attempt. With removal disabled the provider still requires exit or absence
+before proceeding after `409`. These conflict-derived observations do not train shutdown timing.
+
+**Target error handling.** `ENOENT`, `ECONNREFUSED`, `EACCES`, TLS and timeout failures indicate
+unavailable daemon evidence. Retaining the exact possible-issued operation across re-entry until
+independently verified terminal evidence (TASK-26 AC11) and ordering EngineRuntime incumbent
+restoration and publication against native writes remain open.
 
 **Target host transaction.** Reserve the host, prove ownership and admissibility, and validate
 assets, receipts, qualification, image identity and privileges. Close admission and drain active

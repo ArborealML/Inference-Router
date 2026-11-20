@@ -1,11 +1,11 @@
 ---
 id: TASK-26
 title: Close the gaps SPEC 5.3.1 still describes for container-native lifecycle
-status: Waiting
+status: To Do
 assignee:
   - '@gpt-6.2-sol-lifecycle'
 created_date: '2026-11-17T02:54:00Z'
-updated_date: '2026-11-20T00:41:00Z'
+updated_date: '2026-11-20T02:59:00Z'
 labels:
   - engine
   - lifecycle
@@ -19,7 +19,7 @@ ordinal: 26000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Waiting for independent review of the exact-ID stop-conflict plan and addendum on 07e364c. Its verdict wakes Lifecycle. AC10 and related AC11 cover conflict, ambiguous stop, forced removal and reentry. Qualify with the fake daemon.
+The provider now checks independent evidence of the exact owned container state after a stop conflict. Remaining work includes fencing reentry after an ambiguous effect and preventing runtime readiness restoration after an acknowledged or uncertain stop.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -33,14 +33,14 @@ Waiting for independent review of the exact-ID stop-conflict plan and addendum o
 - [ ] #7 After an uncertain start, reconcile the exact recorded operation and immutable container ID. Prove cleanup of the owned unit, or retain the host fence until reconciliation establishes the outcome.
 - [x] #8 A shipped native Docker example passes the config loader with every model selector removed from that engine. The shipped-sample load test passes and remaining delegated examples identify exec as legacy.
 - [ ] #9 After A fails, repeated scheduler wakeups and cooldown expiry produce zero attempts for its engine/model/profile/config generation. Resetting A permits a fresh attempt without resetting unrelated targets (decision-62).
-- [ ] #10 A conflicting native stop response cannot authorize forced removal or replacement unless an independent observation proves the exact owned instance stopped. Pin the refusal and verified-state cases and reconcile the documented 409 behavior.
+- [x] #10 A conflicting native stop response cannot authorize forced removal or replacement unless an independent observation proves the exact owned instance stopped. Pin the refusal and verified-state cases and reconcile the documented 409 behavior.
 - [ ] #11 After ambiguous stop/removal, retain exact operation and immutable ID. Block force-removal, replacement and retry until independently proven terminal.
 <!-- AC:END -->
 
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Implement the reviewed image-identity slice first. Validate complete configured pins in TOML and JSON, compare full image ID, named manifest digest and platform against daemon inspect, and create by immutable ID. Preserve config loading and resident forwarding. Unpinned managed launch fails before mutation. Fake mismatches must leave an owned incumbent untouched. Document the migration, with daemon permission refusal and the boundary between native settings and entrypoint flags as settled by decisions 1, 2 and 56.
+Validate configured TOML and JSON pins against daemon image ID, manifest digest and platform. Create by immutable ID. Preserve config loading and resident forwarding. Unpinned managed launch fails before mutation. Fake mismatches must leave an owned incumbent untouched. Document the migration, with daemon permission refusal and the boundary between native settings and entrypoint flags as settled by decisions 1, 2 and 56.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
@@ -51,6 +51,8 @@ The [image and selector-free sample](https://github.com/ArborealML/Inference-Rou
 The [resource fixtures](https://github.com/ArborealML/Inference-Router/commit/bc63d48) passed 184 focused Release tests and server Native AOT. They verify Docker payloads for measured Qwen and script-derived Bonsai, native devices, NVIDIA requests, mounts, limits and network. Production activation awaits verified host authority, effective settings, serving-instance binding and uncertain-create recovery. External diff reviews dispatched. TASK-33 records live-proof permissions.
 
 For both RemoveStopped settings, inject timeout, disconnect and ambiguous daemon reply after possible issue. Verify exact-ID stopped or absent evidence as appropriate to the operation. Running, wrong-ID or unavailable evidence keeps the fence. Count attempts across re-entry. Transport failure alone proves neither absence nor pre-issue refusal.
+
+The [provider conflict fix](https://github.com/ArborealML/Inference-Router/pull/41) landed in v0.12.101 at ac13557. All 22 focused Release cases passed. Independent reviews covered the provider change and SPEC integration. [Post-merge CI](https://github.com/ArborealML/Inference-Router/actions/runs/44663962819) passed.
 <!-- SECTION:NOTES:END -->
 
 ## Comments

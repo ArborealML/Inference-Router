@@ -32,6 +32,27 @@ public sealed class DockerContainerSummary
     [JsonPropertyName("Labels")] public Dictionary<string, string>? Labels { get; set; }
 }
 
+internal sealed class DockerContainerInspectResponse
+{
+    [JsonPropertyName("Id")] public string? Id { get; set; }
+    [JsonPropertyName("Config")] public DockerContainerInspectConfig? Config { get; set; }
+    [JsonPropertyName("State")] public DockerContainerInspectState? State { get; set; }
+}
+
+internal sealed class DockerContainerInspectConfig
+{
+    [JsonPropertyName("Labels")] public Dictionary<string, string>? Labels { get; set; }
+}
+
+internal sealed class DockerContainerInspectState
+{
+    [JsonPropertyName("Status")] public string? Status { get; set; }
+    [JsonPropertyName("Running")] public bool? Running { get; set; }
+    [JsonPropertyName("Restarting")] public bool? Restarting { get; set; }
+    [JsonPropertyName("Paused")] public bool? Paused { get; set; }
+    [JsonPropertyName("Dead")] public bool? Dead { get; set; }
+}
+
 public sealed class DockerCreateRequest
 {
     [JsonPropertyName("Image")] public required string Image { get; set; }
@@ -132,6 +153,7 @@ public sealed class DockerCreateResponse
 [JsonSerializable(typeof(DockerVersionResponse))]
 [JsonSerializable(typeof(DockerImageInspectResponse))]
 [JsonSerializable(typeof(List<DockerContainerSummary>))]
+[JsonSerializable(typeof(DockerContainerInspectResponse))]
 [JsonSerializable(typeof(DockerCreateRequest))]
 [JsonSerializable(typeof(DockerCreateResponse))]
 [JsonSerializable(typeof(DockerListFilter))]
