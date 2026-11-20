@@ -89,7 +89,9 @@ public class StreamFrameIdentityTests
             var keepalive = await ReadFirstKeepaliveAsync(clientBody, ct);
             Assert.True(keepalive.AsSpan().StartsWith(": [router keepalive seq=0"u8));
             Assert.True(keepalive.AsSpan().EndsWith("\n\n"u8));
-            await ReadExpectedAsync(clientBody, prefix, ct);
+            var receivedPrefix = new byte[prefix.Length];
+            await clientBody.ReadExactlyAsync(receivedPrefix, ct);
+            Assert.Equal(prefix, receivedPrefix);
 
             var read = await armed.Task.WaitAsync(ct);
             Assert.Equal(id, read.Ticket);
@@ -124,13 +126,40 @@ public class StreamFrameIdentityTests
 
             byte[] expected = priorDone || adminFirst ? [] :
                 "data: {\"error\":{\"message\":\"cancelled\",\"code\":\"cancelled\",\"type\":\"air_error\"}}\n\ndata: [DONE]\n\n"u8.ToArray();
-            Assert.Equal(expected, suffix.ToArray());
+            var receivedSuffix = suffix.ToArray();
+            Assert.Equal(expected, receivedSuffix);
+            if (receivedSuffix.Length != 0)
+                AssertShutdownErrorAwareFrames(receivedPrefix, receivedSuffix);
         }
         finally
         {
             releaseRead.TrySetResult();
             if (stopping is not null) await stopping.WaitAsync(TimeSpan.FromSeconds(10), CancellationToken.None);
         }
+    }
+
+    private static void AssertShutdownErrorAwareFrames(byte[] prefix, byte[] suffix)
+    {
+        const string data = "data: ";
+        var delta = Encoding.UTF8.GetString(prefix);
+        Assert.StartsWith(data, delta, StringComparison.Ordinal);
+        Assert.EndsWith("\r\n\r\n", delta, StringComparison.Ordinal);
+        using var completion = JsonDocument.Parse(delta[data.Length..^4]);
+        Assert.Equal("chat.completion.chunk", completion.RootElement.GetProperty("object").GetString());
+        var choice = Assert.Single(completion.RootElement.GetProperty("choices").EnumerateArray());
+        Assert.Equal("hello", choice.GetProperty("delta").GetProperty("content").GetString());
+
+        var terminal = Encoding.UTF8.GetString(suffix).Split("\n\n", StringSplitOptions.None);
+        Assert.Collection(terminal, frame =>
+        {
+            Assert.StartsWith(data, frame, StringComparison.Ordinal);
+            using var document = JsonDocument.Parse(frame[data.Length..]);
+            var error = Assert.Single(document.RootElement.EnumerateObject());
+            Assert.Equal("error", error.Name);
+            Assert.Equal("air_error", error.Value.GetProperty("type").GetString());
+            Assert.Equal("cancelled", error.Value.GetProperty("code").GetString());
+            Assert.Equal("cancelled", error.Value.GetProperty("message").GetString());
+        }, done => Assert.Equal("data: [DONE]", done), end => Assert.Empty(end));
     }
 
     [Theory]

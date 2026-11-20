@@ -98,25 +98,30 @@ public partial class StreamRelayTests
     }
 
     [Theory(Timeout = 20_000)]
-    [InlineData(null, false)]
-    [InlineData(ShutdownOutputCall.InitialKeepaliveWrite, false)]
-    [InlineData(ShutdownOutputCall.InitialKeepaliveWrite, true)]
-    [InlineData(ShutdownOutputCall.InitialKeepaliveFlush, false)]
-    [InlineData(ShutdownOutputCall.InitialKeepaliveFlush, true)]
-    [InlineData(ShutdownOutputCall.RepeatKeepaliveWrite, false)]
-    [InlineData(ShutdownOutputCall.RepeatKeepaliveWrite, true)]
-    [InlineData(ShutdownOutputCall.RepeatKeepaliveFlush, false)]
-    [InlineData(ShutdownOutputCall.RepeatKeepaliveFlush, true)]
-    [InlineData(ShutdownOutputCall.Payload, false)]
-    [InlineData(ShutdownOutputCall.Payload, true)]
-    [InlineData(ShutdownOutputCall.Drain, false)]
-    [InlineData(ShutdownOutputCall.Drain, true)]
-    public async Task DefaultShutdownOutputRequiresEveryLegacyWriteAndFlush(ShutdownOutputCall? failed, bool completed)
+    [InlineData(null, false, 1)]
+    [InlineData(ShutdownOutputCall.InitialKeepaliveWrite, false, 1)]
+    [InlineData(ShutdownOutputCall.InitialKeepaliveWrite, true, 1)]
+    [InlineData(ShutdownOutputCall.InitialKeepaliveFlush, false, 1)]
+    [InlineData(ShutdownOutputCall.InitialKeepaliveFlush, true, 1)]
+    [InlineData(ShutdownOutputCall.RepeatKeepaliveWrite, false, 1)]
+    [InlineData(ShutdownOutputCall.RepeatKeepaliveWrite, true, 1)]
+    [InlineData(ShutdownOutputCall.RepeatKeepaliveFlush, false, 1)]
+    [InlineData(ShutdownOutputCall.RepeatKeepaliveFlush, true, 1)]
+    [InlineData(ShutdownOutputCall.Payload, false, 1)]
+    [InlineData(ShutdownOutputCall.Payload, true, 1)]
+    [InlineData(ShutdownOutputCall.Drain, false, 1)]
+    [InlineData(ShutdownOutputCall.Drain, true, 1)]
+    [InlineData(ShutdownOutputCall.Payload, false, 3)]
+    [InlineData(ShutdownOutputCall.Payload, true, 3)]
+    [InlineData(ShutdownOutputCall.Drain, false, 2)]
+    [InlineData(ShutdownOutputCall.Drain, true, 2)]
+    public async Task DefaultShutdownOutputRequiresEveryLegacyWriteAndFlush(
+        ShutdownOutputCall? failed, bool completed, int occurrence)
     {
         using var bound = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         var ct = bound.Token;
         var clock = new ReadinessDeadlineTests.ManualClock();
-        var writer = new ShutdownWriter(failed, new FlushResult(!completed, completed));
+        var writer = new ShutdownWriter(failed, new FlushResult(!completed, completed), occurrence: occurrence);
         var ctx = ShutdownContext(writer, ct);
         var (ticket, channel) = ShutdownTicket();
         var relay = ServerApp.StreamTicketAsync(ctx, ticket, clock);
@@ -211,6 +216,51 @@ public partial class StreamRelayTests
         Assert.DoesNotContain(ShutdownOutputCall.Terminal, writer.Calls);
     }
 
+    [Fact(Timeout = 20_000)]
+    public async Task DefaultShutdownOutputDoesNotAttemptTerminalAfterPostPrefixAbort()
+    {
+        using var bound = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        using var caller = CancellationTokenSource.CreateLinkedTokenSource(bound.Token);
+        var heldDrain = new TaskCompletionSource<FlushResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var writer = new ShutdownWriter(null, default, heldFirstDrain: heldDrain.Task);
+        var ctx = ShutdownContext(writer, caller.Token);
+        var (ticket, channel) = ShutdownTicket();
+        var first = "data: first\n\n"u8.ToArray();
+        var second = "data: second\n\n"u8.ToArray();
+        Assert.True(channel.Writer.TryWrite(first));
+        Assert.True(channel.Writer.TryWrite(second));
+        var relay = ServerApp.StreamTicketAsync(ctx, ticket, TimeProvider.System);
+        try
+        {
+            // The payload writes returned successfully and the existing drain flush is pending.
+            await writer.FirstDrain.Task.WaitAsync(bound.Token);
+            Assert.False(relay.IsCompleted);
+            Assert.False(heldDrain.Task.IsCompleted);
+            ticket.State = TicketState.Cancelled;
+            caller.Cancel();
+            channel.Writer.TryComplete();
+            heldDrain.TrySetResult(new FlushResult(false, false));
+            await relay.WaitAsync(bound.Token);
+
+            ShutdownOutputCall[] expected =
+            [
+                ShutdownOutputCall.InitialKeepaliveWrite, ShutdownOutputCall.InitialKeepaliveFlush,
+                ShutdownOutputCall.Payload, ShutdownOutputCall.Payload, ShutdownOutputCall.Drain,
+            ];
+            Assert.Equal(expected, writer.Calls.ToArray());
+            Assert.Equal(first, writer.Written[1]);
+            Assert.Equal(second, writer.Written[2]);
+            Assert.True(ticket.DefaultStreamReadShutdown);
+            Assert.Equal(TicketState.Cancelled, ticket.State);
+        }
+        finally
+        {
+            channel.Writer.TryComplete();
+            heldDrain.TrySetResult(new FlushResult(false, false));
+            await relay.WaitAsync(TimeSpan.FromSeconds(5), CancellationToken.None);
+        }
+    }
+
     private static (RouterTicket Ticket, Channel<ReadOnlyMemory<byte>> Channel) ShutdownTicket()
     {
         var channel = Channel.CreateUnbounded<ReadOnlyMemory<byte>>();
@@ -238,11 +288,13 @@ public partial class StreamRelayTests
         public override bool HasStarted => true;
     }
 
-    private sealed class ShutdownWriter(ShutdownOutputCall? failed, FlushResult bad, bool throwOnPayload = false) : PipeWriter
+    private sealed class ShutdownWriter(ShutdownOutputCall? failed, FlushResult bad, bool throwOnPayload = false,
+        int occurrence = 1, Task<FlushResult>? heldFirstDrain = null) : PipeWriter
     {
         private ShutdownOutputCall _lastWrite;
         private int _payloads;
         private int _drains;
+        private int _matchingCalls;
 
         internal List<ShutdownOutputCall> Calls { get; } = [];
         internal List<byte[]> Written { get; } = [];
@@ -284,7 +336,11 @@ public partial class StreamRelayTests
             if (call == ShutdownOutputCall.RepeatKeepaliveFlush) RepeatFlushed.TrySetResult();
             if (call == ShutdownOutputCall.Drain)
             {
-                if (++_drains == 1) FirstDrain.TrySetResult();
+                if (++_drains == 1)
+                {
+                    FirstDrain.TrySetResult();
+                    if (heldFirstDrain is not null) return new ValueTask<FlushResult>(heldFirstDrain);
+                }
                 else SecondDrain.TrySetResult();
             }
             return result;
@@ -293,7 +349,8 @@ public partial class StreamRelayTests
         private ValueTask<FlushResult> Record(ShutdownOutputCall call)
         {
             Calls.Add(call);
-            if (Injected || call != failed) return ValueTask.FromResult(new FlushResult(false, false));
+            if (call != failed || ++_matchingCalls != occurrence)
+                return ValueTask.FromResult(new FlushResult(false, false));
             Injected = true;
             return ValueTask.FromResult(bad);
         }
