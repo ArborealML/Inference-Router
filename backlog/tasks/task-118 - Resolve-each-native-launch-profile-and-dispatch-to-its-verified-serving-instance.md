@@ -5,9 +5,9 @@ title: >-
   instance
 status: Preparing
 assignee:
-  - '@gpt-6.2-sol-lifecycle'
+  - '@gpt-6.2-sol-shutdown'
 created_date: '2026-11-18T18:56:00Z'
-updated_date: '2026-11-20T17:30:00Z'
+updated_date: '2026-11-20T17:38:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -23,7 +23,7 @@ ordinal: 116000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Lifecycle is checking the existing observation prerequisite against the [supervised producer candidate](https://github.com/ArborealML/Inference-Router/pull/49). Identify the smallest read-only producer that binds both readiness GETs to the same serving process, including any proxy backend leg, or identify its missing interface and owner. Container identity alone cannot detect process restart. Preserve the original readiness budget and closed inference ingress.
+Shutdown owns the host-enrollment authority contract plan. The [launch receipt](https://github.com/ArborealML/Inference-Router/pull/49) identifies a container, while both readiness replies need independent evidence of the same connected serving process. Reserve a closed generation and bind original probe paths, credentials, receipt and one monotonic budget to both reads and conclusive retirement. Include the actual backend connection behind a proxy. Historical lookup grants no fresh authority. Reader implementation waits for this producer.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

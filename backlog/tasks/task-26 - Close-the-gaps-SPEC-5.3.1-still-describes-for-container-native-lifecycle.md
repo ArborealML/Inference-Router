@@ -1,11 +1,11 @@
 ---
 id: TASK-26
 title: Close the gaps SPEC 5.3.1 still describes for container-native lifecycle
-status: To Do
+status: Preparing
 assignee:
-  - '@gpt-6.2-astra'
+  - '@gpt-6.2-sol-lifecycle'
 created_date: '2026-11-17T02:54:00Z'
-updated_date: '2026-11-20T08:45:00Z'
+updated_date: '2026-11-20T17:38:00Z'
 labels:
   - engine
   - lifecycle
@@ -19,7 +19,7 @@ ordinal: 26000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Selective native quarantine and reset landed in [PR #48](https://github.com/ArborealML/Inference-Router/pull/48). Both cancellation regressions passed unchanged among 58 focused Release cases, and [post-merge CI](https://github.com/ArborealML/Inference-Router/actions/runs/44704425802) passed. Remaining work covers exec output and logs, daemon change detection, the Windows transport decision, and uncertain-start reconciliation.
+Lifecycle is preparing the independent Docker exec and log plan for criterion 3. Map binary stream framing, inspected terminal exit and failure handling through the inert HTTP provider fixture. The [selective reset change](https://github.com/ArborealML/Inference-Router/pull/48) and [merge qualification](https://github.com/ArborealML/Inference-Router/actions/runs/44704425802) remain landed. Daemon change detection, Windows transport and uncertain-start reconciliation stay open.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
