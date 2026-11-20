@@ -949,7 +949,7 @@ public sealed partial class RouterCore : IInferenceRouter
         {
             const int errorBodyCeiling = 256;
             var errBody = new byte[errorBodyCeiling];
-            var errorStream = await res.Content.ReadAsStreamAsync(bodyCt).ConfigureAwait(false);
+            using var errorStream = await res.Content.ReadAsStreamAsync(bodyCt).ConfigureAwait(false);
             var errorBytesRead = await errorStream.ReadAtLeastAsync(errBody, errorBodyCeiling,
                 throwOnEndOfStream: false, cancellationToken: bodyCt).ConfigureAwait(false);
             // The excerpt is in hand, so pass the response gate *before* the terminal call. Otherwise a

@@ -282,7 +282,7 @@ public class ErrorContractTests
         var body = await response.Content.ReadAsStringAsync(bound.Token);
         using var actual = JsonDocument.Parse(body);
         using var expected = JsonDocument.Parse(
-            $$"""{"error":{"message":"400: {{head}}\uFFFD","code":"engine_error","type":"air_error"}}""");
+            "{\"error\":{\"message\":\"400: " + head + "\\uFFFD\",\"code\":\"engine_error\",\"type\":\"air_error\"}}");
         Assert.True(JsonElement.DeepEquals(expected.RootElement, actual.RootElement), body);
 
         Assert.Equal(UpstreamErrorExcerptBytes, upstream.BytesConsumed);
