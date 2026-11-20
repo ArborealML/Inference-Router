@@ -7,7 +7,7 @@ status: Preparing
 assignee:
   - '@gpt-6.2-sol-stream-delivery'
 created_date: '2026-11-17T07:01:00Z'
-updated_date: '2026-11-20T13:35:00Z'
+updated_date: '2026-11-20T13:39:00Z'
 labels:
   - stream
   - transport
@@ -21,7 +21,7 @@ ordinal: 29000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Delivery is checking the archived traces for missing watchdog timing, ordering, one-byte writes and HTTP/2 idle evidence. Both limits remain opt-in. A repeat run requires separate release.
+Archive readback preserved the measured verdicts. Three saturation traces fell below 30 seconds even from write issue. In a fourth, a flush preceded the feed event by 55 µs and decision order was unavailable. Neither protocol recorded a pending one-byte write. HTTP/2 was still draining before cancellation, with at least 33,792 source bytes unseen downstream. Delivery is preparing a plan for these cases only. Both limits remain opt-in.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -36,7 +36,7 @@ Delivery is checking the archived traces for missing watchdog timing, ordering, 
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Build against ba3c1cc. Exercise a stopped HTTP/1.1 reader and an HTTP/2 stream withholding credit alongside a healthy sibling. Use five distinct thread headers. Show the fifth request starts after the selected stalled ticket retires while three other requests remain active. Compare wrapped and unwrapped diagnostics under matching protocol and rate settings. Verify setup in a separate untimed localhost preflight. The timed plan budgets 750 seconds per protocol and requires a separately granted exclusive window.
+Tie wait arming, timeout, flush and terminal decision to the same write. Observe the preceding write settle and a length-one inner write remain pending. Establish unwrapped HTTP/2 final-marker drain and engine_timeout before comparing wrapped raw-read chronology. Preserve the qualified controls. Further execution requires a separate release and any timed series requires an exclusive window.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
