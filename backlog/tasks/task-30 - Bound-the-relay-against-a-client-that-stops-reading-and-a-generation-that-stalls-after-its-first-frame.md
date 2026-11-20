@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@gpt-6.2-sol-stream-backpressure'
 created_date: '2026-11-17T07:01:00Z'
-updated_date: '2026-11-20T08:42:00Z'
+updated_date: '2026-11-20T10:13:00Z'
 labels:
   - stream
   - transport
@@ -21,7 +21,7 @@ ordinal: 29000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Backpressure owns the approved isolated stopped-reader harness and short untimed localhost preflight. Delivery qualifies the harness before requesting an exclusive measurement window. Both default-enablement checks remain open.
+Backpressure has the timed-driver implementation assignment. The functional harness passed independent review, eight short localhost cases and four cleanup fault controls. Only synthetic traces exercised the cutoff crossing. Delivery will qualify the driver before requesting an exclusive measurement window. Both default-enablement checks remain open.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
