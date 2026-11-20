@@ -1,11 +1,11 @@
 ---
 id: TASK-112
 title: Prove a functional model swap end to end through pi-clm
-status: Blocked
+status: Waiting
 assignee:
   - '@gpt-6.2-sol-scheduling'
 created_date: '2026-11-18T18:15:00Z'
-updated_date: '2026-11-20T00:26:00Z'
+updated_date: '2026-11-20T00:27:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -23,7 +23,7 @@ ordinal: 110000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Blocked on Claire choosing the launcher source of record in TASK-143 before implementation. The independent client plan review on 0b161d3 can complete meanwhile. Exercise opt-in AIR selection with one Pi RPC process, a fake roster initially containing only the incumbent, exact model requests and retained conversation history. Keep live residency criteria open.
+Waiting for the independent client plan verdict on 0b161d3; acceptance wakes Scheduling for implementation. The owner chose local Git for the temporary launcher. Use one Pi RPC process, a fake roster initially containing only the incumbent, exact model requests and retained conversation history. Keep the installed launcher in place and live swap criteria open.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
