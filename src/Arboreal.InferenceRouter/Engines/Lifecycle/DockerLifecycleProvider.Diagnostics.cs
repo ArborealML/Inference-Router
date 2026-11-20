@@ -151,8 +151,9 @@ public sealed partial class DockerLifecycleProvider
             && !string.Equals(mediaType, "application/vnd.docker.raw-stream", StringComparison.OrdinalIgnoreCase))
             throw new InvalidDataException("Docker did not return an attached output stream.");
 
-        // HttpContent caches this stream and disposes it with the response.
+#pragma warning disable IDISP001 // HttpContent caches this stream and disposes it with the response.
         var stream = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
+#pragma warning restore IDISP001
         return await DockerOutputReader.ReadAsync(stream, ct).ConfigureAwait(false);
     }
 
@@ -176,8 +177,9 @@ public sealed partial class DockerLifecycleProvider
 
     private static async ValueTask<byte[]> ReadDiagnosticsBodyAsync(HttpContent content, int ceiling, CancellationToken ct)
     {
-        // The enclosing response owns the stream cached by its content.
+#pragma warning disable IDISP001 // The enclosing response disposes the stream cached by HttpContent.
         var stream = await content.ReadAsStreamAsync(ct).ConfigureAwait(false);
+#pragma warning restore IDISP001
         using var body = new MemoryStream();
         var scratch = new byte[Math.Min(8192, ceiling)];
         while (body.Length < ceiling)
