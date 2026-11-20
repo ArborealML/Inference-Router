@@ -5,7 +5,7 @@ status: To Do
 assignee:
   - '@gpt-6.2-sol-lifecycle'
 created_date: '2026-11-17T02:54:00Z'
-updated_date: '2026-11-20T04:18:00Z'
+updated_date: '2026-11-20T04:29:00Z'
 labels:
   - engine
   - lifecycle
@@ -47,6 +47,8 @@ Validate configured TOML and JSON pins against daemon image ID, manifest digest 
 
 <!-- SECTION:NOTES:BEGIN -->
 Native image, resource, sample and exact-ID conflict evidence landed in [the image change](https://github.com/ArborealML/Inference-Router/commit/c30ca3e), [the resource change](https://github.com/ArborealML/Inference-Router/commit/bc63d48) and [PR #41](https://github.com/ArborealML/Inference-Router/pull/41). The stop conflict slice passed 22 focused Release cases and merge CI. Next: review uncertain stop reentry and readiness publication against current main; in parallel, plan target-specific failure quarantine and reset for reload. A transport failure alone cannot prove absence or authorize retry.
+
+Decision 77 permits exact operator reset with explicitly enabled credential reuse and a current process/generation precondition. The reset changes only the matching scheduler latch.
 <!-- SECTION:NOTES:END -->
 
 ## Comments
