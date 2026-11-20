@@ -7,7 +7,7 @@ status: Waiting
 assignee:
   - '@gpt-6.2-sol-stream-delivery'
 created_date: '2026-11-18T11:14:00Z'
-updated_date: '2026-11-20T17:31:00Z'
+updated_date: '2026-11-20T17:42:00Z'
 labels: []
 milestone: m-1
 dependencies: []
@@ -17,7 +17,7 @@ ordinal: 98000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Wake: independent commit review and hosted checks on [the keepalive frame limit](https://github.com/ArborealML/Inference-Router/pull/50). Delivery qualified b76fc07 with 56/56 focused Release tests and zero trim warnings in Native AOT. The baseline and queued-only mutation each produced 1,728 bytes against a 1,727-byte ceiling. Restoring the projection passed all 56 again. Coordinate integration with the native SPEC revision.
+Wake: Delivery reconciles the reviewed [keepalive frame limit](https://github.com/ArborealML/Inference-Router/pull/50) as the next SPEC revision and obtains exact-head review and hosted checks. The held native correction follows separately. Delivery qualified b76fc07 with 56/56 focused Release tests and zero trim warnings in Native AOT. Baseline and queued-only mutation produced 1,728 bytes against the 1,727-byte ceiling; restoration passed all 56.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

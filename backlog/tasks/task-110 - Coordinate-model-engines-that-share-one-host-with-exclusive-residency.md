@@ -3,9 +3,9 @@ id: TASK-110
 title: Coordinate model engines that share one host with exclusive residency
 status: Waiting
 assignee:
-  - '@gpt-6.2-sol-release'
+  - '@gpt-6.2-sol-lifecycle'
 created_date: '2026-11-18T18:13:00Z'
-updated_date: '2026-11-20T17:30:00Z'
+updated_date: '2026-11-20T17:42:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -21,7 +21,7 @@ ordinal: 108000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Wake: independent feature and analyzer reviews and exact hosted CI for [the supervised launch-record producer](https://github.com/ArborealML/Inference-Router/pull/49). Delivery qualified e2bd353 with seven focused Release cases and zero skips. The earlier analyzer failure preceded test execution. This scope produces a durable initial launch receipt with ingress closed; public enrollment, operator cutover and serving remain open.
+Wake: Lifecycle reaches its Docker exec plan handoff and takes the producer correction. Feature review of [the launch producer](https://github.com/ArborealML/Inference-Router/pull/49) found fixture evidence echoed configuration and combined changes could mask missing checks. Seed observations independently, vary one field at a time, and test create/start contention. Quarantine a flushed journal entry when the head update fails; refuse malformed observed ID or settings. No successful launch bypass was demonstrated. Seven focused passes and hosted green on e2bd353 precede correction.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
