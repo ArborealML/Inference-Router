@@ -3,11 +3,11 @@ id: TASK-109
 title: >-
   Make the subscriber-isolation pins separate the claims they name, and add the
   two missing controls
-status: Waiting
+status: In Progress
 assignee:
-  - '@gpt-6.2-sol-stream-delivery'
+  - '@gpt-6.2-sol-stream-frames'
 created_date: '2026-11-18T17:58:00Z'
-updated_date: '2026-11-20T19:26:00Z'
+updated_date: '2026-11-20T19:28:00Z'
 labels:
   - tests
   - events
@@ -20,7 +20,7 @@ ordinal: 107000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Wake: independent review of the fixture plan on 569a1de. Hold one launch with two pending waiters, make a subscriber throw only on switch completion, and check that the same retained event sequence is visible at the producer commit and both normal wakes. Reuse the existing ring and status controls. The current two-waiter test throws at switch start.
+Frames owns the approved test-only change for subscriber failure at switch completion. The current two-waiter test throws at switch start. The new fixture checks that both joined callers can observe the completion event even when a subscriber throws while receiving it.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -32,6 +32,12 @@ Wake: independent review of the fixture plan on 569a1de. Hold one launch with tw
 - [ ] #5 SPEC 6.1's subscriber rule names what an observer that performs I/O owes for its own failure, so the ring's catch is not read as the only boundary
 - [ ] #6 Counts are re-measured at the tree with per-run load recorded, and no pin is added to the two classes TASK-87 holds open
 <!-- AC:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Hold one launch until both callers are enrolled. Throw only on the matching switch_completed event. At the existing producer commit hook and both normal wake observations, store immutable snapshots before signaling. After settlement, check that all three snapshots contain the same terminal sequence. Reuse the existing ring and status controls and show the producer assertion catches publication after settlement.
+<!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
 
