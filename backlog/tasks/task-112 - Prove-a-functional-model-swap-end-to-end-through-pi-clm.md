@@ -1,28 +1,22 @@
 ---
 id: TASK-112
 title: Prove a functional model swap end to end through pi-clm
-status: Preparing
+status: Blocked
 assignee:
   - '@gpt-6.2-sol-scheduling'
 created_date: '2026-11-18T18:15:00Z'
-updated_date: '2026-11-20T00:13:00Z'
+updated_date: '2026-11-20T00:25:00Z'
 labels: []
 milestone: m-4
 dependencies:
-  - TASK-125
-  - TASK-110
-  - TASK-108
-  - TASK-114
-  - TASK-25
-  - TASK-64
-  - TASK-118
+  - TASK-143
 ordinal: 110000
 ---
 
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Scheduling is preparing the client side of the first Pi-triggered native swap. Trace the installed launcher and propose an opt-in AIR provider mode for selecting DeepSeek and Qwen within one session. Prepare an offline request-capture control. The live demonstration still requires the qualified pair, safe enrolled topology, host fencing and exact serving dispatch.
+Blocked on Claire choosing the launcher source of record in TASK-143 before implementation. The independent client plan review on 0b161d3 can complete meanwhile. Exercise opt-in AIR selection with one Pi RPC process, a fake roster initially containing only the incumbent, exact model requests and retained conversation history. Keep live residency criteria open.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
