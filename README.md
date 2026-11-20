@@ -8,22 +8,12 @@
 
 AIR gives OpenAI-compatible clients one HTTP endpoint for local inference engines. When several conversations share a GPU, AIR queues requests by model, gives interactive threads priority over queued background work, and uses engine health and available slots to decide what can run. Clients can request a context window and stream the reply through the same endpoint.
 
-## Try it without a GPU
-
-From a checkout, use the .NET 11 SDK, Bash, Python 3 and curl to run a chat through the router and a local fixture engine. The script starts both processes on loopback and stops them on exit. It needs ports 18123 and 18321 free.
-
-```bash
-dotnet build src/Arboreal.InferenceRouter.Cli -c Release
-bash tools/ci/smoke.sh ./src/Arboreal.InferenceRouter.Cli/bin/Release/net11.0/air
-```
-
-On Windows, use Git Bash and pass the executable path ending in `air.exe`. A successful run ends with `SMOKE OK`. It checks model discovery, ordinary and streaming chat, the CLI client, and the error returned when the engine fails. If the executable reports that .NET is missing despite a successful build, set `DOTNET_ROOT` to the directory containing your installed `dotnet` runtime and rerun the script.
-
 ## Features
 
 - **OpenAI-compatible inference.** Send chat or legacy text completions with optional SSE streaming. [Client integration guide](docs/ai-integration.md)
 - **Model discovery.** `GET /v1/models` lists each engine’s last accepted roster and can include observed context windows in tokens. [Model discovery contract](docs/ai-integration.md#discover-loaded-models)
 - **Routing and serving profiles.** Queue requests by model, apply thread priorities, and route to configured local and remote engines using health and available slots. The built-in scheduler checks explicit context minimums and required serving profiles against the window observed for that model. [Serving profiles specification](SPEC.md#76-serving-profiles-and-context-window-escalation)
+- **External HY4 Flash routing.** The shared Maya sample lists GLM and HY4 Flash on one listener. HY4 has seven configured context targets with a 96k default. AIR uses the loaded model and its observed window for routing. [HY4 setup](docs/ai-integration.md#hy4-flash-on-the-shared-maya-listener)
 - **Per-engine lifecycle authority.** Set `lifecycle_owner` independently of the inference endpoint. Externally managed engines forward loaded models. A dedicated local engine can use the native Docker provider, and a delegated engine can use a configured selector. A verified refusal before any mutation can leave the incumbent available to serve requests. [Lifecycle configuration](SPEC.md#7-configuration-toml)
 - **Measured switch ordering.** On a single idle native Docker engine with a proven incumbent, AIR can prefer the cheaper of eligible queued model switches. Estimates use recent observed shutdown and activation times. Queue age takes precedence within the comparison, and incomplete estimates fall back to enqueue order. [Queue semantics](SPEC.md#55-queue-semantics)
 - **Operator controls.** Inspect engine and queue status, replay events for a ticket, or cancel it through the admin API. The `air` CLI can host the router and act as a client. [HTTP reference](SPEC.md#6-http-surface-server-project)
@@ -45,9 +35,20 @@ On Windows, use Git Bash and pass the executable path ending in `air.exe`. A suc
 
 See the [delivery milestones](backlog/milestones/README.md) for the full roadmap.
 
+## Try it without a GPU
+
+From a checkout, use the .NET 11 SDK, Bash, Python 3 and curl to run a chat through the router and a local fixture engine. The script starts both processes on loopback and stops them on exit. It needs ports 18123 and 18321 free.
+
+```bash
+dotnet build src/Arboreal.InferenceRouter.Cli -c Release
+bash tools/ci/smoke.sh ./src/Arboreal.InferenceRouter.Cli/bin/Release/net11.0/air
+```
+
+On Windows, use Git Bash and pass the executable path ending in `air.exe`. A successful run ends with `SMOKE OK`. It checks model discovery, ordinary and streaming chat, the CLI client, and the error returned when the engine fails. If the executable reports that .NET is missing despite a successful build, set `DOTNET_ROOT` to the directory containing your installed `dotnet` runtime and rerun the script.
+
 ## Connect an inference engine
 
-Create the ignored directory with `mkdir -p .local` and save this configuration as `.local/router.toml`. Replace the example endpoint and both occurrences of `example-model` with your backend’s base URL and model ID. Set `models_endpoint` to its model-list path. A leading slash resolves from the backend’s root, so an OpenAI-compatible engine mounted at `/v1` typically uses `/v1/models`.
+Create the ignored directory with `mkdir -p .arboreal/ir` and save this configuration as `.arboreal/ir/router.toml`. Replace the example endpoint and both occurrences of `example-model` with your backend’s base URL and model ID. Set `models_endpoint` to its model-list path. A leading slash resolves from the backend’s root, so an OpenAI-compatible engine mounted at `/v1` typically uses `/v1/models`.
 
 ```toml
 listen = "http://127.0.0.1:8399"
@@ -66,8 +67,8 @@ lifecycle_owner = "external"
 With `lifecycle_owner = "external"`, another service must have the model loaded before AIR can route to it. Legacy `remote = true` still gives the same forward-only behavior. For multiple engines and serving profiles, see the [remote-only sample](samples/router.safe-smoke.toml). Keep the router on loopback unless a proxy authenticates callers and terminates TLS.
 
 ```bash
-dotnet run --project src/Arboreal.InferenceRouter.Cli -- config -c "$PWD/.local/router.toml"
-dotnet run --project src/Arboreal.InferenceRouter.Cli -- serve -c "$PWD/.local/router.toml"
+dotnet run --project src/Arboreal.InferenceRouter.Cli -- config -c "$PWD/.arboreal/ir/router.toml"
+dotnet run --project src/Arboreal.InferenceRouter.Cli -- serve -c "$PWD/.arboreal/ir/router.toml"
 ```
 
 The first command validates the configuration offline. Its output includes resolved endpoints, key-file paths and lifecycle arguments, so keep it local. The second command starts AIR. From another terminal, check the listener and see which models the engines currently report.

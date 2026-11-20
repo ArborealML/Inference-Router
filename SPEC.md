@@ -354,6 +354,8 @@ daemon transaction per engine. 137 tests green.
   not proven.
 - v0.12.99 — verify the selected enrolled pair against an independent current topology head
   and freeze an inert offline descriptor (§5.3.1).
+- v0.12.98 — document seven HY4 Flash context targets on the shared external Maya listener and
+  pin ordinary routing, observed capacity and offline launch projection (§7.6).
 - v0.12.97 — exercise the dedicated DeepSeek and Strata Qwen swap in both directions offline,
   including certified delivery, stale route refusal and independent probe readback (§5.3.1).
 - v0.12.96 — add the offline coordinator's enrolled receipt-only launch and recovery, and
@@ -2930,6 +2932,24 @@ Semantics:
   changes. `EngineStats` reads `active_profile` / `active_context_window` / `active_slots` from one snapshot.
 - **Non-goal for now**: automatic *de*-escalation (shrinking a window when big-context
   demand goes away). Escalation is demand-driven; release policy is an open question (§15).
+
+The shipped Maya example keeps GLM and HY4 Flash in the same externally owned engine.
+It discovers loaded models through absolute `/v1/models` and reads the engine-reported
+window and slots at `/props.default_generation_settings.n_ctx` and `/props.total_slots`.
+HY4 uses canonical `hy4-flash` with request aliases `hy4` and `hy4-flash-maya-xs`.
+The sample declares `32k`, `64k`, `96k`, `128k`, `256k`, `512k` and `1024k`
+at 1,024 tokens per k and one slot per tier. An omitted launch tier resolves to
+`96k`, a 98,304-token window sized for 65,536 input tokens plus 32,768 output tokens.
+`32k` is an explicit smaller launch selection. A 32,768-token observation cannot
+satisfy the 96k launch target or authorize a 65,536-token request.
+An unloaded row cannot authorize a send even when the model probe succeeds and
+`/props` reports positive slots.
+
+The inspected HY4 selector accepts `32k` alone and still defaults to it. The other six AIR targets have
+distinct offline create projections and probe expectations. The selector's argument choices
+exclude `64k`, `96k` and `1024k`. Its HY4 profile map excludes all six wider tiers. Native launch
+projection remains gated. Host context fit, memory, artifact identity, exact-instance
+readiness and lifecycle authority need separate qualification.
 
 ## 8. Prefix normalization & affinity
 
