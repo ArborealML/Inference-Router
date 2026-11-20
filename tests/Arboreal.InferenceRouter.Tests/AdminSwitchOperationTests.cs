@@ -411,19 +411,23 @@ public sealed class AdminSwitchOperationTests
     [InlineData(true)]
     public async Task AdminSwitch_AckDeadlineWriteOrCompletionOrchestration(bool completion)
     {
+        var deadline = TimeSpan.FromSeconds(30);
         var gate = new AckGate(holdWrite: true, holdCompletion: completion);
-        await using var rig = await Fixture.StartAsync(ackGate: gate);
+        using var transport = completion ? null : new AckTransport(holdOutput: false);
+        await using var rig = await Fixture.StartAsync(ackGate: gate, transport: transport);
         using var peer = new TcpClient();
         try
         {
-            await SendRawAsync(peer, rig.Port, completion ? "b" : "a", rig.Token);
+            await SendRawAsync(peer, transport?.Port ?? rig.Port, completion ? "b" : "a", rig.Token);
             var id = await gate.Id.Task.WaitAsync(rig.Token);
+            var originalWrite = await gate.OriginalWrite.Task.WaitAsync(rig.Token);
             await ConfigReloadWireTests.WaitUntilAsync(() => rig.Clock.HasTimer, rig.Token);
+            Assert.Equal(deadline, Assert.Single(rig.Clock.GetScheduledDeadlines()));
             if (completion)
             {
                 await rig.Provider.Entered.Task.WaitAsync(rig.Token);
                 await rig.AssertLookupAsync(id, "pending", null);
-                rig.Clock.AdvanceTo(TimeSpan.FromSeconds(20));
+                Assert.Equal(0, rig.Clock.AdvanceTo(TimeSpan.FromSeconds(20)));
                 gate.Release.TrySetResult();
                 await gate.CompletionEntered.Task.WaitAsync(rig.Token);
             }
@@ -431,10 +435,28 @@ public sealed class AdminSwitchOperationTests
             {
                 await rig.AwaitLookupAsync(id, "succeeded", null);
             }
-            rig.Clock.AdvanceTo(TimeSpan.FromSeconds(30) - TimeSpan.FromTicks(1));
+            Assert.Equal(0, rig.Clock.AdvanceTo(deadline - TimeSpan.FromTicks(1)));
             Assert.False(gate.Exited.Task.IsCompleted);
-            rig.Clock.AdvanceTo(TimeSpan.FromSeconds(30));
-            await gate.RequestAborted.Task.WaitAsync(rig.Token);
+            if (transport is not null)
+            {
+                Assert.False(originalWrite.IsCompleted);
+                Assert.False(transport.AbortLogged.Task.IsCompleted);
+                Assert.False(transport.Closed.Task.IsCompleted);
+            }
+
+            Assert.Equal(1, rig.Clock.AdvanceTo(deadline));
+            if (transport is not null)
+            {
+                await transport.AbortLogged.Task.WaitAsync(rig.Token);
+                await transport.Closed.Task.WaitAsync(rig.Token);
+                await AssertPeerClosedAsync(peer.GetStream(), rig.Token);
+                await ObserveCompletionAsync(originalWrite, rig.Token);
+                Assert.True(originalWrite.IsCanceled);
+            }
+            else
+            {
+                await gate.RequestAborted.Task.WaitAsync(rig.Token);
+            }
             await gate.Exited.Task.WaitAsync(rig.Token);
             Assert.Equal(completion, gate.Forwarded);
             if (completion)
@@ -942,8 +964,19 @@ public sealed class AdminSwitchOperationTests
         internal TaskCompletionSource RequestAborted { get; } = Gate();
         internal TaskCompletionSource CompletionRelease { get; } = Gate();
         internal TaskCompletionSource CompletionEntered { get; } = Gate();
+        internal TaskCompletionSource<Task> OriginalWrite { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         internal TaskCompletionSource<Task> OriginalCompletion { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         internal TaskCompletionSource Exited { get; } = Gate();
+
+        internal async Task WaitForReleaseAsync(Task release, CancellationToken abort)
+        {
+            try { await release.WaitAsync(abort); }
+            catch (OperationCanceledException) when (abort.IsCancellationRequested)
+            {
+                RequestAborted.TrySetResult();
+                throw;
+            }
+        }
     }
 
     private sealed class ObservedAckFeature : IHttpResponseBodyFeature, IDisposable
@@ -980,8 +1013,7 @@ public sealed class AdminSwitchOperationTests
         private async Task CompleteAfterGateAsync(AckGate gate)
         {
             gate.CompletionEntered.TrySetResult();
-            using var abort = _context.RequestAborted.Register(() => gate.RequestAborted.TrySetResult());
-            await gate.CompletionRelease.Task.WaitAsync(_context.RequestAborted);
+            await gate.WaitForReleaseAsync(gate.CompletionRelease.Task, _context.RequestAborted);
             await _original.CompleteAsync();
         }
 
@@ -996,10 +1028,7 @@ public sealed class AdminSwitchOperationTests
                     gate.Id.TrySetResult(Id.Value);
                     if (gate.FaultWrite) throw new IOException("fixture ACK write fault");
                     if (gate.HoldWrite)
-                    {
-                        using var abort = _context.RequestAborted.Register(() => gate.RequestAborted.TrySetResult());
-                        await gate.Release.Task.WaitAsync(token);
-                    }
+                        await gate.WaitForReleaseAsync(gate.Release.Task, token);
                     gate.Forwarded = true;
                 }
             }
@@ -1020,12 +1049,18 @@ public sealed class AdminSwitchOperationTests
             public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
             public override void SetLength(long value) => throw new NotSupportedException();
             public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
-            public override ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default) =>
-                owner.WriteAsync(buffer, cancellationToken);
+            public override ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default)
+            {
+                var write = owner.WriteAsync(buffer, cancellationToken);
+                if (owner._gate is not { HoldWrite: true } gate) return write;
+                var original = write.AsTask();
+                gate.OriginalWrite.TrySetResult(original);
+                return new ValueTask(original);
+            }
         }
     }
 
-    private sealed class AckTransport : ILoggerProvider, ILogger
+    private sealed class AckTransport(bool holdOutput = true) : ILoggerProvider, ILogger
     {
         internal ListenOptions? Listener { get; set; }
         internal int Port => Listener!.IPEndPoint!.Port;
@@ -1038,11 +1073,17 @@ public sealed class AdminSwitchOperationTests
 
         internal ConnectionDelegate Run(ConnectionDelegate next) => async connection =>
         {
+            using var closed = connection.ConnectionClosed.Register(() => Closed.TrySetResult());
+            if (!holdOutput)
+            {
+                await next(connection);
+                return;
+            }
+
             var original = connection.Transport;
             var pipe = new Pipe(new PipeOptions(writerScheduler: Scheduler, pauseWriterThreshold: 1,
                 resumeWriterThreshold: 1, useSynchronizationContext: false));
             connection.Transport = new OutputBridge(original.Input, pipe.Writer);
-            using var closed = connection.ConnectionClosed.Register(() => Closed.TrySetResult());
             var forwarding = ForwardAsync(pipe.Reader, original.Output, connection.ConnectionClosed);
             try { await next(connection); }
             finally
