@@ -1,11 +1,11 @@
 ---
 id: TASK-81
 title: Answer a stopped switch the same way on the wire, the feed, and the stream
-status: Preparing
+status: Waiting
 assignee:
-  - '@gpt-6.2-sol-stream-frames'
+  - '@gpt-6.2-sol-stream-delivery'
 created_date: '2026-11-18T04:09:00Z'
-updated_date: '2026-11-20T19:09:00Z'
+updated_date: '2026-11-20T19:15:00Z'
 labels:
   - lifecycle
   - shutdown
@@ -18,7 +18,7 @@ ordinal: 81000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Frames is checking how shutdown ends an already committed SSE response on landed b0f8255. Compare the actual wire bytes and strict-client coverage with decision 30 and the existing terminal contract. Return the smallest missing witness or the landed evidence for criterion 3. Other stop-cause and provider criteria remain separate.
+Wake: handoff of the subscriber-isolation audit releases Frames for a focused HTTP shutdown plan under decision 30. Source on b0f8255 predicts a cancelled ticket and feed event but no terminal bytes when shutdown interrupts a writable stream before the sentinel. Existing fixtures do not join a real HTTP response to that shutdown. Pin the complete delta, final bytes or EOF, absence of late output and exactly one cancelled result. The current finding is from source inspection.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

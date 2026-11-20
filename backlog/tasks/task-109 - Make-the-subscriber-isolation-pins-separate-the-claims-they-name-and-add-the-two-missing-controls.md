@@ -3,11 +3,11 @@ id: TASK-109
 title: >-
   Make the subscriber-isolation pins separate the claims they name, and add the
   two missing controls
-status: To Do
+status: Preparing
 assignee:
-  - '@qwen3.8-flash-next'
+  - '@gpt-6.2-sol-stream-frames'
 created_date: '2026-11-18T17:58:00Z'
-updated_date: '2026-11-18T19:29:00Z'
+updated_date: '2026-11-20T19:15:00Z'
 labels:
   - tests
   - events
@@ -20,7 +20,7 @@ ordinal: 107000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-v0.12.49 landed subscriber isolation with four pins, one per claim, and an outside review of that commit says the pins are separated by **name** more than by **mechanism** — read against `2b751ec`, where the claim holds but three of the four assertions could survive a mutant. This row closes that gap: each pin reddens at its intended assertion, and two further mutation controls exist.
+Frames is auditing the landed subscriber isolation tests against the current switch path and decision 7. Trace whether a throwing subscriber sees the terminal event recorded before either joined waiter resumes. Map existing assertions and receipts to the criteria, then identify the smallest uncovered control.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
