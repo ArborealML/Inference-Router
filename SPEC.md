@@ -354,6 +354,8 @@ daemon transaction per engine. 137 tests green.
   not proven.
 - v0.12.97 — exercise the dedicated DeepSeek and Strata Qwen swap in both directions offline,
   including certified delivery, stale route refusal and independent probe readback (§5.3.1).
+- v0.12.96 — add the offline coordinator's enrolled receipt-only launch and recovery, and
+  record the dedicated-inference deployment assumption (§5.3, §5.3.1).
 - v0.12.95 — recover one synthetic initial launch receipt bound to an independently approved
   Docker create payload and a modeled journal head, and verify closed ingress and completion cuts (§5.3.1).
 - v0.12.94 — keep named option operands out of the `air chat` and `air complete` user message,
@@ -1496,6 +1498,14 @@ A request may declare:
 
 ### 5.3 Engines (configured, not coded)
 
+The initial deployment assumes system resources are dedicated to inference. Tools that start or
+stop a router-managed model coordinate through its engine's single lifecycle owner. Host enrollment
+requires verified enforcement of that ownership. Engine TOML controls per-container memory limits
+and GPU assignments, with serving-profile overrides where the existing schema supports them. The
+initial version preserves the installed `select-model` safeguards for the selected profile. A
+dedicated host still honors configured limits and the defaults, overrides and activation gates in
+§7. General resource-sharing policy is deferred.
+
 Set `lifecycle_owner = "router"` and add an `[engine.<name>.docker]` table to manage local model
 switches through the native Docker provider. The catalog lists the models and serving profiles
 that the engine can run. A model or profile switch replaces the serving container with an instance
@@ -1799,6 +1809,26 @@ evidence and refuses receipt lookup and ingress. Sequential repeat and competing
 fake create or start calls in these refusal cases. The fixture models the head and observer with local evidence roles.
 Host exclusion, administrator credential isolation, directory durability, split reconciliation and
 an authenticated production head require separate proof.
+
+**Offline coordinator receipt path.** Both switch wrappers require a positively commissioned legacy
+slot before legacy settlement, recovery or epoch allocation. The legacy reservation frame must carry
+root `Epoch`, `Owner` and `Pending` fields, including explicit nulls when applicable. The reader
+refuses an enrolled envelope or incomplete state before legacy epoch allocation. The enrolled
+receipt entry takes its scope from a separate trusted catalog. Restored local bytes cannot change
+the selected authority root. Unknown, inconsistent or partly installed scope refuses closed. An
+enrolled grant without a bound operation stays fenced and cannot allocate a second epoch.
+
+One coordinator operation binds the canonical intent and exact approved create payload. Its stable
+lock and installed reservation record are separate. Under the modeled issue fence, the worker rereads
+that installed record at acceptance and before issue. Both reads match the anchored dispatch and
+current independent policy. Acceptance and the exclusive may-have-issued decision precede fake I/O.
+Immediate launch, reconciliation and saved Applied reopen share the same enrolled validation of the
+anchored operation, intent, exact instance and separate effective create and running observations.
+Incomplete or contradictory evidence retains the effect fence. A verified result is `AppliedIngressClosed`.
+It returns before readiness, switch success, route publication, Open or any permit. Exact historical
+lookup can still return the original receipt after authority changes. A fresh acknowledgement requires
+current owner, policy and closed ingress. These code paths are exercised with fake authority only.
+Public enrollment remains disabled.
 
 The successor ledger fixture records submissions, worker acceptances, daemon attempts and applied
 records in separate journals. These are synthetic evidence roles and can share a fixture process.

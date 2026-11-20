@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.Json.Serialization.Metadata;
 
 namespace Arboreal.InferenceRouter.Lifecycle;
 
@@ -15,7 +16,9 @@ internal sealed record HostMutation(
     public static bool IsPlanDigest(string? value) => value is { Length: 64 } && value.All(char.IsAsciiHexDigit);
 }
 
-internal sealed record HostReservationState(long Epoch, string? Owner, HostMutation? Pending,
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+internal sealed record HostReservationState([property: JsonRequired] long Epoch, [property: JsonRequired] string? Owner,
+    [property: JsonRequired] HostMutation? Pending,
     HostMutationPhase Phase = HostMutationPhase.None, string? LaunchedContainerId = null);
 
 [JsonSerializable(typeof(HostReservationState))]
@@ -24,7 +27,7 @@ internal sealed partial class HostReservationJsonContext : JsonSerializerContext
 /// <summary>The cooperating mutation authority for one physical host. Hold the exclusive handle
 /// on the same pre-provisioned local file until the transaction and readiness check end. The file
 /// starts with a checksummed genesis record and must stay in place across restarts.</summary>
-internal sealed class HostReservation : IDisposable
+internal sealed partial class HostReservation : IDisposable
 {
     private const int DigestLength = 32;
     private const int MaxRecordLength = 16 * 1024;
@@ -32,10 +35,11 @@ internal sealed class HostReservation : IDisposable
     private readonly FileStream _file;
     private bool _usable = true;
 
-    private HostReservation(FileStream file, HostReservationState state)
+    private HostReservation(FileStream file, HostReservationState state, HostEnrolledSnapshot? enrolled = null)
     {
         _file = file;
         State = state;
+        Enrolled = enrolled;
     }
 
     public HostReservationState State { get; private set; }
@@ -44,12 +48,15 @@ internal sealed class HostReservation : IDisposable
     /// host coordinator always opens the existing file and has no provisioning fallback.</summary>
     public static void ProvisionNew(string path)
     {
+        if (File.Exists(path)) throw new IOException("The reservation already exists.");
+        HostReservationScope.Commission(path, enrollment: null);
         using var file = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None);
         WriteState(file, new HostReservationState(0, null, null));
     }
 
     public static HostReservation Open(string path)
     {
+        if (!HostReservationScope.Read(path).IsLegacy) throw new IOException("The reservation is not a commissioned legacy slot.");
         var file = new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
         try
         {
@@ -115,7 +122,10 @@ internal sealed class HostReservation : IDisposable
             throw new InvalidOperationException("The host operation does not match the durable intent.");
     }
 
-    private static HostReservationState ReadState(FileStream file)
+    private static HostReservationState ReadState(FileStream file) =>
+        Validate(ReadFrame(file, HostReservationJsonContext.Default.HostReservationState).Value);
+
+    private static (T Value, string Digest) ReadFrame<T>(FileStream file, JsonTypeInfo<T> type) where T : class
     {
         if (file.Length <= DigestLength || file.Length > MaxRecordLength)
             throw new IOException("The host reservation record is incomplete or oversized.");
@@ -126,16 +136,15 @@ internal sealed class HostReservation : IDisposable
         if (!CryptographicOperations.FixedTimeEquals(record.AsSpan(0, DigestLength), SHA256.HashData(body)))
             throw new IOException("The host reservation record has an invalid checksum.");
 
-        HostReservationState? state;
         try
         {
-            state = JsonSerializer.Deserialize(body, HostReservationJsonContext.Default.HostReservationState);
+            var value = JsonSerializer.Deserialize(body, type) ?? throw new IOException("The host reservation record is empty.");
+            return (value, Convert.ToHexString(record.AsSpan(0, DigestLength)));
         }
         catch (JsonException ex)
         {
             throw new IOException("The host reservation record is unreadable.", ex);
         }
-        return Validate(state);
     }
 
     private static HostReservationState Validate(HostReservationState? state)
@@ -175,14 +184,23 @@ internal sealed class HostReservation : IDisposable
     {
         // Invalidate this handle before writing so a flush failure cannot authorize a later action.
         _usable = false;
-        WriteState(_file, state);
+        if (Enrolled is { } enrolled)
+            Enrolled = InstallEnrolled(enrolled.Record with
+            {
+                State = state, Revision = checked(enrolled.Record.Revision + 1), Predecessor = enrolled.Digest,
+            });
+        else
+            WriteState(_file, state);
         State = state;
         _usable = true;
     }
 
-    private static void WriteState(FileStream file, HostReservationState state)
+    private static void WriteState(FileStream file, HostReservationState state) =>
+        WriteFrame(file, Validate(state), HostReservationJsonContext.Default.HostReservationState);
+
+    private static void WriteFrame<T>(FileStream file, T value, JsonTypeInfo<T> type) where T : class
     {
-        var body = JsonSerializer.SerializeToUtf8Bytes(Validate(state), HostReservationJsonContext.Default.HostReservationState);
+        var body = JsonSerializer.SerializeToUtf8Bytes(value, type);
         var length = DigestLength + body.Length;
         if (length > MaxRecordLength) throw new IOException("The host reservation record is oversized.");
 
