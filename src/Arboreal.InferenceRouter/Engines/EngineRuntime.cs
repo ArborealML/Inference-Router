@@ -12,6 +12,7 @@ namespace Arboreal.InferenceRouter;
 public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
 {
     private readonly EngineDefinition _def;
+    private readonly ReloadConfiguration? _reloadSource;
     private readonly Dictionary<string, EngineModelDefinition> _catalog;
     private readonly EventRing _events;
     private readonly TimeProvider _clock;
@@ -161,7 +162,7 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
 
     internal EngineRuntime(EngineDefinition def, RouterConfig config, EventRing events, HttpMessageHandler? handler,
                            IEngineLifecycleProvider? lifecycle, Action? dispatchHint, HostEngineEnrollment? hostEnrollment,
-                           TimeProvider? clock = null)
+                           TimeProvider? clock = null, ReloadConfiguration? reloadSource = null)
     {
         config.ValidateLifecycleTopology(def);
         if (def.Docker?.HasUnqualifiedTargetDocker == true)
@@ -181,6 +182,7 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
             throw new RouterConfigException($"engine.{def.Name}: Docker resources require host qualification before enrollment");
         _hostEnrollment = hostEnrollment;
         _def = def;
+        _reloadSource = reloadSource;
         _catalog = def.Catalog.ToDictionary(entry => entry.Key, entry => CopyCatalogEntry(entry.Value), StringComparer.Ordinal);
         _events = events;
         _clock = clock ?? TimeProvider.System;
@@ -257,7 +259,7 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
     };
 
     public string Name => _def.Name;
-    public EngineDefinition Definition => _def;
+    public EngineDefinition Definition => _reloadSource?.Observe().Engines[Name] ?? _def;
     internal IReadOnlyCollection<string> CatalogModelNames => _catalog.Keys;
     internal IReadOnlyList<RetainedSwitchAttempt> SwitchHistory => _switchHistory.Snapshot();
     public string LifecycleProvider => _lifecycleBinding?.ProviderKind ?? "none";
@@ -609,6 +611,7 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
         }
         catch (Exception ex)
         {
+            if (ReloadableExternal) return PublishExternalProbe(capBefore, null, default, ex, withdraw: false);
             if (Volatile.Read(ref _stopped)) return false;
             Emit("engine.health", reason: WireText.Bound(ex.Message, ProviderReasonChars), value: 0);
             return true;
@@ -629,6 +632,7 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
         catch (Exception ex) when (!loopToken.IsCancellationRequested ||
             ex is not OperationCanceledException canceled || canceled.CancellationToken != loopToken)
         {
+            if (ReloadableExternal) return PublishExternalProbe(capBefore, null, default, ex, withdraw: true);
             PublishProbeFailure(capBefore);
             throw;
         }
@@ -648,7 +652,9 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
         {
             EndHttpUse();
         }
-        PublishProbeResult(capBefore, observation, BindServing(observation, state));
+        var serving = BindServing(observation, state);
+        if (ReloadableExternal) return PublishExternalProbe(capBefore, observation, serving, error: null, withdraw: false);
+        PublishProbeResult(capBefore, observation, serving);
         if (Volatile.Read(ref _stopped)) return false;
         Emit("engine.health", value: observation.LoadedModels.Count);
         return true;
@@ -1012,12 +1018,13 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
         string model, ServingProfile? profileOverride, TimeSpan timeout, SwitchQueueTiming? queue, CancellationToken ct,
         long explicitContextMinimum = 0)
     {
-        if (Volatile.Read(ref _stopped)) return new(SwitchResult.RouterStopped);
+        if (Volatile.Read(ref _stopped) || Volatile.Read(ref _retiring)) return new(SwitchResult.RouterStopped);
         var canonical = CanonicalModel(model) ?? model;
         var requiredWindow = RequiredWindow(profileOverride, explicitContextMinimum);
         var initial = Capability;
         if (ReadyIn(initial, canonical, requiredWindow))
-            return Volatile.Read(ref _stopped) ? new(SwitchResult.RouterStopped) : ReadyFrom(initial.SwitchProof, canonical, profileOverride);
+            return Volatile.Read(ref _stopped) || Volatile.Read(ref _retiring)
+                ? new(SwitchResult.RouterStopped) : ReadyFrom(initial.SwitchProof, canonical, profileOverride);
         // `timeout` bounds the *waiting*, never the switch: the transaction belongs to the engine and
         // runs on _switchCts, so a caller that gives up leaves the engine switching rather than
         // half-switched. The loop is what makes single-flight fair: if the switch in progress is aimed
@@ -1068,7 +1075,7 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
                 // and return "ready" for a model nobody loaded.
                 lock (_transitionGate)
                 {
-                    if (_stopped) return new(SwitchResult.RouterStopped);
+                    if (_stopped || _retiring) return new(SwitchResult.RouterStopped);
                     ct.ThrowIfCancellationRequested();
                     if (deadline != DateTimeOffset.MaxValue && DateTimeOffset.UtcNow >= deadline)
                         return UnclaimedWaitExpired(ct);
@@ -1195,8 +1202,7 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
                     return UnclaimedWaitExpired(ct);
                 if (++claimLosses < MaxClaimLosses) continue;
 
-                Emit("engine.switch_failed", model: canonical,
-                    reason: "switch_error: serving observations changed during every claim attempt");
+                EmitUnclaimedRetryFailure(canonical);
                 return new(SwitchResult.Failed(SwitchReason.SwitchError));
             }
 
@@ -1850,7 +1856,7 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
 
     // Historical switch readiness and switch timing do not enter this decision.
     // The first-send claim and engine-local stop use the same short ordering.
-    internal bool TryBeginForward(CancellationToken ct) => TryBeginHttpUse(ct);
+    internal bool TryBeginForward(CancellationToken ct) => TryBeginHttpUse(ct, inference: true);
 
     internal int HttpUsesForTests
     {
@@ -1859,24 +1865,26 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
 
     internal void EndForward()
     {
-        EndHttpUse();
+        EndHttpUse(inference: true);
         AfterForwardReleaseForTests?.Invoke();
     }
 
-    private bool TryBeginHttpUse(CancellationToken ct)
+    private bool TryBeginHttpUse(CancellationToken ct, bool inference = false)
     {
         lock (_transitionGate)
         {
-            if (_stopped || ct.IsCancellationRequested) return false;
+            if (_stopped || _retiring || ct.IsCancellationRequested) return false;
+            if (inference) _inferenceUses++;
             _httpUses++;
             return true;
         }
     }
 
-    private void EndHttpUse()
+    private void EndHttpUse(bool inference = false)
     {
         lock (_transitionGate)
         {
+            if (inference) _inferenceUses--;
             _httpUses--;
             if (_httpUses != 0 || !_closeHttpWhenIdle) return;
             _closeHttpWhenIdle = false;
@@ -1968,7 +1976,7 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
             }
             Volatile.Write(ref _stopped, true);
             _restoredIncumbent = null;
-            WithdrawDiscoveryOnStop();
+            if (!_retiring) WithdrawDiscoveryOnStop();
         }
         AfterStopDecisionForTests?.Invoke();
 

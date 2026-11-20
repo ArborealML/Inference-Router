@@ -10,6 +10,7 @@ public sealed class QueuedRequest
     public required RouterThread Thread { get; init; }
     public required long EnqueuedSeq { get; init; }
     internal long EnqueuedAtTimestamp { get; init; }
+    internal CancellationToken CallerToken { get; init; }
     internal bool QueueExpired(TimeProvider clock) => Request.Options?.MaxQueueTime is { } window &&
         clock.GetElapsedTime(EnqueuedAtTimestamp) > window;
     public required long PromptChars { get; init; }
@@ -45,13 +46,16 @@ public sealed class ModelQueue
 
     public bool TryEnqueue(QueuedRequest item)
     {
+        if (TryInsert(item)) return true;
+        _onReject(item, "queue_overflow");
+        return false;
+    }
+
+    internal bool TryInsert(QueuedRequest item)
+    {
         lock (_lock)
         {
-            if (_heap.Count >= _capacity)
-            {
-                _onReject(item, "queue_overflow");
-                return false;
-            }
+            if (_heap.Count >= _capacity) return false;
             _heap.Add(item);
             _heap.Sort(HeadFirst);
             return true;
@@ -95,7 +99,7 @@ public sealed class ModelQueue
     private int FirstAdmissibleIndex(Func<RouterThread, bool> admission)
     {
         for (var i = 0; i < _heap.Count; i++)
-            if (admission(_heap[i].Thread)) return i;
+            if (!_heap[i].Ticket.PendingEnqueuePublication && admission(_heap[i].Thread)) return i;
         return -1;
     }
 

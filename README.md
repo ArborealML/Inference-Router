@@ -17,6 +17,7 @@ AIR gives OpenAI-compatible clients one HTTP endpoint for local inference engine
 - **Per-engine lifecycle authority.** Set `lifecycle_owner` independently of the inference endpoint. Externally managed engines forward loaded models. A dedicated local engine can use the native Docker provider, and a delegated engine can use a configured selector. A verified refusal before any mutation can leave the incumbent available to serve requests. [Lifecycle configuration](SPEC.md#7-configuration-toml)
 - **Measured switch ordering.** On a single idle native Docker engine with a proven incumbent, AIR can prefer the cheaper of eligible queued model switches. Estimates use recent observed shutdown and activation times. Queue age takes precedence within the comparison, and incomplete estimates fall back to enqueue order. [Queue semantics](SPEC.md#55-queue-semantics)
 - **Operator controls.** Inspect engine and queue status, replay events for a ticket, or cancel it through the admin API. The `air` CLI can host the router and act as a client. [HTTP reference](SPEC.md#6-http-surface-server-project)
+- **Configuration reload.** An authenticated apply rereads the startup file. Validated defaults take effect for new requests during active inference. External engine additions and removals apply when router work is idle. Accepted streams and switches keep their starting configuration. [Reload contract](SPEC.md#77-runtime-configuration-reload)
 
 ### In progress
 
@@ -30,7 +31,7 @@ AIR gives OpenAI-compatible clients one HTTP endpoint for local inference engine
 
 - **Cluster routing and model placement.** Accept requests from either ingress into one shared queue and let an eligible host activate the selected model. [Cluster milestone](backlog/milestones/m-6%20-%20cluster-routing-and-model-placement.md)
 - **Batching and switch-rate limits.** Use measured costs and queue age to serve cohorts and bound repeated switches. [Scheduling milestone](backlog/milestones/m-5%20-%20measured-model-scheduling.md)
-- **Configuration reload.** Apply validated changes while in-flight requests and switches keep the configuration they started with. [Reload milestone](backlog/milestones/m-8%20-%20configuration-reload-during-inference.md)
+- **Selective native quarantine reset.** Preserve unrelated target quarantines across reloads and allow an operator to reset one target. [Reload milestone](backlog/milestones/m-8%20-%20configuration-reload-during-inference.md)
 - **Operator live view.** Follow engine status and per-ticket progress in a web interface backed by the replayable event feed. [Live view milestone](backlog/milestones/m-11%20-%20operator-live-view.md)
 
 See the [delivery milestones](backlog/milestones/README.md) for the full roadmap.

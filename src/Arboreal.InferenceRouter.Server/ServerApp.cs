@@ -12,7 +12,7 @@ namespace Arboreal.InferenceRouter.Server;
 /// AOT strategy: CreateSlimBuilder + statically declared handlers; JSON bodies are read as raw
 /// bytes and forwarded verbatim to engines (full OpenAI surface incl. tools/multimodal without
 /// DTO binding); responses are raw passthrough bytes; admin DTOs use AirServerJson.</summary>
-public static class ServerApp
+public static partial class ServerApp
 {
     public static WebApplication Build(string[] args, string? configPath = null, RouterConfig? configOverride = null)
         => Build(args, configPath, configOverride, TimeProvider.System);
@@ -20,18 +20,29 @@ public static class ServerApp
     [System.Diagnostics.CodeAnalysis.SuppressMessage("Microsoft.Reliability", "CA2000:Dispose objects before losing scope",
         Justification = "Owned by the DI container: disposed (async) when the WebApplication is disposed in RunAsync.")]
     internal static WebApplication Build(string[] args, string? configPath, RouterConfig? configOverride,
-        TimeProvider streamClock)
+        TimeProvider streamClock, Func<EngineDefinition, Lifecycle.IEngineLifecycleProvider>? lifecycleFactory = null,
+        Func<EngineDefinition, HttpMessageHandler>? httpHandlerFactoryForTests = null, string? reloadTokenForTests = null)
     {
         configPath ??= Environment.GetEnvironmentVariable("ARBOREAL_ROUTER_CONFIG")
                        ?? Environment.GetEnvironmentVariable("AIR_CONFIG")
                        ?? "router.toml";
-        var config = configOverride ?? RouterConfigLoader.LoadFile(configPath);
-        // Owned by the DI container: disposed (async) when the WebApplication is disposed in RunAsync.
-        var router = new RouterCore(config);
-        router.Start();
+        var credential = configOverride is null
+            ? reloadTokenForTests ?? Environment.GetEnvironmentVariable("ARBOREAL_ROUTER_RELOAD_TOKEN")
+            : null;
+        FileReloadEndpoint? reload = null;
+        ReloadConfiguration? loaded = null;
+        if (!string.IsNullOrWhiteSpace(credential))
+        {
+            var path = Path.GetFullPath(configPath);
+            loaded = RouterConfigLoader.LoadForReload(File.ReadAllText(path), path);
+            reload = new FileReloadEndpoint(path, credential);
+        }
+        var config = configOverride ?? loaded?.Config ?? RouterConfigLoader.LoadFile(configPath);
+        if (httpHandlerFactoryForTests is not null) config.HttpHandlerFactory = httpHandlerFactoryForTests;
 
         var builder = WebApplication.CreateSlimBuilder(args);
-        builder.Services.AddSingleton(router);
+        builder.Services.AddSingleton(_ => new RouterCore(config, null, null, TimeProvider.System,
+            lifecycleFactory, reload: loaded));
         builder.Services.AddSingleton(streamClock);
 
         var app = builder.Build();
@@ -56,6 +67,11 @@ public static class ServerApp
         app.MapGet("/admin/events", (HttpContext ctx, RouterCore r) => HandleEvents(ctx, r));
         app.MapPost("/admin/threads", (HttpContext ctx, RouterCore r) => HandleThreads(ctx, r));
         app.MapPost("/admin/switch", (HttpContext ctx, RouterCore r) => HandleSwitch(ctx, r));
+        if (reload is not null)
+        {
+            app.MapGet("/admin/config/reload", (HttpContext ctx, RouterCore r) => reload.GetAsync(ctx, r));
+            app.MapPost("/admin/config/reload", (HttpContext ctx, RouterCore r) => reload.ApplyAsync(ctx, r));
+        }
         app.MapGet("/admin/tickets/{id}", (string id, HttpContext ctx, RouterCore r) => HandleTicket(ctx, r, id));
         app.MapGet("/admin/tickets/{id}/events", (string id, HttpContext ctx, RouterCore r) => HandleEvents(ctx, r, id));
         app.MapDelete("/admin/tickets/{id}", (string id, HttpContext ctx, RouterCore r) => HandleCancel(ctx, r, id));
@@ -64,6 +80,7 @@ public static class ServerApp
 #pragma warning restore IL3050
 #pragma warning restore IL2026
 
+        app.Services.GetRequiredService<RouterCore>().Start();
         return app;
     }
 
@@ -297,7 +314,7 @@ public static class ServerApp
     /// which is not a shape a caller can branch on.</summary>
     private static async Task<byte[]?> ReadBodyAsync(HttpContext ctx, RouterCore router, CancellationToken ct)
     {
-        var limit = router.Config.MaxRequestBodyBytes;
+        var limit = router.MaxRequestBodyBytes;
         if (ctx.Request.ContentLength is { } declared && declared > limit)
         {
             await WriteErrorAsync(ctx, StatusCodes.Status413PayloadTooLarge, "request_body_too_large",
@@ -361,7 +378,8 @@ public static class ServerApp
             w.WriteStartObject();
             w.WriteString("object", "list");
             w.WriteStartArray("data");
-            foreach (var e in router.Engines.Values)
+            var generation = router.CurrentGeneration;
+            foreach (var e in generation.Engines.Values)
             {
                 var capability = e.Capability;
                 foreach (var model in capability.ModelRoster)
@@ -371,7 +389,7 @@ public static class ServerApp
                     w.WriteString("object", "model");
                     w.WriteNumber("created", DateTimeOffset.UtcNow.ToUnixTimeSeconds());
                     w.WriteString("owned_by", e.Name);
-                    if (router.ObservedModelContextWindow(e, capability, model) is { } window)
+                    if (RouterCore.ObservedModelContextWindow(generation, e, capability, model) is { } window)
                         w.WriteNumber("context_window", window);
                     w.WriteEndObject();
                 }
@@ -469,7 +487,7 @@ public static class ServerApp
                 await WriteErrorAsync(ctx, 400, "invalid_request", "threadId is required").ConfigureAwait(false);
                 return;
             }
-            var priority = router.Config.DefaultPriority;
+            var priority = router.DefaultPriority;
             if (root.TryGetProperty("priority", out var prio) && prio.ValueKind == JsonValueKind.Object)
             {
                 var classStr = prio.TryGetProperty("class", out var c) ? c.GetString() : null;
@@ -502,18 +520,20 @@ public static class ServerApp
     {
         using var body = new MemoryStream(1024);
         await ctx.Request.Body.CopyToAsync(body, ctx.RequestAborted).ConfigureAwait(false);
+        var ownsAdminUse = false;
         try
         {
             using var doc = JsonDocument.Parse(body.ToArray());
             var engineName = doc.RootElement.TryGetProperty("engine", out var e) ? e.GetString() : null;
             var model = doc.RootElement.TryGetProperty("model", out var m) ? m.GetString() : null;
             var profileName = doc.RootElement.TryGetProperty("profile", out var p) ? p.GetString() : null;
-            if (engineName is null || model is null || !router.Engines.TryGetValue(engineName, out var engine))
+            if (engineName is null || model is null || router.AcceptEngineAdmin(engineName) is not { } engine)
             {
                 await WriteErrorAsync(ctx, 400, "invalid_request", "engine and model are required (engine must exist)")
                     .ConfigureAwait(false);
                 return;
             }
+            ownsAdminUse = true;
             if (engine.Switching && engine.SwitchingToward != model)
             {
                 await WriteErrorAsync(ctx, 409, "switch_in_progress",
@@ -530,15 +550,19 @@ public static class ServerApp
             // Fire-and-forget by design: the switch continues after the 202 ack is written;
             // its lifetime is bounded by engine shutdown, not by this request.
 #pragma warning disable IDISP013 // await-in-using not applicable: intentionally detached Task
-            if (profile is null)
+            _ = Task.Run(async () =>
             {
-                _ = Task.Run(() => engine.WaitForModelAsync(model!, Timeout.InfiniteTimeSpan, CancellationToken.None));
-            }
-            else
-            {
-                _ = Task.Run(() => engine.WaitForProfileAsync(model!, profile, Timeout.InfiniteTimeSpan, CancellationToken.None));
-            }
+                try
+                {
+                    if (profile is null)
+                        await engine.WaitForModelAsync(model, Timeout.InfiniteTimeSpan, CancellationToken.None).ConfigureAwait(false);
+                    else
+                        await engine.WaitForProfileAsync(model, profile, Timeout.InfiniteTimeSpan, CancellationToken.None).ConfigureAwait(false);
+                }
+                finally { router.ReleaseEngineAdmin(); }
+            });
 #pragma warning restore IDISP013
+            ownsAdminUse = false;
             ctx.Response.StatusCode = 202;
             var ack = new SwitchAck { Engine = engineName!, Model = model!, Profile = profile?.Name, Switching = true };
             await AirJson.WriteAsync(ctx.Response, ack,
@@ -547,6 +571,10 @@ public static class ServerApp
         catch (JsonException)
         {
             await WriteErrorAsync(ctx, 400, "invalid_request", "body is not valid JSON").ConfigureAwait(false);
+        }
+        finally
+        {
+            if (ownsAdminUse) router.ReleaseEngineAdmin();
         }
     }
 

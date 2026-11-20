@@ -15,10 +15,13 @@ internal static partial class AirServerJson
     [JsonSerializable(typeof(RouterStats))]
     [JsonSerializable(typeof(TicketSnapshot))]
     [JsonSerializable(typeof(SwitchAck))]
+    [JsonSerializable(typeof(ReloadAck))]
     [JsonSerializable(typeof(ErrorBody))]
     [JsonSerializable(typeof(string))]
     internal sealed partial class AirServerContext : JsonSerializerContext;
 }
+
+internal sealed record ReloadAck(long Generation);
 
 /// <summary>AOT-safe JSON write helpers over the source-generated context.</summary>
 internal static class AirJson
