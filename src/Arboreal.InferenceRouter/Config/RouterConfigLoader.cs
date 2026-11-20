@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Arboreal.InferenceRouter.Lifecycle;
 using Tomlyn;
+using Tomlyn.Model;
 using Tomlyn.Serialization;
 
 namespace Arboreal.InferenceRouter;
@@ -31,7 +32,20 @@ public static class RouterConfigLoader
         return EnrolledPairTopology.Check(config, commissionedSlot, claim, readCurrent);
     }
 
-    private static RouterConfig ParseAndMap(string text, string? source, bool isJson, Action<ConfigDto>? beforeFreezeForTests = null)
+    internal static ReloadConfiguration LoadForReload(string text, string path)
+    {
+        var isJson = Path.GetExtension(path).Equals(".json", StringComparison.OrdinalIgnoreCase);
+        ConfigDeclaration? declaration = null;
+        var config = ParseAndMap(text, path, isJson,
+            onJson: json => declaration = ConfigDeclaration.Read(json),
+            onToml: toml => declaration = ConfigDeclaration.Read(toml));
+        config.ValidateLifecycleTopology();
+        return new ReloadConfiguration(config, declaration!, text, isJson);
+    }
+
+    private static RouterConfig ParseAndMap(string text, string? source, bool isJson,
+        Action<ConfigDto>? beforeFreezeForTests = null, Action<JsonElement>? onJson = null,
+        Action<TomlTable>? onToml = null)
     {
         try
         {
@@ -46,13 +60,17 @@ public static class RouterConfigLoader
                 });
                 DockerLaunchResources.CheckJson(doc.RootElement);
                 DockerTargetPlans.CheckJson(doc.RootElement);
+                onJson?.Invoke(doc.RootElement);
                 dto = JsonSerializer.Deserialize<ConfigDto>(doc, ConfigJsonContext.Default.ConfigDto)
                       ?? throw new RouterConfigException("config: empty document");
             }
             else
             {
                 if (TomlSerializer.Deserialize(text, ConfigTomlDocumentContext.Default.TomlTable) is { } document)
+                {
                     DockerTargetPlans.CheckTargetDeclarationsToml(document);
+                    onToml?.Invoke(document);
+                }
                 dto = TomlSerializer.Deserialize(text, ConfigTomlContext.Default.ConfigDto)
                       ?? throw new RouterConfigException("config: empty document");
             }

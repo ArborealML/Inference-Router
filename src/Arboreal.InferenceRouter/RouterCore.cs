@@ -7,17 +7,13 @@ namespace Arboreal.InferenceRouter;
 
 /// <summary>Router orchestration: threads, per-model priority queues, dispatch loop,
 /// engine execution, events, stats. Implements <see cref="IInferenceRouter"/>.</summary>
-public sealed class RouterCore : IInferenceRouter
+public sealed partial class RouterCore : IInferenceRouter
 {
     private readonly RouterConfig _config;
     private readonly IRequestScheduler _scheduler;
     private readonly EventRing _events;
     private readonly TimeProvider _clock;
     private readonly ExactTicketAdmission? _admission;
-    private readonly Dictionary<string, EngineRuntime> _engines = new(StringComparer.OrdinalIgnoreCase);
-    /// <summary>The same engines as the capability scan sees, fixed once at construction. A stable list is
-    /// what lets one scan prove that no engine published while it was deciding (§5.5).</summary>
-    private ICapabilitySource[] _capabilitySources = [];
     private readonly Dictionary<string, ModelQueue> _queues = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, RouterThread> _threads = new(StringComparer.Ordinal);
     // Ticket lookup has its own lock. A full queue rejects a ticket from inside the queue's lock,
@@ -43,6 +39,8 @@ public sealed class RouterCore : IInferenceRouter
     internal Action<RouterTicket>? BeforeAdmissionPreparationForTests;
     internal Action<bool>? BeforeDispatchParkForTests;
     internal Action<Task>? AfterDispatchParkForTests;
+    internal Action? BeforeShutdownCancellationForTests;
+    internal Action? BeforeShutdownUnsubscribeForTests;
     internal TimeProvider ResponseTimeoutClockForTests = TimeProvider.System;
 
     public RouterCore(RouterConfig config, IRequestScheduler? scheduler = null, EventRing? events = null)
@@ -52,7 +50,7 @@ public sealed class RouterCore : IInferenceRouter
 
     internal RouterCore(RouterConfig config, IRequestScheduler? scheduler, EventRing? events, TimeProvider clock,
                         Func<EngineDefinition, IEngineLifecycleProvider>? lifecycleFactory = null,
-                        ExactTicketAdmission? admission = null)
+                        ExactTicketAdmission? admission = null, ReloadConfiguration? reload = null)
     {
         config.ValidateLifecycleTopology();
         _shutdownToken = _shutdown.Token;
@@ -61,27 +59,32 @@ public sealed class RouterCore : IInferenceRouter
         _wakeOnEngineState = WakeOnEngineState;
         _scheduler = scheduler ?? new PrefixAwareScheduler();
         _events = events ?? new EventRing(maxLiveSubscribers: config.MaxEventSubscribers);
+        reload?.ValidateNames();
+        var engines = new Dictionary<string, EngineRuntime>(StringComparer.OrdinalIgnoreCase);
         foreach (var (name, def) in config.Engines)
             // The dispatch hint closes the one wake gap the event feed leaves: switch outcome events are
             // emitted before the capability transition commits, so a dispatcher woken by them still sees the
             // engine marked as switching. Committing the transition nudges the loop again (§5.5).
-            _engines[name] = new EngineRuntime(def, config, _events, config.HttpHandlerFactory?.Invoke(def),
-                lifecycleFactory?.Invoke(def), SignalDispatch, hostEnrollment: null, clock: clock);
+            engines[name] = new EngineRuntime(def, config, _events, config.HttpHandlerFactory?.Invoke(def),
+                lifecycleFactory?.Invoke(def), SignalDispatch, hostEnrollment: null, clock: clock,
+                reloadSource: reload);
         foreach (var (id, td) in config.Threads)
             _threads[id] = new RouterThread(id, td.Priority, td.Weight, td.ModelAffinity);
-        _capabilitySources = [.. _engines.Values];
+        _generation = new ConfigurationGeneration(1, config, reload, engines);
         _admission = admission;
-        admission?.Attach(_engines.Count, _clock, SignalDispatch, ReportAdmissionCleanupFailure, RejectVerifiedBinding);
+        admission?.Attach(engines.Count, _clock, SignalDispatch, ReportAdmissionCleanupFailure, RejectVerifiedBinding);
     }
 
     public EventRing Events => _events;
-    public RouterConfig Config => _config;
-    public IReadOnlyDictionary<string, EngineRuntime> Engines => _engines;
+    public RouterConfig Config => CurrentGeneration.File?.Observe() ?? _config;
+    public IReadOnlyDictionary<string, EngineRuntime> Engines => CurrentGeneration.Engines;
+    internal int MaxRequestBodyBytes => _config.MaxRequestBodyBytes;
+    internal ThreadPriority DefaultPriority => _config.DefaultPriority;
 
     public void Start()
     {
         var shutdownToken = _shutdown.Token;
-        foreach (var e in _engines.Values)
+        foreach (var e in CurrentGeneration.Engines.Values)
         {
             e.StartHealthLoop(shutdownToken);
             _events.Append(new RouterEvent { Kind = "engine.registered", Engine = e.Name });
@@ -101,156 +104,11 @@ public sealed class RouterCore : IInferenceRouter
             SignalDispatch();
     }
 
-    // ── IInferenceRouter ────────────────────────────────────────────────────
-
-    public RouterThread RegisterThread(string threadId, ThreadPriority priority, RouterThreadOptions? options = null)
-    {
-        lock (_gate)
-        {
-            if (_threads.TryGetValue(threadId, out var existing))
-            {
-                existing.SetPriority(priority);
-                return existing;
-            }
-            var t = new RouterThread(threadId, priority, options?.Weight ?? 1.0, options?.ModelAffinity);
-            _threads[threadId] = t;
-            _events.Append(new RouterEvent { Kind = "thread.registered", ThreadId = threadId, Value = priority.Class });
-            return t;
-        }
-    }
-
-    public void SetThreadPriority(string threadId, ThreadPriority priority)
-    {
-        lock (_gate)
-        {
-            if (!_threads.TryGetValue(threadId, out var t))
-            {
-                t = new RouterThread(threadId, priority, 1.0, null);
-                _threads[threadId] = t;
-                _events.Append(new RouterEvent { Kind = "thread.registered", ThreadId = threadId, Value = priority.Class });
-                return;
-            }
-            t.SetPriority(priority);
-            _events.Append(new RouterEvent { Kind = "thread.priority_changed", ThreadId = threadId, Value = priority.Class });
-            foreach (var q in _queues.Values) q.Resort();
-        }
-        SignalDispatch();
-    }
-
-    public ValueTask<RouterTicket> EnqueueAsync(string threadId, InferenceRequest request, CancellationToken ct = default)
-    {
-        var opts = request.Options ?? new RouterRequestOptions();
-        RouterThread thread;
-        lock (_gate)
-        {
-            // A newly-encountered thread adopts the first request's explicit priority, if any.
-            if (!_threads.TryGetValue(threadId, out var t))
-                t = RegisterThread(threadId, opts.Priority ?? _config.DefaultPriority);
-            thread = t;
-        }
-
-        var requestedModel = request.Model ?? thread.ModelAffinity ?? _config.DefaultModel;
-        var canonical = ResolveCanonical(requestedModel);
-        var enqueuedAt = _clock.GetTimestamp();
-        var ticket = new RouterTicket(NewTicketId(), threadId, canonical, _clock.GetUtcNow());
-        var prio = opts.Priority ?? thread.Priority;
-        var node = new PrioritizedRequest(ticket, prio, Interlocked.Increment(ref _seq));
-        var promptChars = PromptCharsProbe(request.Body);
-        var queued = new QueuedRequest
-        {
-            Ticket = ticket,
-            Request = request,
-            OriginalModel = requestedModel,
-            PriorityNode = node,
-            Thread = thread,
-            EnqueuedSeq = node.Sequence,
-            EnqueuedAtTimestamp = enqueuedAt,
-            PromptChars = promptChars,
-            RequiredContextTokens = opts.RequiredContext is { } rc && rc > 0
-                ? rc
-                : EstimateContextTokens(promptChars, _config.Scheduler.CharsPerTokenEstimate),
-        };
-        ticket.State = TicketState.Queued;
-        // The cancel signal exists the moment the ticket is findable: if it were created only when
-        // execution starts, an abort in the window between pop and execution would find nothing to
-        // cancel and the request would run to completion for a caller that already hung up. A ticket
-        // that never dispatches leaves it to the GC — it holds no unmanaged resource, and disposing
-        // it from the cancel path would race a dispatch that is concurrently starting.
-        ticket.ExecCts = new CancellationTokenSource();
-        lock (_ticketGate) _tickets[ticket.Id] = ticket;
-        // A model that nothing in this configuration can serve is refused before it ever reaches a queue
-        // (§5.5). The check sits ahead of the cap on purpose: for a model no engine could take, "come back
-        // later" (429) is a worse answer than "nobody here serves this" (503), and refusing puts nothing in
-        // that queue, so the cap stays free for traffic that could actually run.
-        if (CapabilityScan.DefinitelyHopeless(_capabilitySources, canonical))
-        {
-            RejectAtAdmission(queued, "model_unavailable",
-                $"no engine in this configuration declares or currently reports model '{WireText.Ident(canonical)}'");
-            return ValueTask.FromResult(ticket);
-        }
-        var accepted = GetOrCreateQueue(canonical).TryEnqueue(queued);
-        if (accepted && ct.CanBeCanceled)
-        {
-            // A caller that hangs up is a cancellation, wired to the same path an explicit cancel
-            // takes from the moment the ticket can be found. Registered after the enqueue because a
-            // full queue rejects the ticket inside TryEnqueue, and re-checked in case the abort
-            // landed while we were getting here.
-            ticket.CallerLink = ct.Register(() => TryCancel(ticket.Id));
-            if (ct.IsCancellationRequested) TryCancel(ticket.Id);
-        }
-        if (accepted && opts.MaxQueueTime is { } window && window > TimeSpan.Zero)
-        {
-            // The queue bound has to be a timer rather than a check at dispatch time: a busy engine
-            // raises no dispatch signal, so a waiter whose deadline passed would keep its place in the
-            // queue until something else happened to wake the dispatcher.
-            ticket.QueueTimer = new System.Threading.Timer(
-                _ => FailExpiredQueuedWait(ticket, window), null, window, Timeout.InfiniteTimeSpan);
-        }
-        _events.Append(new RouterEvent
-        {
-            Kind = "request.enqueued",
-            ThreadId = threadId,
-            TicketId = ticket.Id,
-            Model = canonical,
-            Value = queued.PromptChars,
-        });
-        SignalDispatch();
-        return ValueTask.FromResult(ticket);
-    }
-
-    public bool TryCancel(string ticketId)
-    {
-        RouterTicket? ticket;
-        lock (_ticketGate)
-        {
-            ticket = _tickets.GetValueOrDefault(ticketId);
-            if (ticket is null) return false;
-        }
-        var snapshot = new List<ModelQueue>();
-        lock (_gate) snapshot.AddRange(_queues.Values);
-        foreach (var q in snapshot)
-        {
-            if (q.TryRemoveById(ticketId))
-            {
-                _admission?.Invalidate(ticket);
-                Fail(ticket, "cancelled", "cancelled while queued");
-                return true;
-            }
-        }
-        var cts = ticket.ExecCts;
-        if (cts is not null)
-        {
-            try { cts.Cancel(); return true; }
-            catch (ObjectDisposedException) { }
-        }
-        return false;
-    }
-
     public RouterStats GetStats()
     {
         lock (_gate)
         {
-            var engines = _engines.Values.Select(e =>
+            var engines = CurrentGeneration.Engines.Values.Select(e =>
             {
                 var cap = e.Capability;
                 return new EngineStats
@@ -421,12 +279,12 @@ public sealed class RouterCore : IInferenceRouter
         EngineRuntime Engine, EngineRuntime.DispatchObservation Observation, SwitchSampleKey Incumbent,
         long Timestamp, DateTimeOffset UtcNow);
 
-    private SwitchComparison? ReadSwitchComparison()
+    private SwitchComparison? ReadSwitchComparison(ConfigurationGeneration generation)
     {
-        if (_scheduler is not PrefixAwareScheduler || !_config.AutoSwitch || _engines.Count != 1)
+        if (_scheduler is not PrefixAwareScheduler || !generation.Settings.AutoSwitch || generation.Engines.Count != 1)
             return null;
 
-        var engine = _engines.Values.Single();
+        var engine = generation.Engines.Values.Single();
         var observation = engine.ReadDispatchObservation();
         if (observation.Inflight != 0 || !observation.HasCapacity ||
             engine.ReadVerifiedSwitchIncumbent(observation.Capability) is not { } incumbent)
@@ -437,8 +295,9 @@ public sealed class RouterCore : IInferenceRouter
 
     private readonly record struct QueueHead(ModelQueue Queue, QueueDispatchCandidate Candidate);
     private readonly record struct Selection(QueueHead Head, SchedulerDecision Decision);
-    private enum TakeResult { Taken, Changed, Ineligible, Expired }
-    private readonly record struct AdmissionTake(TakeResult Result, ExactTicketAdmission.Invocation? Invocation = null);
+    private enum TakeResult { Taken, Changed, Ineligible, Terminal }
+    private readonly record struct AdmissionTake(TakeResult Result, ExactTicketAdmission.Invocation? Invocation = null,
+        string? TerminalCode = null);
 
     internal bool TryDispatchOnce() => DispatchOnce() != DispatchResult.Parked;
 
@@ -447,20 +306,25 @@ public sealed class RouterCore : IInferenceRouter
         _admission?.ResumePendingOpeningOwnerPreparations();
 
         QueueHead[] heads;
+        ConfigurationGeneration generation;
         lock (_gate)
+        {
+            if (_closing) return DispatchResult.Parked;
+            generation = CurrentGeneration;
             heads = [.. _queues.Values
                 .Select(static (queue, ordinal) => new QueueHead(queue, queue.SnapshotCandidate(ordinal, HasThreadCapacity)))
                 .OrderBy(static head => head.Candidate.Depth)
                 .ThenBy(static head => head.Candidate.BaselineOrdinal)];
+        }
 
-        var comparison = ReadSwitchComparison();
+        var comparison = ReadSwitchComparison(generation);
         for (var next = 0; next < heads.Length;)
         {
             var head = heads[next++];
             if (head.Candidate.Request is not { } request) continue;
-            var infos = BuildEngineInfos(request, comparison);
+            var infos = BuildEngineInfos(request, generation, comparison);
             var decision = _scheduler.SelectNext(request,
-                new SchedulerView(infos, comparison?.UtcNow ?? _clock.GetUtcNow()), _config);
+                new SchedulerView(infos, comparison?.UtcNow ?? _clock.GetUtcNow()), generation.Settings);
             if (decision.Engine is null)
             {
                 MaybeFailDeadline(request);
@@ -470,10 +334,10 @@ public sealed class RouterCore : IInferenceRouter
             var selection = new Selection(head, decision);
             var compared = comparison is not null && decision.SwitchRequired;
             if (comparison is { } cost && compared)
-                selection = OrderEligibleSwitches(heads, ref next, selection, request, cost);
+                selection = OrderEligibleSwitches(heads, ref next, selection, request, cost, generation);
 
             var candidate = selection.Head.Candidate.Request!;
-            var engine = _engines[selection.Decision.Engine!];
+            var engine = generation.Engines[selection.Decision.Engine!];
             var observation = comparison?.Observation ?? FindDispatchObservation(infos, engine.Name);
             var explicitMinimum = candidate.ExplicitContextMinimum;
             var profile = engine.GetProfile(candidate.Ticket.Model, selection.Decision.TargetProfile);
@@ -517,7 +381,7 @@ public sealed class RouterCore : IInferenceRouter
                 BeforeAdmissionCommitForTests?.Invoke(candidate.Ticket);
                 lock (admission.Gate)
                 {
-                    take = TryTake(selection, engine, expected, requiredWindow, claim);
+                    take = TryTake(selection, engine, expected, requiredWindow, claim, generation);
                 }
             }
             else
@@ -525,38 +389,47 @@ public sealed class RouterCore : IInferenceRouter
                 if (compared) BeforeCostCommitForTests?.Invoke();
                 if (requiredWindow > 0 &&
                     observation.Capability.Serving.WindowFor(candidate.Ticket.Model) < requiredWindow &&
-                    !WillWaitForModel(selection.Decision.SwitchRequired, profile))
+                    !WillWaitForModel(generation.Settings, selection.Decision.SwitchRequired, profile))
                 {
                     MaybeFailDeadline(candidate);
                     continue;
                 }
-                take = TryTake(selection, engine, expected, requiredWindow, claim: null);
+                BeforeAdmissionCommitForTests?.Invoke(candidate.Ticket);
+                take = TryTake(selection, engine, expected, requiredWindow, claim: null, generation);
             }
 
             if (take.Result == TakeResult.Taken)
             {
-                StartSelected(candidate, engine, selection.Decision.SwitchRequired, profile, proof, take.Invocation);
+                StartSelected(candidate, engine, generation.Settings, selection.Decision.SwitchRequired, profile, proof, take.Invocation);
                 return DispatchResult.Dispatched;
             }
-            if (take.Result == TakeResult.Expired) MaybeFailDeadline(candidate);
+            if (take.Result == TakeResult.Terminal)
+            {
+                SettleQueueEnd(candidate.Ticket, take.TerminalCode!, candidate.Request.Options?.MaxQueueTime);
+                continue;
+            }
             if (take.Result == TakeResult.Changed) return DispatchResult.StateChanged;
         }
         return DispatchResult.Parked;
     }
 
     private AdmissionTake TryTake(Selection selection, EngineRuntime engine, EngineRuntime.DispatchObservation? expected,
-                                  long requiredWindow, ExactTicketAdmission.Claim? claim)
+                                  long requiredWindow, ExactTicketAdmission.Claim? claim, ConfigurationGeneration generation)
     {
         var head = selection.Head;
         var candidate = head.Candidate.Request!;
         lock (_gate)
         lock (head.Queue.Gate)
         {
-            if (_shutdownToken.IsCancellationRequested) return new(TakeResult.Ineligible);
+            if (_closing || _shutdownToken.IsCancellationRequested) return new(TakeResult.Ineligible);
+            if (!ReferenceEquals(CurrentGeneration, generation) ||
+                !ReferenceEquals(generation.Engines.GetValueOrDefault(engine.Name), engine))
+                return new(TakeResult.Changed);
+            if (candidate.Ticket.PendingEnqueuePublication || candidate.Ticket.IsTerminal)
+                return new(TakeResult.Changed);
             if (claim is { } stamped && _admission is { } admission)
             {
                 if (!admission.IsOpen(stamped) || !admission.IsPrepared(stamped)) return new(TakeResult.Ineligible);
-                if (candidate.QueueExpired(_clock)) return new(TakeResult.Expired);
                 var observation = engine.ReadDispatchObservation();
                 if (!observation.HasCapacity || !observation.Capability.Healthy ||
                     observation.Capability.SwitchingToward is not null ||
@@ -571,8 +444,9 @@ public sealed class RouterCore : IInferenceRouter
             if (expected is { } observationAtSelection && !engine.IsDispatchObservationCurrent(observationAtSelection))
                 return new(TakeResult.Changed);
             if (!engine.HasCapacity) return new(TakeResult.Ineligible);
-            if (candidate.QueueExpired(_clock)) return new(TakeResult.Expired);
+            var terminal = ReadQueueEnd(candidate);
             if (!head.Queue.TryTakeExact(head.Candidate, HasThreadCapacity)) return new(TakeResult.Changed);
+            if (terminal is not null) return new(TakeResult.Terminal, TerminalCode: terminal);
 
             var invocation = claim is { } exact ? _admission!.Authorize(exact) : null;
             candidate.Thread.IncrementInflight();
@@ -608,7 +482,7 @@ public sealed class RouterCore : IInferenceRouter
         lock (admission.Gate)
         lock (_gate)
         {
-            if (_shutdownToken.IsCancellationRequested || !admission.IsCurrentBindingRefusal(claim) ||
+            if (_closing || _shutdownToken.IsCancellationRequested || !admission.IsCurrentBindingRefusal(claim) ||
                 !_queues.TryGetValue(claim.Ticket.Model, out var queue) || !queue.TryRemoveById(claim.Ticket.Id))
                 return;
             expired = claim.Request.QueueExpired(_clock);
@@ -621,13 +495,15 @@ public sealed class RouterCore : IInferenceRouter
         SignalDispatch();
     }
 
-    private void StartSelected(QueuedRequest candidate, EngineRuntime engine, bool requiresSwitch,
+    private void StartSelected(QueuedRequest candidate, EngineRuntime engine, RouterConfig settings, bool requiresSwitch,
                                ServingProfile? targetProfile, SwitchServingProof? servingProof,
                                ExactTicketAdmission.Invocation? invocation)
     {
         var ticket = candidate.Ticket;
+        var publishedSelection = false;
         try
         {
+            ticket.EndQueueWait();
             var selectedAt = _clock.GetTimestamp();
             var switchRequired = invocation is null && requiresSwitch;
             if (candidate.Request.Stream && ticket.StreamChannel is null)
@@ -640,6 +516,21 @@ public sealed class RouterCore : IInferenceRouter
 
             ticket.State = switchRequired ? TicketState.WaitingForModel : TicketState.Executing;
             ticket.Engine = engine.Name;
+            PublishSelection();
+            // No cancellation token on Task.Run here: with an already-cancelled token Task.Run hands
+            // back a task that never runs the delegate, which would strand the thread slot and the
+            // engine slot reserved at pop. ExecuteAsync links its own CTS to _shutdown.
+            _ = Task.Run(() => ExecuteAsync(candidate, engine, settings, switchRequired, targetProfile, servingProof, selectedAt, invocation));
+        }
+        catch (Exception)
+        {
+            if (!publishedSelection) PublishSelection();
+            _ = AbortBeforeExecutionAsync(candidate, engine, invocation);
+        }
+
+        void PublishSelection()
+        {
+            publishedSelection = true;
             _events.Append(new RouterEvent
             {
                 Kind = "request.selected",
@@ -648,14 +539,6 @@ public sealed class RouterCore : IInferenceRouter
                 Engine = engine.Name,
                 Model = ticket.Model,
             });
-            // No cancellation token on Task.Run here: with an already-cancelled token Task.Run hands
-            // back a task that never runs the delegate, which would strand the thread slot and the
-            // engine slot reserved at pop. ExecuteAsync links its own CTS to _shutdown.
-            _ = Task.Run(() => ExecuteAsync(candidate, engine, switchRequired, targetProfile, servingProof, selectedAt, invocation));
-        }
-        catch (Exception)
-        {
-            _ = AbortBeforeExecutionAsync(candidate, engine, invocation);
         }
     }
 
@@ -708,7 +591,7 @@ public sealed class RouterCore : IInferenceRouter
     }
 
     private Selection OrderEligibleSwitches(QueueHead[] heads, ref int next, Selection baseline,
-                                            QueuedRequest first, SwitchComparison comparison)
+                                            QueuedRequest first, SwitchComparison comparison, ConfigurationGeneration generation)
     {
         var order = new SwitchCostOrder<Selection>();
         Consider(first, baseline);
@@ -722,7 +605,7 @@ public sealed class RouterCore : IInferenceRouter
                 continue;
             }
             var decision = _scheduler.SelectNext(request,
-                new SchedulerView(BuildEngineInfos(request, comparison), comparison.UtcNow), _config);
+                new SchedulerView(BuildEngineInfos(request, generation, comparison), comparison.UtcNow), generation.Settings);
             if (decision.Engine is not null &&
                 (!decision.SwitchRequired || request.PriorityNode.Priority.CompareTo(first.PriorityNode.Priority) != 0))
                 break;
@@ -740,8 +623,8 @@ public sealed class RouterCore : IInferenceRouter
         }
     }
 
-    private bool WillWaitForModel(bool switchRequired, ServingProfile? profile) =>
-        _config.AutoSwitch && (switchRequired || profile is not null);
+    private static bool WillWaitForModel(RouterConfig settings, bool switchRequired, ServingProfile? profile) =>
+        settings.AutoSwitch && (switchRequired || profile is not null);
 
     private static EngineRuntime.DispatchObservation FindDispatchObservation(EngineRuntimeInfo[] infos, string engine)
     {
@@ -750,11 +633,12 @@ public sealed class RouterCore : IInferenceRouter
         throw new InvalidOperationException("The selected engine is missing from the scheduler view.");
     }
 
-    private EngineRuntimeInfo[] BuildEngineInfos(QueuedRequest head, SwitchComparison? comparison = null)
+    private static EngineRuntimeInfo[] BuildEngineInfos(QueuedRequest head, ConfigurationGeneration generation,
+        SwitchComparison? comparison)
     {
         var messages = head.Messages();
-        var list = new List<EngineRuntimeInfo>(_engines.Count);
-        foreach (var e in _engines.Values)
+        var list = new List<EngineRuntimeInfo>(generation.Engines.Count);
+        foreach (var e in generation.Engines.Values)
         {
             // One snapshot per engine, and every capability-shaped field derived from that one read: the
             // loaded list, the switch marker and the eligibility bit cannot come from different instants and
@@ -781,34 +665,9 @@ public sealed class RouterCore : IInferenceRouter
         return list.ToArray();
     }
 
-    /// <summary>Fails a request whose queue wait outlived the deadline it declared. If the ticket is
-    /// no longer in a queue it was already dispatched — the deadline bounds the wait, not the
-    /// execution — or it is terminal, so there is nothing to do.</summary>
-    private void FailExpiredQueuedWait(RouterTicket ticket, TimeSpan window)
-    {
-        var snapshot = new List<ModelQueue>();
-        lock (_gate) snapshot.AddRange(_queues.Values);
-        foreach (var q in snapshot)
-        {
-            if (q.TryRemoveById(ticket.Id))
-            {
-                _admission?.Invalidate(ticket);
-                Fail(ticket, "deadline_exceeded", $"queue wait exceeded {window}");
-                return;
-            }
-        }
-    }
-
-    private void MaybeFailDeadline(QueuedRequest head)
-    {
-        if (!head.QueueExpired(_clock) || GetQueue(head.Ticket.Model)?.TryRemoveById(head.Ticket.Id) != true) return;
-        _admission?.Invalidate(head.Ticket);
-        Fail(head.Ticket, "deadline_exceeded", $"queue wait exceeded {head.Request.Options?.MaxQueueTime}");
-    }
-
     // ── execution ───────────────────────────────────────────────────────────
 
-    private async Task ExecuteAsync(QueuedRequest candidate, EngineRuntime engine, bool switchRequired,
+    private async Task ExecuteAsync(QueuedRequest candidate, EngineRuntime engine, RouterConfig settings, bool switchRequired,
                                     ServingProfile? targetProfile, SwitchServingProof? servingProof, long selectedAt,
                                     ExactTicketAdmission.Invocation? invocation)
     {
@@ -832,14 +691,14 @@ public sealed class RouterCore : IInferenceRouter
         try
         {
 
-            if (invocation is null && WillWaitForModel(switchRequired, targetProfile))
+            if (invocation is null && WillWaitForModel(settings, switchRequired, targetProfile))
             {
                 ticket.State = TicketState.WaitingForModel;
                 // A ticket's own deadline bounds only its time in the queue, so the wait for a model
                 // switch needs its own ceiling: without one a request is parked through a model load as
                 // long as the engine's lifecycle wait allows (two hours for a strata select). 0 = no
                 // ceiling, which is the old behaviour.
-                var ceilingMs = _config.Scheduler.SwitchWaitTimeoutMs;
+                var ceilingMs = settings.Scheduler.SwitchWaitTimeoutMs;
                 var switchWait = ceilingMs <= 0 ? Timeout.InfiniteTimeSpan : TimeSpan.FromMilliseconds(ceilingMs);
                 // The caller's token bounds only its own wait: the switch transaction runs on the engine's
                 // token, so giving up here never leaves the engine half-switched with nothing loaded.
@@ -882,7 +741,7 @@ public sealed class RouterCore : IInferenceRouter
             var ownsForward = false;
             try
             {
-                using var cts = CancellationTokenSource.CreateLinkedTokenSource(_shutdownToken, execCts.Token);
+                using var cts = CancellationTokenSource.CreateLinkedTokenSource(_shutdownToken, execCts.Token, candidate.CallerToken);
                 var body = ModelRewriter.Rewrite(candidate.Request.Body, engine.CanonicalModel(ticket.Model) ?? ticket.Model);
                 var suffix = LooksLikeCompletion(candidate.Request.Body) ? "completions" : "chat/completions";
 
@@ -1195,9 +1054,8 @@ public sealed class RouterCore : IInferenceRouter
     {
         if (!ticket.TryEnterTerminal()) return;
         ticket.DetachWaitHooks();
-        DisposeQueueTimer(ticket);
         RetainTerminalTicket(ticket);
-        ticket.State = TicketState.Completed;
+        ticket.StoreTerminalState(TicketState.Completed);
         // Count the ticket finished BEFORE waking the caller: a caller that awaits its own ticket and
         // then reads /admin/status must see its own request accounted for, not a stale snapshot.
         var thread = TicketThread(ticket);
@@ -1213,6 +1071,7 @@ public sealed class RouterCore : IInferenceRouter
             Engine = ticket.Engine,
             Model = ticket.Model,
         });
+        ticket.SignalTerminalStream();
         ticket.StreamChannel?.Writer.TryComplete();
         ticket.CompletionTcs.TrySetResult(body ?? []);
         SignalDispatch();
@@ -1229,17 +1088,12 @@ public sealed class RouterCore : IInferenceRouter
         // consumer, rather than at one writer (§10).
         message = WireText.Bound(message, WireText.ReasonChars);
         ticket.DetachWaitHooks();
-        DisposeQueueTimer(ticket);
         RetainTerminalTicket(ticket);
         // Setting a terminal state can resolve StreamReady without a channel. Publish the error
         // details first so an HTTP relay woken by that path sees the same error as a channel reader.
         ticket.ErrorCode = code;
         ticket.Error = message;
-        ticket.State = code is "cancelled" ? TicketState.Cancelled : TicketState.Failed;
-        // A stream that will never produce another byte has to be closed. The HTTP side pumps the
-        // channel until its writer completes, so a failure that leaves the channel open parks the
-        // caller on a 200 response that can no longer say anything — not even its own error frame.
-        ticket.StreamChannel?.Writer.TryComplete();
+        ticket.StoreTerminalState(code is "cancelled" ? TicketState.Cancelled : TicketState.Failed);
         _events.Append(new RouterEvent
         {
             Kind = code is "cancelled" ? "request.cancelled" : "request.failed",
@@ -1249,20 +1103,10 @@ public sealed class RouterCore : IInferenceRouter
             Model = ticket.Model,
             Reason = message,
         });
+        ticket.SignalTerminalStream();
+        ticket.StreamChannel?.Writer.TryComplete();
         ticket.CompletionTcs.TrySetException(new RouterRequestException(code, message));
         SignalDispatch();
-    }
-
-    /// <summary>The queue-wait timer is created here, so it is released here: the ticket only carries
-    /// the reference. Disposing does not wait for a callback that is already running, and that
-    /// callback is guarded by the ticket's single terminal transition.</summary>
-    private static void DisposeQueueTimer(RouterTicket ticket)
-    {
-        var timer = ticket.QueueTimer;
-        ticket.QueueTimer = null;
-#pragma warning disable IDISP007 // created in EnqueueAsync and only parked on the ticket: this type owns it
-        if (timer is not null) timer.Dispose();
-#pragma warning restore IDISP007
     }
 
     /// <summary>Terminal tickets stay lookups-able for a bounded window (the admin surface reads
@@ -1286,77 +1130,25 @@ public sealed class RouterCore : IInferenceRouter
 
     private string NewTicketId() => $"t{Interlocked.Increment(ref _seq):x8}-{Random.Shared.Next(0xffff):x4}";
 
-    internal long? ObservedModelContextWindow(EngineRuntime engine, EngineCapability capability, string model)
+    internal static long? ObservedModelContextWindow(ConfigurationGeneration generation,
+        EngineRuntime engine, EngineCapability capability, string model)
     {
         if (capability.Healthy && capability.SwitchingToward is null &&
             capability.ModelContextWindows.TryGetValue(model, out var tokens) &&
-            string.Equals(ResolveCanonical(model), model, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(ResolveCanonical(model, generation), model, StringComparison.OrdinalIgnoreCase) &&
             string.Equals(engine.CanonicalModel(model) ?? model, model, StringComparison.OrdinalIgnoreCase))
             return tokens;
         return null;
     }
 
-    private string ResolveCanonical(string requested)
+    private static string ResolveCanonical(string requested, ConfigurationGeneration generation)
     {
-        foreach (var e in _engines.Values)
+        foreach (var e in generation.Engines.Values)
         {
             var canonical = e.CanonicalModel(requested);
             if (canonical is not null) return canonical;
         }
         return requested;
-    }
-
-    private ModelQueue? GetQueue(string canonicalModel)
-    {
-        lock (_gate) return _queues.GetValueOrDefault(canonicalModel);
-    }
-
-    private ModelQueue GetOrCreateQueue(string canonicalModel)
-    {
-        lock (_gate)
-        {
-            if (!_queues.TryGetValue(canonicalModel, out var q))
-            {
-                q = new ModelQueue(canonicalModel, _config.Scheduler.MaxQueuePerModel, OnQueueRejected);
-                _queues[canonicalModel] = q;
-            }
-            return q;
-        }
-    }
-
-    // The model id in this sentence comes out of a request body, so it is cut before the sentence is built, the
-    // same rule the request path's other producers follow (§10).
-    private void OnQueueRejected(QueuedRequest item, string reason)
-        => RejectAtAdmission(item, reason, $"queue for {WireText.Ident(item.Ticket.Model)} is full");
-
-    /// <summary>One shape for every request refused before it joins a queue: terminal once, thread counter
-    /// moved, caller answered with the code, and exactly one <c>queue.rejected</c> event — no
-    /// <c>request.enqueued</c>, because this ticket never entered a queue and the feed does not pretend
-    /// otherwise (§10). The queue-cap rejection and the unservable-model refusal (§5.5) are the two callers, so
-    /// their shapes cannot drift apart.</summary>
-    private void RejectAtAdmission(QueuedRequest item, string reason, string message)
-    {
-        Interlocked.Increment(ref item.Thread.Rejected);
-        if (!item.Ticket.TryEnterTerminal()) return;
-        item.Ticket.DetachWaitHooks();
-        DisposeQueueTimer(item.Ticket);
-        RetainTerminalTicket(item.Ticket);
-        item.Ticket.State = TicketState.Failed;
-        item.Ticket.ErrorCode = reason;
-        // Same ceiling as the failure path: an admission refusal is a caller's error body, and one of its two
-        // sentences quotes a model id that came out of a request body. Bound once, here, so the stored error, the
-        // exception and the feed reason cannot disagree about what the caller was told (§5.5, §10).
-        message = WireText.Bound(message, WireText.ReasonChars);
-        item.Ticket.Error = message;
-        item.Ticket.CompletionTcs.TrySetException(new RouterRequestException(reason, message));
-        _events.Append(new RouterEvent
-        {
-            Kind = "queue.rejected",
-            ThreadId = item.Thread.ThreadId,
-            TicketId = item.Ticket.Id,
-            Model = item.Ticket.Model,
-            Reason = reason,
-        });
     }
 
     /// <summary>Cheap context-demand estimate when the client does not declare one:
@@ -1437,19 +1229,36 @@ public sealed class RouterCore : IInferenceRouter
 
     public async ValueTask DisposeAsync()
     {
-        _admission?.Stop();
-        _shutdown.Cancel();
         // A queued ticket has no execution to cancel, so it needs an explicit terminal transition;
         // without this its relays sit open until the process exits.
         var pending = new List<QueuedRequest>();
+        ConfigurationGeneration generation;
+        Task? housekeeping;
         lock (_gate)
         {
+            if (_closing) return;
+            _closing = true;
+            generation = CurrentGeneration;
+            housekeeping = _reloadHousekeeping?.Task;
             foreach (var q in _queues.Values) pending.AddRange(q.DrainAll());
             _queues.Clear();
+            foreach (var queued in pending)
+                if (queued.Ticket.PendingEnqueuePublication)
+                    queued.Ticket.DeferredQueueEnd ??= "cancelled";
+            pending.RemoveAll(queued => queued.Ticket.PendingEnqueuePublication);
         }
-        foreach (var p in pending) Fail(p.Ticket, "cancelled", "router shutting down");
+        BeforeShutdownCancellationForTests?.Invoke();
+        _admission?.Stop();
+        _shutdown.Cancel();
+        foreach (var p in pending)
+        {
+            Fail(p.Ticket, "cancelled", "router shutting down");
+            ReleaseExecutionCancellation(p.Ticket);
+        }
+        if (housekeeping is not null) await housekeeping.ConfigureAwait(false);
+        BeforeShutdownUnsubscribeForTests?.Invoke();
         _events.Unsubscribe(_wakeOnEngineState);
-        foreach (var e in _engines.Values) await e.DisposeAsync().ConfigureAwait(false);
+        foreach (var e in generation.Engines.Values) await e.DisposeAsync().ConfigureAwait(false);
         _shutdown.Dispose();
     }
 }

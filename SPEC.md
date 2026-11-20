@@ -1,6 +1,6 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.100)
+Status: draft, continuously revised (v0.12.102)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
@@ -352,6 +352,10 @@ daemon transaction per engine. 137 tests green.
   that answers no `upload_url`, an upload that dies or answers no asset id, an asset name listed twice on
   the release, and a tag that moves after the first resolve. No tag has run the gate: still configured,
   not proven.
+- v0.12.102 — reload validated defaults and, at router-wide work idle, external engine membership
+  through an authenticated file-backed apply. Keep admitted streams and switches on their starting
+  configuration, keep detached inference counted through cleanup, and preserve the current
+  generation on refusal (§5.5, §6, §7.7).
 - v0.12.100 — relay complete SSE blocks byte-for-byte and discard an unfinished block before a terminal
   error. Apply the same block-boundary check after an upstream-only read cancellation. Bound one block
   to 1 MiB before its delimiter. HTTP keepalives continue until a complete block or terminal result,
@@ -2050,6 +2054,14 @@ engine forks land; the scheduler interface will not change shape.
 
 ### 5.5 Queue semantics
 
+An enqueue commits its canonical model, queue position and ticket index from one current configuration
+generation. An exact take checks the selected generation and engine identity before it removes or
+charges the ticket. A stale selection retries with the accepted canonical model. The admission feed
+reports thread registration, when needed, before enqueue and reports enqueue before selection or
+terminal settlement. A pending enqueue counts toward capacity but cannot dispatch before its feed
+publication. Cancellation and the original monotonic deadline are checked at that publication boundary
+and again before exact take. Shutdown closes both admission cuts before cancelling its wake token.
+
 The offline verified binding revalidates the still-current exact preparation and route generation
 before removing a ticket on a strict binding refusal. A stale result cannot settle its replacement.
 Temporary capacity loss parks the ticket. A definitive refusal settles once without a queue timer.
@@ -2499,6 +2511,22 @@ Admin/control (not OpenAI-compatible, our own contract):
   refuses if a switch is in flight unless `force`. `profile` names a declared
   serving tier; the ack echoes it and the wait-for-ready loop requires the
   reported window to fit.
+- `GET /admin/config/reload` reads the current configuration generation. `POST /admin/config/reload`
+  applies the startup file to that generation (§7.7). Both routes require the startup reload bearer
+  credential. Both return 200, `Cache-Control: no-store`, a strong `ETag` and a PascalCase
+  `{"Generation":n}` body. POST accepts one current strong `If-Match` tag and an empty body.
+  Tags are bound to the serving instance and generation. The first generation is 1. A no-op keeps
+  the tag. Failures use the lowercase error shape in §6.1 and omit the tag.
+
+  | HTTP | Error code |
+  | --- | --- |
+  | 400 | `invalid_reload_request` for a missing or malformed tag or a request body |
+  | 401 | `reload_unauthorized` with a Bearer challenge |
+  | 409 | `reload_busy` when work or the previous topology handoff prevents apply |
+  | 412 | `reload_stale` for another serving instance or an earlier generation |
+  | 422 | `reload_invalid_config` for a read or validation failure |
+  | 422 | `reload_requires_restart` for changes outside §7.7 |
+  | 503 | `reload_unavailable` once the router starts closing |
 - `GET /admin/status` — engines, loaded models, queue depths, in-flight,
   stats per thread/model/engine, and `FeedSubscriberFaults`: how many feed observer invocations have thrown since
   startup (§6.1).
@@ -2619,7 +2647,8 @@ bound on the wire. `docs/ai-integration.md` carries the same table for integrato
 
 ## 7. Configuration (TOML)
 
-Single file; loaded at boot; `--config` may repeat (merge, later wins).
+The server loads its startup file before serving. A file-backed server can optionally apply changes
+from that same path as described in §7.7.
 `lifecycle_owner` accepts `external`, `delegated` and `router` in TOML and JSON. Remove `remote`
 when setting it, including `remote = false`. Explicit `external` requires no controller or selector.
 Explicit `delegated` requires a usable selector and no Docker controller. Explicit `router` requires
@@ -2963,6 +2992,48 @@ distinct offline create projections and probe expectations. The selector's argum
 exclude `64k`, `96k` and `1024k`. Its HY4 profile map excludes all six wider tiers. Native launch
 projection remains gated. Host context fit, memory, artifact identity, exact-instance
 readiness and lifecycle authority need separate qualification.
+
+### 7.7 Runtime configuration reload
+
+Set `ARBOREAL_ROUTER_RELOAD_TOKEN` before starting a file-backed server to enable the reload
+routes in §6. The startup file is selected by the explicit command-line path, then
+`ARBOREAL_ROUTER_CONFIG`, then `AIR_CONFIG`, then `router.toml`. The server captures that absolute
+path and reloads from it. The operator replaces the file and supplies the ETag from an authenticated
+GET to POST. The request supplies neither a file path nor its contents. Programmatic configuration
+overrides and servers started without the reload credential have no reload routes.
+
+| Change | Apply rule |
+| --- | --- |
+| `default_model` | Live. Applies to new requests with neither an explicit model nor thread affinity. |
+| Addition or removal of externally managed engines | Router-wide work idle only. Can combine with a new default in the same apply. |
+| A retained engine declaration or relative engine order, native or delegated membership, and all other settings | Restart required. Includes endpoint, credentials, lifecycle plans, listener, scheduler, limits and configured threads. |
+
+An engine membership edit preserves the relative order of retained engines and appends additions in
+ordinal name order. Conflicting new aliases, case-folded engine name collisions and duplicate JSON
+properties are refused. The parser and normal startup topology checks also apply to candidate
+files. Restart-only declarations preserve explicit values and ordering where the mapper uses it.
+
+A changed effective default needs a configured model in the candidate or a retained, healthy,
+unclaimed external engine reporting it at publication. The reported evidence is checked under
+the same transition gate used by that runtime's capability writers. Managed defaults use immutable
+configured declarations. External health discovery still governs dispatch. A new engine starts
+with unknown capability and has no discovered model rows until it reports them. Existing thread
+affinity remains in effect after topology changes. When the model is known unavailable, a new
+request for it gets the ordinary refusal.
+
+Router-wide work idle excludes queued tickets, logical selections, physical inference, accepted
+admin switch waits and claimed switches. Physical inference remains active through disposal of a
+late response after the ticket times out. A topology apply checks idle and fences removed engines
+before the new map is visible. A busy apply leaves every affected engine open. An already-issued
+health read may finish cleanup, but a fenced runtime cannot start the next HTTP leg or publish its
+result. An active publication from a removed engine makes the apply busy until its event append
+finishes. Busy and invalid candidates preserve the current generation.
+
+Decision 75 bounds decision 50's startup-only assumption to each published engine definition.
+The router retains the runtime and definition of every unchanged engine. An accepted switch and
+any joined waiters use the target resolved before claim. An accepted stream keeps its selected
+runtime and upstream bytes. Prospective dispatch revalidates the current generation and the exact
+runtime before taking the ticket. Selective native quarantine and reset remain open.
 
 ## 8. Prefix normalization & affinity
 
@@ -3384,6 +3455,10 @@ and cohort/residency hysteresis in the scheduler (§12.3 hook).
   (small request served, oversized request queues behind a profile switch that
   widens the engine's reported window, then completes); health probe failure;
   real HTTP through Kestrel against the stub engine.
+- **Configuration reload** (`ConfigReloadWireTests`, `ConfigReloadRaceTests`): authenticated
+  file apply, generation readback and rejection, exact stream bytes and a held native switch,
+  queue and shutdown ordering, idle external retirement, detached response disposal, and
+  retained external reported-default validation.
 - **Benchmark** (`bench/`, not part of the test suite): overhead ladder against a shared
   fake engine; the gate for any §9.1 claim and the regression net for streaming handoff
   stalls. See `docs/benchmarks.md`.

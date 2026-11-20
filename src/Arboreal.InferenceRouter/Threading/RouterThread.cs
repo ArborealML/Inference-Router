@@ -32,9 +32,12 @@ public sealed class RouterThread
 
     public void SetPriority(ThreadPriority priority)
     {
-        Volatile.Write(ref _priorityCode, Encode(priority));
-        PriorityChanged?.Invoke(this, priority);
+        SetPriorityValue(priority);
+        NotifyPriorityChanged(priority);
     }
+
+    internal void SetPriorityValue(ThreadPriority priority) => Volatile.Write(ref _priorityCode, Encode(priority));
+    internal void NotifyPriorityChanged(ThreadPriority priority) => PriorityChanged?.Invoke(this, priority);
 
     /// <summary>Raised when the priority changes; the queue reorders in response.</summary>
     public event EventHandler<ThreadPriority>? PriorityChanged;
@@ -115,10 +118,12 @@ public sealed class RouterTicket
     /// <summary>Wiring from the caller's cancellation token to this ticket's cancel path. Dropped
     /// when the ticket reaches a terminal state, because the registration is rooted in the caller's
     /// token — for a server request that is the connection's abort token, which outlives the request.</summary>
-    internal CancellationTokenRegistration CallerLink;
-    /// <summary>Arms the queue-wait bound for a request that declared max_queue_time; disposed when
-    /// the ticket reaches a terminal state.</summary>
-    internal System.Threading.Timer? QueueTimer;
+    private CancellationTokenRegistration _callerLink;
+    private Timer? _queueTimer;
+    private readonly object _hooks = new();
+    private bool _queueWaitEnded;
+    internal bool PendingEnqueuePublication;
+    internal string? DeferredQueueEnd;
     private int _terminal;
     private int _admissionRevoked;
     internal bool CanPrepareAdmission => Volatile.Read(ref _terminal) == 0 &&
@@ -132,12 +137,68 @@ public sealed class RouterTicket
     /// already finished.</summary>
     internal bool TryEnterTerminal() => Interlocked.CompareExchange(ref _terminal, 1, 0) == 0;
     internal bool IsTerminal => Volatile.Read(ref _terminal) != 0;
+
+    internal void StoreTerminalState(TicketState state) => _state = state;
+    internal void SignalTerminalStream() => _streamReady.TrySetResult(null);
+
+    internal void InstallCallerLink(CancellationTokenRegistration registration)
+    {
+        lock (_hooks)
+        {
+            if (!IsTerminal)
+            {
+                _callerLink = registration;
+                return;
+            }
+        }
+        registration.Unregister();
+    }
+
+    internal void InstallQueueTimer(Timer timer)
+    {
+        lock (_hooks)
+        {
+            if (!_queueWaitEnded && !IsTerminal)
+            {
+                _queueTimer = timer;
+                return;
+            }
+        }
+#pragma warning disable IDISP007 // Caller transfers the newly created timer even when the queue wait has already ended.
+        timer.Dispose();
+#pragma warning restore IDISP007
+    }
+
+    internal void EndQueueWait()
+    {
+        Timer? timer;
+        lock (_hooks)
+        {
+            _queueWaitEnded = true;
+            timer = _queueTimer;
+            _queueTimer = null;
+        }
+        timer?.Dispose();
+    }
+
+    internal void ChangeQueueTimer(TimeSpan due)
+    {
+        Timer? timer;
+        lock (_hooks) timer = _queueTimer;
+        try { timer?.Change(due, Timeout.InfiniteTimeSpan); }
+        catch (ObjectDisposedException) { }
+    }
+
     internal void DetachWaitHooks()
     {
-        // The queue timer is disposed by the code that created it (RouterCore owns it); this only
-        // drops the registration wired to the caller's token.
-        try { CallerLink.Dispose(); } catch (ObjectDisposedException) { }
-        CallerLink = default;
+        CancellationTokenRegistration registration;
+        lock (_hooks)
+        {
+            registration = _callerLink;
+            _callerLink = default;
+        }
+        registration.Unregister();
+        EndQueueWait();
     }
     /// <summary>Streaming responses: ordered upstream byte chunks (SSE frames as received).
     /// Null until admission creates the channel for a streaming request.</summary>
