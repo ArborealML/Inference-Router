@@ -1,11 +1,11 @@
 ---
 id: TASK-144
 title: Plan hardware-specific qualification of stepped inference tiers
-status: Waiting
+status: Preparing
 assignee:
-  - '@gpt-6.2-sol-release'
+  - '@gpt-6.2-sol-config'
 created_date: '2026-11-20T00:33:00Z'
-updated_date: '2026-11-20T16:57:00Z'
+updated_date: '2026-11-20T17:14:00Z'
 labels: []
 milestone: m-14
 dependencies: []
@@ -15,7 +15,7 @@ ordinal: 142000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Wake: independent review of the hardware-specific air tune plan prepared on 72c39a0. Delivery will check the verdict against all five planning criteria. The plan covers repeatable per-window workload, bounded concurrency search, speed metrics, hardware identity and comparison after an upgrade. Benchmark execution and default changes remain separate.
+Config is amending the reviewed air tune plan on 72c39a0. Add a separately bounded 64k rendered-input and 32k output trial that detects output clamping. Require fresh independent process and hardware evidence, overlapping admitted test requests and bounded drain. Reconcile token and attempt counts with native retry and cache-reuse evidence; mark unsupported levels inconclusive. Retain the separate speed metrics and 64 GB versus 128 GB comparison. Independent rereview precedes any implementation or benchmark.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
