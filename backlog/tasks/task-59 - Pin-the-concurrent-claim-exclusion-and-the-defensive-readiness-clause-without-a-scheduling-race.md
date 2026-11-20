@@ -3,25 +3,25 @@ id: TASK-59
 title: >-
   Pin the concurrent-claim exclusion and the defensive readiness clause without
   a scheduling race
-status: Preparing
+status: Waiting
 assignee:
-  - '@gpt-6.2-sol-shutdown'
+  - '@gpt-6.2-sol-release'
 created_date: '2026-11-17T22:49:00Z'
-updated_date: '2026-11-20T21:19:00Z'
+updated_date: '2026-11-20T22:06:00Z'
 labels:
   - concurrency
   - testing
 milestone: m-2
 dependencies:
   - TASK-67
-priority: medium
+priority: high
 ordinal: 59000
 ---
 
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Shutdown is auditing existing switch-claim and readiness evidence on 6588da3, which contains the TASK-67 prerequisites. Identify what each test observes before, during and after the transition gate. Distinguish a waiter rereading state after commit from exclusion during commit, and a throwing post-install hook from failure before installation. Check the readiness marker against the healthy snapshot available after switch proof. Trace the dropped scheduling-dependent test separately from the forced compare-and-swap loser gap in SPEC §15.
+Wake on independent review of the fixture repair plan. Shutdown verified the clean 124d10f checkout and preserved the original readiness assertion and its marker-only reversal. The [failed Release job](https://github.com/ArborealML/Inference-Router/actions/runs/44824380288) had one failure and 1,809 passes. TheMarkerGoesUpBeforeTheEngineIsClaimed saw readiness false after 30 seconds. The fake increments LaunchCount before queueing its gate, so ReleaseOne can miss. The CI log does not establish the interleaving. After plan approval, qualify the failing case and the new readiness case, demonstrate the difference under controlled gate registration, then require correction review and green hosted CI on the corrected [draft](https://github.com/ArborealML/Inference-Router/pull/62).
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -32,6 +32,12 @@ Shutdown is auditing existing switch-claim and readiness evidence on 6588da3, wh
 - [ ] #4 the marker clause of the readiness rule is pinned at its own seam, or recorded as unreachable with the reason
 - [ ] #5 A throwing pre-install marker hook propagates its exception, clears the marker outside the transition gate, makes zero provider launches, and permits the next claim to succeed.
 <!-- AC:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Extend FailedPollDuringASwitchCannotWithdrawTheSwitchsPublishedWindows. Check the matching model roster and fitting window, then call public IsReadyFor with the same model and profile while the marker is held and after settlement. Expect false then true. Remove only the marker check in ReadyIn, verify the held assertion fails, and restore the exact original source for a final pass.
+<!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
 

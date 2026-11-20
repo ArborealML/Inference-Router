@@ -1,11 +1,11 @@
 ---
 id: TASK-56
 title: Emit one event per refusal on the queue-cap overflow path
-status: Waiting
+status: Done
 assignee:
   - '@gpt-6.2-sol-stream-delivery'
 created_date: '2026-11-17T20:41:00Z'
-updated_date: '2026-11-20T21:21:00Z'
+updated_date: '2026-11-20T21:40:00Z'
 labels:
   - wire
   - scheduling
@@ -18,16 +18,16 @@ ordinal: 56000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Wake on hosted qualification and integration of 326f133. The three focused Release tests passed. Changing the overflow reason, adding a second overflow outcome and adding duplicate disconnect cancellation each failed only the intended assertion. Independent review passed. [Reload admission](https://github.com/ArborealML/Inference-Router/pull/43) previously fixed the duplicate enqueue.
+[PR #60](https://github.com/ArborealML/Inference-Router/pull/60) landed at db15a64 and [main CI](https://github.com/ArborealML/Inference-Router/actions/runs/44821582439) passed all three jobs. The three focused Release tests passed. Changing the overflow reason, adding a second overflow outcome and adding duplicate disconnect cancellation each failed only the intended assertion. Independent review passed. [Reload admission](https://github.com/ArborealML/Inference-Router/pull/43) previously fixed the duplicate enqueue.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Events.Replay(0) after a queue-cap rejection shows exactly one queue.rejected with reason queue_overflow and no request.enqueued
+- [x] #1 Events.Replay(0) after a queue-cap rejection shows exactly one queue.rejected with reason queue_overflow and no request.enqueued
 - [x] #2 the model_unavailable admission refusal still shows one queue.rejected and no request.enqueued, pinned in the same test run
-- [ ] #3 SPEC 6.1 states one event per terminal admission outcome
+- [x] #3 SPEC 6.1 states one event per terminal admission outcome
 - [x] #4 A queued ticket reaching its deadline fails with deadline_exceeded and emits exactly one request.failed terminal event.
-- [ ] #5 Events.Replay(0) after a client disconnect shows exactly one request.cancelled and no request.completed
+- [x] #5 Events.Replay(0) after a client disconnect shows exactly one request.cancelled and no request.completed
 - [x] #6 Events.Replay(0) after a successful switch shows one engine.switch_completed and no engine.switch_failed
 <!-- AC:END -->
 

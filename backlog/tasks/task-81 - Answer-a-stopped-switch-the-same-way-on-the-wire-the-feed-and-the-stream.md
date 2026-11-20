@@ -1,11 +1,11 @@
 ---
 id: TASK-81
 title: Answer a stopped switch the same way on the wire, the feed, and the stream
-status: Waiting
+status: To Do
 assignee:
   - '@gpt-6.2-sol-stream-delivery'
 created_date: '2026-11-18T04:09:00Z'
-updated_date: '2026-11-20T20:45:00Z'
+updated_date: '2026-11-20T22:07:00Z'
 labels:
   - lifecycle
   - shutdown
@@ -18,7 +18,7 @@ ordinal: 81000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Wake on the .114 integration turn after the preceding native changes land. Correction 1837ef9 passed independent review and 22 targeted cases. The original 2db3092 passed 149 focused cases and Native AOT; three controls produced the expected failures. The change covers core shutdown during an armed upstream read on the active default HTTP stream. Verified-default callback wiring has source-only coverage. Queue, switch, idle-only and credited modes remain open.
+The [default active-stream shutdown change](https://github.com/ArborealML/Inference-Router/pull/61) landed in v0.12.114. It covers core shutdown during an armed upstream read after ordinary default HTTP streaming has committed. Verified-default callback wiring has static proof only. Queue, switch, idle-only and credited modes remain open under criterion 3. The integrated change passed 154 focused Release cases, server Native AOT and independent review. The disconnect interaction passed against the queue-event change. All three [post-merge checks](https://github.com/ArborealML/Inference-Router/actions/runs/44825528652) passed on 7ee853e.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

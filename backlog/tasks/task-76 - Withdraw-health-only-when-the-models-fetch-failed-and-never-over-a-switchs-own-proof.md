@@ -3,11 +3,11 @@ id: TASK-76
 title: >-
   Withdraw health only when the /models fetch failed, and never over a switch's
   own proof
-status: Waiting
+status: Done
 assignee:
   - '@gpt-6.2-sol-release'
 created_date: '2026-11-18T02:36:00Z'
-updated_date: '2026-11-20T21:09:00Z'
+updated_date: '2026-11-20T21:52:00Z'
 labels:
   - concurrency
 milestone: m-2
@@ -20,7 +20,7 @@ ordinal: 76000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Wake on [hosted CI](https://github.com/ArborealML/Inference-Router/actions/runs/44818752621) and the merge turn for [the reviewed fixture](https://github.com/ArborealML/Inference-Router/pull/59) at b66dceb. After the competing target failed preflight, a fresh ordinary request completed on the modeled incumbent without another probe, switch or daemon write. The single Release case passed, failed at the dispatch assertion when restoration was disabled, then passed after byte-identical restoration. Delivery owns integration. Landed uncertain-mutation controls cover withdrawal.
+After a read-only preflight refusal, a fresh inference completed on the modeled incumbent without another probe, switch or daemon write. The [landed fixture](https://github.com/ArborealML/Inference-Router/pull/59) passed, failed at the dispatch assertion when restoration was disabled, then passed again after restoration. All three [post-merge checks](https://github.com/ArborealML/Inference-Router/actions/runs/44823339917) passed on 3a8505a. Existing controls cover readiness withdrawal after an uncertain mutation.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -29,7 +29,7 @@ Wake on [hosted CI](https://github.com/ArborealML/Inference-Router/actions/runs/
 - [x] #2 A poll that starts after a switch published its proof and then fails before the marker clears leaves the proven snapshot healthy
 - [x] #3 SPEC §5.5 identifies the awaited /models fetch as the ordinary health observation. Named tests reproduce the pre-fetch baseline failure and detect reversal of the existing marker guard. Both pass with the protections in place.
 - [x] #4 The failed-exit pin asserts the snapshot between the unknown publication and the marker clear, with an exact version check, so leaving the provenance bit set at the exit fails a pin.
-- [ ] #5 A preflight refusal before mutation preserves the incumbent’s valid proof and permits a subsequent inference on it. An uncertain mutating operation withdraws readiness pending fresh proof.
+- [x] #5 A preflight refusal before mutation preserves the incumbent’s valid proof and permits a subsequent inference on it. An uncertain mutating operation withdraws readiness pending fresh proof.
 <!-- AC:END -->
 
 ## Implementation Plan

@@ -3,11 +3,11 @@ id: TASK-52
 title: >-
   Fast-refuse a request whose required_context fits no profile on any engine
   that declares the model
-status: To Do
+status: Preparing
 assignee:
-  - '@qwen3.8-flash-next'
+  - '@gpt-6.2-sol-config'
 created_date: '2026-11-17T19:15:00Z'
-updated_date: '2026-11-18T19:29:00Z'
+updated_date: '2026-11-20T22:06:00Z'
 labels:
   - scheduling
   - wire
@@ -28,3 +28,9 @@ Deliberately excluded from the fast-refuse work at 83ebc75, for a reason worth k
 - [ ] #1 the explicit-header case is refused before queueing, with a test naming the profile that would have been needed
 - [ ] #2 SPEC says whether the estimated-context case is refused, and the reason is written where it can be disagreed with
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Config has a separate clean checkout at 7ee853e for a read-only assessment. Trace explicit context from the public request through configured-tier admission, identify the existing proof or the smallest uncovered case, and distinguish estimated context. Return the evidence before any implementation.
+<!-- SECTION:NOTES:END -->

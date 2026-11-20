@@ -1,10 +1,11 @@
 ---
 id: TASK-147
 title: Ship MiniMax M3.1 Flash with stepped context profiles
-status: Preparing
+status: Waiting
 assignee:
-  - '@gpt-6.2-sol-config'
+  - '@gpt-6.2-sol-release'
 created_date: '2026-11-20T20:59:00Z'
+updated_date: '2026-11-20T22:02:00Z'
 labels: []
 milestone: m-4
 dependencies: []
@@ -15,7 +16,7 @@ ordinal: 145000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Config is amending the qualification plan. Include all seven HY4 projection cases that load the shared sample. Pin observed capacity with MiniMax loaded and unloaded, the exact refusal when there is no lifecycle owner, and zero switch attempts. Ship the same context ladder as HY4 for MiniMax M3.1 Flash. Treat 64k as the lowest normal selection, 96k as the normal default and 32k as an explicit fallback.
+Wake on the .114 and .115 landings so Delivery can compose the .116 MiniMax catalog. Independent review passed the supplied diff, and Delivery matched it to local commit 45fe8a0. All ten focused Release cases passed, including the seven existing HY4 cases that load the shared sample. The edited sample also passed offline config validation. The catalog selects 96k by default, offers 64k as the lowest normal tier and retains 32k as an explicit fallback. Hardware capacity requires separate qualification.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -24,3 +25,9 @@ Config is amending the qualification plan. Include all seven HY4 projection case
 - [ ] #2 Validate the shipped sample offline and test selection and forwarding against measured serving capacity, including an absent model and a request exceeding measured capacity.
 - [ ] #3 Document profile selection, distinguish configured tiers from selector support and hardware qualification, and preserve the historical 32k launch receipt.
 <!-- AC:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Add the seven MiniMax profiles and verified aliases to the shared Maya sample. Document the default, the explicit fallback and the Maya reserve. Validate the edited sample and all seven existing HY4 projection rows. Verify MiniMax routing at measured 32k and 96k and an unloaded model with positive reported capacity. Require the exact no-owner refusal with no switch or extra completion POST. Preserve the historical 32k selector fixture.
+<!-- SECTION:PLAN:END -->

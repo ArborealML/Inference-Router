@@ -1,11 +1,11 @@
 ---
 id: TASK-21
 title: Document the adopted operator dashboard and feed contract
-status: To Do
+status: Waiting
 assignee:
-  - '@gpt-6.2-sol'
+  - '@gpt-6.2-sol-stream-delivery'
 created_date: '2026-11-17T02:18:00Z'
-updated_date: '2026-11-18T20:30:00Z'
+updated_date: '2026-11-20T22:07:00Z'
 labels:
   - ui
   - wire
@@ -18,11 +18,7 @@ ordinal: 21000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-**Adopted; nobody is being asked anything:** 1 operator-first — a read-only view over the existing admin reads plus the SSE feed, counts scoped to retained events, no new event kinds; 2 `/admin` stays unauthenticated and loopback-only, reached over an operator-managed tunnel, no token on it; 3 no new feed event kind — continuity comes from sequence holes plus the exclusive cursor. Each was checked against [SPEC.md](https://github.com/ArborealML/Inference-Router/blob/main/SPEC.md) §6, §10, §12.5 and against the ring's eviction semantics in code before being recorded.
-
-**Remaining act (the coding session, about 30 minutes):** write those three postures into SPEC §6, §10 and §12.5 as a revision, with the revision-log line in the same commit, then start [TASK-11](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-11%20-%20Blazor-live-view-screens-plus-the-event-stream-additions-they-need.md), parked behind this answer.
-
-**Links:** [SPEC.md](https://github.com/ArborealML/Inference-Router/blob/main/SPEC.md) §6 (the admin surface and its error casing), §10 (the feed), §12.5 (the screens); the adjacent and deliberately separate `/v1` question: [TASK-34](https://github.com/ArborealML/Inference-Router/blob/main/backlog/tasks/task-34%20-%20Decision-what-the-caller-sees-when-a-generation-stalls-or-a-client-stops-reading.md) (answered).
+Wake on independent review of the dashboard documentation plan. Document the operator view using shipped admin reads and the SSE feed. Counts refer to retained events; sequence gaps and the exclusive cursor describe replay continuity. Remove the unshipped stats endpoint and the proposed shared gap event from the dashboard description. Distinguish recommended loopback deployment and operator-managed tunneling from configurable listener binding, and describe the separate credentials for reload and reset.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
