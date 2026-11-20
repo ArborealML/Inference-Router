@@ -15,12 +15,12 @@ ordinal: 139000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Config is implementing the seven-tier offline sample, catalog and projection on 7d664a5 after independent plan approval. Load the edited shipped sample, observe its discovery and probe requests and matching capability snapshot, then exercise fitting and refused tickets. Preserve the 32k default. The six wider tiers remain catalog intentions pending selector CLI, HY4 launch and readiness support, and hardware qualification.
+Config is implementing the seven-tier offline sample, catalog and projection on 7d664a5 after independent plan approval. Load the edited shipped sample, observe its discovery and probe requests and matching capability snapshot, then exercise fitting and refused tickets. Use 96k as the normal AIR default; keep 32k explicitly selectable for safe operation. The installed selector still defaults to 32k. The six wider tiers remain catalog intentions pending selector CLI, HY4 launch and readiness support, and hardware qualification.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 HY4 and its model aliases resolve 32k, 64k, 96k, 128k, 256k, 512k and 1024k as distinct profiles at 1024 tokens per k. Omitting the tier retains the 32k default.
+- [ ] #1 HY4 and its model aliases resolve 32k, 64k, 96k, 128k, 256k, 512k and 1024k as distinct profiles at 1024 tokens per k. Omitting the tier selects 96k; 32k requires explicit selection.
 - [ ] #2 A focused offline check compares the configured HY4 target against the installed selector launch settings and safeguards; document any unsupported native setting or activation prerequisite.
 - [ ] #3 The updated router configuration passes the config verb offline and identifies where operators enable the model.
 - [ ] #4 Offline readback verifies the exact launch and probe window for each tier. Unsupported launches refuse explicitly; the router only admits requests against verified live capacity.
