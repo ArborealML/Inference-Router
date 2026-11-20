@@ -1,7 +1,6 @@
 using System.Collections.Concurrent;
 using System.Net;
 using System.Text;
-using System.Text.Json;
 
 namespace Arboreal.InferenceRouter.Tests;
 
@@ -81,17 +80,21 @@ public partial class ConfigLoaderTests
         Assert.Equal(Hy4Canonical, runtime.CanonicalModel("hy4"));
         Assert.Equal(Hy4Canonical, runtime.CanonicalModel("hy4-flash-maya-xs"));
 
-        await RouteAsync(new(GlmCanonical, true, 262_144), "glm-flash", GlmCanonical, forwards: true, start: true);
-        await RouteAsync(new(GlmCanonical, true, 262_144), "hy4", Hy4Canonical, forwards: false);
-        await RouteAsync(new(Hy4Canonical, true, 32_768), "hy4-flash-maya-xs", Hy4Canonical, forwards: true);
-        await RouteAsync(new(Hy4Canonical, true, 32_768), "glm-flash", GlmCanonical, forwards: false);
-        await RouteAsync(new(Hy4Canonical, true, 32_768), "hy4", Hy4Canonical, forwards: false, minimum: 65_536);
-        await RouteAsync(new(Hy4Canonical, false, 32_768), "hy4", Hy4Canonical, forwards: false);
+        var glmLoaded = await PublishPhaseAsync(new(GlmCanonical, true, 262_144), start: true);
+        await RouteAsync(glmLoaded, "glm-flash", GlmCanonical, forwards: true);
+        await RouteAsync(glmLoaded, "hy4", Hy4Canonical, forwards: false);
+
+        var hy4Loaded = await PublishPhaseAsync(new(Hy4Canonical, true, 32_768));
+        await RouteAsync(hy4Loaded, "hy4-flash-maya-xs", Hy4Canonical, forwards: true);
+        await RouteAsync(hy4Loaded, "glm-flash", GlmCanonical, forwards: false);
+        await RouteAsync(hy4Loaded, "hy4", Hy4Canonical, forwards: false, minimum: 65_536);
+
+        var unloaded = await PublishPhaseAsync(new(Hy4Canonical, false, 32_768));
+        await RouteAsync(unloaded, "hy4", Hy4Canonical, forwards: false);
         Assert.Equal(2, mayaHttp.Forwards.Count);
         Assert.Equal(0, inert.CompletionCalls);
 
-        async Task RouteAsync(MayaPhase phase, string spelling, string canonical, bool forwards,
-            long? minimum = null, bool start = false)
+        async Task<EngineCapability> PublishPhaseAsync(MayaPhase phase, bool start = false)
         {
             var previousVersion = runtime.Capability.Version;
             var previousPair = mayaHttp.LastPair?.Number ?? 0;
@@ -116,10 +119,17 @@ public partial class ConfigLoaderTests
                 AssertMayaReadback(maya, pair, phase);
                 Assert.True(snapshot.Version > previousVersion);
                 Assert.True(MatchesMayaPhase(snapshot, phase));
+                return snapshot;
             }
             finally { events.Unsubscribe(OnEvent); }
+        }
 
-            var before = mayaHttp.Forwards.Count;
+        async Task RouteAsync(EngineCapability verified, string spelling, string canonical, bool forwards,
+            long? minimum = null)
+        {
+            // Equivalent polls preserve the current capability. Tickets in the same phase reuse it.
+            Assert.Same(verified, runtime.Capability);
+            var before = mayaHttp.Forwards.ToArray();
             var payload = $$$"""{"model":"{{{spelling}}}","messages":[{"role":"user","content":"ping"}]}""";
             var ticket = await router.EnqueueAsync("maya-hy4-fixture", new InferenceRequest
             {
@@ -132,19 +142,20 @@ public partial class ConfigLoaderTests
                 var result = await ticket.CompletionTask.WaitAsync(ct);
                 Assert.Equal("""{"choices":[{"message":{"role":"assistant","content":"pong"}}]}""", Encoding.UTF8.GetString(result));
                 Assert.Equal(maya.Name, ticket.Engine);
-                var sent = Assert.Single(mayaHttp.Forwards.Skip(before));
+                var sent = Assert.Single(mayaHttp.Forwards.Skip(before.Length));
                 Assert.Equal(HttpMethod.Post, sent.Method);
                 Assert.Equal(new Uri(maya.Endpoint, "/v1/chat/completions"), sent.Uri);
-                using var sentBody = JsonDocument.Parse(sent.Body);
-                Assert.Equal(canonical, sentBody.RootElement.GetProperty("model").GetString());
+                var expectedBody = $$$"""{"model":"{{{canonical}}}","messages":[{"role":"user","content":"ping"}]}""";
+                Assert.Equal(Encoding.UTF8.GetBytes(expectedBody), sent.Body);
             }
             else
             {
                 var error = await Assert.ThrowsAsync<RouterRequestException>(() => ticket.CompletionTask.WaitAsync(ct));
                 Assert.Equal("switch_failed", error.Code);
                 Assert.EndsWith("(no_lifecycle_owner)", error.Message, StringComparison.Ordinal);
-                Assert.Equal(before, mayaHttp.Forwards.Count);
+                Assert.Equal(before, mayaHttp.Forwards.ToArray());
             }
+            Assert.Same(verified, runtime.Capability);
         }
     }
 
