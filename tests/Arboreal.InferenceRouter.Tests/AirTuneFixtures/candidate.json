@@ -1,0 +1,244 @@
+{
+  "schema_version": 1,
+  "run_id": "22222222222222222222222222222222",
+  "instance_id": {
+    "kind": "known",
+    "value": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  },
+  "hardware": {
+    "physical_ram_bytes": {
+      "kind": "known",
+      "value": 137438953472
+    },
+    "physical_swap_bytes": {
+      "kind": "known",
+      "value": 8589934592
+    },
+    "ram_limit_bytes": {
+      "kind": "finite",
+      "value": 57982058496
+    },
+    "ram_plus_swap_limit_bytes": {
+      "kind": "finite",
+      "value": 60129542144
+    },
+    "swap_only_limit_bytes": {
+      "kind": "finite",
+      "value": 2147483648
+    },
+    "limit_source": {
+      "kind": "known",
+      "value": "fixture-cgroup-v2"
+    },
+    "cpu_model": {
+      "kind": "known",
+      "value": "fixture-cpu"
+    },
+    "cpu_affinity_sha256": {
+      "kind": "known",
+      "value": "e169bdf59fac30d230f7d21be511d04dc8cc61e5edb1d8255758bc220ba3d4c7"
+    },
+    "cpu_quota": {
+      "kind": "unlimited"
+    },
+    "gpus": {
+      "kind": "known",
+      "value": [
+        {
+          "id": "fixture-gpu",
+          "vram_bytes": {
+            "kind": "known",
+            "value": 25769803776
+          }
+        }
+      ]
+    },
+    "os": {
+      "kind": "known",
+      "value": "fixture-os"
+    },
+    "driver": {
+      "kind": "known",
+      "value": "fixture-driver-2"
+    },
+    "power": {
+      "kind": "known",
+      "value": "fixture-power"
+    },
+    "thermals": {
+      "kind": "known",
+      "value": "fixture-thermals"
+    },
+    "background": {
+      "kind": "unknown"
+    }
+  },
+  "target": {
+    "model": {
+      "kind": "known",
+      "value": "illustrative-model"
+    },
+    "tier": {
+      "kind": "known",
+      "value": "96k"
+    },
+    "quantization": {
+      "kind": "known",
+      "value": "fixture-quant"
+    },
+    "runtime_build": {
+      "kind": "known",
+      "value": "fixture-build"
+    },
+    "nominal_context": {
+      "kind": "known",
+      "value": 98304
+    },
+    "observed_context": {
+      "kind": "known",
+      "value": 98304
+    },
+    "usable_context": {
+      "kind": "known",
+      "value": 98296
+    },
+    "configured_slots": {
+      "kind": "known",
+      "value": 4
+    },
+    "observed_slots": {
+      "kind": "known",
+      "value": 4
+    },
+    "weights_sha256": {
+      "kind": "known",
+      "value": "9a129038d9a00aed0cf6a7ea059ca50a813449061ab87848cf1a13eafdf33b2c"
+    },
+    "executable_sha256": {
+      "kind": "known",
+      "value": "a29c2123a01df1d0febb9d308a20d8a2fe3d40a91ca8b1294f59f08f9773ebea"
+    },
+    "tokenizer_sha256": {
+      "kind": "known",
+      "value": "5f97e3774c51edd1d63706c2ec3826c564a067794770cdab0f8c4797971cacf9"
+    },
+    "template_sha256": {
+      "kind": "known",
+      "value": "5cde0f1298f41f7d1c8b907a36992a7a513225a2615bd6e307bf1a9149b06b40"
+    },
+    "recipe_sha256": {
+      "kind": "known",
+      "value": "e1d8e552330911f9f779f85b6f2c00a15e790dcc3fbb3b28f5da1d660a30c5b8"
+    },
+    "shared_settings_sha256": {
+      "kind": "known",
+      "value": "1bb3c07281662ded73554a3ac200b21e3cf0a9dbcdc0bb7203a0424d916f40a8"
+    },
+    "cache_policy_sha256": {
+      "kind": "known",
+      "value": "0fee07a0f378bdadc30367c1b866388bf0c69c496727323ea783680b84d1445e"
+    },
+    "deadline_policy_sha256": {
+      "kind": "known",
+      "value": "5fe89243e5e3d43eec8979a6d81ab0471fe06bc9aa2589af618da07a8b74d2bd"
+    },
+    "adapter_sha256": {
+      "kind": "known",
+      "value": "ae1eae1d76e5b7c865c4122ce366a08025842566d2d96c75cc13e6353a73db0d"
+    }
+  },
+  "workload": {
+    "id": "near-window-text-v1",
+    "generator": {
+      "kind": "known",
+      "value": "fixture-generator-v1"
+    },
+    "generator_sha256": {
+      "kind": "known",
+      "value": "9123dcbb0b42652b0e105956c68d3ca2ff34584f324fa41a29aedd32b883e131"
+    },
+    "seed": {
+      "kind": "known",
+      "value": "19b25856e1c150ca834cffc8b59b23adbd0ec0389e58eb22b3b64768098d002b"
+    },
+    "warmup_corpus_sha256": {
+      "kind": "known",
+      "value": "f3cc8e2fe394647dddaa2f708df899aec00155b80993166a114d0323b57f6515"
+    },
+    "warmup_body_sha256": {
+      "kind": "known",
+      "value": "ade148272b5cd08c566146289d92d9da9ebad96ccb9bd259ae3c7fc858d91111"
+    }
+  },
+  "cap": 4,
+  "levels": [
+    {
+      "concurrency": 1,
+      "status": "passed",
+      "corpus_sha256": {
+        "kind": "known",
+        "value": "cc6ac5bbfaaddea72a328f8f2ff6ed6233e76de047bccc0b784d9cdd22f09d53"
+      },
+      "body_sha256": {
+        "kind": "known",
+        "value": "ab8f0daab02d498672f6648be672708f964ce59fdeb88e52efb1fd61d8068355"
+      },
+      "wave_output_tokens_per_second": [
+        8,
+        6,
+        7
+      ]
+    },
+    {
+      "concurrency": 2,
+      "status": "passed",
+      "corpus_sha256": {
+        "kind": "known",
+        "value": "2486d357b5f70f42839b2486dd710086238e4a5d9aa77e9142f960b67d59c6c5"
+      },
+      "body_sha256": {
+        "kind": "known",
+        "value": "ab45339762e43182285264e15a58fb1ae79c771aa8657938d486d70a6a80889c"
+      },
+      "wave_output_tokens_per_second": [
+        10,
+        8,
+        9
+      ]
+    },
+    {
+      "concurrency": 3,
+      "status": "passed",
+      "corpus_sha256": {
+        "kind": "known",
+        "value": "07f098e4671c5a4d61ad72c76c80eb63198519953866adda52a0d43698cfc292"
+      },
+      "body_sha256": {
+        "kind": "known",
+        "value": "10a7bcb48d01f5fbdffa0fd92f614c57831a6c8314e74d600fabcac7b71da219"
+      },
+      "wave_output_tokens_per_second": [
+        12,
+        10,
+        11
+      ]
+    },
+    {
+      "concurrency": 4,
+      "status": "passed",
+      "corpus_sha256": {
+        "kind": "known",
+        "value": "868c3a10fada8360973932dfdc5466eba4f9189b181f74d961b039e2d8026a2f"
+      },
+      "body_sha256": {
+        "kind": "known",
+        "value": "835941664f7d1a19752c78b8e79df527af0941b886972d42c9e2b726abc67301"
+      },
+      "wave_output_tokens_per_second": [
+        15,
+        13,
+        14
+      ]
+    }
+  ]
+}

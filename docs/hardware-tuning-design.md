@@ -1,12 +1,12 @@
 # Hardware-specific inference tuning
 
-`air tune` is a proposed AIR command for measuring context capacity and concurrency on one operator-prepared engine. It would produce a hardware-specific record and advisory configuration. The command, its collector integration, and the workloads below describe a design. The example results are illustrative.
+The proposed `air tune run` would measure context capacity and concurrency on one operator-prepared engine and produce a hardware-specific record and advisory configuration. The run command, collector integration and workloads below describe a design. The example results are illustrative. AIR provides an offline comparison command for two saved short-grid summaries on supported Linux x64 systems. [Comparison format and platform requirements](../SPEC.md#111-offline-tuning-comparison)
 
 ## Choose an engine and profile
 
 ```text
 air tune run --config tune.toml --engine ENGINE --model MODEL --profile TIER --max-concurrency 4 --host-record host.json --out run.json
-air tune compare --baseline ram64/ --candidate ram128/
+air tune compare --baseline ram64-summary.json --candidate ram128-summary.json
 ```
 
 Each run uses one explicit profile of one configured engine and model. To sweep a ladder, the authorized operator prepares an isolated instance for each supported tier and saves a separate run. The proposed command talks directly to that configured engine so router queuing, routing to another engine, and router admission caps are outside the measurement. Lifecycle, deployment approval, and any subsequent TOML changes stay with the operator. The comparison command reads saved records offline.

@@ -158,7 +158,7 @@ public sealed class CliCompletionProcessTests
         }
     }
 
-    private static async Task<ProcessResult> RunCliAsync(string verb, string[] args, string? stdin, CancellationToken ct)
+    internal static async Task<ProcessResult> RunCliAsync(string verb, string[] args, string? stdin, CancellationToken ct)
     {
         var dll = Path.Combine(AppContext.BaseDirectory, "air.dll");
         Assert.True(File.Exists(dll), $"CLI project output missing from test directory: {dll}");
@@ -232,5 +232,5 @@ public sealed class CliCompletionProcessTests
     private sealed record Scenario(int Status, bool Stream, string Body, int ExitCode, string TextOut, string JsonOut,
         string TextError, string JsonError);
     private sealed record ObservedRequest(string Method, string? Path, string Thread, string? Priority, JsonElement Body);
-    private sealed record ProcessResult(int ExitCode, byte[] Stdout, byte[] Stderr);
+    internal sealed record ProcessResult(int ExitCode, byte[] Stdout, byte[] Stderr);
 }
