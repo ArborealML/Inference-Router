@@ -45,7 +45,7 @@ public sealed partial class AirTuneCompareOfflineTests : IDisposable
             Row(report, 2), StringComparison.Ordinal);
         Assert.Contains("baseline failed", Row(report, 3), StringComparison.Ordinal);
         Assert.Contains("baseline untested", Row(report, 4), StringComparison.Ordinal);
-        Assert.Single(report.Split('\n').Where(line => line.Contains("observational delta", StringComparison.Ordinal)));
+        Assert.Single(report.Split('\n'), line => line.Contains("observational delta", StringComparison.Ordinal));
     }
 
     [Theory(Timeout = 30_000)]
@@ -423,8 +423,8 @@ public sealed partial class AirTuneCompareOfflineTests : IDisposable
         Assert.Equal(diagnostic + Environment.NewLine, Encoding.UTF8.GetString(result.Stderr));
     }
 
-    private static string Row(string report, int level) => Assert.Single(report.Split('\n')
-        .Where(line => line.StartsWith(FormattableString.Invariant($"C={level}: "), StringComparison.Ordinal)));
+    private static string Row(string report, int level) => Assert.Single(report.Split('\n'),
+        line => line.StartsWith(FormattableString.Invariant($"C={level}: "), StringComparison.Ordinal));
 
     private static void AssertRedacted(ProcessResult result)
     {
