@@ -27,6 +27,39 @@ public sealed class CliCompletionProcessTests
     private static readonly TimeSpan RunLimit = TimeSpan.FromSeconds(15);
     private static readonly TimeSpan CleanupLimit = TimeSpan.FromSeconds(5);
 
+    [Fact(Timeout = 30_000)]
+    public async Task NamedPipeDockerCliConfigRefusesBeforeSuccessOutput()
+    {
+        const string configuration = $$"""
+            [engine.fixture]
+            kind = "openai-compatible"
+            endpoint = "http://127.0.0.1/v1"
+            lifecycle_owner = "router"
+
+            [engine.fixture.docker]
+            image = "fixture"
+            router_id = "test"
+            socket = "{{LifecycleAuthorityTests.NamedPipeDockerAddress}}"
+            """;
+        var directory = Directory.CreateTempSubdirectory("air-npipe-config-");
+        try
+        {
+            var path = Path.Combine(directory.FullName, "router.toml");
+            using var deadline = new CancellationTokenSource(RunLimit);
+            await File.WriteAllTextAsync(path, configuration, deadline.Token);
+            var result = await RunCliAsync("config", ["--config", path], null, deadline.Token);
+
+            Assert.Equal(1, result.ExitCode);
+            Assert.Empty(result.Stdout);
+            Assert.Equal("config invalid: " + LifecycleAuthorityTests.NamedPipeDockerError + Environment.NewLine,
+                Encoding.UTF8.GetString(result.Stderr));
+        }
+        finally
+        {
+            directory.Delete(recursive: true);
+        }
+    }
+
     public enum ResponseCase
     {
         CompletionWithSentinel,

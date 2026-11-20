@@ -215,6 +215,8 @@ public sealed class EngineDefinition
             : EngineLifecycleOwner.External);
         if (Remote && LifecycleOwner.HasValue && !LegacyLifecycleConfiguration)
             throw new RouterConfigException($"engine.{Name}: remove remote when setting lifecycle_owner");
+        if (owner == EngineLifecycleOwner.Router && native)
+            DockerLifecycleProvider.RejectWindowsNamedPipe(Docker!.Socket, Name);
         if (LifecycleOwner is null || LegacyLifecycleConfiguration) return owner;
         if (!Endpoint.IsAbsoluteUri || (Endpoint.Scheme != Uri.UriSchemeHttp && Endpoint.Scheme != Uri.UriSchemeHttps))
             throw new RouterConfigException($"engine.{Name}.endpoint must be an absolute http(s) URI");
