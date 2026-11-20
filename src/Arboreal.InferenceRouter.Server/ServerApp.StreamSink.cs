@@ -48,7 +48,7 @@ public static partial class ServerApp
                     catch (TimeoutException) when (!pending.IsCompleted)
                     {
                         releaseHere = false;
-                        _ = RetirePendingWriteAsync(pending, delivery, bytes, charged);
+                        _ = RetirePendingWriteAsync(Writer, pending, delivery, bytes, charged);
                         if (!ct.IsCancellationRequested)
                             Router?.FailSlowStream(Ticket, ct);
                         Writer.CancelPendingFlush();
@@ -57,7 +57,7 @@ public static partial class ServerApp
                     catch (OperationCanceledException) when (!pending.IsCompleted)
                     {
                         releaseHere = false;
-                        _ = RetirePendingWriteAsync(pending, delivery, bytes, charged);
+                        _ = RetirePendingWriteAsync(Writer, pending, delivery, bytes, charged);
                         Writer.CancelPendingFlush();
                         throw;
                     }
@@ -76,13 +76,14 @@ public static partial class ServerApp
             }
         }
 
-        private static async Task RetirePendingWriteAsync(Task<FlushResult> pending, HttpStreamDelivery delivery,
-            ReadOnlyMemory<byte> bytes, bool charged)
+        private static async Task RetirePendingWriteAsync(PipeWriter writer, Task<FlushResult> pending,
+            HttpStreamDelivery delivery, ReadOnlyMemory<byte> bytes, bool charged)
         {
-            // This detached operation owns only the active write's slice and any charged credit.
+            // A pending task need not retain its writer. Keep the writer and slice alive until settlement.
             // The exchange can abort and discard its independent queued data while the write settles.
             await ((Task)pending).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
             if (charged) delivery.Release(bytes.Length);
+            GC.KeepAlive(writer);
             GC.KeepAlive(bytes);
         }
     }
