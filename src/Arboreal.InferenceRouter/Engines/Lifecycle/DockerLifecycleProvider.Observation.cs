@@ -78,7 +78,7 @@ public sealed partial class DockerLifecycleProvider
 
     private static bool IsDockerTimestamp(string timestamp)
     {
-        if (timestamp.Length is < 20 or > 30 || !timestamp.EndsWith("Z", StringComparison.Ordinal) ||
+        if (timestamp.Length is < 20 or > 30 || timestamp[^1] != 'Z' ||
             !DateTime.TryParseExact(timestamp.AsSpan(0, 19), "yyyy-MM-dd'T'HH:mm:ss",
                 CultureInfo.InvariantCulture, DateTimeStyles.None, out var value) || value == DateTime.MinValue)
             return false;
