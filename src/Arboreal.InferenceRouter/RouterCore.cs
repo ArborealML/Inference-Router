@@ -1157,10 +1157,10 @@ public sealed class RouterCore : IInferenceRouter
             }
             catch (OperationCanceledException)
             {
-                // A cancelled first read is only the caller going away if the gate did not trip.
+                // Preserve the first-byte deadline path. Otherwise a stopped read still has to
+                // account for any bytes already staged, after checking caller cancellation below.
                 if (!firstToken && gate is not null && gate.Tripped) throw;
-                ct.ThrowIfCancellationRequested();
-                return null;
+                break;
             }
             if (read == 0) break;
             if (!firstToken)
@@ -1186,7 +1186,7 @@ public sealed class RouterCore : IInferenceRouter
             }
         }
 
-        // Cancellation takes precedence over classifying an upstream EOF.
+        // Caller cancellation takes precedence over classifying the upstream ending.
         ct.ThrowIfCancellationRequested();
         return blocks.HasIncompleteBlock ? "upstream SSE stream ended before a blank delimiter" : null;
     }

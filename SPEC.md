@@ -353,8 +353,9 @@ daemon transaction per engine. 137 tests green.
   the release, and a tag that moves after the first resolve. No tag has run the gate: still configured,
   not proven.
 - v0.12.100 — relay complete SSE blocks byte-for-byte and discard an unfinished block before a terminal
-  error. Bound one block to 1 MiB before its delimiter. HTTP keepalives continue until a complete block
-  or terminal result, and the response deadline still ends at the first positive raw read (§5.5, §6).
+  error. Apply the same block-boundary check after an upstream-only read cancellation. Bound one block
+  to 1 MiB before its delimiter. HTTP keepalives continue until a complete block or terminal result,
+  and the response deadline still ends at the first positive raw read (§5.5, §6).
 - v0.12.99 — verify the selected enrolled pair against an independent current topology head
   and freeze an inert offline descriptor (§5.3.1).
 - v0.12.98 — document seven HY4 Flash context targets on the shared external Maya listener and
@@ -2541,8 +2542,9 @@ work (TASK-30).
 
 EOF with an unfinished block and a block over the size limit both fail with `engine_error`. This
 includes an otherwise valid oversized event and an upstream `[DONE]` line without its blank delimiter.
-A read fault such as an upstream disconnect uses `engine_unreachable`. The relay discards the
-unfinished block, preserves the complete prefix, and sends a standalone `data: {"error":{…}}` event
+A read cancelled by the upstream alone uses the same block-boundary check as EOF. An I/O fault
+such as an upstream disconnect uses `engine_unreachable`. The relay discards the unfinished
+block, preserves the complete prefix, and sends a standalone `data: {"error":{…}}` event
 followed by `data: [DONE]` before closing. Clean EOF at a block boundary adds no bytes, including on an
 empty upstream or after complete blocks without a sentinel. A caller disconnect closes the relay
 without an extra terminal frame. The benchmark harness measured the time-to-first-token delay from

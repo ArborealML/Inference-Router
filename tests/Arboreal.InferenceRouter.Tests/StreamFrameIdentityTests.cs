@@ -31,7 +31,7 @@ public class StreamFrameIdentityTests
         var prefix = Encoding.UTF8.GetBytes(CompletePrefix);
         var bytes = Encoding.UTF8.GetBytes(CompletePrefix + unfinished);
         var releaseEnd = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        using var upstream = new FragmentedBody(bytes, bytes.Length, 1, releaseEnd.Task, faultAtEnd: fault);
+        using var upstream = new FragmentedBody(bytes, bytes.Length, 1, releaseEnd.Task, endFailure: fault ? Disconnect() : null);
         await AssertUpstreamOutcomeAsync(upstream, prefix, code, releaseEnd);
     }
 
@@ -42,7 +42,7 @@ public class StreamFrameIdentityTests
     public async Task Bytewise_Incomplete_Blocks_Are_Discarded(string unfinished, bool fault, string code)
     {
         var bytes = Encoding.UTF8.GetBytes(CompletePrefix + unfinished);
-        using var upstream = new FragmentedBody(bytes, 0, 1, faultAtEnd: fault);
+        using var upstream = new FragmentedBody(bytes, 0, 1, endFailure: fault ? Disconnect() : null);
         await AssertUpstreamOutcomeAsync(upstream, Encoding.UTF8.GetBytes(CompletePrefix), code);
     }
 
@@ -56,8 +56,19 @@ public class StreamFrameIdentityTests
         string first, string second, string completed)
     {
         var bytes = Encoding.UTF8.GetBytes(first + second);
-        using var upstream = new FragmentedBody(bytes, Encoding.UTF8.GetByteCount(first), bytes.Length, faultAtEnd: true);
+        using var upstream = new FragmentedBody(bytes, Encoding.UTF8.GetByteCount(first), bytes.Length, endFailure: Disconnect());
         await AssertUpstreamOutcomeAsync(upstream, Encoding.UTF8.GetBytes(completed), "engine_unreachable");
+    }
+
+    [Theory]
+    [InlineData("", null)]
+    [InlineData("data: {\"delta\":\"cut\"}\r\n", "engine_error")]
+    public async Task Upstream_Only_Read_Cancellation_Checks_For_An_Incomplete_Block(string unfinished, string? code)
+    {
+        var bytes = Encoding.UTF8.GetBytes(CompletePrefix + unfinished);
+        var upstreamCancellation = new OperationCanceledException("scripted upstream cancellation", new CancellationToken(canceled: true));
+        using var upstream = new FragmentedBody(bytes, 0, 1, endFailure: upstreamCancellation);
+        await AssertUpstreamOutcomeAsync(upstream, Encoding.UTF8.GetBytes(CompletePrefix), code);
     }
 
     [Theory]
@@ -383,9 +394,11 @@ public class StreamFrameIdentityTests
         }
     }
 
+    private static IOException Disconnect() => new("scripted upstream disconnect");
+
     // The HTTP handler supplies this stream directly to the upstream pump, so TCP coalescing
     // cannot erase the scripted boundaries. A zero-length partition is skipped: a zero read is EOF.
-    private sealed class FragmentedBody(byte[] bytes, int split, int stride, Task? gate = null, bool faultAtEnd = false) : Stream
+    private sealed class FragmentedBody(byte[] bytes, int split, int stride, Task? gate = null, Exception? endFailure = null) : Stream
     {
         private int _offset;
         private int _nextBoundary = split == 0 ? stride : split;
@@ -405,8 +418,8 @@ public class StreamFrameIdentityTests
                 await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
             }
 
-            if (faultAtEnd && _offset == bytes.Length)
-                throw new IOException("scripted upstream disconnect");
+            if (endFailure is not null && _offset == bytes.Length)
+                throw endFailure;
 
             var end = Math.Min(_nextBoundary, bytes.Length);
             var count = Math.Min(end - _offset, buffer.Length);
