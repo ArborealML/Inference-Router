@@ -957,12 +957,16 @@ public sealed partial class RouterCore : IInferenceRouter
 
         if (!res.IsSuccessStatusCode)
         {
-            var errBody = await res.Content.ReadAsByteArrayAsync(bodyCt).ConfigureAwait(false);
-            // The body is in hand, so the ceiling is spent: pass it *before* the terminal call, otherwise a
+            const int errorBodyCeiling = 256;
+            var errBody = new byte[errorBodyCeiling];
+            using var errorStream = await res.Content.ReadAsStreamAsync(bodyCt).ConfigureAwait(false);
+            var errorBytesRead = await errorStream.ReadAtLeastAsync(errBody, errorBodyCeiling,
+                throwOnEndOfStream: false, cancellationToken: bodyCt).ConfigureAwait(false);
+            // The excerpt is in hand, so pass the response gate *before* the terminal call. Otherwise a
             // failure inside Fail/event work could be caught by the ceiling filter and blamed on the engine.
             gate?.Pass();
             Fail(ticket, "engine_error",
-                $"{(int)res.StatusCode}: {System.Text.Encoding.UTF8.GetString(errBody.AsSpan(0, Math.Min(errBody.Length, 256)))}");
+                $"{(int)res.StatusCode}: {System.Text.Encoding.UTF8.GetString(errBody.AsSpan(0, errorBytesRead))}");
             return;
         }
 

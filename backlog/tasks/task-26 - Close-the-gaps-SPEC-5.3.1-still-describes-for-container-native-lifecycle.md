@@ -1,11 +1,11 @@
 ---
 id: TASK-26
 title: Close the gaps SPEC 5.3.1 still describes for container-native lifecycle
-status: To Do
+status: Preparing
 assignee:
   - '@gpt-6.2-sol-lifecycle'
 created_date: '2026-11-17T02:54:00Z'
-updated_date: '2026-11-20T04:29:00Z'
+updated_date: '2026-11-20T04:57:00Z'
 labels:
   - engine
   - lifecycle
@@ -19,7 +19,7 @@ ordinal: 26000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-The provider now checks independent evidence of the exact owned container state after a stop conflict. Remaining work includes fencing reentry after an ambiguous effect and preventing runtime readiness restoration after an acknowledged or uncertain stop.
+Lifecycle owns uncertain-stop recovery. The selective native reset plan passed independent review. Shutdown starts implementation after uncertain-stop recovery lands and both workers verify the shared switch-completion code. The plan covers canonical tier identity, late probes, delivery of the original failure after a successor becomes ready, and refusal of a reset using reload-only credentials before and after reload.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
