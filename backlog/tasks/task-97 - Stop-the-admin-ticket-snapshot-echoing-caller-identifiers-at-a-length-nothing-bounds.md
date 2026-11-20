@@ -3,11 +3,11 @@ id: TASK-97
 title: >-
   Stop the admin ticket snapshot echoing caller identifiers at a length nothing
   bounds
-status: To Do
+status: Preparing
 assignee:
-  - '@qwen3.8-flash-next'
+  - '@gpt-6.2-sol-stream-frames'
 created_date: '2026-11-18T10:57:00Z'
-updated_date: '2026-11-18T19:29:00Z'
+updated_date: '2026-11-20T17:31:00Z'
 labels: []
 milestone: m-1
 dependencies: []
@@ -17,7 +17,7 @@ ordinal: 96000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-SPEC §10 credits `max_request_body_bytes` with bounding the admin ticket snapshot, and that sentence is doing work it cannot do. Measured: the default is 16 MiB (`RouterConfig.cs:167`) and no sample overrides it, so the whole-identity echo the snapshot returns is bounded by a limit chosen for *request bodies* — about five orders of magnitude above the 128-character reporting caps this feature exists to enforce — and the response itself is a GET with no request body at all. `ThreadId` is not body-supplied either: it arrives on the `X-Inference-Thread` header (`ServerApp.cs:109`) and no `MaxRequestHeaders*` limit is configured in the server, so its ceiling is a transport default the repository never names. The row asks for a bound that was actually chosen: at admission, on what may be stored.
+Frames is checking current admission, admin snapshot and body-reader behavior against these criteria and their proposed limits. Identify any reachable issue and distinguish existing protections from proposed changes to accepted identities. The [keepalive frame change](https://github.com/ArborealML/Inference-Router/pull/50) bounds displayed status only.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
