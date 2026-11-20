@@ -3,11 +3,11 @@ id: TASK-30
 title: >-
   Bound the relay against a client that stops reading, and a generation that
   stalls after its first frame
-status: Preparing
+status: Waiting
 assignee:
-  - '@gpt-6.2-sol-stream-backpressure'
+  - '@gpt-6.2-sol-stream-delivery'
 created_date: '2026-11-17T07:01:00Z'
-updated_date: '2026-11-20T07:15:00Z'
+updated_date: '2026-11-20T07:22:00Z'
 labels:
   - stream
   - transport
@@ -21,7 +21,7 @@ ordinal: 29000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Backpressure is revising the stopped-reader soak plan after independent review. Demonstrate real socket pressure and distinguish router watchdog expiry from server transport timeouts on HTTP/1.1 and HTTP/2. Harness implementation and the measurement window await the reviewed plan. Positive defaults also require representative upstream timing replay.
+Wake: independent review of the revised stopped-reader soak plan on ba3c1cc. It addresses real socket pressure, HTTP/2 stream isolation and distinguishing router watchdog expiry from transport timeouts. Harness implementation and an exclusive measurement window await the verdict. Positive defaults also require representative upstream timing replay.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
