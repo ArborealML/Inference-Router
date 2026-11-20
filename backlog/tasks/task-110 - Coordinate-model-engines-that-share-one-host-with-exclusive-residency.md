@@ -1,11 +1,11 @@
 ---
 id: TASK-110
 title: Coordinate model engines that share one host with exclusive residency
-status: In Progress
+status: Waiting
 assignee:
   - '@gpt-6.2-sol-lifecycle'
 created_date: '2026-11-18T18:13:00Z'
-updated_date: '2026-11-19T23:47:00Z'
+updated_date: '2026-11-20T00:04:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -21,7 +21,7 @@ ordinal: 108000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Lifecycle is implementing the reviewed internal initial-launch receipt and refusal path on ac4d2be. The amended plan passed independent review on 942d220. Fence owner-only recovery and competing requests through both legacy switch wrappers and the receipt entry. Verify enrollment from trusted scope and actual checkpoint freshness at worker acceptance and issue. After Applied, historical lookup may return the original bytes; a fresh closed-ingress receipt also requires current owner and ingress authority. SPEC .96 is reserved.
+Waiting for independent commit review and hosted CI on [PR #36](https://github.com/ArborealML/Inference-Router/pull/36). Their results wake the delivery manager. The closed initial receipt candidate at 0f76243 passed all 15 focused Release cases with zero skips. It covers trusted enrollment, checkpoint freshness and recovery while ingress stays closed. Live enrollment and serving remain separate.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
