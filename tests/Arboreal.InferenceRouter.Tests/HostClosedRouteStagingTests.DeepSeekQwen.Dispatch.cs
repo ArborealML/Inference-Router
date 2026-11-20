@@ -127,7 +127,7 @@ public sealed partial class HostClosedRouteStagingTests
         finally
         {
             release.TrySetResult();
-            await blocked.WaitAsync(TimeSpan.FromSeconds(10));
+            await blocked.WaitAsync(TimeSpan.FromSeconds(10), CancellationToken.None);
             issuer.BeforeFirstWrite = null;
         }
 
