@@ -1,6 +1,6 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.112)
+Status: draft, continuously revised (v0.12.113)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
@@ -352,6 +352,8 @@ daemon transaction per engine. 137 tests green.
   that answers no `upload_url`, an upload that dies or answers no asset id, an asset name listed twice on
   the release, and a tag that moves after the first resolve. No tag has run the gate: still configured,
   not proven.
+- v0.12.113 — anchor the exact supervised Docker container ID and commissioned API before start.
+  Preserve that closed operation across a lost start acknowledgment or disputed journal persistence (§5.3.1).
 - v0.12.112 — require exact Docker observations for coordinated starts acknowledged with `204`,
   before the first readiness proof and on idle health ticks (§5.3.1).
 - v0.12.111 — compare two saved short-grid tuning summaries offline with exact same-concurrency
@@ -1953,7 +1955,16 @@ possible issue before entering the typed create port. It compares independently 
 commissioning against the original at acceptance, issue, start and fresh acknowledgment. An
 independent observation binds the exact wire bytes to the operation, epoch and daemon. The producer
 records their digest only after the bytes match the approval and separately observed effective image,
-process, resource and route settings agree. An exact running-instance observation qualifies Applied.
+process, resource and route settings agree. The current journal format records the verified full
+container ID, exact operation, create digest and independently commissioned daemon, socket and API
+version in revision 4. The writer reads back its anchored record before it issues Docker Start.
+Revision 5 Applied requires the acknowledged start and matching independent create and running
+evidence. The receipt and its serialized bytes bind the same operation and container ID as revision 4.
+A missing start acknowledgment keeps the exact operation and container ID fenced through reopen.
+Recovery issues no replacement or compensating write, and a running observation alone cannot
+settle the operation. Legacy revision 4 Applied remains available for historical lookup. An older
+Issued-only history stays held.
+
 Contradictory or malformed evidence keeps the installed effect fenced. If the head refuses to
 advance after a journal flush, the producer preserves the extra frame and old head. Reopening a split
 journal keeps the slot quarantined with no receipt, automatic repair, resend or successor. Historical
