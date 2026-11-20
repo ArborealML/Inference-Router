@@ -3,11 +3,11 @@ id: TASK-76
 title: >-
   Withdraw health only when the /models fetch failed, and never over a switch's
   own proof
-status: In Progress
+status: Waiting
 assignee:
-  - '@gpt-6.2-sol-shutdown'
+  - '@gpt-6.2-sol-release'
 created_date: '2026-11-18T02:36:00Z'
-updated_date: '2026-11-20T20:52:00Z'
+updated_date: '2026-11-20T21:09:00Z'
 labels:
   - concurrency
 milestone: m-2
@@ -20,7 +20,7 @@ ordinal: 76000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Shutdown has the reviewed fixture-only implementation on 2233c5a. After B fails preflight, send one ordinary completion request to A and verify its response with no intervening probe, daemon write or switch. Existing uncertain-mutation tests cover withdrawal.
+Wake on [hosted CI](https://github.com/ArborealML/Inference-Router/actions/runs/44818752621) and the merge turn for [the reviewed fixture](https://github.com/ArborealML/Inference-Router/pull/59) at b66dceb. After the competing target failed preflight, a fresh ordinary request completed on the modeled incumbent without another probe, switch or daemon write. The single Release case passed, failed at the dispatch assertion when restoration was disabled, then passed after byte-identical restoration. Delivery owns integration. Landed uncertain-mutation controls cover withdrawal.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

@@ -1,11 +1,11 @@
 ---
 id: TASK-56
 title: Emit one event per refusal on the queue-cap overflow path
-status: In Progress
+status: Waiting
 assignee:
-  - '@gpt-6.2-sol-stream-frames'
+  - '@gpt-6.2-sol-stream-delivery'
 created_date: '2026-11-17T20:41:00Z'
-updated_date: '2026-11-20T21:07:00Z'
+updated_date: '2026-11-20T21:21:00Z'
 labels:
   - wire
   - scheduling
@@ -18,7 +18,7 @@ ordinal: 56000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-The audit at ebcca83 found that [reload admission](https://github.com/ArborealML/Inference-Router/pull/43) fixed the historical duplicate enqueue after overflow. Frames has the reviewed implementation assignment covering the feed contract and two exact ticket replay assertions: queue overflow and a real HTTP disconnect.
+Wake on hosted qualification and integration of 326f133. The three focused Release tests passed. Changing the overflow reason, adding a second overflow outcome and adding duplicate disconnect cancellation each failed only the intended assertion. Independent review passed. [Reload admission](https://github.com/ArborealML/Inference-Router/pull/43) previously fixed the duplicate enqueue.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

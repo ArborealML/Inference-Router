@@ -5,7 +5,7 @@ status: Waiting
 assignee:
   - '@gpt-6.2-sol-release'
 created_date: '2026-11-17T02:54:00Z'
-updated_date: '2026-11-20T21:02:00Z'
+updated_date: '2026-11-20T21:24:00Z'
 labels:
   - engine
   - lifecycle
@@ -19,7 +19,7 @@ ordinal: 26000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Wake on the supervised pre-Start hold integration. [Coordinated Docker observation](https://github.com/ArborealML/Inference-Router/pull/57) landed at bbd8bb9 for instances started through the tracked 204 path. The refusal-audit correction passed all 215 focused Release cases and [main CI](https://github.com/ArborealML/Inference-Router/actions/runs/44816063374) passed all three jobs. The offline pre-Start hold at 449ff58 passed review, 31 focused cases and server AOT. Delivery is composing it on the observation landing. The explicit Windows named-pipe refusal at 1d3329d passed review and 20 focused Release cases. An absent socket retains its constructor error before I/O. External forwarding evidence covers the shipped path and exercised fixture. Delivery will compose .115 after .114 and verify hosted CI. [Docker diagnostics](https://github.com/ArborealML/Inference-Router/pull/53) landed at b0f8255. Full change detection and uncertain-start reconciliation remain open.
+Wake on .114 landing for integration of the reviewed Windows transport refusal. [Coordinated Docker observation](https://github.com/ArborealML/Inference-Router/pull/57) landed at bbd8bb9 for instances started through the tracked 204 path. The refusal-audit correction passed all 215 focused Release cases and [main CI](https://github.com/ArborealML/Inference-Router/actions/runs/44816063374) passed all three jobs. The [offline supervised hold](https://github.com/ArborealML/Inference-Router/pull/58) landed at a115a30. It records the exact container ID before issuing Start and retains it across reopen after a lost acknowledgment. All 31 focused Release cases passed and [main CI](https://github.com/ArborealML/Inference-Router/actions/runs/44819277351) passed all three jobs. The explicit Windows named-pipe refusal at 1d3329d passed review and 20 focused Release cases. An absent socket retains its constructor error before I/O. External forwarding evidence covers the shipped path and exercised fixture. Delivery will compose .115 after .114 and verify hosted CI. [Docker diagnostics](https://github.com/ArborealML/Inference-Router/pull/53) landed at b0f8255. Full change detection and uncertain-start reconciliation remain open.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

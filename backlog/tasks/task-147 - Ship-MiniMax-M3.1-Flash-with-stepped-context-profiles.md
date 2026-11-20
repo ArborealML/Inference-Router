@@ -1,9 +1,9 @@
 ---
 id: TASK-147
 title: Ship MiniMax M3.1 Flash with stepped context profiles
-status: Preparing
+status: Waiting
 assignee:
-  - '@gpt-6.2-sol-config'
+  - '@gpt-6.2-sol-release'
 created_date: '2026-11-20T20:59:00Z'
 labels: []
 milestone: m-4
@@ -15,7 +15,7 @@ ordinal: 145000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Config is preparing the shipped catalog plan on bbd8bb9. Ship the same context ladder as HY4 for MiniMax M3.1 Flash. Treat 64k as the lowest normal selection, 96k as the normal default and 32k as an explicit fallback.
+Wake on independent plan review of the shipped Maya catalog change on bbd8bb9. Delivery will check alias forwarding and measured capacity before implementation. Ship the same context ladder as HY4 for MiniMax M3.1 Flash. Treat 64k as the lowest normal selection, 96k as the normal default and 32k as an explicit fallback.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
