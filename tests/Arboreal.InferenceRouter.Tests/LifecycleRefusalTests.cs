@@ -297,7 +297,7 @@ public sealed class LifecycleRefusalTests
                 await inference.Entered.Task.WaitAsync(Limit);
                 releasePreflight.TrySetResult();
                 await entered.Task.WaitAsync(Limit);
-                Assert.Empty(feed.Replay(0).Where(entry => entry.Kind == "engine.switch_failed"));
+                Assert.DoesNotContain(feed.Replay(0), entry => entry.Kind == "engine.switch_failed");
                 Assert.False(refusal.IsCompleted);
                 inference.Release.TrySetResult();
                 Assert.True(await probe.WaitAsync(Limit));
