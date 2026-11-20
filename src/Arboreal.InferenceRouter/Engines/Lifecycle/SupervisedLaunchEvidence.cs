@@ -96,9 +96,20 @@ internal static class SupervisedLaunchEvidence
 
     private static bool SameFields(JsonElement expected, JsonElement actual, params string[] normalized)
     {
-        var expectedFields = expected.EnumerateObject().Where(field => !normalized.Contains(field.Name, StringComparer.Ordinal));
-        var actualFields = actual.EnumerateObject().Count(field => !normalized.Contains(field.Name, StringComparer.Ordinal));
-        return expectedFields.Count() == actualFields && expectedFields.All(field =>
-            actual.TryGetProperty(field.Name, out var value) && JsonElement.DeepEquals(field.Value, value));
+        var expectedCount = 0;
+        foreach (var field in expected.EnumerateObject())
+        {
+            if (normalized.Contains(field.Name, StringComparer.Ordinal)) continue;
+            expectedCount++;
+            if (!actual.TryGetProperty(field.Name, out var value) || !JsonElement.DeepEquals(field.Value, value))
+                return false;
+        }
+
+        var actualCount = 0;
+        foreach (var field in actual.EnumerateObject())
+        {
+            if (!normalized.Contains(field.Name, StringComparer.Ordinal)) actualCount++;
+        }
+        return expectedCount == actualCount;
     }
 }
