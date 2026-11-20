@@ -5,6 +5,7 @@ using System.Text.Json;
 using Arboreal.InferenceRouter;
 using Arboreal.InferenceRouter.Server;
 using Microsoft.AspNetCore.Builder;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Arboreal.InferenceRouter.Tests;
 
@@ -15,6 +16,8 @@ namespace Arboreal.InferenceRouter.Tests;
 /// </summary>
 public class ErrorContractTests
 {
+    private const int UpstreamErrorExcerptBytes = 256;
+    private const string ErrorBodyRequest = """{"model":"test-model","messages":[]}""";
 
     [Fact(Timeout = 30_000)]
     public async Task AnOversizedBodyIsRefusedWithTheErrorContract_NotAnOpaqueHostFailure()
@@ -220,9 +223,8 @@ public class ErrorContractTests
     /// router's sentence (§6.1), and their length is nobody's choice but the caller's. The criterion is the whole
     /// contract, not an exception's <c>Message</c>: the <c>/v1</c> status, the one lowercase shape, the message
     /// length, and a ceiling on the <b>serialized bytes</b> — escaping means the body is longer than the character
-    /// count, so a character assertion alone would let the wire grow while the test stayed green. Which layer did
-    /// the cutting is not the contract: the producer reads at most 256 bytes of an upstream error body and the
-    /// writer caps the finished sentence, so a caller who posts a 5,000-byte body gets a bounded answer either way.</summary>
+    /// count, so a character assertion alone would let the wire grow while the test stayed green.
+    /// This test bounds the reported error. The counted-stream fixture below measures upstream consumption.</summary>
     [Fact(Timeout = 30_000)]
     public async Task AnUpstreamBodyOfAnyLengthLeavesTheCallersErrorBodyBounded()
     {
@@ -257,6 +259,132 @@ public class ErrorContractTests
                 $"the serialized error body is {bytes.Length} bytes, over the ceiling of {WireText.ReasonChars * 6 + 256}");
         }
         finally { await app.StopAsync(); await app.DisposeAsync(); }
+    }
+
+    [Fact(Timeout = 30_000)]
+    public async Task UpstreamErrorBodyReadsAtMost256Bytes()
+    {
+        // The UTF-8 sequence at byte 256 crosses the boundary. Preserve the existing replacement fallback.
+        var head = new string('x', UpstreamErrorExcerptBytes - 1);
+        var bytes = Encoding.UTF8.GetBytes(head + "é" + new string('y', 4_743));
+        using var upstream = new CountedErrorBody(bytes);
+        using var errorContent = new StreamContent(upstream);
+        Assert.Null(errorContent.Headers.ContentLength);
+        using var fake = new ErrorBodyEngine(errorContent);
+        var (app, _, port) = await WireHarness.StartAsync(fake: fake);
+        await using var server = app;
+        using var http = new HttpClient { BaseAddress = new Uri($"http://127.0.0.1:{port}") };
+        using var bound = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        using var request = new StringContent(ErrorBodyRequest, Encoding.UTF8, "application/json");
+        using var response = await http.PostAsync("/v1/chat/completions", request, bound.Token);
+
+        Assert.Equal(HttpStatusCode.BadGateway, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync(bound.Token);
+        using var actual = JsonDocument.Parse(body);
+        using var expected = JsonDocument.Parse(
+            "{\"error\":{\"message\":\"400: " + head + "\\uFFFD\",\"code\":\"engine_error\",\"type\":\"air_error\"}}");
+        Assert.True(JsonElement.DeepEquals(expected.RootElement, actual.RootElement), body);
+
+        Assert.Equal(UpstreamErrorExcerptBytes, upstream.BytesConsumed);
+        Assert.Equal(UpstreamErrorExcerptBytes, upstream.FurthestRequestedPosition);
+        Assert.Equal(0, upstream.ReadsAtOrPastCeiling);
+    }
+
+    [Fact(Timeout = 30_000)]
+    public async Task UpstreamErrorBodyStallingBelowTheReadCeilingTimesOut()
+    {
+        using var upstream = new CountedErrorBody("short error"u8.ToArray(), holdAtEnd: true);
+        using var errorContent = new StreamContent(upstream);
+        using var fake = new ErrorBodyEngine(errorContent);
+        var clock = new ReadinessDeadlineTests.ManualClock();
+        var (app, _, port) = await WireHarness.StartAsync(fake: fake, responseTimeoutMs: 100);
+        await using var server = app;
+        app.Services.GetRequiredService<RouterCore>().ResponseTimeoutClockForTests = clock;
+        using var http = new HttpClient { BaseAddress = new Uri($"http://127.0.0.1:{port}") };
+        using var bound = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        using var request = new StringContent(ErrorBodyRequest, Encoding.UTF8, "application/json");
+        var response = http.PostAsync("/v1/chat/completions", request, bound.Token);
+
+        try
+        {
+            await upstream.HeldReadEntered.Task.WaitAsync(bound.Token);
+            Assert.Equal("short error"u8.Length, upstream.BytesConsumed);
+            clock.AdvanceTo(99);
+            Assert.False(response.IsCompleted);
+
+            clock.AdvanceTo(100);
+            using var timedOut = await response.WaitAsync(bound.Token);
+            Assert.Equal(HttpStatusCode.GatewayTimeout, timedOut.StatusCode);
+            AssertShape(await timedOut.Content.ReadAsStringAsync(bound.Token), "engine_timeout");
+        }
+        finally
+        {
+            upstream.ReleaseHeldRead();
+        }
+    }
+
+    private sealed class ErrorBodyEngine(StreamContent content) : FakeEngineHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            if (request.Method != HttpMethod.Post) return base.SendAsync(request, cancellationToken);
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.BadRequest) { Content = content });
+        }
+    }
+
+    // StreamContent passes this source through for streaming reads and copies from it for full reads.
+    // Route both reader overloads through the counter, which remains available after disposal.
+    private sealed class CountedErrorBody(byte[] bytes, bool holdAtEnd = false) : Stream
+    {
+        private const int ShortReadBytes = 17;
+        private readonly TaskCompletionSource _releaseHeldRead = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private int _bytesConsumed;
+        private int _furthestRequestedPosition;
+        private int _readsAtOrPastCeiling;
+
+        public TaskCompletionSource HeldReadEntered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public int BytesConsumed => Volatile.Read(ref _bytesConsumed);
+        public int FurthestRequestedPosition => Volatile.Read(ref _furthestRequestedPosition);
+        public int ReadsAtOrPastCeiling => Volatile.Read(ref _readsAtOrPastCeiling);
+
+        public void ReleaseHeldRead() => _releaseHeldRead.TrySetResult();
+
+        public override int Read(byte[] buffer, int offset, int count) => CountAndCopy(buffer.AsSpan(offset, count));
+
+        public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
+            => ReadAsync(buffer.AsMemory(offset, count), cancellationToken).AsTask();
+
+        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (holdAtEnd && BytesConsumed == bytes.Length)
+            {
+                HeldReadEntered.TrySetResult();
+                await _releaseHeldRead.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+            }
+            return CountAndCopy(buffer.Span);
+        }
+
+        private int CountAndCopy(Span<byte> buffer)
+        {
+            var position = BytesConsumed;
+            Volatile.Write(ref _furthestRequestedPosition, Math.Max(FurthestRequestedPosition, position + buffer.Length));
+            if (position >= UpstreamErrorExcerptBytes) Interlocked.Increment(ref _readsAtOrPastCeiling);
+            var count = Math.Min(ShortReadBytes, Math.Min(buffer.Length, bytes.Length - position));
+            bytes.AsSpan(position, count).CopyTo(buffer);
+            Volatile.Write(ref _bytesConsumed, position + count);
+            return count;
+        }
+
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+        public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+        public override void Flush() => throw new NotSupportedException();
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
     }
 
     /// <summary>§10, AC #6, the writer's own ceiling: an admin refusal that quotes the caller's own rejected value.
