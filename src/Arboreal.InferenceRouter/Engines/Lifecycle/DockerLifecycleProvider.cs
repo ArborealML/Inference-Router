@@ -276,42 +276,51 @@ public sealed class DockerLifecycleProvider : IEngineLifecycleProvider, IDisposa
                     .WithNativeStops(observations);
 
             var t = Math.Max(1, _cfg.StopTimeoutMs / 1000);
-            // 304 (already stopped), 404 (already gone) and 409 (not running) all mean the desired
-            // state holds. A previous switch leaves stopped containers behind, and treating that as a
-            // failure would refuse every switch after the first.
+            var containerPath = $"{_cfg.ApiVersion}/containers/{Uri.EscapeDataString(peer.Id)}";
             var stop = await CallAsync(
-                HttpMethod.Post, $"{_cfg.ApiVersion}/containers/{Uri.EscapeDataString(peer.Id)}/stop?t={t}", null, ct,
-                already: [304, 404, 409]).ConfigureAwait(false);
+                HttpMethod.Post, $"{containerPath}/stop?t={t}", null, ct,
+                already: [304, 404], requiredStatus: 204).ConfigureAwait(false);
             var disposition = stop.Status switch
             {
                 204 => NativeStopDisposition.Stopped,
                 304 => NativeStopDisposition.AlreadyStopped,
                 404 => NativeStopDisposition.Absent,
-                _ => stop.Ok ? NativeStopDisposition.Unconfirmed : NativeStopDisposition.Failed,
+                409 => await InspectStopConflictAsync(peer.Id, containerPath, ct).ConfigureAwait(false),
+                >= 200 and < 300 => NativeStopDisposition.Unconfirmed,
+                _ => NativeStopDisposition.Failed,
             };
-            var observation = new NativePeerStop(peer, disposition, stop.Ok && _cfg.RemoveStopped
+            var mayContinue = disposition is NativeStopDisposition.Stopped or NativeStopDisposition.AlreadyStopped
+                or NativeStopDisposition.Absent;
+            var conflict = stop.Status == 409;
+            var remove = mayContinue && _cfg.RemoveStopped && !(conflict && disposition == NativeStopDisposition.Absent);
+            var observation = new NativePeerStop(peer, disposition, remove
                 ? NativeRemovalDisposition.Incomplete : NativeRemovalDisposition.NotRequested);
             observe?.Invoke(observation);
-            if (!stop.Ok)
+            if (!mayContinue)
             {
                 observations.Add(observation);
-                return stop.Failure!.WithNativeStops(observations);
+                var failure = conflict
+                    ? LifecycleResult.Fail("http_409",
+                        $"the stop conflicted and Docker inspect could not verify that the exact owned container {peer.Id} had exited or was absent")
+                    : stop.Failure!;
+                return failure.WithNativeStops(observations);
             }
 
-            if (_cfg.RemoveStopped)
+            if (remove)
             {
-                // Removing is what keeps a model change from accumulating stopped containers on the
-                // host. It is refused for anything we do not own, which is the same proof as above.
+                // A peer observed exited after a conflict can restart before DELETE. An unforced
+                // DELETE lets the daemon refuse removal of the running peer.
                 var removal = await CallAsync(
-                    HttpMethod.Delete, $"{_cfg.ApiVersion}/containers/{Uri.EscapeDataString(peer.Id)}?force=true", null, ct,
-                    already: [404]).ConfigureAwait(false);
+                    HttpMethod.Delete, conflict ? containerPath : $"{containerPath}?force=true", null, ct,
+                    already: [404], requiredStatus: 204).ConfigureAwait(false);
                 observation = observation with
                 {
                     Removal = removal.Status switch
                     {
                         204 => NativeRemovalDisposition.Removed,
                         404 => NativeRemovalDisposition.Absent,
-                        _ => removal.Ok ? NativeRemovalDisposition.Unconfirmed : NativeRemovalDisposition.Failed,
+                        >= 200 and < 300 => NativeRemovalDisposition.Unconfirmed,
+                        _ => NativeRemovalDisposition.Failed,
                     },
                 };
                 observe?.Invoke(observation);
@@ -324,6 +333,25 @@ public sealed class DockerLifecycleProvider : IEngineLifecycleProvider, IDisposa
             observations.Add(observation);
         }
         return LifecycleResult.Ok($"stopped={peers.Count}").WithNativeStops(observations);
+    }
+
+    private async ValueTask<NativeStopDisposition> InspectStopConflictAsync(
+        string id, string containerPath, CancellationToken ct)
+    {
+        // A prefix or a name cannot prove that the peer from inventory is absent.
+        if (id.Length != 64 || !id.All(char.IsAsciiHexDigit)) return NativeStopDisposition.Unconfirmed;
+
+        var inspect = await CallAsync(HttpMethod.Get, $"{containerPath}/json", null, ct,
+            already: [404], requiredStatus: 200).ConfigureAwait(false);
+        if (!inspect.Ok) return NativeStopDisposition.Unconfirmed;
+        if (inspect.Status == 404) return NativeStopDisposition.Absent;
+
+        var observed = TryRead(inspect.Body, DockerJsonContext.Default.DockerContainerInspectResponse);
+        return observed is { Config.Labels: { } labels } && observed.Id == id
+            && labels.TryGetValue(LabelRouter, out var router) && router == _scope.RouterId
+            && labels.TryGetValue(LabelEngine, out var engine) && engine == _scope.EngineName
+            && observed.State is { Status: "exited", Running: false, Restarting: false, Paused: false, Dead: false }
+            ? NativeStopDisposition.AlreadyStopped : NativeStopDisposition.Unconfirmed;
     }
 
     public async ValueTask<LifecycleResult> LaunchAsync(LifecycleTarget target, CancellationToken ct)

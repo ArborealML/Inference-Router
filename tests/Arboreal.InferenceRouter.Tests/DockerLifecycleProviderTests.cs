@@ -41,6 +41,7 @@ public sealed class FakeDockerDaemonHandler : HttpMessageHandler
 public sealed class DockerLifecycleProviderTests
 {
     private const string Ours = "abc123def456";
+    private const string FullPeerId = "abc123def4567890abc123def4567890abc123def4567890abc123def4567890";
     private const string Locator = "registry.local/strata:2026-11";
     private const string ImageId = "sha256:1111111111111111111111111111111111111111111111111111111111111111";
     private const string DifferentId = "sha256:3333333333333333333333333333333333333333333333333333333333333333";
@@ -50,7 +51,7 @@ public sealed class DockerLifecycleProviderTests
     private const string RemoteBase = "https://daemon.invalid:2376/docker/";
 
     private static DockerLifecycleConfig Cfg(string api = "v1.44", bool pinned = true, string platform = "linux/amd64",
-        string socket = LocalSocket, string routerId = "r1", bool waitHealth = true) => new()
+        string socket = LocalSocket, string routerId = "r1", bool waitHealth = true, bool removeStopped = true) => new()
     {
         Image = Locator,
         ImageIdentity = pinned ? new DockerImageIdentity(ImageId, RepoDigest, platform) : null,
@@ -62,6 +63,7 @@ public sealed class DockerLifecycleProviderTests
         HostPort = 18021,
         ContainerPort = 8080,
         WaitHealth = waitHealth,
+        RemoveStopped = removeStopped,
     };
 
     private static LifecycleTarget Target() => new(
@@ -830,6 +832,92 @@ public sealed class DockerLifecycleProviderTests
         Assert.Equal(["POST /v1.44/containers/create"], daemon.Requests.ToArray());
     }
 
+    private const string ExitedState = """{"Status":"exited","Running":false,"Restarting":false,"Paused":false,"Dead":false}""";
+
+    private static string StopConflictInspect(string id = FullPeerId, string router = "r1", string engine = "strata",
+        string state = ExitedState) =>
+        $$$"""{"Id":"{{{id}}}","Config":{"Labels":{"arboreal.router":"{{{router}}}","arboreal.engine":"{{{engine}}}"}},"State":{{{state}}}}""";
+
+    [Theory(Timeout = 20_000)]
+    [InlineData("exited", true)]
+    [InlineData("exited", false)]
+    [InlineData("absent", true)]
+    [InlineData("absent", false)]
+    [InlineData("running", true)]
+    [InlineData("running", false)]
+    [InlineData("wrong-id", true)]
+    [InlineData("wrong-router", true)]
+    [InlineData("wrong-engine", true)]
+    [InlineData("missing-state", true)]
+    [InlineData("malformed", true)]
+    [InlineData("short-id", true)]
+    [InlineData("unexpected-inspect", true)]
+    [InlineData("restart", true)]
+    [InlineData("unexpected-stop", true)]
+    [InlineData("unexpected-remove", true)]
+    public async Task StopConflictRequiresExactStoppedInstance(string scenario, bool removeStopped)
+    {
+        var id = scenario == "short-id" ? Ours : FullPeerId;
+        var containerPath = $"/v1.44/containers/{id}";
+        var stopPath = $"{containerPath}/stop?t=30";
+        var inspectPath = $"{containerPath}/json";
+        var imagePath = $"/v1.44/images/{Uri.EscapeDataString(Locator)}/json";
+        using var daemon = new FakeDockerDaemonHandler
+        {
+            Responder = path => path switch
+            {
+                var list when list.StartsWith("/v1.44/containers/json?all=true&filters=", StringComparison.Ordinal) =>
+                    (HttpStatusCode.OK, $$$"""[{"Id":"{{{id}}}","Labels":{"arboreal.router":"r1","arboreal.engine":"strata"}}]"""),
+                "/v1.44/version" => (HttpStatusCode.OK, """{"ApiVersion":"1.44"}"""),
+                _ when path == imagePath => (HttpStatusCode.OK, Inspect()),
+                _ when path == stopPath => (scenario == "unexpected-stop" ? HttpStatusCode.Accepted : HttpStatusCode.Conflict, ""),
+                _ when path == inspectPath => scenario switch
+                {
+                    "absent" => (HttpStatusCode.NotFound, ""),
+                    "running" => (HttpStatusCode.OK, StopConflictInspect(state:
+                        """{"Status":"exited","Running":true,"Restarting":false,"Paused":false,"Dead":false}""")),
+                    "wrong-id" => (HttpStatusCode.OK, StopConflictInspect(id: FullPeerId.ToUpperInvariant())),
+                    "wrong-router" => (HttpStatusCode.OK, StopConflictInspect(router: "other")),
+                    "wrong-engine" => (HttpStatusCode.OK, StopConflictInspect(engine: "other")),
+                    "missing-state" => (HttpStatusCode.OK, StopConflictInspect(state:
+                        """{"Status":"exited","Running":false,"Paused":false,"Dead":false}""")),
+                    "malformed" => (HttpStatusCode.OK, "{"),
+                    "unexpected-inspect" => (HttpStatusCode.Accepted, StopConflictInspect()),
+                    _ => (HttpStatusCode.OK, StopConflictInspect()),
+                },
+                _ when path == containerPath => (scenario switch
+                {
+                    "restart" => HttpStatusCode.Conflict,
+                    "unexpected-remove" => HttpStatusCode.Accepted,
+                    _ => HttpStatusCode.NoContent,
+                }, ""),
+                "/v1.44/containers/create" => (HttpStatusCode.Created, """{"Id":"replacement"}"""),
+                "/v1.44/containers/replacement/start" => (HttpStatusCode.NoContent, ""),
+                _ => throw new InvalidOperationException($"Unexpected fake daemon request {path}"),
+            },
+        };
+        using var provider = new DockerLifecycleProvider(Cfg(removeStopped: removeStopped), "strata", daemon);
+        using var coordinator = new EngineLifecycleCoordinator(provider);
+
+        var result = await coordinator.SwitchAsync(Target(), CancellationToken.None);
+
+        var replacement = scenario is "exited" or "absent";
+        Assert.Equal(replacement, result.Succeeded);
+        if (!replacement)
+            Assert.Equal(scenario is "unexpected-stop" or "unexpected-remove" ? "http_202" : "http_409", result.Reason);
+        Assert.StartsWith("GET /v1.44/containers/json?all=true&filters=", daemon.Requests[0], StringComparison.Ordinal);
+        var expected = new List<string> { "GET /v1.44/version", $"GET {imagePath}", $"POST {stopPath}" };
+        if (scenario is not ("short-id" or "unexpected-stop")) expected.Add($"GET {inspectPath}");
+        if (removeStopped && scenario is ("exited" or "restart" or "unexpected-remove"))
+            expected.Add($"DELETE {containerPath}");
+        if (replacement)
+        {
+            expected.Add("POST /v1.44/containers/create");
+            expected.Add("POST /v1.44/containers/replacement/start");
+        }
+        Assert.Equal(expected, daemon.Requests.Skip(1));
+    }
+
     [Theory(Timeout = 20_000)]
     [InlineData(204, "incumbent", true)]
     [InlineData(204, "different-model", false)]
@@ -840,13 +928,16 @@ public sealed class DockerLifecycleProviderTests
         int stopStatus, string proofModel, bool comparable)
     {
         var clock = new TimingClock();
+        var id = stopStatus == 409 ? FullPeerId : Ours;
+        var containerPath = $"/v1.44/containers/{id}";
+        var removalPath = stopStatus == 409 ? containerPath : $"{containerPath}?force=true";
         using var daemon = new FakeDockerDaemonHandler
         {
             Responder = path =>
             {
                 if (path.Contains("/containers/json", StringComparison.Ordinal))
                     return (HttpStatusCode.OK,
-                        $$$"""[{"Id":"{{{Ours}}}","ImageID":"{{{ImageId}}}","Labels":{"arboreal.router":"r1","arboreal.engine":"strata","arboreal.model":"incumbent","arboreal.profile":"p"}}]""");
+                        $$$"""[{"Id":"{{{id}}}","ImageID":"{{{ImageId}}}","Labels":{"arboreal.router":"r1","arboreal.engine":"strata","arboreal.model":"incumbent","arboreal.profile":"p"}}]""");
                 if (path.EndsWith("/version", StringComparison.Ordinal))
                     return (HttpStatusCode.OK, """{"ApiVersion":"1.44"}""");
                 if (path.Contains("/images/", StringComparison.Ordinal)) return (HttpStatusCode.OK, Inspect());
@@ -855,7 +946,8 @@ public sealed class DockerLifecycleProviderTests
                     clock.Advance(TimeSpan.FromMilliseconds(7));
                     return ((HttpStatusCode)stopStatus, "");
                 }
-                if (path.Contains("?force=true", StringComparison.Ordinal))
+                if (stopStatus == 409 && path == $"{containerPath}/json") return (HttpStatusCode.OK, StopConflictInspect());
+                if (path == removalPath)
                 {
                     clock.Advance(TimeSpan.FromMilliseconds(2));
                     return (HttpStatusCode.NoContent, "");
@@ -874,7 +966,7 @@ public sealed class DockerLifecycleProviderTests
             SwitchObservationClass.FreshContainer, ImageId);
         var incoming = incumbent with { CanonicalModel = target.Model, EffectiveProfile = target.EffectiveProfile };
         var proof = new SwitchServingProof(new SwitchAttemptId(runtime, 1), 1, incumbent,
-            new NativeLaunch(Ours, "incumbent", "p", ImageId));
+            new NativeLaunch(id, "incumbent", "p", ImageId));
         var attempt = new SwitchAttempt(clock, new SwitchAttemptId(runtime, 2), incoming);
 
         var report = await coordinator.SwitchWithReportAsync(target, attempt, proof, CancellationToken.None);
@@ -885,6 +977,12 @@ public sealed class DockerLifecycleProviderTests
         var shutdown = Assert.IsType<SwitchStageObservation>(record.GetStage(SwitchStage.Shutdown));
         Assert.Equal(TimeSpan.FromMilliseconds(9), clock.GetElapsedTime(shutdown.StartedAt, shutdown.ObservedUntil));
         var receipt = Assert.Single(record.NativeStops);
+        if (stopStatus == 409)
+        {
+            Assert.Equal(NativeStopDisposition.AlreadyStopped, receipt.Stop);
+            Assert.Contains($"GET {containerPath}/json", daemon.Requests);
+            Assert.Contains($"DELETE {containerPath}", daemon.Requests);
+        }
         Assert.Equal(NativeRemovalDisposition.Removed, receipt.Removal);
         Assert.NotNull(record.NativeLaunch);
         Assert.Null(record.GetStage(SwitchStage.Readiness));
