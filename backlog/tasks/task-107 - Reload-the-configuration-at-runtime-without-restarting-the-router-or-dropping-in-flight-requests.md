@@ -21,7 +21,7 @@ ordinal: 105000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Preparing a high-priority reload plan that preserves active streams and switches across configuration generations.
+Preparing a high-priority reload plan that preserves active streams and switches across configuration generations. Decision 75 sets the first release boundary for live defaults, idle-only external engine changes and historical work.
 
 Owner requirement, relayed 17:38Z: the configuration has to be reloadable while the router runs. Read at `2b751ec`, nothing reloads: no file watcher, no signal handler, no admin reload route (`git grep` for `FileSystemWatcher`, `SIGHUP`, `ReloadConfig` in `src/` returns only the engine's own model-loading paths), and the config is parsed once into immutable domain types at startup. So changing a select block, an engine move, or a ceiling means killing the process and losing the queue — which is also how TASK-77's engine-swap fix would have to be tested today. This row reopens decision-50, which declined an immutable copied engine plan on the rule that the config graph is read-only after boot; reload makes that rule false and the declined option has to be re-argued with revalidation attached.
 <!-- SECTION:DESCRIPTION:END -->
