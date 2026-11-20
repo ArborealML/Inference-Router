@@ -1,11 +1,11 @@
 ---
 id: TASK-146
 title: Compare two saved hardware tuning runs offline
-status: In Progress
+status: Testing
 assignee:
-  - '@gpt-6.2-sol-config'
+  - '@gpt-6.2-sol-release'
 created_date: '2026-11-20T19:07:00Z'
-updated_date: '2026-11-20T19:12:00Z'
+updated_date: '2026-11-20T19:30:00Z'
 labels: []
 milestone: m-14
 dependencies: []
@@ -15,7 +15,7 @@ ordinal: 144000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Config owns the approved offline CLI for comparing two saved hardware tuning runs against the [landed design](../../docs/hardware-tuning-design.md). Compare measured capacity and sustained decode at matched concurrency. Represent unknown or incomparable evidence explicitly.
+Delivery is qualifying the offline tuning comparison CLI. Earlier builds stopped on diagnostics before tests. Candidate 6d9a6b8 narrows two ownership-transfer analyzer suppressions. Verify focused Release results and run the golden input pair through the published Linux x64 Native AOT executable. The [hardware tuning design](../../docs/hardware-tuning-design.md) defines the comparison scope.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
