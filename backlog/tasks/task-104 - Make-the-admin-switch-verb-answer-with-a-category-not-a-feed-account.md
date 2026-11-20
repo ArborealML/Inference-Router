@@ -5,7 +5,7 @@ status: Testing
 assignee:
   - '@gpt-6.2-sol-stream-delivery'
 created_date: '2026-11-18T12:59:00Z'
-updated_date: '2026-11-20T23:42:00Z'
+updated_date: '2026-11-20T23:54:00Z'
 labels: []
 milestone: m-7
 dependencies:
@@ -37,5 +37,5 @@ Preserve immediate refusal responses. Add OperationId to the accepted 202 respon
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Candidate 9aa7c96 built in Release with zero warnings or errors. All six affected cases passed and the broader focused filter passed 29/29. The tests-only baseline failed at the missing OperationId. Server AOT evidence carries over from identical production inputs. The HTTP acknowledgment deadline correction passed independent review with isolated early-timer and restart controls. Delivery owns the remaining held-write review, negative controls and hosted qualification.
+Fixture-only correction 89016dd correlates original write cancellation, endpoint exit and the closed connection. Release built with zero warnings/errors, all six affected tests and all 29 broader focused cases passed. Unchanged server build inputs retain the AOT receipt. Baseline and ten negative controls remain pinned to 9aa7c96. Delivery owns the bounded correction review and integration after .118.
 <!-- SECTION:NOTES:END -->

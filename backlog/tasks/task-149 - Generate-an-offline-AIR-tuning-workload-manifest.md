@@ -5,7 +5,7 @@ status: Waiting
 assignee:
   - '@gpt-6.2-sol-release'
 created_date: '2026-11-20T22:44:00Z'
-updated_date: '2026-11-20T23:40:00Z'
+updated_date: '2026-11-20T23:48:00Z'
 labels: []
 milestone: m-14
 dependencies:
@@ -20,7 +20,7 @@ ordinal: 147000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-The independent follow-up verdict on bc646c0 will wake integration of the offline tuning workload planner. Delivery owns the corrected candidate and subsequent integration review.
+Wake on the independent integration and documentation review and exact hosted checks. The .118 candidate 8179440 combines the corrected offline workload planner with the landed dashboard specification. The later board-only main advance is disjoint. Delivery owns qualification and the separate merge-turn request.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -41,5 +41,5 @@ Implement air tune plan --config FILE --engine ENGINE --model MODEL --seed HEX -
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-The corrected planner honors the last value for each exact thread, engine and catalog key. An earlier null overwritten by a valid entry is accepted; an effective null still produces the fixed error. All 27 focused Release tests passed on bc646c0, including both controls. The Linux x64 Native AOT CLI emitted no trim warnings and produced the independent 5,510-byte golden with empty stderr. The independent full-tail check is preserved. No hardware measurement was performed.
+The last-value correction passed independent review on bc646c0. All 27 focused Release cases passed, including shadowed-null acceptance and effective-null rejection. The Linux x64 Native AOT CLI emitted no trim warnings and matched the independent 5,510-byte golden with empty stderr. The full-tail control is preserved. These results qualify offline manifest generation.
 <!-- SECTION:NOTES:END -->

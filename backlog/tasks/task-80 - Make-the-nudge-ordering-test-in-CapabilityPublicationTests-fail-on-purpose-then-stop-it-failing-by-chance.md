@@ -27,7 +27,7 @@ Independent plan review will wake this task. Determine whether sampling before t
 - [ ] #1 With the second dispatch hint held, the historical assertion fails on the first switch’s healthy sample at the intended assertion.
 - [ ] #2 Identify the sampled switch and show why the forced ordering yields the historical symptom. Record what the historical logs can establish.
 - [ ] #3 At the same cut the acknowledged fixture stays pending. Release the exact second hint, observe its sample and complete the focused Release case successfully.
-- [ ] #4 Reverse only marker-clear and hint delivery order with the qualified fixture unchanged. Observe the marker-specific failure, restore the exact source and pass the same focused case.
+- [ ] #4 Move the single hint before marker clear in a temporary mutation, inside the gate and before Ready. With the fixture unchanged, verify eventual readiness and acknowledgment, first Assert.Null failure showing the marker, and green after exact restoration.
 <!-- AC:END -->
 
 ## Implementation Notes

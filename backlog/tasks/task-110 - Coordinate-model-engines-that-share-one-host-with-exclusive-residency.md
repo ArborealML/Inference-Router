@@ -21,7 +21,7 @@ ordinal: 108000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Independent review will wake the closed commission intake. The coordinator owns host-side prerequisites: supervisor-selected protected endpoint and peer identity, authenticated monotonic head outside journal rollback, and independent observer evidence binding pair/config, devices, routes, daemon, policy, exclusive writer and partition occupancy. [Offline launch receipt](https://github.com/ArborealML/Inference-Router/pull/49).
+Host evidence and intake review wake this task. Coordinator owns: observer build and installed identity, protected endpoint and pinned peer, separate authority endpoint and trust identity, persistence outside router restore, authenticated current topology and scope, and approvals for both exact members. Observer and head unverified. [Offline launch receipt](https://github.com/ArborealML/Inference-Router/pull/49).
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -52,5 +52,5 @@ Review on 3160a11 required wrong-target recovery fencing and old-grant/fresh-ope
 
 [PR #23](https://github.com/ArborealML/Inference-Router/pull/23) binds the exact stored proof to the installed runtime attempt and full target before delivery. Review of 0f6245a found foreign proofs could pass on model/tier alone. Correction a99b91c passed independent review and 5/5 focused cases, including substitutions and a notification fault after Open. The deadline fixture passed at 8af4cdd and all seven guard/deadline cases at 8b6a919. Merged at 5d66c8d after all hosted checks passed. Production issuance still requires independently attested live authority.
 
-Host enrollment also owns identifying the trusted observation adapter for the actual serving connection required by TASK-118. The launch receipt alone cannot authorize readiness reads.
+Future launch proof requires accepted create bytes, independent effective settings and exact running instance. Cutover requires exclusion of competing writers, devices and routes, vacancy, and actual readiness-handler evidence.
 <!-- SECTION:NOTES:END -->

@@ -5,7 +5,7 @@ status: Waiting
 assignee:
   - '@gpt-6.2-sol-release'
 created_date: '2026-11-18T18:15:00Z'
-updated_date: '2026-11-20T23:35:00Z'
+updated_date: '2026-11-20T23:50:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -23,7 +23,7 @@ ordinal: 110000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Wake on the enrollment-intake review and independent observer handoff under TASK-110. The combined DeepSeek/Qwen configuration is refused at public config load before a cold request reaches scheduling. The landed EnrolledPairTopologyPreservesThePublicDedicatedOwnerRefusal fixture covers LoadFile. The proposed intake verifies current host evidence before returning a closed descriptor; its paired control changes the authoritative head within the same generation. Neither outcome may issue a journal write, daemon call or serving grant. Both live criteria remain open.
+Wake on independent rereview of the amended enrollment intake and the host-observer handoff. Public LoadFile refuses the selected DeepSeek/Qwen pair before scheduling. Independent review found no simpler existing native queue path for this pair. Lifecycle owns a plan amendment: authenticate the actual observer before entering the launch journal. Using fresh request binding, distinguish a current head from a stale head in the same generation. Separately refuse the wrong peer, wrong challenge and wrong slot at the client. All cases return without host or serving effects. Shutdown owns observer provisioning research. Both live criteria remain open.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
