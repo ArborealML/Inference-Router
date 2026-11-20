@@ -175,7 +175,7 @@ public sealed partial class RouterCore
                 var ticket = new RouterTicket(NewTicketId(), threadId, model, createdAt)
                 {
                     IsHttpStream = httpStream,
-                    HttpDelivery = httpStream && bufferLimit > 0 ? new HttpStreamDelivery(bufferLimit) : null,
+                    HttpDelivery = httpStream && bufferLimit > 0 ? new HttpStreamDelivery(bufferLimit, ct, _shutdownToken) : null,
                 };
                 var node = new PrioritizedRequest(ticket, priority, Interlocked.Increment(ref _seq));
                 queued = new QueuedRequest
@@ -357,18 +357,21 @@ public sealed partial class RouterCore
 
         var cts = ticket.ExecCts;
         if (cts is null) return false;
+        var delivery = ticket.HttpDelivery;
+        if (delivery is not null && delivery.Decide(HttpStreamOutcome.Cancelled).Code != "cancelled")
+            return false;
         try { cts.Cancel(); return true; }
-        catch (ObjectDisposedException) { return false; }
+        catch (ObjectDisposedException) { return delivery is not null; }
     }
 
     private enum QueueEndClaim { Absent, Deferred, Competing, Removed }
 
     internal void FailSlowStream(RouterTicket ticket, CancellationToken caller)
     {
-        if (caller.IsCancellationRequested || _shutdownToken.IsCancellationRequested || ticket.IsTerminal)
-            return;
+        if (ticket.IsTerminal || ticket.HttpDelivery is not { } delivery) return;
         var execution = ticket.ExecCts;
-        if (execution?.IsCancellationRequested == true) return;
+        BeforeSlowStreamDecisionForTests?.Invoke();
+        if (delivery.Decide(HttpStreamOutcome.SlowConsumer, execution, caller).Code != "slow_consumer") return;
 
         switch (ClaimQueuedEnd(ticket, "slow_consumer"))
         {
@@ -381,14 +384,10 @@ public sealed partial class RouterCore
         }
 
         if (execution is null) return;
-        // Install the downstream cause before cancelling. The dispatch owner settles an admitted
-        // ticket so a concurrent selection or model-wait transition cannot overwrite its outcome.
-        Volatile.Write(ref ticket.DownstreamStalled, 1);
+        // The dispatch owner settles an admitted ticket using the already selected outcome.
         try { _ = execution.CancelAsync(); }
         catch (ObjectDisposedException) { }
     }
-
-    private const string SlowStreamReason = "slow_consumer: downstream write made no progress for 30 seconds";
 
     private QueueEndClaim ClaimQueuedEnd(RouterTicket ticket, string code)
     {
@@ -418,7 +417,7 @@ public sealed partial class RouterCore
         var reason = code switch
         {
             "cancelled" => "cancelled while queued",
-            "slow_consumer" => SlowStreamReason,
+            "slow_consumer" => HttpStreamOutcome.SlowConsumer.Message,
             _ => $"queue wait exceeded {window}",
         };
         Fail(ticket, code, reason);

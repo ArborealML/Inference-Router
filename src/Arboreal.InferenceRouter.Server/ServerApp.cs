@@ -233,7 +233,7 @@ public static partial class ServerApp
             ct.ThrowIfCancellationRequested();
             if (delivery is not null && delivery.Sealed.IsCompletedSuccessfully)
             {
-                delivery.Acknowledge();
+                delivery.Decide(HttpStreamOutcome.Acknowledged, ticket.ExecCts, ct);
                 // Publish the outcome before the endpoint returns HTTP EOF.
                 try { await ticket.CompletionTask.WaitAsync(ct).ConfigureAwait(false); }
                 catch (RouterRequestException) { }

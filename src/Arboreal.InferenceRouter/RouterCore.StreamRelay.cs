@@ -6,6 +6,8 @@ public sealed partial class RouterCore
 {
     internal TimeProvider StreamIdleClockForTests = TimeProvider.System;
     internal Action<string>? AfterOptInTransportTaskForTests;
+    internal Action? BeforeSlowStreamDecisionForTests;
+    internal Func<string, Task>? BeforeOptInStreamSettlementForTests;
 
     private async Task ExecuteOptInStreamAsync(QueuedRequest candidate, EngineRuntime engine,
         SwitchServingProof? servingProof, ExactTicketAdmission.Invocation? invocation, CancellationToken execution)
@@ -16,21 +18,29 @@ public sealed partial class RouterCore
             CancellationToken.None);
         using var wait = CancellationTokenSource.CreateLinkedTokenSource(
             _shutdownToken, execution, candidate.CallerToken);
-        var cancellation = Task.Delay(Timeout.InfiniteTimeSpan, wait.Token);
         var completion = ticket.CompletionTask;
         var delivery = ticket.HttpDelivery;
         try
         {
-            if (delivery is null)
-                await Task.WhenAny(completion, cancellation).ConfigureAwait(false);
-            else
-                await Task.WhenAny(completion, delivery.Acknowledged, cancellation).ConfigureAwait(false);
+            if (delivery is not null)
+            {
+                using var cancellation = wait.Token.UnsafeRegister(static state =>
+                {
+                    ((HttpStreamDelivery)state!).Decide(HttpStreamOutcome.Cancelled);
+                }, delivery);
+                var outcome = await delivery.Outcome.ConfigureAwait(false);
+                if (BeforeOptInStreamSettlementForTests is { } before)
+                    await before(ticket.Id).ConfigureAwait(false);
+                if (outcome.Code is { } code)
+                    Fail(ticket, code, outcome.Message, outcome.SuppressIdleTerminal);
+                else
+                    Complete(ticket);
+                return;
+            }
 
-            if (ticket.IsTerminal) return;
-            if (wait.IsCancellationRequested)
+            await Task.WhenAny(completion, Task.Delay(Timeout.InfiniteTimeSpan, wait.Token)).ConfigureAwait(false);
+            if (!ticket.IsTerminal && wait.IsCancellationRequested)
                 Fail(ticket, "cancelled", "cancelled");
-            else if (delivery?.Acknowledged.IsCompletedSuccessfully == true)
-                Complete(ticket);
         }
         finally
         {

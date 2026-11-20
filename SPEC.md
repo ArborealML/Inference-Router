@@ -2603,7 +2603,10 @@ pending. The router aborts that HTTP exchange and records ticket code `slow_cons
 `request.failed` reason beginning with that token. A successful flush restores credit. On clean
 upstream EOF, the router disarms the response timer and starts transport cleanup. The HTTP ticket
 succeeds after the last required successful flush, including the initial comment on an empty body
-and any upstream `[DONE]`. Kestrel's flush acknowledgment describes relay progress.
+and any upstream `[DONE]`. The first selected terminal outcome stands. Caller or shutdown
+cancellation observed before a watchdog or final acknowledgment claims the outcome is recorded
+as cancellation. A later cancellation leaves an already accepted final acknowledgment intact.
+Kestrel's flush acknowledgment describes relay progress.
 
 A positive per-engine `stream_idle_timeout_ms` starts a separate deadline on a pending raw read
 after the first positive read. Time waiting for output credit and HTTP keepalives do not run or

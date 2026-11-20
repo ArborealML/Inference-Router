@@ -263,6 +263,165 @@ public class StreamRelayTests
         finally { writer.Release.TrySetResult(new FlushResult(isCanceled: true, isCompleted: false)); }
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task CancellationAtWatchdogClaimPreservesCallerOrShutdownCause(bool shutdown)
+    {
+        using var fake = new StreamEngine(new MemoryStream([(byte)'\n']));
+        var clock = new ReadinessDeadlineTests.ManualClock();
+        var (app, _, _) = await WireHarness.StartAsync(fake: fake, streamBufferLimit: Credit, streamClock: clock);
+        await using var server = app;
+        using var bound = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        using var caller = CancellationTokenSource.CreateLinkedTokenSource(bound.Token);
+        var router = app.Services.GetRequiredService<RouterCore>();
+        Task? stopped = null;
+        var settle = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        router.BeforeOptInStreamSettlementForTests = _ => settle.Task;
+        router.BeforeSlowStreamDecisionForTests = () =>
+        {
+            if (shutdown) stopped = router.DisposeAsync().AsTask();
+            else caller.Cancel();
+        };
+        var ticket = await router.EnqueueHttpAsync("watchdog-race", Request(), caller.Token);
+        var ctx = new DefaultHttpContext { RequestAborted = caller.Token };
+        var writer = new GatedWriter(2);
+        ctx.Features.Set<IHttpResponseBodyFeature>(new BodyFeature(writer));
+        var relay = ServerApp.StreamTicketAsync(ctx, ticket, clock, router);
+        try
+        {
+            Assert.Equal(1, await writer.Blocked.Task.WaitAsync(bound.Token));
+            var delivery = Assert.IsType<HttpStreamDelivery>(ticket.HttpDelivery);
+            await delivery.Sealed.WaitAsync(bound.Token);
+            await UntilAsync(() => clock.ActiveTimers == 1, bound.Token);
+            clock.AdvanceTo(30_001);
+            await relay.WaitAsync(bound.Token);
+            Assert.Equal("cancelled", (await delivery.Outcome.WaitAsync(bound.Token)).Code);
+            Assert.False(ticket.CompletionTask.IsCompleted);
+            settle.TrySetResult();
+            var error = await Assert.ThrowsAsync<RouterRequestException>(
+                () => ticket.CompletionTask.WaitAsync(bound.Token));
+            Assert.Equal("cancelled", error.Code);
+            var outcome = Assert.Single(router.Events.Replay(0), row => row.TicketId == ticket.Id &&
+                row.Kind is "request.cancelled" or "request.failed" or "request.completed");
+            Assert.Equal("request.cancelled", outcome.Kind);
+            if (stopped is not null) await stopped.WaitAsync(bound.Token);
+        }
+        finally
+        {
+            settle.TrySetResult();
+            writer.Release.TrySetResult(new FlushResult(true, false));
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task FinalAcknowledgmentAndCancellationKeepTheFirstDecision(bool acknowledgeFirst)
+    {
+        using var fake = new StreamEngine(new MemoryStream([(byte)'\n']));
+        var (app, _, _) = await WireHarness.StartAsync(fake: fake, streamBufferLimit: Credit);
+        await using var server = app;
+        using var bound = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        var router = app.Services.GetRequiredService<RouterCore>();
+        var deciding = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var settle = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        router.BeforeOptInStreamSettlementForTests = id =>
+        {
+            deciding.TrySetResult(id);
+            return settle.Task;
+        };
+        var ticket = await router.EnqueueHttpAsync("flush-race", Request(), bound.Token);
+        var ctx = new DefaultHttpContext { RequestAborted = bound.Token };
+        var writer = new GatedWriter(2);
+        ctx.Features.Set<IHttpResponseBodyFeature>(new BodyFeature(writer));
+        var relay = ServerApp.StreamTicketAsync(ctx, ticket, TimeProvider.System, router);
+        var delivery = Assert.IsType<HttpStreamDelivery>(ticket.HttpDelivery);
+        try
+        {
+            await writer.Blocked.Task.WaitAsync(bound.Token);
+            await delivery.Sealed.WaitAsync(bound.Token);
+            if (acknowledgeFirst)
+                writer.Release.TrySetResult(new FlushResult(false, false));
+            else
+                Assert.True(router.TryCancel(ticket.Id));
+            Assert.Equal(ticket.Id, await deciding.Task.WaitAsync(bound.Token));
+            Assert.False(ticket.CompletionTask.IsCompleted);
+            if (acknowledgeFirst)
+            {
+                Assert.Null((await delivery.Outcome.WaitAsync(bound.Token)).Code);
+                // Signal actual execution cancellation after the HTTP acknowledgment while the
+                // dispatcher is still paused before publishing its terminal result.
+                await ticket.ExecCts!.CancelAsync();
+            }
+            else
+            {
+                writer.Release.TrySetResult(new FlushResult(false, false));
+                Assert.Equal("cancelled", delivery.Decide(HttpStreamOutcome.Acknowledged).Code);
+            }
+            settle.TrySetResult();
+            if (acknowledgeFirst)
+                await ticket.CompletionTask.WaitAsync(bound.Token);
+            else
+            {
+                var error = await Assert.ThrowsAsync<RouterRequestException>(
+                    () => ticket.CompletionTask.WaitAsync(bound.Token));
+                Assert.Equal("cancelled", error.Code);
+            }
+            await relay.WaitAsync(bound.Token);
+            var outcome = Assert.Single(router.Events.Replay(0), row => row.TicketId == ticket.Id &&
+                row.Kind is "request.cancelled" or "request.failed" or "request.completed");
+            Assert.Equal(acknowledgeFirst ? "request.completed" : "request.cancelled", outcome.Kind);
+        }
+        finally
+        {
+            settle.TrySetResult();
+            writer.Release.TrySetResult(new FlushResult(true, false));
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task LateContentAcquisitionStaysPhysicallyOwnedThroughResponseDisposal(bool fault)
+    {
+        using var content = new HeldAcquisitionContent();
+        using var fake = new ContentEngine(content);
+        using var late = new DisposalStream();
+        var (app, _, _) = await WireHarness.StartAsync(fake: fake, maxInflight: 1, responseTimeoutMs: 100,
+            streamBufferLimit: Credit);
+        await using var server = app;
+        using var bound = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        var router = app.Services.GetRequiredService<RouterCore>();
+        var responseClock = new ReadinessDeadlineTests.ManualClock();
+        router.ResponseTimeoutClockForTests = responseClock;
+        var cleaned = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        router.AfterOptInTransportTaskForTests = id => cleaned.TrySetResult(id);
+        var ticket = await router.EnqueueHttpAsync("acquisition", Request(), bound.Token);
+        try
+        {
+            await content.Acquiring.Task.WaitAsync(bound.Token);
+            responseClock.AdvanceTo(101);
+            var error = await Assert.ThrowsAsync<RouterRequestException>(
+                () => ticket.CompletionTask.WaitAsync(bound.Token));
+            Assert.Equal("engine_timeout", error.Code);
+            var engine = router.Engines["fake"];
+            await UntilAsync(() => router.GetStats().Engines.Single().Inflight == 0, bound.Token);
+            Assert.Equal(1, engine.HttpUsesForTests);
+            Assert.False(content.Disposed.Task.IsCompleted);
+            Assert.False(cleaned.Task.IsCompleted);
+            if (fault) content.Finish.TrySetException(new IOException("scripted late acquisition"));
+            else content.Finish.TrySetResult(late);
+            Assert.Equal(ticket.Id, await cleaned.Task.WaitAsync(bound.Token));
+            Assert.True(content.Disposed.Task.IsCompletedSuccessfully);
+            Assert.Equal(!fault, late.Disposed);
+            Assert.Equal(0, engine.HttpUsesForTests);
+            Assert.False(ticket.StreamChannel!.Reader.TryRead(out _));
+            Assert.Equal("engine_timeout", ticket.ErrorCode);
+        }
+        finally { content.Finish.TrySetResult(late); }
+    }
+
     [Fact]
     public async Task LibraryCompletionCanPrecedeDrainAboveHttpLimit()
     {
@@ -337,6 +496,55 @@ public class StreamRelayTests
             if (request.Method == HttpMethod.Post)
                 return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StreamContent(body) };
             return await base.SendAsync(request, ct);
+        }
+    }
+
+    private sealed class ContentEngine(HttpContent content) : FakeEngineHandler
+    {
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
+        {
+            if (request.Method == HttpMethod.Post)
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = content };
+            return await base.SendAsync(request, ct);
+        }
+    }
+
+    private sealed class HeldAcquisitionContent : HttpContent
+    {
+        public TaskCompletionSource Acquiring { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource<Stream> Finish { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource Disposed { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        protected override Task<Stream> CreateContentReadStreamAsync(CancellationToken cancellationToken)
+        {
+            Acquiring.TrySetResult();
+            return Finish.Task;
+        }
+
+        protected override bool TryComputeLength(out long length)
+        {
+            length = 0;
+            return false;
+        }
+
+        protected override Task SerializeToStreamAsync(Stream stream, TransportContext? context) =>
+            throw new NotSupportedException();
+
+        protected override void Dispose(bool disposing)
+        {
+            base.Dispose(disposing);
+            if (disposing) Disposed.TrySetResult();
+        }
+    }
+
+    private sealed class DisposalStream : MemoryStream
+    {
+        public bool Disposed { get; private set; }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing) Disposed = true;
+            base.Dispose(disposing);
         }
     }
 

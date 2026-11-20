@@ -3,19 +3,36 @@ using System.Threading.Channels;
 namespace Arboreal.InferenceRouter;
 
 /// <summary>One producer reserves output bytes. The HTTP writer returns them after flush or discard.</summary>
-internal sealed class HttpStreamDelivery(int limit)
+internal sealed class HttpStreamDelivery(int limit, CancellationToken caller = default, CancellationToken shutdown = default)
 {
     private readonly object _gate = new();
+    private readonly object _outcomeGate = new();
     private readonly TaskCompletionSource _sealed = new(TaskCreationOptions.RunContinuationsAsynchronously);
-    private readonly TaskCompletionSource _acknowledged = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly TaskCompletionSource<HttpStreamOutcome> _outcome = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private TaskCompletionSource? _space;
     private int _reserved;
     private bool _stopped;
 
     internal Task Sealed => _sealed.Task;
-    internal Task Acknowledged => _acknowledged.Task;
+    internal Task<HttpStreamOutcome> Outcome => _outcome.Task;
     internal void Seal() => _sealed.TrySetResult();
-    internal void Acknowledge() => _acknowledged.TrySetResult();
+
+    internal HttpStreamOutcome Decide(HttpStreamOutcome proposal, CancellationTokenSource? execution = null,
+        CancellationToken observedCaller = default)
+    {
+        lock (_outcomeGate)
+        {
+            if (_outcome.Task.IsCompletedSuccessfully) return _outcome.Task.Result;
+            // Observe cancellation at the same decision point used by flush acknowledgment and the
+            // watchdog. A later callback cannot reinterpret an already selected outcome.
+            if (proposal.Code != "cancelled" && (caller.IsCancellationRequested ||
+                observedCaller.IsCancellationRequested || shutdown.IsCancellationRequested ||
+                execution?.IsCancellationRequested == true))
+                proposal = HttpStreamOutcome.Cancelled;
+            _outcome.SetResult(proposal);
+            return proposal;
+        }
+    }
 
     internal int ReservedBytes
     {
@@ -85,4 +102,11 @@ internal sealed class HttpStreamDelivery(int limit)
     {
         if (_stopped) throw new OperationCanceledException();
     }
+}
+
+internal readonly record struct HttpStreamOutcome(string? Code, string Message, bool SuppressIdleTerminal = false)
+{
+    internal static HttpStreamOutcome Acknowledged => new(null, "");
+    internal static HttpStreamOutcome Cancelled => new("cancelled", "cancelled");
+    internal static HttpStreamOutcome SlowConsumer => new("slow_consumer", "slow_consumer: downstream write made no progress for 30 seconds");
 }

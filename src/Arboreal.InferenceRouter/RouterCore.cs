@@ -1103,12 +1103,16 @@ public sealed partial class RouterCore : IInferenceRouter
 
     private void Fail(RouterTicket ticket, string code, string message, bool suppressIdleTerminal = false)
     {
-        if (!ticket.TryEnterTerminal()) return;
-        if (code == "cancelled" && Volatile.Read(ref ticket.DownstreamStalled) != 0)
+        if (ticket.HttpDelivery is { } delivery)
         {
-            code = "slow_consumer";
-            message = SlowStreamReason;
+            if (ticket.IsTerminal) return;
+            var outcome = delivery.Decide(new HttpStreamOutcome(code, message, suppressIdleTerminal), execution: ticket.ExecCts);
+            if (outcome.Code is not { } chosenCode) return;
+            code = chosenCode;
+            message = outcome.Message;
+            suppressIdleTerminal = outcome.SuppressIdleTerminal;
         }
+        if (!ticket.TryEnterTerminal()) return;
         ticket.SuppressIdleTerminal = suppressIdleTerminal;
         // One terminal path, one ceiling. From here the same string is three caller-visible things at once —
         // <c>ticket.Error</c>, the <see cref="RouterRequestException"/> the HTTP writer turns into an error body,
