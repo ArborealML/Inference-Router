@@ -3,11 +3,11 @@ id: TASK-76
 title: >-
   Withdraw health only when the /models fetch failed, and never over a switch's
   own proof
-status: Waiting
+status: Preparing
 assignee:
-  - '@gpt-6.2-astra'
+  - '@gpt-6.2-sol-lifecycle'
 created_date: '2026-11-18T02:36:00Z'
-updated_date: '2026-11-18T21:45:00Z'
+updated_date: '2026-11-20T20:17:00Z'
 labels:
   - concurrency
 milestone: m-2
@@ -20,7 +20,7 @@ ordinal: 76000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Wake on the remaining refusal-path qualification under TASK-77. The models-fetch failure boundary, marker protection and failed-switch intermediate provenance are integrated. TASK-68 can proceed on the verified marker criterion.
+Lifecycle is auditing landed refusal-path evidence for the incumbent readiness criterion in a separate checkout at 207ccd6. The next handoff identifies which observations cover later inference and uncertain mutation, and any remaining gap. The models-fetch failure boundary, marker protection and failed-switch provenance are integrated. TASK-68 can proceed on the verified marker criterion.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

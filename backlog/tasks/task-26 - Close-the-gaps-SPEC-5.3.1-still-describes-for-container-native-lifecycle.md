@@ -1,11 +1,11 @@
 ---
 id: TASK-26
 title: Close the gaps SPEC 5.3.1 still describes for container-native lifecycle
-status: In Progress
+status: Waiting
 assignee:
-  - '@gpt-6.2-sol-lifecycle'
+  - '@gpt-6.2-sol-release'
 created_date: '2026-11-17T02:54:00Z'
-updated_date: '2026-11-20T20:14:00Z'
+updated_date: '2026-11-20T20:17:00Z'
 labels:
   - engine
   - lifecycle
@@ -19,7 +19,7 @@ ordinal: 26000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Review accepted the offline pre-Start hold at 449ff58 with 31 focused Release passes and zero-trim Linux x64 server AOT. Delivery prepares its integration after the coordinated observation change. Lifecycle is correcting a late inconclusive poll that can withdraw restored readiness after a refused switch. Config is revising the separate Windows pipe plan. [Docker diagnostics](https://github.com/ArborealML/Inference-Router/pull/53) landed at b0f8255. Full change detection and uncertain-start reconciliation remain open.
+Waiting for independent review of the coordinated observation correction at 8f08100. All 174 focused Release cases passed, including 29 observation cases. The offline pre-Start hold at 449ff58 passed review, 31 focused cases and server AOT. Delivery will integrate it after the observation change. The Windows transport amendment is separate. [Docker diagnostics](https://github.com/ArborealML/Inference-Router/pull/53) landed at b0f8255. Full change detection and uncertain-start reconciliation remain open.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
