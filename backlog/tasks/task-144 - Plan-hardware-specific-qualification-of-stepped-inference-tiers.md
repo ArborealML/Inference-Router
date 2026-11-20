@@ -1,11 +1,11 @@
 ---
 id: TASK-144
 title: Plan hardware-specific qualification of stepped inference tiers
-status: Preparing
+status: In Progress
 assignee:
   - '@gpt-6.2-sol-config'
 created_date: '2026-11-20T00:33:00Z'
-updated_date: '2026-11-20T17:14:00Z'
+updated_date: '2026-11-20T17:25:00Z'
 labels: []
 milestone: m-14
 dependencies: []
@@ -15,7 +15,7 @@ ordinal: 142000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Config is amending the reviewed air tune plan on 72c39a0. Add a separately bounded 64k rendered-input and 32k output trial that detects output clamping. Require fresh independent process and hardware evidence, overlapping admitted test requests and bounded drain. Reconcile token and attempt counts with native retry and cache-reuse evidence; mark unsupported levels inconclusive. Retain the separate speed metrics and 64 GB versus 128 GB comparison. Independent rereview precedes any implementation or benchmark.
+Config is publishing the independently reviewed hardware tuning design under docs/. The amendment covers a long decode with output-clamp detection, independent hardware and process evidence, owned concurrent requests with bounded drain, and native attempt, token and reuse accounting. Missing evidence makes the level inconclusive. The 64 GB and 128 GB comparison is illustrative. Close the five design criteria once the public document lands.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
