@@ -236,7 +236,7 @@ public sealed class ConfigReloadWireTests : IDisposable
             using var fresh = await http.PostAsync("/v1/completions", freshBody, ct);
             Assert.Equal(HttpStatusCode.OK, fresh.StatusCode);
             Assert.Equal(1, fake.CompletionCalls);
-            Assert.Equal("""{"prompt":"new","model":"b"}""", Assert.Single(fake.Forwarded));
+            Assert.Equal("""{"prompt":"new","model":"b"}"""u8.ToArray(), Assert.Single(fake.Forwarded));
         }
         finally { provider.Release.TrySetResult(); }
     }
@@ -586,12 +586,12 @@ public sealed class ConfigReloadWireTests : IDisposable
 
     private sealed class CapturingEngine : FakeEngineHandler
     {
-        internal System.Collections.Concurrent.ConcurrentQueue<string> Forwarded { get; } = new();
+        internal System.Collections.Concurrent.ConcurrentQueue<byte[]> Forwarded { get; } = new();
 
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
         {
             if (request.RequestUri!.AbsolutePath.EndsWith("/completions", StringComparison.Ordinal))
-                Forwarded.Enqueue(await request.Content!.ReadAsStringAsync(ct));
+                Forwarded.Enqueue(await request.Content!.ReadAsByteArrayAsync(ct));
             return await base.SendAsync(request, ct);
         }
     }

@@ -181,6 +181,63 @@ public sealed class ConfigReloadRaceTests
     }
 
     [Fact(Timeout = 20_000)]
+    public async Task DeferredPriorityPublishesBeforeALaterSetterAndAReentrantObserver()
+    {
+        using var bound = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        using var fake = new FakeEngineHandler();
+        await using var router = CreateRouter(A + One, _ => fake);
+        using var beforeRegistration = new Cut();
+        using var beforeOlderPriority = new Cut();
+        const string threadId = "ordered-priority";
+        var initial = ThreadPriority.Normal();
+        var older = ThreadPriority.Low();
+        var later = ThreadPriority.High();
+        var reentrant = ThreadPriority.Interactive();
+        var delivered = new List<RouterEvent>();
+        router.BeforeThreadRegistrationFeedForTests = _ => beforeRegistration.Hold();
+        router.BeforeThreadPriorityFeedForTests = priority =>
+        {
+            if (priority.Equals(older)) beforeOlderPriority.Hold();
+        };
+        router.Events.Subscribe(evt =>
+        {
+            if (evt.Kind == "thread.priority_changed" && evt.Value == older.Class)
+                router.SetThreadPriority(threadId, reentrant);
+        });
+        router.Events.Subscribe(delivered.Add);
+
+        var registration = Task.Run(() => router.RegisterThread(threadId, initial));
+        try
+        {
+            await beforeRegistration.Entered.Task.WaitAsync(bound.Token);
+            await Task.Run(() => router.SetThreadPriority(threadId, older)).WaitAsync(bound.Token);
+            beforeRegistration.Release();
+            await beforeOlderPriority.Entered.Task.WaitAsync(bound.Token);
+            await Task.Run(() => router.SetThreadPriority(threadId, later)).WaitAsync(bound.Token);
+            Assert.Equal("thread.registered", Assert.Single(delivered).Kind);
+        }
+        finally
+        {
+            beforeRegistration.Release();
+            beforeOlderPriority.Release();
+        }
+
+        Assert.Equal(reentrant, (await registration.WaitAsync(bound.Token)).Priority);
+        Assert.Collection(delivered,
+            evt => Check(evt, "thread.registered", initial),
+            evt => Check(evt, "thread.priority_changed", older),
+            evt => Check(evt, "thread.priority_changed", later),
+            evt => Check(evt, "thread.priority_changed", reentrant));
+
+        static void Check(RouterEvent evt, string kind, ThreadPriority priority)
+        {
+            Assert.Equal(kind, evt.Kind);
+            Assert.Equal(threadId, evt.ThreadId);
+            Assert.Equal((double)priority.Class, evt.Value);
+        }
+    }
+
+    [Fact(Timeout = 20_000)]
     public async Task AStaleExactTakeDoesNotChargeOrRebindAnAcceptedTicket()
     {
         using var bound = new CancellationTokenSource(TimeSpan.FromSeconds(10));

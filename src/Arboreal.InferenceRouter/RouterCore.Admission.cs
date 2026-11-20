@@ -5,16 +5,17 @@ namespace Arboreal.InferenceRouter;
 
 public sealed partial class RouterCore
 {
-    // A newly registered thread can be seen by concurrent or reentrant submitters before its
-    // synchronous EventRing observers return. Its publisher owns their initial events.
-    private sealed class PendingThreadRegistration
+    // An owner stays registered while it publishes outside the router gate. Concurrent or
+    // reentrant setters append to that owner rather than publish a newer priority first.
+    private sealed class ThreadPublication
     {
-        internal List<QueuedRequest> Enqueues { get; } = [];
+        internal List<QueuedRequest>? Enqueues;
         internal List<ThreadPriority>? PriorityChanges;
     }
 
-    private readonly Dictionary<string, PendingThreadRegistration> _registeringThreads = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, ThreadPublication> _threadPublications = new(StringComparer.Ordinal);
     internal Action<string>? BeforeThreadRegistrationFeedForTests;
+    internal Action<ThreadPriority>? BeforeThreadPriorityFeedForTests;
     internal Action<RouterTicket>? BeforeEnqueueFeedForTests;
     internal Action? BeforeEnqueueCommitForTests;
     internal Action<RouterTicket>? BeforeEnqueueEligibilityForTests;
@@ -48,11 +49,12 @@ public sealed partial class RouterCore
             {
                 thread.SetPriorityValue(priority);
                 foreach (var queue in _queues.Values) queue.Resort();
-                if (_registeringThreads.TryGetValue(threadId, out var pending))
+                if (_threadPublications.TryGetValue(threadId, out var pending))
                 {
                     (pending.PriorityChanges ??= []).Add(priority);
                     return;
                 }
+                _threadPublications.Add(threadId, new ThreadPublication());
             }
         }
         if (created)
@@ -60,11 +62,13 @@ public sealed partial class RouterCore
             PublishThreadRegistration(thread, priority);
             return;
         }
-        PublishThreadPriorityChange(thread, priority);
+        try { PublishThreadPriorityChange(thread, priority); }
+        finally { DrainThreadPriorityChanges(thread); }
     }
 
     private void PublishThreadPriorityChange(RouterThread thread, ThreadPriority priority)
     {
+        BeforeThreadPriorityFeedForTests?.Invoke(priority);
         thread.NotifyPriorityChanged(priority);
         _events.Append(new RouterEvent { Kind = "thread.priority_changed", ThreadId = thread.ThreadId, Value = priority.Class });
         SignalDispatch();
@@ -74,7 +78,7 @@ public sealed partial class RouterCore
     {
         var thread = new RouterThread(id, priority, weight, affinity);
         _threads.Add(id, thread);
-        _registeringThreads.Add(id, new PendingThreadRegistration());
+        _threadPublications.Add(id, new ThreadPublication { Enqueues = [] });
         return thread;
     }
 
@@ -82,23 +86,45 @@ public sealed partial class RouterCore
     {
         BeforeThreadRegistrationFeedForTests?.Invoke(thread.ThreadId);
         _events.Append(new RouterEvent { Kind = "thread.registered", ThreadId = thread.ThreadId, Value = priority.Class });
-        PendingThreadRegistration pending;
+        List<QueuedRequest> enqueues;
         lock (_gate)
         {
-            pending = _registeringThreads[thread.ThreadId];
-            _registeringThreads.Remove(thread.ThreadId);
+            var pending = _threadPublications[thread.ThreadId];
+            enqueues = pending.Enqueues!;
+            pending.Enqueues = null;
         }
-        if (pending.PriorityChanges is { } changes)
+
+        DrainThreadPriorityChanges(thread);
+        foreach (var item in enqueues) PublishEnqueue(item);
+    }
+
+    private void DrainThreadPriorityChanges(RouterThread thread)
+    {
+        while (true)
         {
+            List<ThreadPriority> changes;
+            lock (_gate)
+            {
+                var pending = _threadPublications[thread.ThreadId];
+                if (pending.PriorityChanges is not { } batch)
+                {
+                    _threadPublications.Remove(thread.ThreadId);
+                    return;
+                }
+
+                // Keep ownership while the detached batch is published. New changes go to
+                // the next batch, including changes made from a synchronous feed observer.
+                changes = batch;
+                pending.PriorityChanges = null;
+            }
             foreach (var change in changes)
             {
                 // The setter has already returned. A deferred priority callback's exception
-                // cannot propagate back to it or strand this registration's pending tickets.
+                // cannot propagate back to it or strand the remaining notifications.
                 try { PublishThreadPriorityChange(thread, change); }
                 catch (Exception) { }
             }
         }
-        foreach (var item in pending.Enqueues) PublishEnqueue(item);
     }
 
     public ValueTask<RouterTicket> EnqueueAsync(string threadId, InferenceRequest request, CancellationToken ct = default)
@@ -180,8 +206,9 @@ public sealed partial class RouterCore
                     }
                 }
 
-                publishItem = !_registeringThreads.TryGetValue(threadId, out var pending);
-                if (!publishItem) pending!.Enqueues.Add(queued);
+                var publication = _threadPublications.GetValueOrDefault(threadId)?.Enqueues;
+                publishItem = publication is null;
+                publication?.Add(queued);
             }
 
             if (publishRegistration) PublishThreadRegistration(queued.Thread, priority);
