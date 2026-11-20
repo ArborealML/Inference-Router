@@ -15,6 +15,7 @@ internal static partial class AirServerJson
     [JsonSerializable(typeof(RouterStats))]
     [JsonSerializable(typeof(TicketSnapshot))]
     [JsonSerializable(typeof(SwitchAck))]
+    [JsonSerializable(typeof(SwitchOperationSnapshot))]
     [JsonSerializable(typeof(ReloadAck))]
     [JsonSerializable(typeof(ErrorBody))]
     [JsonSerializable(typeof(string))]
@@ -74,8 +75,11 @@ internal sealed record ErrorDetail
     [JsonPropertyName("type")] public string Type { get; init; } = "air_error";
 }
 
+internal sealed record SwitchOperationSnapshot(string OperationId, string Status, string? Reason);
+
 internal sealed record SwitchAck
 {
+    public required string OperationId { get; init; }
     public required string Engine { get; init; }
     public required string Model { get; init; }
     public bool Switching { get; init; }

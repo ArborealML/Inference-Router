@@ -23,7 +23,7 @@ public static partial class ServerApp
     internal static WebApplication Build(string[] args, string? configPath, RouterConfig? configOverride,
         TimeProvider streamClock, Func<EngineDefinition, Lifecycle.IEngineLifecycleProvider>? lifecycleFactory = null,
         Func<EngineDefinition, HttpMessageHandler>? httpHandlerFactoryForTests = null, string? reloadTokenForTests = null,
-        Func<string?>? readTargetResetOptInForTests = null)
+        Func<string?>? readTargetResetOptInForTests = null, TimeProvider? adminSwitchClockForTests = null)
     {
         configPath ??= Environment.GetEnvironmentVariable("ARBOREAL_ROUTER_CONFIG")
                        ?? Environment.GetEnvironmentVariable("AIR_CONFIG")
@@ -52,6 +52,7 @@ public static partial class ServerApp
         builder.Services.AddSingleton(_ => new RouterCore(config, null, null, TimeProvider.System,
             lifecycleFactory, reload: loaded, nativeResetStartupInstance: targetResetInstance));
         builder.Services.AddSingleton(streamClock);
+        builder.Services.AddSingleton(new AdminSwitchOperations(adminSwitchClockForTests ?? TimeProvider.System));
 
         var app = builder.Build();
         // Explicit --urls / ASPNETCORE_URLS win over the config's listen address; setting
@@ -74,7 +75,10 @@ public static partial class ServerApp
         app.MapGet("/admin/status", (HttpContext ctx, RouterCore r) => HandleStatus(ctx, r));
         app.MapGet("/admin/events", (HttpContext ctx, RouterCore r) => HandleEvents(ctx, r));
         app.MapPost("/admin/threads", (HttpContext ctx, RouterCore r) => HandleThreads(ctx, r));
-        app.MapPost("/admin/switch", (HttpContext ctx, RouterCore r) => HandleSwitch(ctx, r));
+        app.MapPost("/admin/switch", (HttpContext ctx, RouterCore r, AdminSwitchOperations operations) =>
+            HandleSwitch(ctx, r, operations));
+        app.MapGet("/admin/switch/{operationId}", (string operationId, HttpContext ctx, AdminSwitchOperations operations) =>
+            HandleSwitchLookup(ctx, operations, operationId));
         if (reload is not null)
         {
             app.MapGet("/admin/config/reload", (HttpContext ctx, RouterCore r) => reload.GetAsync(ctx, r));
@@ -574,11 +578,12 @@ public static partial class ServerApp
         }
     }
 
-    private static async Task HandleSwitch(HttpContext ctx, RouterCore router)
+    private static async Task HandleSwitch(HttpContext ctx, RouterCore router, AdminSwitchOperations operations)
     {
         var body = await ReadBodyAsync(ctx, router, ctx.RequestAborted).ConfigureAwait(false);
         if (body is null) return;
         var ownsAdminUse = false;
+        AdminSwitchOperations.Operation? accepted = null;
         try
         {
             using var doc = JsonDocument.Parse(body);
@@ -605,35 +610,82 @@ public static partial class ServerApp
                     $"engine {engineName} has no serving profile '{profileName}' for {model}").ConfigureAwait(false);
                 return;
             }
-            // Fire-and-forget by design: the switch continues after the 202 ack is written;
-            // its lifetime is bounded by engine shutdown, not by this request.
-#pragma warning disable IDISP013 // await-in-using not applicable: intentionally detached Task
-            _ = Task.Run(async () =>
+            if (!operations.TryReserve(out accepted))
             {
-                try
-                {
-                    if (profile is null)
-                        await engine.WaitForModelAsync(model, Timeout.InfiniteTimeSpan, CancellationToken.None).ConfigureAwait(false);
-                    else
-                        await engine.WaitForProfileAsync(model, profile, Timeout.InfiniteTimeSpan, CancellationToken.None).ConfigureAwait(false);
-                }
-                finally { router.ReleaseEngineAdmin(); }
-            });
-#pragma warning restore IDISP013
-            ownsAdminUse = false;
+                await WriteErrorAsync(ctx, 503, "too_many_switch_operations",
+                    "The explicit switch operation limit is full. Retry later.").ConfigureAwait(false);
+                return;
+            }
+
+            // The accepted record owns the admin use before the worker is submitted.
+            operations.Schedule(accepted, router, engine, model, profile);
             ctx.Response.StatusCode = 202;
-            var ack = new SwitchAck { Engine = engineName!, Model = model!, Profile = profile?.Name, Switching = true };
-            await AirJson.WriteAsync(ctx.Response, ack,
-                AirServerJson.AirServerContext.Default.SwitchAck, ctx.RequestAborted).ConfigureAwait(false);
+            var ack = new SwitchAck
+            {
+                OperationId = accepted.Id.ToString("N"),
+                Engine = engineName,
+                Model = model,
+                Profile = profile?.Name,
+                Switching = true,
+            };
+            await SendSwitchAckAsync(ctx, ack, operations.Clock).ConfigureAwait(false);
         }
-        catch (JsonException)
+        catch (JsonException) when (accepted is null)
         {
             await WriteErrorAsync(ctx, 400, "invalid_request", "body is not valid JSON").ConfigureAwait(false);
         }
         finally
         {
-            if (ownsAdminUse) router.ReleaseEngineAdmin();
+            if (accepted is not null) operations.CloseAck(accepted);
+            else if (ownsAdminUse) router.ReleaseEngineAdmin();
         }
+    }
+
+    private static async Task SendSwitchAckAsync(HttpContext ctx, SwitchAck ack, TimeProvider clock)
+    {
+        var started = clock.GetTimestamp();
+        var send = WriteSwitchAckAsync(ctx, ack);
+        try
+        {
+            var remaining = TimeSpan.FromSeconds(30) - clock.GetElapsedTime(started);
+            await send.WaitAsync(remaining > TimeSpan.Zero ? remaining : TimeSpan.Zero, clock, ctx.RequestAborted)
+                .ConfigureAwait(false);
+        }
+        catch (Exception)
+        {
+            // Successful completion can win the race with the watchdog. Otherwise Abort owns
+            // transport termination, including a suffix that suppresses RequestAborted.
+            try
+            {
+                if (!send.IsCompletedSuccessfully) ctx.Abort();
+            }
+            finally
+            {
+                // The deadline initiates abort. The ACK half stays open until this same send retires.
+                await send.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+            }
+        }
+    }
+
+    private static async Task WriteSwitchAckAsync(HttpContext ctx, SwitchAck ack)
+    {
+        ctx.RequestAborted.ThrowIfCancellationRequested();
+        await AirJson.WriteAsync(ctx.Response, ack,
+            AirServerJson.AirServerContext.Default.SwitchAck, ctx.RequestAborted).ConfigureAwait(false);
+        await ctx.Response.CompleteAsync().ConfigureAwait(false);
+    }
+
+    private static async Task HandleSwitchLookup(HttpContext ctx, AdminSwitchOperations operations, string operationId)
+    {
+        ctx.Response.Headers.CacheControl = "no-store";
+        if (operationId.Length != 32 || !Guid.TryParseExact(operationId, "N", out var id) ||
+            operations.Lookup(id) is not { } snapshot)
+        {
+            await WriteErrorAsync(ctx, 404, "not_found", "Switch operation not found.").ConfigureAwait(false);
+            return;
+        }
+        await AirJson.WriteAsync(ctx.Response, snapshot,
+            AirServerJson.AirServerContext.Default.SwitchOperationSnapshot, ctx.RequestAborted).ConfigureAwait(false);
     }
 
     private static async Task HandleTicket(HttpContext ctx, RouterCore router, string id)
