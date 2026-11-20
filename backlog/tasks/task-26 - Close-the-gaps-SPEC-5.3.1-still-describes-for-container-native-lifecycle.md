@@ -1,11 +1,11 @@
 ---
 id: TASK-26
 title: Close the gaps SPEC 5.3.1 still describes for container-native lifecycle
-status: Waiting
+status: To Do
 assignee:
-  - '@gpt-6.2-sol-release'
+  - '@gpt-6.2-astra'
 created_date: '2026-11-17T02:54:00Z'
-updated_date: '2026-11-20T08:22:00Z'
+updated_date: '2026-11-20T08:45:00Z'
 labels:
   - engine
   - lifecycle
@@ -19,7 +19,7 @@ ordinal: 26000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Wake: Delivery receives the SPEC clarification, exact-source fixture review and green hosted CI for [selective reset](https://github.com/ArborealML/Inference-Router/pull/48). Two shutdown cancellation tests timed out on 4c0681b in the [Ubuntu Release run](https://github.com/ArborealML/Inference-Router/actions/runs/44700636453). Both passed unchanged among 58 focused Release cases on c1d5a29, zero skips. The earlier reset suite passed 41/41. Independent launch, post-publication mutation and durable host settlement remain open.
+Selective native quarantine and reset landed in [PR #48](https://github.com/ArborealML/Inference-Router/pull/48). Both cancellation regressions passed unchanged among 58 focused Release cases, and [post-merge CI](https://github.com/ArborealML/Inference-Router/actions/runs/44704425802) passed. Remaining work covers exec output and logs, daemon change detection, the Windows transport decision, and uncertain-start reconciliation.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -27,12 +27,12 @@ Wake: Delivery receives the SPEC clarification, exact-source fixture review and 
 - [x] #1 Verify image Id, RepoDigests and platform independently of tag resolution. A mismatch refuses the switch with one actionable message.
 - [x] #2 GPU device requests, mounts and resource limits are expressible in config and reach the create request
 - [ ] #3 Exec frame demux and log reading exist behind the provider seam with a fake, and a non-zero exec exit is a failure
-- [ ] #4 A failed activation after native lifecycle transaction entry latches the target through dispatcher wakes until explicit target reset or relevant configuration change. Earlier claim-hook or scheduling rollback permits retry without reset.
+- [x] #4 A failed activation after native lifecycle transaction entry latches the target through dispatcher wakes until explicit target reset or relevant configuration change. Earlier claim-hook or scheduling rollback permits retry without reset.
 - [ ] #5 Daemon event subscription (or a documented polling substitute) replaces the assumption that nothing else changed the engine
 - [ ] #6 The Windows named-pipe transport is implemented or explicitly declined in SPEC with the reason
 - [ ] #7 After an uncertain start, reconcile the exact recorded operation and immutable container ID. Prove cleanup of the owned unit, or retain the host fence until reconciliation establishes the outcome.
 - [x] #8 A shipped native Docker example passes the config loader with every model selector removed from that engine. The shipped-sample load test passes and remaining delegated examples identify exec as legacy.
-- [ ] #9 After A fails, repeated scheduler wakeups and cooldown expiry produce zero attempts for its engine/model/profile/config generation. Resetting A permits a fresh attempt without resetting unrelated targets (decision-62).
+- [x] #9 After A fails, repeated scheduler wakeups and cooldown expiry produce zero attempts for its engine/model/profile/config generation. Resetting A permits a fresh attempt without resetting unrelated targets (decision-62).
 - [x] #10 A conflicting native stop response cannot authorize forced removal or replacement unless an independent observation proves the exact owned instance stopped. Pin the refusal and verified-state cases and reconcile the documented 409 behavior.
 - [x] #11 After ambiguous stop/removal, retain exact operation and immutable ID. Block force-removal, replacement and retry until independently proven terminal.
 <!-- AC:END -->

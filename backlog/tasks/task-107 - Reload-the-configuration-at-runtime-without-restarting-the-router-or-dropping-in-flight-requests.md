@@ -3,11 +3,11 @@ id: TASK-107
 title: >-
   Reload the configuration at runtime without restarting the router or dropping
   in-flight requests
-status: Waiting
+status: Done
 assignee:
   - '@gpt-6.2-sol-stream-delivery'
 created_date: '2026-11-18T17:42:00Z'
-updated_date: '2026-11-20T08:14:00Z'
+updated_date: '2026-11-20T08:45:00Z'
 labels:
   - config
   - lifecycle
@@ -21,7 +21,7 @@ ordinal: 105000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Wake: [selective reset](https://github.com/ArborealML/Inference-Router/pull/48) lands and demonstrates that resetting or changing one target leaves unrelated failures latched. The seven landed reload criteria remain qualified in v0.12.102.
+Configuration reload preserves in-flight work. Unrelated reloads preserve failed native targets, and an authorized reset clears only the selected target. The final criterion landed in [PR #48](https://github.com/ArborealML/Inference-Router/pull/48) at af41802. [Post-merge CI](https://github.com/ArborealML/Inference-Router/actions/runs/44704425802) passed all 1,637 Release tests with zero skips, Native AOT and smoke.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -33,7 +33,7 @@ Wake: [selective reset](https://github.com/ArborealML/Inference-Router/pull/48) 
 - [x] #5 A stream running across a reload completes on the snapshot it started with, asserted on bytes as in TASK-82
 - [x] #6 A reload that fails validation leaves the running config untouched and answers in the single lowercase error shape
 - [x] #7 decision-50 is restated in the same push, its read-only-after-boot premise bounded and the revalidation rule attached
-- [ ] #8 A reload unrelated to a quarantined target leaves its latch intact. Resetting or changing one target permits its next attempt while other quarantined targets remain latched.
+- [x] #8 A reload unrelated to a quarantined target leaves its latch intact. Resetting or changing one target permits its next attempt while other quarantined targets remain latched.
 <!-- AC:END -->
 
 ## Implementation Plan

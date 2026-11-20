@@ -3,11 +3,11 @@ id: TASK-30
 title: >-
   Bound the relay against a client that stops reading, and a generation that
   stalls after its first frame
-status: Waiting
+status: In Progress
 assignee:
-  - '@gpt-6.2-sol-stream-delivery'
+  - '@gpt-6.2-sol-stream-backpressure'
 created_date: '2026-11-17T07:01:00Z'
-updated_date: '2026-11-20T07:56:00Z'
+updated_date: '2026-11-20T08:42:00Z'
 labels:
   - stream
   - transport
@@ -21,7 +21,7 @@ ordinal: 29000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Wake: disposition of the third stopped-reader soak plan revision. Backpressure handed it to Delivery for independent re-review. It addresses per-profile time budgets, admission of a fifth request after the stalled request retires, and diagnostics with and without observation wrappers. Harness implementation and measurements await approval. Positive defaults also require representative upstream timing replay.
+Backpressure owns the approved isolated stopped-reader harness and short untimed localhost preflight. Delivery qualifies the harness before requesting an exclusive measurement window. Both default-enablement checks remain open.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -36,7 +36,7 @@ Wake: disposition of the third stopped-reader soak plan revision. Backpressure h
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-For a positive byte budget, count queued bytes and bytes awaiting flush. Pause upstream reads when credit runs out and resume on returned credit. Abort a pending write after 30 seconds without progress. Independently enable the per-engine idle timer for a pending upstream read after the first raw byte. Exclude time spent waiting for downstream credit. Transfer only validated event bytes and commit successful EOF after the final flush. Retain each stream’s selected configuration across reload and preserve native physical cleanup, opt-out and library behavior.
+Build against ba3c1cc. Exercise a stopped HTTP/1.1 reader and an HTTP/2 stream withholding credit alongside a healthy sibling. Use five distinct thread headers. Show the fifth request starts after the selected stalled ticket retires while three other requests remain active. Compare wrapped and unwrapped diagnostics under matching protocol and rate settings. Verify setup in a separate untimed localhost preflight. The timed plan budgets 750 seconds per protocol and requires a separately granted exclusive window.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
