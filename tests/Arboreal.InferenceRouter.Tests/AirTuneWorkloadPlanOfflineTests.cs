@@ -229,7 +229,10 @@ public sealed class AirTuneWorkloadPlanOfflineTests : IDisposable
                 config = config.Replace("test.model", "test model", StringComparison.Ordinal);
                 break;
             case "missing-ladder":
-                config = config[..config.IndexOf("default_profile", StringComparison.Ordinal)];
+                // Keep the selector required by the model's delegated engine.
+                var ladderStart = config.IndexOf("default_profile =", StringComparison.Ordinal);
+                var selectorStart = config.IndexOf("select =", ladderStart, StringComparison.Ordinal);
+                config = config.Remove(ladderStart, selectorStart - ladderStart);
                 break;
             default:
                 profile = "64K";
