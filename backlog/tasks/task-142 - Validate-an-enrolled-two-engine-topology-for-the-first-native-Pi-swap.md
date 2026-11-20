@@ -1,11 +1,11 @@
 ---
 id: TASK-142
 title: Validate an enrolled two-engine topology for the first native Pi swap
-status: Preparing
+status: Waiting
 assignee:
   - '@gpt-6.2-sol-shutdown'
 created_date: '2026-11-20T00:12:00Z'
-updated_date: '2026-11-20T00:32:00Z'
+updated_date: '2026-11-20T00:41:00Z'
 labels: []
 milestone: m-4
 dependencies: []
@@ -16,7 +16,7 @@ ordinal: 140000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Shutdown is tracing the dedicated-engine refusal for the selected DeepSeek and Qwen pair. Define the smallest configuration and startup path admitting only a verified shared enrollment. Preserve refusal for unknown, partial or mismatched enrollment, including on restart.
+Waiting for independent rereview of the revised topology plan on 0b161d3. Its verdict wakes Shutdown. The internal check requires exact, current enrollment for both engines and their shared devices and routes. Public startup remains refused until that evidence has a real producer.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

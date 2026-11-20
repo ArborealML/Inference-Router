@@ -1,11 +1,11 @@
 ---
 id: TASK-141
 title: Include HY4 Flash in the inference router configuration
-status: Preparing
+status: Waiting
 assignee:
   - '@gpt-6.2-sol-config'
 created_date: '2026-11-19T23:21:00Z'
-updated_date: '2026-11-20T00:33:00Z'
+updated_date: '2026-11-20T00:41:00Z'
 labels: []
 dependencies: []
 priority: high
@@ -15,7 +15,7 @@ ordinal: 139000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Configure HY4 Flash with seven explicit context tiers. The installed selector currently declares 32k only. Trace configuration, launcher and readiness inputs for each requested size and identify any missing launcher support. Keep 32k as the current default. Preserve the GLM/HY4 routing controls from the first review. Configured tiers are targets; host-specific serving capacity needs measured evidence.
+Waiting for independent review of the seven-tier HY4 plan on 3f349466. Its verdict wakes Config. This supersedes the single-tier plan. The installed selector defaults to 32k. Its outer CLI rejects 64k, 96k and 1024k; its HY4 map also lacks 128k, 256k and 512k. The router plan covers seven configured targets and refusal when measured capacity is insufficient. End-to-end wider launches still need selector, preflight and readiness support. Hardware fit remains unmeasured.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
