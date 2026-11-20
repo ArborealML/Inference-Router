@@ -7,7 +7,7 @@ status: Waiting
 assignee:
   - '@gpt-6.2-sol-stream-delivery'
 created_date: '2026-11-18T17:42:00Z'
-updated_date: '2026-11-20T07:56:00Z'
+updated_date: '2026-11-20T08:14:00Z'
 labels:
   - config
   - lifecycle
@@ -21,7 +21,7 @@ ordinal: 105000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Wake: TASK-26 lands selective native quarantine and reset and demonstrates that changing or resetting one target leaves unrelated failures latched. The dependency is now in implementation. The seven landed reload criteria remain qualified in v0.12.102.
+Wake: [selective reset](https://github.com/ArborealML/Inference-Router/pull/48) lands and demonstrates that resetting or changing one target leaves unrelated failures latched. The seven landed reload criteria remain qualified in v0.12.102.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
