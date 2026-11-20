@@ -1,11 +1,11 @@
 ---
 id: TASK-110
 title: Coordinate model engines that share one host with exclusive residency
-status: Waiting
+status: In Progress
 assignee:
   - '@gpt-6.2-sol-lifecycle'
 created_date: '2026-11-18T18:13:00Z'
-updated_date: '2026-11-20T17:42:00Z'
+updated_date: '2026-11-20T17:48:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -21,7 +21,7 @@ ordinal: 108000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Wake: Lifecycle reaches its Docker exec plan handoff and takes the producer correction. Feature review of [the launch producer](https://github.com/ArborealML/Inference-Router/pull/49) found fixture evidence echoed configuration and combined changes could mask missing checks. Seed observations independently, vary one field at a time, and test create/start contention. Quarantine a flushed journal entry when the head update fails; refuse malformed observed ID or settings. No successful launch bypass was demonstrated. Seven focused passes and hosted green on e2bd353 precede correction.
+Lifecycle has picked up the [launch-record correction](https://github.com/ArborealML/Inference-Router/pull/49). Seed effective observations independently, isolate field and authority drift, and exercise create/start contention. Quarantine a flushed journal entry when its head update fails and refuse malformed observed IDs or settings. Review demonstrated proof gaps; seven focused passes and hosted green on e2bd353 precede correction.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -51,4 +51,6 @@ Review on 3160a11 required wrong-target recovery fencing and old-grant/fresh-ope
 [PR #19](https://github.com/ArborealML/Inference-Router/pull/19) preserves the paired 1/1 receipt at 6ef4723. Review identified stale incumbent authority during applied-launch recovery and missing failure controls. Published e7b951c closes after the exact match and before the first occupancy await. Six focused Release cases passed, covering denial during and after a held probe, untouched preflight, both cancellation cuts, completion, installation and drain-disposal faults, and fresh retry without duplicate effects. Both findings cleared review, all hosted checks passed, and PR #19 merged at 0b84766. Deadline equality in the enrolled path remains separate from fixture cancellation.
 
 [PR #23](https://github.com/ArborealML/Inference-Router/pull/23) binds the exact stored proof to the installed runtime attempt and full target before delivery. Review of 0f6245a found foreign proofs could pass on model/tier alone. Correction a99b91c passed independent review and 5/5 focused cases, including substitutions and a notification fault after Open. The deadline fixture passed at 8af4cdd and all seven guard/deadline cases at 8b6a919. Merged at 5d66c8d after all hosted checks passed. Production issuance still requires independently attested live authority.
+
+Host enrollment also owns identifying the trusted observation adapter for the actual serving connection required by TASK-118. The launch receipt alone cannot authorize readiness reads.
 <!-- SECTION:NOTES:END -->

@@ -3,11 +3,11 @@ id: TASK-118
 title: >-
   Resolve each native launch profile and dispatch to its verified serving
   instance
-status: Preparing
+status: Waiting
 assignee:
-  - '@gpt-6.2-sol-shutdown'
+  - '@gpt-6.2-sol-release'
 created_date: '2026-11-18T18:56:00Z'
-updated_date: '2026-11-20T17:38:00Z'
+updated_date: '2026-11-20T17:48:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -23,7 +23,7 @@ ordinal: 116000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Shutdown owns the host-enrollment authority contract plan. The [launch receipt](https://github.com/ArborealML/Inference-Router/pull/49) identifies a container, while both readiness replies need independent evidence of the same connected serving process. Reserve a closed generation and bind original probe paths, credentials, receipt and one monotonic budget to both reads and conclusive retirement. Include the actual backend connection behind a proxy. Historical lookup grants no fresh authority. Reader implementation waits for this producer.
+Wake: independent review of the connected-peer authority plan on f3d2d20. Reader implementation also needs a host-enrollment adapter that attests the serving process on its actual stream or mediated backend connection. Bind the launch receipt and closed generation to both ordered GETs and conclusive retirement. Config supplies the original probe and credential-version policy.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

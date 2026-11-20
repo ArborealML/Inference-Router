@@ -3,11 +3,11 @@ id: TASK-97
 title: >-
   Stop the admin ticket snapshot echoing caller identifiers at a length nothing
   bounds
-status: Preparing
+status: Waiting
 assignee:
-  - '@gpt-6.2-sol-stream-frames'
+  - '@gpt-6.2-sol-stream-delivery'
 created_date: '2026-11-18T10:57:00Z'
-updated_date: '2026-11-20T17:40:00Z'
+updated_date: '2026-11-20T17:48:00Z'
 labels: []
 milestone: m-1
 dependencies: []
@@ -17,7 +17,7 @@ ordinal: 96000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Frames is checking current admission, admin snapshot and body-reader behavior against these criteria and their proposed limits. Identify any reachable issue and distinguish existing protections from proposed changes to accepted identities. The [keepalive frame change](https://github.com/ArborealML/Inference-Router/pull/50) bounds displayed status only.
+Wake: independent wire review of the two-route body-limit plan on da73b35. The plan applies existing lowercase 413 behavior to declared and streamed oversized admin requests before effects, pins exact-cap acceptance and corrects the SPEC snapshot sizing claim. Whole snapshot identities remain available.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
