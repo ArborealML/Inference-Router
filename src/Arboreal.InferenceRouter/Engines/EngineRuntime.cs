@@ -131,6 +131,9 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
         // Read and written under the transition gate. In-flight probes cannot publish a new proof.
         public bool IncumbentContradicted;
         public bool IncumbentServingContradicted;
+        public bool ReadOnlyFailureCanRestore;
+        public NativeSwitchQuarantine.Target? QuarantineTarget;
+        public SwitchResult? NativeFailure;
         public TaskCompletionSource Ready { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         // Set before the volatile terminal verdict is published, and completed after its outcome is delivered.
         public TaskCompletionSource? ReadinessOutcomeDelivered;
@@ -181,6 +184,9 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
         if (hostEnrollment is not null && def.Docker?.Resources is not null)
             throw new RouterConfigException($"engine.{def.Name}: Docker resources require host qualification before enrollment");
         _hostEnrollment = hostEnrollment;
+        if (hostEnrollment is null && _lifecycleBinding?.ProviderKind == DockerLifecycleProvider.ProviderKind &&
+            def.Docker is { } docker)
+            _nativeQuarantine = new(docker, _runtimeEpoch);
         _def = def;
         _reloadSource = reloadSource;
         _catalog = def.Catalog.ToDictionary(entry => entry.Key, entry => CopyCatalogEntry(entry.Value), StringComparer.Ordinal);
@@ -376,7 +382,8 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
             if (_stopped) return;
             var current = Capability;
             var state = _switchState;
-            if (ReferenceEquals(current, expected) && state.End == SwitchEnd.Pending &&
+            if (ReferenceEquals(current, expected) &&
+                (state.End == SwitchEnd.Pending || (state.End == SwitchEnd.Failed && state.ReadOnlyFailureCanRestore)) &&
                 string.Equals(state.Model, current.SwitchingToward, StringComparison.Ordinal) &&
                 state.IncumbentProof is { } incumbent && incumbent.Version + 1 == expected.Version)
             {
@@ -1105,6 +1112,11 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
                             }
                             else
                             {
+                                var quarantineTarget = _nativeQuarantine?.Resolve(target!);
+                                if (quarantineTarget is { } key && _nativeQuarantine!.Read(key) is { } failed &&
+                                    ReferenceEquals(Capability, offered))
+                                    return new(failed);
+
                                 claimTarget = target;
                                 var costKey = CostKey(target!);
                                 var candidate = new SwitchState
@@ -1112,6 +1124,7 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
                                     Model = canonical,
                                     Profile = profileOverride?.Name,
                                     RequiredWindow = requiredWindow,
+                                    QuarantineTarget = quarantineTarget,
                                     IncumbentProof = offered.Healthy ? offered : null,
                                 };
                                 ct.ThrowIfCancellationRequested();
@@ -1314,6 +1327,9 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
                 : SwitchResult.RouterStopped);
         }
 
+        if (own && end == SwitchEnd.Failed && state.NativeFailure is { } failure)
+            return new ObservedSwitchResult(failure);
+
         var cap = Capability;
         if (ReadyIn(cap, canonical, requiredWindow)) return ReadyFrom(cap.SwitchProof, canonical, profile);
         if (!own) return null;
@@ -1434,9 +1450,10 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
     private readonly record struct SwitchEndCommit(SwitchEnd End, bool Committed, ServingCapacity Serving,
         EngineCapability? MutationUnknown);
 
-    // A native refusal is committed with the provider operation gate already held. No delivery here.
+    // A read-only refusal from the actual Docker provider is committed with its operation gate held.
+    // Delivery runs after the provider and transition gates are released.
     private SwitchEndCommit CommitSwitchEnd(SwitchState state, bool ready, bool restoreIncumbent,
-        DockerLifecycleProvider? native = null)
+        DockerLifecycleProvider? native = null, bool withdrawForFailure = false)
     {
         var committed = false;
         var serving = default(ServingCapacity);
@@ -1453,6 +1470,8 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
                 // dispatch. Withdraw it before clearing the marker.
                 if (end == SwitchEnd.RouterStopped || (_stopped && state.ReadinessOutcomeDelivered is not null))
                     PublishUnknown();
+                if (end == SwitchEnd.Failed && withdrawForFailure && !_stopped)
+                    mutationUnknown = PublishUnknown();
                 var canRestore = end == SwitchEnd.Failed && restoreIncumbent && !_stopped && !_retiring;
                 if (canRestore && native is not null &&
                     !native.CanRestoreIncumbentUnderGate(state.IncumbentProof?.SwitchProof?.NativeLaunch?.ContainerId))
@@ -1521,7 +1540,7 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
         var profileOverride = target.Profile;
         var lifecycle = _lifecycle!;
         var timing = state.Timing!;
-        var nativeRefusalCommitted = false;
+        var nativeTransaction = false;
         // The idle claim already validated this target against the runtime binding.
         try
         {
@@ -1551,27 +1570,25 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
             }
             else
             {
+                nativeTransaction = state.QuarantineTarget is not null;
                 report = await lifecycle.SwitchWithReportAsync(target, timing, state.IncumbentProof?.SwitchProof, ct)
                     .ConfigureAwait(false);
             }
             var launched = report.Result;
             if (!launched.Succeeded)
             {
-                Emit("engine.switch_failed", model: model, reason: DescribeLaunchFailure(launched));
-                // The provider's own words stay on the feed; the caller is told only the category.
-                state.FailureReason = SwitchReason.LaunchFailed;
-                // An attempted stop or launch can invalidate the earlier proof even when it returns failure.
-                // Only an explicit refusal before either call can restore a still-valid incumbent.
-                if (report.RefusedBeforeMutation && lifecycle.NativeProvider is { } native)
+                if (nativeTransaction)
                 {
-                    await native.EnterOperationAsync(ct).ConfigureAwait(false);
-                    SwitchEndCommit commit;
-                    try { commit = CommitSwitchEnd(state, ready: false, restoreIncumbent: true, native); }
-                    finally { native.ExitOperation(); }
-                    nativeRefusalCommitted = commit.Committed;
-                    DeliverSwitchEnd(state, commit);
+                    await FinishNativeFailureAsync(state, DescribeLaunchFailure(launched), providerRefusal: true,
+                        report.RefusedBeforeMutation, lifecycle.NativeProvider, ct).ConfigureAwait(false);
                     return;
                 }
+
+                Emit("engine.switch_failed", model: model, reason: DescribeLaunchFailure(launched));
+                // The provider's own words stay on the feed; the caller is told only the category.
+                RecordLifecycleFailureReason(state, providerRefusal: true);
+                // An attempted stop or launch can invalidate the earlier proof even when it returns failure.
+                // Only an explicit refusal before either call can restore a still-valid incumbent.
                 if (!report.RefusedBeforeMutation)
                 {
                     var unknown = PublishUnknown();
@@ -1585,7 +1602,7 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
             await RunLegacyReadinessAsync(state, target, lifecycle.Readiness(target), lifecycle.Kind, ct)
                 .ConfigureAwait(false);
         }
-        catch (Exception) when (nativeRefusalCommitted || state.ReadinessOutcomeDelivered is not null)
+        catch (Exception) when (state.ReadinessOutcomeDelivered is not null)
         {
             // The terminal winner has already settled. Delivery faults cannot write a second outcome.
         }
@@ -1595,9 +1612,15 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
         }
         catch (Exception ex)
         {
+            if (nativeTransaction)
+            {
+                await FinishNativeFailureAsync(state, WireText.Bound(ex.Message, ProviderReasonChars),
+                    providerRefusal: false, restoreIncumbent: false, native: null, ct).ConfigureAwait(false);
+                return;
+            }
             // Provider and IO text reaches the feed here, bounded; the caller is told only the category, so a
             // message that names a socket path or an address never travels to whoever made the request.
-            state.FailureReason = SwitchReason.SwitchError;
+            RecordLifecycleFailureReason(state, providerRefusal: false);
             Emit("engine.switch_failed", model: model, reason: WireText.Bound(ex.Message, ProviderReasonChars));
             // An exception can escape after the engine was stopped and before anything was relaunched, and
             // the router cannot tell from here which half happened. Unknown is the honest answer (§5.5).
@@ -1618,6 +1641,87 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
                 else _hostEnrollment?.ImmediateForTests?.AfterRun?.Invoke();
             }
         }
+    }
+
+    private static void RecordLifecycleFailureReason(SwitchState state, bool providerRefusal)
+    {
+        if (providerRefusal)
+        {
+            state.FailureReason = SwitchReason.LaunchFailed;
+        }
+        else
+        {
+            state.FailureReason = SwitchReason.SwitchError;
+        }
+    }
+
+    private void RememberNativeFailure(SwitchState state)
+    {
+        if (state.QuarantineTarget is not { } target) return;
+        var failure = SwitchResult.FailedFromRecord(state.FailureReason);
+        _nativeQuarantine!.Remember(target, failure);
+        state.NativeFailure = failure;
+    }
+
+    private async Task FinishNativeFailureAsync(SwitchState state, string reason, bool providerRefusal,
+        bool restoreIncumbent, DockerLifecycleProvider? native, CancellationToken stop)
+    {
+        TaskCompletionSource? delivery = null;
+        SwitchEnd previousEnd;
+        lock (_transitionGate)
+        {
+            previousEnd = state.End;
+            if (!_stopped && !_retiring && ReferenceEquals(_switchState, state) && previousEnd == SwitchEnd.Pending)
+            {
+                delivery = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                RecordLifecycleFailureReason(state, providerRefusal);
+                state.ReadOnlyFailureCanRestore = restoreIncumbent;
+                RememberNativeFailure(state);
+                state.ReadinessOutcomeDelivered = delivery;
+                state.End = SwitchEnd.Failed;
+            }
+        }
+
+        if (delivery is null)
+        {
+            // A returned provider failure can describe how a stopped transaction unwound.
+            if (providerRefusal && previousEnd == SwitchEnd.RouterStopped)
+                Emit("engine.switch_failed", model: state.Model, reason: reason);
+            return;
+        }
+
+        try
+        {
+            try { BeforeNativeFailureEventForTests?.Invoke(); }
+            finally { Emit("engine.switch_failed", model: state.Model, reason: reason); }
+        }
+        finally
+        {
+            try
+            {
+                var commit = await CommitNativeFailureAsync(state, restoreIncumbent, native, stop).ConfigureAwait(false);
+                DeliverSwitchEnd(state, commit);
+            }
+            finally { delivery.TrySetResult(); }
+        }
+    }
+
+    private async ValueTask<SwitchEndCommit> CommitNativeFailureAsync(SwitchState state, bool restoreIncumbent,
+        DockerLifecycleProvider? native, CancellationToken stop)
+    {
+        if (!restoreIncumbent || native is null)
+            return CommitSwitchEnd(state, ready: false, restoreIncumbent, withdrawForFailure: !restoreIncumbent);
+
+        // Restoration of a native incumbent is revalidated against the same provider in
+        // provider-to-transition order. Stops can cancel this wait after Failed has won.
+        try { await native.EnterOperationAsync(stop).ConfigureAwait(false); }
+        catch (OperationCanceledException) when (stop.IsCancellationRequested)
+        {
+            return CommitSwitchEnd(state, ready: false, restoreIncumbent: false);
+        }
+
+        try { return CommitSwitchEnd(state, ready: false, restoreIncumbent: true, native); }
+        finally { native.ExitOperation(); }
     }
 
     private static string DescribeLaunchFailure(LifecycleResult result)
@@ -1771,6 +1875,7 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
                     _ => failure,
                 };
                 state.FailureReason = failure.Reason;
+                RememberNativeFailure(state);
                 PublishUnknown();
             }
 

@@ -1,6 +1,6 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.105)
+Status: draft, continuously revised (v0.12.106)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
@@ -352,6 +352,8 @@ daemon transaction per engine. 137 tests green.
   that answers no `upload_url`, an upload that dies or answers no asset id, an asset name listed twice on
   the release, and a tag that moves after the first resolve. No tag has run the gate: still configured,
   not proven.
+- v0.12.106 — latch the exact failed native switch target across dispatch wakes and unrelated
+  reloads. Allow an authenticated, explicitly enabled reset of one latch (§5.3.1, §6, §7.7).
 - v0.12.105 — fence native Docker stop/removal uncertainty in the live provider and order
   incumbent restoration against exact stop/removal issue on that provider (§5.3.1).
 - v0.12.104 — add independent opt-in SSE buffer and upstream idle limits for HTTP completions.
@@ -1679,7 +1681,7 @@ A preflight refusal leaves existing containers untouched and can retain a still-
 discovery proof (§5.5). The provider refuses unavailable or unauthorized daemon access without
 escalating. Once stop begins, a failure can leave some peers stopped or
 removed. A create, start or readiness failure can leave the target container behind. The shipped
-path has no rollback and no persistent target quarantine. The scheduler considers only healthy
+path has no rollback. The scheduler considers only healthy
 engines for an automatic switch, so `auto_switch` alone cannot load the first model on a cold engine.
 
 On the non-enrolled Docker path, the post-launch readiness budget comes from
@@ -1765,21 +1767,29 @@ Same-target callers can join the active switch, and cancelling one waiter detach
 waiter (§5.5). The host reservation and
 restart reconciliation are pending (TASK-110), as are the admission reservation and drain (TASK-25).
 
-**Target quarantine and recovery (decision 62).** A preflight refusal preserves an incumbent with
-valid proof. Quarantine the failed model, serving profile and configuration generation on that engine.
-Scheduler wakeups and cooldown expiry leave the quarantine in force. An explicit operator reset or
-relevant config change permits a fresh attempt. Each affected ticket still pending settles once with a
-corresponding terminal feed event. A ticket that has already terminated keeps its outcome. A failed
-switch returns `503` with `switch_failed` before response commitment and uses the in-band error
-contract on a committed stream (§6).
+**Native target quarantine and recovery (decision 62).** Once a non-enrolled native switch
+enters its lifecycle transaction, a selected failure latches its engine, canonical model,
+effective profile and bound definition in the runtime. This covers ownership and preflight
+refusals, an unsuccessful provider result or provider exception, and failed readiness.
+An earlier claim-hook or scheduling failure rolls back with zero launches and leaves no
+target latch, so a later attempt can proceed without a reset.
+The native plan resolves an omitted tier or alias to the same canonical tier used in Docker
+create. A read-only refusal can preserve an incumbent when the same provider and current
+probe evidence still support it. Subsequent attempts to switch to a latched target return the
+recorded failure category without starting another provider transaction. Dispatch wakes,
+elapsed cooldown and unrelated reloads leave the latch in force. Independently proven
+resident service and unrelated eligible targets can continue.
 
-After the incumbent stops, a host that can hold only one resident inference instance cannot serve
-locally until a target has verified readiness. If activation of A fails, service for B is a separate
-request or cohort. It requires a fresh, ownership-checked host transaction and proof of B's readiness.
-The failed A request keeps its own failure. Reconcile runtime state and probes before recovery and
-treat the journal as advisory. Uncertain occupancy blocks launch. Recovery starts a fresh transaction
-with no automatic rollback and leaves unrelated resources untouched. Quarantine and alternate
-recovery remain implementation work (TASK-26, TASK-114). Configuration reload is tracked in TASK-107.
+Each affected selected ticket settles once. Before response commitment, it receives
+`503` with `switch_failed`. On a committed stream it receives the existing in-band
+error (§6). A waiter that joined a failed switch keeps its recorded outcome even when an
+operator resets that target and a later switch proves it ready.
+
+An explicit operator reset clears a single latch on the current definition (§7.7).
+After the incumbent stops, a host that can hold only one resident inference instance needs
+a fresh ownership-checked transaction and verified readiness to serve another target.
+Uncertain occupancy continues to block launch. The ordinary host and provider authority
+checks govern any attempt after reset. Alternate recovery remains separate work (TASK-114).
 
 **Reservation semantics.** Today a dispatched ticket holds its engine-slot reservation across a model
 switch (`RouterCore` reserves at dispatch and releases in the `finally` after the engine call). That is
@@ -2563,6 +2573,13 @@ Admin/control (not OpenAI-compatible, our own contract):
   | 422 | `reload_invalid_config` for a read or validation failure |
   | 422 | `reload_requires_restart` for changes outside §7.7 |
   | 503 | `reload_unavailable` once the router starts closing |
+- `POST /admin/config/target-reset` requires a file-backed startup with the reload Bearer and
+  a separate reset opt-in (§7.7). Send one current reload ETag in `If-Match` and JSON
+  `{"engine":"…","model":"…","profile":"…"}` naming the engine, canonical model and exact
+  effective profile. Use an explicit empty string for an unprofiled target. Success returns
+  204 and keeps the generation. A malformed request returns 400 `invalid_target_reset`.
+  An unknown, unlatched or busy target returns 409 `target_reset_unavailable`. Authentication,
+  staleness and shutdown use the reload error envelope and codes above.
 - `GET /admin/status` — engines, loaded models, queue depths, in-flight,
   stats per thread/model/engine, and `FeedSubscriberFaults`: how many feed observer invocations have thrown since
   startup (§6.1).
@@ -3101,7 +3118,15 @@ Decision 75 bounds decision 50's startup-only assumption to each published engin
 The router retains the runtime and definition of every unchanged engine. An accepted switch and
 any joined waiters use the target resolved before claim. An accepted stream keeps its selected
 runtime and upstream bytes. Prospective dispatch revalidates the current generation and the exact
-runtime before taking the ticket. Selective native quarantine and reset remain open.
+runtime before taking the ticket. Unrelated applies retain the native runtime's existing latches.
+
+Set `ARBOREAL_ROUTER_TARGET_RESET_ENABLED=true` before startup to opt in to exact target reset
+(decision 77). The file-backed server also requires `ARBOREAL_ROUTER_RELOAD_TOKEN`. Supplying
+only the token enables reload alone. Reset checks the authenticated ETag against the startup
+instance and current configuration generation when it removes the exact latch. It issues
+no lifecycle operation and leaves unresolved native effects and host fencing in force.
+Native definition changes still require a restart. A future managed reload must preserve the
+latches for unchanged effective target definitions.
 
 ## 8. Prefix normalization & affinity
 

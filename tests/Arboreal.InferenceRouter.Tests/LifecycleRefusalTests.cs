@@ -164,6 +164,7 @@ public sealed class LifecycleRefusalTests
     [InlineData("held")]
     [InlineData("recovered")]
     [InlineData("shutdown")]
+    [InlineData("contradiction")]
     public async Task NativeRefusalRevalidatesIncumbentAtCommit(string disposition)
     {
         const string id = DockerLifecycleProviderTests.FullPeerId;
@@ -172,7 +173,7 @@ public sealed class LifecycleRefusalTests
         var loaded = false;
         var absent = false;
         var cfg = DockerLifecycleProviderTests.Cfg(waitHealth: false, removeStopped: false);
-        using var inference = new FakeEngineHandler { LoadedModels = [] };
+        using var inference = new HeldRefusalProbe { LoadedModels = [] };
         using var daemon = new FakeDockerDaemonHandler
         {
             Responder = path =>
@@ -230,7 +231,30 @@ public sealed class LifecycleRefusalTests
 
         var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var preflightEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releasePreflight = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var ended = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        if (disposition is "shutdown" or "contradiction")
+        {
+            daemon.AsyncResponder = async (path, ct) =>
+            {
+                if (path.Contains("/images/", StringComparison.Ordinal))
+                {
+                    preflightEntered.TrySetResult();
+                    await releasePreflight.Task.WaitAsync(Limit, CancellationToken.None);
+                    ct.ThrowIfCancellationRequested();
+                }
+                return daemon.Responder(path);
+            };
+        }
+        if (disposition == "contradiction")
+        {
+            engine.BeforeNativeFailureEventForTests = () =>
+            {
+                entered.TrySetResult();
+                release.Task.WaitAsync(Limit).GetAwaiter().GetResult();
+            };
+        }
         var failuresAtWake = 0;
         EngineCapability? unknown = null;
         engine.AfterFailedMutationUnknownForTests = snapshot => unknown = snapshot;
@@ -244,7 +268,7 @@ public sealed class LifecycleRefusalTests
             ended.TrySetResult(!transitionHeld && providerFree);
         };
         engine.AfterReadyWaitForTests = _ => failuresAtWake = feed.Replay(0).Count(e => e.Kind == "engine.switch_failed");
-        var holdFeed = disposition is "untouched" or "acknowledged" or "shutdown";
+        var holdFeed = disposition is "untouched" or "acknowledged";
         feed.Subscribe(e =>
         {
             if (!holdFeed || e.Kind != "engine.switch_failed" || e.Model != "target") return;
@@ -258,14 +282,41 @@ public sealed class LifecycleRefusalTests
             if (holdFeed) await entered.Task.WaitAsync(Limit);
             if (disposition == "acknowledged")
                 Assert.True((await provider.StopAsync(nativeTarget, peers, CancellationToken.None)).Succeeded);
-            if (disposition == "shutdown") await engine.DisposeAsync();
+            if (disposition == "shutdown")
+            {
+                await preflightEntered.Task.WaitAsync(Limit);
+                await engine.DisposeAsync();
+            }
+            if (disposition == "contradiction")
+            {
+                await preflightEntered.Task.WaitAsync(Limit);
+                var marker = engine.Capability;
+                Assert.Equal("target", marker.SwitchingToward);
+                inference.LoadedModels = ["different"];
+                inference.HoldModels = true;
+                var probe = engine.ProbeHealthOnceAsync(CancellationToken.None);
+                await inference.Entered.Task.WaitAsync(Limit);
+                releasePreflight.TrySetResult();
+                await entered.Task.WaitAsync(Limit);
+                Assert.DoesNotContain(feed.Replay(0), entry => entry.Kind == "engine.switch_failed");
+                Assert.False(refusal.IsCompleted);
+                inference.Release.TrySetResult();
+                Assert.True(await probe.WaitAsync(Limit));
+                Assert.Same(marker, engine.Capability);
+            }
         }
-        finally { release.TrySetResult(); }
+        finally
+        {
+            releasePreflight.TrySetResult();
+            inference.Release.TrySetResult();
+            release.TrySetResult();
+        }
 
         var result = await refusal;
         Assert.True(await ended.Task.WaitAsync(Limit));
         Assert.False(result.IsReady);
-        Assert.Single(feed.Replay(0), e => e.Kind == "engine.switch_failed");
+        Assert.Equal(disposition == "shutdown" ? 0 : 1,
+            feed.Replay(0).Count(e => e.Kind == "engine.switch_failed"));
         Assert.Null(engine.SwitchingToward);
         Assert.False(engine.Capability.HealthFromClaim);
         Assert.Equal(["incumbent"], engine.LoadedModels);
@@ -279,7 +330,13 @@ public sealed class LifecycleRefusalTests
         {
             Assert.False(engine.Healthy);
             Assert.Null(engine.Capability.SwitchProof);
-            if (disposition != "shutdown")
+            if (disposition == "contradiction")
+            {
+                Assert.Empty(engine.Capability.ModelContextWindows);
+                Assert.Equal(default, engine.Capability.Serving);
+                Assert.Null(unknown);
+            }
+            else if (disposition != "shutdown")
             {
                 var captured = Assert.IsType<EngineCapability>(unknown);
                 Assert.Equal("target", captured.SwitchingToward);
@@ -295,8 +352,39 @@ public sealed class LifecycleRefusalTests
         else Assert.Equal(EngineRuntime.SwitchOutcome.RouterStopped, result.Outcome);
         var writes = daemon.Requests.Skip(initialRequests)
             .Where(request => !request.StartsWith("GET ", StringComparison.Ordinal));
-        string[] expectedWrites = disposition is "untouched" or "shutdown" ? [] : [$"POST {stop}"];
+        string[] expectedWrites = disposition is "untouched" or "shutdown" or "contradiction" ? [] : [$"POST {stop}"];
         Assert.Equal(expectedWrites, writes);
+
+        if (disposition == "held")
+        {
+            var beforeReset = engine.Capability;
+            var priorCalls = daemon.Requests.Count;
+            lock (engine.ReloadTransitionGate)
+                Assert.True(engine.ResetNativeTargetUnderGate("target", ""));
+            Assert.Same(beforeReset, engine.Capability);
+            Assert.Equal(priorCalls, daemon.Requests.Count);
+            var fenced = await engine.WaitForModelAsync("target", Limit, CancellationToken.None);
+            Assert.Equal(SwitchReason.LaunchFailed, fenced.Detail);
+            Assert.Equal($"GET /v1.44/containers/{submitted}/json", Assert.Single(daemon.Requests.Skip(priorCalls)));
+            Assert.False(engine.Healthy);
+        }
+    }
+
+    private sealed class HeldRefusalProbe : FakeEngineHandler
+    {
+        internal bool HoldModels { get; set; }
+        internal TaskCompletionSource Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        internal TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
+        {
+            if (HoldModels && request.RequestUri!.AbsolutePath.EndsWith("/models", StringComparison.Ordinal))
+            {
+                Entered.TrySetResult();
+                await Release.Task.WaitAsync(ct);
+            }
+            return await base.SendAsync(request, ct);
+        }
     }
 
     private static EngineRuntime Engine(FakeEngineHandler handler, RecordingLifecycleProvider provider, EventRing feed,

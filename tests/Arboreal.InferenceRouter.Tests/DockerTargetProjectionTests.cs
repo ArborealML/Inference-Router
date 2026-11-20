@@ -150,6 +150,46 @@ public sealed partial class DockerTargetProjectionTests
     }
 
     [Fact]
+    public void NativeFailureQuarantineUsesTheFrozenCreateLabels()
+    {
+        var engine = LoadToml("""
+            [engine.strata.catalog.qwen]
+            serving = [{ name = "tier", max_context = 1024, aliases = ["alternate"], docker = { env = ["TIER=fixture"] } }]
+            [engine.strata.catalog.other]
+            """);
+        var docker = engine.Docker!;
+        var quarantine = new NativeSwitchQuarantine(docker, Guid.NewGuid());
+        var omitted = Selection(engine, "qwen");
+        var canonical = Selection(engine, "qwen", "tier");
+        var alternate = canonical with { Profile = canonical.Profile! with { Name = "alternate" } };
+        var unprofiled = Selection(engine, "other");
+        var failure = EngineRuntime.SwitchResult.Failed(SwitchReason.LaunchFailed);
+
+        var canonicalKey = quarantine.Resolve(canonical);
+        foreach (var target in new[] { omitted, canonical, alternate, unprofiled })
+        {
+            var key = quarantine.Resolve(target);
+            var create = DockerLifecycleProvider.ProjectCreateRequest(docker, engine.Name, target, docker.ImageIdentity!);
+            Assert.Equal(create.Labels[DockerLifecycleProvider.LabelModel], key.Model);
+            Assert.Equal(create.Labels[DockerLifecycleProvider.LabelProfile], key.Profile);
+        }
+        quarantine.Remember(quarantine.Resolve(omitted), failure);
+        Assert.Same(failure, quarantine.Read(canonicalKey));
+        Assert.True(quarantine.Reset(canonicalKey));
+        quarantine.Remember(quarantine.Resolve(alternate), failure);
+        Assert.Same(failure, quarantine.Read(canonicalKey));
+
+        var unprofiledKey = quarantine.Resolve(unprofiled);
+        Assert.Empty(unprofiledKey.Profile);
+        quarantine.Remember(unprofiledKey, failure);
+        Assert.True(quarantine.Reset(canonicalKey));
+        Assert.Null(quarantine.Read(quarantine.Resolve(alternate)));
+        Assert.Same(failure, quarantine.Read(unprofiledKey));
+        Assert.Throws<RouterConfigException>(() =>
+            quarantine.Resolve(canonical with { Profile = canonical.Profile! with { Name = "unknown" } }));
+    }
+
+    [Fact]
     public void EqualSizeProfilesKeepDistinctLiteralSettingsAndUseTheCapturedDefault()
     {
         var engine = LoadToml("""

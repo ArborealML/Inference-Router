@@ -15,6 +15,9 @@ public sealed partial class RouterCore
         internal ICapabilitySource[] Capabilities { get; } = [.. engines.Values];
     }
 
+    internal enum NativeTargetResetStatus { Reset, Stale, Closing, Unavailable }
+
+    private readonly string? _nativeResetStartupInstance;
     private ConfigurationGeneration _generation;
     private bool _closing;
     private int _engineAdminUses;
@@ -45,6 +48,30 @@ public sealed partial class RouterCore
     internal void ReleaseEngineAdmin()
     {
         lock (_gate) _engineAdminUses--;
+    }
+
+    internal NativeTargetResetStatus ResetNativeTarget(string instance, long expectedGeneration, string engineName,
+        string model, string effectiveProfile, CancellationToken caller)
+    {
+        lock (_gate)
+        {
+            if (_closing) return NativeTargetResetStatus.Closing;
+            var current = CurrentGeneration;
+            if (_nativeResetStartupInstance is null || instance != _nativeResetStartupInstance ||
+                current.Number != expectedGeneration)
+                return NativeTargetResetStatus.Stale;
+            if (current.Engines.GetValueOrDefault(engineName) is not { } engine || engine.Name != engineName)
+                return NativeTargetResetStatus.Unavailable;
+
+            lock (engine.ReloadTransitionGate)
+            {
+                caller.ThrowIfCancellationRequested();
+                if (!engine.ResetNativeTargetUnderGate(model, effectiveProfile))
+                    return NativeTargetResetStatus.Unavailable;
+            }
+        }
+        SignalDispatch();
+        return NativeTargetResetStatus.Reset;
     }
 
     internal async Task<(ConfigReloadStatus Status, long Generation)> ApplyConfigurationAsync(
