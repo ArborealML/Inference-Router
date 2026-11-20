@@ -3,11 +3,11 @@ id: TASK-99
 title: >-
   Cap the caller-facing text in keepalive frames and in an error frame on a
   committed stream
-status: Waiting
+status: In Progress
 assignee:
-  - '@gpt-6.2-sol-stream-delivery'
+  - '@gpt-6.2-sol-stream-frames'
 created_date: '2026-11-18T11:14:00Z'
-updated_date: '2026-11-20T17:15:00Z'
+updated_date: '2026-11-20T17:16:00Z'
 labels: []
 milestone: m-1
 dependencies: []
@@ -17,7 +17,7 @@ ordinal: 98000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Wake: Native confirms the lifecycle change and caller-facing frame change have disjoint source edits. Delivery then releases Frames without another lead decision. Independent review approved the plan on 004e70f. The upstream error-body read ceiling landed in [PR #44](https://github.com/ArborealML/Inference-Router/pull/44).
+Native confirmed the stream and lifecycle source edits are independent. Frames has the implementation release for the reviewed keepalive identifier projection and wire-size fixtures. The upstream error-body read ceiling landed separately in [PR #44](https://github.com/ArborealML/Inference-Router/pull/44).
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
