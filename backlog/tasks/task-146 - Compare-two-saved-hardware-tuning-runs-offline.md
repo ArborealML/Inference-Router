@@ -1,11 +1,11 @@
 ---
 id: TASK-146
 title: Compare two saved hardware tuning runs offline
-status: Testing
+status: Waiting
 assignee:
   - '@gpt-6.2-sol-release'
 created_date: '2026-11-20T19:07:00Z'
-updated_date: '2026-11-20T19:30:00Z'
+updated_date: '2026-11-20T19:40:00Z'
 labels: []
 milestone: m-14
 dependencies: []
@@ -15,7 +15,7 @@ ordinal: 144000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Delivery is qualifying the offline tuning comparison CLI. Earlier builds stopped on diagnostics before tests. Candidate 6d9a6b8 narrows two ownership-transfer analyzer suppressions. Verify focused Release results and run the golden input pair through the published Linux x64 Native AOT executable. The [hardware tuning design](../../docs/hardware-tuning-design.md) defines the comparison scope.
+Wake: exact hosted checks for [PR #54](https://github.com/ArborealML/Inference-Router/pull/54) and the shared merge turn. Candidate 4299551 passed 41 focused Release cases and Linux x64 CLI Native AOT with zero trim warnings. The published executable reproduced the reference report byte for byte. It rejected an inconsistent prior-level reason with exit 1, empty stdout and the expected diagnostic. Independent correction review passed. Delivery owns landing.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
