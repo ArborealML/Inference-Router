@@ -5,6 +5,7 @@ using System.Text;
 using System.Text.Json;
 using System.Threading.Channels;
 using Arboreal.InferenceRouter.Server;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -444,6 +445,148 @@ public class StreamFrameIdentityTests
         await clientBody.CopyToAsync(tail, ct);
         Assert.True(ShortFixture.AsSpan(prefix.Length).SequenceEqual(tail.ToArray()),
             $"The relay tore, changed, duplicated, or inserted a keepalive into the upstream frame split at byte {split}.");
+    }
+
+    [Fact(Timeout = 30_000)]
+    public async Task CoreShutdownEndsAnAlreadyQueuedHttp11StreamAfterItsFirstComment()
+    {
+        const string queuedThread = "shutdown-queued";
+        const string model = "test-model";
+        const string reason = "router shutting down";
+        using var bound = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        var ct = bound.Token;
+        using var fake = new FragmentedEngine();
+        var releaseSlot = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var occupyingBody = new FragmentedBody(ShortFixture, 0, ShortFixture.Length, releaseSlot.Task);
+        using var spare = new MemoryStream(CompletionFixture, writable: false);
+        fake.Responses.Enqueue(occupyingBody);
+        fake.Responses.Enqueue(spare);
+
+        var clock = new ReadinessDeadlineTests.ManualClock();
+        var starting = WireHarness.StartAsync(maxInflight: 1, fake: fake, streamClock: clock);
+        WebApplication? app = null;
+        Task? draining = null;
+        Task? stopping = null;
+        using var suffix = new MemoryStream();
+        try
+        {
+            var started = await starting.WaitAsync(ct);
+            app = started.App;
+            using var handler = new SocketsHttpHandler { MaxResponseDrainSize = 0 };
+            using var http = new HttpClient(handler, disposeHandler: false)
+            {
+                BaseAddress = new Uri($"http://127.0.0.1:{started.Port}"),
+                Timeout = Timeout.InfiniteTimeSpan,
+            };
+            var router = app.Services.GetRequiredService<RouterCore>();
+            var engine = router.Engines["fake"];
+            var enqueued = new TaskCompletionSource<RouterTicket>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var released = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            router.BeforeEnqueueFeedForTests = ticket =>
+            {
+                if (ticket.ThreadId == queuedThread) enqueued.TrySetResult(ticket);
+            };
+            engine.AfterForwardReleaseForTests = () => released.TrySetResult();
+
+            var (_, occupyingResponse) = await WireHarness.StartStreamAsync(http, "shutdown-blocker", Request, ct);
+            using var occupying = occupyingResponse;
+            await occupyingBody.AtGate.Task.WaitAsync(ct);
+            Assert.Equal(1, engine.InferenceUses);
+
+            var (id, response) = await WireHarness.StartStreamAsync(http, queuedThread, Request, ct);
+            using var pending = response;
+            Assert.Equal(HttpVersion.Version11, pending.Version);
+            Assert.Equal(HttpStatusCode.OK, pending.StatusCode);
+            Assert.Equal("text/event-stream", pending.Content.Headers.ContentType?.ToString());
+            Assert.True(pending.Headers.TransferEncodingChunked);
+            await using var body = await pending.Content.ReadAsStreamAsync(ct);
+            await ReadExpectedAsync(body, ": [router keepalive seq=0 status=\"queued model=test-model\"]\n\n"u8.ToArray(), ct);
+
+            var ticket = await enqueued.Task.WaitAsync(ct);
+            Assert.Equal(id, ticket.Id);
+            Assert.Equal(queuedThread, ticket.ThreadId);
+            Assert.Equal(TicketState.Queued, ticket.State);
+            Assert.False(ticket.PendingEnqueuePublication);
+            Assert.Null(ticket.StreamChannel);
+            Assert.Null(ticket.HttpDelivery);
+            Assert.False(ticket.StreamReady.IsCompleted);
+            Assert.False(ticket.CompletionTask.IsCompleted);
+            Assert.False(released.Task.IsCompleted);
+            Assert.Equal(1, engine.InferenceUses);
+            Assert.Same(spare, Assert.Single(fake.Responses));
+
+            var before = router.Events.Replay(0).Where(evt => evt.TicketId == id).ToArray();
+            var queued = Assert.Single(before, evt => evt.Kind == "request.enqueued");
+            Assert.Equal(queuedThread, queued.ThreadId);
+            Assert.Equal(model, queued.Model);
+            Assert.DoesNotContain(before, IsTerminal);
+
+            draining = body.CopyToAsync(suffix, ct);
+            Assert.False(draining.IsCompleted);
+            Assert.False(ct.IsCancellationRequested);
+            Assert.False(router.ShutdownToken.IsCancellationRequested);
+            stopping = Task.Run(async () => await router.DisposeAsync(), CancellationToken.None);
+
+            // Successful chunked EOF requires a terminating HTTP chunk, even for an empty SSE suffix.
+            await draining;
+            Assert.Empty(suffix.ToArray());
+            var cancelled = await Assert.ThrowsAsync<RouterRequestException>(() => ticket.CompletionTask.WaitAsync(ct));
+            await stopping.WaitAsync(ct);
+            await released.Task.WaitAsync(ct);
+            Assert.Equal(TicketState.Cancelled, ticket.State);
+            Assert.Equal("cancelled", cancelled.Code);
+            Assert.Equal("cancelled", ticket.ErrorCode);
+            Assert.Equal(reason, cancelled.Message);
+            Assert.Equal(reason, ticket.Error);
+            Assert.Null(await ticket.StreamReady.WaitAsync(ct));
+            Assert.Same(spare, Assert.Single(fake.Responses));
+
+            var after = router.Events.Replay(0).Where(evt => evt.TicketId == id).ToArray();
+            Assert.Equal(queued, Assert.Single(after, evt => evt.Kind == "request.enqueued"));
+            var outcome = Assert.Single(after, IsTerminal);
+            Assert.True(queued.Seq < outcome.Seq);
+            Assert.Equal("request.cancelled", outcome.Kind);
+            Assert.Equal(queuedThread, outcome.ThreadId);
+            Assert.Equal(model, outcome.Model);
+            Assert.Equal(reason, outcome.Reason);
+        }
+        finally
+        {
+            releaseSlot.TrySetResult();
+            using var cleanup = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            if (app is null)
+            {
+                try { app = (await starting.WaitAsync(cleanup.Token)).App; }
+                catch (Exception) when (starting.IsFaulted || starting.IsCanceled)
+                {
+                    // The startup failure was already on the test path.
+                }
+            }
+
+            if (app is not null)
+            {
+                try
+                {
+                    if (draining is not null)
+                    {
+                        try { await draining.WaitAsync(cleanup.Token); }
+                        catch (Exception) when (draining.IsFaulted || draining.IsCanceled)
+                        {
+                            // A failed exchange may fault on disposal. The test path observes read errors.
+                        }
+                    }
+                    if (stopping is not null) await stopping.WaitAsync(cleanup.Token);
+                }
+                finally
+                {
+                    try { await app.StopAsync(cleanup.Token); }
+                    finally { await app.DisposeAsync().AsTask().WaitAsync(cleanup.Token); }
+                }
+            }
+        }
+
+        static bool IsTerminal(RouterEvent evt) =>
+            evt.Kind is "queue.rejected" or "request.completed" or "request.failed" or "request.cancelled";
     }
 
     private static async Task AssertUpstreamOutcomeAsync(
