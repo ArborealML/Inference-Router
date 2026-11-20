@@ -360,13 +360,21 @@ public sealed class DockerLifecycleProvider : IEngineLifecycleProvider, IDisposa
         };
     }
 
-    internal DockerCreateRequest BuildCreateRequest(LifecycleTarget target, DockerImageIdentity image)
+    internal DockerCreateRequest BuildCreateRequest(LifecycleTarget target, DockerImageIdentity image) =>
+        BuildCreateRequest(_cfg, _scope.EngineName, _scope.RouterId, _command, _env, target, image);
+
+    internal static DockerCreateRequest ProjectCreateRequest(DockerLifecycleConfig config, string engine,
+        LifecycleTarget target, DockerImageIdentity image) =>
+        BuildCreateRequest(config, engine, config.RouterId, config.Command, config.Env, target, image);
+
+    private static DockerCreateRequest BuildCreateRequest(DockerLifecycleConfig config, string engine, string routerId,
+        string[] command, string[] env, LifecycleTarget target, DockerImageIdentity image)
     {
-        var launch = _cfg.TargetPlans?.Resolve(target);
+        var launch = config.TargetPlans?.Resolve(target);
         var body = new DockerCreateRequest
         {
             Image = image.Id,
-            Entrypoint = _cfg.Entrypoint is { } executable ? [executable] : null,
+            Entrypoint = config.Entrypoint is { } executable ? [executable] : null,
             Healthcheck = launch?.Healthcheck is { } probe ? new DockerCreateHealthcheck
             {
                 Test = ["CMD-SHELL", probe.Command],
@@ -377,12 +385,12 @@ public sealed class DockerLifecycleProvider : IEngineLifecycleProvider, IDisposa
             } : null,
             Labels = new Dictionary<string, string>(StringComparer.Ordinal)
             {
-                [LabelRouter] = _scope.RouterId,
-                [LabelEngine] = _scope.EngineName,
+                [LabelRouter] = routerId,
+                [LabelEngine] = engine,
                 [LabelModel] = launch?.Model ?? target.Model,
                 [LabelProfile] = launch?.Profile ?? target.EffectiveProfile,
             },
-            StopTimeoutSeconds = Math.Max(1, _cfg.StopTimeoutMs / 1000),
+            StopTimeoutSeconds = Math.Max(1, config.StopTimeoutMs / 1000),
         };
         if (launch is not null)
         {
@@ -391,24 +399,24 @@ public sealed class DockerLifecycleProvider : IEngineLifecycleProvider, IDisposa
         }
         else
         {
-            if (_command.Length > 0) body.Cmd = Expand(_command, target);
-            if (_env.Length > 0) body.Env = Expand(_env, target);
+            if (command.Length > 0) body.Cmd = Expand(command, target, engine);
+            if (env.Length > 0) body.Env = Expand(env, target, engine);
         }
 
-        var resources = _cfg.Resources;
+        var resources = config.Resources;
         var binds = launch?.Binds ?? resources?.BindMounts ?? [];
         var memory = launch is null ? resources?.MemoryBytes : launch.MemoryBytes;
         var memorySwap = launch is null ? resources?.MemorySwapBytes : launch.MemorySwapBytes;
         var gpu = launch is null ? resources?.Gpu : launch.Gpu;
         var shm = launch is null ? resources?.ShmSizeBytes : launch.ShmSizeBytes;
-        var policy = _cfg.ContainerPolicy;
-        if (_cfg.HostPort is null && _cfg.NetworkMode is null && _cfg.IpcMode is null && policy is null &&
+        var policy = config.ContainerPolicy;
+        if (config.HostPort is null && config.NetworkMode is null && config.IpcMode is null && policy is null &&
             resources is null && binds.IsEmpty && memory is null && memorySwap is null && gpu is null && shm is null) return body;
 
         var host = new DockerHostConfig
         {
-            NetworkMode = _cfg.NetworkMode,
-            IpcMode = _cfg.IpcMode,
+            NetworkMode = config.NetworkMode,
+            IpcMode = config.IpcMode,
             Init = policy?.Init,
             RestartPolicy = policy?.Restart is { } restart ? new DockerRestartPolicy(restart, 0) : null,
             LogConfig = policy?.LogRotation is { } rotation ? new DockerLogConfig("", new Dictionary<string, string>(StringComparer.Ordinal)
@@ -421,10 +429,10 @@ public sealed class DockerLifecycleProvider : IEngineLifecycleProvider, IDisposa
             ShmSize = shm,
         };
         body.HostConfig = host;
-        if (_cfg.HostPort is { } port)
+        if (config.HostPort is { } port)
         {
-            var containerPort = $"{_cfg.ContainerPort}/tcp";
-            if (_cfg.HasUnqualifiedTargetDocker || _cfg.HasUnqualifiedLaunchOptions)
+            var containerPort = $"{config.ContainerPort}/tcp";
+            if (config.HasUnqualifiedTargetDocker || config.HasUnqualifiedLaunchOptions)
                 body.ExposedPorts = new Dictionary<string, DockerExposedPort>(StringComparer.Ordinal)
                 {
                     [containerPort] = new DockerExposedPort(),
@@ -434,7 +442,7 @@ public sealed class DockerLifecycleProvider : IEngineLifecycleProvider, IDisposa
                 [containerPort] = [new DockerPortBinding
                 {
                     // Docker interprets an empty HostIp as every interface.
-                    HostIp = _cfg.HostIp,
+                    HostIp = config.HostIp,
                     HostPort = port.ToString(CultureInfo.InvariantCulture),
                 }],
             };
@@ -455,13 +463,13 @@ public sealed class DockerLifecycleProvider : IEngineLifecycleProvider, IDisposa
         return body;
     }
 
-    private string[] Expand(string[] template, LifecycleTarget target)
+    private static string[] Expand(string[] template, LifecycleTarget target, string engine)
     {
         var outValues = new string[template.Length];
         for (var i = 0; i < template.Length; i++)
         {
             outValues[i] = DockerTargetPlans.Expand(template[i], target.Model,
-                target.Profile?.Name ?? target.Definition.Profile ?? "", _scope.EngineName);
+                target.Profile?.Name ?? target.Definition.Profile ?? "", engine);
         }
         return outValues;
     }
