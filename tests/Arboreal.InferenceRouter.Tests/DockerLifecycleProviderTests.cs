@@ -55,7 +55,7 @@ public sealed class DockerLifecycleProviderTests
 
     internal static DockerLifecycleConfig Cfg(string api = "v1.44", bool pinned = true, string platform = "linux/amd64",
         string socket = LocalSocket, string routerId = "r1", bool waitHealth = true, bool removeStopped = true,
-        int callTimeoutMs = 15_000) => new()
+        int callTimeoutMs = 15_000, int waitTimeoutMs = 600_000) => new()
     {
         Image = Locator,
         ImageIdentity = pinned ? new DockerImageIdentity(ImageId, RepoDigest, platform) : null,
@@ -69,6 +69,7 @@ public sealed class DockerLifecycleProviderTests
         WaitHealth = waitHealth,
         RemoveStopped = removeStopped,
         CallTimeoutMs = callTimeoutMs,
+        WaitTimeoutMs = waitTimeoutMs,
     };
 
     private static LifecycleTarget Target() => new(
@@ -81,6 +82,19 @@ public sealed class DockerLifecycleProviderTests
         var variantField = variant is null ? "" : $",\"Variant\":\"{variant}\"";
         return $"{{\"Id\":\"{id}\",\"RepoDigests\":[\"{digest}\"],\"Os\":\"{os}\",\"Architecture\":\"{architecture}\"{variantField}}}";
     }
+
+    internal static string NativeContainerInspect(string id, string model, string profile = "", string router = "r1",
+        string engine = "strata", string image = ImageId, string startedAt = "2026-01-01T00:00:00.123456781Z",
+        int restarts = 0, string state = "running", bool running = true, bool paused = false,
+        bool restarting = false, bool dead = false) =>
+        $$"""
+        {"Id":"{{id}}","Image":"{{image}}","RestartCount":{{restarts}},
+         "Config":{"Labels":{"arboreal.router":"{{router}}","arboreal.engine":"{{engine}}",
+                             "arboreal.model":"{{model}}","arboreal.profile":"{{profile}}" } },
+         "State":{"Status":"{{state}}","StartedAt":"{{startedAt}}",
+                  "Running":{{(running ? "true" : "false")}},"Paused":{{(paused ? "true" : "false")}},
+                  "Restarting":{{(restarting ? "true" : "false")}},"Dead":{{(dead ? "true" : "false")}} } }
+        """;
 
     private static (HttpStatusCode, string) OwnedIncumbent() => (HttpStatusCode.OK,
         $$$"""[{"Id":"{{{Ours}}}","Labels":{"arboreal.router":"r1","arboreal.engine":"strata","arboreal.model":"incumbent"}}]""");
@@ -165,6 +179,7 @@ public sealed class DockerLifecycleProviderTests
     [Fact(Timeout = 20_000)]
     public async Task RuntimeSwitchesWithMatchingUnixScopeUsingTheSameOwnershipLabels()
     {
+        const string replacement = "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210";
         var config = BindingConfig(LocalSocket);
         var def = config.Engines["strata"];
         using var inference = new FakeEngineHandler { LoadedModels = ["incumbent"] };
@@ -183,8 +198,10 @@ public sealed class DockerLifecycleProviderTests
                     return (HttpStatusCode.OK, """{"ApiVersion":"1.44"}""");
                 if (path.Contains("/images/", StringComparison.Ordinal)) return (HttpStatusCode.OK, Inspect());
                 if (path.EndsWith("/containers/create", StringComparison.Ordinal))
-                    return (HttpStatusCode.Created, """{"Id":"replacement"}""");
-                if (path.EndsWith("/containers/replacement/start", StringComparison.Ordinal))
+                    return (HttpStatusCode.Created, $$"""{"Id":"{{replacement}}"}""");
+                if (path.EndsWith($"/containers/{replacement}/json", StringComparison.Ordinal))
+                    return (HttpStatusCode.OK, NativeContainerInspect(replacement, "strata-8b"));
+                if (path.EndsWith($"/containers/{replacement}/start", StringComparison.Ordinal))
                     inference.LoadedModels = ["strata-8b"];
                 return (HttpStatusCode.NoContent, "");
             },
@@ -205,7 +222,9 @@ public sealed class DockerLifecycleProviderTests
             $"POST /v1.44/containers/{Ours}/stop?t=30",
             $"DELETE /v1.44/containers/{Ours}?force=true",
             "POST /v1.44/containers/create",
-            "POST /v1.44/containers/replacement/start",
+            $"POST /v1.44/containers/{replacement}/start",
+            $"GET /v1.44/containers/{replacement}/json",
+            $"GET /v1.44/containers/{replacement}/json",
         ], daemon.Requests.Skip(1));
         using var create = JsonDocument.Parse(Assert.Single(daemon.Bodies, body => body.Length != 0));
         Assert.Equal(ImageId, create.RootElement.GetProperty("Image").GetString());

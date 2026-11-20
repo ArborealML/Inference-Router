@@ -196,7 +196,10 @@ public sealed class LifecycleRefusalTests
                 if (path == stop)
                     return disposition == "acknowledged" ? (HttpStatusCode.NoContent, "") : throw new HttpRequestException("lost stop reply");
                 if (path == $"/v1.44/containers/{submitted}/json")
-                    return (absent ? HttpStatusCode.NotFound : HttpStatusCode.OK, "{}");
+                    return absent ? (HttpStatusCode.NotFound, "") :
+                        (HttpStatusCode.OK, DockerLifecycleProviderTests.NativeContainerInspect(id, "incumbent"));
+                if (path == $"/v1.44/containers/{id}/json")
+                    return (HttpStatusCode.OK, DockerLifecycleProviderTests.NativeContainerInspect(id, "incumbent"));
                 throw new InvalidOperationException($"Unexpected fake daemon request {path}");
             },
         };
