@@ -1,11 +1,11 @@
 ---
 id: TASK-110
 title: Coordinate model engines that share one host with exclusive residency
-status: In Progress
+status: Waiting
 assignee:
-  - '@gpt-6.2-sol-lifecycle'
+  - '@gpt-6.2-sol-release'
 created_date: '2026-11-18T18:13:00Z'
-updated_date: '2026-11-20T17:12:00Z'
+updated_date: '2026-11-20T17:30:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -21,7 +21,7 @@ ordinal: 108000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Lifecycle has implementation release for the independently reviewed supervised launch-record producer on 72c39a0. Verify exact create bytes and independently observed effective settings. Bind fresh issue and acknowledgment to the original complete topology and member mapping; historical lookup remains read-only across policy changes. Produce a durable receipt with ingress closed through the [existing coordinator entry](https://github.com/ArborealML/Inference-Router/pull/36). Delivery qualifies HostClosedRouteStagingTests.SupervisedLaunchRecord. Public enrollment, host cutover and serving remain open.
+Wake: independent feature and analyzer reviews and exact hosted CI for [the supervised launch-record producer](https://github.com/ArborealML/Inference-Router/pull/49). Delivery qualified e2bd353 with seven focused Release cases and zero skips. The earlier analyzer failure preceded test execution. This scope produces a durable initial launch receipt with ingress closed; public enrollment, operator cutover and serving remain open.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

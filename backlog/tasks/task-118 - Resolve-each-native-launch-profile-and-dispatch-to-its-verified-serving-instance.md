@@ -3,11 +3,11 @@ id: TASK-118
 title: >-
   Resolve each native launch profile and dispatch to its verified serving
   instance
-status: Waiting
+status: Preparing
 assignee:
   - '@gpt-6.2-sol-lifecycle'
 created_date: '2026-11-18T18:56:00Z'
-updated_date: '2026-11-20T00:20:00Z'
+updated_date: '2026-11-20T17:30:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -23,7 +23,7 @@ ordinal: 116000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Waiting for host enrollment to supply a GET-only channel that attests the connected serving process, including the backend leg of any proxy. Delivery of that producer wakes Lifecycle. Bind both readiness reads to the recorded launch, scope, route, immutable container and one serving incarnation while inference is closed. The receipt on 0f76243 identifies the container; its process can restart independently. Revalidate saved Applied evidence and read /v1/models and /props under the original readiness budget. A process restart between valid replies must refuse the combined measurement. Parser changes alone cannot qualify this path.
+Lifecycle is checking the existing observation prerequisite against the [supervised producer candidate](https://github.com/ArborealML/Inference-Router/pull/49). Identify the smallest read-only producer that binds both readiness GETs to the same serving process, including any proxy backend leg, or identify its missing interface and owner. Container identity alone cannot detect process restart. Preserve the original readiness budget and closed inference ingress.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
