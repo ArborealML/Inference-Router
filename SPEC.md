@@ -1,6 +1,6 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.115)
+Status: draft, continuously revised (v0.12.118)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
@@ -352,6 +352,7 @@ daemon transaction per engine. 137 tests green.
   that answers no `upload_url`, an upload that dies or answers no asset id, an asset name listed twice on
   the release, and a tag that moves after the first resolve. No tag has run the gate: still configured,
   not proven.
+- v0.12.118 — generate bounded offline tuning workload manifests from configured serving tiers (§11.2).
 - v0.12.115 — decline Windows Docker named-pipe transport and refuse router-owned pipe addresses
   before provider binding or I/O (§5.3.1, §7, §15).
 - v0.12.114 — report core shutdown on a writable default HTTP stream with one in-band
@@ -3491,6 +3492,7 @@ air threads --id id [--priority high:200] [--server url]
 air tickets id [--server url]
 air config [--config f.toml]
 air tune compare --baseline FILE --candidate FILE
+air tune plan --config FILE --engine ENGINE --model MODEL --seed HEX --max-concurrency N [--profile TIER]
 ```
 
 `air serve` starts the router host in the CLI process. Client verbs construct HTTP requests and
@@ -3593,6 +3595,63 @@ stdout. Valid comparisons, including incomparable records, exit 0. File, platfor
 schema errors exit 1 with a fixed error category and empty stdout. Usage errors exit 2.
 Two synthetic example inputs exercise the contract. [Baseline](tests/Arboreal.InferenceRouter.Tests/AirTuneFixtures/baseline.json)
 · [Candidate](tests/Arboreal.InferenceRouter.Tests/AirTuneFixtures/candidate.json)
+
+### 11.2 Offline tuning workload manifests
+
+`air tune plan --config FILE --engine ENGINE --model MODEL --seed HEX --max-concurrency N [--profile TIER]`
+reads one AIR configuration with the file admission rules in §11.1. It takes each
+required option exactly once, in any order, and accepts one optional profile. The seed
+is 64 lowercase hexadecimal characters and the cap is a single digit from 1 through 8.
+The command selects JSON for a case-insensitive `.json` extension and TOML otherwise.
+The admitted config must contain at most 65,536 bytes of valid UTF-8 without a BOM.
+Only the admitted bytes go to the config loader. The planner uses the parsed catalog
+without constructing an engine runtime or opening referenced files.
+
+Select one exact engine key, refusing any case-insensitive twin of that key. Match
+the model key and its aliases case-insensitively within that engine, requiring one
+distinct canonical match. Select an explicit tier by its exact canonical name. With
+no selection, sort all serving tiers by configured context, then by ordinal name.
+Refuse absent ladders and duplicate tier names. The omission path accepts at most
+16 tiers. An exact single-tier selection can use a longer ladder. The declared
+default is descriptive. Tier names, contexts and slots come from the parsed
+serving ladder. Name-only legacy profiles and Docker target aliases do not supply
+alternate planner tiers.
+
+The output is one compact JSON object in UTF-8 with a final LF. The root fields
+in order are `kind` (`air_tune_workload_plan`), `schema_version` (1), `workload`
+(`near-window-text-v1`), `generator`, `generator_sha256`, `engine`, `model`,
+`default_profile` (null if undeclared), `seed`, `max_concurrency`, `policy` and `tiers`.
+Only the canonical engine, model and tier spellings appear. They use the bounded
+ASCII token syntax in §11.1. The generator identity is `air-tune/text-generator/v1`
+and its hash names the exact embedded definition bytes.
+[Generator definition](src/Arboreal.InferenceRouter.Cli/AirTuneTextGenerator.v1.txt)
+
+| Object | Fields in order |
+| --- | --- |
+| `policy` | `fit_policy` (`near-window-fit-policy-v1`), `target_output_tokens` (512), `waves_per_level` (3), `request_seconds` (600), `output_idle_seconds` (60), `tier_seconds` (5400), `abort_drain_reserve_seconds` (30), `max_prefix_count_calls` (16), `max_tail_count_calls` (8), `max_count_calls` (24), `max_count_input_bytes_per_prompt` (8388608), `max_count_body_bytes_per_call` (349525), `max_candidate_bytes` (8388608). |
+| Tier | `profile`, `configured_context`, `configured_slots`, `planned_cap`, `nominal_prompt_min`, `nominal_prompt_max`, `requests`. |
+| Request | `kind` (`warmup` or `grid`), `concurrency`, `wave`, `worker`, `nonce` (64 lowercase hexadecimal characters). |
+
+For configured context W, the inclusive nominal prompt band is [W−671, W−640].
+W must be at least 672. The cap is the smaller of the operator cap and configured
+slots. A tier begins with an unmeasured warmup at C=1, wave 0, worker 1. It then
+lists consecutive C from 1 through the cap, with waves 1–3 and workers 1–C in
+that order. At cap 8 it lists 109 coordinates including the warmup. The generator
+uses a derived warmup seed and distinct nonce and record domains. Each coordinate
+reproduces candidate text with the nonce first, a selectable prefix of complete
+records and an optional byte prefix of the next record. There is no selected
+count or tail in the manifest.
+
+The policy and coordinates describe planned work. Measurements require a verified
+resident, measured window and slots, real token counting and template rendering,
+fitted prompts, and native and terminal evidence. Final corpus and request-body
+hashes belong to that measured work and its saved summaries. The planner reads
+no credentials, opens no backend connection, and emits no config file paths,
+endpoints, probe paths, launcher settings or runtime observations. It changes
+no configuration, profile or default. Validate the entire output including LF
+against a 524,288-byte limit before writing stdout. Success exits 0. Input,
+platform and planning errors exit 1 with fixed redacted stderr and empty stdout.
+Usage errors exit 2.
 
 ## 12. Future architecture commitments
 
