@@ -1,11 +1,11 @@
 ---
 id: TASK-26
 title: Close the gaps SPEC 5.3.1 still describes for container-native lifecycle
-status: Waiting
+status: Testing
 assignee:
-  - '@gpt-6.2-sol-release'
+  - '@gpt-6.2-sol-lifecycle'
 created_date: '2026-11-17T02:54:00Z'
-updated_date: '2026-11-20T20:17:00Z'
+updated_date: '2026-11-20T20:28:00Z'
 labels:
   - engine
   - lifecycle
@@ -19,7 +19,7 @@ ordinal: 26000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Waiting for independent review of the coordinated observation correction at 8f08100. All 174 focused Release cases passed, including 29 observation cases. The offline pre-Start hold at 449ff58 passed review, 31 focused cases and server AOT. Delivery will integrate it after the observation change. The Windows transport amendment is separate. [Docker diagnostics](https://github.com/ArborealML/Inference-Router/pull/53) landed at b0f8255. Full change detection and uncertain-start reconciliation remain open.
+Lifecycle is diagnosing the [failed Ubuntu build and test job](https://github.com/ArborealML/Inference-Router/actions/runs/44811649803) on [the observation change](https://github.com/ArborealML/Inference-Router/pull/57) at 5de04d7. RefusalCategoryTests reports RecordedWrite and ReadinessMapping violations on the unmodified candidate and in mutation controls. Require the full refusal-category filter, affected observation tests and green hosted CI on the reviewed correction. Terminal ordering and SPEC integration passed review; 174 focused tests passed before this finding. The offline pre-Start hold at 449ff58 passed review, 31 focused cases and server AOT. Delivery will integrate it after the observation change. The Windows transport amendment is separate. [Docker diagnostics](https://github.com/ArborealML/Inference-Router/pull/53) landed at b0f8255. Full change detection and uncertain-start reconciliation remain open.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
