@@ -5,7 +5,7 @@ status: Waiting
 assignee:
   - '@gpt-6.2-sol-stream-delivery'
 created_date: '2026-11-18T04:09:00Z'
-updated_date: '2026-11-20T19:26:00Z'
+updated_date: '2026-11-20T19:42:00Z'
 labels:
   - lifecycle
   - shutdown
@@ -18,7 +18,7 @@ ordinal: 81000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Wake: independent review of the real HTTP shutdown plan on b0f8255. Check who owns the terminal outcome after one complete delta, which bytes the downstream receives, and how the CLI handles cancellation. The plan distinguishes a writable connection from a disconnected client and a stream that already sent its sentinel. Source inspection predicts a cancelled ticket without terminal bytes in the pre-sentinel case. The HTTP result is unmeasured.
+Wake: independent rereview of the active default HTTP shutdown plan. If core shutdown wins while an upstream read is pending, emit the existing cancellation error and one sentinel only on a writable stream at an acknowledged complete event boundary. Pin one exact delta, no late output or duplicate terminal, and a single cancelled ticket and feed result. Queue, switch, idle-only and credited paths remain outside this increment.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

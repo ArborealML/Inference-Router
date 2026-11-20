@@ -3,9 +3,9 @@ id: TASK-26
 title: Close the gaps SPEC 5.3.1 still describes for container-native lifecycle
 status: In Progress
 assignee:
-  - '@gpt-6.2-sol-lifecycle'
+  - '@gpt-6.2-sol-shutdown'
 created_date: '2026-11-17T02:54:00Z'
-updated_date: '2026-11-20T19:27:00Z'
+updated_date: '2026-11-20T19:42:00Z'
 labels:
   - engine
   - lifecycle
@@ -19,7 +19,7 @@ ordinal: 26000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Lifecycle owns the approved daemon-observation increment for a coordinated Docker start returning HTTP 204. [Docker diagnostics](https://github.com/ArborealML/Inference-Router/pull/53) landed at b0f8255. Existing residents, initial 304 responses, uncertain starts and serving-peer verification remain separate. Criterion 5 stays open.
+Lifecycle handed off e875375 for the coordinated Docker 204 daemon-observation increment. Shutdown is implementing the separate supervised lost-start increment: preserve the exact container ID in an anchored record before Docker Start and keep the launch fenced on an unknown reply after reopen. [Docker diagnostics](https://github.com/ArborealML/Inference-Router/pull/53) landed at b0f8255. Full change detection and uncertain-start reconciliation remain open.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

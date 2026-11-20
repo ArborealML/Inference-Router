@@ -3,11 +3,11 @@ id: TASK-109
 title: >-
   Make the subscriber-isolation pins separate the claims they name, and add the
   two missing controls
-status: In Progress
+status: Waiting
 assignee:
-  - '@gpt-6.2-sol-stream-frames'
+  - '@gpt-6.2-sol-stream-delivery'
 created_date: '2026-11-18T17:58:00Z'
-updated_date: '2026-11-20T19:28:00Z'
+updated_date: '2026-11-20T19:42:00Z'
 labels:
   - tests
   - events
@@ -20,7 +20,7 @@ ordinal: 107000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Frames owns the approved test-only change for subscriber failure at switch completion. The current two-waiter test throws at switch start. The new fixture checks that both joined callers can observe the completion event even when a subscriber throws while receiving it.
+Wake: hosted CI and shared merge turn for [PR #55](https://github.com/ArborealML/Inference-Router/pull/55). Fixture 28366f1 passed 19 focused Release cases before and after restoring the mutations. Moving terminal publication too late failed the producer snapshot alone. Breaking subscriber fanout failed two intended assertions and disabling fault counting failed four. Independent review passed. Delivery owns landing.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
