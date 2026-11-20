@@ -5,6 +5,7 @@ status: Preparing
 assignee:
   - '@gpt-6.2-sol-shutdown'
 created_date: '2026-11-20T00:12:00Z'
+updated_date: '2026-11-20T00:32:00Z'
 labels: []
 milestone: m-4
 dependencies: []
@@ -28,5 +29,5 @@ Shutdown is tracing the dedicated-engine refusal for the selected DeepSeek and Q
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Trace configuration loading and runtime construction at the landed source, identify the owner of the trusted enrollment, and map dependencies on the receipt and serving paths. Return a bounded plan for independent review; keep the live host untouched.
+Review of the plan on 0b161d3 requires coverage of the public DTO conversion, router construction and engine startup guards. Amend the internal verifier to compare frozen configuration and target inputs with an independently current revision and digest. Reject old evidence replayed in the same generation. Require authority-issued membership for both exact engines, devices and routes. Exercise those checks offline; public startup continues to refuse the shared topology until a real enrollment producer supplies the evidence.
 <!-- SECTION:PLAN:END -->
