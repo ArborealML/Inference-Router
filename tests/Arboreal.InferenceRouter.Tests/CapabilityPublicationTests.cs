@@ -116,6 +116,7 @@ public sealed class CapabilityPublicationTests
         public bool ProveHealth { get; set; } = true;
         public int ReadinessMs { get; set; } = 10_000;
         public bool GateLaunches { get; set; }
+        public (TaskCompletionSource Release, TaskCompletionSource Registered)? ObservedLaunchGate { get; init; }
         public int LaunchCount { get; private set; }
         public List<string> Launches { get; } = [];
 
@@ -136,12 +137,15 @@ public sealed class CapabilityPublicationTests
             if (ThrowOnLaunch is { } boom) throw new InvalidOperationException(boom);
             if (GateLaunches)
             {
+                var observedGate = ObservedLaunchGate;
                 TaskCompletionSource gate;
                 lock (_gates)
                 {
-                    gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                    gate = observedGate?.Release ??
+                        new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
                     _gates.Enqueue(gate);
                 }
+                observedGate?.Registered.TrySetResult();
                 await gate.Task.ConfigureAwait(false);
             }
             return LaunchOutcome;
@@ -1242,7 +1246,13 @@ public sealed class CapabilityPublicationTests
     public async Task TheMarkerGoesUpBeforeTheEngineIsClaimed()
     {
         using var handler = new ProbeHandler("m");
-        var provider = new ScriptedProvider { GateLaunches = true };
+        var launchGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var gateRegistered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var provider = new ScriptedProvider
+        {
+            GateLaunches = true,
+            ObservedLaunchGate = (launchGate, gateRegistered),
+        };
         var def = Def(new HealthProbeDefinition { Path = "/props", IntervalMs = 3_600_000 });
         var engine = NewEngine(def, provider, handler);
         await using var _ = engine;
@@ -1252,9 +1262,16 @@ public sealed class CapabilityPublicationTests
 
         handler.SetModels("m", "second");
         var pending = engine.WaitForModelAsync("second", TimeSpan.FromSeconds(30), CancellationToken.None);
-        await WaitUntil(() => provider.LaunchCount == 1);
-        provider.ReleaseOne();
-        Assert.True((await pending).IsReady);
+        try
+        {
+            await gateRegistered.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            provider.ReleaseOne();
+            Assert.True((await pending).IsReady);
+        }
+        finally
+        {
+            launchGate.TrySetResult();
+        }
 
         // Dispatch and the admission refusal both read the snapshot rather than the runtime's private claim, so
         // the marker has to be visible no later than the claim itself: an engine that has been claimed for a
