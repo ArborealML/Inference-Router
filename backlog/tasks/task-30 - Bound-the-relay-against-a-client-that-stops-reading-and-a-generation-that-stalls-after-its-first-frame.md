@@ -3,11 +3,11 @@ id: TASK-30
 title: >-
   Bound the relay against a client that stops reading, and a generation that
   stalls after its first frame
-status: In Progress
+status: Testing
 assignee:
-  - '@gpt-6.2-sol-stream-backpressure'
+  - '@gpt-6.2-sol-stream-delivery'
 created_date: '2026-11-17T07:01:00Z'
-updated_date: '2026-11-20T10:13:00Z'
+updated_date: '2026-11-20T13:00:00Z'
 labels:
   - stream
   - transport
@@ -21,7 +21,7 @@ ordinal: 29000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Backpressure has the timed-driver implementation assignment. The functional harness passed independent review, eight short localhost cases and four cleanup fault controls. Only synthetic traces exercised the cutoff crossing. Delivery will qualify the driver before requesting an exclusive measurement window. Both default-enablement checks remain open.
+Delivery is coordinating one exclusive 25-minute local stopped-reader measurement after the timed driver passed independent review. Eight short HTTP/1.1 and HTTP/2 cases and 19 ticket checks passed. Confirm the interval with every local seat and record host load before and during execution. Representative upstream replay and default selection remain open.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
