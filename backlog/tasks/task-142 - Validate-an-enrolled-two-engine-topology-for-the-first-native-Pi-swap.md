@@ -5,7 +5,7 @@ status: Waiting
 assignee:
   - '@gpt-6.2-sol-shutdown'
 created_date: '2026-11-20T00:12:00Z'
-updated_date: '2026-11-20T00:41:00Z'
+updated_date: '2026-11-20T00:49:00Z'
 labels: []
 milestone: m-4
 dependencies: []
@@ -16,7 +16,7 @@ ordinal: 140000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Waiting for independent rereview of the revised topology plan on 0b161d3. Its verdict wakes Shutdown. The internal check requires exact, current enrollment for both engines and their shared devices and routes. Public startup remains refused until that evidence has a real producer.
+Waiting for independent review of the unchanged revised topology plan on 0b161d3. The prior request produced no verdict; one replacement was submitted. Its verdict wakes Shutdown. The internal check requires exact current enrollment for both engines and their shared devices and routes. Public startup remains refused until a real producer supplies that evidence.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
