@@ -1,11 +1,11 @@
 ---
 id: TASK-112
 title: Prove a functional model swap end to end through pi-clm
-status: Preparing
+status: Waiting
 assignee:
   - '@gpt-6.2-sol-scheduling'
 created_date: '2026-11-18T18:15:00Z'
-updated_date: '2026-11-20T00:34:00Z'
+updated_date: '2026-11-20T00:52:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -23,7 +23,7 @@ ordinal: 110000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Scheduling is amending the offline Pi client plan. In Pi 1.3.0, RPC model selection and enumeration use the full available model snapshot. Restricting the cycling list alone leaves other providers eligible. Source ownership is settled: the temporary launcher lives in local Git. Live swap criteria remain open.
+Waiting for independent review of the amended offline Pi client plan on 0b161d3. The original review returned no verdict and its continuation was unavailable. Delivery submitted the same amendment once more; the verdict wakes Scheduling. Local Git is the source of record for this temporary launcher. Implementation and deployment have separate gates; the live Pi swap criteria remain open.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
