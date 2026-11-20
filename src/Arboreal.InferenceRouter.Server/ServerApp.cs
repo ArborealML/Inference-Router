@@ -527,11 +527,11 @@ public static partial class ServerApp
 
     private static async Task HandleThreads(HttpContext ctx, RouterCore router)
     {
-        using var body = new MemoryStream(1024);
-        await ctx.Request.Body.CopyToAsync(body, ctx.RequestAborted).ConfigureAwait(false);
+        var body = await ReadBodyAsync(ctx, router, ctx.RequestAborted).ConfigureAwait(false);
+        if (body is null) return;
         try
         {
-            using var doc = JsonDocument.Parse(body.ToArray());
+            using var doc = JsonDocument.Parse(body);
             var root = doc.RootElement;
             var threadId = root.TryGetProperty("threadId", out var t) ? t.GetString() : null;
             if (string.IsNullOrEmpty(threadId))
@@ -570,12 +570,12 @@ public static partial class ServerApp
 
     private static async Task HandleSwitch(HttpContext ctx, RouterCore router)
     {
-        using var body = new MemoryStream(1024);
-        await ctx.Request.Body.CopyToAsync(body, ctx.RequestAborted).ConfigureAwait(false);
+        var body = await ReadBodyAsync(ctx, router, ctx.RequestAborted).ConfigureAwait(false);
+        if (body is null) return;
         var ownsAdminUse = false;
         try
         {
-            using var doc = JsonDocument.Parse(body.ToArray());
+            using var doc = JsonDocument.Parse(body);
             var engineName = doc.RootElement.TryGetProperty("engine", out var e) ? e.GetString() : null;
             var model = doc.RootElement.TryGetProperty("model", out var m) ? m.GetString() : null;
             var profileName = doc.RootElement.TryGetProperty("profile", out var p) ? p.GetString() : null;
