@@ -5,7 +5,7 @@ status: Waiting
 assignee:
   - '@gpt-6.2-sol-release'
 created_date: '2026-11-20T00:33:00Z'
-updated_date: '2026-11-20T17:40:00Z'
+updated_date: '2026-11-20T17:56:00Z'
 labels: []
 milestone: m-14
 dependencies: []
@@ -15,7 +15,7 @@ ordinal: 142000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Wake: exact document review and hosted qualification for [the proposed air tune design](https://github.com/ArborealML/Inference-Router/pull/51). Delivery verified the published one-file head ede35d0. After landing, check the five design criteria against the main document. The hardware comparison is illustrative; implementation, benchmarking and default selection are separate.
+Wake: independent rereview and hosted qualification of the corrected [hardware tuning design](https://github.com/ArborealML/Inference-Router/pull/51). Published ab891ba changes only the document. It clarifies usable capacity, hypothetical concurrency comparisons, execution evidence, workload identity and recommendation goals. Close the planning criteria after the reviewed document lands.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

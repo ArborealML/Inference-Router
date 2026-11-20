@@ -3,11 +3,11 @@ id: TASK-118
 title: >-
   Resolve each native launch profile and dispatch to its verified serving
   instance
-status: Waiting
+status: Preparing
 assignee:
-  - '@gpt-6.2-sol-release'
+  - '@gpt-6.2-sol-shutdown'
 created_date: '2026-11-18T18:56:00Z'
-updated_date: '2026-11-20T17:48:00Z'
+updated_date: '2026-11-20T17:56:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -23,7 +23,7 @@ ordinal: 116000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Wake: independent review of the connected-peer authority plan on f3d2d20. Reader implementation also needs a host-enrollment adapter that attests the serving process on its actual stream or mediated backend connection. Bind the launch receipt and closed generation to both ordered GETs and conclusive retirement. Config supplies the original probe and credential-version policy.
+Shutdown is amending the connected-peer authority plan reviewed on f3d2d20. Order issue and revocation durably across host and issuer. Enforce one monotonic cutoff from entry at the broker. Require fresh evidence of the handler for each GET, including a same-socket handoff control. Use the original launch-bound probe and credential approval; missing or revoked approval makes observation unavailable. The external evidence producer is still missing. Reader implementation awaits that producer and plan review.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

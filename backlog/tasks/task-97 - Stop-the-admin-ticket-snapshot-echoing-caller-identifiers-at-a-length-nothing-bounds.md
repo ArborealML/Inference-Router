@@ -3,11 +3,11 @@ id: TASK-97
 title: >-
   Stop the admin ticket snapshot echoing caller identifiers at a length nothing
   bounds
-status: Waiting
+status: In Progress
 assignee:
-  - '@gpt-6.2-sol-stream-delivery'
+  - '@gpt-6.2-sol-stream-frames'
 created_date: '2026-11-18T10:57:00Z'
-updated_date: '2026-11-20T17:48:00Z'
+updated_date: '2026-11-20T17:57:00Z'
 labels: []
 milestone: m-1
 dependencies: []
@@ -17,7 +17,7 @@ ordinal: 96000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Wake: independent wire review of the two-route body-limit plan on da73b35. The plan applies existing lowercase 413 behavior to declared and streamed oversized admin requests before effects, pins exact-cap acceptance and corrects the SPEC snapshot sizing claim. Whole snapshot identities remain available.
+Frames has the reviewed implementation release for criterion 4: apply the existing counted request limit to the two admin JSON routes, verify refusal before effects and valid exact-cap requests, and correct the snapshot sizing claim. Whole stored identifiers and existing refusal fields remain unchanged.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

@@ -1,11 +1,11 @@
 ---
 id: TASK-110
 title: Coordinate model engines that share one host with exclusive residency
-status: In Progress
+status: Waiting
 assignee:
-  - '@gpt-6.2-sol-lifecycle'
+  - '@gpt-6.2-sol-release'
 created_date: '2026-11-18T18:13:00Z'
-updated_date: '2026-11-20T17:48:00Z'
+updated_date: '2026-11-20T17:54:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -21,7 +21,7 @@ ordinal: 108000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Lifecycle has picked up the [launch-record correction](https://github.com/ArborealML/Inference-Router/pull/49). Seed effective observations independently, isolate field and authority drift, and exercise create/start contention. Quarantine a flushed journal entry when its head update fails and refuse malformed observed IDs or settings. Review demonstrated proof gaps; seven focused passes and hosted green on e2bd353 precede correction.
+Wake: independent review of correction 2e2d549 and qualification of the integrated .108 head for [the launch-record producer](https://github.com/ArborealML/Inference-Router/pull/49). The correction passed all 19 focused Release tests with zero skips. The seven original passes belong to e2bd353, still the published draft head. Delivery will integrate after the keepalive merge is verified.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
