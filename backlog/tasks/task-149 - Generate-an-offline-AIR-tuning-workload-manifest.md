@@ -1,11 +1,11 @@
 ---
 id: TASK-149
 title: Generate an offline AIR tuning workload manifest
-status: In Progress
+status: Waiting
 assignee:
-  - '@gpt-6.2-sol-config'
+  - '@gpt-6.2-sol-release'
 created_date: '2026-11-20T22:44:00Z'
-updated_date: '2026-11-20T23:26:00Z'
+updated_date: '2026-11-20T23:40:00Z'
 labels: []
 milestone: m-14
 dependencies:
@@ -20,7 +20,7 @@ ordinal: 147000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Config owns the planner compatibility correction for duplicate keys in engine, thread and catalog dictionaries. Match the configuration loader’s last-value semantics and preserve the fixed diagnostic for an effective null entry.
+The independent follow-up verdict on bc646c0 will wake integration of the offline tuning workload planner. Delivery owns the corrected candidate and subsequent integration review.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -41,5 +41,5 @@ Implement air tune plan --config FILE --engine ENGINE --model MODEL --seed HEX -
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Candidate 8767467 passed 25/25 focused Release cases and matched the 5,510-byte published Linux x64 AOT golden. The independent full-tail fixture finding is resolved. Subsequent review and a published-binary reproduction showed that an earlier null engine entry followed by a valid duplicate is accepted by air config but refused by air tune plan. Cover overwritten nulls across all three dictionaries and verify equivalent effective configurations produce identical output. Delivery holds integration pending corrected qualification and independent review.
+The corrected planner honors the last value for each exact thread, engine and catalog key. An earlier null overwritten by a valid entry is accepted; an effective null still produces the fixed error. All 27 focused Release tests passed on bc646c0, including both controls. The Linux x64 Native AOT CLI emitted no trim warnings and produced the independent 5,510-byte golden with empty stderr. The independent full-tail check is preserved. No hardware measurement was performed.
 <!-- SECTION:NOTES:END -->

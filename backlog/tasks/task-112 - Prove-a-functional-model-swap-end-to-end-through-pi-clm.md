@@ -1,11 +1,11 @@
 ---
 id: TASK-112
 title: Prove a functional model swap end to end through pi-clm
-status: Preparing
+status: Waiting
 assignee:
-  - '@gpt-6.2-sol-lifecycle'
+  - '@gpt-6.2-sol-release'
 created_date: '2026-11-18T18:15:00Z'
-updated_date: '2026-11-20T23:31:00Z'
+updated_date: '2026-11-20T23:35:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -23,7 +23,7 @@ ordinal: 110000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Lifecycle is tracing the first primary-host queue-triggered DeepSeek/Qwen swap from the admission and lifecycle entry points against existing host records and Decisions 68 and 71. The isolated checkout was verified at 1b2c17f. The next handoff identifies the first failing precondition, cites the evidence, and identifies the smallest fix and a test that would demonstrate it. Both live Pi acceptance criteria remain open.
+Wake on the enrollment-intake review and independent observer handoff under TASK-110. The combined DeepSeek/Qwen configuration is refused at public config load before a cold request reaches scheduling. The landed EnrolledPairTopologyPreservesThePublicDedicatedOwnerRefusal fixture covers LoadFile. The proposed intake verifies current host evidence before returning a closed descriptor; its paired control changes the authoritative head within the same generation. Neither outcome may issue a journal write, daemon call or serving grant. Both live criteria remain open.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

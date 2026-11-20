@@ -1,11 +1,11 @@
 ---
 id: TASK-104
 title: Make the admin switch verb answer with a category, not a feed account
-status: In Progress
+status: Testing
 assignee:
-  - '@gpt-6.2-sol-stream-frames'
+  - '@gpt-6.2-sol-stream-delivery'
 created_date: '2026-11-18T12:59:00Z'
-updated_date: '2026-11-20T23:28:00Z'
+updated_date: '2026-11-20T23:42:00Z'
 labels: []
 milestone: m-7
 dependencies:
@@ -37,5 +37,5 @@ Preserve immediate refusal responses. Add OperationId to the accepted 202 respon
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-At 53d2c61 the production/docs and wire fixture reviews passed, and the server Native AOT publish completed with zero warnings. The test build stopped on eight fixture errors. Child 3213760 edits the fixture for async and disposal diagnostics; focused results are pending. The HTTP/1.1 review found asynchronous socket checks could accept an early 29-second acknowledgment timeout. Require the registered deadline at exactly 30 seconds, observable absence of abort immediately before it, and an isolated 29-second control that fails at the deadline assertion. Preserve the real socket, original send task and retention checks. Frames owns the correction.
+Candidate 9aa7c96 built in Release with zero warnings or errors. All six affected cases passed and the broader focused filter passed 29/29. The tests-only baseline failed at the missing OperationId. Server AOT evidence carries over from identical production inputs. The HTTP acknowledgment deadline correction passed independent review with isolated early-timer and restart controls. Delivery owns the remaining held-write review, negative controls and hosted qualification.
 <!-- SECTION:NOTES:END -->

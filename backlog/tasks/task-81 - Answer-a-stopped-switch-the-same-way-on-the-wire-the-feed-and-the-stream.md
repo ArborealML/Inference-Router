@@ -1,11 +1,11 @@
 ---
 id: TASK-81
 title: Answer a stopped switch the same way on the wire, the feed, and the stream
-status: To Do
+status: Preparing
 assignee:
   - '@gpt-6.2-sol-stream-frames'
 created_date: '2026-11-18T04:09:00Z'
-updated_date: '2026-11-20T22:58:00Z'
+updated_date: '2026-11-20T23:43:00Z'
 labels:
   - lifecycle
   - shutdown
@@ -18,7 +18,7 @@ ordinal: 81000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-The queued HTTP audit predicts that a client which has received a queued comment sees clean EOF with no further bytes when the core stops. The ticket should record one cancellation. Existing tests separately cover queued cancellation and HTTP keepalives, and [the landed active-read terminal](https://github.com/ArborealML/Inference-Router/pull/61) passed [main CI](https://github.com/ArborealML/Inference-Router/actions/runs/44825528652). The combined queued HTTP case remains untested. A reserved fixture plan will hold the only slot and the clock, observe the first queued comment, stop only the core with the client reading, and check the exact suffix, zero upstream forwards and one correlated enqueue followed by one cancellation. The queued wire contract remains open.
+Frames is preparing the queued HTTP/1.1 shutdown test plan on ced5bb5. Hold the only slot and the clock, observe the queued comment, stop the core while the client keeps reading, then check the exact HTTP suffix, zero upstream forwards, and one enqueue followed by one cancellation for that ticket. Clean EOF after the comment is a source prediction. The combined case remains untested. Independent plan review precedes test implementation. The [active-read case](https://github.com/ArborealML/Inference-Router/pull/61) has separate landed evidence.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
