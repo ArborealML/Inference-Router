@@ -3,6 +3,52 @@ namespace Arboreal.InferenceRouter.Tests;
 public sealed class QueueDispatchTests
 {
     [Fact]
+    public async Task DispatchObservationReusesThePublishedRosterWithoutAllocating()
+    {
+        const int reads = 256;
+        const int slots = 3;
+        const long promptChars = 37;
+        using var handler = new FakeEngineHandler { LoadedModels = ["a"], NCtx = 128, TotalSlots = slots };
+        var scheduler = new RecordingScheduler { Decision = SchedulerDecision.Wait("fixture") };
+        await using var router = CreateRouter(handler, scheduler);
+        var engine = router.Engines["fake"];
+        Assert.True(await engine.ProbeHealthOnceAsync(CancellationToken.None));
+        var published = engine.Capability;
+        Assert.True(published.Healthy);
+        Assert.Equal("a", Assert.Single(published.ModelRoster));
+
+        engine.BeginRequest(promptChars);
+        try
+        {
+            var warm = MeasureDispatchReads(engine, published, reads);
+            var measured = MeasureDispatchReads(engine, published, reads);
+
+            Assert.Equal(0L, measured.AllocatedBytes);
+            var checksumPerRead = published.ModelRoster.Count + 1L + promptChars + slots + 1;
+            Assert.Equal(reads * checksumPerRead, warm.Checksum);
+            Assert.Equal(reads * checksumPerRead, measured.Checksum);
+            Assert.Equal(reads, measured.MatchingReads);
+
+            var ticket = await router.EnqueueAsync("allocation", Request("a", context: null));
+            Assert.False(router.TryDispatchOnce());
+            Assert.Same(ticket, Assert.Single(scheduler.Seen).Ticket);
+            Assert.Equal(TicketState.Queued, ticket.State);
+            var view = Assert.IsType<SchedulerView>(scheduler.LastView);
+            var info = Assert.Single(view.Engines);
+            Assert.Same(published, info.DispatchObservation.Capability);
+            Assert.Same(published.ModelRoster, info.LoadedModels);
+            Assert.Equal(1, info.DispatchObservation.Inflight);
+            Assert.Equal(promptChars, info.DispatchObservation.InflightTokenProxy);
+            Assert.Equal(slots, info.DispatchObservation.SlotLimit);
+            Assert.True(info.DispatchObservation.HasCapacity);
+        }
+        finally
+        {
+            engine.EndRequest(promptChars);
+        }
+    }
+
+    [Fact]
     public async Task SchedulerEvaluatesTheThreadAdmissibleTicketAndItsOwnContext()
     {
         using var handler = new FakeEngineHandler();
@@ -262,6 +308,26 @@ public sealed class QueueDispatchTests
         await Assert.ThrowsAsync<RouterRequestException>(() => ticket.CompletionTask);
     }
 
+    private static (long AllocatedBytes, long Checksum, int MatchingReads) MeasureDispatchReads(
+        EngineRuntime engine, EngineCapability published, int reads)
+    {
+        var publishedRoster = published.ModelRoster;
+        long checksum = 0;
+        var matchingReads = 0;
+        var start = GC.GetAllocatedBytesForCurrentThread();
+        for (var i = 0; i < reads; i++)
+        {
+            var observation = engine.ReadDispatchObservation();
+            var roster = observation.Capability.ModelRoster;
+            if (ReferenceEquals(published, observation.Capability) && ReferenceEquals(publishedRoster, roster))
+                matchingReads++;
+            checksum += roster.Count + observation.Inflight + observation.InflightTokenProxy +
+                observation.SlotLimit + (observation.HasCapacity ? 1 : 0);
+        }
+        var allocatedBytes = GC.GetAllocatedBytesForCurrentThread() - start;
+        return (allocatedBytes, checksum, matchingReads);
+    }
+
     private static string? SelectedTicket(RouterCore router) =>
         Assert.Single(router.Events.Replay(0), entry => entry.Kind == "request.selected").TicketId;
 
@@ -323,12 +389,14 @@ public sealed class QueueDispatchTests
     private sealed class RecordingScheduler : IRequestScheduler
     {
         internal List<QueuedRequest> Seen { get; } = [];
+        internal SchedulerView? LastView { get; private set; }
         internal Action<QueuedRequest>? OnSelect { get; set; }
         internal SchedulerDecision Decision { get; init; } = new() { Engine = "fake" };
 
         public SchedulerDecision SelectNext(QueuedRequest request, SchedulerView view, RouterConfig config)
         {
             Seen.Add(request);
+            LastView = view;
             OnSelect?.Invoke(request);
             return Decision;
         }
