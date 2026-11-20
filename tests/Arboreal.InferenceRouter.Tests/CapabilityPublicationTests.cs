@@ -1036,13 +1036,17 @@ public sealed class CapabilityPublicationTests
             finish.Task.WaitAsync(ct).GetAwaiter().GetResult();
         };
         var pending = engine.WaitForModelAsync("m", TimeSpan.FromSeconds(10), ct);
+        EngineCapability proven;
         try
         {
             await published.Task.WaitAsync(ct);
-            var proven = engine.Capability;
+            proven = engine.Capability;
             Assert.Equal("m", proven.SwitchingToward);
             Assert.True(proven.Healthy);
+            Assert.Contains("m", proven.ModelRoster);
             Assert.Equal(32_768, proven.ModelContextWindows["m"]);
+            Assert.NotNull(proven.SwitchProof);
+            Assert.False(engine.IsReadyFor("m", null));
             var requestsAtProof = handler.ModelsRequests;
             handler.ModelsStatus = 503;
             engine.StartHealthLoop(loopCts.Token);
@@ -1058,8 +1062,12 @@ public sealed class CapabilityPublicationTests
             await loopCts.CancelAsync();
         }
         Assert.True((await pending).IsReady);
-        Assert.Null(engine.Capability.SwitchingToward);
-        Assert.Equal(32_768, engine.Capability.ModelContextWindows["m"]);
+        var settled = engine.Capability;
+        Assert.Null(settled.SwitchingToward);
+        Assert.Contains("m", settled.ModelRoster);
+        Assert.Equal(32_768, settled.ModelContextWindows["m"]);
+        Assert.Same(proven.SwitchProof, settled.SwitchProof);
+        Assert.True(engine.IsReadyFor("m", null));
     }
 
     [Fact(Timeout = 60_000)]
