@@ -415,10 +415,12 @@ public sealed class AdminSwitchOperationTests
         var gate = new AckGate(holdWrite: true, holdCompletion: completion);
         using var transport = completion ? null : new AckTransport(holdOutput: false);
         await using var rig = await Fixture.StartAsync(ackGate: gate, transport: transport);
-        using var peer = new TcpClient();
+        using var peer = new TcpClient(AddressFamily.InterNetwork);
         try
         {
             await SendRawAsync(peer, transport?.Port ?? rig.Port, completion ? "b" : "a", rig.Token);
+            var accepted = transport is null ? null : await transport.Accepted.Task.WaitAsync(rig.Token);
+            if (accepted is not null) Assert.Equal(peer.Client.LocalEndPoint, accepted.RemoteEndPoint);
             var id = await gate.Id.Task.WaitAsync(rig.Token);
             var originalWrite = await gate.OriginalWrite.Task.WaitAsync(rig.Token);
             await ConfigReloadWireTests.WaitUntilAsync(() => rig.Clock.HasTimer, rig.Token);
@@ -437,21 +439,25 @@ public sealed class AdminSwitchOperationTests
             }
             Assert.Equal(0, rig.Clock.AdvanceTo(deadline - TimeSpan.FromTicks(1)));
             Assert.False(gate.Exited.Task.IsCompleted);
-            if (transport is not null)
+            if (accepted is not null)
             {
                 Assert.False(originalWrite.IsCompleted);
-                Assert.False(transport.AbortLogged.Task.IsCompleted);
-                Assert.False(transport.Closed.Task.IsCompleted);
+                Assert.False(accepted.AbortedRequest.Task.IsCompleted);
+                Assert.False(accepted.Closed.Task.IsCompleted);
             }
 
             Assert.Equal(1, rig.Clock.AdvanceTo(deadline));
-            if (transport is not null)
+            if (accepted is not null)
             {
-                await transport.AbortLogged.Task.WaitAsync(rig.Token);
-                await transport.Closed.Task.WaitAsync(rig.Token);
+                var abortedRequest = await accepted.AbortedRequest.Task.WaitAsync(rig.Token);
+                await accepted.Closed.Task.WaitAsync(rig.Token);
                 await AssertPeerClosedAsync(peer.GetStream(), rig.Token);
-                await ObserveCompletionAsync(originalWrite, rig.Token);
-                Assert.True(originalWrite.IsCanceled);
+                var exit = await gate.WriteAtExit.Task.WaitAsync(rig.Token);
+                Assert.Equal<Guid?>(id, exit.OperationId);
+                Assert.Equal(accepted.ConnectionId, exit.ConnectionId);
+                Assert.Equal(abortedRequest, exit.RequestId);
+                Assert.Same(originalWrite, exit.Write);
+                Assert.True(exit.WasCancelled);
             }
             else
             {
@@ -780,6 +786,12 @@ public sealed class AdminSwitchOperationTests
                 try { await next(ctx); }
                 finally
                 {
+                    if (gate is { HoldWrite: true, HoldCompletion: false })
+                    {
+                        var write = feature.SavedWrite;
+                        gate.WriteAtExit.TrySetResult(new(feature.Id, ctx.Connection.Id, ctx.TraceIdentifier,
+                            write, write?.IsCanceled == true));
+                    }
                     ctx.Features.Set(original);
                     if (feature.Id is { } id) _exits.TryAdd(id, 0);
                     gate?.Exited.TrySetResult();
@@ -953,6 +965,9 @@ public sealed class AdminSwitchOperationTests
         public ReadinessPolicy Readiness(LifecycleTarget target) => new(false, TimeSpan.FromSeconds(5));
     }
 
+    private sealed record HeldWriteExit(Guid? OperationId, string ConnectionId, string RequestId, Task? Write,
+        bool WasCancelled);
+
     private sealed class AckGate(bool holdWrite = false, bool holdCompletion = false, bool faultWrite = false)
     {
         internal bool HoldWrite { get; } = holdWrite;
@@ -966,6 +981,7 @@ public sealed class AdminSwitchOperationTests
         internal TaskCompletionSource CompletionEntered { get; } = Gate();
         internal TaskCompletionSource<Task> OriginalWrite { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         internal TaskCompletionSource<Task> OriginalCompletion { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        internal TaskCompletionSource<HeldWriteExit> WriteAtExit { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         internal TaskCompletionSource Exited { get; } = Gate();
 
         internal async Task WaitForReleaseAsync(Task release, CancellationToken abort)
@@ -995,6 +1011,7 @@ public sealed class AdminSwitchOperationTests
         }
 
         internal Guid? Id { get; private set; }
+        internal Task? SavedWrite { get; private set; }
         public Stream Stream => _stream;
         public PipeWriter Writer => _original.Writer;
         public void DisableBuffering() => _original.DisableBuffering();
@@ -1054,6 +1071,7 @@ public sealed class AdminSwitchOperationTests
                 var write = owner.WriteAsync(buffer, cancellationToken);
                 if (owner._gate is not { HoldWrite: true } gate) return write;
                 var original = write.AsTask();
+                owner.SavedWrite = original;
                 gate.OriginalWrite.TrySetResult(original);
                 return new ValueTask(original);
             }
@@ -1062,6 +1080,8 @@ public sealed class AdminSwitchOperationTests
 
     private sealed class AckTransport(bool holdOutput = true) : ILoggerProvider, ILogger
     {
+        private PassiveConnection? _passiveConnection;
+
         internal ListenOptions? Listener { get; set; }
         internal int Port => Listener!.IPEndPoint!.Port;
         internal TaskCompletionSource FirstFlush { get; } = Gate();
@@ -1070,16 +1090,21 @@ public sealed class AdminSwitchOperationTests
         internal TaskCompletionSource Closed { get; } = Gate();
         internal TaskCompletionSource AbortLogged { get; } = Gate();
         internal FlushScheduler Scheduler { get; } = new();
+        internal TaskCompletionSource<PassiveConnection> Accepted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         internal ConnectionDelegate Run(ConnectionDelegate next) => async connection =>
         {
-            using var closed = connection.ConnectionClosed.Register(() => Closed.TrySetResult());
             if (!holdOutput)
             {
+                var accepted = new PassiveConnection(connection.ConnectionId, connection.RemoteEndPoint);
+                using var passiveClosed = connection.ConnectionClosed.Register(() => accepted.Closed.TrySetResult());
+                if (Interlocked.CompareExchange(ref _passiveConnection, accepted, null) is null)
+                    Accepted.TrySetResult(accepted);
                 await next(connection);
                 return;
             }
 
+            using var closed = connection.ConnectionClosed.Register(() => Closed.TrySetResult());
             var original = connection.Transport;
             var pipe = new Pipe(new PipeOptions(writerScheduler: Scheduler, pauseWriterThreshold: 1,
                 resumeWriterThreshold: 1, useSynchronizationContext: false));
@@ -1124,10 +1149,34 @@ public sealed class AdminSwitchOperationTests
         public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception,
             Func<TState, Exception?, string> formatter)
         {
-            if (eventId.Name == "ApplicationAbortedConnection") AbortLogged.TrySetResult();
+            if (eventId.Name != "ApplicationAbortedConnection") return;
+            if (holdOutput)
+            {
+                AbortLogged.TrySetResult();
+                return;
+            }
+
+            var observed = Volatile.Read(ref _passiveConnection);
+            if (observed is null || state is not IReadOnlyList<KeyValuePair<string, object?>> fields) return;
+
+            string? connectionId = null;
+            string? requestId = null;
+            foreach (var (key, value) in fields)
+            {
+                if (key == "ConnectionId") connectionId = value as string;
+                if (key == "TraceIdentifier") requestId = value as string;
+            }
+            if (connectionId == observed.ConnectionId && requestId is not null)
+                observed.AbortedRequest.TrySetResult(requestId);
         }
 
         public void Dispose() { }
+
+        internal sealed record PassiveConnection(string ConnectionId, EndPoint? RemoteEndPoint)
+        {
+            internal TaskCompletionSource Closed { get; } = Gate();
+            internal TaskCompletionSource<string> AbortedRequest { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        }
 
         private sealed record OutputBridge(PipeReader Input, PipeWriter Output) : IDuplexPipe;
     }
