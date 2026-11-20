@@ -1,11 +1,11 @@
 ---
 id: TASK-26
 title: Close the gaps SPEC 5.3.1 still describes for container-native lifecycle
-status: Waiting
+status: In Progress
 assignee:
-  - '@gpt-6.2-sol-release'
+  - '@gpt-6.2-sol-shutdown'
 created_date: '2026-11-17T02:54:00Z'
-updated_date: '2026-11-20T07:45:00Z'
+updated_date: '2026-11-20T07:56:00Z'
 labels:
   - engine
   - lifecycle
@@ -19,7 +19,7 @@ ordinal: 26000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Wake: independent commit review of exact incumbent stop/removal recovery in [PR #47](https://github.com/ArborealML/Inference-Router/pull/47). Delivery owns disposition; all three hosted checks passed on 3f7b2e7. Selective native reset waits for this change to land and for the shared switch-completion code to be rechecked. Independent create/start and post-publication ownership remain open.
+Shutdown has the approved offline implementation assignment for target-specific failure quarantine and reset. Stop and removal recovery landed. Independent launch, post-publication mutation and durable host settlement remain open.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -34,23 +34,19 @@ Wake: independent commit review of exact incumbent stop/removal recovery in [PR 
 - [x] #8 A shipped native Docker example passes the config loader with every model selector removed from that engine. The shipped-sample load test passes and remaining delegated examples identify exec as legacy.
 - [ ] #9 After A fails, repeated scheduler wakeups and cooldown expiry produce zero attempts for its engine/model/profile/config generation. Resetting A permits a fresh attempt without resetting unrelated targets (decision-62).
 - [x] #10 A conflicting native stop response cannot authorize forced removal or replacement unless an independent observation proves the exact owned instance stopped. Pin the refusal and verified-state cases and reconcile the documented 409 behavior.
-- [ ] #11 After ambiguous stop/removal, retain exact operation and immutable ID. Block force-removal, replacement and retry until independently proven terminal.
+- [x] #11 After ambiguous stop/removal, retain exact operation and immutable ID. Block force-removal, replacement and retry until independently proven terminal.
 <!-- AC:END -->
 
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Use the validated full container ID consistently across issue, history, readback and the final readiness decision. Treat uppercase and lowercase spellings of the same hexadecimal ID as equal. Exercise a case-equivalent stop through the real provider path and contradictory inventory after an exact-ID lookup. Preserve ordinary restoration when no conflicting stop or removal occurred. Delivery qualifies and independently reviews the candidate. The amended plan passed independent review before implementation.
+Latch failure by exact engine, canonical model, effective profile and configuration. Keep probe publication fenced until the failed claim marker clears, and deliver each waiter its own recorded outcome. At operator reset, enforce explicit startup opt-in, credential and current process/generation ETag at the latch change. Verify a valid reload-only credential receives 404 before and after reload. Clear only the exact target; preserve uncertain-stop and host fences.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Native image, resource, sample and exact-ID conflict evidence landed in [the image change](https://github.com/ArborealML/Inference-Router/commit/c30ca3e), [the resource change](https://github.com/ArborealML/Inference-Router/commit/bc63d48) and [PR #41](https://github.com/ArborealML/Inference-Router/pull/41). The stop conflict slice passed 22 focused Release cases and merge CI. Next: review uncertain stop reentry and readiness publication against current main; in parallel, plan target-specific failure quarantine and reset for reload. A transport failure alone cannot prove absence or authorize retry.
-
-Decision 77 permits exact operator reset with explicitly enabled credential reuse and a current process/generation precondition. The reset changes only the matching scheduler latch.
-
-Candidate 3f7b2e7 on 0bb3f7b passed 171 focused Release cases with zero skips. The tests used offline fixtures. The stop/removal criterion remains open pending review and integration.
+The [image change](https://github.com/ArborealML/Inference-Router/commit/c30ca3e), [resource fixtures](https://github.com/ArborealML/Inference-Router/commit/bc63d48) and [stop conflict fix](https://github.com/ArborealML/Inference-Router/pull/41) cover the earlier checked criteria. [Provider-lifetime stop and removal recovery](https://github.com/ArborealML/Inference-Router/pull/47) passed 171 focused Release cases with zero skips and independent review. The landed tree matched the approved composition at 3a47cb4; [merge CI](https://github.com/ArborealML/Inference-Router/actions/runs/44697942609) passed all three jobs. The shared switch-completion code was revalidated before handoff.
 <!-- SECTION:NOTES:END -->
 
 ## Comments

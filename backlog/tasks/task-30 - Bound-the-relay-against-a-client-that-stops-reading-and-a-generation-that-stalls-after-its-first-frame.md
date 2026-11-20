@@ -7,7 +7,7 @@ status: Waiting
 assignee:
   - '@gpt-6.2-sol-stream-delivery'
 created_date: '2026-11-17T07:01:00Z'
-updated_date: '2026-11-20T07:22:00Z'
+updated_date: '2026-11-20T07:56:00Z'
 labels:
   - stream
   - transport
@@ -21,7 +21,7 @@ ordinal: 29000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Wake: independent review of the revised stopped-reader soak plan on ba3c1cc. It addresses real socket pressure, HTTP/2 stream isolation and distinguishing router watchdog expiry from transport timeouts. Harness implementation and an exclusive measurement window await the verdict. Positive defaults also require representative upstream timing replay.
+Wake: disposition of the third stopped-reader soak plan revision. Backpressure handed it to Delivery for independent re-review. It addresses per-profile time budgets, admission of a fifth request after the stalled request retires, and diagnostics with and without observation wrappers. Harness implementation and measurements await approval. Positive defaults also require representative upstream timing replay.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
