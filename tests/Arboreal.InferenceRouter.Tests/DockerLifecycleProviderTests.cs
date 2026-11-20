@@ -90,10 +90,10 @@ public sealed class DockerLifecycleProviderTests
         $$"""
         {"Id":"{{id}}","Image":"{{image}}","RestartCount":{{restarts}},
          "Config":{"Labels":{"arboreal.router":"{{router}}","arboreal.engine":"{{engine}}",
-                             "arboreal.model":"{{model}}","arboreal.profile":"{{profile}}" }},
+                             "arboreal.model":"{{model}}","arboreal.profile":"{{profile}}" } },
          "State":{"Status":"{{state}}","StartedAt":"{{startedAt}}",
                   "Running":{{(running ? "true" : "false")}},"Paused":{{(paused ? "true" : "false")}},
-                  "Restarting":{{(restarting ? "true" : "false")}},"Dead":{{(dead ? "true" : "false")}} }}
+                  "Restarting":{{(restarting ? "true" : "false")}},"Dead":{{(dead ? "true" : "false")}} } }
         """;
 
     private static (HttpStatusCode, string) OwnedIncumbent() => (HttpStatusCode.OK,
