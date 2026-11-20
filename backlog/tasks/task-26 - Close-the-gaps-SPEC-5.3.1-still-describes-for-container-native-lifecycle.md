@@ -1,11 +1,11 @@
 ---
 id: TASK-26
 title: Close the gaps SPEC 5.3.1 still describes for container-native lifecycle
-status: Waiting
+status: Testing
 assignee:
-  - '@gpt-6.2-sol-release'
+  - '@gpt-6.2-sol-shutdown'
 created_date: '2026-11-17T02:54:00Z'
-updated_date: '2026-11-20T08:14:00Z'
+updated_date: '2026-11-20T08:15:00Z'
 labels:
   - engine
   - lifecycle
@@ -19,7 +19,7 @@ ordinal: 26000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Wake: independent review and hosted CI on [selective reset](https://github.com/ArborealML/Inference-Router/pull/48). Delivery owns qualification and integration. All 41 focused Release cases passed on 4c0681b with zero skips. Stop and removal recovery landed. Independent launch, post-publication mutation and durable host settlement remain open.
+Shutdown owns diagnosis of two Release failures on [selective reset](https://github.com/ArborealML/Inference-Router/pull/48). In the Ubuntu build and test job on 4c0681b, ShutdownDuringAClaimEndsCancelledNotEngineUnreachable and AWaiterInsideTheReadinessWaitIsToldTheRouterStopped timed out seeing only the switch-start event. Verify both cancellation events, affected reset cases and corrected hosted CI before landing. [Failing run](https://github.com/ArborealML/Inference-Router/actions/runs/44700636453). The 41 focused reset cases passed. Independent launch, post-publication mutation and durable host settlement remain open.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
