@@ -15,7 +15,9 @@ internal interface ISupervisedLaunchHead
 }
 
 internal sealed record SupervisedLaunchFrame(string? Predecessor, [property: JsonRequired] HostInitialHistory History,
-    SupervisedLaunchCommission? Commission);
+    SupervisedLaunchCommission? Commission,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] int FormatVersion = 0,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] SupervisedStartIssue? StartIssue = null);
 
 internal sealed record SupervisedLaunchSnapshot(SupervisedLaunchJournalHead Head, SupervisedLaunchFrame Frame);
 
@@ -24,7 +26,8 @@ internal sealed partial class SupervisedLaunchJsonContext : JsonSerializerContex
 
 internal sealed class SupervisedLaunchJournal(HostReservationScope scope, ISupervisedLaunchHead head)
 {
-    private const int LastRevision = 4;
+    internal const int CurrentFormat = 1;
+    private const int LastRevision = 5;
     private const int MaxFrameLength = 512 * 1024;
     private string FencePath => Path.Combine(scope.AuthorityDirectory, "supervised-launch.lock");
     internal string JournalPath => Path.Combine(scope.AuthorityDirectory, "supervised-launch.journal");
@@ -38,7 +41,7 @@ internal sealed class SupervisedLaunchJournal(HostReservationScope scope, ISuper
         Directory.CreateDirectory(scope.AuthorityDirectory);
         using var fence = new FileStream(FencePath, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None);
         using (var journal = new FileStream(JournalPath, FileMode.CreateNew, FileAccess.Write, FileShare.None)) { }
-        Append(null, new(null, new HostInitialHistory(scope, installed.Digest), null));
+        Append(null, new(null, new HostInitialHistory(scope, installed.Digest), null, CurrentFormat));
     }
 
     internal IDisposable EnterFence() => new FileStream(FencePath, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
@@ -73,8 +76,14 @@ internal sealed class SupervisedLaunchJournal(HostReservationScope scope, ISuper
             ? new(current, previous!) : null;
     }
 
-    internal void Advance(SupervisedLaunchSnapshot previous, HostInitialHistory history, SupervisedLaunchCommission commission) =>
-        Append(previous, new(previous.Head.Digest, history, commission));
+    internal void Advance(SupervisedLaunchSnapshot previous, HostInitialHistory history,
+        SupervisedLaunchCommission commission, SupervisedStartIssue? startIssue = null)
+    {
+        if (previous.Frame.FormatVersion != CurrentFormat)
+            throw new IOException("The legacy supervised launch journal is read only.");
+        Append(previous, new(previous.Head.Digest, history, commission, CurrentFormat,
+            startIssue ?? previous.Frame.StartIssue));
+    }
 
     private void Append(SupervisedLaunchSnapshot? previous, SupervisedLaunchFrame next)
     {
@@ -104,23 +113,39 @@ internal sealed class SupervisedLaunchJournal(HostReservationScope scope, ISuper
     private static bool Extends(SupervisedLaunchFrame? previous, SupervisedLaunchFrame frame, int revision)
     {
         var history = frame.History;
+        var legacy = frame.FormatVersion == 0;
         if (revision == 0)
-            return frame.Commission is null && HostMutation.IsPlanDigest(history.GenesisDigest) &&
+            return (legacy || frame.FormatVersion == CurrentFormat) &&
+                frame.Commission is null && frame.StartIssue is null && HostMutation.IsPlanDigest(history.GenesisDigest) &&
                 history == new HostInitialHistory(history.Scope, history.GenesisDigest);
 
-        if (previous is null || frame.Commission is not { } commission || commission.Scope != history.Scope) return false;
+        if (previous is null || previous.FormatVersion != frame.FormatVersion ||
+            frame.Commission is not { } commission || commission.Scope != history.Scope) return false;
         var prior = previous.History;
         if (revision == 1)
-            return history.Dispatch is { } first && first.Policy.Authorizes(history.Scope) &&
+            return frame.StartIssue is null && !commission.Approvals.IsDefaultOrEmpty &&
+                commission.Approvals.All(approval => legacy ? approval.ApiVersion is null : approval.HasPinnedApiVersion()) &&
+                history.Dispatch is { } first && first.Policy.Authorizes(history.Scope) &&
                 commission.Approval(first.Operation.Engine)?.Intent == first.Intent &&
                 history == (prior with { Dispatch = first });
 
-        return commission.Matches(previous.Commission) && prior.Dispatch is { } dispatch && (revision switch
+        if (!commission.Matches(previous.Commission) || prior.Dispatch is not { } dispatch) return false;
+        return revision switch
         {
-            2 => history == (prior with { Accepted = dispatch }),
-            3 => history == (prior with { Issued = dispatch }),
-            4 => history.Applied is { } applied && history == (prior with { Applied = applied }),
+            2 => frame.StartIssue is null && history == (prior with { Accepted = dispatch }),
+            3 => frame.StartIssue is null && history == (prior with { Issued = dispatch }),
+            4 when legacy => frame.StartIssue is null && history.Applied is { } applied &&
+                history == (prior with { Applied = applied }),
+            4 => frame.StartIssue is { } issue && issue.Matches(commission, dispatch) && history == prior,
+            5 when !legacy => previous.StartIssue is { } issued && frame.StartIssue == issued &&
+                history.Applied is { } completed && history == (prior with { Applied = completed }) &&
+                MatchesApplied(issued, dispatch, completed),
             _ => false,
-        });
+        };
     }
+
+    private static bool MatchesApplied(SupervisedStartIssue issue, HostInitialDispatch dispatch, HostInitialApplied applied) =>
+        applied.Receipt == new HostInitialReceipt(issue.Command.Scope, dispatch.Operation, dispatch.Intent, issue.InstanceId) &&
+        JsonSerializer.Deserialize(Convert.FromBase64String(applied.ReceiptBytes),
+            HostReservationJsonContext.Default.HostInitialReceipt) == applied.Receipt;
 }
