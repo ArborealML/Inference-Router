@@ -3,11 +3,11 @@ id: TASK-30
 title: >-
   Bound the relay against a client that stops reading, and a generation that
   stalls after its first frame
-status: In Progress
+status: Waiting
 assignee:
-  - '@gpt-6.2-sol-stream-backpressure'
+  - '@gpt-6.2-astra'
 created_date: '2026-11-17T07:01:00Z'
-updated_date: '2026-11-20T15:28:00Z'
+updated_date: '2026-11-20T16:47:00Z'
 labels:
   - stream
   - transport
@@ -21,7 +21,7 @@ ordinal: 29000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-The offline timer observer passed independent review. Backpressure is implementing the driver for the remaining timed cases. Short checks support conditional saturation trials for both protocols and the unwrapped HTTP/2 idle trial. Neither one-byte write was proven; wrapped HTTP/2 observations fell on opposite sides of two seconds. Preserve both receipts and all 50 original verdicts. Delivery will return the reviewed driver and eligible cases before any execution decision.
+Wake: lead disposition of the interrupted measurement-driver assignment. The incomplete private checkout is preserved. The last qualified artifact checks the timer journal; no runnable follow-up driver has been handed off for qualification. All 50 measured results stand. Both stream limits remain opt-in.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

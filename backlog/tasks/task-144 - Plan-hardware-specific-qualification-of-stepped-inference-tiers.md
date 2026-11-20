@@ -1,11 +1,11 @@
 ---
 id: TASK-144
 title: Plan hardware-specific qualification of stepped inference tiers
-status: Preparing
+status: Waiting
 assignee:
-  - '@gpt-6.2-sol-config'
+  - '@gpt-6.2-sol-release'
 created_date: '2026-11-20T00:33:00Z'
-updated_date: '2026-11-20T16:45:00Z'
+updated_date: '2026-11-20T17:56:00Z'
 labels: []
 milestone: m-14
 dependencies: []
@@ -15,7 +15,7 @@ ordinal: 142000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Design an operator-facing air tune command for one configured engine and model. Sweep supported context windows under a defined workload, measuring stable concurrency and speed on the target hardware. Retain comparable results across hardware upgrades. Preserve existing defaults and keep this planning work independent of the first native swap.
+Wake: independent rereview and hosted qualification of the corrected [hardware tuning design](https://github.com/ArborealML/Inference-Router/pull/51). Published ab891ba changes only the document. It clarifies usable capacity, hypothetical concurrency comparisons, execution evidence, workload identity and recommendation goals. Close the planning criteria after the reviewed document lands.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

@@ -1,6 +1,6 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.107)
+Status: draft, continuously revised (v0.12.108)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
@@ -352,9 +352,12 @@ daemon transaction per engine. 137 tests green.
   that answers no `upload_url`, an upload that dies or answers no asset id, an asset name listed twice on
   the release, and a tag that moves after the first resolve. No tag has run the gate: still configured,
   not proven.
-- v0.12.107 — produce and recover an offline supervised initial-launch receipt for the checked
+- v0.12.108 — produce and recover an offline supervised initial-launch receipt for the checked
   DeepSeek/Qwen pair. Anchor full commissioning through issue and require independent wire and
   effective-state evidence before recording an applied launch with ingress closed (§5.3.1).
+- v0.12.107 — report model and engine identifiers at reporting length in SSE keepalive comments.
+  Specify encoded byte ceilings for keepalives, HTTP error JSON and the committed-stream error
+  and completion pair (§6, §6.1).
 - v0.12.106 — latch the exact failed native switch target across dispatch wakes and unrelated
   reloads. Allow an authenticated, explicitly enabled reset of one latch (§5.3.1, §6, §7.7).
 - v0.12.105 — fence native Docker stop/removal uncertainty in the live provider and order
@@ -2630,8 +2633,12 @@ monotonic deadline and sequence. Available complete bytes or a terminal result t
 a due keepalive. The relay emits no more keepalives after it starts forwarding upstream bytes.
 Each keepalive is an SSE comment such as `: [router keepalive seq=7 status="switching model=qwen-long engine=hyperqwen"]` followed by a blank line.
 The sequence starts at zero and increases by one on that stream. The optional JSON-quoted `status`
-appears on the first comment and when the status changes. SSE parsers ignore comments when
-dispatching data events.
+appears on the first comment and when the reported status changes. Model and engine identifiers use
+the 128 UTF-16 code-unit reporting limit (§10). A missing engine name renders as empty text. Each
+encoded keepalive is at most **1,727 bytes**, including both terminating line feeds. The longest
+status has 24 fixed code units plus two reported identifiers. Allow up to six bytes per status code
+unit after JSON escaping, ten decimal sequence digits, and 37 bytes for the frame text and quotes.
+SSE parsers ignore comments when dispatching data events.
 
 The pump holds one unfinished block until its blank line, preserving LF, CRLF and bare CR across
 upstream read boundaries. The per-block limit is 1 MiB including all bytes on nonblank lines and their
@@ -2739,9 +2746,14 @@ An upstream engine's own 4xx/5xx arrives as `engine_error` with the engine's mes
 caller can tell "my request was wrong" from "the engine is down". Every message in that body carries the router's ceiling: the
 finished sentence is capped where the ticket becomes terminal and again at the writer that serialises it, so a caller cannot
 choose the size of an answer about their own request — whether the long text came from an upstream engine, a URL segment, or a
-rejected value in a request body (§10). `ErrorContractTests` pins the mapping, the casing, the message length, and a ceiling in
-**serialized bytes**, because JSON escaping makes the body longer than the character count and a character count alone is not a
-bound on the wire. `docs/ai-integration.md` carries the same table for integrators.
+rejected value in a request body (§10). The router-generated HTTP error JSON entity is at most
+**9,856 bytes**. That allows six bytes per UTF-16 code unit of the 1,600-unit reason and 256 bytes
+for the remaining envelope and fixed fields. On a committed SSE response, the router error event
+and its `[DONE]` event together are at most **9,878 bytes**, including 22 bytes for both event
+prefixes, delimiters and the sentinel. The pair's limit excludes preceding keepalives and upstream
+data. These limits count encoded body bytes. `ErrorContractTests` and `StreamFrameIdentityTests`
+pin the error shape, reported reason and encoded sizes. `docs/ai-integration.md` carries the error
+code table for integrators.
 
 ## 7. Configuration (TOML)
 

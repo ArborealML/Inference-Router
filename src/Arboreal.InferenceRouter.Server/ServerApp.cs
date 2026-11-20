@@ -347,9 +347,9 @@ public static partial class ServerApp
     {
         var status = ticket.State switch
         {
-            TicketState.Queued => $"queued model={ticket.Model}",
-            TicketState.WaitingForModel => $"switching model={ticket.Model} engine={ticket.Engine}",
-            _ => $"engine={ticket.Engine}",
+            TicketState.Queued => $"queued model={WireText.Ident(ticket.Model)}",
+            TicketState.WaitingForModel => $"switching model={WireText.Ident(ticket.Model)} engine={WireText.Ident(ticket.Engine ?? "")}",
+            _ => $"engine={WireText.Ident(ticket.Engine ?? "")}",
         };
         // Encode as a JSON string so a model name cannot introduce another SSE line.
         var statusField = string.Equals(status, lastStatus, StringComparison.Ordinal)

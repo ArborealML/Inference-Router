@@ -3,11 +3,11 @@ id: TASK-99
 title: >-
   Cap the caller-facing text in keepalive frames and in an error frame on a
   committed stream
-status: To Do
+status: Done
 assignee:
-  - '@qwen3.8-flash-next'
+  - '@gpt-6.2-sol-stream-delivery'
 created_date: '2026-11-18T11:14:00Z'
-updated_date: '2026-11-18T19:29:00Z'
+updated_date: '2026-11-20T17:57:00Z'
 labels: []
 milestone: m-1
 dependencies: []
@@ -17,20 +17,24 @@ ordinal: 98000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Three seams on caller-facing text and memory, each verified in this tree: an upstream error body is read **whole** before any excerpt is taken (`RouterCore.cs:708`, `:725`, `ReadAsByteArrayAsync`), so a large upstream error makes the process hold the entire response before a cap applies — and `ErrorContractTests.cs:224` states the opposite ("reads at most 256 bytes"); the queued and switching keepalive frames interpolate `ticket.Model` whole (`ServerApp.cs:244-245`), which is a caller-facing frame with no cap; and the byte ceilings in the new HTTP pins are `WireText.ReasonChars * 6 + 256` — an escaping allowance, not a stated wire ceiling — with no pin at all for a long error frame on a stream whose 200 is already committed.
+The caller-facing keepalive and error frame limits landed in [PR #50](https://github.com/ArborealML/Inference-Router/pull/50), SPEC .107. All 56 focused Release tests passed and Native AOT had zero trim warnings. The baseline and queued-only mutation exceeded the 1,727-byte limit by one byte; restoring the projection passed all 56 again. The merged tree matches the reviewed integration and [post-merge CI](https://github.com/ArborealML/Inference-Router/actions/runs/44787290297) passed.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
-
 <!-- AC:BEGIN -->
-- [ ] #1 Keepalive control frames carry the identifier at its reporting length, and a named pin asserts the frame length
-- [ ] #2 Each HTTP ceiling is asserted against a byte ceiling named in SPEC, and a long error frame on a committed stream has its own pin
-- [ ] #3 A mutation that removes the admission ceiling turns exactly one pin red
+- [x] #1 Keepalive control frames carry the identifier at its reporting length, and a named pin asserts the frame length
+- [x] #2 Each HTTP ceiling is asserted against a byte ceiling named in SPEC, and a long error frame on a committed stream has its own pin
+- [x] #3 Removing only the queued-model display cap fails the named queued keepalive regression; restoring it passes.
 <!-- AC:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Apply WireText.Ident to displayed model and engine identifiers before comparing emitted keepalive status. Preserve cadence, delimiters and routing identity. Specify encoded byte ceilings of 1,727 for a keepalive, 9,856 for plain error JSON and 9,878 for a committed error plus DONE. Exercise all status arms and the long committed error on the wire.
+<!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Found by the deep commit review of 8e6867d; every claim re-measured here before recording: `ReadAsByteArrayAsync` at `RouterCore.cs:708` and `:725`, keepalive interpolation at `ServerApp.cs:244-245`, the ceiling constant at `ErrorContractTests.cs:256,291,322`. The review ran nothing: its five mutation controls are its reading of the pins, not a run, and it reports no CI evidence.
-Disposition by the coding seat, recorded here: the keepalive text and the committed-stream error frame land as one follow-up commit right after TASK-94, because both are the mechanism v0.12.40 already owns. The **read side** is refused here and moved to TASK-101 — buffering an upstream error body whole is about what the router *reads*, and wants its own ceiling, pin and commit.
+The queued display was the demonstrated unbounded path. The admitted model and the existing terminal reason cap stay intact. Removing the queued display cap replaces the obsolete admission mutation.
 <!-- SECTION:NOTES:END -->
