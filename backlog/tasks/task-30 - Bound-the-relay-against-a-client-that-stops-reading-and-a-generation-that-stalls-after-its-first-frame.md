@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@gpt-6.2-sol-stream-backpressure'
 created_date: '2026-11-17T07:01:00Z'
-updated_date: '2026-11-20T04:31:00Z'
+updated_date: '2026-11-20T05:00:00Z'
 labels:
   - stream
   - transport
@@ -42,7 +42,7 @@ For a positive byte budget, count queued bytes and bytes awaiting flush. Pause u
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Independent plan review approved the opt-in scope on 13fdd43. Exercise successful bursts, partial writes, stalled reads, terminal ordering, cancellation and cleanup using controlled fixtures. Positive defaults still require the representative per-engine gap replay and stopped-reader HTTP soak specified in the stream timeout decision. [Frame integrity](https://github.com/ArborealML/Inference-Router/pull/42) supplies the completed-event boundary.
+Independent review approved the opt-in scope. Delivery found fixture failures on 8c5c15e. The implementer reported 17/17 on 7c18160. Acknowledgment and termination-cause ordering require corrections and independent qualification. Positive defaults still require representative gap replay and a stopped-reader soak.
 <!-- SECTION:NOTES:END -->
 
 ## Comments

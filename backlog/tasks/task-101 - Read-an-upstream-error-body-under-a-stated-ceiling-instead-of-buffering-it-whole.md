@@ -3,11 +3,11 @@ id: TASK-101
 title: >-
   Read an upstream error body under a stated ceiling instead of buffering it
   whole
-status: In Progress
+status: Done
 assignee:
-  - '@gpt-6.2-sol-stream-frames'
+  - '@gpt-6.2-sol-stream-delivery'
 created_date: '2026-11-18T11:29:00Z'
-updated_date: '2026-11-20T04:38:00Z'
+updated_date: '2026-11-20T05:00:00Z'
 labels: []
 milestone: m-1
 dependencies: []
@@ -17,16 +17,15 @@ ordinal: 100000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Frames is implementing a 256-byte read ceiling for non-success upstream HTTP responses. The ceiling counts application content-stream bytes. Preserve the existing UTF-8 diagnostic, caller response and deadline behavior.
+For a non-success upstream response, AIR reads through the first 256 application content-stream bytes or EOF. The existing diagnostic and deadline behavior are preserved. The limit applies to application reads; the HTTP transport can separately read ahead or drain.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
-
 <!-- AC:BEGIN -->
-- [ ] #1 The upstream error read stops at a stated ceiling instead of buffering the whole body
-- [ ] #2 The false comment at `ErrorContractTests.cs:224` is corrected, and a pin with counted content fails if the read grows past the ceiling
-- [ ] #3 A named mutation that removes the read ceiling reddens exactly that pin and no other
-- [ ] #4 SPEC states the read ceiling next to the reporting caps, so the numbers sit in one place
+- [x] #1 The upstream error read stops at a stated ceiling instead of buffering the whole body
+- [x] #2 The false comment at `ErrorContractTests.cs:224` is corrected, and a pin with counted content fails if the read grows past the ceiling
+- [x] #3 A named mutation that removes the read ceiling reddens exactly that pin and no other
+- [x] #4 SPEC states the read ceiling next to the reporting caps, so the numbers sit in one place
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -38,5 +37,5 @@ Stop reading at 256 bytes or EOF. Document transport read-ahead and draining sep
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Independent commit review was dispatched for 381f14c. The candidate build stopped at IDISP001 on the acquired stream. The tests-only baseline stopped at CS9007 on the expected JSON literal. Neither run executed a test. Frames owns both corrections; Delivery will qualify the corrected successor and include its delta in review.
+The baseline and a deliberate removal of the ceiling consumed 5,000 bytes with the same parsed diagnostic. Only the counted assertion failed under mutation. Restoring the limit passed all 14 focused Release tests and server Native AOT without warnings. [PR #44](https://github.com/ArborealML/Inference-Router/pull/44) landed in v0.12.103 after independent review. [Merge CI](https://github.com/ArborealML/Inference-Router/actions/runs/44677543464) passed on 6c225d2; the landed non-board tree matched the qualified head.
 <!-- SECTION:NOTES:END -->

@@ -5,7 +5,7 @@ status: Preparing
 assignee:
   - '@gpt-6.2-sol-lifecycle'
 created_date: '2026-11-17T02:54:00Z'
-updated_date: '2026-11-20T04:42:00Z'
+updated_date: '2026-11-20T04:57:00Z'
 labels:
   - engine
   - lifecycle
@@ -19,7 +19,7 @@ ordinal: 26000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Lifecycle owns uncertain-stop recovery. Shutdown is revising the selective reset plan: aliases and implicit defaults must share the canonical tier latch, probe publication must stay fenced until the failed claim marker clears, and each failed waiter must receive its own recorded outcome. Verify that a reload-only credential gets 404 on reset before and after reload. Shared terminal changes follow uncertain-stop recovery.
+Lifecycle owns uncertain-stop recovery. The selective native reset plan passed independent review. Shutdown starts implementation after uncertain-stop recovery lands and both workers verify the shared switch-completion code. The plan covers canonical tier identity, late probes, delivery of the original failure after a successor becomes ready, and refusal of a reset using reload-only credentials before and after reload.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
