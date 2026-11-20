@@ -3,11 +3,11 @@ id: TASK-99
 title: >-
   Cap the caller-facing text in keepalive frames and in an error frame on a
   committed stream
-status: To Do
+status: Preparing
 assignee:
-  - '@qwen3.8-flash-next'
+  - '@gpt-6.2-sol-stream-frames'
 created_date: '2026-11-18T11:14:00Z'
-updated_date: '2026-11-18T19:29:00Z'
+updated_date: '2026-11-20T16:52:00Z'
 labels: []
 milestone: m-1
 dependencies: []
@@ -17,7 +17,7 @@ ordinal: 98000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Three seams on caller-facing text and memory, each verified in this tree: an upstream error body is read **whole** before any excerpt is taken (`RouterCore.cs:708`, `:725`, `ReadAsByteArrayAsync`), so a large upstream error makes the process hold the entire response before a cap applies — and `ErrorContractTests.cs:224` states the opposite ("reads at most 256 bytes"); the queued and switching keepalive frames interpolate `ticket.Model` whole (`ServerApp.cs:244-245`), which is a caller-facing frame with no cap; and the byte ceilings in the new HTTP pins are `WireText.ReasonChars * 6 + 256` — an escaping allowance, not a stated wire ceiling — with no pin at all for a long error frame on a stream whose 200 is already committed.
+Frames will compare the shipped keepalive and committed-stream error frames with the documented wire ceilings and current tests. Identify any remaining caller-facing size gap and the smallest test that distinguishes it. The upstream error-body read ceiling landed separately in [PR #44](https://github.com/ArborealML/Inference-Router/pull/44).
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
