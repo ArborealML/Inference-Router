@@ -108,7 +108,16 @@ public sealed class DockerNativeDiagnosticsTests
             Assert.Equal(message, frame.Payload.ToArray());
         }
         Assert.Equal(exitCode is null ? [Inspect, Create, Start] : new[] { Inspect, Create, Start, Terminal }, daemon.Requests);
-        Assert.All(daemon.Responses, AssertDisposed);
+        if (mode == "wrong-mime")
+        {
+            Assert.All(daemon.Responses.Take(2), AssertDisposed);
+            AssertResponseDisposed(daemon.Responses[2]);
+            Assert.False(daemon.Responses[2].StreamAcquired);
+        }
+        else
+        {
+            Assert.All(daemon.Responses, AssertDisposed);
+        }
     }
 
     [Theory]
@@ -492,9 +501,14 @@ public sealed class DockerNativeDiagnosticsTests
 
     private static void AssertDisposed(ObservedReply response)
     {
+        AssertResponseDisposed(response);
+        Assert.Equal(1, response.Body.Disposals);
+    }
+
+    private static void AssertResponseDisposed(ObservedReply response)
+    {
         Assert.Equal(1, response.Disposals);
-        Assert.True(response.ContentWasDisposed);
-        Assert.True(response.Body.IsDisposed);
+        Assert.Equal(1, response.ContentDisposals);
     }
 
     private sealed record Reply(HttpStatusCode Status, byte[] Bytes, string? Media = null, int Fragment = int.MaxValue,
@@ -567,15 +581,15 @@ public sealed class DockerNativeDiagnosticsTests
     private sealed class ObservedReply : HttpResponseMessage
     {
         private readonly ObservedContent _content;
-        public ObservedStream Body { get; }
+        public ObservedStream Body => Assert.IsType<ObservedStream>(_content.Body);
+        public bool StreamAcquired => _content.Body is not null;
         public int Disposals { get; private set; }
-        public bool ContentWasDisposed => _content.IsDisposed;
+        public int ContentDisposals => _content.Disposals;
 
         public ObservedReply(Reply scripted) : base(scripted.Status)
         {
             Version = HttpVersion.Version11;
-            Body = new ObservedStream(scripted);
-            _content = new ObservedContent(Body);
+            _content = new ObservedContent(scripted);
             Content = _content;
             if (scripted.Media is { } media) Content.Headers.ContentType = new MediaTypeHeaderValue(media);
         }
@@ -587,13 +601,32 @@ public sealed class DockerNativeDiagnosticsTests
         }
     }
 
-    private sealed class ObservedContent(ObservedStream body) : StreamContent(body)
+    private sealed class ObservedContent(Reply scripted) : HttpContent
     {
-        public bool IsDisposed { get; private set; }
+        public ObservedStream? Body { get; private set; }
+        public int Disposals { get; private set; }
+
+        protected override Task<Stream> CreateContentReadStreamAsync(CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Assert.Null(Body);
+            var stream = new ObservedStream(scripted);
+            Body = stream;
+            return Task.FromResult<Stream>(stream);
+        }
+
+        protected override bool TryComputeLength(out long length)
+        {
+            length = 0;
+            return false;
+        }
+
+        protected override Task SerializeToStreamAsync(Stream stream, TransportContext? context) =>
+            stream.WriteAsync(scripted.Bytes.AsMemory()).AsTask();
 
         protected override void Dispose(bool disposing)
         {
-            if (disposing) IsDisposed = true;
+            if (disposing) Disposals++;
             base.Dispose(disposing);
         }
     }
@@ -602,11 +635,11 @@ public sealed class DockerNativeDiagnosticsTests
     {
         public int BytesRead { get; private set; }
         public bool SawEof { get; private set; }
-        public bool IsDisposed { get; private set; }
+        public int Disposals { get; private set; }
 
         public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
         {
-            Assert.False(IsDisposed);
+            Assert.Equal(0, Disposals);
             cancellationToken.ThrowIfCancellationRequested();
             if (scripted.HoldRead is { } entered)
             {
@@ -620,7 +653,7 @@ public sealed class DockerNativeDiagnosticsTests
             return count;
         }
 
-        public override bool CanRead => !IsDisposed;
+        public override bool CanRead => Disposals == 0;
         public override bool CanWrite => false;
         public override bool CanSeek => false;
         public override long Length => throw new NotSupportedException();
@@ -633,7 +666,7 @@ public sealed class DockerNativeDiagnosticsTests
 
         protected override void Dispose(bool disposing)
         {
-            if (disposing) IsDisposed = true;
+            if (disposing) Disposals++;
             base.Dispose(disposing);
         }
     }
