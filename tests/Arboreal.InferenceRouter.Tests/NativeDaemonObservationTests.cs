@@ -605,24 +605,28 @@ public sealed class NativeDaemonObservationTests
     private sealed class LoopClock : TimeProvider
     {
         private readonly ReadinessDeadlineTests.ManualClock _single = new();
-        private TickTimer? _timer;
+        private Action? _tick;
         public override long TimestampFrequency => _single.TimestampFrequency;
         public override long GetTimestamp() => _single.GetTimestamp();
         public void AdvanceTo(int milliseconds) => _single.AdvanceTo(milliseconds);
-        public void Tick() => Assert.IsType<TickTimer>(_timer).Fire();
+        public void Tick() => Assert.IsType<Action>(Volatile.Read(ref _tick)).Invoke();
         public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
         {
             if (period == Timeout.InfiniteTimeSpan) return _single.CreateTimer(callback, state, dueTime, period);
-            _timer = new TickTimer(callback, state);
-            return _timer;
+            Action tick = () => callback(state);
+            Volatile.Write(ref _tick, tick);
+            return new TickTimer(() => Interlocked.CompareExchange(ref _tick, null, tick));
         }
 
-        private sealed class TickTimer(TimerCallback callback, object? state) : ITimer
+        private sealed class TickTimer(Action stop) : ITimer
         {
-            public void Fire() => callback(state);
             public bool Change(TimeSpan dueTime, TimeSpan period) => throw new NotSupportedException();
-            public void Dispose() { }
-            public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+            public void Dispose() => stop();
+            public ValueTask DisposeAsync()
+            {
+                Dispose();
+                return ValueTask.CompletedTask;
+            }
         }
     }
 }
