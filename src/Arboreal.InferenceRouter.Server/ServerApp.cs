@@ -22,7 +22,8 @@ public static partial class ServerApp
         Justification = "Owned by the DI container: disposed (async) when the WebApplication is disposed in RunAsync.")]
     internal static WebApplication Build(string[] args, string? configPath, RouterConfig? configOverride,
         TimeProvider streamClock, Func<EngineDefinition, Lifecycle.IEngineLifecycleProvider>? lifecycleFactory = null,
-        Func<EngineDefinition, HttpMessageHandler>? httpHandlerFactoryForTests = null, string? reloadTokenForTests = null)
+        Func<EngineDefinition, HttpMessageHandler>? httpHandlerFactoryForTests = null, string? reloadTokenForTests = null,
+        Func<string?>? readTargetResetOptInForTests = null)
     {
         configPath ??= Environment.GetEnvironmentVariable("ARBOREAL_ROUTER_CONFIG")
                        ?? Environment.GetEnvironmentVariable("AIR_CONFIG")
@@ -32,18 +33,24 @@ public static partial class ServerApp
             : null;
         FileReloadEndpoint? reload = null;
         ReloadConfiguration? loaded = null;
+        string? targetResetInstance = null;
         if (!string.IsNullOrWhiteSpace(credential))
         {
             var path = Path.GetFullPath(configPath);
             loaded = RouterConfigLoader.LoadForReload(File.ReadAllText(path), path);
-            reload = new FileReloadEndpoint(path, credential);
+            var instance = Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture);
+            reload = new FileReloadEndpoint(path, credential, instance);
+            var resetOptIn = readTargetResetOptInForTests is { } readOptIn
+                ? readOptIn() : Environment.GetEnvironmentVariable("ARBOREAL_ROUTER_TARGET_RESET_ENABLED");
+            if (string.Equals(resetOptIn, "true", StringComparison.OrdinalIgnoreCase))
+                targetResetInstance = instance;
         }
         var config = configOverride ?? loaded?.Config ?? RouterConfigLoader.LoadFile(configPath);
         if (httpHandlerFactoryForTests is not null) config.HttpHandlerFactory = httpHandlerFactoryForTests;
 
         var builder = WebApplication.CreateSlimBuilder(args);
         builder.Services.AddSingleton(_ => new RouterCore(config, null, null, TimeProvider.System,
-            lifecycleFactory, reload: loaded));
+            lifecycleFactory, reload: loaded, nativeResetStartupInstance: targetResetInstance));
         builder.Services.AddSingleton(streamClock);
 
         var app = builder.Build();
@@ -72,6 +79,8 @@ public static partial class ServerApp
         {
             app.MapGet("/admin/config/reload", (HttpContext ctx, RouterCore r) => reload.GetAsync(ctx, r));
             app.MapPost("/admin/config/reload", (HttpContext ctx, RouterCore r) => reload.ApplyAsync(ctx, r));
+            if (targetResetInstance is not null)
+                app.MapPost("/admin/config/target-reset", (HttpContext ctx, RouterCore r) => reload.ResetTargetAsync(ctx, r));
         }
         app.MapGet("/admin/tickets/{id}", (string id, HttpContext ctx, RouterCore r) => HandleTicket(ctx, r, id));
         app.MapGet("/admin/tickets/{id}/events", (string id, HttpContext ctx, RouterCore r) => HandleEvents(ctx, r, id));

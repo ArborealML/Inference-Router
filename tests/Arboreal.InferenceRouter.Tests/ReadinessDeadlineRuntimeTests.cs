@@ -424,6 +424,14 @@ public sealed partial class ReadinessDeadlineTests
             Assert.Equal(0, Volatile.Read(ref proofs));
             Assert.False(content.Disposed.Task.IsCompleted);
 
+            var latched = await engine.WaitForProfileAsync("model", tier, Watchdog, CancellationToken.None)
+                .WaitAsync(Watchdog);
+            Assert.Equal(refusal, latched);
+            Assert.Equal(1, handler.ModelsCalls);
+            Assert.Equal(1, handler.StateCalls);
+            lock (engine.ReloadTransitionGate)
+                Assert.True(engine.ResetNativeTargetUnderGate("model", tier.Name));
+
             var fresh = await engine.WaitForProfileAsync("model", tier, Watchdog, CancellationToken.None)
                 .WaitAsync(Watchdog);
             Assert.True(fresh.IsReady);

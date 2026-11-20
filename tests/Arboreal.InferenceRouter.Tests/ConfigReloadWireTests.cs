@@ -11,7 +11,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Arboreal.InferenceRouter.Tests;
 
-public sealed class ConfigReloadWireTests : IDisposable
+public sealed partial class ConfigReloadWireTests : IDisposable
 {
     private const string ReloadPath = "/admin/config/reload";
     private const string Token = "offline-reload-credential";

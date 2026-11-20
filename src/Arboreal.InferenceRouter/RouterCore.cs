@@ -51,11 +51,12 @@ public sealed partial class RouterCore : IInferenceRouter
 
     internal RouterCore(RouterConfig config, IRequestScheduler? scheduler, EventRing? events, TimeProvider clock,
                         Func<EngineDefinition, IEngineLifecycleProvider>? lifecycleFactory = null,
-                        ExactTicketAdmission? admission = null, ReloadConfiguration? reload = null)
+                        ExactTicketAdmission? admission = null, ReloadConfiguration? reload = null, string? nativeResetStartupInstance = null)
     {
         config.ValidateLifecycleTopology();
         _shutdownToken = _shutdown.Token;
         _config = config;
+        _nativeResetStartupInstance = nativeResetStartupInstance;
         _clock = clock;
         _wakeOnEngineState = WakeOnEngineState;
         _scheduler = scheduler ?? new PrefixAwareScheduler();

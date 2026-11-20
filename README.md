@@ -18,6 +18,7 @@ AIR gives OpenAI-compatible clients one HTTP endpoint for local inference engine
 - **Measured switch ordering.** On a single idle native Docker engine with a proven incumbent, AIR can prefer the cheaper of eligible queued model switches. Estimates use recent observed shutdown and activation times. Queue age takes precedence within the comparison, and incomplete estimates fall back to enqueue order. [Queue semantics](SPEC.md#55-queue-semantics)
 - **Operator controls.** Inspect engine and queue status, replay events for a ticket, or cancel it through the admin API. The `air` CLI can host the router and act as a client. [HTTP reference](SPEC.md#6-http-surface-server-project)
 - **Configuration reload.** An authenticated apply rereads the startup file. Validated defaults take effect for new requests during active inference. External engine additions and removals apply when router work is idle. Accepted streams and switches keep their starting configuration. [Reload contract](SPEC.md#77-runtime-configuration-reload)
+- **Selective native quarantine reset.** Failed native targets stay latched across unrelated reloads. An operator can enable authenticated reset of one exact target at startup. [Reload and reset contract](SPEC.md#77-runtime-configuration-reload)
 - **Opt-in SSE limits.** Configure a per-stream output buffer limit or a per-engine upstream idle timeout for HTTP completions. [Streaming contract](SPEC.md#6-http-surface-server-project)
 
 ### In progress
@@ -34,7 +35,6 @@ AIR gives OpenAI-compatible clients one HTTP endpoint for local inference engine
 
 - **Cluster routing and model placement.** Accept requests from either ingress into one shared queue and let an eligible host activate the selected model. [Cluster milestone](backlog/milestones/m-6%20-%20cluster-routing-and-model-placement.md)
 - **Batching and switch-rate limits.** Use measured costs and queue age to serve cohorts and bound repeated switches. [Scheduling milestone](backlog/milestones/m-5%20-%20measured-model-scheduling.md)
-- **Selective native quarantine reset.** Preserve unrelated target quarantines across reloads and allow an operator to reset one target. [Reload milestone](backlog/milestones/m-8%20-%20configuration-reload-during-inference.md)
 - **Operator live view.** Follow engine status and per-ticket progress in a web interface backed by the replayable event feed. [Live view milestone](backlog/milestones/m-11%20-%20operator-live-view.md)
 
 See the [delivery milestones](backlog/milestones/README.md) for the full roadmap.
