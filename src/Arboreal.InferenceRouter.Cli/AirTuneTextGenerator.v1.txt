@@ -1,0 +1,19 @@
+air-tune/text-generator/v1
+Encoding: ASCII, no BOM or CR, with one LF at the end of each line.
+Tokens: preserved engine, model and tier spelling, 1 to 128 characters; initial ASCII alphanumeric,
+then ASCII alphanumeric or one of ._:@/+-. Seed and hashes are 64 lowercase hexadecimal digits.
+Integers: invariant unsigned decimal, no padding. H(bytes) is lowercase SHA-256 hexadecimal.
+Header for every hash: air-tune/text-generator/v1/<domain> followed by LF.
+Warmup seed: H(header for warmup-seed, run seed LF, canonical tier LF).
+Hash for a coordinate: H(header, coordinate seed LF, canonical tier LF, C LF, wave LF, worker LF, line LF).
+Grid uses run seed, domains grid-nonce and grid-record, C=1..8, wave=1..3, worker=1..C.
+Warmup uses warmup seed, domains warmup-nonce and warmup-record, C=1, wave=0, worker=1.
+Nonce uses line 0. Each record uses a positive line and is decimal line, space, record hash, LF.
+Candidate user text is "nonce " followed by the nonce and LF, then the instruction and LF.
+Instruction: Copy the numbered records below in order.
+Append N complete records with lines 1..N, then the first T bytes of record N+1 starting at offset zero.
+N may be zero. T may be zero and may not exceed the next record's full length. Append no extra LF.
+A full next-record tail is equivalent to N+1 full records and a zero tail.
+The complete candidate is at most 8388608 bytes, including the 113-byte header.
+N may not exceed floor(8388608/67); only the next-record tail may use the following line index.
+Exact full-record length is decimal line digit count plus 66. Check candidate length before generation.
