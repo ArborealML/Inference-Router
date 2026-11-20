@@ -1,11 +1,11 @@
 ---
 id: TASK-26
 title: Close the gaps SPEC 5.3.1 still describes for container-native lifecycle
-status: Waiting
+status: In Progress
 assignee:
-  - '@gpt-6.2-sol-release'
+  - '@gpt-6.2-sol-lifecycle'
 created_date: '2026-11-17T02:54:00Z'
-updated_date: '2026-11-20T19:10:00Z'
+updated_date: '2026-11-20T19:27:00Z'
 labels:
   - engine
   - lifecycle
@@ -19,7 +19,7 @@ ordinal: 26000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Wake: independent review of the daemon-observation amendment. [Docker diagnostics PR #53](https://github.com/ArborealML/Inference-Router/pull/53) landed at b0f8255 with 54 focused Release passes. [Main CI](https://github.com/ArborealML/Inference-Router/actions/runs/44798668380) passed all three jobs. The corrected reader counts empty stdout and stderr frames in order. The independent uncertain-start investigation traces a lost acknowledgment against the recorded operation and immutable container ID.
+Lifecycle owns the approved daemon-observation increment for a coordinated Docker start returning HTTP 204. [Docker diagnostics](https://github.com/ArborealML/Inference-Router/pull/53) landed at b0f8255. Existing residents, initial 304 responses, uncertain starts and serving-peer verification remain separate. Criterion 5 stays open.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -40,7 +40,7 @@ Wake: independent review of the daemon-observation amendment. [Docker diagnostic
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Request stdout and stderr explicitly at exec creation and pin the start request. Verify immutable ownership and demultiplex binary frames with finite byte ceilings for output, metadata and errors. Require exact terminal inspect status and exit code. Start one deadline before acquiring the provider gate. Preserve unknown interrupted-exec handling, pending stop/removal fences and borrowed handler ownership. Use DockerNativeDiagnosticsTests to distinguish status, size, timeout, sends and disposal on the fake handler.
+Sample the same immutable instance after the endpoint reads and before publishing readiness. Order the final check with issued stop/removal history. Distinguish retryable unknown observations from definite invalidation, including coherent created and removing states. For baseline and final inspections, prove timeout releases the provider gate and delivers one failure while the cancelled GET is still held. Exercise idle observation with a controlled timer and qualify NativeDaemonObservationTests through the fake provider.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
