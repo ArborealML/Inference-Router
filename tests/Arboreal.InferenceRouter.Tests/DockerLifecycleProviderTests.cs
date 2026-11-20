@@ -54,7 +54,8 @@ public sealed class DockerLifecycleProviderTests
     private const string RemoteBase = "https://daemon.invalid:2376/docker/";
 
     internal static DockerLifecycleConfig Cfg(string api = "v1.44", bool pinned = true, string platform = "linux/amd64",
-        string socket = LocalSocket, string routerId = "r1", bool waitHealth = true, bool removeStopped = true) => new()
+        string socket = LocalSocket, string routerId = "r1", bool waitHealth = true, bool removeStopped = true,
+        int callTimeoutMs = 15_000) => new()
     {
         Image = Locator,
         ImageIdentity = pinned ? new DockerImageIdentity(ImageId, RepoDigest, platform) : null,
@@ -67,6 +68,7 @@ public sealed class DockerLifecycleProviderTests
         ContainerPort = 8080,
         WaitHealth = waitHealth,
         RemoveStopped = removeStopped,
+        CallTimeoutMs = callTimeoutMs,
     };
 
     private static LifecycleTarget Target() => new(

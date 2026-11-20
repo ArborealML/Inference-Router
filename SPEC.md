@@ -1,6 +1,6 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.108)
+Status: draft, continuously revised (v0.12.110)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
@@ -352,6 +352,8 @@ daemon transaction per engine. 137 tests green.
   that answers no `upload_url`, an upload that dies or answers no asset id, an asset name listed twice on
   the release, and a tag that moves after the first resolve. No tag has run the gate: still configured,
   not proven.
+- v0.12.110 — add internal native Docker exec and finite log capture with bounded non-TTY framing,
+  exact-ID ownership and independently inspected exec exit (§5.3.1).
 - v0.12.108 — produce and recover an offline supervised initial-launch receipt for the checked
   DeepSeek/Qwen pair. Anchor full commissioning through issue and require independent wire and
   effective-state evidence before recording an applied launch with ingress closed (§5.3.1).
@@ -1725,8 +1727,27 @@ public interface IContainerRuntime            // proposed Docker Engine API adap
 **Transport and AOT.** The shipped provider uses raw Docker Engine HTTP over a Unix socket or an
 HTTP(S) daemon address, with proxy and redirect handling disabled, per-call timeouts, a configured
 API version and source-generated JSON (§9). The target design adds Windows `npipe` transport,
-version negotiation, logs and daemon events. Docker exec output would be demultiplexed from the
-8-byte frame header (stream ID and big-endian length), with a nonzero exec exit code treated as failure.
+version negotiation and daemon events.
+
+**Internal Docker exec and logs.** The native provider inspects the full container ID on the scoped
+daemon and checks the exact returned ID and both ownership labels before exec or log capture.
+Exec passes literal argv, attaches stdout and stderr without stdin, privilege elevation or TTY, and
+uses HTTP/1.1 attachment without Upgrade. Logs requires an explicit non-TTY container and takes one
+snapshot of at most 256 tail lines with both streams enabled. Both read 8-byte headers and binary
+payloads into ordered stdout/stderr frames. A capture keeps at most 64 KiB of payload and 256 frames.
+Overflow of either capture limit truncates the retained prefix while the reader validates and drains
+up to the 1 MiB framed-wire ceiling, including headers. A malformed or oversized stream refuses.
+Container inspect JSON is capped at 256 KiB, exec create at 4 KiB, exec inspect at 16 KiB and error
+bodies at 4 KiB. The one `docker.call_timeout_ms` budget begins before the shared provider gate and
+covers every response read through terminal inspect.
+
+Exec create requires HTTP `201`. Container inspect, attached start, logs and exec inspect require
+`200`. After a clean attached EOF, exec inspects the exact exec and container IDs and requires
+explicit `Running=false` and a nonnegative exit code. Zero succeeds and nonzero fails with the
+confirmed code and bounded output. Failure to establish terminal evidence leaves exit unconfirmed.
+Interrupted capture issues no automatic retry or compensating write. A pending Stop/DELETE still
+blocks exec before any daemon request. These internal operations have fake HTTP coverage and no
+runtime, admin, CLI or readiness call site.
 
 **Target ownership and launch checks.** Host-wide occupancy and ownership reconciliation remain
 target design. The per-engine image check above verifies the daemon's local image mapping.
