@@ -3,9 +3,9 @@ id: TASK-81
 title: Answer a stopped switch the same way on the wire, the feed, and the stream
 status: To Do
 assignee:
-  - '@gpt-6.2-sol-stream-delivery'
+  - '@gpt-6.2-sol-stream-frames'
 created_date: '2026-11-18T04:09:00Z'
-updated_date: '2026-11-20T22:07:00Z'
+updated_date: '2026-11-20T22:58:00Z'
 labels:
   - lifecycle
   - shutdown
@@ -18,7 +18,7 @@ ordinal: 81000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-The [default active-stream shutdown change](https://github.com/ArborealML/Inference-Router/pull/61) landed in v0.12.114. It covers core shutdown during an armed upstream read after ordinary default HTTP streaming has committed. Verified-default callback wiring has static proof only. Queue, switch, idle-only and credited modes remain open under criterion 3. The integrated change passed 154 focused Release cases, server Native AOT and independent review. The disconnect interaction passed against the queue-event change. All three [post-merge checks](https://github.com/ArborealML/Inference-Router/actions/runs/44825528652) passed on 7ee853e.
+The queued HTTP audit predicts that a client which has received a queued comment sees clean EOF with no further bytes when the core stops. The ticket should record one cancellation. Existing tests separately cover queued cancellation and HTTP keepalives, and [the landed active-read terminal](https://github.com/ArborealML/Inference-Router/pull/61) passed [main CI](https://github.com/ArborealML/Inference-Router/actions/runs/44825528652). The combined queued HTTP case remains untested. A reserved fixture plan will hold the only slot and the clock, observe the first queued comment, stop only the core with the client reading, and check the exact suffix, zero upstream forwards and one correlated enqueue followed by one cancellation. The queued wire contract remains open.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

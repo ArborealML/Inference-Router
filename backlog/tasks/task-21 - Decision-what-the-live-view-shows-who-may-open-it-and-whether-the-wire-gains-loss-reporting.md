@@ -5,7 +5,7 @@ status: Waiting
 assignee:
   - '@gpt-6.2-sol-stream-delivery'
 created_date: '2026-11-17T02:18:00Z'
-updated_date: '2026-11-20T22:07:00Z'
+updated_date: '2026-11-20T22:41:00Z'
 labels:
   - ui
   - wire
@@ -18,7 +18,7 @@ ordinal: 21000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Wake on independent review of the dashboard documentation plan. Document the operator view using shipped admin reads and the SSE feed. Counts refer to retained events; sequence gaps and the exclusive cursor describe replay continuity. Remove the unshipped stats endpoint and the proposed shared gap event from the dashboard description. Distinguish recommended loopback deployment and operator-managed tunneling from configurable listener binding, and describe the separate credentials for reload and reset.
+Wake on independent integration review and hosted CI for the [dashboard documentation draft](https://github.com/ArborealML/Inference-Router/pull/67) at bfcc169. The integrated revision preserves the MiniMax entry and the subsequent switch-test citation. Independent commit review passed on 82ec2f1. The SPEC-only change documents the existing admin reads, retained event counts, replay cursor and sequence gaps, and the 256-entry buffer for HTTP event-feed subscribers. It distinguishes recommended loopback deployment from listener configuration and describes the credentials for reload and reset. Delivery owns the landing after both checks pass.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

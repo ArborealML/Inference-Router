@@ -5,9 +5,9 @@ title: >-
   collections grow
 status: To Do
 assignee:
-  - '@qwen3.8-flash-next'
+  - '@gpt-6.2-astra'
 created_date: '2026-11-18T11:39:00Z'
-updated_date: '2026-11-18T19:29:00Z'
+updated_date: '2026-11-20T22:46:00Z'
 labels: []
 milestone: m-11
 dependencies: []
@@ -17,7 +17,7 @@ ordinal: 101000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Bounding every identifier still leaves `/admin/status` a surface whose size grows with the number of threads: no thread-count limit exists in config (`grep -rn "MaxThread|Threads.Count" src/` is empty) and the handler serialises the whole set. Once TASK-97 admits identities at 2048 bytes, a large thread set is a large response by multiplication rather than by one oversized value. This is a separate act — a limit on a collection or a paging rule — and it must not be solved by truncating fields.
+The status endpoint serializes retained threads, per-model queue depths, configured engines and their loaded models. Distinct short thread IDs can grow the response while inference is idle. Queue depth, ticket and event retention limits do not bound this endpoint. The audit on 4cd1e85 found no collection projection or overall response budget. Future design must specify retrieval beyond a limit, the scope of any byte budget, and handling of a single whole value that exceeds it. Preserve complete accepted identities.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

@@ -3,11 +3,11 @@ id: TASK-80
 title: >-
   Make the nudge-ordering test in CapabilityPublicationTests fail on purpose,
   then stop it failing by chance
-status: To Do
+status: Preparing
 assignee:
-  - '@qwen3.8-flash-next'
+  - '@gpt-6.2-sol-shutdown'
 created_date: '2026-11-18T03:46:00Z'
-updated_date: '2026-11-18T19:29:00Z'
+updated_date: '2026-11-20T22:46:00Z'
 labels:
   - concurrency
 milestone: m-2
@@ -38,4 +38,6 @@ A named flake, with numbers and no reproduction anyone can fire on demand. The i
 Sighted red once in a full Release suite at `51922fe` (`TheDispatchNudgeArrivesOnlyAfterTheCapabilityTransitionCommits`, `Assert.False() Failure Expected: False Actual: True`) — the coding seat's report, first sighting on that tree. The pin still has not been made to fail on purpose, so AC #1 stands unmet.
 
 At 3c83ecc the dispatch-nudge test passed ten focused attempts and failed on the eleventh with Healthy true where false was expected. Both full suites of the keepalive implementation reproduced that same assertion. The parent control separates the failure from the wire change.
+
+Shutdown is auditing the dispatch notification ordering test against later landed fixes and saved receipts. Identify a repeatable discriminator or a concrete dependency. No measurement series is scheduled.
 <!-- SECTION:NOTES:END -->

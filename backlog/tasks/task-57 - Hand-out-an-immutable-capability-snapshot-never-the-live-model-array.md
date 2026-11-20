@@ -3,9 +3,9 @@ id: TASK-57
 title: Hand out an immutable capability snapshot, never the live model array
 status: Waiting
 assignee:
-  - '@gpt-6.2-sol-shutdown'
+  - '@gpt-6.2-sol-release'
 created_date: '2026-11-17T20:41:00Z'
-updated_date: '2026-11-20T22:07:00Z'
+updated_date: '2026-11-20T22:48:00Z'
 labels:
   - concurrency
 milestone: m-3
@@ -17,7 +17,7 @@ ordinal: 57000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Wake on the handoff of the readiness fixture repair and the reserved switch-claim citation audit, followed by release of the approved allocation fixture to Shutdown. The scheduler uses an immutable roster and public callers receive copies. The [landed mutation test](https://github.com/ArborealML/Inference-Router/blob/bbd8bb9/tests/Arboreal.InferenceRouter.Tests/CapabilityScanTests.cs#L9) covers inputs, getter output and deconstruction. Its source matches 31179e3. The [full Release run](https://github.com/ArborealML/Inference-Router/actions/runs/44816063374) passed 1,798/1,798. The runtime getter mutation also passed in the 122-case run at 4bc9a0a. Allocation measurement and SPEC §5.5 wording remain open.
+Wake on independent review and [hosted CI](https://github.com/ArborealML/Inference-Router/actions/runs/44831695208) for the [allocation fixture](https://github.com/ArborealML/Inference-Router/pull/66) at 0a3d07d. In Release, 256 warmed snapshot and roster reads allocated zero managed bytes on the measuring thread. Forcing a roster copy produced 8,192 bytes and failed the assertion. Exact restoration passed. A separate scheduler Wait callback verified the same capability and roster references. The [landed mutation test](https://github.com/ArborealML/Inference-Router/blob/bbd8bb9/tests/Arboreal.InferenceRouter.Tests/CapabilityScanTests.cs#L9) covers constructor and initializer inputs, getter output and deconstruction. The [full run](https://github.com/ArborealML/Inference-Router/actions/runs/44816063374) passed 1,798/1,798. The runtime getter mutation also passed in the 122-case run at 4bc9a0a. The SPEC wording remains open.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
