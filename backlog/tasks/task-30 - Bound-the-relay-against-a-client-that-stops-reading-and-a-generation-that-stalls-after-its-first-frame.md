@@ -3,11 +3,11 @@ id: TASK-30
 title: >-
   Bound the relay against a client that stops reading, and a generation that
   stalls after its first frame
-status: Preparing
+status: In Progress
 assignee:
-  - '@gpt-6.2-sol-stream-delivery'
+  - '@gpt-6.2-sol-stream-backpressure'
 created_date: '2026-11-17T07:01:00Z'
-updated_date: '2026-11-20T13:39:00Z'
+updated_date: '2026-11-20T14:10:00Z'
 labels:
   - stream
   - transport
@@ -21,7 +21,7 @@ ordinal: 29000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Archive readback preserved the measured verdicts. Three saturation traces fell below 30 seconds even from write issue. In a fourth, a flush preceded the feed event by 55 µs and decision order was unavailable. Neither protocol recorded a pending one-byte write. HTTP/2 was still draining before cancellation, with at least 33,792 source bytes unseen downstream. Delivery is preparing a plan for these cases only. Both limits remain opt-in.
+Backpressure owns the approved residual harness and short localhost preflight. Preserve all 50 archived verdicts, including the three unexplained sub-30-second observations. Delivery will report whether each conditional case is feasible. The timed follow-up requires a separate decision; both limits stay opt-in.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -36,7 +36,7 @@ Archive readback preserved the measured verdicts. Three saturation traces fell b
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Tie wait arming, timeout, flush and terminal decision to the same write. Observe the preceding write settle and a length-one inner write remain pending. Establish unwrapped HTTP/2 final-marker drain and engine_timeout before comparing wrapped raw-read chronology. Preserve the qualified controls. Further execution requires a separate release and any timed series requires an exclusive window.
+Join watchdog arming, expiry, flush and terminal cause to the actual inner operation and watched task. Establish prior write settlement before a real pending one-byte write. Require unwrapped HTTP/2 final-marker drain and idle attribution before checking the wrapped pending inner read. Use one saturation trial and one conditional one-byte trial per protocol plus the ordered HTTP/2 idle pair. Future measured work and normal cleanup are capped at 320 seconds.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
