@@ -18,6 +18,7 @@ public sealed class FakeDockerDaemonHandler : HttpMessageHandler
     public int StallMs { get; set; }
     public Func<string, (HttpStatusCode Status, string Body)> Responder { get; set; } =
         _ => (HttpStatusCode.NotFound, "{}");
+    public Func<string, CancellationToken, Task<(HttpStatusCode Status, string Body)>>? AsyncResponder { get; set; }
 
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
@@ -29,7 +30,9 @@ public sealed class FakeDockerDaemonHandler : HttpMessageHandler
         if (TransportFails) throw new HttpRequestException("connection refused");
 
         if (StallMs > 0) await Task.Delay(StallMs, cancellationToken);
-        var (status, text) = Responder(path);
+        var (status, text) = AsyncResponder is { } respond
+            ? await respond(path, cancellationToken)
+            : Responder(path);
         return new HttpResponseMessage(status)
         {
             Content = new StringContent(text, Encoding.UTF8, "application/json"),
@@ -40,8 +43,8 @@ public sealed class FakeDockerDaemonHandler : HttpMessageHandler
 
 public sealed class DockerLifecycleProviderTests
 {
-    private const string Ours = "abc123def456";
-    private const string FullPeerId = "abc123def4567890abc123def4567890abc123def4567890abc123def4567890";
+    private const string Ours = FullPeerId;
+    internal const string FullPeerId = "abc123def4567890abc123def4567890abc123def4567890abc123def4567890";
     private const string Locator = "registry.local/strata:2026-11";
     private const string ImageId = "sha256:1111111111111111111111111111111111111111111111111111111111111111";
     private const string DifferentId = "sha256:3333333333333333333333333333333333333333333333333333333333333333";
@@ -50,7 +53,7 @@ public sealed class DockerLifecycleProviderTests
     private const string LocalSocket = "unix:///run/docker.sock";
     private const string RemoteBase = "https://daemon.invalid:2376/docker/";
 
-    private static DockerLifecycleConfig Cfg(string api = "v1.44", bool pinned = true, string platform = "linux/amd64",
+    internal static DockerLifecycleConfig Cfg(string api = "v1.44", bool pinned = true, string platform = "linux/amd64",
         string socket = LocalSocket, string routerId = "r1", bool waitHealth = true, bool removeStopped = true) => new()
     {
         Image = Locator,
@@ -70,7 +73,7 @@ public sealed class DockerLifecycleProviderTests
         "strata", "strata-8b", null,
         new EngineModelDefinition { Name = "strata-8b" });
 
-    private static string Inspect(string id = ImageId, string digest = RepoDigest, string os = "linux",
+    internal static string Inspect(string id = ImageId, string digest = RepoDigest, string os = "linux",
         string architecture = "amd64", string? variant = null)
     {
         var variantField = variant is null ? "" : $",\"Variant\":\"{variant}\"";
@@ -168,9 +171,9 @@ public sealed class DockerLifecycleProviderTests
             Responder = path =>
             {
                 if (path.Contains("/containers/json", StringComparison.Ordinal))
-                    return (HttpStatusCode.OK, """
+                    return (HttpStatusCode.OK, $$$"""
                         [
-                          {"Id":"abc123def456","Labels":{"arboreal.router":"r1","arboreal.engine":"strata","arboreal.model":"incumbent"}},
+                          {"Id":"{{{Ours}}}","Labels":{"arboreal.router":"r1","arboreal.engine":"strata","arboreal.model":"incumbent"}},
                           {"Id":"foreign","Labels":{"arboreal.router":"r1","arboreal.engine":"other","arboreal.model":"other"}}
                         ]
                         """);
@@ -557,7 +560,7 @@ public sealed class DockerLifecycleProviderTests
         using var daemon = new FakeDockerDaemonHandler
         {
             Responder = _ => (HttpStatusCode.OK,
-                """[{"Id":"abc123def456","Image":"img","State":"running","Labels":{"arboreal.router":"r1","arboreal.engine":"strata","arboreal.model":"old"}},""" +
+                $$$"""[{"Id":"{{{Ours}}}","Image":"img","State":"running","Labels":{"arboreal.router":"r1","arboreal.engine":"strata","arboreal.model":"old"}},""" +
                 """{"Id":"foreign","Image":"img","State":"running","Labels":{"arboreal.router":"someone-else"}}]"""),
         };
         using var provider = new DockerLifecycleProvider(Cfg(), "strata", daemon);
@@ -771,7 +774,7 @@ public sealed class DockerLifecycleProviderTests
 
         Assert.True(result.Succeeded);
         Assert.Equal(
-            ["POST /v1.44/containers/abc123def456/stop?t=30", "DELETE /v1.44/containers/abc123def456?force=true"],
+            [$"POST /v1.44/containers/{Ours}/stop?t=30", $"DELETE /v1.44/containers/{Ours}?force=true"],
             daemon.Requests.ToArray());
     }
 
@@ -791,7 +794,7 @@ public sealed class DockerLifecycleProviderTests
         var result = await provider.StopAsync(Target(), [new EnginePeer(Ours, "img", "strata-8b", OwnedByUs: true)], CancellationToken.None);
 
         Assert.True(result.Succeeded);
-        Assert.Equal(["POST /v1.44/containers/abc123def456/stop?t=30"], daemon.Requests.ToArray());
+        Assert.Equal([$"POST /v1.44/containers/{Ours}/stop?t=30"], daemon.Requests.ToArray());
     }
 
     [Fact(Timeout = 20_000)]
@@ -857,7 +860,7 @@ public sealed class DockerLifecycleProviderTests
     [InlineData("unexpected-remove", true)]
     public async Task StopConflictRequiresExactStoppedInstance(string scenario, bool removeStopped)
     {
-        var id = scenario == "short-id" ? Ours : FullPeerId;
+        var id = scenario == "short-id" ? FullPeerId[..12] : FullPeerId;
         var containerPath = $"/v1.44/containers/{id}";
         var stopPath = $"{containerPath}/stop?t=30";
         var inspectPath = $"{containerPath}/json";
@@ -904,9 +907,15 @@ public sealed class DockerLifecycleProviderTests
         var replacement = scenario is "exited" or "absent";
         Assert.Equal(replacement, result.Succeeded);
         if (!replacement)
-            Assert.Equal(scenario is "unexpected-stop" or "unexpected-remove" ? "http_202" : "http_409", result.Reason);
+            Assert.Equal(scenario switch
+            {
+                "short-id" => "native_peer_id_unverifiable",
+                "unexpected-stop" or "unexpected-remove" => "http_202",
+                _ => "http_409",
+            }, result.Reason);
         Assert.StartsWith("GET /v1.44/containers/json?all=true&filters=", daemon.Requests[0], StringComparison.Ordinal);
-        var expected = new List<string> { "GET /v1.44/version", $"GET {imagePath}", $"POST {stopPath}" };
+        var expected = new List<string> { "GET /v1.44/version", $"GET {imagePath}" };
+        if (scenario != "short-id") expected.Add($"POST {stopPath}");
         if (scenario is not ("short-id" or "unexpected-stop")) expected.Add($"GET {inspectPath}");
         if (removeStopped && scenario is ("exited" or "restart" or "unexpected-remove"))
             expected.Add($"DELETE {containerPath}");
@@ -919,6 +928,162 @@ public sealed class DockerLifecycleProviderTests
     }
 
     [Theory(Timeout = 20_000)]
+    [InlineData(false, false, "timeout")]
+    [InlineData(false, true, "disconnect")]
+    [InlineData(false, true, "conflict")]
+    [InlineData(true, true, "accepted")]
+    [InlineData(true, true, "server-error")]
+    [InlineData(true, true, "cancelled")]
+    public async Task UncertainPeerMutationFencesReentry(bool delete, bool removeStopped, string fault)
+    {
+        const string inventory = "/v1.44/containers/json?";
+        var id = fault == "disconnect" ? FullPeerId.ToUpperInvariant() : FullPeerId;
+        var container = $"/v1.44/containers/{id}";
+        var stop = $"{container}/stop?t=30";
+        var removal = $"{container}?force=true";
+        var affected = delete ? removal : stop;
+        var phase = "issue";
+        using var caller = new CancellationTokenSource();
+        using var daemon = new FakeDockerDaemonHandler
+        {
+            Responder = path =>
+            {
+                if (path == affected && phase == "issue")
+                {
+                    if (fault == "cancelled")
+                    {
+                        caller.Cancel();
+                        caller.Token.ThrowIfCancellationRequested();
+                    }
+                    return fault switch
+                    {
+                        "disconnect" => throw new HttpRequestException("lost response"),
+                        "timeout" => throw new OperationCanceledException(),
+                        "conflict" => (HttpStatusCode.Conflict, ""),
+                        "server-error" => (HttpStatusCode.InternalServerError, ""),
+                        _ => (HttpStatusCode.Accepted, ""),
+                    };
+                }
+                if (path == $"{container}/json")
+                    return phase switch
+                    {
+                        "issue" => (HttpStatusCode.OK, StopConflictInspect(id: id, state: """{"Status":"running","Running":true}""")),
+                        "present" => (HttpStatusCode.OK, StopConflictInspect(id: id)),
+                        _ => (HttpStatusCode.NotFound, ""),
+                    };
+                if (path.StartsWith(inventory, StringComparison.Ordinal))
+                    return phase switch
+                    {
+                        "issue" => (HttpStatusCode.OK,
+                            $$$"""[{"Id":"{{{id}}}","Labels":{"arboreal.router":"r1","arboreal.engine":"strata"}}]"""),
+                        "unexpected-list" => (HttpStatusCode.Accepted, ""),
+                        "malformed-list" => (HttpStatusCode.OK, "[null]"),
+                        "case-alias" => (HttpStatusCode.OK,
+                            $$$"""[{"Id":"{{{id.ToUpperInvariant()}}}","Labels":{"arboreal.router":"foreign"}}]"""),
+                        _ => (HttpStatusCode.OK, "[]"),
+                    };
+                if (path == "/v1.44/version") return (HttpStatusCode.OK, """{"ApiVersion":"1.44"}""");
+                if (path.Contains("/images/", StringComparison.Ordinal)) return (HttpStatusCode.OK, Inspect());
+                if (path == stop && delete && phase == "issue") return (HttpStatusCode.NoContent, "");
+                if (path == "/v1.44/containers/create") return (HttpStatusCode.Created, """{"Id":"replacement"}""");
+                if (path == "/v1.44/containers/replacement/start") return (HttpStatusCode.NoContent, "");
+                throw new InvalidOperationException($"Unexpected fake daemon request {path}");
+            },
+        };
+        using var provider = new DockerLifecycleProvider(Cfg(removeStopped: removeStopped), "strata", daemon);
+        using var coordinator = new EngineLifecycleCoordinator(provider);
+        var target = Target();
+        EnginePeer[] peers = [new(id, Locator, "incumbent", OwnedByUs: true)];
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            provider.StopAsync(target, peers, new CancellationToken(canceled: true)).AsTask());
+        Assert.Empty(daemon.Requests);
+
+        if (fault == "cancelled")
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => coordinator.SwitchAsync(target, caller.Token).AsTask());
+        else
+        {
+            var failed = await coordinator.SwitchAsync(target, caller.Token);
+            Assert.False(failed.Succeeded);
+            if (delete) Assert.Equal(NativeStopDisposition.Stopped, Assert.Single(failed.NativeStops).Stop);
+        }
+
+        var tail = daemon.Requests.Count;
+        var blocked = await provider.StopAsync(target, peers, CancellationToken.None);
+        Assert.Equal("native_peer_mutation_unresolved", blocked.Reason);
+        Assert.Contains(delete ? "Delete" : "Stop", blocked.Action, StringComparison.Ordinal);
+        Assert.Contains(id, blocked.Action, StringComparison.Ordinal);
+        Assert.Equal("native_peer_mutation_unresolved", (await provider.LaunchAsync(target, CancellationToken.None)).Reason);
+        Assert.Equal(tail, daemon.Requests.Count);
+
+        phase = "present";
+        Assert.False((await coordinator.SwitchAsync(target, CancellationToken.None)).Succeeded);
+        Assert.Equal([$"GET {container}/json"], daemon.Requests.Skip(tail).ToArray());
+        if (fault == "timeout")
+        {
+            foreach (var invalid in new[] { "unexpected-list", "malformed-list", "case-alias" })
+            {
+                phase = invalid;
+                tail = daemon.Requests.Count;
+                Assert.False((await coordinator.SwitchAsync(target, CancellationToken.None)).Succeeded);
+                Assert.Equal(tail + 2, daemon.Requests.Count);
+                Assert.Equal($"GET {container}/json", daemon.Requests[tail]);
+                Assert.StartsWith($"GET {inventory}", daemon.Requests[tail + 1], StringComparison.Ordinal);
+            }
+        }
+
+        phase = "vacant";
+        tail = daemon.Requests.Count;
+        Assert.True((await coordinator.SwitchAsync(target, CancellationToken.None)).Succeeded);
+        Assert.Equal($"GET {container}/json", daemon.Requests[tail]);
+        Assert.StartsWith($"GET {inventory}", daemon.Requests[tail + 1], StringComparison.Ordinal);
+        Assert.Single(daemon.Requests, request => request == $"POST {stop}");
+        Assert.Equal(delete ? 1 : 0, daemon.Requests.Count(request => request == $"DELETE {removal}"));
+        Assert.Single(daemon.Requests, request => request == "POST /v1.44/containers/create");
+        Assert.Single(daemon.Requests, request => request == "POST /v1.44/containers/replacement/start");
+    }
+
+    [Fact(Timeout = 20_000)]
+    public async Task DirectLaunchCannotPassTheHeldRecoveryInventory()
+    {
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var container = $"/v1.44/containers/{FullPeerId}";
+        using var daemon = new FakeDockerDaemonHandler
+        {
+            AsyncResponder = async (path, ct) =>
+            {
+                if (path == $"{container}/stop?t=30") return (HttpStatusCode.Accepted, "");
+                if (path == $"{container}/json") return (HttpStatusCode.NotFound, "");
+                if (!path.StartsWith("/v1.44/containers/json?", StringComparison.Ordinal))
+                    throw new InvalidOperationException($"Unexpected fake daemon request {path}");
+                entered.TrySetResult();
+                await release.Task.WaitAsync(ct);
+                return (HttpStatusCode.Accepted, "");
+            },
+        };
+        using var provider = new DockerLifecycleProvider(Cfg(removeStopped: false), "strata", daemon);
+        using var coordinator = new EngineLifecycleCoordinator(provider);
+        var target = Target();
+        Assert.False((await provider.StopAsync(target,
+            [new EnginePeer(FullPeerId, Locator, "incumbent", OwnedByUs: true)], CancellationToken.None)).Succeeded);
+
+        var recovery = coordinator.SwitchAsync(target, CancellationToken.None).AsTask();
+        Task<LifecycleResult> direct;
+        try
+        {
+            await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            direct = provider.LaunchAsync(target, CancellationToken.None).AsTask();
+            Assert.False(direct.IsCompleted);
+            Assert.Equal(3, daemon.Requests.Count);
+        }
+        finally { release.TrySetResult(); }
+
+        Assert.False((await recovery).Succeeded);
+        Assert.Equal("native_peer_mutation_unresolved", (await direct).Reason);
+        Assert.Equal(3, daemon.Requests.Count);
+    }
+
+    [Theory(Timeout = 20_000)]
     [InlineData(204, "incumbent", true)]
     [InlineData(204, "different-model", false)]
     [InlineData(304, "incumbent", false)]
@@ -928,7 +1093,7 @@ public sealed class DockerLifecycleProviderTests
         int stopStatus, string proofModel, bool comparable)
     {
         var clock = new TimingClock();
-        var id = stopStatus == 409 ? FullPeerId : Ours;
+        var id = FullPeerId;
         var containerPath = $"/v1.44/containers/{id}";
         var removalPath = stopStatus == 409 ? containerPath : $"{containerPath}?force=true";
         using var daemon = new FakeDockerDaemonHandler
