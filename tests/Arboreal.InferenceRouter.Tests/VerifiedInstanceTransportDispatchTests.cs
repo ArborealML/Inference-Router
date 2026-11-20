@@ -22,6 +22,8 @@ public sealed partial class VerifiedInstanceTransportTests
         rig.Publish(generation: 1);
         var idle = new ReadinessDeadlineTests.ManualClock();
         rig.Router.StreamIdleClockForTests = idle;
+        var transportSettled = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        rig.Router.AfterOptInTransportTaskForTests = id => transportSettled.TrySetResult(id);
         Assert.True(await rig.Engine.ProbeHealthOnceAsync(rig.Token));
         var ticket = await rig.Router.EnqueueHttpAsync("verified-stream", new InferenceRequest
         {
@@ -59,17 +61,14 @@ public sealed partial class VerifiedInstanceTransportTests
             }
             Assert.Equal(1, rig.Admission.PhysicalUses);
             Assert.Equal(0, rig.Admission.Releases);
+            Assert.False(transportSettled.Task.IsCompleted);
             Assert.Equal(0, rig.Engine.MatchedPrefixChars([prompt]));
             Assert.False(await channel.Reader.WaitToReadAsync(rig.Token));
             retiring.Release();
             await released.WaitAsync(rig.Token);
+            Assert.Equal(ticket.Id, await transportSettled.Task.WaitAsync(rig.Token));
             Assert.Equal(0, rig.Admission.PhysicalUses);
             Assert.Equal(1, rig.Admission.Releases);
-            while (Volatile.Read(ref ticket.ExecCts) is not null)
-            {
-                rig.Token.ThrowIfCancellationRequested();
-                await Task.Yield();
-            }
             Assert.True(rig.Engine.MatchedPrefixChars([prompt]) > 0);
             Assert.Equal(1, rig.Terminals(ticket));
         }

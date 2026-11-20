@@ -5,6 +5,7 @@ namespace Arboreal.InferenceRouter;
 public sealed partial class RouterCore
 {
     internal TimeProvider StreamIdleClockForTests = TimeProvider.System;
+    internal Action<string>? AfterOptInTransportTaskForTests;
 
     private async Task ExecuteOptInStreamAsync(QueuedRequest candidate, EngineRuntime engine,
         SwitchServingProof? servingProof, ExactTicketAdmission.Invocation? invocation, CancellationToken execution)
@@ -189,6 +190,7 @@ public sealed partial class RouterCore
             // Observation starts only after logical settlement. Disposal thus follows both
             // the HTTP delivery decision and the last physical user of the execution token.
             ReleaseExecutionCancellation(ticket);
+            AfterOptInTransportTaskForTests?.Invoke(ticket.Id);
         }
     }
 
