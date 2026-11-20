@@ -126,11 +126,52 @@ internal static class AirTuneWorkloadPlan
         try
         {
             var text = StrictUtf8.GetString(bytes);
-            return RouterConfigLoader.Load(text, isJson: Path.GetExtension(path.AsSpan()).Equals(".json", StringComparison.OrdinalIgnoreCase));
+            var isJson = Path.GetExtension(path.AsSpan()).Equals(".json", StringComparison.OrdinalIgnoreCase);
+            if (isJson && HasNullConfigMapEntry(text))
+                return null;
+
+            return RouterConfigLoader.Load(text, isJson: isJson);
         }
-        catch (Exception exception) when (exception is RouterConfigException or ArgumentException or OverflowException)
+        catch (Exception exception) when (exception is RouterConfigException or JsonException or ArgumentException or OverflowException)
         {
             return null;
+        }
+    }
+
+    private static bool HasNullConfigMapEntry(string json)
+    {
+        // Typed map values can deserialize as null even when the config mapper requires objects.
+        // Keep the loader's JSON syntax allowances and validate these entries at the planner boundary.
+        using var document = JsonDocument.Parse(json, new JsonDocumentOptions
+        {
+            CommentHandling = JsonCommentHandling.Skip,
+            AllowTrailingCommas = true,
+        });
+        var root = document.RootElement;
+        if (root.ValueKind != JsonValueKind.Object)
+            return false;
+        if (HasNullEntry(root, "threads"))
+            return true;
+        if (!root.TryGetProperty("engine", out var engines) || engines.ValueKind != JsonValueKind.Object)
+            return false;
+
+        foreach (var engine in engines.EnumerateObject())
+        {
+            var value = engine.Value;
+            if (value.ValueKind == JsonValueKind.Null ||
+                (value.ValueKind == JsonValueKind.Object && HasNullEntry(value, "catalog")))
+                return true;
+        }
+        return false;
+
+        static bool HasNullEntry(JsonElement owner, string name)
+        {
+            if (!owner.TryGetProperty(name, out var map) || map.ValueKind != JsonValueKind.Object)
+                return false;
+            foreach (var entry in map.EnumerateObject())
+                if (entry.Value.ValueKind == JsonValueKind.Null)
+                    return true;
+            return false;
         }
     }
 

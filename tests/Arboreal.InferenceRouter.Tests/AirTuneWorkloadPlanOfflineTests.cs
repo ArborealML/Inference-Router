@@ -99,7 +99,9 @@ public sealed class AirTuneWorkloadPlanOfflineTests : IDisposable
         Assert.Equal("a69aaac1268953fdcf3ad6672053783915a07d153e13072d33bd8b43dc9c0d6b", Digest(withTail));
         Assert.Equal(prefix, withTail[..prefix.Length]);
         Assert.Equal("3 94db2c1a1", Encoding.ASCII.GetString(withTail.AsSpan(prefix.Length)));
-        Assert.Equal(grid.Candidate(3, 0), grid.Candidate(2, 67));
+        var fullTail = grid.Candidate(2, 67);
+        Assert.Equal("7119ea1a79c436c340fb37e14f803a279775dd793cfeb92d7d95d2d3927e7f1a", Digest(fullTail));
+        Assert.Equal(grid.Candidate(3, 0), fullTail);
         Assert.Equal(113, grid.Candidate(0, 0).Length);
         Assert.Throws<ArgumentOutOfRangeException>(() => grid.Candidate(2, 68));
         Assert.Throws<ArgumentOutOfRangeException>(() => grid.Candidate(AirTuneTextGenerator.MaxRecordCount, 0));
@@ -263,6 +265,23 @@ public sealed class AirTuneWorkloadPlanOfflineTests : IDisposable
         };
         await File.WriteAllBytesAsync(path, input, deadline.Token);
         AssertError(await RunAsync(Arguments(path)), 1, BadConfig);
+    }
+
+    [Theory(Timeout = 30_000)]
+    [InlineData("""{"engine":{"endpoint-canary":null}}""")]
+    [InlineData("""
+        {"threads":{"key-canary":null},"engine":{"tune":{"kind":"openai-compatible","endpoint":"http://endpoint-canary.invalid"}}}
+        """)]
+    [InlineData("""
+        {"engine":{"tune":{"kind":"openai-compatible","endpoint":"http://endpoint-canary.invalid","catalog":{"key-canary":null}}}}
+        """)]
+    public async Task NullJsonConfigMapEntriesAreRedacted(string json)
+    {
+        if (!LinuxX64)
+            return;
+
+        var result = await RunAsync(Arguments(Write("input-path-canary.json", json)));
+        AssertError(result, 1, BadConfig);
     }
 
     [Theory(Timeout = 30_000)]
