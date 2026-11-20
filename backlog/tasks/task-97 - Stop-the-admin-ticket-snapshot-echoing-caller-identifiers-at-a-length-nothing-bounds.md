@@ -3,22 +3,23 @@ id: TASK-97
 title: >-
   Stop the admin ticket snapshot echoing caller identifiers at a length nothing
   bounds
-status: Blocked
+status: To Do
 assignee:
   - '@gpt-6.2-sol-stream-delivery'
 created_date: '2026-11-18T10:57:00Z'
-updated_date: '2026-11-20T18:38:00Z'
+updated_date: '2026-11-20T18:40:00Z'
 labels: []
 milestone: m-1
 dependencies:
   - TASK-145
+priority: low
 ordinal: 96000
 ---
 
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Blocked on Claire’s decision in TASK-145 about whether to retain existing request compatibility or design identifier limits for bounded ticket snapshots. [PR #52](https://github.com/ArborealML/Inference-Router/pull/52) landed the existing body cap on both admin POST routes and corrected SPEC sizing at c6f34c3. All 54 focused tests passed, Linux AOT had zero trim warnings and [main CI](https://github.com/ArborealML/Inference-Router/actions/runs/44793610067) passed all three jobs.
+Low-priority backlog under decision 78. A future generous limit for model and thread names is approved in principle. The owner suggested 128–256 characters. [PR #52](https://github.com/ArborealML/Inference-Router/pull/52) shipped the two admin request-body limits separately and passed all 54 focused tests and [main CI](https://github.com/ArborealML/Inference-Router/actions/runs/44793610067).
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -34,11 +35,11 @@ Blocked on Claire’s decision in TASK-145 about whether to retain existing requ
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Prepare a bounded plan to reuse the existing counted body reader on POST /admin/threads and POST /admin/switch. Pin declared and streamed oversized requests returning the existing 413 before registration or switch effects, plus valid requests at the configured ceiling. Correct the SPEC snapshot sizing claim while preserving whole identities. Seek independent review before implementation.
+When prioritized, define the exact character count and unit, assess client compatibility, and derive a serialized snapshot byte bound including escaping and other identity fields. Review before implementation.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Source on 3fb1981 shows both handlers copy the entire body before parsing. Inference and authorized reset already use the bounded reader; reload accepts no body. A thread header can itself exceed the inference body budget, and JSON escaping also affects the serialized snapshot. Decision 45 retains complete snapshot identities. A new identity limit, fixed snapshot ceiling and refusal fields remain proposals outside this increment.
+Decision 45 preserves the whole accepted identifier for exact correlation. A thread header is independent of the body cap. The shipped admin route checks remain covered by criterion 4.
 <!-- SECTION:NOTES:END -->
