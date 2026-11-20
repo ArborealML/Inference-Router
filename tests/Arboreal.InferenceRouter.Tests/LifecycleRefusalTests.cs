@@ -236,12 +236,13 @@ public sealed class LifecycleRefusalTests
         var ended = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         if (disposition is "shutdown" or "contradiction")
         {
-            daemon.AsyncResponder = async (path, _) =>
+            daemon.AsyncResponder = async (path, ct) =>
             {
                 if (path.Contains("/images/", StringComparison.Ordinal))
                 {
                     preflightEntered.TrySetResult();
                     await releasePreflight.Task.WaitAsync(Limit, CancellationToken.None);
+                    ct.ThrowIfCancellationRequested();
                 }
                 return daemon.Responder(path);
             };

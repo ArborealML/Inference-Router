@@ -1666,17 +1666,28 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
     private async Task FinishNativeFailureAsync(SwitchState state, string reason, bool providerRefusal,
         bool restoreIncumbent, DockerLifecycleProvider? native, CancellationToken stop)
     {
-        var delivery = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        TaskCompletionSource? delivery = null;
+        SwitchEnd previousEnd;
         lock (_transitionGate)
         {
-            if (_stopped || _retiring || !ReferenceEquals(_switchState, state) || state.End != SwitchEnd.Pending)
-                return;
+            previousEnd = state.End;
+            if (!_stopped && !_retiring && ReferenceEquals(_switchState, state) && previousEnd == SwitchEnd.Pending)
+            {
+                delivery = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                RecordLifecycleFailureReason(state, providerRefusal);
+                state.ReadOnlyFailureCanRestore = restoreIncumbent;
+                RememberNativeFailure(state);
+                state.ReadinessOutcomeDelivered = delivery;
+                state.End = SwitchEnd.Failed;
+            }
+        }
 
-            RecordLifecycleFailureReason(state, providerRefusal);
-            state.ReadOnlyFailureCanRestore = restoreIncumbent;
-            RememberNativeFailure(state);
-            state.ReadinessOutcomeDelivered = delivery;
-            state.End = SwitchEnd.Failed;
+        if (delivery is null)
+        {
+            // A returned provider failure can describe how a stopped transaction unwound.
+            if (providerRefusal && previousEnd == SwitchEnd.RouterStopped)
+                Emit("engine.switch_failed", model: state.Model, reason: reason);
+            return;
         }
 
         try
