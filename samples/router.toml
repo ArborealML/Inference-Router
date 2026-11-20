@@ -133,15 +133,32 @@ path = "/v1/models"
 [engine.hyperqwen.catalog."qwen-3.8-27b"]
 aliases = ["qwen-27b"]
 
-# ── glm: health + routing only (no lifecycle commands from this router) ─────
+# ── glm: shared Maya listener for externally selected GLM or HY4 ────────────
 [engine.glm]
 kind = "openai-compatible"
 endpoint = "http://127.0.0.1:18060/v1"
-remote = true                           # remote peers switch themselves; we only route
+remote = true
+models_endpoint = "/v1/models"
+loaded_requires_status_loaded = true
 
 [engine.glm.health_probe]
-path = "/v1/models"
-expect = "glm"
+path = "/props"
+expect = "total_slots>0"
+context_path = "default_generation_settings.n_ctx"
+slots_path = "total_slots"
 
 [engine.glm.catalog."glm-5.3-flash"]
 aliases = ["glm-flash"]
+
+[engine.glm.catalog."hy4-flash"]
+aliases = ["hy4", "hy4-flash-maya-xs"]
+default_profile = "32k"
+serving = [
+  { name = "32k",   max_context = 32768,   max_slots = 1 },
+  { name = "64k",   max_context = 65536,   max_slots = 1 },
+  { name = "96k",   max_context = 98304,   max_slots = 1 },
+  { name = "128k",  max_context = 131072,  max_slots = 1 },
+  { name = "256k",  max_context = 262144,  max_slots = 1 },
+  { name = "512k",  max_context = 524288,  max_slots = 1 },
+  { name = "1024k", max_context = 1048576, max_slots = 1 },
+]
