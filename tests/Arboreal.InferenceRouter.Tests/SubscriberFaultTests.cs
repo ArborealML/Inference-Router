@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using System.Text.Json;
 using Arboreal.InferenceRouter.Lifecycle;
 using Microsoft.Extensions.DependencyInjection;
@@ -60,42 +61,110 @@ public sealed class SubscriberFaultTests
         Assert.Null(engine.SwitchingToward);
     }
 
-    /// <summary>The half that used to strand a request: an observer that throws at the emit nearest the transition —
-    /// the record that the switch has begun, written by the switch task itself. A second caller parked behind that
-    /// switch still takes the joined outcome, and the readiness task is settled rather than left for the caller's
-    /// ceiling. A stranded switch is not a slow request, it is a request that never answers.</summary>
+    /// <summary>A fault at terminal success leaves both joined callers ready and the same event
+    /// available in replay when readiness settles and when each caller wakes.</summary>
     [Fact(Timeout = 60_000)]
     public async Task AThrowingSubscriberDoesNotStrandTheSwitchItWoke()
     {
         using var reported = new FakeEngineHandler { LoadedModels = ["m"] };
+        using var bound = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        var ct = bound.Token;
         var feed = new EventRing();
         var provider = new GatedLaunch();
-        var engine = Engine(feed, provider, reported);
-        await using var _ = engine;
+        await using var engine = Engine(feed, provider, reported);
 
-        var started = 0;
-        Assert.True(feed.TrySubscribeReplay(0, e =>
+        var firstWaiting = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var secondWaiting = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var producer = new TaskCompletionSource<ImmutableArray<long>>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var firstWake = new TaskCompletionSource<ImmutableArray<long>>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var secondWake = new TaskCompletionSource<ImmutableArray<long>>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var followingObserver = new TaskCompletionSource<long>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var wait = TimeSpan.FromSeconds(20);
+        var arrivals = 0;
+        engine.SwitchWaitTimeForTests = deadline =>
         {
-            if (e.Kind != "engine.switch_started") return;
-            started++;
-            throw new InvalidOperationException("the SSE client hung up mid-write");
-        }, out var replayed));
+            var arrival = Interlocked.Increment(ref arrivals) == 1 ? firstWaiting : secondWaiting;
+            arrival.TrySetResult();
+            return deadline - wait;
+        };
 
-        var first = engine.WaitForModelAsync("extra", TimeSpan.FromSeconds(20), CancellationToken.None);
-        await WaitUntil(() => provider.GateCount == 1);
-        var joined = engine.WaitForModelAsync("extra", TimeSpan.FromSeconds(20), CancellationToken.None);
+        static bool MatchesCompletion(RouterEvent evt) =>
+            evt.Kind == "engine.switch_completed" && evt.Engine == "fake" && evt.Model == "extra";
 
-        reported.LoadedModels = ["m", "extra"];
-        provider.ReleaseAll(LifecycleResult.Ok());
-        var a = await first;
-        var b = await joined;
+        ImmutableArray<long> CompletionSequences() =>
+            [.. feed.Replay(0).Where(MatchesCompletion).Select(evt => evt.Seq)];
 
-        Assert.True(a.IsReady);
-        Assert.True(b.IsReady);                       // the waiter was not left parked on a task nobody settles
-        Assert.Equal(1, started);                     // the throw happened, at the emit nearest the transition
-        Assert.Equal(1, feed.SubscriberFaults);
-        Assert.Contains("engine.switch_started", feed.Replay(0).Select(e => e.Kind));
-        Assert.Null(engine.SwitchingToward);
+        engine.AfterEndCommitForTests = _ =>
+        {
+            var snapshot = CompletionSequences();
+            producer.TrySetResult(snapshot);
+        };
+
+        var wakes = 0;
+        engine.AfterReadyWaitForTests = cancelled =>
+        {
+            if (cancelled) return;
+
+            var snapshot = CompletionSequences();
+            var wake = Interlocked.Increment(ref wakes) == 1 ? firstWake : secondWake;
+            wake.TrySetResult(snapshot);
+        };
+
+        var matchingCallbacks = 0;
+        Assert.True(feed.TrySubscribeReplay(0, evt =>
+        {
+            if (MatchesCompletion(evt) && Interlocked.Increment(ref matchingCallbacks) == 1)
+                throw new InvalidOperationException("the fixture observer failed at switch completion");
+        }, out _));
+        Assert.True(feed.TrySubscribeReplay(0, evt =>
+        {
+            if (MatchesCompletion(evt)) followingObserver.TrySetResult(evt.Seq);
+        }, out _));
+        var faultsBefore = feed.SubscriberFaults;
+
+        var first = engine.WaitForModelAsync("extra", wait, ct);
+        try
+        {
+            await provider.Entered.Task.WaitAsync(ct);
+            await firstWaiting.Task.WaitAsync(ct);
+            var joined = engine.WaitForModelAsync("extra", wait, ct);
+            await secondWaiting.Task.WaitAsync(ct);
+            Assert.Equal(2, Volatile.Read(ref arrivals));
+            Assert.False(first.IsCompleted);
+            Assert.False(joined.IsCompleted);
+            Assert.Equal(1, provider.LaunchCount);
+
+            reported.LoadedModels = ["m", "extra"];
+            provider.Release.TrySetResult();
+
+            Assert.True((await first.WaitAsync(ct)).IsReady);
+            Assert.True((await joined.WaitAsync(ct)).IsReady);
+            var atSettlement = await producer.Task.WaitAsync(ct);
+            var atFirstWake = await firstWake.Task.WaitAsync(ct);
+            var atSecondWake = await secondWake.Task.WaitAsync(ct);
+
+            // A retained event at settlement has already gone through the synchronous fanout.
+            // For an inverted emit, let the observer prove the terminal eventually arrived.
+            if (!atSettlement.IsEmpty)
+                Assert.True(followingObserver.Task.IsCompletedSuccessfully, "The observer after the throw missed the completion.");
+            var observedSeq = await followingObserver.Task.WaitAsync(ct);
+            var terminalSeq = Assert.Single(CompletionSequences());
+            Assert.Equal(terminalSeq, observedSeq);
+            Assert.Equal(terminalSeq, Assert.Single(atSettlement));
+            Assert.Equal(terminalSeq, Assert.Single(atFirstWake));
+            Assert.Equal(terminalSeq, Assert.Single(atSecondWake));
+            Assert.Equal(2, Volatile.Read(ref arrivals));
+            Assert.Equal(2, Volatile.Read(ref wakes));
+            Assert.Equal(1, provider.LaunchCount);
+            Assert.Equal(1, Volatile.Read(ref matchingCallbacks));
+            Assert.Equal(faultsBefore + 1, feed.SubscriberFaults);
+            Assert.Null(engine.SwitchingToward);
+        }
+        finally
+        {
+            provider.Release.TrySetResult();
+        }
     }
 
     /// <summary>Counting is not enough if nobody can see the count: the fault total rides the status surface an
@@ -164,12 +233,15 @@ public sealed class SubscriberFaultTests
         public ReadinessPolicy Readiness(LifecycleTarget target) => new(false, TimeSpan.FromSeconds(1));
     }
 
-    /// <summary>Holds the launch open so the second caller is provably parked behind the switch while the observer
-    /// throws at its nearest emit.</summary>
+    /// <summary>Holds the launch open while the second caller joins.</summary>
     private sealed class GatedLaunch : IEngineLifecycleProvider
     {
-        private readonly Queue<TaskCompletionSource<LifecycleResult>> _gates = new();
+        private int _launchCount;
+
         public string Kind => "exec";
+        internal TaskCompletionSource Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        internal TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        internal int LaunchCount => Volatile.Read(ref _launchCount);
 
         public ValueTask<LifecycleResult> PreflightAsync(LifecycleTarget target, CancellationToken ct)
             => ValueTask.FromResult(LifecycleResult.Ok("fake"));
@@ -183,45 +255,12 @@ public sealed class SubscriberFaultTests
 
         public async ValueTask<LifecycleResult> LaunchAsync(LifecycleTarget target, CancellationToken ct)
         {
-            TaskCompletionSource<LifecycleResult> gate;
-            lock (_gates)
-            {
-                gate = new TaskCompletionSource<LifecycleResult>(TaskCreationOptions.RunContinuationsAsynchronously);
-                _gates.Enqueue(gate);
-            }
-
-            return await gate.Task.WaitAsync(ct).ConfigureAwait(false);
-        }
-
-        public void ReleaseAll(LifecycleResult outcome)
-        {
-            TaskCompletionSource<LifecycleResult>[] all;
-            lock (_gates)
-            {
-                all = [.. _gates];
-                _gates.Clear();
-            }
-
-            foreach (var gate in all) gate.TrySetResult(outcome);
-        }
-
-        public int GateCount
-        {
-            get { lock (_gates) return _gates.Count; }
+            Interlocked.Increment(ref _launchCount);
+            Entered.TrySetResult();
+            await Release.Task.WaitAsync(ct).ConfigureAwait(false);
+            return LifecycleResult.Ok();
         }
 
         public ReadinessPolicy Readiness(LifecycleTarget target) => new(false, TimeSpan.FromSeconds(1));
-    }
-
-    private static async Task WaitUntil(Func<bool> condition, int timeoutMs = 10_000)
-    {
-        var deadline = DateTimeOffset.UtcNow + TimeSpan.FromMilliseconds(timeoutMs);
-        while (DateTimeOffset.UtcNow < deadline)
-        {
-            if (condition()) return;
-            await Task.Delay(20).ConfigureAwait(false);
-        }
-
-        throw new TimeoutException("condition not met within " + timeoutMs + " ms");
     }
 }

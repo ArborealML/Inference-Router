@@ -1,11 +1,11 @@
 ---
 id: TASK-146
 title: Compare two saved hardware tuning runs offline
-status: Waiting
+status: Done
 assignee:
   - '@gpt-6.2-sol-release'
 created_date: '2026-11-20T19:07:00Z'
-updated_date: '2026-11-20T19:40:00Z'
+updated_date: '2026-11-20T19:57:00Z'
 labels: []
 milestone: m-14
 dependencies: []
@@ -15,14 +15,14 @@ ordinal: 144000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Wake: exact hosted checks for [PR #54](https://github.com/ArborealML/Inference-Router/pull/54) and the shared merge turn. Candidate 4299551 passed 41 focused Release cases and Linux x64 CLI Native AOT with zero trim warnings. The published executable reproduced the reference report byte for byte. It rejected an inconsistent prior-level reason with exit 1, empty stdout and the expected diagnostic. Independent correction review passed. Delivery owns landing.
+The offline comparison CLI shipped in [PR #54](https://github.com/ArborealML/Inference-Router/pull/54) at 09a0d9b. It compares two saved runs at matched concurrency. All 41 focused Release cases passed. The published Linux x64 Native AOT executable reproduced the reference report byte for byte and rejected a contradictory record with exit 1 and empty stdout. [Post-merge CI](https://github.com/ArborealML/Inference-Router/actions/runs/44805928105) passed all three jobs. Hardware measurement remains separate.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Compare compatible saved runs at the same concurrency with reproducible deltas. Identify unknown or incomparable evidence explicitly.
-- [ ] #2 Bound input and output and verify file identity on supported systems. Malformed input produces a redacted error with no partial report.
-- [ ] #3 Exercise the comparison through the CLI with golden and negative controls and verify the published Native AOT binary.
+- [x] #1 Compare compatible saved runs at the same concurrency with reproducible deltas. Identify unknown or incomparable evidence explicitly.
+- [x] #2 Bound input and output and verify file identity on supported systems. Malformed input produces a redacted error with no partial report.
+- [x] #3 Exercise the comparison through the CLI with golden and negative controls and verify the published Native AOT binary.
 <!-- AC:END -->
 
 ## Implementation Plan

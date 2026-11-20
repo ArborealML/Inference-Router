@@ -44,7 +44,8 @@ public sealed class EngineLifecycleCoordinator : IDisposable
 
     public ReadinessPolicy Readiness(LifecycleTarget target) => _provider.Readiness(target);
 
-    internal readonly record struct SwitchReport(LifecycleResult Result, bool RefusedBeforeMutation);
+    internal readonly record struct SwitchReport(LifecycleResult Result, bool RefusedBeforeMutation,
+        NativeContainerObservation Baseline = default);
 
     public async ValueTask<LifecycleResult> SwitchAsync(LifecycleTarget target, CancellationToken ct) =>
         (await SwitchWithReportAsync(target, ct).ConfigureAwait(false)).Result;
@@ -52,8 +53,12 @@ public sealed class EngineLifecycleCoordinator : IDisposable
     internal ValueTask<SwitchReport> SwitchWithReportAsync(LifecycleTarget target, CancellationToken ct) =>
         SwitchWithReportAsync(target, timing: null, incumbent: null, ct);
 
-    internal async ValueTask<SwitchReport> SwitchWithReportAsync(
+    internal ValueTask<SwitchReport> SwitchWithReportAsync(
         LifecycleTarget target, SwitchAttempt? timing, SwitchServingProof? incumbent, CancellationToken ct)
+        => SwitchWithReportAsync(target, timing, incumbent, observeLaunch: false, ct);
+
+    internal async ValueTask<SwitchReport> SwitchWithReportAsync(
+        LifecycleTarget target, SwitchAttempt? timing, SwitchServingProof? incumbent, bool observeLaunch, CancellationToken ct)
     {
         await _gate.WaitAsync(ct).ConfigureAwait(false);
         var native = NativeProvider;
@@ -136,7 +141,12 @@ public sealed class EngineLifecycleCoordinator : IDisposable
                 return new SwitchReport(launched, RefusedBeforeMutation: false);
             }
             Record($"launched:{target.Model}");
-            return new SwitchReport(launched, RefusedBeforeMutation: false);
+            if (!observeLaunch || native is null || launched.NativeLaunch is not { } launch)
+                return new SwitchReport(launched, RefusedBeforeMutation: false);
+
+            using var baselineDeadline = ReadinessDeadline.Start(native.ObservationClock, native.ObservationTimeout, ct);
+            var baseline = await native.ObserveContainerAsync(launch, baselineDeadline).ConfigureAwait(false);
+            return new SwitchReport(launched, RefusedBeforeMutation: false, baseline.Observation);
         }
         finally
         {

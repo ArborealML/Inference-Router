@@ -355,6 +355,10 @@ daemon transaction per engine. 137 tests green.
 - v0.12.114 — report core shutdown on a writable default HTTP stream with one in-band
   `cancelled` error and `[DONE]` when the producer's armed-read observations attribute the
   result to core shutdown and the acknowledged prefix permits a terminal (§6).
+- v0.12.113 — anchor the exact supervised Docker container ID and commissioned API before start.
+  Preserve that closed operation across a lost start acknowledgment or disputed journal persistence (§5.3.1).
+- v0.12.112 — require exact Docker observations for coordinated starts acknowledged with `204`,
+  before the first readiness proof and on idle health ticks (§5.3.1).
 - v0.12.111 — compare two saved short-grid tuning summaries offline with exact same-concurrency
   matching, bounded versioned inputs and descriptor-based file admission on Linux x64 (§11.1).
 - v0.12.110 — add internal native Docker exec and finite log capture with bounded non-TTY framing,
@@ -1738,6 +1742,30 @@ HTTP(S) daemon address, with proxy and redirect handling disabled, per-call time
 API version and source-generated JSON (§9). The target design adds Windows `npipe` transport,
 version negotiation and daemon events.
 
+**Polling for a tracked Docker launch.** After the concrete Docker coordinator receives start
+`204`, an exact inspect establishes a baseline for that launch. It checks the immutable container
+ID and image, the router, engine, model and profile labels, and coherent running state with a
+full-precision start time and restart count. A second exact match after the endpoint reads is
+required for the first readiness proof, including with `wait_health = false`. It must fit the
+original readiness budget and the bounded Docker observation. Local Stop/DELETE issue and proof
+publication are ordered by the provider gate. Missing baseline or failed confirmation leaves
+readiness unknown without restoring the previous incumbent or allowing an endpoint-only proof.
+
+The existing serial health timer (`health_probe.interval_ms`, default 2,000) then polls the exact
+container even while the engine is idle and when the endpoint fails to answer. Inspect uses the
+pinned daemon/API and GET only, with `docker.call_timeout_ms` bounding inspection and gate waits
+and a 256 KiB inspect body ceiling. A valid contradiction withdraws health, serving capacity and
+switch proof for that exact launch and retains the last roster as history. A fresh matching
+sample and successful endpoint round can recover from a transient unknown without restoring the
+old switch proof. A definite contradiction remains until a new qualified `204` launch. The
+poll rechecks pending and previously issued local Stop/DELETE before a positive publication and
+never settles or retries a mutation. A timed-out read that later returns can only clean up.
+
+Polling covers tracked launches at completed samples. Startup-existing containers, initial
+`304` and other direct creates lack this baseline. Between-sample changes, changes to the
+application process inside a matching container, and authentication of the connected serving peer
+remain separate. This supplies no host-wide vacancy, retirement or mutation authority.
+
 **Internal Docker exec and logs.** The native provider inspects the full container ID on the scoped
 daemon and checks the exact returned ID and both ownership labels before exec or log capture.
 Exec passes literal argv, attaches stdout and stderr without stdin, privilege elevation or TTY, and
@@ -1930,7 +1958,16 @@ possible issue before entering the typed create port. It compares independently 
 commissioning against the original at acceptance, issue, start and fresh acknowledgment. An
 independent observation binds the exact wire bytes to the operation, epoch and daemon. The producer
 records their digest only after the bytes match the approval and separately observed effective image,
-process, resource and route settings agree. An exact running-instance observation qualifies Applied.
+process, resource and route settings agree. The current journal format records the verified full
+container ID, exact operation, create digest and independently commissioned daemon, socket and API
+version in revision 4. The writer reads back its anchored record before it issues Docker Start.
+Revision 5 Applied requires the acknowledged start and matching independent create and running
+evidence. The receipt and its serialized bytes bind the same operation and container ID as revision 4.
+A missing start acknowledgment keeps the exact operation and container ID fenced through reopen.
+Recovery issues no replacement or compensating write, and a running observation alone cannot
+settle the operation. Legacy revision 4 Applied remains available for historical lookup. An older
+Issued-only history stays held.
+
 Contradictory or malformed evidence keeps the installed effect fenced. If the head refuses to
 advance after a journal flush, the producer preserves the extra frame and old head. Reopening a split
 journal keeps the slot quarantined with no receipt, automatic repair, resend or successor. Historical
@@ -2752,6 +2789,11 @@ not throw still receive it, the emitter finishes the transition it was mid-way t
 the operator (`/admin/status` → `FeedSubscriberFaults`) rather than rethrown into a stranger's call stack. A subscriber
 that *blocks* blocks every producer that appends, because the append holds the ring lock: the feed is a diagnostic
 surface, not a hook, and an observer that must not slow a request replays it by sequence instead of subscribing live.
+
+Code that performs I/O on behalf of a subscription handles its own failures, unsubscribes,
+and cleans up outside the ring lock. The ring's catch protects the producer and increments
+`FeedSubscriberFaults` for each uncaught callback exception. Replay retains the original
+event and sequence without adding a fault record.
 
 The shipped error contract is one lowercase body on every surface —
 `{"error":{"type":"air_error","code":…,"message":…}}` — and the code picks the status:

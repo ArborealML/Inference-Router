@@ -5,7 +5,7 @@ status: Waiting
 assignee:
   - '@gpt-6.2-sol-stream-delivery'
 created_date: '2026-11-18T04:09:00Z'
-updated_date: '2026-11-20T19:42:00Z'
+updated_date: '2026-11-20T20:45:00Z'
 labels:
   - lifecycle
   - shutdown
@@ -18,7 +18,7 @@ ordinal: 81000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Wake: independent rereview of the active default HTTP shutdown plan. If core shutdown wins while an upstream read is pending, emit the existing cancellation error and one sentinel only on a writable stream at an acknowledged complete event boundary. Pin one exact delta, no late output or duplicate terminal, and a single cancelled ticket and feed result. Queue, switch, idle-only and credited paths remain outside this increment.
+Wake on the .114 integration turn after the preceding native changes land. Correction 1837ef9 passed independent review and 22 targeted cases. The original 2db3092 passed 149 focused cases and Native AOT; three controls produced the expected failures. The change covers core shutdown during an armed upstream read on the active default HTTP stream. Verified-default callback wiring has source-only coverage. Queue, switch, idle-only and credited modes remain open.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

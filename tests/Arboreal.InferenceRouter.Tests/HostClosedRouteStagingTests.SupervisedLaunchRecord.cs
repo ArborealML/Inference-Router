@@ -10,6 +10,7 @@ namespace Arboreal.InferenceRouter.Tests;
 public sealed partial class HostClosedRouteStagingTests
 {
     private const string SupervisedSocket = "/fixture/supervised.sock";
+    private const string SupervisedApiVersion = "v1.43";
 
     [Theory(Timeout = 30_000)]
     [InlineData(DeepSeekEngineName)]
@@ -18,7 +19,7 @@ public sealed partial class HostClosedRouteStagingTests
     {
         var fx = ProvisionSupervisedLaunch(engine);
         var loseAcknowledgment = engine == QwenEngineName;
-        fx.Head.LoseAppliedHeadRead = loseAcknowledgment;
+        fx.Head.LoseHeadReadAtRevision = loseAcknowledgment ? 5 : null;
         var first = await fx.Open().RunAsync(engine, fx.Text, fx.Claim, CancellationToken.None);
         var reopened = fx.Open();
         if (loseAcknowledgment)
@@ -28,7 +29,10 @@ public sealed partial class HostClosedRouteStagingTests
             first = await reopened.RunAsync(engine, fx.Text, fx.Claim, CancellationToken.None);
         }
         var receipt = Assert.IsType<HostAppliedIngressClosed>(first).Receipt;
-        var dispatch = Assert.IsType<HostInitialDispatch>(fx.ReadJournal().Frame.History.Dispatch);
+        var completed = fx.ReadJournal();
+        Assert.Equal(5, completed.Head.Revision);
+        var dispatch = Assert.IsType<HostInitialDispatch>(completed.Frame.History.Dispatch);
+        Assert.Equal(ReceiptInstance, completed.Frame.StartIssue?.InstanceId);
         Assert.Equal(new HostInitialReceipt(fx.Scope, dispatch.Operation, fx.Approval.Intent, ReceiptInstance), receipt);
         Assert.Equal(dispatch.Operation, HostReservation.ReadEnrolled(fx.Scope).Record.State.Pending);
         Assert.Equal(HostMutationPhase.LaunchApplied, HostReservation.ReadEnrolled(fx.Scope).Record.State.Phase);
@@ -69,9 +73,10 @@ public sealed partial class HostClosedRouteStagingTests
     [Theory(Timeout = 30_000)]
     [InlineData("image")]
     [InlineData("socket")]
+    [InlineData("api")]
     public async Task SupervisedLaunchRecordRequiresThePinnedImageAtTheCommissionedSocket(string wrong)
     {
-        var fx = ProvisionSupervisedLaunch(DeepSeekEngineName, wrong == "image" ? "inventory-image" : "inventory-socket");
+        var fx = ProvisionSupervisedLaunch(DeepSeekEngineName, "inventory-" + wrong);
         var installed = File.ReadAllBytes(fx.Scope.Slot);
         var journal = File.ReadAllBytes(fx.Journal.JournalPath);
         var head = fx.Head.Current;
@@ -94,6 +99,8 @@ public sealed partial class HostClosedRouteStagingTests
     [InlineData("running-id", 1)]
     [InlineData("observed-image", 0)]
     [InlineData("observed-socket", 0)]
+    [InlineData("observed-create-api", 0)]
+    [InlineData("observed-start-api", 1)]
     [InlineData("observed-route", 0)]
     [InlineData("observed-endpoint", 0)]
     [InlineData("observed-devices", 0)]
@@ -114,6 +121,7 @@ public sealed partial class HostClosedRouteStagingTests
     [InlineData("owner")]
     [InlineData("head-revision")]
     [InlineData("competing-member-socket")]
+    [InlineData("api")]
     public async Task SupervisedLaunchRecordRechecksCommissionAndPolicyAfterAcceptance(string changed)
     {
         var fx = ProvisionSupervisedLaunch(DeepSeekEngineName);
@@ -136,6 +144,11 @@ public sealed partial class HostClosedRouteStagingTests
             var before = fx.Observer.Commission;
             var policy = fx.Observer.Policy;
             if (changed == "owner") fx.Observer.Policy = policy with { OwnerGeneration = policy.OwnerGeneration + 1 };
+            else if (changed == "api")
+                fx.Observer.Commission = before with
+                {
+                    Approvals = before.Approvals.Replace(fx.Approval, fx.Approval with { ApiVersion = "v1.44" }),
+                };
             else
             {
                 var topology = before.Topology;
@@ -215,6 +228,163 @@ public sealed partial class HostClosedRouteStagingTests
         await AssertSupervisedLaunchStillFencedAsync(fx, dispatch, expectedCreates: 0, expectedStarts: 0);
     }
 
+    [Theory(Timeout = 30_000)]
+    [InlineData("lost start acknowledgment", 4, 1)]
+    [InlineData("refused start head", 3, 0)]
+    [InlineData("unreadable start head", 4, 0)]
+    public async Task SupervisedLaunchRecordHoldsTheExactPreStartId(string fault, int revision, int starts)
+    {
+        var fx = ProvisionSupervisedLaunch(DeepSeekEngineName);
+        if (fault == "lost start acknowledgment") fx.Port.LoseStartAcknowledgment = true;
+        if (fault == "refused start head") fx.Head.RefuseRevision = 4;
+        if (fault == "unreadable start head") fx.Head.LoseHeadReadAtRevision = 4;
+
+        Assert.Null(await fx.Open().RunAsync(DeepSeekEngineName, fx.Text, fx.Claim, CancellationToken.None));
+        var frames = ReadSupervisedFrames(fx.Journal.JournalPath);
+        Assert.Equal(5, frames.Count);
+        var tail = frames[^1];
+        var dispatch = Assert.IsType<HostInitialDispatch>(tail.History.Issued);
+        var issue = Assert.IsType<SupervisedStartIssue>(tail.StartIssue);
+        Assert.Equal(new SupervisedStartIssue(fx.Observer.Commission.Command(dispatch), ReceiptInstance,
+            fx.Approval.Intent.CreateDigest), issue);
+        Assert.Equal(fx.Approval.Intent, dispatch.Intent);
+        Assert.Null(tail.History.Applied);
+        Assert.Equal(revision, fx.Head.Current?.Revision);
+        if (starts == 1)
+        {
+            var observed = Assert.IsType<SupervisedObservedStart>(fx.Daemon.Running);
+            Assert.Equal(new SupervisedObservedStart(issue.Command, issue.InstanceId, Running: true), observed);
+        }
+        else
+            Assert.Null(fx.Daemon.Running);
+
+        await AssertSupervisedLaunchStillFencedAsync(fx, dispatch, expectedCreates: 1, expectedStarts: starts);
+        using var fence = fx.Journal.EnterFence();
+        var anchored = fx.Journal.Read();
+        if (revision == 3) Assert.Null(anchored);
+        else Assert.Equal(issue, Assert.IsType<SupervisedLaunchSnapshot>(anchored).Frame.StartIssue);
+    }
+
+    [Theory(Timeout = 30_000)]
+    [InlineData("legacy applied")]
+    [InlineData("legacy issued")]
+    [InlineData("applied at revision 4")]
+    [InlineData("wrong applied ID")]
+    [InlineData("wrong receipt bytes")]
+    public async Task SupervisedLaunchRecordDiscriminatesLegacyAndNewJournalShapes(string shape)
+    {
+        var fx = ProvisionSupervisedLaunch(DeepSeekEngineName);
+        // Simulate loss of the coordinator-facing reply for held cases. The fixture
+        // will reseed the journal below while the local reservation remains Dispatching.
+        var legacyApplied = shape == "legacy applied";
+        fx.Head.LoseHeadReadAtRevision = legacyApplied ? null : 5;
+        var first = await fx.Open().RunAsync(DeepSeekEngineName, fx.Text, fx.Claim, CancellationToken.None);
+        if (legacyApplied) Assert.IsType<HostAppliedIngressClosed>(first);
+        else Assert.Null(first);
+
+        var frames = ReadSupervisedFrames(fx.Journal.JournalPath);
+        Assert.Equal(6, frames.Count);
+        var applied = Assert.IsType<HostInitialApplied>(frames[^1].History.Applied);
+        var dispatch = Assert.IsType<HostInitialDispatch>(frames[3].History.Issued);
+        if (shape is "legacy applied" or "legacy issued")
+        {
+            frames.RemoveAt(4);
+            if (!legacyApplied) frames.RemoveAt(4);
+            for (var i = 0; i < frames.Count; i++)
+            {
+                var frame = frames[i];
+                var commission = frame.Commission;
+                frames[i] = frame with
+                {
+                    FormatVersion = 0,
+                    StartIssue = null,
+                    Commission = commission is null ? null : commission with
+                    {
+                        Approvals = [.. commission.Approvals.Select(member => member with { ApiVersion = null })],
+                    },
+                };
+            }
+        }
+        else if (shape == "applied at revision 4")
+        {
+            frames.RemoveAt(4);
+            frames[4] = frames[4] with { StartIssue = null };
+        }
+        else
+        {
+            var mismatchedReceipt = applied.Receipt with { InstanceId = new string('F', 64) };
+            var bytes = JsonSerializer.SerializeToUtf8Bytes(mismatchedReceipt, HostReservationJsonContext.Default.HostInitialReceipt);
+            var changed = applied with { ReceiptBytes = Convert.ToBase64String(bytes) };
+            if (shape == "wrong applied ID") changed = changed with { Receipt = mismatchedReceipt };
+            frames[5] = frames[5] with { History = frames[5].History with { Applied = changed } };
+        }
+
+        fx = RewriteSupervisedFixtureJournal(fx, frames);
+        if (legacyApplied)
+        {
+            Assert.Equal(4, fx.ReadJournal().Head.Revision);
+            Assert.Null(fx.ReadJournal().Frame.StartIssue);
+            Assert.Equal(Convert.FromBase64String(applied.ReceiptBytes),
+                fx.Open().ReadReceipt(dispatch.Operation, ReceiptInstance));
+            Assert.Null(await fx.Open().RunAsync(DeepSeekEngineName, fx.Text, fx.Claim, CancellationToken.None));
+            Assert.Equal(1, fx.Port.Creates);
+            Assert.Equal(1, fx.Port.Starts);
+            await AssertReceiptIngressClosedAsync(fx.Staging, fx.Scope, applied.Receipt);
+            return;
+        }
+
+        using (fx.Journal.EnterFence())
+        {
+            var installed = fx.Journal.Read();
+            if (shape == "legacy issued")
+            {
+                var legacy = Assert.IsType<SupervisedLaunchSnapshot>(installed);
+                Assert.Equal(3, legacy.Head.Revision);
+                Assert.Null(legacy.Frame.StartIssue);
+            }
+            else
+                Assert.Null(installed);
+        }
+        await AssertSupervisedLaunchStillFencedAsync(fx, dispatch, expectedCreates: 1, expectedStarts: 1);
+    }
+
+    private static List<SupervisedLaunchFrame> ReadSupervisedFrames(string path)
+    {
+        var result = new List<SupervisedLaunchFrame>();
+        var bytes = File.ReadAllBytes(path);
+        var offset = 0;
+        while (offset < bytes.Length)
+        {
+            var length = BinaryPrimitives.ReadInt32LittleEndian(bytes.AsSpan(offset, sizeof(int)));
+            offset += sizeof(int);
+            result.Add(Assert.IsType<SupervisedLaunchFrame>(JsonSerializer.Deserialize(bytes.AsSpan(offset, length),
+                SupervisedLaunchJsonContext.Default.SupervisedLaunchFrame)));
+            offset += length;
+        }
+        return result;
+    }
+
+    private static SupervisedLaunchFixture RewriteSupervisedFixtureJournal(SupervisedLaunchFixture fixture,
+        List<SupervisedLaunchFrame> frames)
+    {
+        var head = new SupervisedFixtureHead();
+        using var fence = fixture.Journal.EnterFence();
+        using var journal = new FileStream(fixture.Journal.JournalPath, FileMode.Create, FileAccess.Write, FileShare.None);
+        Span<byte> length = stackalloc byte[sizeof(int)];
+        for (var revision = 0; revision < frames.Count; revision++)
+        {
+            var prior = head.Current;
+            var frame = frames[revision] with { Predecessor = prior?.Digest };
+            var bytes = JsonSerializer.SerializeToUtf8Bytes(frame, SupervisedLaunchJsonContext.Default.SupervisedLaunchFrame);
+            BinaryPrimitives.WriteInt32LittleEndian(length, bytes.Length);
+            journal.Write(length);
+            journal.Write(bytes);
+            Assert.True(head.TryAdvance(prior, new(fixture.Scope, revision, Convert.ToHexString(SHA256.HashData(bytes)))));
+        }
+        journal.Flush(flushToDisk: true);
+        return fixture with { Head = head, Journal = new(fixture.Scope, head) };
+    }
+
     private static SupervisedLaunchFrame ReadSupervisedFrame(byte[] journal, int offset)
     {
         var length = BinaryPrimitives.ReadInt32LittleEndian(journal.AsSpan(offset, sizeof(int)));
@@ -260,7 +430,7 @@ public sealed partial class HostClosedRouteStagingTests
                 row.GetProperty("model").GetString() == member.Plan.Model &&
                 row.GetProperty("tier").GetString() == member.Plan.Tier).GetProperty("create");
             var bytes = JsonSerializer.SerializeToUtf8Bytes(ReadPairCreate(recipe), DockerJsonContext.Default.DockerCreateRequest);
-            approvals.Add(new(HostInitialLaunchIntent.Freeze(member.Plan, bytes), member.Image));
+            approvals.Add(new(HostInitialLaunchIntent.Freeze(member.Plan, bytes), member.Image, SupervisedApiVersion));
         }
         var commission = new SupervisedLaunchCommission(scope, authority, approvals.ToImmutable());
         var approval = Assert.IsType<SupervisedLaunchApproval>(commission.Approval(engine));
@@ -301,9 +471,10 @@ public sealed partial class HostClosedRouteStagingTests
         var wrongImage = new DockerImageIdentity(image.Id,
             $"registry.invalid/selector-fixture/{imageName}@sha256:{new string('8', 64)}", image.Platform);
         var inventory = new SupervisedImageAtSocket(head.Daemon, wrong == "inventory-socket" ? "/fixture/other.sock" : SupervisedSocket,
-            image.Id, wrong == "inventory-image" ? wrongImage : image);
+            wrong == "inventory-api" ? "v1.44" : SupervisedApiVersion, image.Id, wrong == "inventory-image" ? wrongImage : image);
         var create = new SupervisedDaemonCreateSeed(
             wrong == "observed-socket" ? "/fixture/other.sock" : SupervisedSocket,
+            wrong == "observed-create-api" ? "v1.44" : SupervisedApiVersion,
             wrong == "missing-id" ? null : ReceiptInstance,
             wrong == "wire" ? [.. wire, (byte)' '] : wire,
             wrong == "observed-image" ? wrongImage : image,
@@ -312,7 +483,8 @@ public sealed partial class HostClosedRouteStagingTests
             new Uri(wrong == "observed-endpoint" ? "http://127.0.0.1:28099/v1" : deepSeek
                 ? "http://127.0.0.1:28060/v1" : "http://127.0.0.1:28021/v1"),
             wrong == "observed-devices" ? ["fixture-device-a", "foreign-device"] : ["fixture-device-a", "fixture-device-b"]);
-        return new(scope, head, inventory, create, wrong == "running-id" ? new string('F', 64) : ReceiptInstance);
+        return new(scope, head, inventory, create, wrong == "running-id" ? new string('F', 64) : ReceiptInstance,
+            wrong == "observed-start-api" ? "v1.44" : SupervisedApiVersion);
     }
 
     private static string CompetingMember(string engine) => engine == DeepSeekEngineName ? QwenEngineName : DeepSeekEngineName;
@@ -360,15 +532,15 @@ public sealed partial class HostClosedRouteStagingTests
     private sealed class SupervisedFixtureHead : ISupervisedLaunchHead
     {
         internal SupervisedLaunchJournalHead? Current { get; private set; }
-        internal bool LoseAppliedHeadRead { get; set; }
+        internal int? LoseHeadReadAtRevision { get; set; }
         internal int? RefuseRevision { get; set; }
 
         public SupervisedLaunchJournalHead? Read(HostReservationScope scope)
         {
             if (Current is not { } current || current.Scope != scope) return null;
-            if (current.Revision == 4 && LoseAppliedHeadRead)
+            if (current.Revision == LoseHeadReadAtRevision)
             {
-                LoseAppliedHeadRead = false;
+                LoseHeadReadAtRevision = null;
                 return null;
             }
             return current;
@@ -393,32 +565,36 @@ public sealed partial class HostClosedRouteStagingTests
         public SupervisedLaunchCommission? ReadCommission(HostReservationScope scope) => scope == Commission.Scope ? Commission : null;
         public SupervisedLaunchPolicy? ReadPolicy(HostReservationScope scope) =>
             scope == Commission.Scope ? new(Policy, Vacant: daemon.Created is null) : null;
-        public DockerImageIdentity? ReadImage(EnrolledPairHead head, string socketPath, string imageId) => daemon.ImageAt(head, socketPath, imageId);
+        public DockerImageIdentity? ReadImage(EnrolledPairHead head, string socketPath, string apiVersion, string imageId) =>
+            daemon.ImageAt(head, socketPath, apiVersion, imageId);
         public SupervisedObservedCreate? ReadCreate(SupervisedLaunchCommand command) =>
             daemon.Created is { } created && created.Command.Operation == command.Operation ? created : null;
         public SupervisedObservedStart? ReadStart(SupervisedLaunchCommand command) =>
             daemon.Running is { } running && running.Command.Operation == command.Operation ? running : null;
     }
 
-    private sealed record SupervisedImageAtSocket(string Daemon, string Socket, string RequestedId, DockerImageIdentity Image);
+    private sealed record SupervisedImageAtSocket(string Daemon, string Socket, string ApiVersion, string RequestedId,
+        DockerImageIdentity Image);
 
-    private sealed record SupervisedDaemonCreateSeed(string Socket, string? Instance, byte[] Wire, DockerImageIdentity Image,
+    private sealed record SupervisedDaemonCreateSeed(string Socket, string ApiVersion, string? Instance, byte[] Wire, DockerImageIdentity Image,
         DockerCreateRequest? Effective, string Route, Uri Endpoint, ImmutableArray<string> Devices);
 
     private sealed class SupervisedFixtureDaemon(HostReservationScope scope, EnrolledPairHead head, SupervisedImageAtSocket image,
-        SupervisedDaemonCreateSeed create, string runningId)
+        SupervisedDaemonCreateSeed create, string runningId, string runningApiVersion)
     {
         internal SupervisedObservedCreate? Created { get; private set; }
         internal SupervisedObservedStart? Running { get; private set; }
 
-        internal DockerImageIdentity? ImageAt(EnrolledPairHead queried, string socket, string id) =>
-            queried.Daemon == image.Daemon && socket == image.Socket && id == image.RequestedId ? image.Image : null;
+        internal DockerImageIdentity? ImageAt(EnrolledPairHead queried, string socket, string apiVersion, string id) =>
+            queried.Daemon == image.Daemon && socket == image.Socket &&
+            apiVersion == image.ApiVersion && id == image.RequestedId ? image.Image : null;
 
-        internal void RecordCreate(HostMutation operation) => Created = new(new(scope, head, create.Socket, operation),
-            create.Instance, create.Wire, create.Image, create.Effective, create.Route, create.Endpoint, create.Devices);
+        internal void RecordCreate(HostMutation operation) => Created =
+            new(new(scope, head, create.Socket, operation, create.ApiVersion), create.Instance, create.Wire,
+                create.Image, create.Effective, create.Route, create.Endpoint, create.Devices);
 
-        internal void RecordStart(HostMutation operation) => Running = new(new(scope, head, SupervisedSocket, operation),
-            runningId, Running: true);
+        internal void RecordStart(HostMutation operation) =>
+            Running = new(new(scope, head, SupervisedSocket, operation, runningApiVersion), runningId, Running: true);
 
         internal void ForgetRunning() => Running = null;
     }
@@ -428,6 +604,7 @@ public sealed partial class HostClosedRouteStagingTests
     {
         internal int Creates { get; private set; }
         internal int Starts { get; private set; }
+        internal bool LoseStartAcknowledgment { get; set; }
 
         public ValueTask<string?> CreateAsync(SupervisedLaunchCommand command, ReadOnlyMemory<byte> bytes, CancellationToken ct)
         {
@@ -443,6 +620,7 @@ public sealed partial class HostClosedRouteStagingTests
             var commission = Assert.IsType<SupervisedLaunchCommission>(snapshot.Frame.Commission);
             Assert.Equal(command.Head, commission.Topology.Head);
             Assert.Equal(command.SocketPath, commission.Grant(command.Operation.Engine).SocketPath);
+            Assert.Equal(SupervisedApiVersion, command.ApiVersion);
             Assert.Equal(expectedWire, bytes.ToArray());
             Assert.True(dispatch.MatchesDispatching(HostReservation.ReadEnrolled(command.Scope)));
             AssertFencesHeld(command.Scope);
@@ -455,10 +633,17 @@ public sealed partial class HostClosedRouteStagingTests
         {
             ct.ThrowIfCancellationRequested();
             Assert.Equal(ReceiptInstance, instance);
-            Assert.Equal(command.Operation, journal.Read()?.Frame.History.Issued?.Operation);
+            var snapshot = Assert.IsType<SupervisedLaunchSnapshot>(journal.Read());
+            var dispatch = Assert.IsType<HostInitialDispatch>(snapshot.Frame.History.Issued);
+            Assert.Equal(4, snapshot.Head.Revision);
+            Assert.Equal(command.Operation, dispatch.Operation);
+            Assert.Equal(new SupervisedStartIssue(command, instance, dispatch.Intent.CreateDigest), snapshot.Frame.StartIssue);
+            Assert.Null(snapshot.Frame.History.Applied);
+            Assert.True(dispatch.MatchesDispatching(HostReservation.ReadEnrolled(command.Scope)));
             AssertFencesHeld(command.Scope);
             Starts++;
             daemon.RecordStart(command.Operation);
+            if (LoseStartAcknowledgment) throw new IOException("The fake daemon lost its start acknowledgment.");
             return ValueTask.FromResult(true);
         }
 

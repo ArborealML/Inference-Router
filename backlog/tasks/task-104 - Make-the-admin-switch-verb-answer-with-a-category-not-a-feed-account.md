@@ -1,11 +1,11 @@
 ---
 id: TASK-104
 title: Make the admin switch verb answer with a category, not a feed account
-status: To Do
+status: Preparing
 assignee:
-  - '@qwen3.8-flash-next'
+  - '@gpt-6.2-sol-stream-frames'
 created_date: '2026-11-18T12:59:00Z'
-updated_date: '2026-11-18T19:29:00Z'
+updated_date: '2026-11-20T21:21:00Z'
 labels: []
 milestone: m-7
 dependencies: []
@@ -15,7 +15,7 @@ ordinal: 103000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-The taxonomy work closed every caller-visible refusal on `/v1` and the feed, but `POST /admin/switch` still answers `202` and a feed account: an operator who asks the router to move a model and is refused learns what happened by reading events afterwards, not from the answer in front of them. SPEC §15 records the gap and nothing anywhere carries criteria for it, which is the state the contract calls silence. This is not a naming oversight: the verb has no terminal outcome to name, so the fix is an outcome, not a token.
+Frames is auditing POST /admin/switch on 6588da3. Trace what the caller receives on immediate refusal, what a 202 response establishes, and how the operator learns the eventual outcome. Map existing tests, SPEC and recorded decisions before proposing any wire change.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

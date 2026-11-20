@@ -1,11 +1,11 @@
 ---
 id: TASK-56
 title: Emit one event per refusal on the queue-cap overflow path
-status: To Do
+status: Waiting
 assignee:
-  - '@qwen3.8-flash-next'
+  - '@gpt-6.2-sol-stream-delivery'
 created_date: '2026-11-17T20:41:00Z'
-updated_date: '2026-11-18T19:29:00Z'
+updated_date: '2026-11-20T21:21:00Z'
 labels:
   - wire
   - scheduling
@@ -18,23 +18,27 @@ ordinal: 56000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-A request refused by the per-model queue cap reports that it queued. Checked in the tree at 20a06fa: RouterCore.cs appends request.enqueued after the enqueue attempt with no regard for the answer (:175-184 region), while the rejection callback fires inside ModelQueue.TryEnqueue (Queue/ModelQueue.cs:36-48), so an overflow emits both request.enqueued and queue.rejected for a ticket that never entered a queue. Pre-existing, not introduced by the admission-refusal work, which got its own path right: that one answers 503 model_unavailable as exactly one queue.rejected with no request.enqueued. This is a wire-contract defect on the same surface — a feed reader that reconciles enqueues against completions and refusals goes wrong on every overflow, and the event stream is what the live view and the Pi extension read. Smallest honest shape: append the enqueue event only when the ticket was accepted.
+Wake on hosted qualification and integration of 326f133. The three focused Release tests passed. Changing the overflow reason, adding a second overflow outcome and adding duplicate disconnect cancellation each failed only the intended assertion. Independent review passed. [Reload admission](https://github.com/ArborealML/Inference-Router/pull/43) previously fixed the duplicate enqueue.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [ ] #1 Events.Replay(0) after a queue-cap rejection shows exactly one queue.rejected with reason queue_overflow and no request.enqueued
-- [ ] #2 the model_unavailable admission refusal still shows one queue.rejected and no request.enqueued, pinned in the same test run
+- [x] #2 the model_unavailable admission refusal still shows one queue.rejected and no request.enqueued, pinned in the same test run
 - [ ] #3 SPEC 6.1 states one event per terminal admission outcome
-- [ ] #4 Events.Replay(0) after a queued ticket's timeout (max_queue_time) shows exactly one queue.rejected with reason queue_timeout and no request.completed
-- [ ] #5 Events.Replay(0) after a client disconnect shows exactly one request.canceled and no request.completed
-- [ ] #6 Events.Replay(0) after a successful switch shows one engine.switch_completed and no engine.switch_failed
+- [x] #4 A queued ticket reaching its deadline fails with deadline_exceeded and emits exactly one request.failed terminal event.
+- [ ] #5 Events.Replay(0) after a client disconnect shows exactly one request.cancelled and no request.completed
+- [x] #6 Events.Replay(0) after a successful switch shows one engine.switch_completed and no engine.switch_failed
 <!-- AC:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Clarify SPEC §§5.5, 6.1 and 10: a refusal before enqueue emits one queue.rejected; an accepted ticket emits one terminal event. In the held-append overflow test, compare the entire ticket event sequence and reason. In the real HTTP disconnect test, establish an active read before abort, observe its cancellation, verify one forward and settlement, and assert enqueue precedes the sole terminal event. Run the three scoped cases and individually demonstrate detection of a wrong overflow reason, an extra terminal event and duplicate cancellation.
+<!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-**Measured at 21:5xZ by the coding session, and the reason this grew from one path to four.** The cancellation path was already right and I had wrongly flagged it: TryCancel (RouterCore.cs:206) routes through ModelQueue.cs:113-116, which emits request.canceled and no completed. What was missing is the timeout path: the max_queue_time handler (RouterCore.cs:419-445) emits queue.rejected (queue_timeout) and then request.completed. And a lifecycle event carries no outcome field, so the live view renders switch_failed and switch_completed identically (BlazorClientTests.cs:345-357).
-
-**One-event rule, stated per surface.** A request emits one terminal event on the request surface (queue.rejected | request.canceled | request.completed | request.failed) and one terminal event on the lifecycle surface (engine.switch_failed | engine.switch_completed); an in-flight request emits no lifecycle event at all. The wire shape stays OpenAI-compatible because request.completed is what an SSE stream ends with, so a canceled or refused request never reaches the client with a completion.
+EndToEndTests covers the full ticket replay and reason for an unavailable model. TicketLifetimeTests covers deadline_exceeded; ConfigReloadRaceTests and ExactTicketAdmissionTests check one failure after acceptance. HostLifecycleCoordinatorTests counts one switch completion across both terminal kinds. The [landed Release suite](https://github.com/ArborealML/Inference-Router/actions/runs/44813198939) passed 1,769 tests with zero skips.
 <!-- SECTION:NOTES:END -->

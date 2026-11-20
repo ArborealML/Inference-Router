@@ -3,11 +3,11 @@ id: TASK-59
 title: >-
   Pin the concurrent-claim exclusion and the defensive readiness clause without
   a scheduling race
-status: To Do
+status: Preparing
 assignee:
-  - '@qwen3.8-flash-next'
+  - '@gpt-6.2-sol-shutdown'
 created_date: '2026-11-17T22:49:00Z'
-updated_date: '2026-11-18T21:09:00Z'
+updated_date: '2026-11-20T21:19:00Z'
 labels:
   - concurrency
   - testing
@@ -21,7 +21,7 @@ ordinal: 59000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-fd5e0cd made the claim/coalesce decision read switch state inside the transition gate, so a second waiter reaching that decision while a switch commits its end is excluded by construction. The construction is not pinned. A test that started a second waiter inside the window reproduced the hazard, but its outcome was decided by the thread pool's own scheduling — two blocked pool threads starved its continuation by seconds — so it was removed rather than shipped as a flake, and SPEC 15 records the drop. Today the ordering rests on a code comment plus a moved read. What is wanted is a seam that makes the interleaving explicit and deterministic — an internal hook like the one the marker-before-claim barrier already uses, or a single-threaded dispatcher clock — not a sleep. Same treatment for the marker half of IsReadyFor, which no public path reaches now that every marker state carries Healthy=false.
+Shutdown is auditing existing switch-claim and readiness evidence on 6588da3, which contains the TASK-67 prerequisites. Identify what each test observes before, during and after the transition gate. Distinguish a waiter rereading state after commit from exclusion during commit, and a throwing post-install hook from failure before installation. Check the readiness marker against the healthy snapshot available after switch proof. Trace the dropped scheduling-dependent test separately from the forced compare-and-swap loser gap in SPEC §15.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
