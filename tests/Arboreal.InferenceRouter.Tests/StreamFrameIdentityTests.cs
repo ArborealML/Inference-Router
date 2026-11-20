@@ -3,12 +3,17 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
+using System.Threading.Channels;
+using Arboreal.InferenceRouter.Server;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Arboreal.InferenceRouter.Tests;
 
 public class StreamFrameIdentityTests
 {
+    private const int KeepaliveFrameBytes = 1_727;
+    private const int ErrorTerminalBytes = 9_878;
     private const string Request = """{"model":"test-model","stream":true,"messages":[{"role":"user","content":"ping"}]}""";
     private const string CompletionChunk = """
         {"id":"chatcmpl-wire","object":"chat.completion.chunk","created":1,"model":"test-model","choices":[{"index":0,"delta":{"content":"hello"},"finish_reason":null}]}
@@ -33,6 +38,27 @@ public class StreamFrameIdentityTests
         var releaseEnd = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         using var upstream = new FragmentedBody(bytes, bytes.Length, 1, releaseEnd.Task, endFailure: fault ? Disconnect() : null);
         await AssertUpstreamOutcomeAsync(upstream, prefix, code, releaseEnd);
+    }
+
+    [Fact]
+    public async Task Committed_Stream_Error_Uses_Reported_Reason_And_Encoded_Budget()
+    {
+        var prefix = Encoding.UTF8.GetBytes(CompletePrefix);
+        var reason = "scripted upstream disconnect: " + new string('\u0001', 2_048);
+        var releaseFault = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var upstream = new FragmentedBody(prefix, prefix.Length, prefix.Length, releaseFault.Task,
+            endFailure: new IOException(reason));
+
+        try
+        {
+            // The reader reaches its gated fault after one complete block, and the HTTP status is committed.
+            await AssertUpstreamOutcomeAsync(upstream, prefix, "engine_unreachable", releaseFault,
+                expectedReason: WireText.Bound(reason, WireText.ReasonChars));
+        }
+        finally
+        {
+            releaseFault.TrySetResult();
+        }
     }
 
     [Theory]
@@ -164,6 +190,57 @@ public class StreamFrameIdentityTests
     }
 
     [Fact]
+    public async Task Queued_Keepalive_Caps_Escaped_Model_Bytes()
+    {
+        var model = "queued-" + new string('\u0001', 2_048) + "-model-tail";
+        var request = "{\"model\":\"" + JsonEncodedText.Encode(model).ToString() + "\",\"stream\":true}";
+        using var fake = new FakeEngineHandler { ModelsStatus = 503 };
+        var (app, _, port) = await WireHarness.StartAsync(fake: fake);
+        await using var server = app;
+        using var http = Client(port);
+        using var bound = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        var (_, response) = await WireHarness.StartStreamAsync(http, "long-queued-status", request, bound.Token);
+        using var res = response;
+        Assert.Equal(HttpStatusCode.OK, res.StatusCode);
+        await using var body = await res.Content.ReadAsStreamAsync(bound.Token);
+
+        var frame = await ReadFirstKeepaliveAsync(body, bound.Token);
+        AssertKeepaliveStatus(frame, $"queued model={ReportedIdentifier(model)}");
+    }
+
+    [Theory]
+    [InlineData(TicketState.WaitingForModel, true)]
+    [InlineData(TicketState.WaitingForModel, false)]
+    [InlineData(TicketState.Executing, true)]
+    [InlineData(TicketState.Executing, false)]
+    public async Task Switching_And_Executing_Keepalives_Cap_Reported_Identifiers(TicketState state, bool hasEngine)
+    {
+        var model = "switch-" + new string('\u0001', 2_048) + "-model-tail";
+        var engine = hasEngine ? "engine-" + new string('\u0002', 2_048) + "-engine-tail" : null;
+        using var bound = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        using var wire = new MemoryStream();
+        var context = new DefaultHttpContext { RequestAborted = bound.Token };
+        context.Response.Body = wire;
+
+        var channel = Channel.CreateUnbounded<ReadOnlyMemory<byte>>();
+        Assert.True(channel.Writer.TryComplete());
+        var ticket = new RouterTicket("ticket", "thread", model, DateTimeOffset.UnixEpoch)
+        {
+            State = state,
+            Engine = engine,
+            StreamChannel = channel,
+        };
+        await ServerApp.StreamTicketAsync(context, ticket, TimeProvider.System);
+
+        Assert.Equal(200, context.Response.StatusCode);
+        var reportedEngine = ReportedIdentifier(engine ?? "");
+        var expected = state == TicketState.WaitingForModel
+            ? $"switching model={ReportedIdentifier(model)} engine={reportedEngine}"
+            : $"engine={reportedEngine}";
+        AssertKeepaliveStatus(wire.ToArray(), expected);
+    }
+
+    [Fact]
     public Task Every_64_Byte_Alignment_Preserves_The_Long_Stream()
     {
         var payload = new string('x', 45);
@@ -236,7 +313,8 @@ public class StreamFrameIdentityTests
     }
 
     private static async Task AssertUpstreamOutcomeAsync(
-        FragmentedBody upstream, byte[] prefix, string? errorCode, TaskCompletionSource? releaseEnd = null)
+        FragmentedBody upstream, byte[] prefix, string? errorCode, TaskCompletionSource? releaseEnd = null,
+        string? expectedReason = null)
     {
         using var fake = new FragmentedEngine();
         var (app, _, port) = await WireHarness.StartAsync(fake: fake);
@@ -247,18 +325,20 @@ public class StreamFrameIdentityTests
         fake.Responses.Enqueue(upstream);
         var (ticketId, response) = await WireHarness.StartStreamAsync(http, "frame-ending", Request, ct);
         using var res = response;
+        Assert.Equal(HttpStatusCode.OK, res.StatusCode);
 
         if (releaseEnd is not null)
         {
-            await upstream.AtGate.Task.WaitAsync(ct);
-            releaseEnd.SetResult();
+            try { await upstream.AtGate.Task.WaitAsync(ct); }
+            finally { releaseEnd.TrySetResult(); }
         }
 
         // Reading through EOF proves the writer sent a complete HTTP response and closed its body.
         var wire = await res.Content.ReadAsByteArrayAsync(ct);
         var output = wire.AsMemory(LeadingKeepaliveLength(wire));
         Assert.True(output.Span.StartsWith(prefix), "The relay changed or omitted a complete upstream block.");
-        var terminal = Encoding.UTF8.GetString(output.Span[prefix.Length..]);
+        var terminalBytes = output[prefix.Length..];
+        var terminal = Encoding.UTF8.GetString(terminalBytes.Span);
         var ticket = app.Services.GetRequiredService<RouterCore>().TryGetTicket(ticketId);
         Assert.NotNull(ticket);
 
@@ -271,6 +351,7 @@ public class StreamFrameIdentityTests
 
         const string data = "data: ";
         const string ending = "\n\ndata: [DONE]\n\n";
+        Assert.InRange(terminalBytes.Length, 1, ErrorTerminalBytes);
         Assert.StartsWith(data + "{\"error\":", terminal, StringComparison.Ordinal);
         Assert.EndsWith(ending, terminal, StringComparison.Ordinal);
         using var json = JsonDocument.Parse(terminal[data.Length..^ending.Length]);
@@ -279,7 +360,11 @@ public class StreamFrameIdentityTests
         Assert.Equal(3, error.EnumerateObject().Count());
         Assert.Equal("air_error", error.GetProperty("type").GetString());
         Assert.Equal(errorCode, error.GetProperty("code").GetString());
-        Assert.False(string.IsNullOrWhiteSpace(error.GetProperty("message").GetString()));
+        var reason = error.GetProperty("message").GetString();
+        Assert.NotNull(reason);
+        Assert.False(string.IsNullOrWhiteSpace(reason));
+        Assert.InRange(reason.Length, 1, WireText.ReasonChars);
+        if (expectedReason is not null) Assert.Equal(expectedReason, reason);
         Assert.Equal("Failed", ticket.State);
         Assert.Equal(errorCode, ticket.ErrorCode);
     }
@@ -365,6 +450,40 @@ public class StreamFrameIdentityTests
         var received = new byte[expected.Length];
         await stream.ReadExactlyAsync(received, ct);
         Assert.Equal(expected.ToArray(), received);
+    }
+
+    private static async Task<byte[]> ReadFirstKeepaliveAsync(Stream stream, CancellationToken ct)
+    {
+        // An over-budget frame trips the byte assertion before waiting for its delimiter.
+        var frame = new byte[KeepaliveFrameBytes + 1];
+        for (var length = 1; length <= frame.Length; length++)
+        {
+            await stream.ReadExactlyAsync(frame.AsMemory(length - 1, 1), ct);
+            if (frame.AsSpan(0, length).EndsWith("\n\n"u8))
+                return frame[..length];
+        }
+        return frame;
+    }
+
+    private static string ReportedIdentifier(string value)
+    {
+        var reported = WireText.Ident(value);
+        Assert.InRange(reported.Length, 0, 128);
+        return reported;
+    }
+
+    private static void AssertKeepaliveStatus(ReadOnlySpan<byte> frame, string expected)
+    {
+        Assert.InRange(frame.Length, 1, KeepaliveFrameBytes);
+        const string prefix = ": [router keepalive seq=0 status=";
+        const string ending = "]\n\n";
+        var text = Encoding.UTF8.GetString(frame);
+        Assert.StartsWith(prefix, text, StringComparison.Ordinal);
+        Assert.EndsWith(ending, text, StringComparison.Ordinal);
+        Assert.DoesNotContain("\r", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("\n", text[..^2], StringComparison.Ordinal);
+        using var status = JsonDocument.Parse(text[prefix.Length..^ending.Length]);
+        Assert.Equal(expected, status.RootElement.GetString());
     }
 
     private static async Task<string> ReadKeepaliveEndAsync(Stream stream, CancellationToken ct)
