@@ -1,6 +1,6 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.114)
+Status: draft, continuously revised (v0.12.115)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
@@ -352,6 +352,8 @@ daemon transaction per engine. 137 tests green.
   that answers no `upload_url`, an upload that dies or answers no asset id, an asset name listed twice on
   the release, and a tag that moves after the first resolve. No tag has run the gate: still configured,
   not proven.
+- v0.12.115 — decline Windows Docker named-pipe transport and refuse router-owned pipe addresses
+  before provider binding or I/O (§5.3.1, §7, §15).
 - v0.12.114 — report core shutdown on a writable default HTTP stream with one in-band
   `cancelled` error and `[DONE]` when the producer's armed-read observations attribute the
   result to core shutdown and the acknowledged prefix permits a terminal (§6).
@@ -1739,8 +1741,11 @@ public interface IContainerRuntime            // proposed Docker Engine API adap
 
 **Transport and AOT.** The shipped provider uses raw Docker Engine HTTP over a Unix socket or an
 HTTP(S) daemon address, with proxy and redirect handling disabled, per-call timeouts, a configured
-API version and source-generated JSON (§9). The target design adds Windows `npipe` transport,
-version negotiation and daemon events.
+API version and source-generated JSON (§9). AIR declines Windows Docker named-pipe transport because
+the provider has no qualified Win32 pipe connector. A router-owned Docker declaration with `npipe:`
+or a bare Windows pipe address fails validation before provider binding or I/O. Direct construction
+and scope checks on a Docker provider apply the same refusal. Windows CLI builds support other AIR
+commands under their existing contracts. Version negotiation and daemon events remain separate work.
 
 **Polling for a tracked Docker launch.** After the concrete Docker coordinator receives start
 `204`, an exact inspect establishes a baseline for that launch. It checks the immutable container
@@ -2887,6 +2892,13 @@ with multiple engine definitions. This compatibility path acts only on the confi
 the engine's label-owned containers. It supplies no proof of host-wide occupancy or exclusion.
 Fenced managed-peer actuation requires an enrolled host controller.
 
+`docker.socket` accepts Unix socket paths with or without `unix://` and HTTP(S) daemon addresses under
+the authority rules above. Router-owned Docker rejects `npipe:` and bare Windows pipe names, including
+local, server, device and extended UNC spellings with slash or backslash separators. The diagnostic
+identifies the `docker.socket` field without echoing the address. An explicit `unix://` declaration
+retains its Unix path interpretation. A legacy `remote = true` engine can retain an inert Docker
+declaration and forward already-loaded models without binding a lifecycle provider.
+
 An engine can set `models_context_window_path` in TOML or JSON when its models endpoint reports
 the effective serving context as a positive signed 64-bit integer in each individual loaded row.
 The dotted object path is relative to that row. Leave it unset when the backend exposes an
@@ -3947,7 +3959,7 @@ router robust until rows 2, 4 and 6 close.
 | Pi mid-session model switching + wait protocol design | **completed**; folded into §13.2/§13.3 |
 | Recommended Roslyn analyzer stack for code quality on .NET 11 AOT | **completed, integrated** (§9.2: central packages, banned-API policy, warnings-as-errors, 0-warning build + 0-warning AOT publish) |
 | Tomlyn DOM vs source-generated binding API on .NET 11 | **completed**: keep Tomlyn 2.11.1 source-gen; untyped `TomlSerializer.Deserialize<TomlTable>` is reflection-free/AOT-safe if a DOM path is ever needed (not needed today) |
-| AOT-safe Docker access from .NET 11 (client library vs raw engine API) | **completed**: no client library — Docker.DotNet needs reflection roots (`DynamicDependency`, IL2026/IL3050 risk). Go raw: `SocketsHttpHandler.ConnectCallback` over `UnixDomainSocketEndPoint` (npipe on Windows), `HttpClient` based at `http://docker/`, STJ **source-generated** DTOs, API version pinned with `/_ping` + `/version` negotiation, exec demux of the 8-byte frame header, and error fidelity where **inspect 404 means absent and nothing else** while transport failure means *daemon unavailable*. Seam: `IEngineLifecycle` over a fakeable `IContainerRuntime` (§5.3) |
+| AOT-safe Docker access from .NET 11 (client library vs raw engine API) | **Completed for the shipped transports.** The raw Engine API uses `SocketsHttpHandler.ConnectCallback` over `UnixDomainSocketEndPoint` or an HTTP(S) daemon base, with source-generated JSON DTOs. The provider pins the configured API version, demultiplexes exec frames, and distinguishes inspect 404 from transport failure. Windows named pipes are declined because the provider lacks a qualified Win32 pipe connector (§5.3.1). |
 | Robustness and UI comparison against NVIDIA Personal-AI-Router | **completed**: verdict + ordering in §14.1, feed prerequisites in §10, UI borrow/change/skip in §12.5. Where that router leads on robustness we have tasks; where we lead (priority, admission, profiles, prefix, generic endpoints, engine keys, per-engine instances) is not a gap to close |
 | Concrete Docker injection scope (TASK-128) | The startup check now compares engine, router ID and daemon against the same scope the injected provider uses for labels and transport. The focused fixtures cover independent mismatches, Unix and HTTP scope, caller ownership, matching switch readiness and external forwarding. The check covers configured identity. Host authority and physical isolation remain separate requirements. |
 | Native engine-lifecycle design (transaction shape + container seam) | **completed**, adopted in §5.3.1: provider seam (`IEngineLifecycleProvider` over a coordinator), transaction order, single-flight per target with latched failures, ownership gate with no adoption of unowned resources, advisory journal, preflight as a validate-only verb, `select.exec` kept as a mutually-exclusive delegated provider. It preferred the docker CLI as the first Docker provider (smaller safety-critical surface); we keep **raw Engine HTTP** instead, because "no client library" from the review above is about reflection-rooted SDKs rather than `HttpClient` — the CLI stays as an operator fallback |

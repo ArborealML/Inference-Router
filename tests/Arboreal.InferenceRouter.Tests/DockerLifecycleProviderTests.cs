@@ -76,6 +76,26 @@ public sealed class DockerLifecycleProviderTests
         "strata", "strata-8b", null,
         new EngineModelDefinition { Name = "strata-8b" });
 
+    [Fact]
+    public void NamedPipeDockerDirectProviderRefusesBeforeIo()
+    {
+        using var daemon = new FakeDockerDaemonHandler { TransportFails = true };
+        var error = Assert.Throws<RouterConfigException>(() =>
+        {
+            using var provider = new DockerLifecycleProvider(
+                Cfg(socket: LifecycleAuthorityTests.NamedPipeDockerAddress), "fixture", daemon);
+        });
+
+        Assert.Equal(LifecycleAuthorityTests.NamedPipeDockerError, error.Message);
+
+        var missingSocket = Assert.Throws<RouterConfigException>(() =>
+        {
+            using var provider = new DockerLifecycleProvider(Cfg(socket: null!), "fixture", daemon);
+        });
+        Assert.Equal("engine.fixture: docker.socket must name a Unix socket or an absolute HTTP(S) daemon base", missingSocket.Message);
+        Assert.Empty(daemon.Requests);
+    }
+
     internal static string Inspect(string id = ImageId, string digest = RepoDigest, string os = "linux",
         string architecture = "amd64", string? variant = null)
     {

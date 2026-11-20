@@ -9,8 +9,122 @@ namespace Arboreal.InferenceRouter.Tests;
 
 public sealed class LifecycleAuthorityTests
 {
+    internal const string NamedPipeDockerAddress = "npipe:////./pipe/docker_engine";
+    internal const string NamedPipeDockerError = "engine.fixture.docker.socket: Windows Docker named-pipe transport is unsupported";
     private static readonly TimeSpan Ceiling = TimeSpan.FromSeconds(5);
     private static readonly string[] ExpectedNativeCalls = ["ownership", "preflight", "launch"];
+
+    [Theory]
+    [InlineData(false, true, NamedPipeDockerAddress)]
+    [InlineData(true, false, "NpIpE://./pipe/docker_engine")]
+    [InlineData(true, false, @"\\.\pipe\docker_engine")]
+    [InlineData(false, true, "//./pipe/docker_engine")]
+    [InlineData(true, true, @"\\?\pipe\docker_engine")]
+    [InlineData(false, false, @"\\?\UNC\server\pipe\docker_engine")]
+    [InlineData(true, false, @"\\server\pipe\docker_engine")]
+    [InlineData(false, true, "//server/pipe/docker_engine")]
+    public void NamedPipeDockerRejectsConfiguredAddresses(bool json, bool explicitOwner, string socket)
+    {
+        var owner = explicitOwner ? Field(json, "lifecycle_owner", "\"router\"") : "";
+        // Both JSON strings and TOML basic strings require escaped backslashes.
+        var fields = owner + Docker(json, socket.Replace(@"\", @"\\", StringComparison.Ordinal));
+        var error = Assert.Throws<RouterConfigException>(() => LoadConfig(json, fields));
+        Assert.Equal(NamedPipeDockerError, error.Message);
+        Assert.False(DockerLifecycleProvider.TryParseUnixSocket(socket, out _));
+
+        if (socket == NamedPipeDockerAddress)
+        {
+            var dto = new ConfigDto
+            {
+                Engines = new Dictionary<string, EngineDto>(StringComparer.Ordinal)
+                {
+                    ["fixture"] = new()
+                    {
+                        Kind = "openai-compatible",
+                        Endpoint = "http://127.0.0.1/v1",
+                        LifecycleOwner = "router",
+                        Docker = new DockerDto { Image = "fixture", RouterId = "test", Socket = socket },
+                    },
+                },
+            };
+            error = Assert.Throws<RouterConfigException>(() => RouterConfigLoader.FromDto(dto, "fixture"));
+            Assert.Equal(NamedPipeDockerError, error.Message);
+        }
+    }
+
+    [Theory]
+    [InlineData("unix:////./pipe/docker_engine", "//./pipe/docker_engine")]
+    [InlineData("//server/pipeline/socket", "//server/pipeline/socket")]
+    public void NamedPipeDockerPreservesUnixPaths(string declaration, string expectedPath)
+    {
+        Assert.True(DockerLifecycleProvider.TryParseUnixSocket(declaration, out var path));
+        Assert.Equal(expectedPath, path);
+    }
+
+    [Fact]
+    public async Task NamedPipeDockerProgrammaticRuntimeRefusesBeforeBinding()
+    {
+        var definition = new EngineDefinition
+        {
+            Name = "fixture",
+            Endpoint = new Uri("http://127.0.0.1/v1"),
+            Lifecycle = EngineLifecycleKind.Docker,
+            Docker = new DockerLifecycleConfig { Image = "fixture", RouterId = "test", Socket = NamedPipeDockerAddress },
+        };
+        using var inference = new FakeDockerDaemonHandler { TransportFails = true };
+        var provider = new RecordingLifecycleProvider { Kind = "docker" };
+
+        var error = await Assert.ThrowsAsync<RouterConfigException>(async () =>
+        {
+            await using var engine = new EngineRuntime(definition, new RouterConfig(), new EventRing(),
+                inference, lifecycle: provider);
+        });
+
+        Assert.Equal(NamedPipeDockerError, error.Message);
+        Assert.Empty(inference.Requests);
+        Assert.Empty(provider.Calls);
+    }
+
+    [Fact(Timeout = 30_000)]
+    public async Task NamedPipeDockerLegacyExternalForwardsResidentWithoutBinding()
+    {
+        var fields = "\nremote = true" + Docker(false, NamedPipeDockerAddress) + "\n[engine.fixture.catalog.resident]";
+        var config = LoadConfig(false, fields, "peer.invalid");
+        var definition = config.Engines["fixture"];
+        Assert.Equal(EngineLifecycleOwner.External, definition.LifecycleOwner);
+        Assert.Equal(NamedPipeDockerAddress, Assert.IsType<DockerLifecycleConfig>(definition.Docker).Socket);
+
+        using var daemon = new FakeDockerDaemonHandler { TransportFails = true };
+        using var provider = new DockerLifecycleProvider(
+            DockerLifecycleProviderTests.Cfg(socket: "https://controller.invalid"), definition.Name, daemon);
+        using var inference = new FakeEngineHandler { LoadedModels = ["resident"] };
+        config.HttpHandlerFactory = _ => inference;
+        var feed = new EventRing();
+        await using var router = new RouterCore(config, scheduler: null, events: feed, clock: TimeProvider.System,
+            lifecycleFactory: _ => provider);
+        using var deadline = new CancellationTokenSource(Ceiling);
+        var ct = deadline.Token;
+        router.Start();
+        var engine = router.Engines["fixture"];
+        await WaitHealthyAsync(engine, ct);
+        Assert.Contains("resident", engine.LoadedModels);
+
+        var ticket = await router.EnqueueAsync("fixture-thread", new InferenceRequest
+        {
+            Model = "resident",
+            Body = """{"model":"resident","messages":[{"role":"user","content":"ping"}]}"""u8.ToArray(),
+            Options = new(),
+        }, ct);
+        var response = await ticket.CompletionTask.WaitAsync(ct);
+
+        Assert.Contains("pong", Encoding.UTF8.GetString(response), StringComparison.Ordinal);
+        Assert.Equal(TicketState.Completed, ticket.State);
+        Assert.Equal("fixture", ticket.Engine);
+        Assert.Equal(1, inference.CompletionCalls);
+        Assert.Equal("none", engine.LifecycleProvider);
+        Assert.Empty(daemon.Requests);
+        Assert.DoesNotContain(feed.Replay(0), item => item.Kind == "engine.switch_started");
+    }
 
     [Theory]
     [InlineData(false)]
