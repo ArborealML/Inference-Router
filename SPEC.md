@@ -1,6 +1,6 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.95)
+Status: draft, continuously revised (v0.12.97)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
@@ -352,6 +352,8 @@ daemon transaction per engine. 137 tests green.
   that answers no `upload_url`, an upload that dies or answers no asset id, an asset name listed twice on
   the release, and a tag that moves after the first resolve. No tag has run the gate: still configured,
   not proven.
+- v0.12.97 — exercise the dedicated DeepSeek and Strata Qwen swap in both directions offline,
+  including certified delivery, stale route refusal and independent probe readback (§5.3.1).
 - v0.12.95 — recover one synthetic initial launch receipt bound to an independently approved
   Docker create payload and a modeled journal head, and verify closed ingress and completion cuts (§5.3.1).
 - v0.12.94 — keep named option operands out of the `air chat` and `air complete` user message,
@@ -1878,6 +1880,22 @@ runtime waiter and terminal path with injected bound evidence. It exercises an i
 commit, one timeout at equality without timer delivery, and fresh verification of the same
 applied launch. Ordinary enrolled intake retains its capacity guard and production activation
 remains gated.
+
+The offline DeepSeek/Qwen companion uses independent dedicated configurations for
+`deepseek-v4.1-flash-1017-iq2-xxs` at `32k` (32,768 tokens, one slot) and
+`qwen3.8-flash-next-iq3_s` at `256k-4` (256,000 tokens, four slots). Both capture the
+ordered create payload from separate selector-derived settings and bind the exact applied
+instance and plan to a fake host receipt. The DeepSeek readback uses the Maya `/v1` completion
+base, absolute `/v1/models` loaded-row discovery and absolute `/props` serving gauges.
+Its endpoint changes the frozen plan digest without changing Docker create settings.
+The fixture refuses wrong image identity, wrong canonical model and a measured window smaller
+than the selected tier requires. It exercises the enrolled runtime guard with fixture-supplied
+instance observations. Each direction checks a canonical POST through certified checkout on
+the current recorded channel. Recovery retains the applied receipt and opens a fresh
+incarnation. The old incarnation cannot mint another grant or authorize the first write of
+a grant it received before closure. Two explicit router-owned engines in one configuration
+still fail the dedicated-engine topology check. Native host enrollment and a live Pi swap
+remain separate acceptance requirements.
 
 In the older injected immediate-host fixture, proof publication remains provisional while the
 switch marker is raised. The host records acceptance with a synchronous store under the runtime
