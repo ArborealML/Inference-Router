@@ -3,11 +3,11 @@ id: TASK-76
 title: >-
   Withdraw health only when the /models fetch failed, and never over a switch's
   own proof
-status: Waiting
+status: Preparing
 assignee:
-  - '@gpt-6.2-sol-release'
+  - '@gpt-6.2-sol-shutdown'
 created_date: '2026-11-18T02:36:00Z'
-updated_date: '2026-11-20T20:33:00Z'
+updated_date: '2026-11-20T20:37:00Z'
 labels:
   - concurrency
 milestone: m-2
@@ -20,7 +20,7 @@ ordinal: 76000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Wake on review of the existing post-refusal inference fixture proposal. Delivery owns the handoff. After B fails preflight, send one ordinary completion request to A and verify its response with no intervening probe, daemon write or switch. Existing uncertain-mutation tests cover withdrawal.
+Shutdown is preparing the post-refusal inference test plan from the existing audit on 8f84480. After B fails preflight, send one ordinary completion request to A and verify its response with no intervening probe, daemon write or switch. Existing uncertain-mutation tests cover withdrawal.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

@@ -1,11 +1,11 @@
 ---
 id: TASK-81
 title: Answer a stopped switch the same way on the wire, the feed, and the stream
-status: Testing
+status: Waiting
 assignee:
   - '@gpt-6.2-sol-stream-delivery'
 created_date: '2026-11-18T04:09:00Z'
-updated_date: '2026-11-20T20:26:00Z'
+updated_date: '2026-11-20T20:45:00Z'
 labels:
   - lifecycle
   - shutdown
@@ -18,7 +18,7 @@ ordinal: 81000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Delivery is qualifying 2db3092. All 149 focused Release cases passed. AOT, negative controls and two scoped reviews are part of the handoff. When core shutdown wins during an armed upstream read, emit the existing lowercase cancellation error and one sentinel only on a writable stream at a confirmed complete event boundary. Qualify exact downstream bytes, cancellation attribution and one terminal result over real HTTP. Verified-default callback wiring has source-only coverage. Queue, switch, idle-only and credited modes remain open.
+Wake on the .114 integration turn after the preceding native changes land. Correction 1837ef9 passed independent review and 22 targeted cases. The original 2db3092 passed 149 focused cases and Native AOT; three controls produced the expected failures. The change covers core shutdown during an armed upstream read on the active default HTTP stream. Verified-default callback wiring has source-only coverage. Queue, switch, idle-only and credited modes remain open.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

@@ -3,11 +3,11 @@ id: TASK-109
 title: >-
   Make the subscriber-isolation pins separate the claims they name, and add the
   two missing controls
-status: Ready for Review
+status: To Do
 assignee:
   - '@gpt-6.2-sol-stream-delivery'
 created_date: '2026-11-18T17:58:00Z'
-updated_date: '2026-11-20T20:26:00Z'
+updated_date: '2026-11-20T20:45:00Z'
 labels:
   - tests
   - events
@@ -20,7 +20,7 @@ ordinal: 107000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-The approved subscriber I/O documentation plan produced 9eac602, a SPEC §6.1 paragraph awaiting review and integration. The [joined-waiter test](https://github.com/ArborealML/Inference-Router/pull/55) landed at 2c43490. It records the same completion sequence at the producer commit and both wakes, with one gated launch, two pending callers and exactly one matching subscriber fault. Ordering, fanout and counter mutations produced 1, 2 and 4 intended failures. All 19 focused cases passed after restoration and [main CI](https://github.com/ArborealML/Inference-Router/actions/runs/44808078550) passed all three jobs. Observer I/O documentation and the per-run load measurement remain open.
+[SPEC §6.1 subscriber I/O responsibilities](https://github.com/ArborealML/Inference-Router/pull/56) landed at ebcca83 and [main CI passed](https://github.com/ArborealML/Inference-Router/actions/runs/44813198939). The [joined-waiter test](https://github.com/ArborealML/Inference-Router/pull/55) landed at 2c43490. It records the same completion sequence at the producer commit and both wakes, with one gated launch, two pending callers and exactly one matching subscriber fault. Ordering, fanout and counter mutations produced 1, 2 and 4 intended failures. All 19 focused cases passed after restoration and [main CI](https://github.com/ArborealML/Inference-Router/actions/runs/44808078550) passed all three jobs. The per-run load measurement remains open.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -29,7 +29,7 @@ The approved subscriber I/O documentation plan produced 9eac602, a SPEC §6.1 pa
 - [x] #2 The stranding pin proves the join, not only the answer: exactly one launch (`LaunchCount == 1`) and the joined caller still incomplete while the launch is gated
 - [x] #3 The producer pin asserts a fault delta of exactly one for the event it targets, not a nonzero total that any other event could satisfy
 - [x] #4 Two further controls redden named pins with traces: a `break` where the catch continues reddens the surviving-subscriber assertion, and a no-op count reddens the count and status pins
-- [ ] #5 SPEC 6.1's subscriber rule names what an observer that performs I/O owes for its own failure, so the ring's catch is not read as the only boundary
+- [x] #5 SPEC 6.1's subscriber rule names what an observer that performs I/O owes for its own failure, so the ring's catch is not read as the only boundary
 - [ ] #6 Counts are re-measured at the tree with per-run load recorded, and no pin is added to the two classes TASK-87 holds open
 <!-- AC:END -->
 
