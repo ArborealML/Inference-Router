@@ -128,25 +128,69 @@ public sealed class SwitchCostDispatchTests
     public async Task AReadOnlyRefusalRestoresTheServingTupleAndTheMeasuredIncumbent()
     {
         await using var rig = new SwitchRig(aLoadMs: 80, bLoadMs: 20);
-        await rig.LoadProfileAsync("c");
+        await rig.LoadProfileAsync("a");
         var before = rig.Engine.Capability;
+        var proof = Assert.IsType<SwitchServingProof>(before.SwitchProof);
+        var launched = Assert.IsType<NativeLaunch>(proof.NativeLaunch);
+        Assert.NotEmpty(launched.ContainerId);
         var incumbent = Assert.IsType<SwitchSampleKey>(rig.Engine.ReadVerifiedSwitchIncumbent(before));
-        Assert.Equal(1_024L, before.Serving.WindowFor("c"));
+        Assert.Equal(1_024L, before.Serving.WindowFor("a"));
+        var daemonBeforeRefusal = rig.DaemonRequests.Count;
+        var applicationBeforeRefusal = rig.ApplicationRoutes.Count;
         rig.RefusePreflight = true;
 
-        var result = await rig.Engine.WaitForModelAsync("a", TimeSpan.FromSeconds(5), CancellationToken.None);
+        var result = await rig.Engine.WaitForModelAsync("b", TimeSpan.FromSeconds(5), CancellationToken.None);
 
         Assert.False(result.IsReady);
-        var restored = rig.Engine.Capability;
-        Assert.True(restored.Healthy);
-        Assert.Null(restored.SwitchingToward);
-        Assert.Equal(before.Serving, restored.Serving);
-        Assert.Same(before.SwitchProof, restored.SwitchProof);
-        Assert.Equal(incumbent, Assert.IsType<SwitchSampleKey>(rig.Engine.ReadVerifiedSwitchIncumbent(restored)));
+        Assert.Equal("launch_failed", result.Detail);
         var refused = rig.Engine.SwitchHistory[^1].Terminal;
+        Assert.Equal("b", refused.Target.CanonicalModel);
         Assert.Equal(SwitchAttemptOutcome.Failed, refused.Outcome);
         Assert.Null(refused.GetStage(SwitchStage.Shutdown));
         Assert.Null(refused.GetStage(SwitchStage.Launch));
+        Assert.Collection(rig.DaemonRequests.Skip(daemonBeforeRefusal),
+            request => Assert.StartsWith("GET /v1.44/containers/json?all=true&filters=", request, StringComparison.Ordinal),
+            request => Assert.Equal("GET /v1.44/version", request),
+            request => Assert.Equal($"GET /v1.44/images/{Uri.EscapeDataString(SwitchRig.ImageReference)}/json", request));
+        Assert.Empty(rig.ApplicationRoutes.Skip(applicationBeforeRefusal));
+        var refusal = Assert.Single(rig.Router.Events.Replay(0), entry => entry.Kind == "engine.switch_failed");
+        Assert.Equal("b", refusal.Model);
+        Assert.StartsWith("image_not_present", refusal.Reason, StringComparison.Ordinal);
+        var restored = rig.Engine.Capability;
+        var daemonAfterRefusal = rig.DaemonRequests.Count;
+        var historyAfterRefusal = rig.Engine.SwitchHistory.Count;
+        var afterRefusal = rig.Router.Events.Replay(0)[^1].Seq;
+        var posts = rig.CaptureCompletionPosts();
+        const string marker = "after-native-refusal";
+
+        var ticket = await rig.EnqueueAsync("a", marker: marker);
+
+        Assert.True(rig.Router.TryDispatchOnce(), "The restored incumbent must dispatch the fresh A ticket.");
+        var selection = Assert.Single(rig.Router.Events.Replay(afterRefusal), entry => entry.Kind == "request.selected");
+        Assert.Equal(ticket.Id, selection.TicketId);
+        var response = await ticket.CompletionTask.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal(TicketState.Completed, ticket.State);
+        var expectedResponse = """
+            {"id":"c1","object":"chat.completion","choices":[{"index":0,"message":{"role":"assistant","content":"pong"}}]}
+            """u8.ToArray();
+        Assert.Equal(expectedResponse, response);
+        var post = Assert.Single(posts);
+        Assert.Equal(HttpMethod.Post, post.Method);
+        Assert.Equal("/v1/chat/completions", post.Path);
+        Assert.Equal(launched.ContainerId, post.ContainerId);
+        var expectedBody = $$"""{"messages":[{"role":"user","content":"{{marker}}"}],"model":"a"}""";
+        Assert.Equal(System.Text.Encoding.UTF8.GetBytes(expectedBody), post.Body);
+        Assert.Equal(post.Path, Assert.Single(rig.ApplicationRoutes.Skip(applicationBeforeRefusal)));
+        Assert.Empty(rig.DaemonRequests.Skip(daemonAfterRefusal));
+        Assert.Equal(historyAfterRefusal, rig.Engine.SwitchHistory.Count);
+        Assert.DoesNotContain(rig.Router.Events.Replay(afterRefusal), entry => entry.Kind == "engine.switch_started");
+
+        Assert.True(restored.Healthy);
+        Assert.Null(restored.SwitchingToward);
+        Assert.Equal(before.Serving, restored.Serving);
+        Assert.Same(proof, restored.SwitchProof);
+        Assert.Equal(incumbent, Assert.IsType<SwitchSampleKey>(rig.Engine.ReadVerifiedSwitchIncumbent(restored)));
+        Assert.Same(restored, rig.Engine.Capability);
     }
 
     [Fact(Timeout = 20_000)]
@@ -408,6 +452,7 @@ public sealed class SwitchCostDispatchTests
 
     private sealed class SwitchRig : IAsyncDisposable
     {
+        internal const string ImageReference = "fixture/inference:local";
         private const string ImageId = "sha256:1111111111111111111111111111111111111111111111111111111111111111";
         private const string Digest = "fixture/inference@sha256:2222222222222222222222222222222222222222222222222222222222222222";
         private readonly CompletionEntryHandler _http = new() { LoadedModels = [], NCtx = 1_024 };
@@ -422,6 +467,8 @@ public sealed class SwitchCostDispatchTests
         internal TestClock Clock { get; } = new();
         internal EngineRuntime Engine => _router.Engines["fixture"];
         internal RouterCore Router => _router;
+        internal IReadOnlyList<string> DaemonRequests => _daemon.Requests;
+        internal IReadOnlyList<string> ApplicationRoutes => _http.SeenRoutes;
         internal HttpStatusCode StopStatus { get; set; } = HttpStatusCode.NoContent;
         internal HttpStatusCode RemovalStatus { get; set; } = HttpStatusCode.NoContent;
         internal bool MultiplePeers { get; set; }
@@ -437,7 +484,7 @@ public sealed class SwitchCostDispatchTests
             _daemon.Responder = Respond;
             var docker = new DockerLifecycleConfig
             {
-                Image = "fixture/inference:local",
+                Image = ImageReference,
                 ImageIdentity = new DockerImageIdentity(ImageId, Digest, "linux/amd64"),
                 RouterId = "fixture",
                 WaitHealth = false,
@@ -511,6 +558,18 @@ public sealed class SwitchCostDispatchTests
                 Body = System.Text.Encoding.UTF8.GetBytes($$"""{"messages":[{"role":"user","content":"{{marker}}"}]}"""),
                 Options = new RouterRequestOptions { RequiredContext = requiredContext },
             });
+
+        internal List<CompletionPost> CaptureCompletionPosts()
+        {
+            var posts = new List<CompletionPost>();
+            _http.RecordCompletionAsync = async (request, ct) =>
+            {
+                var containerId = _container?.Id;
+                var body = await request.Content!.ReadAsByteArrayAsync(ct);
+                posts.Add(new CompletionPost(request.Method, request.RequestUri!.PathAndQuery, containerId, body));
+            };
+            return posts;
+        }
 
         internal TimeSpan? Estimate(string target)
         {
@@ -738,14 +797,29 @@ public sealed class SwitchCostDispatchTests
         }
     }
 
+    private sealed record CompletionPost(HttpMethod Method, string Path, string? ContainerId, byte[] Body);
+
     private sealed class CompletionEntryHandler : FakeEngineHandler
     {
         internal Action? BeforeCompletion { get; set; }
+        internal Func<HttpRequestMessage, CancellationToken, Task>? RecordCompletionAsync { get; set; }
 
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
         {
-            if (request.Method == HttpMethod.Post) BeforeCompletion?.Invoke();
+            if (request.Method == HttpMethod.Post)
+            {
+                BeforeCompletion?.Invoke();
+                if (RecordCompletionAsync is { } record)
+                    return RecordAndSendAsync(record, request, ct);
+            }
             return base.SendAsync(request, ct);
+        }
+
+        private async Task<HttpResponseMessage> RecordAndSendAsync(
+            Func<HttpRequestMessage, CancellationToken, Task> record, HttpRequestMessage request, CancellationToken ct)
+        {
+            await record(request, ct);
+            return await base.SendAsync(request, ct);
         }
     }
 
