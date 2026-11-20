@@ -102,17 +102,19 @@ curl -N http://127.0.0.1:8321/v1/chat/completions \
   -d '{"model":"qwen-coder","stream":true,"messages":[{"role":"user","content":"hi"}]}'
 ```
 
-Streaming is the default, and frames from the engine are passed through verbatim. Two things the
-router adds:
+Streaming is the default. AIR forwards complete upstream SSE blocks verbatim.
 
-- **Keepalives while a request waits.** While a request is queued or a model is loading, the
-  router emits SSE comments such as `: [router keepalive seq=7 status="switching model=qwen-long engine=hyperqwen"]`
-  every four seconds. SSE parsers skip comments when dispatching data events. The status appears as
+- **Keepalives until the first complete block.** AIR sends an initial SSE comment and one every four
+  seconds until it has a complete upstream SSE block or the request ends. An upstream comment-only
+  block counts. A keepalive looks like `: [router keepalive seq=7 status="switching model=qwen-long engine=hyperqwen"]`.
+  SSE parsers skip comments when dispatching data events. The status appears as
   a JSON string on the first comment and when it changes. In text mode, `air chat` shows these
   status changes on stderr.
-- **A clean end on failure.** If the stream fails after it started, the last frames are
-  `data: {"error":{"code":…, "message":…}}` then `data: [DONE]`. A client that stops at `[DONE]`
-  will not hang, and can tell a truncated completion from a finished one.
+- **An explicit end on failure.** AIR preserves complete blocks and discards an unfinished block.
+  EOF before the blank delimiter and blocks exceeding 1 MiB before that delimiter both produce
+  `engine_error`. A `[DONE]` line without its blank delimiter is unfinished. A read fault
+  produces `engine_unreachable`. The failure ends with `data: {"error":{"type":"air_error","code":…,"message":…}}`
+  followed by `data: [DONE]`.
 
 Send `X-Inference-Required-Context: 24000` to give the scheduler a context requirement in
 tokens for choosing a profile or requesting a switch. Without the header, AIR estimates
@@ -178,8 +180,9 @@ takes the request and then says nothing past its `response_timeout_ms`, the requ
 `engine_timeout` and the engine's slot is handed back — retrying is reasonable there, and aiming at a
 different model usually beats retrying the same one. On a streaming request the failure looks different
 once the answer has started: the `200` is already committed, so there is no status to change and the
-error arrives inside the stream — one `engine_timeout` error frame, then `[DONE]`. The ceiling covers the
-wait for that first frame and nothing after it, so a generation in progress is never cut off mid-token.
+error arrives inside the stream as one `engine_timeout` frame followed by `[DONE]`.
+The ceiling ends at the engine's first positive body read. AIR can continue sending keepalive comments
+until the first complete upstream SSE block.
 That gives one reliable rule: a 504 means nothing was emitted, so retrying cannot duplicate output; an
 in-band error frame means part of an answer may already have reached you. If a request is parked in `WaitingForModel` while
 the router loads a bigger model, `switch_wait_timeout_ms` decides how long the queue will wait for that

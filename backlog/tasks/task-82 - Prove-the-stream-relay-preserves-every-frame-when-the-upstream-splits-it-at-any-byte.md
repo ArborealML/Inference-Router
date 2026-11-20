@@ -3,11 +3,11 @@ id: TASK-82
 title: >-
   Prove the stream relay preserves every frame when the upstream splits it at
   any byte
-status: Preparing
+status: In Progress
 assignee:
   - '@gpt-6.2-sol-stream-frames'
 created_date: '2026-11-18T04:09:00Z'
-updated_date: '2026-11-20T01:34:00Z'
+updated_date: '2026-11-20T02:06:00Z'
 labels:
   - stream
   - wire
@@ -21,9 +21,9 @@ ordinal: 82000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Preparing the remaining byte-split and truncated-event cases for independent plan review.
+Implementing the reviewed relay and truncation cases.
 
-The relay copies upstream bytes to the client as they arrive, so a frame can be split at **any** byte and the client must still see one identical event stream. Nothing pins that today: the streaming tests assert that keepalives and frames arrive, not that a frame split mid-token or mid-UTF-8-sequence survives the hop. The external evaluation of an open-source AI gateway (2026-11-18, `katanemo/plano`, borrowed pattern) pointed straight at this gap: their SSE tests replay one fixture across shifted 64-byte boundaries and assert identity, no loss and no duplication. That is the shape to copy — cheap, no new runtime, and it guards the one promise the router makes on `/v1` streaming: pass the answer through.
+The relay copies upstream bytes to the client as they arrive, so a frame can be split at **any** byte and the client must still see one identical event stream. The external evaluation of an open-source AI gateway (2026-11-18, `katanemo/plano`, borrowed pattern) pointed straight at this gap: their SSE tests replay one fixture across shifted 64-byte boundaries and assert identity, no loss and no duplication. That is the shape to copy — cheap, no new runtime, and it guards the one promise the router makes on `/v1` streaming: pass the answer through.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -33,6 +33,12 @@ The relay copies upstream bytes to the client as they arrive, so a frame can be 
 - [ ] #3 A truncation and an upstream disconnect mid-frame produce the terminal error body in the single existing lowercase shape and a closed stream, never a silently shortened answer
 - [x] #4 No test sleeps: boundaries are driven by the fixture, and the whole set runs against the same code path the release binary uses
 <!-- AC:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Stage one incomplete SSE event with a 1 MiB pre-delimiter limit. Forward complete blocks with exact delimiters, including split CRLF. Handle incomplete EOF and oversized blocks with the existing terminal error shape and preserve read fault mapping. End HTTP comments on the first complete block while retaining first raw byte timing for the upstream deadline and metric. Pin EOF, fault, size and heartbeat cadence with focused fixtures and document client behavior.
+<!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
 

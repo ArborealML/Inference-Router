@@ -182,7 +182,7 @@ public static class ServerApp
 
     private static readonly TimeSpan StreamKeepaliveInterval = TimeSpan.FromSeconds(4);
 
-    /// <summary>SSE passthrough with keepalive comments until the first upstream byte.</summary>
+    /// <summary>SSE passthrough with keepalive comments until a complete upstream block or terminal result.</summary>
     internal static async Task StreamTicketAsync(HttpContext ctx, RouterTicket ticket, TimeProvider clock)
     {
         var ct = ctx.RequestAborted;

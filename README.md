@@ -10,7 +10,7 @@ AIR gives OpenAI-compatible clients one HTTP endpoint for local inference engine
 
 ## Features
 
-- **OpenAI-compatible inference.** Send chat or legacy text completions with optional SSE streaming. [Client integration guide](docs/ai-integration.md)
+- **OpenAI-compatible inference.** Send chat or legacy text completions with optional SSE streaming. AIR preserves complete upstream blocks across read boundaries and reports a cut-off block as a stream error. [Client integration guide](docs/ai-integration.md)
 - **Model discovery.** `GET /v1/models` lists each engine’s last accepted roster and can include observed context windows in tokens. [Model discovery contract](docs/ai-integration.md#discover-loaded-models)
 - **Routing and serving profiles.** Queue requests by model, apply thread priorities, and route to configured local and remote engines using health and available slots. The built-in scheduler checks explicit context minimums and required serving profiles against the window observed for that model. [Serving profiles specification](SPEC.md#76-serving-profiles-and-context-window-escalation)
 - **External HY4 Flash routing.** The shared Maya sample lists GLM and HY4 Flash on one listener. HY4 has seven configured context targets with a 96k default. AIR uses the loaded model and its observed window for routing. [HY4 setup](docs/ai-integration.md#hy4-flash-on-the-shared-maya-listener)
@@ -87,7 +87,7 @@ curl -N http://127.0.0.1:8399/v1/chat/completions \
   -d '{"model":"MODEL_ID","stream":true,"messages":[{"role":"user","content":"Hello"}]}'
 ```
 
-Reuse the thread ID to identify the conversation across turns. The default class is `normal` in this example. Register a thread priority through the admin API or set `X-Inference-Priority` on a request. If a client knows its context demand, it can send `X-Inference-Required-Context` in tokens so AIR can consider a fitting serving profile. Queued streams carry SSE keepalive comments until data is available. AIR also supports the legacy `/v1/completions` endpoint. See the [client integration guide](docs/ai-integration.md) for headers, cancellation, error codes and a worked example.
+Reuse the thread ID to identify the conversation across turns. The default class is `normal` in this example. Register a thread priority through the admin API or set `X-Inference-Priority` on a request. If a client knows its context demand, it can send `X-Inference-Required-Context` in tokens so AIR can consider a fitting serving profile. Streams carry SSE keepalive comments until the first complete upstream block or a terminal result. AIR also supports the legacy `/v1/completions` endpoint. See the [client integration guide](docs/ai-integration.md) for headers, cancellation, error codes and a worked example.
 
 ## Model switches and serving profiles
 
