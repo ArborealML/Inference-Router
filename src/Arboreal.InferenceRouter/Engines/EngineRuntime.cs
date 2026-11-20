@@ -367,6 +367,7 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
         ModelContextWindows = EngineCapability.NoModelContextWindows,
         Serving = default,
         SwitchProof = null,
+        NativeWatch = UnknownNativeWatch(current.NativeWatch),
     };
 
     private static bool IsIncumbentClaim(EngineCapability current) =>
@@ -414,15 +415,18 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
 
     // Callers hold the transition gate and have checked that this claim is current and pending.
     private bool TryPublishClaimProof(SwitchState state, ModelsObservation observation, ServingCapacity serving,
-        ReadinessDeadline? deadline, out ReadinessStepOutcome settlement)
+        ReadinessDeadline? deadline, out ReadinessStepOutcome settlement, NativeLaunchWatch? nativeWatch = null,
+        ReadinessDeadline? dockerDeadline = null)
     {
         var current = Capability;
         var next = WithModelsObservation(current, observation, serving);
         var timing = state.Timing!;
         var proof = timing.Proof(ReferenceEquals(next, current) ? current.Version + 1 : next.Version);
-        next = next with { Version = proof.Version, SwitchProof = proof };
+        next = next with { Version = proof.Version, SwitchProof = proof, NativeWatch = nativeWatch ?? current.NativeWatch };
 
         settlement = deadline?.OutcomeForSettlement ?? ReadinessStepOutcome.Completed;
+        if (settlement == ReadinessStepOutcome.Completed && dockerDeadline is { IsExpired: true })
+            settlement = ReadinessStepOutcome.Expired;
         if (settlement != ReadinessStepOutcome.Completed ||
             !ReferenceEquals(Interlocked.CompareExchange(ref _cap, next, current), current)) return false;
 
@@ -489,7 +493,7 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
             // claim as the author — a *provenance-only* change, which still has to advance `Version` or a reader
             // could not tell the two states apart (AC #8).
             if (!cur.Healthy && !cur.HealthFromClaim && cur.ModelContextWindows.IsEmpty && cur.Serving == default &&
-                cur.SwitchProof is null)
+                cur.SwitchProof is null && cur.NativeWatch?.Health != NativeLaunchHealth.Eligible)
                 return cur;
             var next = cur with
             {
@@ -499,6 +503,7 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
                 ModelContextWindows = EngineCapability.NoModelContextWindows,
                 Serving = default,
                 SwitchProof = null,
+                NativeWatch = UnknownNativeWatch(cur.NativeWatch),
             };
             if (Interlocked.CompareExchange(ref _cap, next, cur) == cur) return next;
         }
@@ -568,6 +573,7 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
                 SwitchProof = switchProof,
                 SwitchingToward = null,
                 HealthFromClaim = false,
+                NativeWatch = cur.Healthy || restored is not null ? cur.NativeWatch : UnknownNativeWatch(cur.NativeWatch),
             };
             if (Interlocked.CompareExchange(ref _cap, next, cur) != cur) continue;
             _restoredIncumbent = restored is null ? null : (cur, next);
@@ -597,7 +603,7 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
     {
         var interval = TimeSpan.FromMilliseconds(_def.Health?.IntervalMs ?? 2_000);
         using var ticks = CancellationTokenSource.CreateLinkedTokenSource(ct, _switchCts.Token);
-        using var timer = new PeriodicTimer(interval);
+        using var timer = new PeriodicTimer(interval, _lifecycle?.NativeProvider is null ? TimeProvider.System : _clock);
         while (!ticks.IsCancellationRequested)
         {
             if (!await ProbeHealthOnceAsync(ct).ConfigureAwait(false)) break;
@@ -629,6 +635,9 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
 
     private async Task<bool> ProbeHealthAsync(EngineCapability capBefore, CancellationToken loopToken)
     {
+        if (capBefore.NativeWatch is { } watch && _lifecycle?.NativeProvider is { } native)
+            return await ProbeTrackedNativeAsync(capBefore, watch, native, loopToken).ConfigureAwait(false);
+
         // The loop token stops new rounds. An admitted round retains its own timeout and
         // publication fences, including when the loop is cancelled while /models is in flight.
         using var budget = new CancellationTokenSource(_def.Health?.TimeoutMs ?? 5_000);
@@ -707,7 +716,7 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
     private readonly record struct ModelsObservation(
         ImmutableList<string> LoadedModels, ImmutableDictionary<string, long> ContextWindows, string? ServingModel = null);
 
-    private readonly record struct ServingProbe(bool Satisfied, long Window, int Slots);
+    private readonly record struct ServingProbe(bool Satisfied, long Window, int Slots, bool Answered = false);
 
     private async Task<ModelsObservation> FetchModelsObservationAsync(CancellationToken ct,
         HttpCompletionOption completion = HttpCompletionOption.ResponseContentRead)
@@ -769,7 +778,7 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
             var window = ReadGauge(root, _def.Health?.ContextPath ?? "n_ctx");
             var slots = (int)Math.Min(int.MaxValue, ReadGauge(root, _def.Health?.SlotsPath ?? "total_slots"));
             var satisfied = _def.Health?.Expect is not { } expect || ProbeExpect.Evaluate(root, expect);
-            return new(satisfied, window, slots);
+            return new(satisfied, window, slots, Answered: true);
         }
         catch (Exception)
         {
@@ -1471,10 +1480,15 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
                 if (end == SwitchEnd.RouterStopped || (_stopped && state.ReadinessOutcomeDelivered is not null))
                     PublishUnknown();
                 if (end == SwitchEnd.Failed && withdrawForFailure && !_stopped)
+                {
+                    InvalidateNativeWatch(Capability);
                     mutationUnknown = PublishUnknown();
+                }
                 var canRestore = end == SwitchEnd.Failed && restoreIncumbent && !_stopped && !_retiring;
-                if (canRestore && native is not null &&
-                    !native.CanRestoreIncumbentUnderGate(state.IncumbentProof?.SwitchProof?.NativeLaunch?.ContainerId))
+                if (canRestore && (Capability.NativeWatch is { } watch
+                    ? native is null || !CanRestoreNativeWatch(state, watch, native)
+                    : native is not null &&
+                      !native.CanRestoreIncumbentUnderGate(state.IncumbentProof?.SwitchProof?.NativeLaunch?.ContainerId)))
                 {
                     canRestore = false;
                     mutationUnknown = PublishUnknown();
@@ -1532,7 +1546,7 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
     /// <summary>Why the prove-health loop ended without readiness, as its last poll saw it: the category the
     /// caller is told follows from this, so an engine that is up and wrong is not reported as an engine that is
     /// still starting (§5.5).</summary>
-    private enum ReadinessMiss { NeverHealthy, ModelNotReported, WindowTooSmall, RefreshUnanswered, Error }
+    private enum ReadinessMiss { NeverHealthy, ModelNotReported, WindowTooSmall, RefreshUnanswered, Error, NativeObservation }
 
     private async Task RunSwitchAsync(SwitchState state, LifecycleTarget target, CancellationToken ct)
     {
@@ -1571,7 +1585,8 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
             else
             {
                 nativeTransaction = state.QuarantineTarget is not null;
-                report = await lifecycle.SwitchWithReportAsync(target, timing, state.IncumbentProof?.SwitchProof, ct)
+                report = await lifecycle.SwitchWithReportAsync(target, timing, state.IncumbentProof?.SwitchProof,
+                    observeLaunch: true, ct)
                     .ConfigureAwait(false);
             }
             var launched = report.Result;
@@ -1598,6 +1613,25 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
                 return;
             }
             if (_hostEnrollment is not null) return; // the controller committed readiness under its host guard
+            if (lifecycle.NativeProvider is not null)
+            {
+                if (launched.NativeLaunch is { } launch)
+                {
+                    if (!RecordPendingNativeLaunch(state, launch, report.Baseline)) return;
+                    if (report.Baseline.Status != NativeContainerStatus.Running)
+                    {
+                        await FinishNativeFailureAsync(state, "Docker did not confirm the exact started container.",
+                            providerRefusal: false, restoreIncumbent: false, native: null, ct).ConfigureAwait(false);
+                        return;
+                    }
+                }
+                else if (Capability.NativeWatch is not null)
+                {
+                    await FinishNativeFailureAsync(state, "Docker did not acknowledge a fresh start for a tracked engine.",
+                        providerRefusal: false, restoreIncumbent: false, native: null, ct).ConfigureAwait(false);
+                    return;
+                }
+            }
             timing.TryStartStage(SwitchStage.Readiness);
             await RunLegacyReadinessAsync(state, target, lifecycle.Readiness(target), lifecycle.Kind, ct)
                 .ConfigureAwait(false);
@@ -1741,6 +1775,7 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
             ReadinessMiss.WindowTooSmall => SwitchReason.WindowTooSmall,
             ReadinessMiss.RefreshUnanswered => SwitchReason.RefreshUnanswered,
             ReadinessMiss.Error => SwitchReason.SwitchError,
+            ReadinessMiss.NativeObservation => SwitchReason.SwitchError,
             _ => SwitchReason.HealthTimeout,
         };
     }
@@ -1798,7 +1833,11 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
             result = new(Failure: new(ReadinessMiss.Error, Error: WireText.Bound(ex.Message, ProviderReasonChars)));
         }
 
-        FinishLegacyReadiness(state, target, readiness, deadline, providerKind, result, lastMiss);
+        BeforeReadinessCommitForTests?.Invoke();
+        var commit = Capability.NativeWatch is { } watch && _lifecycle?.NativeProvider is { } native
+            ? await ConfirmNativeReadinessAsync(state, result, lastMiss, watch, native, deadline, stop).ConfigureAwait(false)
+            : CommitLegacyReadiness(state, result, lastMiss, deadline);
+        if (commit is { } settled) DeliverLegacyReadiness(state, target, readiness, providerKind, settled);
     }
 
     private Task<ModelsObservation> ReadReadinessModelsAsync(CancellationToken ct) =>
@@ -1834,35 +1873,56 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
             : new(Failure: new(ReadinessMiss.WindowTooSmall, Window: window));
     }
 
-    private void FinishLegacyReadiness(SwitchState state, LifecycleTarget target, ReadinessPolicy readiness,
-        ReadinessDeadline deadline, string providerKind, LegacyReadinessObservation result, ReadinessFailure lastMiss)
+    private readonly record struct LegacyReadinessCommit(bool Ready, ReadinessFailure Failure, TaskCompletionSource Delivery);
+
+    private LegacyReadinessCommit? CommitLegacyReadiness(SwitchState state, LegacyReadinessObservation result,
+        ReadinessFailure lastMiss, ReadinessDeadline deadline, NativeLaunchWatch? qualifiedWatch = null,
+        ReadinessDeadline? dockerDeadline = null, SwitchAttemptId? invalidNativeAttempt = null,
+        DockerLifecycleProvider? native = null)
     {
         var delivery = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var failure = result.Failure;
         ReadinessStepOutcome settlement;
         bool ready;
-        BeforeReadinessCommitForTests?.Invoke();
         lock (_transitionGate)
         {
-            if (_stopped || !ReferenceEquals(_switchState, state) || state.End != SwitchEnd.Pending) return;
+            if (_stopped || !ReferenceEquals(_switchState, state) || state.End != SwitchEnd.Pending) return null;
 
-            var window = result.Serving.WindowFor(target.Model);
+            var nativeWatch = Capability.NativeWatch;
+            if (invalidNativeAttempt is { } invalid && nativeWatch is { } currentWatch &&
+                currentWatch.Attempt == invalid && currentWatch.Health != NativeLaunchHealth.Invalid)
+            {
+                var current = Capability;
+                nativeWatch = currentWatch with { Health = NativeLaunchHealth.Invalid };
+                Volatile.Write(ref _cap, WithoutProbeProof(current) with { NativeWatch = nativeWatch });
+            }
+            var watchAllowsReady = nativeWatch is null || qualifiedWatch is not null &&
+                nativeWatch.Attempt == qualifiedWatch.Attempt && nativeWatch.Health == NativeLaunchHealth.Pending &&
+                native is not null && native.CanRestoreIncumbentUnderGate(nativeWatch.Launch.ContainerId);
+            var window = result.Serving.WindowFor(state.Model!);
             while (true)
             {
-                if (result.Models is { } models && WindowFits(window, state.RequiredWindow))
+                if (watchAllowsReady && result.Models is { } models && WindowFits(window, state.RequiredWindow))
                 {
                     // The shared writer rechecks the deadline after preparing the snapshot, before its CAS.
-                    ready = TryPublishClaimProof(state, models, result.Serving, deadline, out settlement);
+                    ready = TryPublishClaimProof(state, models, result.Serving, deadline, out settlement,
+                        qualifiedWatch, dockerDeadline);
                     if (!ready && settlement == ReadinessStepOutcome.Completed) continue;
+                    if (!ready && dockerDeadline is { IsExpired: true } && !deadline.IsExpired)
+                    {
+                        settlement = ReadinessStepOutcome.Completed;
+                        failure = NativeObservationFailure;
+                    }
                 }
                 else
                 {
                     ready = false;
                     settlement = deadline.OutcomeForSettlement;
-                    if (result.Models is not null) failure = new(ReadinessMiss.WindowTooSmall, Window: window);
+                    if (result.Models is not null)
+                        failure = watchAllowsReady ? new(ReadinessMiss.WindowTooSmall, Window: window) : NativeObservationFailure;
                 }
 
-                if (settlement == ReadinessStepOutcome.Stopped) return;
+                if (settlement == ReadinessStepOutcome.Stopped) return null;
                 break;
             }
 
@@ -1871,7 +1931,8 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
                 failure = settlement switch
                 {
                     ReadinessStepOutcome.Expired => lastMiss,
-                    ReadinessStepOutcome.StepExpired => new(ReadinessMiss.WindowTooSmall),
+                    ReadinessStepOutcome.StepExpired when failure.Miss != ReadinessMiss.NativeObservation =>
+                        new(ReadinessMiss.WindowTooSmall),
                     _ => failure,
                 };
                 state.FailureReason = failure.Reason;
@@ -1883,9 +1944,15 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
             state.End = ready ? SwitchEnd.Ready : SwitchEnd.Failed;
         }
 
+        return new(ready, failure, delivery);
+    }
+
+    private void DeliverLegacyReadiness(SwitchState state, LifecycleTarget target, ReadinessPolicy readiness,
+        string providerKind, LegacyReadinessCommit commit)
+    {
         try
         {
-            if (ready)
+            if (commit.Ready)
             {
                 try { AfterSwitchProofForTests?.Invoke(); }
                 finally
@@ -1898,13 +1965,13 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
             else
             {
                 Emit("engine.switch_failed", model: target.Model,
-                    reason: DescribeReadinessFailure(target, state.RequiredWindow, readiness, providerKind, failure));
+                    reason: DescribeReadinessFailure(target, state.RequiredWindow, readiness, providerKind, commit.Failure));
             }
         }
         finally
         {
-            try { EndSwitch(state, ready); }
-            finally { delivery.TrySetResult(); }
+            try { EndSwitch(state, commit.Ready); }
+            finally { commit.Delivery.TrySetResult(); }
         }
     }
 
@@ -1940,6 +2007,7 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
                 "all the router is given, and an exit code is not a loaded model — check that the select " +
                 "command leaves the engine answering /models; the router does not retry or fall back to another engine",
             ReadinessMiss.Error => failure.Error!,
+            ReadinessMiss.NativeObservation => "Docker did not confirm the exact started container.",
             _ => $"{timeout} — engine {engine} never reported {askedFor} serving: " +
                 $"inspect what the {providerKind} provider started " +
                 "(for docker: containers labelled arboreal.engine=<name>) or raise the wait timeout; " +

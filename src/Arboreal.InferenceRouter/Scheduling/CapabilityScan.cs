@@ -1,6 +1,12 @@
 using System.Collections.Immutable;
+using Arboreal.InferenceRouter.Lifecycle;
 
 namespace Arboreal.InferenceRouter;
+
+internal enum NativeLaunchHealth { Pending, Eligible, Unknown, Invalid }
+
+internal sealed record NativeLaunchWatch(SwitchAttemptId Attempt, NativeLaunch Launch, NativeContainerStamp? Baseline,
+    NativeLaunchHealth Health);
 
 internal readonly record struct ServingCapacity(string? Model, long ContextWindow, int TotalSlots, string? Profile)
 {
@@ -58,6 +64,7 @@ public sealed record EngineCapability(
 
     internal ServingCapacity Serving { get; init; }
     internal SwitchServingProof? SwitchProof { get; init; }
+    internal NativeLaunchWatch? NativeWatch { get; init; }
 
     /// <summary>Did the switch that raised the current marker author this engine's unknown health? One
     /// <see cref="Healthy"/> flag cannot say both "we do not know" and "who made us not know", and the

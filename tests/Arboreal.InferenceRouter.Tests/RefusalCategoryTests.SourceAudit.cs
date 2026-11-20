@@ -148,8 +148,8 @@ public partial class RefusalCategoryTests
         var failedFromRecord = switchResult?.Members.OfType<MethodDeclarationSyntax>()
             .FirstOrDefault(method => method.Identifier.ValueText == "FailedFromRecord");
         var fallback = failedFromRecord?.ExpressionBody?.Expression;
-        var finishReadiness = engine?.Members.OfType<MethodDeclarationSyntax>()
-            .FirstOrDefault(method => method.Identifier.ValueText == "FinishLegacyReadiness");
+        var commitReadiness = engine?.Members.OfType<MethodDeclarationSyntax>()
+            .FirstOrDefault(method => method.Identifier.ValueText == "CommitLegacyReadiness");
         var reasonReferences = new HashSet<string>(StringComparer.Ordinal);
         var mappedWrites = 0;
         var failedConstructors = 0;
@@ -182,8 +182,8 @@ public partial class RefusalCategoryTests
                     break;
                 case AssignmentExpressionSyntax assignment when WritesRecordedReason(assignment.Left):
                     if (SyntaxFactory.AreEquivalent(assignment, MappedWrite, topLevel: false) &&
-                        assignment.Ancestors().OfType<MethodDeclarationSyntax>().FirstOrDefault()?.Span == finishReadiness?.Span &&
-                        finishReadiness is not null)
+                        assignment.Ancestors().OfType<MethodDeclarationSyntax>().FirstOrDefault()?.Span == commitReadiness?.Span &&
+                        commitReadiness is not null)
                     {
                         if (++mappedWrites != 1) Reject(ViolationKind.RecordedWrite, assignment);
                     }
@@ -212,7 +212,7 @@ public partial class RefusalCategoryTests
             }
         }
 
-        if (mappedWrites == 0) Reject(ViolationKind.RecordedWrite, (SyntaxNode?)finishReadiness ?? root);
+        if (mappedWrites == 0) Reject(ViolationKind.RecordedWrite, (SyntaxNode?)commitReadiness ?? root);
         if (failedConstructors == 0) Reject(ViolationKind.FailedConstructor, (SyntaxNode?)failed ?? root);
         foreach (var member in NamedMembers)
         {

@@ -723,6 +723,9 @@ public sealed class SwitchCostDispatchTests
                 _launches.Add((current.Model, current.Profile));
                 return (HttpStatusCode.NoContent, "");
             }
+            if (_container is { } running && path.EndsWith($"/containers/{running.Id}/json", StringComparison.Ordinal))
+                return (HttpStatusCode.OK, DockerLifecycleProviderTests.NativeContainerInspect(running.Id, running.Model,
+                    running.Profile ?? "", router: "fixture", engine: "fixture", image: ImageId));
             return (HttpStatusCode.InternalServerError, "");
         }
 

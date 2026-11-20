@@ -1,6 +1,6 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.111)
+Status: draft, continuously revised (v0.12.112)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
@@ -352,6 +352,8 @@ daemon transaction per engine. 137 tests green.
   that answers no `upload_url`, an upload that dies or answers no asset id, an asset name listed twice on
   the release, and a tag that moves after the first resolve. No tag has run the gate: still configured,
   not proven.
+- v0.12.112 — require exact Docker observations for coordinated starts acknowledged with `204`,
+  before the first readiness proof and on idle health ticks (§5.3.1).
 - v0.12.111 — compare two saved short-grid tuning summaries offline with exact same-concurrency
   matching, bounded versioned inputs and descriptor-based file admission on Linux x64 (§11.1).
 - v0.12.110 — add internal native Docker exec and finite log capture with bounded non-TTY framing,
@@ -1734,6 +1736,30 @@ public interface IContainerRuntime            // proposed Docker Engine API adap
 HTTP(S) daemon address, with proxy and redirect handling disabled, per-call timeouts, a configured
 API version and source-generated JSON (§9). The target design adds Windows `npipe` transport,
 version negotiation and daemon events.
+
+**Polling for a tracked Docker launch.** After the concrete Docker coordinator receives start
+`204`, an exact inspect establishes a baseline for that launch. It checks the immutable container
+ID and image, the router, engine, model and profile labels, and coherent running state with a
+full-precision start time and restart count. A second exact match after the endpoint reads is
+required for the first readiness proof, including with `wait_health = false`. It must fit the
+original readiness budget and the bounded Docker observation. Local Stop/DELETE issue and proof
+publication are ordered by the provider gate. Missing baseline or failed confirmation leaves
+readiness unknown without restoring the previous incumbent or allowing an endpoint-only proof.
+
+The existing serial health timer (`health_probe.interval_ms`, default 2,000) then polls the exact
+container even while the engine is idle and when the endpoint fails to answer. Inspect uses the
+pinned daemon/API and GET only, with `docker.call_timeout_ms` bounding inspection and gate waits
+and a 256 KiB inspect body ceiling. A valid contradiction withdraws health, serving capacity and
+switch proof for that exact launch and retains the last roster as history. A fresh matching
+sample and successful endpoint round can recover from a transient unknown without restoring the
+old switch proof. A definite contradiction remains until a new qualified `204` launch. The
+poll rechecks pending and previously issued local Stop/DELETE before a positive publication and
+never settles or retries a mutation. A timed-out read that later returns can only clean up.
+
+Polling covers tracked launches at completed samples. Startup-existing containers, initial
+`304` and other direct creates lack this baseline. Between-sample changes, changes to the
+application process inside a matching container, and authentication of the connected serving peer
+remain separate. This supplies no host-wide vacancy, retirement or mutation authority.
 
 **Internal Docker exec and logs.** The native provider inspects the full container ID on the scoped
 daemon and checks the exact returned ID and both ownership labels before exec or log capture.
