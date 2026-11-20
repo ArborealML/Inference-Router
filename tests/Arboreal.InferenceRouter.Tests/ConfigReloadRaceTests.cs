@@ -108,9 +108,10 @@ public sealed class ConfigReloadRaceTests
             Assert.Equal("Failed", router.TryGetTicket(overflow.Id)?.State);
             var error = await Assert.ThrowsAsync<RouterRequestException>(() => overflow.CompletionTask);
             Assert.Equal("queue_overflow", error.Code);
-            Assert.Single(router.Events.Replay(0), evt => evt.TicketId == overflow.Id && evt.Kind == "queue.rejected");
-            Assert.DoesNotContain(router.Events.Replay(0), evt => evt.TicketId == indexed);
-            Assert.DoesNotContain(router.Events.Replay(0), evt => evt.TicketId == overflow.Id && evt.Kind == "request.enqueued");
+            var replay = router.Events.Replay(0);
+            Assert.Equal([("queue.rejected", "queue_overflow")],
+                replay.Where(evt => evt.TicketId == overflow.Id).Select(evt => (evt.Kind, evt.Reason)).ToArray());
+            Assert.DoesNotContain(replay, evt => evt.TicketId == indexed);
         }
         finally { pause.Release(); }
         var ticket = await enqueue.WaitAsync(bound.Token);
