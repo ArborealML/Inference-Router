@@ -32,10 +32,12 @@ internal sealed class SupervisedInitialLaunch(HostReservationScope scope, string
                 }
                 else
                 {
-                    if (ReadCommission() is not { } current) return null;
+                    if (frame.FormatVersion != SupervisedLaunchJournal.CurrentFormat ||
+                        ReadCommission() is not { } current) return null;
                     var pair = RouterConfigLoader.PrepareEnrolledPair(config, commissionedSlot, claim, _ => current.Topology);
                     if (current.Approvals.IsDefault || current.Approvals.Length != pair.Members.Length ||
                         current.Approvals.Select(item => item.Intent.Plan.Engine).Distinct(StringComparer.Ordinal).Count() != pair.Members.Length ||
+                        !current.Approvals.All(approval => approval.HasPinnedApiVersion()) ||
                         !pair.Members.All(member => MatchesProjection(member, current.Approval(member.Plan.Engine))) ||
                         current.Approval(engine) is not { } approved) return null;
                     commission = current;
@@ -83,9 +85,10 @@ internal sealed class SupervisedInitialLaunch(HostReservationScope scope, string
         public bool Approves(HostReservationScope selected, HostInitialLaunchIntent intent)
         {
             if (selected != scope || commission is null || !commission.Matches(readCommission()) ||
-                commission.Approval(intent.Plan.Engine) is not { } approved || approved.Intent != intent) return false;
+                commission.Approval(intent.Plan.Engine) is not { } approved || approved.Intent != intent ||
+                !approved.HasPinnedApiVersion()) return false;
             var grant = commission.Grant(intent.Plan.Engine);
-            return observer.ReadImage(commission.Topology.Head, grant.SocketPath, approved.Image.Id) == approved.Image;
+            return observer.ReadImage(commission.Topology.Head, grant.SocketPath, approved.ApiVersion!, approved.Image.Id) == approved.Image;
         }
 
         public HostInitialObservation? Observe(HostReservationScope selected)
@@ -101,7 +104,7 @@ internal sealed class SupervisedInitialLaunch(HostReservationScope scope, string
                 frame.History.Applied is not { Receipt: var receipt } ||
                 !Approves(scope, dispatch.Intent)) return null;
 
-            var command = Command(commission, dispatch);
+            var command = commission.Command(dispatch);
             var create = ReadCreate(commission, dispatch, command);
             var start = ReadStart(command, receipt.InstanceId);
             return create is not null && start is not null ? new(observed.Policy, create, start) : null;
@@ -137,23 +140,33 @@ internal sealed class SupervisedInitialLaunch(HostReservationScope scope, string
             journal.Advance(installed, accepted with { Issued = dispatch }, commission);
             if (!CurrentForDispatch(dispatch, vacant: true)) return default;
 
-            var command = Command(commission, dispatch);
+            var command = commission.Command(dispatch);
             var bytes = Convert.FromBase64String(dispatch.Intent.CreateBytes);
             ct.ThrowIfCancellationRequested();
             var instance = await port.CreateAsync(command, bytes, ct).ConfigureAwait(false);
             var create = ReadCreate(commission, dispatch, command);
-            if (instance is null || create?.InstanceId != instance || !CurrentForDispatch(dispatch, vacant: false)) return default;
-
-            ct.ThrowIfCancellationRequested();
-            if (!await port.StartAsync(command, instance, ct).ConfigureAwait(false) || ReadStart(command, instance) is null ||
-                ReadCreate(commission, dispatch, command)?.InstanceId != instance ||
+            if (instance is null || create is null || create.InstanceId != instance ||
                 !CurrentForDispatch(dispatch, vacant: false) ||
                 journal.Read() is not { Frame.History: { Applied: null } issued } issuedSnapshot ||
                 issued.Issued != dispatch) return default;
 
+            ct.ThrowIfCancellationRequested();
+            var issue = new SupervisedStartIssue(command, instance, create.EffectiveCreateDigest);
+            journal.Advance(issuedSnapshot, issued, commission, issue);
+            if (journal.Read() is not { Head.Revision: 4, Frame.StartIssue: var stored } || stored != issue ||
+                ReadCreate(commission, dispatch, command) != create ||
+                !CurrentForDispatch(dispatch, vacant: false)) return default;
+
+            ct.ThrowIfCancellationRequested();
+            if (!await port.StartAsync(command, instance, ct).ConfigureAwait(false) || ReadStart(command, instance) is null ||
+                ReadCreate(commission, dispatch, command) != create ||
+                !CurrentForDispatch(dispatch, vacant: false) ||
+                journal.Read() is not { Head.Revision: 4, Frame.StartIssue: var afterStart } started ||
+                afterStart != issue) return default;
+
             var receipt = new HostInitialReceipt(scope, dispatch.Operation, dispatch.Intent, instance);
             var receiptBytes = JsonSerializer.SerializeToUtf8Bytes(receipt, HostReservationJsonContext.Default.HostInitialReceipt);
-            journal.Advance(issuedSnapshot, issued with { Applied = new(receipt, Convert.ToBase64String(receiptBytes)) }, commission);
+            journal.Advance(started, started.Frame.History with { Applied = new(receipt, Convert.ToBase64String(receiptBytes)) }, commission);
             return new(dispatch.Operation, HostMutationStatus.Applied, instance);
         }
 
@@ -169,9 +182,6 @@ internal sealed class SupervisedInitialLaunch(HostReservationScope scope, string
         private bool CurrentForDispatch(HostInitialDispatch dispatch, bool vacant) =>
             dispatch.MatchesDispatching(HostReservation.ReadEnrolled(scope)) && Approves(scope, dispatch.Intent) &&
             dispatch.Policy.Authorizes(scope) && observer.ReadPolicy(scope) == new SupervisedLaunchPolicy(dispatch.Policy, vacant);
-
-        private static SupervisedLaunchCommand Command(SupervisedLaunchCommission original, HostInitialDispatch dispatch) =>
-            new(original.Scope, original.Topology.Head, original.Grant(dispatch.Operation.Engine).SocketPath, dispatch.Operation);
 
         private HostInitialCreate? ReadCreate(SupervisedLaunchCommission original, HostInitialDispatch dispatch,
             SupervisedLaunchCommand command) => SupervisedLaunchEvidence.VerifyCreate(observer.ReadCreate(command), command,
