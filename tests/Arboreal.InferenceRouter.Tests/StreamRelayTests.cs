@@ -401,10 +401,11 @@ public class StreamRelayTests
     [InlineData(true)]
     public async Task FinalAcknowledgmentAndCancellationKeepTheFirstDecision(bool acknowledgeFirst)
     {
-        using var fake = new StreamEngine(new MemoryStream([(byte)'\n']));
+        using var fake = new StreamEngine(new MemoryStream(Done));
         var (app, _, _) = await WireHarness.StartAsync(fake: fake, streamBufferLimit: Credit);
         await using var server = app;
         using var bound = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        using var caller = CancellationTokenSource.CreateLinkedTokenSource(bound.Token);
         var router = app.Services.GetRequiredService<RouterCore>();
         var deciding = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
         var settle = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -413,16 +414,19 @@ public class StreamRelayTests
             deciding.TrySetResult(id);
             return settle.Task;
         };
-        var ticket = await router.EnqueueHttpAsync("flush-race", Request(), bound.Token);
-        var ctx = new DefaultHttpContext { RequestAborted = bound.Token };
+        var ticket = await router.EnqueueHttpAsync("flush-race", Request(), caller.Token);
+        var ctx = new DefaultHttpContext { RequestAborted = caller.Token };
         var writer = new GatedWriter(2);
         ctx.Features.Set<IHttpResponseBodyFeature>(new BodyFeature(writer));
         var relay = ServerApp.StreamTicketAsync(ctx, ticket, TimeProvider.System, router);
         var delivery = Assert.IsType<HttpStreamDelivery>(ticket.HttpDelivery);
         try
         {
-            await writer.Blocked.Task.WaitAsync(bound.Token);
+            Assert.Equal(Done.Length, await writer.Blocked.Task.WaitAsync(bound.Token));
             await delivery.Sealed.WaitAsync(bound.Token);
+            Assert.Equal(Done, writer.Received[1]);
+            Assert.False(writer.Release.Task.IsCompleted);
+            Assert.False(delivery.Outcome.IsCompleted);
             if (acknowledgeFirst)
                 writer.Release.TrySetResult(new FlushResult(false, false));
             else
@@ -432,14 +436,14 @@ public class StreamRelayTests
             if (acknowledgeFirst)
             {
                 Assert.Null((await delivery.Outcome.WaitAsync(bound.Token)).Code);
-                // Signal actual execution cancellation after the HTTP acknowledgment while the
-                // dispatcher is still paused before publishing its terminal result.
-                await ticket.ExecCts!.CancelAsync();
+                // Hang up through the caller token while the accepted HTTP acknowledgment is
+                // waiting for the dispatcher to publish success.
+                await caller.CancelAsync();
             }
             else
             {
+                Assert.Equal("cancelled", (await delivery.Outcome.WaitAsync(bound.Token)).Code);
                 writer.Release.TrySetResult(new FlushResult(false, false));
-                Assert.Equal("cancelled", delivery.Decide(HttpStreamOutcome.Acknowledged).Code);
             }
             settle.TrySetResult();
             if (acknowledgeFirst)
@@ -451,6 +455,7 @@ public class StreamRelayTests
                 Assert.Equal("cancelled", error.Code);
             }
             await relay.WaitAsync(bound.Token);
+            Assert.Equal(Done, WithoutComments(writer.Received.SelectMany(static bytes => bytes).ToArray()));
             var outcome = Assert.Single(router.Events.Replay(0), row => row.TicketId == ticket.Id &&
                 row.Kind is "request.cancelled" or "request.failed" or "request.completed");
             Assert.Equal(acknowledgeFirst ? "request.completed" : "request.cancelled", outcome.Kind);
@@ -490,13 +495,18 @@ public class StreamRelayTests
             var engine = router.Engines["fake"];
             await UntilAsync(() => router.GetStats().Engines.Single().Inflight == 0, bound.Token);
             Assert.Equal(1, engine.HttpUsesForTests);
+            Assert.Equal(0, fake.ResponseDisposals);
+            Assert.Equal(0, content.DisposeCount);
+            Assert.Equal(0, late.DisposeCount);
             Assert.False(content.Disposed.Task.IsCompleted);
             Assert.False(cleaned.Task.IsCompleted);
             if (fault) content.Finish.TrySetException(new IOException("scripted late acquisition"));
             else content.Finish.TrySetResult(late);
             Assert.Equal(ticket.Id, await cleaned.Task.WaitAsync(bound.Token));
+            Assert.Equal(1, fake.ResponseDisposals);
             Assert.True(content.Disposed.Task.IsCompletedSuccessfully);
-            Assert.Equal(!fault, late.Disposed);
+            Assert.Equal(1, content.DisposeCount);
+            Assert.Equal(fault ? 0 : 1, late.DisposeCount);
             Assert.Equal(0, engine.HttpUsesForTests);
             Assert.False(ticket.StreamChannel!.Reader.TryRead(out _));
             Assert.Equal("engine_timeout", ticket.ErrorCode);
@@ -583,16 +593,29 @@ public class StreamRelayTests
 
     private sealed class ContentEngine(HttpContent content) : FakeEngineHandler
     {
+        private int _responseDisposals;
+        public int ResponseDisposals => Volatile.Read(ref _responseDisposals);
+
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
         {
             if (request.Method == HttpMethod.Post)
-                return new HttpResponseMessage(HttpStatusCode.OK) { Content = content };
+                return new DisposalResponse(() => Interlocked.Increment(ref _responseDisposals)) { Content = content };
             return await base.SendAsync(request, ct);
+        }
+    }
+
+    private sealed class DisposalResponse(Action recordDisposal) : HttpResponseMessage(HttpStatusCode.OK)
+    {
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing) recordDisposal();
+            base.Dispose(disposing);
         }
     }
 
     private sealed class HeldAcquisitionContent : HttpContent
     {
+        public int DisposeCount { get; private set; }
         public TaskCompletionSource Acquiring { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource<Stream> Finish { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource Disposed { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -615,17 +638,21 @@ public class StreamRelayTests
         protected override void Dispose(bool disposing)
         {
             base.Dispose(disposing);
-            if (disposing) Disposed.TrySetResult();
+            if (disposing)
+            {
+                DisposeCount++;
+                Disposed.TrySetResult();
+            }
         }
     }
 
     private sealed class DisposalStream : MemoryStream
     {
-        public bool Disposed { get; private set; }
+        public int DisposeCount { get; private set; }
 
         protected override void Dispose(bool disposing)
         {
-            if (disposing) Disposed = true;
+            if (disposing) DisposeCount++;
             base.Dispose(disposing);
         }
     }
