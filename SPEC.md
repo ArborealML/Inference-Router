@@ -1767,8 +1767,12 @@ Same-target callers can join the active switch, and cancelling one waiter detach
 waiter (§5.5). The host reservation and
 restart reconciliation are pending (TASK-110), as are the admission reservation and drain (TASK-25).
 
-**Native target quarantine and recovery (decision 62).** A failed non-enrolled native switch
-latches its engine, canonical model, effective profile and bound definition in the runtime.
+**Native target quarantine and recovery (decision 62).** Once a non-enrolled native switch
+enters its lifecycle transaction, a selected failure latches its engine, canonical model,
+effective profile and bound definition in the runtime. This covers ownership and preflight
+refusals, an unsuccessful provider result or provider exception, and failed readiness.
+An earlier claim-hook or scheduling failure rolls back with zero launches and leaves no
+target latch, so a later attempt can proceed without a reset.
 The native plan resolves an omitted tier or alias to the same canonical tier used in Docker
 create. A read-only refusal can preserve an incumbent when the same provider and current
 probe evidence still support it. Subsequent attempts to switch to a latched target return the
