@@ -314,11 +314,16 @@ public sealed class NativeDaemonObservationTests
     [InlineData("successor")]
     [InlineData("displaced")]
     [InlineData("restored")]
+    [InlineData("restored-unknown")]
     [InlineData("stopped")]
     public async Task HeldDaemonReadOnlyInvalidatesItsOwnWitness(string disposition)
     {
         await using var fixture = new Fixture();
+        var firstEnd = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        fixture.Engine.AfterEndCommitForTests = _ => firstEnd.TrySetResult();
         Assert.True((await fixture.SwitchAsync("a")).IsReady);
+        await firstEnd.Task.WaitAsync(Limit);
+        fixture.Engine.AfterEndCommitForTests = null;
         var original = fixture.Engine.Capability;
         var delayed = new Barrier();
         var failure = new Barrier();
@@ -326,9 +331,11 @@ public sealed class NativeDaemonObservationTests
         {
             if (id != A) return InspectReply(id);
             await delayed.HoldAsync();
-            return InspectReply(id, startedAt: ChangedStamp);
+            return disposition == "restored-unknown"
+                ? new HttpResponseMessage(HttpStatusCode.NotModified)
+                : InspectReply(id, startedAt: ChangedStamp);
         };
-        if (disposition is "displaced" or "restored") fixture.RefusePreflight = true;
+        if (disposition is "displaced" or "restored" or "restored-unknown") fixture.RefusePreflight = true;
         if (disposition == "displaced")
             fixture.Engine.BeforeNativeFailureEventForTests = () => failure.HoldAsync().GetAwaiter().GetResult();
         var poll = fixture.Engine.ProbeHealthOnceAsync(CancellationToken.None);
@@ -356,7 +363,12 @@ public sealed class NativeDaemonObservationTests
 
             var current = fixture.Engine.Capability;
             Assert.NotSame(original, current);
-            if (disposition == "restored") Assert.Same(original.SwitchProof, current.SwitchProof);
+            if (disposition is "restored" or "restored-unknown")
+            {
+                Assert.True(current.Healthy);
+                Assert.Same(original.SwitchProof, current.SwitchProof);
+            }
+            var nudges = fixture.DispatchNudges;
             delayed.Release.TrySetResult();
             await poll.WaitAsync(Limit);
             if (disposition == "successor")
@@ -364,11 +376,20 @@ public sealed class NativeDaemonObservationTests
                 Assert.Same(current, fixture.Engine.Capability);
                 Assert.Equal(B, fixture.Watch.Launch.ContainerId);
             }
+            else if (disposition == "restored-unknown")
+            {
+                Assert.Same(current, fixture.Engine.Capability);
+            }
             else
             {
                 Assert.False(fixture.Engine.Healthy);
                 Assert.Equal(NativeLaunchHealth.Invalid, fixture.Watch.Health);
                 Assert.Equal(current.Version + 1, fixture.Engine.Capability.Version);
+                if (disposition == "displaced")
+                {
+                    Assert.Equal(default, current.Serving);
+                    Assert.Equal(nudges, fixture.DispatchNudges);
+                }
             }
         }
         finally
@@ -379,7 +400,7 @@ public sealed class NativeDaemonObservationTests
         if (claim is not null && disposition != "successor")
         {
             Assert.False((await claim.WaitAsync(Limit)).IsReady);
-            Assert.Null(fixture.Engine.Capability.SwitchProof);
+            if (disposition != "restored-unknown") Assert.Null(fixture.Engine.Capability.SwitchProof);
             Assert.Equal(2, fixture.Writes.Count);
         }
     }
@@ -449,6 +470,7 @@ public sealed class NativeDaemonObservationTests
         private readonly EngineDefinition _definition;
         private readonly ConcurrentQueue<string> _requests = new();
         private readonly SemaphoreSlim _healthRounds = new(0);
+        private int _dispatchNudges;
         public LoopClock Clock { get; } = new();
         public EventRing Feed { get; } = new();
         public DockerLifecycleProvider Provider { get; }
@@ -460,6 +482,7 @@ public sealed class NativeDaemonObservationTests
         public bool RefusePreflight { get; set; }
         public HttpStatusCode StartStatus { get; set; } = HttpStatusCode.NoContent;
         public NativeLaunchWatch Watch => Assert.IsType<NativeLaunchWatch>(Engine.Capability.NativeWatch);
+        public int DispatchNudges => Volatile.Read(ref _dispatchNudges);
         public IReadOnlyList<string> Writes => _requests.Where(request => !request.StartsWith("GET ", StringComparison.Ordinal)).ToArray();
         public int InspectCount(string id) => _requests.Count(request => request == $"GET /v1.44/containers/{id}/json");
         public Task<bool> FirstTick => _healthRounds.WaitAsync(Limit);
@@ -490,7 +513,8 @@ public sealed class NativeDaemonObservationTests
                 ObservationCleanupForTests = Cleanups.Enqueue,
             };
             Engine = new EngineRuntime(_definition, new RouterConfig(), Feed, _app, Provider,
-                dispatchHint: null, hostEnrollment: null, clock: Clock) { ReadinessClockForTests = Clock };
+                dispatchHint: () => Interlocked.Increment(ref _dispatchNudges), hostEnrollment: null, clock: Clock)
+                { ReadinessClockForTests = Clock };
             Feed.Subscribe(entry =>
             {
                 if (entry.Kind == "engine.health") _healthRounds.Release();

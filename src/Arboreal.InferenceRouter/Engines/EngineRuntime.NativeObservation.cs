@@ -108,7 +108,7 @@ public sealed partial class EngineRuntime
         var read = await native.ObserveContainerAsync(watch.Launch, deadline).ConfigureAwait(false);
         if (stop.IsCancellationRequested) return false;
         var sample = read.Outcome == ReadinessStepOutcome.Completed ? read.Observation : default;
-        EngineCapability? published = null;
+        (ServingCapacity Previous, ServingCapacity Current)? published = null;
         var reconcileApplication = false;
         if (ContradictsNativeWatch(sample, watch))
         {
@@ -134,7 +134,7 @@ public sealed partial class EngineRuntime
         }
 
         if (reconcileApplication) ReconcileIncumbentObservation(expected, observation, serving);
-        if (published is not null) NotifyServingChange(expected.Serving, published.Serving);
+        if (published is { } change) NotifyServingChange(change.Previous, change.Current);
         if (Volatile.Read(ref _stopped)) return false;
         if (Capability.NativeWatch?.Attempt != watch.Attempt) return true;
         Emit("engine.health", reason: error is null ? null : WireText.Bound(error.Message, ProviderReasonChars),
@@ -142,7 +142,8 @@ public sealed partial class EngineRuntime
         return true;
     }
 
-    private EngineCapability? CommitNativePoll(EngineCapability expected, NativeLaunchWatch captured,
+    private (ServingCapacity Previous, ServingCapacity Current)? CommitNativePoll(
+        EngineCapability expected, NativeLaunchWatch captured,
         NativeLaunchHealth health, ModelsObservation? observation = null, ServingCapacity serving = default,
         ReadinessDeadline? deadline = null)
     {
@@ -158,26 +159,28 @@ public sealed partial class EngineRuntime
             if (health == NativeLaunchHealth.Invalid)
             {
                 InvalidateNativeWatch(current);
-                return Capability;
+                return (current.Serving, Capability.Serving);
             }
 
+            // Inconclusive evidence may withdraw only the exact snapshot read by this round.
+            if (!ReferenceEquals(current, expected)) return null;
             if (health == NativeLaunchHealth.Unknown)
             {
                 if (watch.Health == NativeLaunchHealth.Unknown) return null;
                 var unknown = WithoutProbeProof(current) with { NativeWatch = watch with { Health = health } };
                 Volatile.Write(ref _cap, unknown);
                 _restoredIncumbent = null;
-                return unknown;
+                return (current.Serving, unknown.Serving);
             }
 
-            if (!ReferenceEquals(current, expected) || current.SwitchingToward is not null || observation is not { } models)
+            if (current.SwitchingToward is not null || observation is not { } models)
                 return null;
             var next = WithModelsObservation(current, models, serving);
             if (watch.Health == health && ReferenceEquals(next, current)) return null;
             if (ReferenceEquals(next, current)) next = next with { Version = current.Version + 1 };
             next = next with { NativeWatch = watch with { Health = health } };
             Volatile.Write(ref _cap, next);
-            return next;
+            return (current.Serving, next.Serving);
         }
     }
 
