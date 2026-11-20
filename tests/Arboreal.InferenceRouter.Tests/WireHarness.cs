@@ -14,7 +14,7 @@ internal static class WireHarness
     public static async Task<(WebApplication App, FakeEngineHandler Fake, int Port)> StartAsync(
         bool holdCompletions = true, int maxInflight = 8, int maxEventSubscribers = 256, int maxRequestBodyBytes = 16 * 1024 * 1024,
         int responseTimeoutMs = 600_000, int switchWaitTimeoutMs = 0, FakeEngineHandler? fake = null,
-        TimeProvider? streamClock = null)
+        TimeProvider? streamClock = null, int streamBufferLimit = 0, int streamIdleTimeoutMs = 0)
     {
         fake ??= new FakeEngineHandler { HoldCompletions = holdCompletions };
         int port;
@@ -32,6 +32,7 @@ internal static class WireHarness
             Scheduler = new SchedulerConfig { MaxInflightPerEngine = maxInflight, MaxQueuePerModel = 8, SwitchWaitTimeoutMs = switchWaitTimeoutMs },
             MaxEventSubscribers = maxEventSubscribers,
             MaxRequestBodyBytes = maxRequestBodyBytes,
+            StreamBufferLimitBytes = streamBufferLimit,
             HttpHandlerFactory = _ => fake,
         };
         cfg.Engines = new Dictionary<string, EngineDefinition>
@@ -42,6 +43,7 @@ internal static class WireHarness
                 Kind = EngineKind.OpenAiCompatible,
                 Endpoint = new Uri("http://127.0.0.1:9/v1"),
                 ResponseTimeoutMs = responseTimeoutMs,
+                StreamIdleTimeoutMs = streamIdleTimeoutMs,
                 Catalog = new Dictionary<string, EngineModelDefinition>
                 {
                     ["test-model"] = new EngineModelDefinition { Name = "test-model" },

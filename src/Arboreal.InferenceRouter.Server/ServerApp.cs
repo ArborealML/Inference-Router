@@ -5,6 +5,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 using System.Threading.Channels;
 using Arboreal.InferenceRouter;
+using Microsoft.AspNetCore.Http;
 
 namespace Arboreal.InferenceRouter.Server;
 
@@ -136,7 +137,7 @@ public static partial class ServerApp
         RouterTicket ticket;
         try
         {
-            ticket = await router.EnqueueAsync(threadId, new InferenceRequest
+            ticket = await router.EnqueueHttpAsync(threadId, new InferenceRequest
             {
                 Model = requestedModel,
                 Stream = stream,
@@ -171,7 +172,7 @@ public static partial class ServerApp
 
         if (stream)
         {
-            await StreamTicketAsync(ctx, ticket, streamClock).ConfigureAwait(false);
+            await StreamTicketAsync(ctx, ticket, streamClock, router).ConfigureAwait(false);
         }
         else
         {
@@ -200,49 +201,93 @@ public static partial class ServerApp
     private static readonly TimeSpan StreamKeepaliveInterval = TimeSpan.FromSeconds(4);
 
     /// <summary>SSE passthrough with keepalive comments until a complete upstream block or terminal result.</summary>
-    internal static async Task StreamTicketAsync(HttpContext ctx, RouterTicket ticket, TimeProvider clock)
+    internal static async Task StreamTicketAsync(HttpContext ctx, RouterTicket ticket, TimeProvider clock,
+        RouterCore? router = null)
     {
         var ct = ctx.RequestAborted;
         ctx.Response.StatusCode = 200;
         ctx.Response.Headers.ContentType = "text/event-stream";
         ctx.Response.Headers.CacheControl = "no-cache";
-        ctx.Response.Headers.Connection = "keep-alive";
+        if (HttpProtocol.IsHttp11(ctx.Request.Protocol))
+            ctx.Response.Headers.Connection = "keep-alive";
 
         var writer = ctx.Response.BodyWriter;
+        var delivery = ticket.HttpDelivery;
+        var sink = new InferenceStreamSink(ctx, writer, ticket, router, clock);
         try
         {
             ct.ThrowIfCancellationRequested();
-            var (reader, first) = await ReadFirstChunkAsync(writer, ticket, clock, ct).ConfigureAwait(false);
+            var (reader, first) = await ReadFirstChunkAsync(sink, ticket, clock, ct).ConfigureAwait(false);
             if (reader is not null)
             {
-                await writer.WriteAsync(first, ct).ConfigureAwait(false);
-                while (await reader.WaitToReadAsync(ct).ConfigureAwait(false))
+                await sink.WritePayloadAsync(first, ct).ConfigureAwait(false);
+                while (await WaitForStreamDataAsync(reader, delivery, ct).ConfigureAwait(false))
                 {
                     while (reader.TryRead(out var chunk))
-                        await writer.WriteAsync(chunk, ct).ConfigureAwait(false);
-                    await writer.FlushAsync(ct).ConfigureAwait(false);
+                        await sink.WritePayloadAsync(chunk, ct).ConfigureAwait(false);
+                    if (delivery is null)
+                        await writer.FlushAsync(ct).ConfigureAwait(false);
                 }
             }
 
             ct.ThrowIfCancellationRequested();
-            if (ticket.State is TicketState.Failed)
+            if (delivery is not null && delivery.Sealed.IsCompletedSuccessfully)
+            {
+                delivery.Acknowledge();
+                // Publish the outcome before the endpoint returns HTTP EOF.
+                try { await ticket.CompletionTask.WaitAsync(ct).ConfigureAwait(false); }
+                catch (RouterRequestException) { }
+            }
+            if (ticket.State is TicketState.Failed && !ticket.SuppressIdleTerminal)
             {
                 var json = JsonSerializer.Serialize(
                     new ErrorBody { Error = new ErrorDetail { Message = ticket.Error ?? "engine error", Code = ticket.ErrorCode ?? "engine_error" } },
                     AirServerJson.AirServerContext.Default.ErrorBody);
-                await AirJson.WriteFrameAsync(writer, AirJson.Frame(json, "[DONE]"), ct).ConfigureAwait(false);
+                await sink.WriteFrameAsync(AirJson.Frame(json, "[DONE]"), ct).ConfigureAwait(false);
             }
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
             // The caller went away. HandleInference links the abort to the producer.
         }
+        catch (OperationCanceledException) when (delivery is not null)
+        {
+            router?.TryCancel(ticket.Id);
+            ctx.Abort();
+        }
+        catch (IOException) when (delivery is not null)
+        {
+            router?.TryCancel(ticket.Id);
+            ctx.Abort();
+        }
+        finally
+        {
+            delivery?.StopAndDiscard(ticket.StreamChannel?.Reader);
+        }
+    }
+
+    private static ValueTask<bool> WaitForStreamDataAsync(ChannelReader<ReadOnlyMemory<byte>> reader,
+        HttpStreamDelivery? delivery, CancellationToken ct)
+    {
+        if (delivery is null) return reader.WaitToReadAsync(ct);
+        if (reader.TryPeek(out _)) return ValueTask.FromResult(true);
+        if (delivery.Sealed.IsCompletedSuccessfully) return ValueTask.FromResult(false);
+        return WaitForDataOrSealAsync(reader, delivery.Sealed, ct);
+    }
+
+    private static async ValueTask<bool> WaitForDataOrSealAsync(ChannelReader<ReadOnlyMemory<byte>> reader,
+        Task seal, CancellationToken ct)
+    {
+        var data = reader.WaitToReadAsync(ct).AsTask();
+        await Task.WhenAny(data, seal).ConfigureAwait(false);
+        ct.ThrowIfCancellationRequested();
+        return data.IsCompleted ? await data.ConfigureAwait(false) : reader.TryPeek(out _);
     }
 
     private static async Task<(ChannelReader<ReadOnlyMemory<byte>>? Reader, ReadOnlyMemory<byte> First)> ReadFirstChunkAsync(
-        PipeWriter writer, RouterTicket ticket, TimeProvider clock, CancellationToken ct)
+        InferenceStreamSink sink, RouterTicket ticket, TimeProvider clock, CancellationToken ct)
     {
-        var lastStatus = await WriteKeepaliveAsync(writer, ticket, 0, "", ct).ConfigureAwait(false);
+        var lastStatus = await WriteKeepaliveAsync(sink, ticket, 0, "", ct).ConfigureAwait(false);
         var sequence = 1;
         using var stopHeartbeat = CancellationTokenSource.CreateLinkedTokenSource(ct);
         Task? heartbeat = null;
@@ -257,7 +302,7 @@ public static partial class ServerApp
             {
                 // Keep this wait in flight across ticks. Its producer publishes the terminal
                 // outcome before completing the channel, so buffered data still drains first.
-                var readable = reader.WaitToReadAsync(ct).AsTask();
+                var readable = WaitForStreamDataAsync(reader, ticket.HttpDelivery, ct).AsTask();
                 await WaitWithKeepalivesAsync(readable, reader).ConfigureAwait(false);
                 if (!await readable.ConfigureAwait(false)) return default;
 
@@ -284,13 +329,13 @@ public static partial class ServerApp
                 ct.ThrowIfCancellationRequested();
                 if (progress.IsCompleted || ticket.IsTerminal || reader?.TryPeek(out _) == true) return;
 
-                lastStatus = await WriteKeepaliveAsync(writer, ticket, sequence++, lastStatus, ct).ConfigureAwait(false);
+                lastStatus = await WriteKeepaliveAsync(sink, ticket, sequence++, lastStatus, ct).ConfigureAwait(false);
                 heartbeat = null;
             }
         }
     }
 
-    private static async Task<string> WriteKeepaliveAsync(PipeWriter writer, RouterTicket ticket, int seq,
+    private static async Task<string> WriteKeepaliveAsync(InferenceStreamSink sink, RouterTicket ticket, int seq,
         string lastStatus, CancellationToken ct)
     {
         var status = ticket.State switch
@@ -304,7 +349,7 @@ public static partial class ServerApp
             ? ""
             : $" status={JsonSerializer.Serialize(status, AirServerJson.AirServerContext.Default.String)}";
         var frame = string.Create(CultureInfo.InvariantCulture, $": [router keepalive seq={seq}{statusField}]\n\n");
-        await AirJson.WriteFrameAsync(writer, Encoding.UTF8.GetBytes(frame), ct).ConfigureAwait(false);
+        await sink.WriteFrameAsync(Encoding.UTF8.GetBytes(frame), ct).ConfigureAwait(false);
         return status;
     }
 

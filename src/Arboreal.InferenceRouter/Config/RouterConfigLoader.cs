@@ -98,7 +98,10 @@ public static class RouterConfigLoader
 
     private static RouterConfig Map(ConfigDto dto, string source)
     {
-        var cfg = new RouterConfig();
+        var streamBufferLimit = dto.StreamBufferLimitBytes.GetValueOrDefault();
+        if (streamBufferLimit < 0)
+            throw new RouterConfigException("stream_buffer_limit_bytes must be >= 0 (0 disables the bounded relay)");
+        var cfg = new RouterConfig { StreamBufferLimitBytes = streamBufferLimit };
         if (dto.Listen is { } listen) cfg.Listen = listen;
         if (dto.DefaultModel is { } dm) cfg.DefaultModel = dm;
         if (dto.AutoSwitch is { } autoSwitch) cfg.AutoSwitch = autoSwitch;
@@ -341,6 +344,9 @@ public static class RouterConfigLoader
         if (responseTimeoutMs < 0)
             throw new RouterConfigException(
                 $"engine.{name}.response_timeout_ms must be >= 0 (0 disables the cap on waiting for the engine's first byte)");
+        var streamIdleTimeout = e.StreamIdleTimeoutMs.GetValueOrDefault();
+        if (streamIdleTimeout < 0)
+            throw new RouterConfigException($"engine.{name}.stream_idle_timeout_ms must be >= 0 (0 disables upstream idle)");
 
         if (e.ModelsContextWindowPath is { } modelsContextPath &&
             modelsContextPath.Split('.').Any(segment => segment.Length == 0 || segment != segment.Trim()))
@@ -383,6 +389,7 @@ public static class RouterConfigLoader
             LifecycleOwner = owner,
             LegacyLifecycleConfiguration = e.LifecycleOwner is null,
             ResponseTimeoutMs = responseTimeoutMs,
+            StreamIdleTimeoutMs = streamIdleTimeout,
             Lifecycle = lifecycle,
             Docker = docker,
         };

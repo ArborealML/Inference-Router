@@ -18,8 +18,11 @@ AIR gives OpenAI-compatible clients one HTTP endpoint for local inference engine
 - **Measured switch ordering.** On a single idle native Docker engine with a proven incumbent, AIR can prefer the cheaper of eligible queued model switches. Estimates use recent observed shutdown and activation times. Queue age takes precedence within the comparison, and incomplete estimates fall back to enqueue order. [Queue semantics](SPEC.md#55-queue-semantics)
 - **Operator controls.** Inspect engine and queue status, replay events for a ticket, or cancel it through the admin API. The `air` CLI can host the router and act as a client. [HTTP reference](SPEC.md#6-http-surface-server-project)
 - **Configuration reload.** An authenticated apply rereads the startup file. Validated defaults take effect for new requests during active inference. External engine additions and removals apply when router work is idle. Accepted streams and switches keep their starting configuration. [Reload contract](SPEC.md#77-runtime-configuration-reload)
+- **Opt-in SSE limits.** Configure a per-stream output buffer limit or a per-engine upstream idle timeout for HTTP completions. [Streaming contract](SPEC.md#6-http-surface-server-project)
 
 ### In progress
+
+- **Default SSE limits.** Enabling the limits by default requires representative upstream timing replay and stopped-reader qualification over HTTP/1.1 and HTTP/2. [Acceptance criteria](SPEC.md#141-robustness-bar-parity-review)
 
 - **Context fit at dispatch.** Carry the selected ticket’s capacity check through dispatch and finish switch restoration and deadline verification. [Serving gauge verification](backlog/tasks/task-68%20-%20Bind-the-serving-gauges-to-a-capability-epoch-so-a-stale-window-cannot-authorise-a-profile-the-engine-cannot-serve.md)
 - **Native model swaps on a shared host.** Offline DeepSeek/Qwen fixtures exercise both switch directions, readiness refusal and certified delivery to the current route. Production swaps still require an enforced residency partition and instance-bound admission through inference completion. [Native swap milestone](backlog/milestones/m-4%20-%20native-model-swap-through-pi-clm.md)

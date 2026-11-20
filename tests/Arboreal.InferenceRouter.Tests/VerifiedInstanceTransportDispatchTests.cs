@@ -8,6 +8,65 @@ public sealed partial class VerifiedInstanceTransportTests
     private static readonly byte[] VerifiedBody = """{"model":"model.canonical","prompt":"two  spaces"}"""u8.ToArray();
     private static readonly Uri VerifiedEndpoint = new("http://127.0.0.1:8123/prefix/v1?mode=exact");
 
+    [Fact(Timeout = 20_000)]
+    public async Task OptInIdleReleasesLogicalSlotWhileVerifiedIssuerRetirementIsHeld()
+    {
+        const string prefix = "data: valid\n\n";
+        await using var rig = new DispatchRig(streamIdleTimeoutMs: 300_000);
+        using var peer = await LoopbackPair.OpenAsync(rig.Token);
+        using var retiring = new HeldCheckout();
+        rig.Issuer.Channels.Enqueue(peer.Client.GetStream());
+        rig.Issuer.BeforeRetire = _ => retiring.HoldAsync(rig.Token);
+        rig.Publish(generation: 1);
+        var idle = new ReadinessDeadlineTests.ManualClock();
+        rig.Router.StreamIdleClockForTests = idle;
+        Assert.True(await rig.Engine.ProbeHealthOnceAsync(rig.Token));
+        var ticket = await rig.Router.EnqueueHttpAsync("verified-stream", new InferenceRequest
+        {
+            Model = "ALIAS",
+            Stream = true,
+            Body = "{\"model\":\"alias\",\"prompt\":\"two  spaces\",\"stream\":true}"u8.ToArray(),
+            Options = new RouterRequestOptions { RequiredContext = 32_768 },
+        }, rig.Token);
+        var released = rig.WaitForRelease();
+        rig.Start();
+        try
+        {
+            var remote = peer.Server.GetStream();
+            var bodyLength = "{\"model\":\"model.canonical\",\"prompt\":\"two  spaces\",\"stream\":true}"u8.Length;
+            await ReadAsync(remote, rig.Token, bodyLength);
+            await remote.WriteAsync("HTTP/1.1 200 Fixture\r\nContent-Length: 1000\r\nConnection: close\r\n\r\ndata: valid\n\n"u8.ToArray(),
+                rig.Token);
+            var channel = Assert.IsAssignableFrom<System.Threading.Channels.Channel<ReadOnlyMemory<byte>>>(
+                await ticket.StreamReady.WaitAsync(rig.Token));
+            var accepted = await channel.Reader.ReadAsync(rig.Token);
+            Assert.Equal(prefix, System.Text.Encoding.UTF8.GetString(accepted.Span));
+            while (idle.ActiveTimers == 0)
+            {
+                rig.Token.ThrowIfCancellationRequested();
+                await Task.Yield();
+            }
+            idle.AdvanceTo(300_001);
+            var error = await Assert.ThrowsAsync<RouterRequestException>(() => ticket.CompletionTask.WaitAsync(rig.Token));
+            Assert.Equal("engine_timeout", error.Code);
+            await retiring.Reached.WaitAsync(rig.Token);
+            while (rig.Router.GetStats().Engines.Single().Inflight != 0)
+            {
+                rig.Token.ThrowIfCancellationRequested();
+                await Task.Yield();
+            }
+            Assert.Equal(1, rig.Admission.PhysicalUses);
+            Assert.Equal(0, rig.Admission.Releases);
+            Assert.False(await channel.Reader.WaitToReadAsync(rig.Token));
+            retiring.Release();
+            await released.WaitAsync(rig.Token);
+            Assert.Equal(0, rig.Admission.PhysicalUses);
+            Assert.Equal(1, rig.Admission.Releases);
+            Assert.Equal(1, rig.Terminals(ticket));
+        }
+        finally { retiring.Release(); }
+    }
+
     [Theory(Timeout = 20_000)]
     [InlineData(null, false, "resident")]
     [InlineData(null, true, "wide")]
@@ -454,7 +513,8 @@ public sealed partial class VerifiedInstanceTransportTests
         private Task _dispatcher = Task.CompletedTask;
         private int _preparations;
 
-        internal DispatchRig(string? tier = null, bool switches = false, string runtimeKey = "fixture-key", Uri? runtimeEndpoint = null)
+        internal DispatchRig(string? tier = null, bool switches = false, string runtimeKey = "fixture-key",
+            Uri? runtimeEndpoint = null, int streamIdleTimeoutMs = 0)
         {
             var parsed = VerifiedDispatchTargetTests.Load(endpoint: VerifiedEndpoint.AbsoluteUri);
             Daemon = new FakeDockerDaemonHandler();
@@ -465,6 +525,7 @@ public sealed partial class VerifiedInstanceTransportTests
             var engine = new EngineDefinition
             {
                 Name = parsed.Name, Endpoint = runtimeEndpoint ?? VerifiedEndpoint, Remote = true, Catalog = parsed.Catalog, ApiKey = runtimeKey,
+                StreamIdleTimeoutMs = streamIdleTimeoutMs,
             };
             Admission = new ExactTicketAdmission(
                 static (_, _) => throw new InvalidOperationException("A verified route requires its prepared sender."),
