@@ -1774,7 +1774,8 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
             ReadinessMiss.ModelNotReported => SwitchReason.RefreshOmits,
             ReadinessMiss.WindowTooSmall => SwitchReason.WindowTooSmall,
             ReadinessMiss.RefreshUnanswered => SwitchReason.RefreshUnanswered,
-            ReadinessMiss.Error or ReadinessMiss.NativeObservation => SwitchReason.SwitchError,
+            ReadinessMiss.Error => SwitchReason.SwitchError,
+            ReadinessMiss.NativeObservation => SwitchReason.SwitchError,
             _ => SwitchReason.HealthTimeout,
         };
     }
