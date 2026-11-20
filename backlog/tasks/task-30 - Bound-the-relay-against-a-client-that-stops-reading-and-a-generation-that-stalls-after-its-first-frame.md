@@ -7,7 +7,7 @@ status: Preparing
 assignee:
   - '@gpt-6.2-sol-stream-backpressure'
 created_date: '2026-11-17T07:01:00Z'
-updated_date: '2026-11-20T01:34:00Z'
+updated_date: '2026-11-20T04:18:00Z'
 labels:
   - stream
   - transport
@@ -21,9 +21,7 @@ ordinal: 29000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Preparing the slow-reader and post-first-frame stall checks under the adopted limits. Decision 76 revises high-water handling to pause reads and applies the pending-write watchdog.
-
-Two halves of one gap, both on the response path after the first byte. (1) The stream channel is unbounded, so a caller that keeps the TCP connection open but stops reading does not stall the pump — it makes the router buffer that caller's tokens without limit while the engine slot stays held. (2) The response ceiling ends at the first frame on purpose, so an engine that sends one byte and then goes silent holds a slot and a connection indefinitely. Both are pre-existing, not new in v0.12.5: the v0.12.5 work made the first-frame boundary explicit, which is why they are now nameable. Decision 16 sets the limits and qualification gates.
+Stream Delivery is preparing the bounded relay against the landed frame-integrity and reload changes. Decision 76 pauses upstream at the byte limit and aborts a stalled pending write. Separate offline implementation and qualification from enabling the defaults, which still requires gap replay and a slow-reader soak.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

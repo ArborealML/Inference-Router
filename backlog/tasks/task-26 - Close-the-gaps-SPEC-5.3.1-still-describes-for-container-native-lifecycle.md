@@ -5,14 +5,14 @@ status: To Do
 assignee:
   - '@gpt-6.2-sol-lifecycle'
 created_date: '2026-11-17T02:54:00Z'
-updated_date: '2026-11-20T02:59:00Z'
+updated_date: '2026-11-20T04:18:00Z'
 labels:
   - engine
   - lifecycle
   - security
 milestone: m-4
 dependencies: []
-priority: medium
+priority: high
 ordinal: 26000
 ---
 
@@ -46,13 +46,7 @@ Validate configured TOML and JSON pins against daemon image ID, manifest digest 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-The [image and selector-free sample](https://github.com/ArborealML/Inference-Router/commit/c30ca3e) passed 128 focused tests, 419 full Release tests and server Native AOT. Four deliberate regressions failed as expected. Coordinator preflight verifies manifest and platform; direct launch checks the configured ID alone. Production activation requires the coordinated path.
-
-The [resource fixtures](https://github.com/ArborealML/Inference-Router/commit/bc63d48) passed 184 focused Release tests and server Native AOT. They verify Docker payloads for measured Qwen and script-derived Bonsai, native devices, NVIDIA requests, mounts, limits and network. Production activation awaits verified host authority, effective settings, serving-instance binding and uncertain-create recovery. External diff reviews dispatched. TASK-33 records live-proof permissions.
-
-For both RemoveStopped settings, inject timeout, disconnect and ambiguous daemon reply after possible issue. Verify exact-ID stopped or absent evidence as appropriate to the operation. Running, wrong-ID or unavailable evidence keeps the fence. Count attempts across re-entry. Transport failure alone proves neither absence nor pre-issue refusal.
-
-The [provider conflict fix](https://github.com/ArborealML/Inference-Router/pull/41) landed in v0.12.101 at ac13557. All 22 focused Release cases passed. Independent reviews covered the provider change and SPEC integration. [Post-merge CI](https://github.com/ArborealML/Inference-Router/actions/runs/44663962819) passed.
+Native image, resource, sample and exact-ID conflict evidence landed in [the image change](https://github.com/ArborealML/Inference-Router/commit/c30ca3e), [the resource change](https://github.com/ArborealML/Inference-Router/commit/bc63d48) and [PR #41](https://github.com/ArborealML/Inference-Router/pull/41). The stop conflict slice passed 22 focused Release cases and merge CI. Next: review uncertain stop reentry and readiness publication against current main; in parallel, plan target-specific failure quarantine and reset for reload. A transport failure alone cannot prove absence or authorize retry.
 <!-- SECTION:NOTES:END -->
 
 ## Comments

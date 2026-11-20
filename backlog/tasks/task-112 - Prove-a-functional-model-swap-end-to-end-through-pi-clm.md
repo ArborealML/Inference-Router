@@ -5,7 +5,7 @@ status: Waiting
 assignee:
   - '@gpt-6.2-sol-scheduling'
 created_date: '2026-11-18T18:15:00Z'
-updated_date: '2026-11-20T00:52:00Z'
+updated_date: '2026-11-20T04:18:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -23,7 +23,7 @@ ordinal: 110000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Waiting for independent review of the amended offline Pi client plan on 0b161d3. The original review returned no verdict and its continuation was unavailable. Delivery submitted the same amendment once more; the verdict wakes Scheduling. Local Git is the source of record for this temporary launcher. Implementation and deployment have separate gates; the live Pi swap criteria remain open.
+Wake: TASK-110 and TASK-118 supply authenticated host enrollment and verified serving dispatch for a live DeepSeek/Qwen swap. The local-only Pi launcher already passed the isolated two-turn streaming test with history preserved. The deployed launcher and both live criteria remain open.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
