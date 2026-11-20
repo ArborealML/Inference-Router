@@ -1809,10 +1809,12 @@ Host exclusion, administrator credential isolation, directory durability, split 
 an authenticated production head require separate proof.
 
 **Offline coordinator receipt path.** Both switch wrappers require a positively commissioned legacy
-slot before legacy settlement, recovery or epoch allocation. The enrolled receipt entry takes its
-scope from a separate trusted catalog. Restored local bytes cannot change the selected authority
-root. Unknown, inconsistent or partly installed scope refuses closed. An enrolled grant without a
-bound operation stays fenced and cannot allocate a second epoch.
+slot before legacy settlement, recovery or epoch allocation. The legacy reservation frame must carry
+root `Epoch`, `Owner` and `Pending` fields, including explicit nulls when applicable. The reader
+refuses an enrolled envelope or incomplete state before legacy epoch allocation. The enrolled
+receipt entry takes its scope from a separate trusted catalog. Restored local bytes cannot change
+the selected authority root. Unknown, inconsistent or partly installed scope refuses closed. An
+enrolled grant without a bound operation stays fenced and cannot allocate a second epoch.
 
 One coordinator operation binds the canonical intent and exact approved create payload. Its stable
 lock and installed reservation record are separate. Under the modeled issue fence, the worker rereads

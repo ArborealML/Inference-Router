@@ -16,7 +16,9 @@ internal sealed record HostMutation(
     public static bool IsPlanDigest(string? value) => value is { Length: 64 } && value.All(char.IsAsciiHexDigit);
 }
 
-internal sealed record HostReservationState(long Epoch, string? Owner, HostMutation? Pending,
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+internal sealed record HostReservationState([property: JsonRequired] long Epoch, [property: JsonRequired] string? Owner,
+    [property: JsonRequired] HostMutation? Pending,
     HostMutationPhase Phase = HostMutationPhase.None, string? LaunchedContainerId = null);
 
 [JsonSerializable(typeof(HostReservationState))]

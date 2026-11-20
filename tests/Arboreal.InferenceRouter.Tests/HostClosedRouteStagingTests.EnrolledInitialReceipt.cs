@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using System.Text.Json;
 using Arboreal.InferenceRouter.Lifecycle;
 
@@ -204,6 +205,40 @@ public sealed partial class HostClosedRouteStagingTests
     [Theory(Timeout = 30_000)]
     [InlineData(false)]
     [InlineData(true)]
+    public async Task EnrolledInitialReceiptRejectsWrongLegacyFrame(bool enrolledFrame)
+    {
+        HostReservation.ProvisionNew(ReservationPath);
+        Assert.True(HostReservationScope.Read(ReservationPath).IsLegacy);
+        byte[] frame;
+        if (enrolledFrame)
+        {
+            var source = Path.Combine(_directory.FullName, "enrolled-source");
+            var scope = HostReservation.ProvisionEnrolled(source, ReceiptEnrollment);
+            Assert.Equal(scope, HostReservation.ReadEnrolled(scope).Record.Scope);
+            frame = File.ReadAllBytes(source);
+        }
+        else
+        {
+            var body = "{}"u8.ToArray();
+            frame = [.. SHA256.HashData(body), .. body];
+        }
+        File.WriteAllBytes(ReservationPath, frame);
+
+        var legacy = ReceiptCoordinator(null, ReceiptStaging());
+        var target = Target("b");
+        var (plain, staged) = ReceiptWrapperPublications(target);
+        var result = await legacy.SwitchAsync(target, CancellationToken.None, stagedPublicationForTests: plain);
+        Assert.Equal("host_reservation_unavailable", result.Reason);
+        Assert.Equal(frame, File.ReadAllBytes(ReservationPath));
+        var stagedResult = await legacy.SwitchStagedAsync(target, staged, CancellationToken.None);
+        Assert.Equal("host_reservation_unavailable", stagedResult.Result.Reason);
+        Assert.False(stagedResult.Opened);
+        Assert.Equal(frame, File.ReadAllBytes(ReservationPath));
+    }
+
+    [Theory(Timeout = 30_000)]
+    [InlineData(false)]
+    [InlineData(true)]
     public async Task EnrolledInitialReceiptUsesCurrentTrustedRootAfterLocalRestore(bool legacyRestore)
     {
         var pair = ProjectReceiptPair();
@@ -298,18 +333,24 @@ public sealed partial class HostClosedRouteStagingTests
         var legacy = ReceiptCoordinator(null, staging);
         foreach (var target in new[] { pair.DeepSeek.Target, pair.Qwen.Target })
         {
-            var plain = new HostStagedPublication(Guid.NewGuid(), _ => throw UnexpectedServing(), _ => throw UnexpectedServing());
+            var (plain, staged) = ReceiptWrapperPublications(target);
             Assert.False((await legacy.SwitchAsync(target, CancellationToken.None, stagedPublicationForTests: plain)).Succeeded);
-            var attempt = new SwitchAttemptId(Guid.NewGuid(), 1);
-            var key = new SwitchSampleKey(attempt.RuntimeEpoch, DockerLifecycleProvider.ProviderKind, target.Model,
-                target.EffectiveProfile!, 1, SwitchObservationClass.FreshContainer, null);
-            var staged = new HostStagedDeadlinePublication(Guid.NewGuid(), attempt, key, TimeProvider.System,
-                (_, _) => throw UnexpectedServing(), (_, _, _, _) => throw UnexpectedServing(), _ => throw UnexpectedServing(),
-                (_, _, _) => throw UnexpectedServing(), () => throw UnexpectedServing());
             var result = await legacy.SwitchStagedAsync(target, staged, CancellationToken.None);
             Assert.False(result.Result.Succeeded);
             Assert.False(result.Opened);
         }
+    }
+
+    private static (HostStagedPublication Plain, HostStagedDeadlinePublication Staged) ReceiptWrapperPublications(LifecycleTarget target)
+    {
+        var plain = new HostStagedPublication(Guid.NewGuid(), _ => throw UnexpectedServing(), _ => throw UnexpectedServing());
+        var attempt = new SwitchAttemptId(Guid.NewGuid(), 1);
+        var key = new SwitchSampleKey(attempt.RuntimeEpoch, DockerLifecycleProvider.ProviderKind, target.Model,
+            target.EffectiveProfile!, 1, SwitchObservationClass.FreshContainer, null);
+        var staged = new HostStagedDeadlinePublication(Guid.NewGuid(), attempt, key, TimeProvider.System,
+            (_, _) => throw UnexpectedServing(), (_, _, _, _) => throw UnexpectedServing(), _ => throw UnexpectedServing(),
+            (_, _, _) => throw UnexpectedServing(), () => throw UnexpectedServing());
+        return (plain, staged);
     }
 
     private static async Task AssertReceiptIngressClosedAsync(HostClosedRouteStaging staging, HostReservationScope scope, HostInitialReceipt receipt)
