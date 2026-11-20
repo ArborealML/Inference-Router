@@ -58,9 +58,12 @@ internal interface IHostLifecycleProvider
 
 /// <summary>Serializes one host transaction through readiness and leaves uncertain effects recorded
 /// for the next holder. Every cooperating launcher uses the same local reservation file.</summary>
-internal sealed class HostLifecycleCoordinator(string reservationPath, IHostLifecycleProvider provider,
-    HostClosedRouteStaging? stagingForTests = null)
+internal sealed partial class HostLifecycleCoordinator(string reservationPath, IHostLifecycleProvider provider,
+    HostClosedRouteStaging? stagingForTests = null, IHostInitialLaunchAuthority? initialLaunch = null)
 {
+    private readonly string _reservationPath = reservationPath;
+    private readonly IHostInitialLaunchAuthority? _initialLaunch = initialLaunch;
+
     public async ValueTask<LifecycleResult> SwitchAsync(
         LifecycleTarget target, CancellationToken ct, HostSwitchPublication? publication = null,
         HostStagedPublication? stagedPublicationForTests = null)
@@ -117,7 +120,9 @@ internal sealed class HostLifecycleCoordinator(string reservationPath, IHostLife
     private async ValueTask<LifecycleResult> SwitchUnderReservationAsync(LifecycleTarget target, HostSwitchPublication? publication,
         HostClosedRouteStaging.Attempt? staged, CancellationToken ct)
     {
-        using var reservation = HostReservation.Open(reservationPath);
+        // Both switch wrappers enter here. Only a positively commissioned legacy slot can
+        // settle, reconcile or grant on the switch path, regardless of its local phase.
+        using var reservation = HostReservation.Open(_reservationPath);
         if (reservation.State.Pending is { } pending)
         {
             if (staged is not null)
@@ -247,7 +252,7 @@ internal sealed class HostLifecycleCoordinator(string reservationPath, IHostLife
         {
             var observer = provider;
             var expected = new HostResident(launch.Engine, containerId);
-            return await staged.VerifyAndPublishAsync(reservationPath, reservation.State, launch, containerId,
+            return await staged.VerifyAndPublishAsync(_reservationPath, reservation.State, launch, containerId,
                 token => IsCurrentInstanceAsync(observer, expected, token), ct).ConfigureAwait(false);
         }
 
@@ -256,7 +261,7 @@ internal sealed class HostLifecycleCoordinator(string reservationPath, IHostLife
 
         ct.ThrowIfCancellationRequested();
         if (staged is not null)
-            return staged.StageAndComplete(reservationPath, reservation.State, launch, containerId, ct) ? ready : PublicationRefusal();
+            return staged.StageAndComplete(_reservationPath, reservation.State, launch, containerId, ct) ? ready : PublicationRefusal();
 
         reservation.Settle(launch);
         if (publication is null) return ready;
