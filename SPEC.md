@@ -354,6 +354,10 @@ daemon transaction per engine. 137 tests green.
   not proven.
 - v0.12.110 — add internal native Docker exec and finite log capture with bounded non-TTY framing,
   exact-ID ownership and independently inspected exec exit (§5.3.1).
+- v0.12.109 — apply the counted ingress body cap to `POST /admin/threads` and `POST /admin/switch`.
+  Both use the existing lowercase 413 before JSON parsing or side effects. The admin wire tests cover
+  declared and chunked overflow, valid requests at the cap and malformed JSON. §10 explains why the ingress
+  cap supplies no serialized ticket snapshot ceiling and records the full identities returned by that surface.
 - v0.12.108 — produce and recover an offline supervised initial-launch receipt for the checked
   DeepSeek/Qwen pair. Anchor full commissioning through issue and require independent wire and
   effective-state evidence before recording an applied launch with ingress closed (§5.3.1).
@@ -3347,10 +3351,14 @@ records, and a filter written literally as another thread's cut form selects tha
 all. On a surface that is unauthenticated and loopback-or-behind-a-proxy (§6.1) that is an operator looking at the wrong thread,
 never a way in — and it never hides the right one. Isolation on the feed is the `ticket` filter, and that one stays **exact**.
 
-What the reporting caps deliberately do **not** cut is the admin ticket snapshot, which reports `Id`, `ThreadId` and `Model`
-**whole**: an operator who reads a model id off a response retries with it, and a cut id is a value that looks valid and matches
-nothing. That response's size is bounded by `max_request_body_bytes` rather than by the reporting caps; the bounded surfaces are
-the feed excerpt and error prose, and a size policy for admin responses generally is a separate question.
+The admin ticket snapshot returns the router-generated `Id` and the full `ThreadId`, `Model` and, when assigned,
+`Engine`. The ticket ID remains the exact correlation key. For HTTP inference, `ThreadId` may come from the
+`X-Inference-Thread` header, independently of the request-body limit. The model comes from the requested model,
+thread affinity or configured default after canonical resolution. A catalog alias can resolve to a different full
+name, and library callers can supply identities outside HTTP. The engine name comes from configuration. The
+serialized snapshot includes the full identities and JSON escaping, so `max_request_body_bytes` limits ingress
+bodies and supplies no snapshot byte ceiling. The feed still uses reporting excerpts and the snapshot's `Error`
+keeps the terminal reason cap.
 
 - `thread.registered`, `thread.priority_changed`
 - `request.enqueued {thread, ticket, model, priority, promptChars}`
