@@ -1,8 +1,10 @@
+using System.IO.Pipelines;
 using System.Net;
 using System.Text;
 using System.Threading.Channels;
 using Arboreal.InferenceRouter.Server;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Arboreal.InferenceRouter.Tests;
 
@@ -13,19 +15,28 @@ public class StreamHeartbeatTests
     private static readonly double[] ExpectedReceiveSeconds = [0d, 4d, 8d, 12d, 16d];
 
     [Fact]
-    public async Task OneCadenceSpansAdmissionAndTheFirstByteWithoutSplittingAnUpstreamFrame()
+    public async Task OneCadenceSpansAdmissionAndPartialFirstBlockUntilAnUpstreamCommentIsComplete()
     {
+        var comment = ": upstream comment\r\n\r\n"u8.ToArray();
         var payload = "data: {\"delta\":\"🌲\"}\r\n\r\ndata: [DONE]\r\n\r\n"u8.ToArray();
-        var split = payload.AsSpan().IndexOf("🌲"u8) + 1;
-        using var upstream = new HeldBody(payload.AsMemory(0, split), payload.AsMemory(split));
+        var split = comment.Length - 2;
+        using var upstream = new HeldBody(comment.AsMemory(0, split), comment.AsMemory(split), tail: payload);
         using var fake = new GatedEngine(upstream);
         var clock = new HeartbeatClock();
-        var (app, _, port) = await WireHarness.StartAsync(fake: fake, streamClock: clock);
+        var responseClock = new HeartbeatClock();
+        var (app, _, port) = await WireHarness.StartAsync(fake: fake, streamClock: clock, responseTimeoutMs: 4_000);
         await using var server = app;
+        var router = app.Services.GetRequiredService<RouterCore>();
+        router.ResponseTimeoutClockForTests = responseClock;
+        var firstToken = new TaskCompletionSource<RouterEvent>(TaskCreationOptions.RunContinuationsAsynchronously);
+        router.Events.Subscribe(e =>
+        {
+            if (e.Kind == "request.streaming_first_token") firstToken.TrySetResult(e);
+        });
         using var http = Client(port);
         using var bound = new CancellationTokenSource(TimeSpan.FromSeconds(15));
         var ct = bound.Token;
-        var (_, response) = await WireHarness.StartStreamAsync(http, "cadence", Request, ct);
+        var (ticketId, response) = await WireHarness.StartStreamAsync(http, "cadence", Request, ct);
         using var res = response;
         await using var body = await res.Content.ReadAsStreamAsync(ct);
 
@@ -46,6 +57,7 @@ public class StreamHeartbeatTests
             clock.Reach(TimeSpan.FromSeconds(10));
             fake.ModelsReady.TrySetResult();
             await upstream.FirstRead.Task.WaitAsync(ct); // admission installed the channel
+            var responseDeadline = await responseClock.NextTimerAsync(ct);
             Assert.False(carriedTick.Disposed.Task.IsCompleted);
 
             clock.Reach(carriedTick.Due, carriedTick);
@@ -59,19 +71,30 @@ public class StreamHeartbeatTests
             var pending = await clock.NextTimerAsync(ct);
             clock.Reach(TimeSpan.FromSeconds(18));
             upstream.AllowFirst.TrySetResult();
-            var prefix = new byte[split];
-            await body.ReadExactlyAsync(prefix, ct);
-            Assert.Equal(payload[..split], prefix);
             await upstream.SecondRead.Task.WaitAsync(ct);
-            await pending.Disposed.Task.WaitAsync(ct);
+            Assert.Equal(ticketId, (await firstToken.Task.WaitAsync(ct)).TicketId);
+            await responseDeadline.Disposed.Task.WaitAsync(ct);
+            responseClock.Reach(responseDeadline.Due + TimeSpan.FromSeconds(1), responseDeadline);
 
-            // Split inside a UTF-8 codepoint and hold the second part beyond two deadlines.
-            clock.Reach(TimeSpan.FromSeconds(30), pending);
+            // The raw first read spent the response deadline. Its incomplete block stays private,
+            // so the HTTP stream still sends the same next comment at the old time.
+            clock.Reach(pending.Due, pending);
+            Assert.Equal(TimeSpan.FromSeconds(20), await ReadCommentAsync(body, 5, clock, ct));
+            var finalTick = await clock.NextTimerAsync(ct);
             upstream.AllowSecond.TrySetResult();
+            await upstream.ThirdRead.Task.WaitAsync(ct);
+            var published = new byte[comment.Length];
+            await body.ReadExactlyAsync(published, ct);
+            Assert.Equal(comment, published);
+            await AssertTimerStoppedAsync(clock, finalTick, ct);
+
+            // The comment-only block has already stopped AIR comments while the next block waits.
+            upstream.AllowThird.TrySetResult();
             using var tail = new MemoryStream();
             await body.CopyToAsync(tail, ct);
-            Assert.Equal(payload[split..], tail.ToArray());
+            Assert.Equal(payload, tail.ToArray());
             Assert.False(clock.HasUnreadTimer);
+            Assert.Single(router.Events.Replay(0), e => e.TicketId == ticketId && e.Kind == "request.streaming_first_token");
         }
         finally
         {
@@ -180,6 +203,7 @@ public class StreamHeartbeatTests
     [Theory]
     [InlineData("admission")]
     [InlineData("data")]
+    [InlineData("comment")]
     [InlineData("terminal")]
     [InlineData("terminal before admission")]
     [InlineData("buffered failure")]
@@ -187,9 +211,12 @@ public class StreamHeartbeatTests
     public async Task ReadyDataOrTerminalTakesPrecedenceAtTheHeartbeatDeadline(string transition)
     {
         using var bound = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-        var ctx = new DefaultHttpContext { RequestAborted = bound.Token };
-        using var bytes = new MemoryStream();
-        ctx.Response.Body = bytes;
+        using var caller = CancellationTokenSource.CreateLinkedTokenSource(bound.Token);
+        var ctx = new DefaultHttpContext { RequestAborted = caller.Token };
+        var output = new Pipe();
+        await using var sink = output.Writer.AsStream(leaveOpen: true);
+        await using var source = output.Reader.AsStream();
+        ctx.Response.Body = sink;
         var ticket = new RouterTicket("ticket", "thread", "test-model", DateTimeOffset.UnixEpoch);
         var channel = Channel.CreateUnbounded<ReadOnlyMemory<byte>>(new UnboundedChannelOptions
         {
@@ -201,6 +228,7 @@ public class StreamHeartbeatTests
         var supplied = transition switch
         {
             "admission" or "data" => "data: [DONE]\n\n",
+            "comment" => ": upstream comment\n\n",
             "buffered failure" => "data: partial\n\n",
             _ => "",
         };
@@ -210,9 +238,10 @@ public class StreamHeartbeatTests
             AtFirstDeadline = () =>
             {
                 // Both signals become available before the relay can observe the completed timer.
-                if (transition == "client abort") bound.Cancel();
+                if (transition == "client abort") caller.Cancel();
                 if (transition == "admission") ticket.StreamChannel = channel;
                 if (supplied.Length > 0) Assert.True(channel.Writer.TryWrite(Encoding.UTF8.GetBytes(supplied)));
+                if (transition == "comment") return; // Let the client observe the comment with the ticket still open.
                 if (failed)
                 {
                     ticket.ErrorCode = "engine_unreachable";
@@ -223,11 +252,22 @@ public class StreamHeartbeatTests
             },
         };
 
-        await ServerApp.StreamTicketAsync(ctx, ticket, clock);
-        var output = Encoding.UTF8.GetString(bytes.ToArray());
+        var relay = ServerApp.StreamTicketAsync(ctx, ticket, clock);
         var expected = ": [router keepalive seq=0 status=\"queued model=test-model\"]\n\n" + supplied;
         if (failed && transition != "client abort") expected += ErrorFrame("engine_unreachable", EarlyFailure);
-        Assert.Equal(expected, output);
+        using var received = new MemoryStream();
+        if (transition == "comment")
+        {
+            var prefix = new byte[Encoding.UTF8.GetByteCount(expected)];
+            await source.ReadExactlyAsync(prefix, bound.Token);
+            received.Write(prefix);
+            ticket.State = TicketState.Completed;
+            Assert.True(channel.Writer.TryComplete());
+        }
+        await relay.WaitAsync(bound.Token);
+        await output.Writer.CompleteAsync();
+        await source.CopyToAsync(received, bound.Token);
+        Assert.Equal(expected, Encoding.UTF8.GetString(received.ToArray()));
     }
 
     private static string ErrorFrame(string code, string message) =>
@@ -280,19 +320,24 @@ public class StreamHeartbeatTests
         }
     }
 
-    private sealed class HeldBody(ReadOnlyMemory<byte> prefix = default, ReadOnlyMemory<byte> suffix = default, bool fail = false) : Stream
+    private sealed class HeldBody(
+        ReadOnlyMemory<byte> prefix = default, ReadOnlyMemory<byte> suffix = default, bool fail = false,
+        ReadOnlyMemory<byte>? tail = null) : Stream
     {
         private int _read;
         public TaskCompletionSource FirstRead { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource SecondRead { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource ThirdRead { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource AllowFirst { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource AllowSecond { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource AllowThird { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource FirstReadCancelled { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         public void Release()
         {
             AllowFirst.TrySetResult();
             AllowSecond.TrySetResult();
+            AllowThird.TrySetResult();
         }
 
         public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
@@ -315,6 +360,11 @@ public class StreamHeartbeatTests
                     await AllowSecond.Task.WaitAsync(cancellationToken);
                     suffix.CopyTo(buffer);
                     return suffix.Length;
+                case 2 when tail is { } rest:
+                    ThirdRead.TrySetResult();
+                    await AllowThird.Task.WaitAsync(cancellationToken);
+                    rest.CopyTo(buffer);
+                    return rest.Length;
                 default:
                     return 0;
             }

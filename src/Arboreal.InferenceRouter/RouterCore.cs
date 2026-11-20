@@ -1099,8 +1099,10 @@ public sealed class RouterCore : IInferenceRouter
         if (candidate.Request.Stream)
         {
             var channel = ticket.StreamChannel!;
-            await PumpStreamAsync(engine, ticket, res.Content, channel, gate, ct).ConfigureAwait(false);
-            Complete(ticket);
+            var error = await PumpStreamAsync(engine, ticket, res.Content, channel, gate, ct).ConfigureAwait(false);
+            // The ticket's terminal transition closes the channel after the safe prefix is queued.
+            if (error is null) Complete(ticket);
+            else Fail(ticket, "engine_error", error);
         }
         else
         {
@@ -1127,18 +1129,19 @@ public sealed class RouterCore : IInferenceRouter
         public void Dispose() => _cts.Dispose();
     }
 
-    private async Task PumpStreamAsync(EngineRuntime engine, RouterTicket ticket, HttpContent content,
+    private async Task<string?> PumpStreamAsync(EngineRuntime engine, RouterTicket ticket, HttpContent content,
         Channel<ReadOnlyMemory<byte>> channel, ResponseGate? gate, CancellationToken ct)
     {
         var firstToken = false;
         var sw = System.Diagnostics.Stopwatch.StartNew();
-        // Only the first read is bounded: a stream that has begun is relayed to its end whatever the
-        // engine's ceiling is, because cutting a generation mid-token is worse than a slow one.
+        // The response ceiling applies to the first raw byte. The first complete SSE block can
+        // arrive later, after the gate is disarmed, while the HTTP relay still sends keepalives.
         using var firstReadLink = gate is null
             ? null
             : CancellationTokenSource.CreateLinkedTokenSource(ct, gate.Token);
         var firstReadCt = firstReadLink?.Token ?? ct;
         var buffer = new byte[16384];
+        var blocks = new SseBlockBuffer();
         // Stream acquisition is inside the ceiling too: with ResponseHeadersRead the content object exists
         // before any byte does, and a handler that builds the stream lazily must not be able to stall the
         // request before the first gated read happens.
@@ -1156,7 +1159,8 @@ public sealed class RouterCore : IInferenceRouter
             {
                 // A cancelled first read is only the caller going away if the gate did not trip.
                 if (!firstToken && gate is not null && gate.Tripped) throw;
-                break;
+                ct.ThrowIfCancellationRequested();
+                return null;
             }
             if (read == 0) break;
             if (!firstToken)
@@ -1172,17 +1176,19 @@ public sealed class RouterCore : IInferenceRouter
                     Value = sw.ElapsedMilliseconds,
                 });
             }
-            var chunk = new byte[read];
-            buffer.AsSpan(0, read).CopyTo(chunk);
-            await channel.Writer.WriteAsync(chunk, ct).ConfigureAwait(false);
+            var (complete, limitExceeded) = blocks.Append(buffer.AsSpan(0, read));
+            if (!complete.IsEmpty)
+                await channel.Writer.WriteAsync(complete, ct).ConfigureAwait(false);
+            if (limitExceeded)
+            {
+                ct.ThrowIfCancellationRequested();
+                return "upstream SSE block exceeded 1 MiB before its blank delimiter";
+            }
         }
 
-        // Reaching the end of the loop because the caller went away is not the same as reaching
-        // the end of the stream: a truncated stream must not be counted as a finished one.
+        // Cancellation takes precedence over classifying an upstream EOF.
         ct.ThrowIfCancellationRequested();
-        // The channel is *not* closed here. The terminal transition (Complete / Fail) owns it, so the
-        // relay is never let go before the ticket knows its own outcome: close the channel first and the
-        // HTTP side reports a stream that merely stopped instead of the failure that stopped it.
+        return blocks.HasIncompleteBlock ? "upstream SSE stream ended before a blank delimiter" : null;
     }
 
     private void Complete(RouterTicket ticket, byte[]? body = null)
