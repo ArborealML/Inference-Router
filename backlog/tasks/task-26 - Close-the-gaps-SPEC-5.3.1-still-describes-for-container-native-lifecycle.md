@@ -1,11 +1,11 @@
 ---
 id: TASK-26
 title: Close the gaps SPEC 5.3.1 still describes for container-native lifecycle
-status: In Progress
+status: Waiting
 assignee:
-  - '@gpt-6.2-sol-lifecycle'
+  - '@gpt-6.2-sol-release'
 created_date: '2026-11-17T02:54:00Z'
-updated_date: '2026-11-20T07:23:00Z'
+updated_date: '2026-11-20T07:45:00Z'
 labels:
   - engine
   - lifecycle
@@ -19,7 +19,7 @@ ordinal: 26000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Lifecycle is implementing offline recovery for an exact incumbent container stop or removal issued before runtime readiness is committed. An uncertain outcome keeps the fence in place. Independent create/start and authority after publication remain open. Selective native reset waits for this change to land and for both workers to recheck the shared completion code.
+Wake: independent commit review of exact incumbent stop/removal recovery in [PR #47](https://github.com/ArborealML/Inference-Router/pull/47). Delivery owns disposition; all three hosted checks passed on 3f7b2e7. Selective native reset waits for this change to land and for the shared switch-completion code to be rechecked. Independent create/start and post-publication ownership remain open.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -49,6 +49,8 @@ Use the validated full container ID consistently across issue, history, readback
 Native image, resource, sample and exact-ID conflict evidence landed in [the image change](https://github.com/ArborealML/Inference-Router/commit/c30ca3e), [the resource change](https://github.com/ArborealML/Inference-Router/commit/bc63d48) and [PR #41](https://github.com/ArborealML/Inference-Router/pull/41). The stop conflict slice passed 22 focused Release cases and merge CI. Next: review uncertain stop reentry and readiness publication against current main; in parallel, plan target-specific failure quarantine and reset for reload. A transport failure alone cannot prove absence or authorize retry.
 
 Decision 77 permits exact operator reset with explicitly enabled credential reuse and a current process/generation precondition. The reset changes only the matching scheduler latch.
+
+Candidate 3f7b2e7 on 0bb3f7b passed 171 focused Release cases with zero skips. The tests used offline fixtures. The stop/removal criterion remains open pending review and integration.
 <!-- SECTION:NOTES:END -->
 
 ## Comments
