@@ -1,6 +1,6 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.102)
+Status: draft, continuously revised (v0.12.105)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
@@ -352,6 +352,9 @@ daemon transaction per engine. 137 tests green.
   that answers no `upload_url`, an upload that dies or answers no asset id, an asset name listed twice on
   the release, and a tag that moves after the first resolve. No tag has run the gate: still configured,
   not proven.
+- v0.12.105 — bound the upstream non-2xx diagnostic read to the first 256 body bytes
+  or earlier EOF. Keep the existing error excerpt and apply the response deadline to that
+  read when the gate is armed (§5.5, §10).
 - v0.12.102 — reload validated defaults and, at router-wide work idle, external engine membership
   through an authenticated file-backed apply. Keep admitted streams and switches on their starting
   configuration, keep detached inference counted through cleanup, and preserve the current
@@ -2465,8 +2468,9 @@ Temporary capacity loss parks the ticket. A definitive refusal settles once with
   selector could not serve that model.
   Per-engine `response_timeout_ms` (default `600000`, `0` disables) caps how long an engine may sit on a
   request it already accepted. For a stream the ceiling ends at the **first positive raw read**,
-  which also records `request.streaming_first_token`. For a non-streaming request and for an upstream
-  error body it stays armed through the **body**. Headers followed by silence time out
+  which also records `request.streaming_first_token`. When armed, the gate covers the full
+  successful non-streaming body or the capped excerpt from an upstream non-2xx response (§10).
+  Headers followed by silence time out
   (`HeadersWithoutABodyAreNotAnAnswerSoTheCeilingStillEndsTheRequest`). A stream whose engine sends
   no bytes before the ceiling fails **in band** with one `engine_timeout` error frame and `[DONE]` on a response whose
   `200` was already committed — because there is no status left to change (§6, and
@@ -3205,9 +3209,11 @@ producer — it writes its own sentences, and interpolates a model id that came 
 the engine's emitter; and where a ticket becomes **terminal**, which is the one place a failure turns into `ticket.Error`, the
 exception the HTTP layer serialises, and the error frame of a stream that has already committed its `200`. The error writer caps
 what it serialises as well, because the sentences it writes quote values a caller chose: a rejected profile name, an unknown
-ticket id. The promise is about text **before it is stored or published**, not a denial that an over-long sentence ever exists —
-an upstream engine's words arrive already long, whether as a provider's exception text or as an error body read at 256 bytes
-where the failure is built — and the router bounds them instead of pretending they did not arrive. The feed filter cuts its own values the same way, so a caller whose thread
+ticket id. These reporting caps apply before text is stored or published, including to provider exception messages.
+For an upstream non-2xx response the router requests at most the first **256 bytes** from the content stream
+and decodes only the returned bytes as UTF-8. It stops at that ceiling or an earlier EOF. An armed response
+gate covers stream acquisition and the excerpt read. HTTP handler or socket read-ahead and response disposal
+draining remain governed by the transport. The feed filter cuts its own values the same way, so a caller whose thread
 id is longer than the reporting length still finds their records: reporting is bounded, lookup is not. What that buys is not
 isolation. The `thread` and `engine` filters are **excerpt matching**: two filter values that share a head select the same
 records, and a filter written literally as another thread's cut form selects that thread's records with no collision involved at
