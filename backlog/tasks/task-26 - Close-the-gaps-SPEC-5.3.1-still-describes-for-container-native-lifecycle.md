@@ -1,11 +1,11 @@
 ---
 id: TASK-26
 title: Close the gaps SPEC 5.3.1 still describes for container-native lifecycle
-status: In Progress
+status: Waiting
 assignee:
-  - '@gpt-6.2-sol-lifecycle'
+  - '@gpt-6.2-sol-release'
 created_date: '2026-11-17T02:54:00Z'
-updated_date: '2026-11-20T18:23:00Z'
+updated_date: '2026-11-20T18:45:00Z'
 labels:
   - engine
   - lifecycle
@@ -19,7 +19,7 @@ ordinal: 26000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Lifecycle owns criterion 3, Docker exec output and container logs through the internal provider and fake daemon. The approved plan applies on 0d62dc6. [Selective reset](https://github.com/ArborealML/Inference-Router/pull/48) is landed. Daemon change detection, Windows transport and uncertain-start reconciliation remain open.
+Wake: independent reviews and integrated qualification for Docker exec and log handling on landed SPEC .109. Candidate 238682c passed 51 focused Release tests with zero skips, including stream disposal checks. Delivery owns integration. Lifecycle is released to prepare the separate daemon change-detection criterion against existing evidence. [Selective reset](https://github.com/ArborealML/Inference-Router/pull/48) remains landed.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
