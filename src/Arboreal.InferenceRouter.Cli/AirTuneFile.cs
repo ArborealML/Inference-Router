@@ -59,25 +59,27 @@ internal static partial class AirTuneFile
 
     private static SafeFileHandle? VerifyProcDirectory(SafeFileHandle process, SafeFileHandle status, FileIdentity identity)
     {
-        var directory = OpenChildPath(process, "fd", PathOnly | CloseOnExec | DirectoryOnly);
-        if (directory is null)
-            return null;
-
         // Reopen the kernel-provided status inode with the production flags. No bytes are read.
+        SafeFileHandle? directory = null;
         try
         {
-            using var data = Reopen(directory, status, identity);
-            if (data is not null)
-                return directory;
-        }
-        catch
-        {
-            directory.Dispose();
-            throw;
-        }
+            directory = OpenChildPath(process, "fd", PathOnly | CloseOnExec | DirectoryOnly);
+            if (directory is null)
+                return null;
+            using (var data = Reopen(directory, status, identity))
+            {
+                if (data is null)
+                    return null;
+            }
 
-        directory.Dispose();
-        return null;
+            var verified = directory;
+            directory = null;
+            return verified;
+        }
+        finally
+        {
+            directory?.Dispose();
+        }
     }
 
     internal static SafeFileHandle? PinPath(string path) =>
@@ -147,20 +149,21 @@ internal static partial class AirTuneFile
         if (fd < 0)
             return null;
 
-        var data = new SafeFileHandle(fd, ownsHandle: true);
+        SafeFileHandle? data = null;
         try
         {
-            if (InspectRegular(data, ownProcStatus: expected.FileSystem == ProcFs) == expected)
-                return data;
-        }
-        catch
-        {
-            data.Dispose();
-            throw;
-        }
+            data = new SafeFileHandle(fd, ownsHandle: true);
+            if (InspectRegular(data, ownProcStatus: expected.FileSystem == ProcFs) != expected)
+                return null;
 
-        data.Dispose();
-        return null;
+            var verified = data;
+            data = null;
+            return verified;
+        }
+        finally
+        {
+            data?.Dispose();
+        }
     }
 
     internal static byte[]? Read(SafeFileHandle procDescriptors, string path)
@@ -176,7 +179,7 @@ internal static partial class AirTuneFile
         {
             using var stream = new FileStream(data, FileAccess.Read, bufferSize: 1);
             var buffer = new byte[AirTuneRecord.MaxBytes + 1];
-            var count = stream.ReadAtLeast(buffer, buffer.Length, throwIfEndOfStream: false);
+            var count = stream.ReadAtLeast(buffer, buffer.Length, throwOnEndOfStream: false);
             return buffer[..count];
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException)
