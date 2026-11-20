@@ -95,7 +95,6 @@ public sealed partial class RouterCore
             finally
             {
                 engine.EndForward();
-                engine.RecordPrefix(candidate.Messages());
             }
         }
         catch (Exception error) when (!ticket.IsTerminal && ticket.HttpDelivery?.Sealed.IsCompletedSuccessfully != true)
@@ -104,7 +103,8 @@ public sealed partial class RouterCore
         }
         finally
         {
-            await AbortUnstartedInvocationAsync(ticket, invocation).ConfigureAwait(false);
+            try { engine.RecordPrefix(candidate.Messages()); }
+            finally { await AbortUnstartedInvocationAsync(ticket, invocation).ConfigureAwait(false); }
         }
 
         async Task ConsumeAsync(HttpResponseMessage response, ResponseGate? gate)

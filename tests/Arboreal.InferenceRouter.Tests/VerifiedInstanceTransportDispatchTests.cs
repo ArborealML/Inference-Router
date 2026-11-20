@@ -12,6 +12,8 @@ public sealed partial class VerifiedInstanceTransportTests
     public async Task OptInIdleReleasesLogicalSlotWhileVerifiedIssuerRetirementIsHeld()
     {
         const string prefix = "data: valid\n\n";
+        const string prompt = "verified relay prefix";
+        var requestBody = "{\"model\":\"alias\",\"messages\":[{\"role\":\"user\",\"content\":\"verified relay prefix\"}],\"stream\":true}"u8.ToArray();
         await using var rig = new DispatchRig(streamIdleTimeoutMs: 300_000);
         using var peer = await LoopbackPair.OpenAsync(rig.Token);
         using var retiring = new HeldCheckout();
@@ -25,7 +27,7 @@ public sealed partial class VerifiedInstanceTransportTests
         {
             Model = "ALIAS",
             Stream = true,
-            Body = "{\"model\":\"alias\",\"prompt\":\"two  spaces\",\"stream\":true}"u8.ToArray(),
+            Body = requestBody,
             Options = new RouterRequestOptions { RequiredContext = 32_768 },
         }, rig.Token);
         var released = rig.WaitForRelease();
@@ -33,8 +35,8 @@ public sealed partial class VerifiedInstanceTransportTests
         try
         {
             var remote = peer.Server.GetStream();
-            var bodyLength = "{\"model\":\"model.canonical\",\"prompt\":\"two  spaces\",\"stream\":true}"u8.Length;
-            await ReadAsync(remote, rig.Token, bodyLength);
+            var sent = ModelRewriter.Rewrite(requestBody, "model.canonical");
+            Assert.Equal(sent, (await ReadAsync(remote, rig.Token, sent.Length)).Body);
             await remote.WriteAsync("HTTP/1.1 200 Fixture\r\nContent-Length: 1000\r\nConnection: close\r\n\r\ndata: valid\n\n"u8.ToArray(),
                 rig.Token);
             var channel = Assert.IsAssignableFrom<System.Threading.Channels.Channel<ReadOnlyMemory<byte>>>(
@@ -57,11 +59,18 @@ public sealed partial class VerifiedInstanceTransportTests
             }
             Assert.Equal(1, rig.Admission.PhysicalUses);
             Assert.Equal(0, rig.Admission.Releases);
+            Assert.Equal(0, rig.Engine.MatchedPrefixChars([prompt]));
             Assert.False(await channel.Reader.WaitToReadAsync(rig.Token));
             retiring.Release();
             await released.WaitAsync(rig.Token);
             Assert.Equal(0, rig.Admission.PhysicalUses);
             Assert.Equal(1, rig.Admission.Releases);
+            while (Volatile.Read(ref ticket.ExecCts) is not null)
+            {
+                rig.Token.ThrowIfCancellationRequested();
+                await Task.Yield();
+            }
+            Assert.True(rig.Engine.MatchedPrefixChars([prompt]) > 0);
             Assert.Equal(1, rig.Terminals(ticket));
         }
         finally { retiring.Release(); }
