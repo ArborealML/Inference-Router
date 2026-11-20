@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@gpt-6.2-sol-stream-backpressure'
 created_date: '2026-11-17T07:01:00Z'
-updated_date: '2026-11-20T14:10:00Z'
+updated_date: '2026-11-20T15:28:00Z'
 labels:
   - stream
   - transport
@@ -21,7 +21,7 @@ ordinal: 29000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Backpressure owns the approved residual harness and short localhost preflight. Preserve all 50 archived verdicts, including the three unexplained sub-30-second observations. Delivery will report whether each conditional case is feasible. The timed follow-up requires a separate decision; both limits stay opt-in.
+The offline timer observer passed independent review. Backpressure is implementing the driver for the remaining timed cases. Short checks support conditional saturation trials for both protocols and the unwrapped HTTP/2 idle trial. Neither one-byte write was proven; wrapped HTTP/2 observations fell on opposite sides of two seconds. Preserve both receipts and all 50 original verdicts. Delivery will return the reviewed driver and eligible cases before any execution decision.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
