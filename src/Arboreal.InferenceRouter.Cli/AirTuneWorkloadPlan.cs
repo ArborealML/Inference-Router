@@ -155,9 +155,8 @@ internal static class AirTuneWorkloadPlan
         if (!root.TryGetProperty("engine", out var engines) || engines.ValueKind != JsonValueKind.Object)
             return false;
 
-        foreach (var engine in engines.EnumerateObject())
+        foreach (var value in LastValues(engines).Values)
         {
-            var value = engine.Value;
             if (value.ValueKind == JsonValueKind.Null ||
                 (value.ValueKind == JsonValueKind.Object && HasNullEntry(value, "catalog")))
                 return true;
@@ -168,10 +167,19 @@ internal static class AirTuneWorkloadPlan
         {
             if (!owner.TryGetProperty(name, out var map) || map.ValueKind != JsonValueKind.Object)
                 return false;
-            foreach (var entry in map.EnumerateObject())
-                if (entry.Value.ValueKind == JsonValueKind.Null)
+            foreach (var value in LastValues(map).Values)
+                if (value.ValueKind == JsonValueKind.Null)
                     return true;
             return false;
+        }
+
+        static Dictionary<string, JsonElement> LastValues(JsonElement map)
+        {
+            // The loader's dictionaries keep the last value for each ordinal key.
+            var values = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
+            foreach (var entry in map.EnumerateObject())
+                values[entry.Name] = entry.Value;
+            return values;
         }
     }
 

@@ -275,6 +275,13 @@ public sealed class AirTuneWorkloadPlanOfflineTests : IDisposable
     [InlineData("""
         {"engine":{"tune":{"kind":"openai-compatible","endpoint":"http://endpoint-canary.invalid","catalog":{"key-canary":null}}}}
         """)]
+    [InlineData("""
+        {"engine":{
+          "tune":{"kind":"openai-compatible","endpoint":"http://endpoint-canary.invalid"},
+          "tune":null,
+          "TUNE":{"kind":"openai-compatible","endpoint":"http://endpoint-canary.invalid"}
+        }}
+        """)]
     public async Task NullJsonConfigMapEntriesAreRedacted(string json)
     {
         if (!LinuxX64)
@@ -282,6 +289,49 @@ public sealed class AirTuneWorkloadPlanOfflineTests : IDisposable
 
         var result = await RunAsync(Arguments(Write("input-path-canary.json", json)));
         AssertError(result, 1, BadConfig);
+    }
+
+    [Fact(Timeout = 30_000)]
+    public async Task ShadowedNullJsonMapEntriesUseEffectiveOrdinalValues()
+    {
+        if (!LinuxX64)
+            return;
+
+        var path = Write("input-path-canary.json", """
+            {
+              "threads": {
+                "key-canary": null,
+                "key-canary": {"priority":{"class":"normal"}}
+              },
+              "engine": {
+                "tune": null,
+                "tune": {
+                  "kind": "openai-compatible",
+                  "endpoint": "http://endpoint-canary.invalid",
+                  "catalog": {"key-canary": null}
+                },
+                "tune": {
+                  "kind": "openai-compatible",
+                  "endpoint": "http://endpoint-canary.invalid/v1/",
+                  "catalog": {
+                    "test.model": null,
+                    "test.model": {
+                      "aliases": ["model-alias"],
+                      "default_profile": "64k",
+                      "serving": [
+                        {"name":"64k","max_context":65536,"max_slots":4},
+                        {"name":"32k","max_context":32768,"max_slots":1}
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+            """);
+        var result = await RunAsync(Arguments(path));
+        using var manifest = Parse(result);
+        Assert.Equal("test.model", manifest.RootElement.GetProperty("model").GetString());
+        Assert.Equal(GoldenDigest, Digest(result.Stdout));
     }
 
     [Theory(Timeout = 30_000)]
