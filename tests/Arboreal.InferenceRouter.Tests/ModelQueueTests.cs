@@ -67,7 +67,7 @@ public class ModelQueueTests
         var snapshot = queue.SnapshotCandidate(7, HasCapacity);
 
         Assert.Equal(2, snapshot.Depth);
-        Assert.Equal(7, snapshot.BaselineOrdinal);
+        Assert.Equal(7L, snapshot.BaselineOrdinal);
         Assert.Same(second, snapshot.Request);
         head.Thread.DecrementInflight();
         Assert.False(queue.TryTakeExact(snapshot, HasCapacity));

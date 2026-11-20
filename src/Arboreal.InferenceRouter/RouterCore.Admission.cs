@@ -200,7 +200,7 @@ public sealed partial class RouterCore
                 }
                 else
                 {
-                    var queue = GetOrCreateQueue(model, generation.Settings.Scheduler.MaxQueuePerModel);
+                    var queue = GetOrCreateQueue(model, generation.Settings.Scheduler.MaxQueuePerModel, node.Sequence);
                     lock (queue.Gate)
                     {
                         ticket.PendingEnqueuePublication = true;
@@ -212,6 +212,7 @@ public sealed partial class RouterCore
                         else
                         {
                             ticket.PendingEnqueuePublication = false;
+                            RetireQueueIfEmpty(queue);
                             IndexRejected(queued, "queue_overflow", $"queue for {WireText.Ident(model)} is full");
                         }
                     }
@@ -228,12 +229,19 @@ public sealed partial class RouterCore
         }
     }
 
-    private ModelQueue GetOrCreateQueue(string model, int capacity)
+    private ModelQueue GetOrCreateQueue(string model, int capacity, long creationOrdinal)
     {
         if (_queues.TryGetValue(model, out var queue)) return queue;
-        queue = new ModelQueue(model, capacity, static (_, _) => { });
+        queue = new ModelQueue(model, capacity, static (_, _) => { }) { CreationOrdinal = creationOrdinal };
         _queues.Add(model, queue);
         return queue;
+    }
+
+    // Called under the router gate and queue gate in the same cut as the membership change.
+    private void RetireQueueIfEmpty(ModelQueue queue)
+    {
+        if (queue.Depth == 0 && ReferenceEquals(_queues.GetValueOrDefault(queue.Model), queue))
+            _queues.Remove(queue.Model);
     }
 
     private void IndexRejected(QueuedRequest queued, string reason, string message)
@@ -285,7 +293,8 @@ public sealed partial class RouterCore
                 lock (queue.Gate)
                 {
                     ticket.PendingEnqueuePublication = false;
-                    if (end is not null) queue.TryRemove(ticket);
+                    if (end is not null && queue.TryRemove(ticket))
+                        RetireQueueIfEmpty(queue);
                 }
             }
             else
@@ -400,8 +409,13 @@ public sealed partial class RouterCore
                 ticket.DeferredQueueEnd = code;
                 return QueueEndClaim.Deferred;
             }
-            return _queues.TryGetValue(ticket.Model, out var queue) && queue.TryRemove(ticket)
-                ? QueueEndClaim.Removed : QueueEndClaim.Absent;
+            if (!_queues.TryGetValue(ticket.Model, out var queue)) return QueueEndClaim.Absent;
+            lock (queue.Gate)
+            {
+                if (!queue.TryRemove(ticket)) return QueueEndClaim.Absent;
+                RetireQueueIfEmpty(queue);
+                return QueueEndClaim.Removed;
+            }
         }
     }
 

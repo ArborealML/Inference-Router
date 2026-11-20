@@ -314,7 +314,7 @@ public sealed partial class RouterCore : IInferenceRouter
             if (_closing) return DispatchResult.Parked;
             generation = CurrentGeneration;
             heads = [.. _queues.Values
-                .Select(static (queue, ordinal) => new QueueHead(queue, queue.SnapshotCandidate(ordinal, HasThreadCapacity)))
+                .Select(static queue => new QueueHead(queue, queue.SnapshotCandidate(queue.CreationOrdinal, HasThreadCapacity)))
                 .OrderBy(static head => head.Candidate.Depth)
                 .ThenBy(static head => head.Candidate.BaselineOrdinal)];
         }
@@ -427,6 +427,8 @@ public sealed partial class RouterCore : IInferenceRouter
             if (!ReferenceEquals(CurrentGeneration, generation) ||
                 !ReferenceEquals(generation.Engines.GetValueOrDefault(engine.Name), engine))
                 return new(TakeResult.Changed);
+            if (!ReferenceEquals(_queues.GetValueOrDefault(candidate.Ticket.Model), head.Queue))
+                return new(TakeResult.Changed);
             if (candidate.Ticket.PendingEnqueuePublication || candidate.Ticket.IsTerminal)
                 return new(TakeResult.Changed);
             if (claim is { } stamped && _admission is { } admission)
@@ -448,6 +450,7 @@ public sealed partial class RouterCore : IInferenceRouter
             if (!engine.HasCapacity) return new(TakeResult.Ineligible);
             var terminal = ReadQueueEnd(candidate);
             if (!head.Queue.TryTakeExact(head.Candidate, HasThreadCapacity)) return new(TakeResult.Changed);
+            RetireQueueIfEmpty(head.Queue);
             if (terminal is not null) return new(TakeResult.Terminal, TerminalCode: terminal);
 
             var invocation = claim is { } exact ? _admission!.Authorize(exact) : null;
@@ -485,8 +488,13 @@ public sealed partial class RouterCore : IInferenceRouter
         lock (_gate)
         {
             if (_closing || _shutdownToken.IsCancellationRequested || !admission.IsCurrentBindingRefusal(claim) ||
-                !_queues.TryGetValue(claim.Ticket.Model, out var queue) || !queue.TryRemoveById(claim.Ticket.Id))
+                !_queues.TryGetValue(claim.Ticket.Model, out var queue))
                 return;
+            lock (queue.Gate)
+            {
+                if (!queue.TryRemoveById(claim.Ticket.Id)) return;
+                RetireQueueIfEmpty(queue);
+            }
             expired = claim.Request.QueueExpired(_clock);
             claim.Ticket.RevokeAdmission();
         }

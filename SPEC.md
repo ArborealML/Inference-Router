@@ -1,6 +1,6 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.119)
+Status: draft, continuously revised (v0.12.120)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
@@ -352,6 +352,8 @@ daemon transaction per engine. 137 tests green.
   that answers no `upload_url`, an upload that dies or answers no asset id, an asset name listed twice on
   the release, and a tag that moves after the first resolve. No tag has run the gate: still configured,
   not proven.
+- v0.12.120 — retire each model queue when its last member leaves, remove its status row,
+  and give a recreated queue a new equal-depth position (§5.5, §6, Decision 80).
 - v0.12.119 — acknowledge explicit admin switches with a queryable operation ID and retain their
   structured outcomes on the serving router (§§5.5, 6).
 - v0.12.118 — generate bounded offline tuning workload manifests from configured serving tiers (§11.2).
@@ -2200,10 +2202,11 @@ engine forks land; the scheduler interface will not change shape.
 ### 5.5 Queue semantics
 
 An enqueue commits its canonical model, queue position and ticket index from one current configuration
-generation. An exact take checks the selected generation and engine identity before it removes or
-charges the ticket. A stale selection retries with the accepted canonical model. The admission feed
-reports thread registration, when needed, before enqueue and reports enqueue before selection or
-terminal settlement. A pending enqueue counts toward capacity. It cannot dispatch before its feed
+generation. An exact take checks the selected generation, engine identity and mapped queue identity
+before it removes or charges the ticket. A stale selection ends the current dispatch pass before
+selection commits. The next pass scans the current queues with the accepted canonical model.
+The admission feed reports thread registration, when needed, before enqueue and reports
+enqueue before selection or terminal settlement. A pending enqueue counts toward capacity. It cannot dispatch before its feed
 publication, and later published tickets can use the queue while it waits. Cancellation and the original
 monotonic deadline are checked at that publication boundary and again before exact take. Shutdown closes
 both admission cuts before cancelling its wake token.
@@ -2212,11 +2215,16 @@ The offline verified binding revalidates the still-current exact preparation and
 before removing a ticket on a strict binding refusal. A stale result cannot settle its replacement.
 Temporary capacity loss parks the ticket. A definitive refusal settles once without a queue timer.
 
-- One global priority queue per (model-alias). Dispatch scans model queues by increasing
-  observed depth, retaining queue order at equal depths. Each scheduler call evaluates the
-  first published ticket in that queue whose thread has capacity. Commit takes that exact ticket only
-  while it is still first admissible. If the candidate is removed or displaced before commit,
-  dispatch restarts the queue scan.
+- One global priority queue per canonical model, keyed case-insensitively. The default is
+  immediate retirement of the exact mapped queue when its last member leaves. Pending
+  enqueue publication counts as membership. Simultaneously populated queues follow normal
+  admission with `max_queue_per_model` applying to each queue.
+- Dispatch scans queues by increasing observed depth, then by the creation order of the
+  live queues. A recreated queue goes after all existing queues of equal depth and preserves
+  their relative order. Each scheduler call evaluates the first published ticket in that
+  queue whose thread has capacity. Commit takes that exact ticket only while it is still
+  first admissible. If the candidate is removed or displaced before commit, the next
+  dispatch pass scans the current queues.
 - **Offline exact-ticket admission.** The injected sender qualifies the queue handshake.
   Schedule outside the router lock. The host admission gate, router lock and model queue lock
   order the live check and exact removal. Validate the ranked route generation, model-bound
@@ -2706,9 +2714,10 @@ Admin/control (not OpenAI-compatible, our own contract):
   An unknown, unlatched or busy target returns 409 `target_reset_unavailable`. Authentication,
   staleness and shutdown use the reload error envelope and codes above.
 - `GET /admin/status` — current engine health, loaded models, switch target, serving profile, context
-  window, slots and in-flight requests. Also reports queue depths by model, thread priority, weight
-  and enqueue/completion counters, and `FeedSubscriberFaults`, the number of observer invocations
-  that have thrown since startup (§6.1).
+  window, slots and in-flight requests. Also reports depths for populated model queues, including
+  members awaiting enqueue publication. A retired queue's model key is omitted (§5.5). The
+  response includes thread priority, weight and enqueue/completion counters, and
+  `FeedSubscriberFaults`, the number of observer invocations that have thrown since startup (§6.1).
 - `GET /admin/events?since=<seq>` — SSE feed of `RouterEvent`s (see §10),
   `text/event-stream`, replayable from ring buffer by sequence. Optional filters:
   `kinds=a,b` (exact kinds), `thread=<id>`, `engine=<name>`, `ticket=<id>`.
