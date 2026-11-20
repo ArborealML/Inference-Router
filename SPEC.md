@@ -1,6 +1,6 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.115)
+Status: draft, continuously revised (v0.12.117)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
@@ -352,6 +352,7 @@ daemon transaction per engine. 137 tests green.
   that answers no `upload_url`, an upload that dies or answers no asset id, an asset name listed twice on
   the release, and a tag that moves after the first resolve. No tag has run the gate: still configured,
   not proven.
+- v0.12.117 — Document the operator dashboard's current admin reads, loopback access and retained feed semantics (§§6, 10, 12.5).
 - v0.12.115 — decline Windows Docker named-pipe transport and refuse router-owned pipe addresses
   before provider binding or I/O (§5.3.1, §7, §15).
 - v0.12.114 — report core shutdown on a writable default HTTP stream with one in-band
@@ -1460,7 +1461,7 @@ remote peers without schema changes.
 +-------------------+        +------------+--------------+
 | HTTP surface      |<---------------------+
 | /v1/chat/completions, /v1/completions
-| /admin/* (control), /admin/events (SSE), /admin/stats
+| /admin/* (control), /admin/events (SSE), /admin/status
 +-------------------+
         | (engine adapters: HttpClient)
         v
@@ -2680,9 +2681,10 @@ Admin/control (not OpenAI-compatible, our own contract):
   204 and keeps the generation. A malformed request returns 400 `invalid_target_reset`.
   An unknown, unlatched or busy target returns 409 `target_reset_unavailable`. Authentication,
   staleness and shutdown use the reload error envelope and codes above.
-- `GET /admin/status` — engines, loaded models, queue depths, in-flight,
-  stats per thread/model/engine, and `FeedSubscriberFaults`: how many feed observer invocations have thrown since
-  startup (§6.1).
+- `GET /admin/status` — current engine health, loaded models, switch target, serving profile, context
+  window, slots and in-flight requests. Also reports queue depths by model, thread priority, weight
+  and enqueue/completion counters, and `FeedSubscriberFaults`, the number of observer invocations
+  that have thrown since startup (§6.1).
 - `GET /admin/events?since=<seq>` — SSE feed of `RouterEvent`s (see §10),
   `text/event-stream`, replayable from ring buffer by sequence. Optional filters:
   `kinds=a,b` (exact kinds), `thread=<id>`, `engine=<name>`, `ticket=<id>`.
@@ -2787,10 +2789,17 @@ carries its ticket id back on the response as `X-Inference-Ticket`, which is how
 `GET|DELETE /admin/tickets/{id}` (watch / cancel) without scraping the event stream. Body-only
 callers (default thread `anon`, priority Normal) work unchanged.
 
-Priority is **not** clamped to the configured default and the surface has no authentication, so a
+Priority is **not** clamped to the configured default and there is no general caller authentication, so a
 caller can currently promote itself. Pinning that at the edge is v0.1 ingress work (§15.1); until
 then the deployment posture is loopback-or-behind-your-proxy. `docs/ai-integration.md` states this
 to integrators.
+
+The read-only operator dashboard uses the ordinary admin reads and SSE feed (§12.5). Run it
+alongside the router on loopback and reach it over an operator-managed tunnel. Loopback is the
+default listener and the dashboard's deployment posture. The host listener is configurable.
+Ordinary dashboard reads require no dashboard credential. The optional configuration reload
+routes use their startup Bearer credential. Target reset also requires its separate opt-in and
+a current reload ETag (§6, §7.7).
 
 A feed subscriber is invoked **inside the append**, on the thread that produced the event. A subscriber that throws
 **loses its own event and nothing else**: the append completes and keeps its sequence number, the subscribers that did
@@ -3378,22 +3387,31 @@ Status: **0 warnings / 0 errors with warnings-as-errors, and an AOT publish with
 
 ## 10. Observability
 
-`RouterEvent` ring buffer (per-host, ordered, monotonic `Seq`, replayable; capacity 4096).
+`RouterEvent` ring buffer (per running router, ordered, monotonic `Seq`, replayable; capacity 4096).
 Replay is **exclusive** on its cursor: `since=n` means "after n". A cursor inside the retained window
 gets every event still held for what was asked — there is no smaller cap than the ring itself — and a
 cursor ahead of the ring (a client reconnecting with a sequence from a previous router lifetime) is
 clamped to the current head, so the live tail still flows instead of a feed that can never deliver
-anything. The retention boundary is the only place events disappear. A subscriber's snapshot and its
-live subscription are taken together, so an event appended between the two is neither lost nor
+anything. Replay begins at the oldest retained record when the cursor predates that window. A subscriber's
+snapshot and its live subscription are taken together, so an event appended between the two is neither lost nor
 delivered twice. The feed is also **causally ordered**: every terminal outcome — an engine switch, a
 completed, cancelled or failed request — is appended before the caller waiting on it is woken, so a
 client that awaits its own ticket and then replays its history, or an operator tailing `/admin/events`,
-never arrives a moment before the explanation does. Subscribers get a bounded buffer (256 events) and the feed of a consumer that falls
-behind is **ended** rather than silently pruned: on a filtered feed a dropped event leaves no `Seq`
-gap, so an ended stream is the strongest signal available — reconnect from the last `Seq` you saw. It
-does **not** say how much was missed, and it looks the same as a feed that ended normally; nothing
-distinguishes a restart from a quiet period either, because the ring has no epoch. Reporting loss, and
-naming the epoch, need new fields on the wire (`stream.gap`, below) and are still open.
+never arrives a moment before the explanation does.
+
+Each HTTP event-feed subscriber has a 256-event live buffer. On overflow the feed stops accepting new matches and
+ends after it sends the queued matches if the reader stays connected. Reconnect from the last
+`Seq` received. Replay can recover the matching records that the ring still holds. A sequence hole
+in unfiltered replay can identify missing records within the same router lifetime. A filtered feed
+normally skips some global sequences, so a jump is inconclusive. An ended feed gives a reconnect
+signal. Its cause and any loss count remain unknown from the ending alone.
+
+The ring starts a new sequence on restart and carries no epoch. A cursor ahead of the new head
+is clamped as above. A cursor from a previous lifetime can also fall within the new sequence range.
+Refresh the current admin snapshots when continuity is lost or uncertain. A shared `stream.gap`
+event is declined because loss is subscriber-relative and a shared record would consume ring
+capacity without identifying what the subscriber missed.
+
 Live subscriptions are bounded by `max_event_subscribers` (256 by default; the count includes the
 router's own internal subscription, so the key must be at least 2 to let one client feed through), and
 a feed that arrives when the ring is full is refused with `503 too_many_subscribers` **before** any SSE
@@ -3462,20 +3480,14 @@ keeps the terminal reason cap.
 - `queue.rejected {thread, ticket, model, reason}` — refused before joining a queue; `reason` is `queue_overflow` or
   `model_unavailable`, and no `request.enqueued` event precedes it
 
-`/admin/stats` aggregates: per-thread (enqueued/completed/p50-p99 TTFT),
-per-engine (inflight, queue, tokens/s estimate), per-model queue depth.
-This feed is the Blazor client's contract (§12.5).
+The operator dashboard reads current state from `/admin/status` and uses `/admin/tickets/{id}`
+for a known ticket. The event feed supplies retained observations. Label feed-derived counts
+with the retained slice observed. Snapshot counters keep their own scope (§6).
 
-**Feed gaps that must close before a live view is worth building** (from the robustness
-comparison; tracked as the parity task): ticket records need generated fields — owner,
-state, priority, queue, attempt, active profile, required vs active context, capacity,
-timing, result, prompt/completion bytes, tokens, prefix hash, config pin, commit boundary.
-The event set needs rejection, capacity change, queue, health/crash/restart, switch/profile,
-prefix, config change and an explicit **`stream.gap`** (append + counters only, never
-content). `/admin/status` must add active/queued/readiness/rates; `/admin/events` must
-support filtering, a heartbeat and bounded sequence-gap handling; a bounded
-`/admin/requests` (recent-request journal) is needed for the request timeline. Pinning the
-admin schema and casing (§15.1) is a prerequisite, not a follow-up.
+TASK-11 tracks the richer ticket fields, event coverage and status rates proposed for expanded
+views, along with a feed heartbeat, a bounded recent-request journal and deliberate admin
+schema and casing work (§15.1). The current feed supports filtering and reconnect with the
+exclusive cursor described above.
 
 ## 11. CLI
 
@@ -3657,9 +3669,14 @@ owner/session, lifetime, relocation and repair cost — and never credit overlap
 prefix/suffix tokens twice.
 
 ### 12.5 Blazor web client
-Reads `/admin/events` (SSE) + `/admin/stats`; static SSR + selective
-Interactive Server per T011 guidance; never bypasses the public API. Live
-view = request log stream + per-engine gauges + queue depths.
+The Blazor live view is a read-only operator dashboard for current router state and retained
+observations. Bootstrap engine gauges and queues from `GET /admin/status` and read a known
+ticket through `GET /admin/tickets/{id}`. Use `GET /admin/events` and the ticket-scoped feed
+for retained history and the live tail. Refresh current snapshots after a retention gap or
+uncertain continuity. Scope event-derived counts to the retained observations shown (§10).
+Use the loopback and tunnel deployment in §6.1.
+
+Static SSR + selective Interactive Server per T011 guidance. The view uses the public API.
 
 Screens (our shape, not an appliance's): global inference activity · queues and
 admission · engines/profiles/switches · topology and trends · request timeline ·
@@ -3668,7 +3685,7 @@ health, config and security. From the comparable NVIDIA router (Personal-AI-Rout
 error presentation; **change** capacity/profile/readiness presentation to be
 engine-first rather than model-first, and add queue/TTFT/throughput trends;
 **skip** the installer, model deletion, pairing flow, autostart/update/wipe controls.
-The feed prerequisites in §10 gate this whole section.
+TASK-11 tracks the additional feed and schema work in §10 for expanded views.
 
 ## 13. Pi integration (session-scoped model switching)
 
@@ -3939,8 +3956,8 @@ rather than assumed; dispatch progress that cannot spin or starve.
 | 2 transport discipline | **closed on the request side** | bounded bodies ✔ (`max_request_body_bytes`, 413 `request_body_too_large`, §6); cancellation reaches the engine ✔ (§5.5 wire tests); lifecycle phases are timed ✔ (`stop/wait/call_timeout_ms`, health `timeout_ms`); and every request-side wait now has its own ceiling ✔ (`switch_wait_timeout_ms` for a switch the request triggered — over the ceiling the request fails `switch_failed` with its slot handed back; per-engine `response_timeout_ms` for a turn at the engine — over the ceiling it fails `engine_timeout` 504 and the slot is released, or ends in band when the response had already started). `RequestPhaseTimeoutTests` pins all three outcomes, including that a caller's abort still reports `cancelled` and not a timeout, and that a switch survives the waiter that started it. **Still open:** a wedged *engine process* is noticed through health probes rather than through the request path (§5.3.2), a switch reserves an inference slot rather than its own lifecycle reservation (TASK-25), the HTTP relay limits are opt-in (§6 and §7). Enabling 262,144 bytes and 300,000 ms by default requires the representative 10,000-stream per-engine gap replay with zero false idle expiries and a real HTTP/1.1 and HTTP/2 stopped-reader soak (TASK-30). RequestPhaseTimeoutTests and StreamRelayTests pin the configured timeout and output paths offline |
 | 3 switch serialization + error contract | **closed** | single-flight per engine with `_switchState` reset on every failure path (§5.3.1); error codes and casing pinned by `ErrorContractTests` against the §6.1 table |
 | 4 owned lifecycle | **partly open** | provider seam + coordinator + Docker provider shipped (§5.3.1, §15); request-side phase bounds now exist (§5.5), so a select command that hangs no longer parks traffic indefinitely — the waiting request fails at `switch_wait_timeout_ms` while the switch runs on; **open:** a switch still occupies an inference slot instead of its own lifecycle reservation (TASK-25), and the §5.3.1 non-claims — image identity pinning, mounts/GPU, in-place model mutation, latched failures (TASK-26) |
-| 5 security | **open by deployment posture** | no ingress auth/TLS/rate caps yet: admin is unauthenticated and binds loopback (§6.1), engine keys are per-engine config; this is the v0.1 ingress work, not a silent hole |
-| 6 P1 set | **open in order** | bounded telemetry with gap detection is half-done: ring bounds, exclusive replay, ended-on-slow feeds, causal ordering (§10) exist, but loss reporting (`stream.gap`) and the epoch are wire additions awaiting the live-view decision (TASK-21 → TASK-11); request-journal durability and the fairness/starvation bound are not started |
+| 5 security | **open by deployment posture** | General ingress authentication, TLS and rate limits remain v0.1 ingress work. The dashboard uses a loopback listener and operator-managed tunnel. The listener is configurable and the opt-in reload/reset checks are scoped to those routes (§6, §7.7). Engine keys remain per-engine configuration. |
+| 6 P1 set | **open in order** | Bounded replay, an exclusive cursor, ending slow feeds and causal ordering are shipped (§10). The shared gap event was declined and the ring carries no epoch. Request-journal durability and the fairness/starvation bound remain open. |
 | 7 multi-host | **not started, deliberately** | §12.1–§12.3 stay speculative until rows 1–5 hold; no task is cut for it yet |
 
 Nothing in the open rows is a surprise to the design: each is either a task on the board or a row here
