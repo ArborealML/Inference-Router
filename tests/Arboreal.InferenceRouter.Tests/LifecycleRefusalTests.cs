@@ -1,3 +1,4 @@
+using System.Net;
 using Arboreal.InferenceRouter.Lifecycle;
 
 namespace Arboreal.InferenceRouter.Tests;
@@ -155,6 +156,147 @@ public sealed class LifecycleRefusalTests
         Assert.False(engine.Healthy);
         Assert.Null(engine.SwitchingToward);
         Assert.Equal(["ownership", "preflight"], provider.Calls);
+    }
+
+    [Theory(Timeout = 40_000)]
+    [InlineData("untouched")]
+    [InlineData("acknowledged")]
+    [InlineData("held")]
+    [InlineData("recovered")]
+    [InlineData("shutdown")]
+    public async Task NativeRefusalRevalidatesIncumbentAtCommit(string disposition)
+    {
+        const string id = DockerLifecycleProviderTests.FullPeerId;
+        var submitted = disposition == "acknowledged" ? id.ToUpperInvariant() : id;
+        var stop = $"/v1.44/containers/{submitted}/stop?t=30";
+        var loaded = false;
+        var absent = false;
+        var cfg = DockerLifecycleProviderTests.Cfg(waitHealth: false, removeStopped: false);
+        using var inference = new FakeEngineHandler { LoadedModels = [] };
+        using var daemon = new FakeDockerDaemonHandler
+        {
+            Responder = path =>
+            {
+                if (path.StartsWith("/v1.44/containers/json?", StringComparison.Ordinal))
+                    return (HttpStatusCode.OK, loaded && !absent
+                        ? $$$"""[{"Id":"{{{id}}}","Labels":{"arboreal.router":"r1","arboreal.engine":"strata","arboreal.model":"incumbent"}}]"""
+                        : "[]");
+                if (path == "/v1.44/version") return (HttpStatusCode.OK, """{"ApiVersion":"1.44"}""");
+                if (path.Contains("/images/", StringComparison.Ordinal))
+                    return loaded ? (HttpStatusCode.NotFound, "") : (HttpStatusCode.OK, DockerLifecycleProviderTests.Inspect());
+                if (path == "/v1.44/containers/create" && !loaded)
+                    return (HttpStatusCode.Created, $$$"""{"Id":"{{{id}}}"}""");
+                if (path == $"/v1.44/containers/{id}/start" && !loaded)
+                {
+                    loaded = true;
+                    inference.LoadedModels = ["incumbent"];
+                    return (HttpStatusCode.NoContent, "");
+                }
+                if (path == stop)
+                    return disposition == "acknowledged" ? (HttpStatusCode.NoContent, "") : throw new HttpRequestException("lost stop reply");
+                if (path == $"/v1.44/containers/{submitted}/json")
+                    return (absent ? HttpStatusCode.NotFound : HttpStatusCode.OK, "{}");
+                throw new InvalidOperationException($"Unexpected fake daemon request {path}");
+            },
+        };
+        using var provider = new DockerLifecycleProvider(cfg, "strata", daemon);
+        var feed = new EventRing();
+        var definition = new EngineDefinition
+        {
+            Name = "strata",
+            Endpoint = new Uri("http://127.0.0.1:9/v1"),
+            Lifecycle = EngineLifecycleKind.Docker,
+            Docker = cfg,
+            Catalog = new Dictionary<string, EngineModelDefinition>
+            {
+                ["incumbent"] = new() { Name = "incumbent" },
+                ["target"] = new() { Name = "target" },
+            },
+        };
+        await using var engine = new EngineRuntime(definition, new RouterConfig(), feed, inference, lifecycle: provider);
+        Assert.True((await engine.WaitForModelAsync("incumbent", Limit, CancellationToken.None)).IsReady);
+        var incumbent = Assert.IsType<SwitchServingProof>(engine.Capability.SwitchProof);
+        Assert.Equal(id, incumbent.NativeLaunch?.ContainerId);
+        var nativeTarget = new LifecycleTarget(definition.Name, "incumbent", null, definition.Catalog["incumbent"]);
+        EnginePeer[] peers = [new(submitted, cfg.Image, "incumbent", OwnedByUs: true)];
+        var initialRequests = daemon.Requests.Count;
+        if (disposition is "held" or "recovered")
+            Assert.False((await provider.StopAsync(nativeTarget, peers, CancellationToken.None)).Succeeded);
+        if (disposition == "recovered")
+        {
+            absent = true;
+            Assert.Empty(await provider.OwnedPeersAsync(nativeTarget, CancellationToken.None));
+        }
+
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var ended = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var failuresAtWake = 0;
+        EngineCapability? unknown = null;
+        engine.AfterFailedMutationUnknownForTests = snapshot => unknown = snapshot;
+        engine.AfterEndCommitForTests = transitionHeld =>
+        {
+            using var probe = new CancellationTokenSource();
+            var entry = provider.EnterOperationAsync(probe.Token);
+            var providerFree = entry.IsCompletedSuccessfully;
+            if (providerFree) provider.ExitOperation();
+            else probe.Cancel();
+            ended.TrySetResult(!transitionHeld && providerFree);
+        };
+        engine.AfterReadyWaitForTests = _ => failuresAtWake = feed.Replay(0).Count(e => e.Kind == "engine.switch_failed");
+        var holdFeed = disposition is "untouched" or "acknowledged" or "shutdown";
+        feed.Subscribe(e =>
+        {
+            if (!holdFeed || e.Kind != "engine.switch_failed" || e.Model != "target") return;
+            entered.TrySetResult();
+            release.Task.WaitAsync(Limit).GetAwaiter().GetResult();
+        });
+
+        var refusal = engine.WaitForModelAsync("target", Limit, CancellationToken.None);
+        try
+        {
+            if (holdFeed) await entered.Task.WaitAsync(Limit);
+            if (disposition == "acknowledged")
+                Assert.True((await provider.StopAsync(nativeTarget, peers, CancellationToken.None)).Succeeded);
+            if (disposition == "shutdown") await engine.DisposeAsync();
+        }
+        finally { release.TrySetResult(); }
+
+        var result = await refusal;
+        Assert.True(await ended.Task.WaitAsync(Limit));
+        Assert.False(result.IsReady);
+        Assert.Single(feed.Replay(0), e => e.Kind == "engine.switch_failed");
+        Assert.Null(engine.SwitchingToward);
+        Assert.False(engine.Capability.HealthFromClaim);
+        Assert.Equal(["incumbent"], engine.LoadedModels);
+        if (disposition == "untouched")
+        {
+            Assert.True(engine.Healthy);
+            Assert.Same(incumbent, engine.Capability.SwitchProof);
+            Assert.Null(unknown);
+        }
+        else
+        {
+            Assert.False(engine.Healthy);
+            Assert.Null(engine.Capability.SwitchProof);
+            if (disposition != "shutdown")
+            {
+                var captured = Assert.IsType<EngineCapability>(unknown);
+                Assert.Equal("target", captured.SwitchingToward);
+                Assert.False(captured.HealthFromClaim);
+                Assert.Null(captured.SwitchProof);
+            }
+        }
+        if (disposition != "shutdown")
+        {
+            Assert.Equal("launch_failed", result.Detail);
+            Assert.Equal(1, failuresAtWake);
+        }
+        else Assert.Equal(EngineRuntime.SwitchOutcome.RouterStopped, result.Outcome);
+        var writes = daemon.Requests.Skip(initialRequests)
+            .Where(request => !request.StartsWith("GET ", StringComparison.Ordinal));
+        string[] expectedWrites = disposition is "untouched" or "shutdown" ? [] : [$"POST {stop}"];
+        Assert.Equal(expectedWrites, writes);
     }
 
     private static EngineRuntime Engine(FakeEngineHandler handler, RecordingLifecycleProvider provider, EventRing feed,

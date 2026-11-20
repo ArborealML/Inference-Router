@@ -27,6 +27,7 @@ public sealed class EngineLifecycleCoordinator : IDisposable
     }
 
     public string Kind => _provider.Kind;
+    internal DockerLifecycleProvider? NativeProvider => _provider as DockerLifecycleProvider;
 
     /// <summary>Most recent journal lines, oldest first. Advisory: it explains to an operator why a
     /// switch was refused, and it is not part of the wire contract.</summary>
@@ -55,11 +56,20 @@ public sealed class EngineLifecycleCoordinator : IDisposable
         LifecycleTarget target, SwitchAttempt? timing, SwitchServingProof? incumbent, CancellationToken ct)
     {
         await _gate.WaitAsync(ct).ConfigureAwait(false);
+        var native = NativeProvider;
+        var nativeEntered = false;
         try
         {
+            if (native is not null)
+            {
+                await native.EnterOperationAsync(ct).ConfigureAwait(false);
+                nativeEntered = true;
+            }
             // 1. Ownership proof first: everything below is decided by what we are allowed to touch.
             timing?.TryStartStage(SwitchStage.Ownership);
-            var peers = await _provider.OwnedPeersAsync(target, ct).ConfigureAwait(false);
+            var peers = native is not null
+                ? await native.OwnedPeersUnderGateAsync(ct).ConfigureAwait(false)
+                : await _provider.OwnedPeersAsync(target, ct).ConfigureAwait(false);
             var ours = new List<EnginePeer>(peers.Count);
             foreach (var peer in peers)
             {
@@ -99,8 +109,8 @@ public sealed class EngineLifecycleCoordinator : IDisposable
             if (ours.Count > 0)
             {
                 timing?.TryStartStage(SwitchStage.Shutdown);
-                var stopped = _provider is DockerLifecycleProvider native && timing is not null
-                    ? await native.StopWithObservationsAsync(ours, timing.ObserveNativeStop, ct).ConfigureAwait(false)
+                var stopped = native is not null
+                    ? await native.StopUnderGateAsync(ours, timing is null ? null : timing.ObserveNativeStop, ct).ConfigureAwait(false)
                     : await _provider.StopAsync(target, ours, ct).ConfigureAwait(false);
                 timing?.TryCompleteShutdown(stopped.Succeeded, VerifiedShutdown(stopped, incumbent), stopped.NativeStops);
                 if (!stopped.Succeeded)
@@ -115,7 +125,9 @@ public sealed class EngineLifecycleCoordinator : IDisposable
             // (the runtime), not here: this step only claims the launch was accepted.
             var delegated = string.Equals(_provider.Kind, DelegatedExecProvider.ProviderKind, StringComparison.Ordinal);
             timing?.TryStartStage(delegated ? SwitchStage.DelegatedCommand : SwitchStage.Launch);
-            var launched = await _provider.LaunchAsync(target, ct).ConfigureAwait(false);
+            var launched = native is not null
+                ? await native.LaunchUnderGateAsync(target, ct).ConfigureAwait(false)
+                : await _provider.LaunchAsync(target, ct).ConfigureAwait(false);
             if (delegated) timing?.TryCompleteStage(SwitchStage.DelegatedCommand, launched.Succeeded);
             else timing?.TryCompleteNativeLaunch(launched.Succeeded, launched.NativeLaunch);
             if (!launched.Succeeded)
@@ -128,6 +140,7 @@ public sealed class EngineLifecycleCoordinator : IDisposable
         }
         finally
         {
+            if (nativeEntered) native!.ExitOperation();
             _gate.Release();
         }
     }

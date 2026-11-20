@@ -1428,10 +1428,19 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
     /// ends, instead of rejoining a readiness task that is already resolved. The feed event is always
     /// emitted before this call, so the outcome is on the feed before the request that failed on it
     /// resumes.</summary>
-    private SwitchEnd EndSwitch(SwitchState state, bool ready, bool restoreIncumbent = false)
+    private SwitchEnd EndSwitch(SwitchState state, bool ready, bool restoreIncumbent = false) =>
+        DeliverSwitchEnd(state, CommitSwitchEnd(state, ready, restoreIncumbent));
+
+    private readonly record struct SwitchEndCommit(SwitchEnd End, bool Committed, ServingCapacity Serving,
+        EngineCapability? MutationUnknown);
+
+    // A native refusal is committed with the provider operation gate already held. No delivery here.
+    private SwitchEndCommit CommitSwitchEnd(SwitchState state, bool ready, bool restoreIncumbent,
+        DockerLifecycleProvider? native = null)
     {
         var committed = false;
         var serving = default(ServingCapacity);
+        EngineCapability? mutationUnknown = null;
         SwitchEnd end;
         lock (_transitionGate)
         {
@@ -1444,7 +1453,14 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
                 // dispatch. Withdraw it before clearing the marker.
                 if (end == SwitchEnd.RouterStopped || (_stopped && state.ReadinessOutcomeDelivered is not null))
                     PublishUnknown();
-                var incumbent = end == SwitchEnd.Failed && restoreIncumbent && !state.IncumbentContradicted
+                var canRestore = end == SwitchEnd.Failed && restoreIncumbent && !_stopped && !_retiring;
+                if (canRestore && native is not null &&
+                    !native.CanRestoreIncumbentUnderGate(state.IncumbentProof?.SwitchProof?.NativeLaunch?.ContainerId))
+                {
+                    canRestore = false;
+                    mutationUnknown = PublishUnknown();
+                }
+                var incumbent = canRestore && !state.IncumbentContradicted
                     ? state.IncumbentProof : null;
                 if (end == SwitchEnd.Ready) serving = Capability.Serving;
                 _switchState = new SwitchState();
@@ -1456,25 +1472,31 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
             // idle state and this line, which would hide a running model load from the scheduler. A second
             // EndSwitch for the same attempt (the finally block) sees a successor's state and does nothing.
         }
+        return new(end, committed, serving, mutationUnknown);
+    }
+
+    private SwitchEnd DeliverSwitchEnd(SwitchState state, SwitchEndCommit commit)
+    {
         // A switch reports its outcome before EndSwitch. Report the profile after marker clear, then release
         // waiters before invoking the explicit nudge. A throwing nudge cannot hold a waiter or rewrite the
         // committed outcome, and the next engine observation can still wake dispatch.
         try
         {
-            if (committed && end == SwitchEnd.Ready)
-                EmitServingProfileChange(state.IncumbentProof?.Serving ?? default, serving);
+            if (commit.MutationUnknown is { } unknown) AfterFailedMutationUnknownForTests?.Invoke(unknown);
+            if (commit.Committed && commit.End == SwitchEnd.Ready)
+                EmitServingProfileChange(state.IncumbentProof?.Serving ?? default, commit.Serving);
         }
         finally
         {
             state.Ready.TrySetResult();
-            if (committed)
+            if (commit.Committed)
             {
                 try { _dispatchHint?.Invoke(); }
                 catch (Exception) { /* a lost nudge is a late dispatch, not a lost switch */ }
                 AfterEndCommitForTests?.Invoke(Monitor.IsEntered(_transitionGate));
             }
         }
-        return end;
+        return commit.End;
     }
 
     private void SealAttempt(SwitchState state, SwitchEnd end)
@@ -1499,6 +1521,7 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
         var profileOverride = target.Profile;
         var lifecycle = _lifecycle!;
         var timing = state.Timing!;
+        var nativeRefusalCommitted = false;
         // The idle claim already validated this target against the runtime binding.
         try
         {
@@ -1539,6 +1562,16 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
                 state.FailureReason = SwitchReason.LaunchFailed;
                 // An attempted stop or launch can invalidate the earlier proof even when it returns failure.
                 // Only an explicit refusal before either call can restore a still-valid incumbent.
+                if (report.RefusedBeforeMutation && lifecycle.NativeProvider is { } native)
+                {
+                    await native.EnterOperationAsync(ct).ConfigureAwait(false);
+                    SwitchEndCommit commit;
+                    try { commit = CommitSwitchEnd(state, ready: false, restoreIncumbent: true, native); }
+                    finally { native.ExitOperation(); }
+                    nativeRefusalCommitted = commit.Committed;
+                    DeliverSwitchEnd(state, commit);
+                    return;
+                }
                 if (!report.RefusedBeforeMutation)
                 {
                     var unknown = PublishUnknown();
@@ -1552,9 +1585,9 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
             await RunLegacyReadinessAsync(state, target, lifecycle.Readiness(target), lifecycle.Kind, ct)
                 .ConfigureAwait(false);
         }
-        catch (Exception) when (state.ReadinessOutcomeDelivered is not null)
+        catch (Exception) when (nativeRefusalCommitted || state.ReadinessOutcomeDelivered is not null)
         {
-            // The readiness winner has already settled. Delivery faults cannot write a second outcome.
+            // The terminal winner has already settled. Delivery faults cannot write a second outcome.
         }
         catch (Exception) when (ct.IsCancellationRequested || Volatile.Read(ref _stopped))
         {

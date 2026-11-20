@@ -1,6 +1,6 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.104)
+Status: draft, continuously revised (v0.12.105)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
@@ -352,6 +352,8 @@ daemon transaction per engine. 137 tests green.
   that answers no `upload_url`, an upload that dies or answers no asset id, an asset name listed twice on
   the release, and a tag that moves after the first resolve. No tag has run the gate: still configured,
   not proven.
+- v0.12.105 — fence native Docker stop/removal uncertainty in the live provider and order
+  incumbent restoration against exact stop/removal issue on that provider (§5.3.1).
 - v0.12.104 — add independent opt-in SSE buffer and upstream idle limits for HTTP completions.
   Pause upstream reads at exhausted output credit, abort a continuously blocked write after 30 s,
   and separate HTTP final-flush acknowledgment from upstream transport cleanup (§5.5, §6, §7, §14.1).
@@ -1735,10 +1737,23 @@ unavailable or invalid observation, or an unexpected stop, inspect or removal re
 replacement in that attempt. With removal disabled the provider still requires exit or absence
 before proceeding after `409`. These conflict-derived observations do not train shutdown timing.
 
-**Target error handling.** `ENOENT`, `ECONNREFUSED`, `EACCES`, TLS and timeout failures indicate
-unavailable daemon evidence. Retaining the exact possible-issued operation across re-entry until
-independently verified terminal evidence (TASK-26 AC11) and ordering EngineRuntime incumbent
-restoration and publication against native writes remain open.
+**Shipped provider-lifetime stop and removal recovery.** Before sending stop or DELETE, record
+the operation and the full container ID. An unresolved outcome blocks new writes through that
+provider. Only exact-ID inspect `404` on the same configured daemon and API followed by fresh
+ownership inventory `200` with a valid array omitting that ID releases the fence. Both reads and
+release run under the gate shared with direct and coordinated writes. A present but exited
+container and unavailable or malformed readback keep the fence held. Recovery compares full ASCII
+hex IDs without regard to letter case and uses the submitted spelling in the exact request. The
+same-attempt stop-conflict inspect and ownership labels retain ordinal comparison.
+
+The runtime rechecks prior issued Stop/DELETE of its incumbent, including acknowledged outcomes,
+under the same provider gate at the restoration commit. If the provider still has a held operation
+or issued a stop or removal of the incumbent, the runtime leaves capability unknown. A read-only
+refusal can still restore an incumbent whose proof passes those checks and the runtime's existing
+probe checks. Independent create/start can affect the serving endpoint without recording incumbent
+stop or removal. The gate gives no restoration guarantee for that launch. Post-publication direct
+write authority, uncertain create/start settlement, durable recovery after process loss and
+whole-host exclusion require separate evidence. Exact scoped absence does not prove any of them.
 
 **Target host transaction.** Reserve the host, prove ownership and admissibility, and validate
 assets, receipts, qualification, image identity and privileges. Close admission and drain active

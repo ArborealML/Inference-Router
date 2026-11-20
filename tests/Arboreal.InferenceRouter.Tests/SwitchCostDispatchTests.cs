@@ -692,7 +692,7 @@ public sealed class SwitchCostDispatchTests
                     + "}";
                 var entry = $$"""{"Id":"{{peer.Id}}","ImageID":"{{ImageId}}","Labels":{{labels}}""" + "}";
                 var extra = MultiplePeers
-                    ? """,{"Id":"another-container","Labels":{"arboreal.router":"fixture","arboreal.engine":"fixture"}}"""
+                    ? """,{"Id":"ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff","Labels":{"arboreal.router":"fixture","arboreal.engine":"fixture"}}"""
                     : "";
                 return (HttpStatusCode.OK, "[" + entry + extra + "]");
             }
@@ -711,7 +711,7 @@ public sealed class SwitchCostDispatchTests
             {
                 using var body = JsonDocument.Parse(_daemon.Bodies[^1]);
                 var labels = body.RootElement.GetProperty("Labels");
-                var id = $"container-{++_created}";
+                var id = (++_created).ToString("x64", System.Globalization.CultureInfo.InvariantCulture);
                 _container = (id, labels.GetProperty("arboreal.model").GetString()!,
                                   labels.GetProperty("arboreal.profile").GetString()!);
                 return (HttpStatusCode.Created, $$"""{"Id":"{{id}}"}""");
