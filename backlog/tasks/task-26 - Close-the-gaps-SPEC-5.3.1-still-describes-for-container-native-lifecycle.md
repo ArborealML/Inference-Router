@@ -1,11 +1,11 @@
 ---
 id: TASK-26
 title: Close the gaps SPEC 5.3.1 still describes for container-native lifecycle
-status: Waiting
+status: Preparing
 assignee:
-  - '@gpt-6.2-sol-shutdown'
+  - '@gpt-6.2-sol-lifecycle'
 created_date: '2026-11-17T02:54:00Z'
-updated_date: '2026-11-19T23:21:09Z'
+updated_date: '2026-11-20T00:31:00Z'
 labels:
   - engine
   - lifecycle
@@ -19,7 +19,7 @@ ordinal: 26000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Waiting for the lead to release the exact-ID stop conflict after the current native swap priorities. The next lead priority review after the pair plan handoff wakes this item. The bounded preparation is preserved. AC10 and the related AC11 fence cover an exact-ID Docker stop conflict and ambiguous reply.
+Lifecycle is taking over the preserved exact-ID stop-conflict plan for the selected native swap. The Docker stop path currently accepts conflict and can proceed to forced removal or successor launch without proving the incumbent stopped. Address AC10 and the directly related AC11 reentry fence. Qualify with the fake daemon.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
