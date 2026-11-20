@@ -34,8 +34,8 @@ internal sealed record SupervisedLaunchCommission(HostReservationScope Scope, En
 internal sealed record SupervisedLaunchPolicy(HostInitialPolicy Policy, bool Vacant);
 internal sealed record SupervisedLaunchCommand(HostReservationScope Scope, EnrolledPairHead Head, string SocketPath,
     HostMutation Operation);
-internal sealed record SupervisedObservedCreate(SupervisedLaunchCommand Command, string InstanceId,
-    ReadOnlyMemory<byte> WireBytes, DockerImageIdentity Image, DockerCreateRequest EffectiveSettings,
+internal sealed record SupervisedObservedCreate(SupervisedLaunchCommand Command, string? InstanceId,
+    ReadOnlyMemory<byte> WireBytes, DockerImageIdentity Image, DockerCreateRequest? EffectiveSettings,
     string BackendRoute, Uri Endpoint, ImmutableArray<string> Devices);
 internal sealed record SupervisedObservedStart(SupervisedLaunchCommand Command, string InstanceId, bool Running);
 
@@ -62,8 +62,8 @@ internal static class SupervisedLaunchEvidence
     internal static HostInitialCreate? VerifyCreate(SupervisedObservedCreate? observed, SupervisedLaunchCommand command,
         SupervisedLaunchApproval approval, EnrolledPairMemberGrant grant, ImmutableArray<string> devices)
     {
-        if (observed is null || observed.Command != command || observed.InstanceId.Length != 64 ||
-            !observed.InstanceId.All(char.IsAsciiHexDigit) || observed.Image != approval.Image ||
+        if (observed is not { InstanceId: { Length: 64 } instance, EffectiveSettings: { } effective } ||
+            observed.Command != command || !instance.All(char.IsAsciiHexDigit) || observed.Image != approval.Image ||
             observed.BackendRoute != grant.Member.BackendRoute ||
             !VerifiedDispatchEnvelope.SameEffectiveUri(observed.Endpoint, grant.Endpoint) ||
             !SupervisedLaunchCommission.SameDevices(devices, observed.Devices)) return null;
@@ -73,9 +73,9 @@ internal static class SupervisedLaunchEvidence
         var digest = Convert.ToHexString(SHA256.HashData(observed.WireBytes.Span));
         if (digest != approval.Intent.CreateDigest ||
             JsonSerializer.Deserialize(bytes, DockerJsonContext.Default.DockerCreateRequest) is not { } approved ||
-            !EffectiveSettingsMatch(approved, observed.EffectiveSettings)) return null;
+            !EffectiveSettingsMatch(approved, effective)) return null;
 
-        return new(command.Operation, observed.InstanceId, digest, CompletePair: true);
+        return new(command.Operation, instance, digest, CompletePair: true);
     }
 
     private static bool EffectiveSettingsMatch(DockerCreateRequest approved, DockerCreateRequest observed)

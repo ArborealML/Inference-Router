@@ -67,6 +67,8 @@ internal sealed class SupervisedLaunchJournal(HostReservationScope scope, ISuper
             previous = frame;
         }
 
+        // An unanchored tail is quarantined even if all of its bytes parse. A reopen cannot
+        // distinguish a refused advance from an uncertain install and never trims the file.
         return journal.Position == journal.Length && digest == current.Digest && head.Read(scope) == current
             ? new(current, previous!) : null;
     }
@@ -93,6 +95,8 @@ internal sealed class SupervisedLaunchJournal(HostReservationScope scope, ISuper
         }
 
         var placed = new SupervisedLaunchJournalHead(scope, revision, Convert.ToHexString(SHA256.HashData(bytes)));
+        // Preserve the flushed tail if the head refuses. Retrying or truncating here would hide
+        // the split from subsequent holders of the slot.
         if (!head.TryAdvance(previous?.Head, placed) || Read()?.Head != placed)
             throw new IOException("The supervised launch journal did not reach its authenticated head.");
     }

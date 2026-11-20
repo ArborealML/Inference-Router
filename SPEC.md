@@ -1896,10 +1896,13 @@ commissioning against the original at acceptance, issue, start and fresh acknowl
 independent observation binds the exact wire bytes to the operation, epoch and daemon. The producer
 records their digest only after the bytes match the approval and separately observed effective image,
 process, resource and route settings agree. An exact running-instance observation qualifies Applied.
-Contradictory evidence keeps the installed effect fenced. Historical lookup reads the original bytes
-from the anchored journal and does not grant fresh authority. The producer is qualified with offline
-ports and a modeled independent head. Service deployment, durable host commissioning, authenticated
-live readiness and serving require separate authority and evidence.
+Contradictory or malformed evidence keeps the installed effect fenced. If the head refuses to
+advance after a journal flush, the producer preserves the extra frame and old head. Reopening a split
+journal keeps the slot quarantined with no receipt, automatic repair, resend or successor. Historical
+lookup reads the original bytes from a coherent anchored journal and does not grant fresh authority.
+The producer is qualified with offline ports and a modeled independent head. Service deployment,
+durable host commissioning, authenticated live readiness and serving require separate authority and
+evidence.
 
 The successor ledger fixture records submissions, worker acceptances, daemon attempts and applied
 records in separate journals. These are synthetic evidence roles and can share a fixture process.
