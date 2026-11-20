@@ -2,7 +2,7 @@ using Arboreal.InferenceRouter;
 
 namespace Arboreal.InferenceRouter.Tests;
 
-public class ConfigLoaderTests
+public partial class ConfigLoaderTests
 {
     private const string TomlConfig = """
         listen = "http://127.0.0.1:9901"
@@ -432,7 +432,7 @@ public class ConfigLoaderTests
         var strata = cfg.Engines["strata"];
         Assert.Equal(EngineLifecycleOwner.Delegated, strata.LifecycleOwner);
         Assert.Equal(EngineLifecycleOwner.External, cfg.Engines["hyperqwen"].LifecycleOwner);
-        Assert.Equal(EngineLifecycleOwner.External, cfg.Engines["glm"].LifecycleOwner);
+        AssertMayaSample(cfg.Engines["glm"]);
         Assert.Contains("qwen-3.8-flash-next", strata.Catalog.Keys);
         Assert.DoesNotContain("qwen-3", strata.Catalog.Keys);
         var model = strata.Catalog["qwen-3.8-flash-next"];

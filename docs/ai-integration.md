@@ -49,6 +49,21 @@ A row can remain listed after its window and health evidence have been withdrawn
 readiness when it handles an inference request, which can wait for a model or use a different
 engine or profile.
 
+### HY4 Flash on the shared Maya listener
+
+Use the existing Maya engine catalog, shown as `engine.glm` in
+[samples/router.toml](../samples/router.toml). Its listener can serve either GLM
+or HY4 Flash. Supply the deployment’s authorized upstream credential if required.
+Ask for `hy4-flash`, `hy4` or `hy4-flash-maya-xs` when Maya reports the canonical
+`hy4-flash` row as loaded.
+
+The catalog defines seven context targets from 32k to 1024k. AIR's omitted launch
+tier resolves to 96k, a 98,304-token target sized for 65,536 input plus 32,768 output
+tokens. Choose 32k explicitly for a smaller launch. The installed selector still
+accepts and defaults to 32k. AIR's 96k default requires selector support and host
+qualification before it can launch. AIR forwards against the measured window for
+the loaded model. The operator retains control of which model and tier Maya loads.
+
 ## Thread identity: how an agent gets its share
 
 Send a stable id on every request:
