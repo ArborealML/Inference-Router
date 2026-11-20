@@ -53,6 +53,25 @@ internal sealed class DockerContainerInspectState
     [JsonPropertyName("Dead")] public bool? Dead { get; set; }
 }
 
+internal sealed class DockerObservationResponse
+{
+    [JsonPropertyName("Id")] public string? Id { get; set; }
+    [JsonPropertyName("Image")] public string? Image { get; set; }
+    [JsonPropertyName("RestartCount")] public long? RestartCount { get; set; }
+    [JsonPropertyName("Config")] public DockerContainerInspectConfig? Config { get; set; }
+    [JsonPropertyName("State")] public DockerObservationState? State { get; set; }
+}
+
+internal sealed class DockerObservationState
+{
+    [JsonPropertyName("Status")] public string? Status { get; set; }
+    [JsonPropertyName("Running")] public bool? Running { get; set; }
+    [JsonPropertyName("Paused")] public bool? Paused { get; set; }
+    [JsonPropertyName("Restarting")] public bool? Restarting { get; set; }
+    [JsonPropertyName("Dead")] public bool? Dead { get; set; }
+    [JsonPropertyName("StartedAt")] public string? StartedAt { get; set; }
+}
+
 public sealed class DockerCreateRequest
 {
     [JsonPropertyName("Image")] public required string Image { get; set; }
@@ -190,6 +209,7 @@ internal sealed class DockerExecInspectResponse
 [JsonSerializable(typeof(DockerImageInspectResponse))]
 [JsonSerializable(typeof(List<DockerContainerSummary>))]
 [JsonSerializable(typeof(DockerContainerInspectResponse))]
+[JsonSerializable(typeof(DockerObservationResponse))]
 [JsonSerializable(typeof(DockerCreateRequest))]
 [JsonSerializable(typeof(DockerCreateResponse))]
 [JsonSerializable(typeof(DockerDiagnosticContainerResponse))]
