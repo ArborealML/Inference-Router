@@ -751,7 +751,8 @@ public sealed partial class RouterCore : IInferenceRouter
             var ownsForward = false;
             try
             {
-                using var cts = CancellationTokenSource.CreateLinkedTokenSource(_shutdownToken, execCts.Token, candidate.CallerToken);
+                var executionToken = execCts.Token;
+                using var cts = CancellationTokenSource.CreateLinkedTokenSource(_shutdownToken, executionToken, candidate.CallerToken);
                 var body = ModelRewriter.Rewrite(candidate.Request.Body, engine.CanonicalModel(ticket.Model) ?? ticket.Model);
                 var suffix = LooksLikeCompletion(candidate.Request.Body) ? "completions" : "chat/completions";
 
@@ -761,7 +762,8 @@ public sealed partial class RouterCore : IInferenceRouter
                     await invocation.RunAsync(request, response =>
                     {
                         cts.Token.ThrowIfCancellationRequested();
-                        return FinishWithResponseAsync(engine, ticket, response, candidate, gate: null, cts.Token);
+                        return FinishWithResponseAsync(engine, ticket, response, candidate, gate: null, cts.Token,
+                            executionToken);
                     }, ReportExecutionFailure, cts.Token, invocation.VerifiedCredentialEpoch).ConfigureAwait(false);
                     return;
                 }
@@ -786,7 +788,8 @@ public sealed partial class RouterCore : IInferenceRouter
                 {
                     using var res = await SendAsync(engine, body, suffix, ticket.Model, servingProof, cts.Token)
                         .ConfigureAwait(false);
-                    await FinishWithResponseAsync(engine, ticket, res, candidate, gate: null, cts.Token).ConfigureAwait(false);
+                    await FinishWithResponseAsync(engine, ticket, res, candidate, gate: null, cts.Token,
+                        executionToken).ConfigureAwait(false);
                 }
                 else
                 {
@@ -806,7 +809,8 @@ public sealed partial class RouterCore : IInferenceRouter
                             res = await send.ConfigureAwait(false);
                             try
                             {
-                                await FinishWithResponseAsync(engine, ticket, res, candidate, gate, cts.Token).ConfigureAwait(false);
+                                await FinishWithResponseAsync(engine, ticket, res, candidate, gate, cts.Token,
+                                    executionToken).ConfigureAwait(false);
                                 silent = false;
                             }
                             catch (Exception) when (gate.Tripped && !cts.IsCancellationRequested)
@@ -947,7 +951,8 @@ public sealed partial class RouterCore : IInferenceRouter
     /// for a non-streaming call it stays armed across the body read, and for a stream the pump disarms it
     /// at the first byte so a generation in progress is never truncated.</summary>
     private async Task FinishWithResponseAsync(EngineRuntime engine, RouterTicket ticket,
-        HttpResponseMessage res, QueuedRequest candidate, ResponseGate? gate, CancellationToken ct)
+        HttpResponseMessage res, QueuedRequest candidate, ResponseGate? gate, CancellationToken ct,
+        CancellationToken? defaultExecutionToken = null)
     {
         // The body is the answer, so the cap covers the body: linked with the caller's token so an abort
         // still ends as cancelled rather than as a timeout.
@@ -974,9 +979,20 @@ public sealed partial class RouterCore : IInferenceRouter
         if (candidate.Request.Stream)
         {
             var channel = ticket.StreamChannel!;
-            var error = await PumpStreamAsync(engine, ticket, res.Content, channel, gate, ct).ConfigureAwait(false);
+            DefaultStreamShutdown? shutdown = null;
+            if (defaultExecutionToken is { } execution && ticket.IsHttpStream &&
+                ticket.HttpDelivery is null && engine.StreamIdleTimeout is null)
+            {
+                var observe = DefaultStreamReadObservedForTests;
+                shutdown = new DefaultStreamShutdown(ct, _shutdownToken, execution, candidate.CallerToken,
+                    observe is null ? null : (arm, observation) => observe(ticket.Id, arm, observation));
+            }
+            using var registration = shutdown?.Register() ?? default;
+            var error = await PumpStreamAsync(engine, ticket, res.Content, channel, gate, ct, shutdown: shutdown)
+                .ConfigureAwait(false);
             // The ticket's terminal transition closes the channel after the safe prefix is queued.
-            if (error is null) Complete(ticket);
+            if (shutdown?.Qualified == true) Fail(ticket, "cancelled", "cancelled", defaultStreamReadShutdown: true);
+            else if (error is null) Complete(ticket);
             else Fail(ticket, "engine_error", error);
         }
         else
@@ -1005,7 +1021,8 @@ public sealed partial class RouterCore : IInferenceRouter
     }
 
     private async Task<string?> PumpStreamAsync(EngineRuntime engine, RouterTicket ticket, HttpContent content,
-        Channel<ReadOnlyMemory<byte>> channel, ResponseGate? gate, CancellationToken ct, StreamReadLifetime? lifetime = null)
+        Channel<ReadOnlyMemory<byte>> channel, ResponseGate? gate, CancellationToken ct, StreamReadLifetime? lifetime = null,
+        DefaultStreamShutdown? shutdown = null)
     {
         var firstToken = false;
         var sw = System.Diagnostics.Stopwatch.StartNew();
@@ -1030,20 +1047,36 @@ public sealed partial class RouterCore : IInferenceRouter
             if (delivery is not null)
                 await delivery.WaitForSpaceAsync(ct).ConfigureAwait(false);
             int read;
+            long arm = 0;
             try
             {
                 var readToken = firstToken ? ct : firstReadCt;
-                read = lifetime is null
-                    ? await stream.ReadAsync(buffer, readToken).ConfigureAwait(false)
-                    : await lifetime.ReadAsync(stream, buffer, firstToken, readToken).ConfigureAwait(false);
+                if (lifetime is null)
+                {
+                    var pending = stream.ReadAsync(buffer, readToken);
+                    if (shutdown is { PublishedBlock: true } && !pending.IsCompleted)
+                        arm = shutdown.TryArm();
+                    read = await pending.ConfigureAwait(false);
+                }
+                else
+                {
+                    read = await lifetime.ReadAsync(stream, buffer, firstToken, readToken).ConfigureAwait(false);
+                }
             }
-            catch (OperationCanceledException)
+            catch (OperationCanceledException error)
             {
+                if (arm != 0 && shutdown!.ObserveResult(arm, 0, error)) return null;
                 // Preserve the first-byte deadline path. Otherwise a stopped read still has to
                 // account for any bytes already staged, after checking caller cancellation below.
                 if (!firstToken && gate is not null && gate.Tripped) throw;
                 break;
             }
+            catch (Exception error) when (arm != 0)
+            {
+                shutdown!.ObserveResult(arm, 0, error);
+                throw;
+            }
+            if (arm != 0 && shutdown!.ObserveResult(arm, read)) return null;
             if (read == 0) break;
             if (!firstToken)
             {
@@ -1066,6 +1099,7 @@ public sealed partial class RouterCore : IInferenceRouter
                 else
                     await delivery.PublishAsync(channel.Writer, complete, ct).ConfigureAwait(false);
                 lifetime?.ObservePublished(complete.Span);
+                if (shutdown is not null) shutdown.PublishedBlock = true;
             }
             if (limitExceeded)
             {
@@ -1106,7 +1140,8 @@ public sealed partial class RouterCore : IInferenceRouter
         SignalDispatch();
     }
 
-    private void Fail(RouterTicket ticket, string code, string message, bool suppressIdleTerminal = false)
+    private void Fail(RouterTicket ticket, string code, string message, bool suppressIdleTerminal = false,
+        bool defaultStreamReadShutdown = false)
     {
         if (ticket.HttpDelivery is { } delivery)
         {
@@ -1119,6 +1154,7 @@ public sealed partial class RouterCore : IInferenceRouter
         }
         if (!ticket.TryEnterTerminal()) return;
         ticket.SuppressIdleTerminal = suppressIdleTerminal;
+        ticket.DefaultStreamReadShutdown = defaultStreamReadShutdown;
         // One terminal path, one ceiling. From here the same string is three caller-visible things at once —
         // <c>ticket.Error</c>, the <see cref="RouterRequestException"/> the HTTP writer turns into an error body,
         // and the error frame of a stream that already committed its 200 — plus the feed reason below. Some of it

@@ -28,6 +28,140 @@ public class StreamFrameIdentityTests
     public Task Every_Byte_Split_Preserves_The_Short_Stream()
         => CheckSplitsAsync(ShortFixture, Enumerable.Range(0, ShortFixture.Length + 1), ShortFixture.Length);
 
+    [Theory(Timeout = 30_000)]
+    [InlineData(false, false, false)]
+    [InlineData(false, true, false)]
+    [InlineData(true, false, false)]
+    [InlineData(false, false, true)]
+    public async Task CoreShutdownWritesOneCancellationTerminalAfterACompleteDelta(
+        bool priorDone, bool matchingCancellation, bool adminFirst)
+    {
+        var prefix = Encoding.UTF8.GetBytes($"data: {CompletionChunk}\r\n\r\n" +
+            (priorDone ? "data: [DONE]\r\n\r\n" : ""));
+        var upstreamBytes = prefix.Concat("data: late delta\r\n\r\n"u8.ToArray()).ToArray();
+        using var bound = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        var ct = bound.Token;
+        var rawToken = new TaskCompletionSource<CancellationToken>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseRead = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var upstream = new FragmentedBody(upstreamBytes, prefix.Length, upstreamBytes.Length)
+        {
+            HeldRead = async token =>
+            {
+                rawToken.TrySetResult(token);
+                await releaseRead.Task.WaitAsync(ct);
+                if (matchingCancellation) token.ThrowIfCancellationRequested();
+            },
+        };
+
+        using var fake = new FragmentedEngine();
+        fake.Responses.Enqueue(upstream);
+        var (app, _, port) = await WireHarness.StartAsync(fake: fake, streamClock: new ReadinessDeadlineTests.ManualClock());
+        await using var server = app;
+        using var http = Client(port);
+        var router = app.Services.GetRequiredService<RouterCore>();
+        var enqueued = new TaskCompletionSource<RouterTicket>(TaskCreationOptions.RunContinuationsAsynchronously);
+        router.BeforeEnqueueFeedForTests = ticket => enqueued.TrySetResult(ticket);
+        var armed = new TaskCompletionSource<(string Ticket, long Arm)>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var coreRead = new TaskCompletionSource<(string Ticket, long Arm)>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var otherRead = new TaskCompletionSource<(string Ticket, long Arm)>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var qualified = new TaskCompletionSource<(string Ticket, long Arm)>(TaskCreationOptions.RunContinuationsAsynchronously);
+        router.DefaultStreamReadObservedForTests = (ticket, arm, observation) =>
+        {
+            var receipt = (ticket, arm);
+            switch (observation)
+            {
+                case RouterCore.DefaultStreamReadObservation.Armed: armed.TrySetResult(receipt); break;
+                case RouterCore.DefaultStreamReadObservation.CoreCancellation: coreRead.TrySetResult(receipt); break;
+                case RouterCore.DefaultStreamReadObservation.OtherCancellation: otherRead.TrySetResult(receipt); break;
+                case RouterCore.DefaultStreamReadObservation.QualifiedResult: qualified.TrySetResult(receipt); break;
+            }
+        };
+
+        var coreStopped = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var stoppedRegistration = router.ShutdownToken.Register(() => coreStopped.TrySetResult());
+        Task? stopping = null;
+        try
+        {
+            var (id, response) = await WireHarness.StartStreamAsync(http, "shutdown-active", Request, ct);
+            using var res = response;
+            Assert.Equal(HttpStatusCode.OK, res.StatusCode);
+            await using var clientBody = await res.Content.ReadAsStreamAsync(ct);
+            var keepalive = await ReadFirstKeepaliveAsync(clientBody, ct);
+            Assert.True(keepalive.AsSpan().StartsWith(": [router keepalive seq=0"u8));
+            Assert.True(keepalive.AsSpan().EndsWith("\n\n"u8));
+            var receivedPrefix = new byte[prefix.Length];
+            await clientBody.ReadExactlyAsync(receivedPrefix, ct);
+            Assert.Equal(prefix, receivedPrefix);
+
+            var read = await armed.Task.WaitAsync(ct);
+            Assert.Equal(id, read.Ticket);
+            var token = await rawToken.Task.WaitAsync(ct);
+            if (adminFirst)
+            {
+                using var admin = await http.DeleteAsync($"/admin/tickets/{id}", ct);
+                Assert.Equal(HttpStatusCode.NoContent, admin.StatusCode);
+                Assert.Equal(read, await otherRead.Task.WaitAsync(ct));
+            }
+
+            stopping = Task.Run(async () => await router.DisposeAsync(), CancellationToken.None);
+            await coreStopped.Task.WaitAsync(ct);
+            if (!adminFirst)
+                Assert.Equal(read, await coreRead.Task.WaitAsync(ct));
+            Assert.True(token.IsCancellationRequested);
+            releaseRead.TrySetResult();
+
+            using var suffix = new MemoryStream();
+            await clientBody.CopyToAsync(suffix, ct);
+            var ticket = await enqueued.Task.WaitAsync(ct);
+            Assert.Equal(id, ticket.Id);
+            Assert.Equal(TicketState.Cancelled, ticket.State);
+            var cancelled = await Assert.ThrowsAsync<RouterRequestException>(() => ticket.CompletionTask.WaitAsync(ct));
+            Assert.Equal("cancelled", cancelled.Code);
+            var outcome = Assert.Single(router.Events.Replay(0), evt => evt.TicketId == id &&
+                evt.Kind is "request.cancelled" or "request.failed" or "request.completed");
+            Assert.Equal("request.cancelled", outcome.Kind);
+            Assert.Equal(!adminFirst, ticket.DefaultStreamReadShutdown);
+            if (adminFirst) Assert.False(qualified.Task.IsCompleted);
+            else Assert.Equal(read, await qualified.Task.WaitAsync(ct));
+
+            byte[] expected = priorDone || adminFirst ? [] :
+                "data: {\"error\":{\"message\":\"cancelled\",\"code\":\"cancelled\",\"type\":\"air_error\"}}\n\ndata: [DONE]\n\n"u8.ToArray();
+            var receivedSuffix = suffix.ToArray();
+            Assert.Equal(expected, receivedSuffix);
+            if (receivedSuffix.Length != 0)
+                AssertShutdownErrorAwareFrames(receivedPrefix, receivedSuffix);
+        }
+        finally
+        {
+            releaseRead.TrySetResult();
+            if (stopping is not null) await stopping.WaitAsync(TimeSpan.FromSeconds(10), CancellationToken.None);
+        }
+    }
+
+    private static void AssertShutdownErrorAwareFrames(byte[] prefix, byte[] suffix)
+    {
+        const string data = "data: ";
+        var delta = Encoding.UTF8.GetString(prefix);
+        Assert.StartsWith(data, delta, StringComparison.Ordinal);
+        Assert.EndsWith("\r\n\r\n", delta, StringComparison.Ordinal);
+        using var completion = JsonDocument.Parse(delta[data.Length..^4]);
+        Assert.Equal("chat.completion.chunk", completion.RootElement.GetProperty("object").GetString());
+        var choice = Assert.Single(completion.RootElement.GetProperty("choices").EnumerateArray());
+        Assert.Equal("hello", choice.GetProperty("delta").GetProperty("content").GetString());
+
+        var terminal = Encoding.UTF8.GetString(suffix).Split("\n\n", StringSplitOptions.None);
+        Assert.Collection(terminal, frame =>
+        {
+            Assert.StartsWith(data, frame, StringComparison.Ordinal);
+            using var document = JsonDocument.Parse(frame[data.Length..]);
+            var error = Assert.Single(document.RootElement.EnumerateObject());
+            Assert.Equal("error", error.Name);
+            Assert.Equal("air_error", error.Value.GetProperty("type").GetString());
+            Assert.Equal("cancelled", error.Value.GetProperty("code").GetString());
+            Assert.Equal("cancelled", error.Value.GetProperty("message").GetString());
+        }, done => Assert.Equal("data: [DONE]", done), end => Assert.Empty(end));
+    }
+
     [Theory]
     [InlineData("data: {\"delta\":\"cut", false, "engine_error")]
     [InlineData("data: {\"delta\":\"cut\"}\r\n", true, "engine_unreachable")]
@@ -522,6 +656,7 @@ public class StreamFrameIdentityTests
         private int _offset;
         private int _nextBoundary = split == 0 ? stride : split;
         public TaskCompletionSource AtGate { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public Func<CancellationToken, Task>? HeldRead { get; init; }
 
         public override bool CanRead => true;
         public override bool CanSeek => false;
@@ -531,6 +666,11 @@ public class StreamFrameIdentityTests
 
         public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
         {
+            if (HeldRead is { } hold && _offset == split)
+            {
+                AtGate.TrySetResult();
+                await hold(cancellationToken).ConfigureAwait(false);
+            }
             if (gate is not null && _offset == split)
             {
                 AtGate.TrySetResult();

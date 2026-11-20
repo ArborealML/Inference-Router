@@ -5,7 +5,7 @@ namespace Arboreal.InferenceRouter.Server;
 public static partial class ServerApp
 {
     private readonly record struct InferenceStreamSink(PipeWriter Writer,
-        RouterTicket Ticket, RouterCore? Router, TimeProvider Clock)
+        RouterTicket Ticket, RouterCore? Router, TimeProvider Clock, DefaultStreamOutput? Output)
     {
         private static readonly TimeSpan WriteTimeout = TimeSpan.FromSeconds(30);
 
@@ -14,7 +14,8 @@ public static partial class ServerApp
             var delivery = Ticket.HttpDelivery;
             if (delivery is null)
             {
-                await Writer.WriteAsync(bytes, ct).ConfigureAwait(false);
+                var result = await Writer.WriteAsync(bytes, ct).ConfigureAwait(false);
+                Output?.ObservePayload(result, bytes.Span);
                 return;
             }
 
@@ -25,6 +26,18 @@ public static partial class ServerApp
             Ticket.HttpDelivery is { } delivery
                 ? WriteWatchedAsync(delivery, frame, charged: false, ct)
                 : new ValueTask(AirJson.WriteFrameAsync(Writer, frame, ct));
+
+        internal async ValueTask WriteKeepaliveAsync(ReadOnlyMemory<byte> frame, CancellationToken ct)
+        {
+            if (Output is null)
+            {
+                await WriteFrameAsync(frame, ct).ConfigureAwait(false);
+                return;
+            }
+
+            Output.Observe(await Writer.WriteAsync(frame, ct).ConfigureAwait(false));
+            Output.Observe(await Writer.FlushAsync(ct).ConfigureAwait(false));
+        }
 
         private async ValueTask WriteWatchedAsync(HttpStreamDelivery delivery, ReadOnlyMemory<byte> bytes,
             bool charged, CancellationToken ct)

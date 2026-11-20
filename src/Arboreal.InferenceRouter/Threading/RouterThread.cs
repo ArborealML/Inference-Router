@@ -118,6 +118,7 @@ public sealed class RouterTicket
     internal bool IsHttpStream { get; init; }
     internal HttpStreamDelivery? HttpDelivery { get; init; }
     internal bool SuppressIdleTerminal { get; set; }
+    internal bool DefaultStreamReadShutdown { get; set; }
     /// <summary>Wiring from the caller's cancellation token to this ticket's cancel path. Dropped
     /// when the ticket reaches a terminal state, because the registration is rooted in the caller's
     /// token — for a server request that is the connection's abort token, which outlives the request.</summary>
