@@ -258,6 +258,13 @@ public class StreamRelayTests
                 Assert.Equal(TicketState.Completed, ticket.State);
             }
             await relay.WaitAsync(bound.Token);
+            if (stall)
+            {
+                var flush = await writer.Release.Task.WaitAsync(bound.Token);
+                Assert.True(flush.IsCanceled);
+                // The detached writer can return its credit after the relay has exited.
+                await UntilAsync(() => delivery.ReservedBytes == 0, bound.Token);
+            }
             Assert.Equal(0, delivery.ReservedBytes);
         }
         finally { writer.Release.TrySetResult(new FlushResult(isCanceled: true, isCompleted: false)); }
