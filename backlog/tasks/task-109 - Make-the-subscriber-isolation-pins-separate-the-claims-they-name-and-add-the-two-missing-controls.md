@@ -3,11 +3,11 @@ id: TASK-109
 title: >-
   Make the subscriber-isolation pins separate the claims they name, and add the
   two missing controls
-status: Preparing
+status: Waiting
 assignee:
   - '@gpt-6.2-sol-stream-delivery'
 created_date: '2026-11-18T17:58:00Z'
-updated_date: '2026-11-20T19:20:00Z'
+updated_date: '2026-11-20T19:26:00Z'
 labels:
   - tests
   - events
@@ -20,7 +20,7 @@ ordinal: 107000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Delivery is preparing the focused subscriber-isolation test plan. On ea9e2f0 the normal switch emits its completion before releasing joined waiters. The existing two-waiter fixture throws at switch start. Hold one launch with two pending callers, throw only on completion, and check that the same retained event sequence is visible at the producer commit and both normal wakes. The audit identified this missing witness by source inspection.
+Wake: independent review of the fixture plan on 569a1de. Hold one launch with two pending waiters, make a subscriber throw only on switch completion, and check that the same retained event sequence is visible at the producer commit and both normal wakes. Reuse the existing ring and status controls. The current two-waiter test throws at switch start.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
