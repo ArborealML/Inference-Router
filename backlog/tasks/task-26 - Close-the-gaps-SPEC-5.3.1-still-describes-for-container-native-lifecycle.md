@@ -5,7 +5,7 @@ status: Waiting
 assignee:
   - '@gpt-6.2-sol-release'
 created_date: '2026-11-17T02:54:00Z'
-updated_date: '2026-11-20T20:48:00Z'
+updated_date: '2026-11-20T21:02:00Z'
 labels:
   - engine
   - lifecycle
@@ -19,7 +19,7 @@ ordinal: 26000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Wake on the bounded correction review. The [replacement hosted run](https://github.com/ArborealML/Inference-Router/actions/runs/44814438821) passed all three jobs for [the observation change](https://github.com/ArborealML/Inference-Router/pull/57) at 49e84d2. The [original Ubuntu test job](https://github.com/ArborealML/Inference-Router/actions/runs/44811649803) failed eight refusal-audit cases at 5de04d7. The correction retains the single recorded-write location and allowed readiness mappings. All 215 focused Release cases passed with zero skips, including 41 refusal-category and 29 observation cases. The offline pre-Start hold at 449ff58 passed review, 31 focused cases and server AOT. Delivery will integrate it after the observation change. The Windows transport amendment is separate. [Docker diagnostics](https://github.com/ArborealML/Inference-Router/pull/53) landed at b0f8255. Full change detection and uncertain-start reconciliation remain open.
+Wake on the supervised pre-Start hold integration. [Coordinated Docker observation](https://github.com/ArborealML/Inference-Router/pull/57) landed at bbd8bb9 for instances started through the tracked 204 path. The refusal-audit correction passed all 215 focused Release cases and [main CI](https://github.com/ArborealML/Inference-Router/actions/runs/44816063374) passed all three jobs. The offline pre-Start hold at 449ff58 passed review, 31 focused cases and server AOT. Delivery is composing it on the observation landing. The explicit Windows named-pipe refusal at 1d3329d passed review and 20 focused Release cases. An absent socket retains its constructor error before I/O. External forwarding evidence covers the shipped path and exercised fixture. Delivery will compose .115 after .114 and verify hosted CI. [Docker diagnostics](https://github.com/ArborealML/Inference-Router/pull/53) landed at b0f8255. Full change detection and uncertain-start reconciliation remain open.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
