@@ -1,11 +1,11 @@
 ---
 id: TASK-110
 title: Coordinate model engines that share one host with exclusive residency
-status: Waiting
+status: Preparing
 assignee:
-  - '@gpt-6.2-sol-release'
+  - '@gpt-6.2-sol-lifecycle'
 created_date: '2026-11-18T18:13:00Z'
-updated_date: '2026-11-20T16:57:00Z'
+updated_date: '2026-11-20T17:04:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -21,7 +21,7 @@ ordinal: 108000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Wake: independent review of the supervised launch-record producer plan prepared on 72c39a0. Delivery will verify the verdict before releasing implementation. The producer serves the DeepSeek and Qwen pair through the landed closed-receipt entry, with durable record recovery while inference stays closed. Decision 71 settles resource ownership. Deployment, host exclusion and authenticated live readiness remain separate. [Closed receipt recovery](https://github.com/ArborealML/Inference-Router/pull/36).
+Lifecycle is amending the supervised launch-record plan reviewed on 72c39a0. Require independent agreement on effective settings before accepting the create-byte digest. Bind fresh operations to the original complete topology head and member mapping; refuse drift even within the same generation. Exact historical receipt lookup remains read-only across policy changes. The amended plan and distinguishing controls return for independent review. [Closed receipt recovery](https://github.com/ArborealML/Inference-Router/pull/36).
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
