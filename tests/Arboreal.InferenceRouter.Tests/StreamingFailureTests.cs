@@ -1,4 +1,7 @@
 using System.Net;
+using System.Text;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Arboreal.InferenceRouter.Tests;
 
@@ -38,56 +41,216 @@ public class StreamingFailureTests
         Assert.Equal(expected, body[terminalStart..]);
     }
 
+    private const string DisconnectDelta = """
+        data: {"choices":[{"delta":{"content":"hello"},"finish_reason":null}]}
+        """;
+
     [Fact(Timeout = 30_000)]
     public async Task HangingUpMidStreamIsNotCountedAsACompletedRequest()
     {
-        var (app, fake, port) = await WireHarness.StartAsync(holdCompletions: false);
-        using var _ = app;
-        fake.TrickleStreamMs = 25;
-
-        using var http = new HttpClient
+        using var bound = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        var ct = bound.Token;
+        using var upstream = new DisconnectBody();
+        using var fake = new DisconnectEngine(upstream);
+        var (app, _, port) = await StartDisconnectHarnessAsync(fake, ct);
+        await using var server = app;
+        using var handler = new SocketsHttpHandler { MaxResponseDrainSize = 0 };
+        using var http = new HttpClient(handler, disposeHandler: false)
         {
             BaseAddress = new Uri($"http://127.0.0.1:{port}"),
-            Timeout = TimeSpan.FromSeconds(15),
+            Timeout = Timeout.InfiniteTimeSpan,
         };
-        var (ticket, res) = await WireHarness.StartStreamAsync(http, "stream-abort", Body("hello"));
 
-        // Prove the stream is live, then hang up on it. The pump used to swallow the resulting
-        // cancellation and return normally, which completed the ticket: a truncated request looked
-        // identical to a served one, in the stats and in the event feed.
-        using (var readCts = new CancellationTokenSource(TimeSpan.FromSeconds(5)))
+        var router = app.Services.GetRequiredService<RouterCore>();
+        var engine = router.Engines["fake"];
+        var enqueued = new TaskCompletionSource<RouterTicket>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var released = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var forwards = 0;
+        var releases = 0;
+        router.BeforeEnqueueFeedForTests = ticket => enqueued.TrySetResult(ticket);
+        engine.AfterForwardAdmissionForTests = () =>
         {
-            await using var stream = await res.Content.ReadAsStreamAsync(readCts.Token);
-            using var reader = new StreamReader(stream);
-            string? first;
-            do
+            Interlocked.Increment(ref forwards);
+            return Task.CompletedTask;
+        };
+        engine.AfterForwardReleaseForTests = () =>
+        {
+            Interlocked.Increment(ref releases);
+            released.TrySetResult();
+        };
+
+        // Deadlines bound the assertions. Only the response disposal below aborts a passing exchange.
+        var sending = WireHarness.StartStreamAsync(http, "stream-abort", Body("hello"));
+        Task<Stream>? opening = null;
+        Task? reading = null;
+        var checkedReplay = false;
+        try
+        {
+            var (id, response) = await sending.WaitAsync(ct);
+            using var res = response;
+            Assert.Equal(HttpStatusCode.OK, res.StatusCode);
+            Assert.Equal(HttpVersion.Version11, res.Version);
+            opening = res.Content.ReadAsStreamAsync();
+            await using var body = await opening.WaitAsync(ct);
+            using var reader = new StreamReader(body, leaveOpen: true);
+            reading = ReadCompleteDeltaAsync(reader);
+            await reading.WaitAsync(ct);
+
+            var (readToken, heldRead) = await upstream.ReadEntered.Task.WaitAsync(ct);
+            var ticket = await enqueued.Task.WaitAsync(ct);
+            Assert.Equal(id, ticket.Id);
+
+            Assert.False(ct.IsCancellationRequested);
+            Assert.False(router.ShutdownToken.IsCancellationRequested);
+            Assert.True(reader.BaseStream.CanRead);
+            Assert.True(readToken.CanBeCanceled);
+            Assert.False(readToken.IsCancellationRequested);
+            Assert.False(heldRead.IsCompleted);
+            Assert.False(upstream.CleanupRelease.Task.IsCompleted);
+            Assert.False(upstream.ReadCancelled.Task.IsCompleted);
+            Assert.False(upstream.ReadExited.Task.IsCompleted);
+            Assert.False(ticket.IsTerminal);
+            Assert.False(ticket.CompletionTask.IsCompleted);
+            Assert.False(released.Task.IsCompleted);
+            Assert.Equal(1, fake.Posts);
+            Assert.Equal(1, Volatile.Read(ref forwards));
+            Assert.Equal(0, Volatile.Read(ref releases));
+            Assert.Equal(1, engine.InferenceUses);
+
+            res.Dispose();
+
+            var observed = await upstream.ReadCancelled.Task.WaitAsync(ct);
+            Assert.Equal(readToken, observed);
+            Assert.True(observed.IsCancellationRequested);
+            await upstream.ReadExited.Task.WaitAsync(ct);
+            await released.Task.WaitAsync(ct);
+            var error = await Assert.ThrowsAsync<RouterRequestException>(() => ticket.CompletionTask.WaitAsync(ct));
+            Assert.Equal("cancelled", error.Code);
+            Assert.Equal(TicketState.Cancelled, ticket.State);
+            Assert.Equal(1, fake.Posts);
+            Assert.Equal(1, Volatile.Read(ref forwards));
+            Assert.Equal(1, Volatile.Read(ref releases));
+            Assert.Equal(0, engine.InferenceUses);
+
+            var replay = router.Events.Replay(0).Where(evt => evt.TicketId == id).ToArray();
+            var queued = Assert.Single(replay, evt => evt.Kind == "request.enqueued");
+            var outcome = Assert.Single(replay, evt =>
+                evt.Kind is "queue.rejected" or "request.completed" or "request.failed" or "request.cancelled");
+            Assert.Equal("request.cancelled", outcome.Kind);
+            Assert.True(queued.Seq < outcome.Seq);
+            checkedReplay = true;
+        }
+        finally
+        {
+            if (!checkedReplay)
             {
-                first = await reader.ReadLineAsync(readCts.Token);
+                http.Dispose();
+                upstream.CleanupRelease.TrySetResult();
+                using var cleanup = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                var outstanding = Task.WhenAll(sending, opening ?? Task.CompletedTask, reading ?? Task.CompletedTask);
+                try { await outstanding.WaitAsync(cleanup.Token); }
+                catch (Exception) when (outstanding.IsCompleted)
+                {
+                    // Closing a failed exchange can fault the outstanding send or read.
+                }
+                if (sending.IsCompletedSuccessfully)
+                    (await sending).Response.Dispose();
             }
-            while (first is not null && (first.Length == 0 || first.StartsWith(':')));
-            Assert.NotNull(first);
-            Assert.StartsWith("data: {\"choices\":[{\"delta\":", first, StringComparison.Ordinal);
         }
-        res.Dispose();      // the caller is gone; the router should stop serving it
-
-        // The disconnect has to be noticed by the server writing to a socket nobody is reading, so the
-        // terminal event lands a little later than the request itself. Poll the replay rather than
-        // trusting one quiet-window read: on a loaded machine a single window can end before the
-        // cancellation is recorded, and a passing test that way proves nothing.
-        string terminal = "";
-        var deadline = Environment.TickCount64 + 15_000;
-        while (Environment.TickCount64 < deadline)
-        {
-            var frames = await WireHarness.ReadSseFramesAsync(http, $"/admin/tickets/{ticket}/events?since=0",
-                idleMs: 700, maxMs: 4000);
-            terminal = frames.FirstOrDefault(f =>
-                f.Contains("request.cancelled", StringComparison.Ordinal) ||
-                f.Contains("request.completed", StringComparison.Ordinal)) ?? "";
-            if (terminal.Length > 0) break;
-        }
-
-        Assert.Contains("request.cancelled", terminal);
-        Assert.DoesNotContain("request.completed", terminal);
     }
 
+    private static async Task<(WebApplication App, FakeEngineHandler Fake, int Port)> StartDisconnectHarnessAsync(
+        DisconnectEngine fake, CancellationToken ct)
+    {
+        var starting = WireHarness.StartAsync(maxInflight: 1, fake: fake);
+        try
+        {
+            return await starting.WaitAsync(ct);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            using var cleanup = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            var (app, _, _) = await starting.WaitAsync(cleanup.Token);
+            await app.DisposeAsync().AsTask().WaitAsync(cleanup.Token);
+            throw;
+        }
+    }
+
+    private static async Task ReadCompleteDeltaAsync(StreamReader reader)
+    {
+        var line = await reader.ReadLineAsync();
+        while (line is not null && line.StartsWith(':'))
+        {
+            Assert.Equal("", await reader.ReadLineAsync());
+            line = await reader.ReadLineAsync();
+        }
+        Assert.Equal(DisconnectDelta, line);
+        Assert.Equal("", await reader.ReadLineAsync());
+    }
+
+    private sealed class DisconnectEngine(DisconnectBody body) : FakeEngineHandler
+    {
+        private int _posts;
+        internal int Posts => Volatile.Read(ref _posts);
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
+        {
+            if (request.Method != HttpMethod.Post) return base.SendAsync(request, ct);
+            Assert.EndsWith("/chat/completions", request.RequestUri!.AbsolutePath, StringComparison.Ordinal);
+            Interlocked.Increment(ref _posts);
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StreamContent(body) });
+        }
+    }
+
+    private sealed class DisconnectBody : Stream
+    {
+        private static readonly byte[] DeltaBytes = Encoding.UTF8.GetBytes(DisconnectDelta + "\n\n");
+        private int _offset;
+
+        internal TaskCompletionSource<(CancellationToken Token, Task Pending)> ReadEntered { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        internal TaskCompletionSource<CancellationToken> ReadCancelled { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        internal TaskCompletionSource ReadExited { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        internal TaskCompletionSource CleanupRelease { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            if (_offset < DeltaBytes.Length)
+            {
+                var count = Math.Min(buffer.Length, DeltaBytes.Length - _offset);
+                DeltaBytes.AsMemory(_offset, count).CopyTo(buffer);
+                _offset += count;
+                return count;
+            }
+
+            var pending = CleanupRelease.Task.WaitAsync(cancellationToken);
+            ReadEntered.TrySetResult((cancellationToken, pending));
+            try
+            {
+                await pending;
+                return 0;
+            }
+            catch (OperationCanceledException error)
+            {
+                ReadCancelled.TrySetResult(error.CancellationToken);
+                throw;
+            }
+            finally
+            {
+                ReadExited.TrySetResult();
+            }
+        }
+
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+        public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+        public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+        public override void Flush() => throw new NotSupportedException();
+    }
 }

@@ -2292,13 +2292,17 @@ Temporary capacity loss parks the ticket. A definitive refusal settles once with
   that hangs up (an HTTP disconnect is `RequestAborted`) takes the same path as
   `DELETE /admin/tickets/{id}`: a queued request gives its place back, an in-flight request cancels the
   upstream engine call and releases the engine slot. Resulting code: `cancelled`.
-- **One terminal state**: every sink (complete, fail, cancel, queue rejection, queue deadline,
-  shutdown) claims the ticket's terminal transition atomically; the first wins and later racers are
-  ignored. A ticket therefore emits exactly one of `request.completed` / `request.failed` /
-  `request.cancelled`, and capacity reserved for it is released once.
+- **One terminal state**: every settlement path claims the ticket's terminal transition atomically.
+  A pre-queue ticket refusal publishes one `queue.rejected` with reason `queue_overflow` or
+  `model_unavailable` and no `request.enqueued`. A ticket accepted into the queue publishes
+  `request.enqueued` and settles with exactly one of `request.completed`, `request.failed` or
+  `request.cancelled`. The first terminal claim wins, and any capacity reserved for the ticket is
+  released once.
 - **Queue deadline is a timer**: `max_queue_time` arms a timer when the request is enqueued. It bounds
   the *wait* only — after dispatch the deadline no longer applies. A dispatch-time check is not
-  sufficient: a busy engine gives the dispatcher no reason to re-examine the queue.
+  sufficient: a busy engine gives the dispatcher no reason to re-examine the queue. A ticket settled
+  by this deadline emits `request.failed` with a reason sentence on the feed and has error code
+  `deadline_exceeded`.
 - **A model nothing here can serve is refused at admission and never joins a queue**: when every engine has
   answered its model probe, and none declares the model in its configured catalog, reports it loaded, or is
   switching toward it, the request is refused `model_unavailable` (503) **before** `TryEnqueue`. On the feed it
@@ -2789,6 +2793,14 @@ committed its `200`, so the same failure reaches the caller inside the stream as
 error frame followed by `[DONE]` — a 504 therefore always means nothing was emitted yet, and a caller may
 retry one),
 `switch_in_progress` 409 and `unknown_profile` 400 on the admin side.
+
+A ticket refused before queue admission produces one `queue.rejected` with reason `queue_overflow`
+or `model_unavailable` and no `request.enqueued`. An accepted ticket settles with one
+`request.completed`, `request.failed` or `request.cancelled`. When the queue deadline settles an
+accepted ticket, the feed records `request.failed` with a reason sentence and the ticket has error
+code `deadline_exceeded`.
+These feed events describe ticket outcomes. Committed SSE follows the stream rules in §6.
+
 A `switch_failed` message names the target and, when the caller's own attempt **ended**, ends with that attempt's
 reason **category**: one of `no_select_command`, `launch_failed`, `health_timeout`, `refresh_omits`,
 `refresh_unanswered`, `window_too_small`, `switch_error`, `no_lifecycle_owner` — **bare, parameter-free, in
@@ -3409,12 +3421,14 @@ keeps the terminal reason cap.
 - `request.selected {ticket, engine, model, affinityScore, busyScore}`
 - `request.streaming_first_token {ticket, engine, msFromEnqueue}`
 - `request.completed {ticket, engine, tokens, msFromEnqueue, msFromFirstToken}`
-- `request.failed/cancelled/deadline_exceeded {ticket, reason}`
+- `request.failed {ticket, reason}` — includes queue expiry, which has ticket error code
+  `deadline_exceeded`
+- `request.cancelled {ticket, reason}`
 - `request.cleanup_failed {ticket, thread, engine, model, reason}` — offline admission cleanup fault,
   reported independently of the ticket's terminal result
 - `engine.health {engine, healthy, loadedModels}`
 - `engine.switch_started/completed/failed {engine, model, profile, ms}`
-- `queue.rejected {thread, model, reason}` — refused before joining a queue; `reason` is `queue_overflow` or
+- `queue.rejected {thread, ticket, model, reason}` — refused before joining a queue; `reason` is `queue_overflow` or
   `model_unavailable`, and no `request.enqueued` event precedes it
 
 `/admin/stats` aggregates: per-thread (enqueued/completed/p50-p99 TTFT),
