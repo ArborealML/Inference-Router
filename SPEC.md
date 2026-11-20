@@ -1,6 +1,6 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.99)
+Status: draft, continuously revised (v0.12.100)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
@@ -352,6 +352,10 @@ daemon transaction per engine. 137 tests green.
   that answers no `upload_url`, an upload that dies or answers no asset id, an asset name listed twice on
   the release, and a tag that moves after the first resolve. No tag has run the gate: still configured,
   not proven.
+- v0.12.100 — relay complete SSE blocks byte-for-byte and discard an unfinished block before a terminal
+  error. Apply the same block-boundary check after an upstream-only read cancellation. Bound one block
+  to 1 MiB before its delimiter. HTTP keepalives continue until a complete block or terminal result,
+  and the response deadline still ends at the first positive raw read (§5.5, §6).
 - v0.12.99 — verify the selected enrolled pair against an independent current topology head
   and freeze an inert offline descriptor (§5.3.1).
 - v0.12.98 — document seven HY4 Flash context targets on the shared external Maya listener and
@@ -2435,12 +2439,11 @@ Temporary capacity loss parks the ticket. A definitive refusal settles once with
   selector failure are worded differently: the first says the switch is still running, the second says the
   selector could not serve that model.
   Per-engine `response_timeout_ms` (default `600000`, `0` disables) caps how long an engine may sit on a
-  request it already accepted. The ceiling bounds what the caller is still owed, not merely the arrival of
-  headers: for a stream it ends at the **first frame**, and for a non-streaming request (and for an
-  upstream error body) it stays armed through the **body**, so headers-then-silence is a timeout rather
-  than a hang (`HeadersWithoutABodyAreNotAnAnswerSoTheCeilingStillEndsTheRequest`). A generation in
-  progress is never cut off: once the first frame is out the ceiling no longer applies, and a stream whose
-  engine goes quiet fails **in band** — one `engine_timeout` error frame and `[DONE]` on a response whose
+  request it already accepted. For a stream the ceiling ends at the **first positive raw read**,
+  which also records `request.streaming_first_token`. For a non-streaming request and for an upstream
+  error body it stays armed through the **body**. Headers followed by silence time out
+  (`HeadersWithoutABodyAreNotAnAnswerSoTheCeilingStillEndsTheRequest`). A stream whose engine sends
+  no bytes before the ceiling fails **in band** with one `engine_timeout` error frame and `[DONE]` on a response whose
   `200` was already committed — because there is no status left to change (§6, and
   `AStreamThatNeverSendsAFrameEndsInsideTheStreamBecauseTheStatusIsAlreadySent`). The ceiling loses a race
   cleanly: if the owed bytes are already in hand when it expires the caller gets the answer rather than a
@@ -2468,10 +2471,8 @@ Temporary capacity loss parks the ticket. A definitive refusal settles once with
 OpenAI-compatible (path-for-verbatim):
 
 - `POST /v1/chat/completions` — body `chat/completions` DTO; `stream: true`
-  streams SSE deltas verbatim as the engine produces them (no re-buffering). The copy is byte-identical whatever chunk boundary
-  the upstream chooses: `StreamFrameIdentityTests` replays one fixture at every byte offset and at 64-byte alignments and
-  compares the client's bytes with the upstream's, so a torn, duplicated or keepalive-interleaved frame fails a test rather
-  than reading as a slow stream.
+  streams complete SSE blocks verbatim. `StreamFrameIdentityTests` compares the client's bytes with the upstream's
+  at every split of a short fixture and all 64 alignments of a longer fixture.
 - `POST /v1/completions` — same for legacy completions.
 - `GET /v1/models` returns the OpenAI model list envelope with the last reported loaded row for
   each model and engine, in roster order. Entries retain `id`, `object`, `created`, and `owned_by`.
@@ -2523,19 +2524,31 @@ client start parsing it (§15 open question).
 **Streaming handoff**: the SSE relay does not poll for the ticket's stream channel. The
 channel is created at admission, before the `Executing` event is published, and
 `RouterTicket.StreamReady` resolves with it (or with `null` at a terminal state). The relay flushes
-one initial keepalive and then one every 4 s while it waits for the channel or the first nonempty
-upstream chunk. Installing the channel carries forward the same monotonic deadline and sequence.
-Available data or a terminal result takes precedence over a due keepalive. After the first
-nonempty chunk, the relay forwards upstream bytes in order and emits no further keepalives.
+one initial keepalive and then one every 4 s until the first complete upstream SSE block or a terminal
+result. A complete upstream comment-only block counts. Installing the channel carries forward the same
+monotonic deadline and sequence. Available complete bytes or a terminal result takes precedence over
+a due keepalive. The relay emits no more keepalives after it starts forwarding upstream bytes.
 Each keepalive is an SSE comment such as `: [router keepalive seq=7 status="switching model=qwen-long engine=hyperqwen"]` followed by a blank line.
 The sequence starts at zero and increases by one on that stream. The optional JSON-quoted `status`
 appears on the first comment and when the status changes. SSE parsers ignore comments when
-dispatching data events. A stream that fails after it started ends with
-`data: {"error":{…}}` then `data: [DONE]`, so a client that stops at the sentinel cannot hang and
-can tell a truncated completion from a finished one. Successful EOF adds no bytes, and a client
-disconnect stops the relay without an extra terminal frame. Poll-based handoffs stall time-to-first-token
-by the whole poll interval — the benchmark harness measured exactly that before this fix (§14,
-`docs/benchmarks.md`).
+dispatching data events.
+
+The pump holds one unfinished block until its blank line, preserving LF, CRLF and bare CR across
+upstream read boundaries. The per-block limit is 1 MiB including all bytes on nonblank lines and their
+line endings. The blank delimiter contributes one or two bytes outside that limit. The read scratch is
+16 KiB and a single owned channel write can contain up to 1 MiB plus 16 KiB. Growing the staging array
+temporarily retains its old allocation during the copy. Queued output has its own pending backpressure
+work (TASK-30).
+
+EOF with an unfinished block and a block over the size limit both fail with `engine_error`. This
+includes an otherwise valid oversized event and an upstream `[DONE]` line without its blank delimiter.
+A read cancelled by the upstream alone uses the same block-boundary check as EOF. An I/O fault
+such as an upstream disconnect uses `engine_unreachable`. The relay discards the unfinished
+block, preserves the complete prefix, and sends a standalone `data: {"error":{…}}` event
+followed by `data: [DONE]` before closing. Clean EOF at a block boundary adds no bytes, including on an
+empty upstream or after complete blocks without a sentinel. A caller disconnect closes the relay
+without an extra terminal frame. The benchmark harness measured the time-to-first-token delay from
+the previous poll-based handoff (§14, `docs/benchmarks.md`).
 
 **Threading through HTTP**: clients convey thread + priority via headers:
 `X-Inference-Thread: agent-42`, `X-Inference-Priority: high:200`

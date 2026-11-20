@@ -3,6 +3,7 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Arboreal.InferenceRouter.Tests;
 
@@ -12,14 +13,107 @@ public class StreamFrameIdentityTests
     private const string CompletionChunk = """
         {"id":"chatcmpl-wire","object":"chat.completion.chunk","created":1,"model":"test-model","choices":[{"index":0,"delta":{"content":"hello"},"finish_reason":null}]}
         """;
+    private const string CompletePrefix = "data: {\"delta\":\"é🌲\"}\r\n\r\n";
     private static readonly byte[] CompletionFixture = Encoding.UTF8.GetBytes(
         $"data: {CompletionChunk}\r\n\r\ndata: [DONE]\r\n\r\n");
-    private static readonly byte[] ShortFixture =
-        "data: {\"delta\":\"é🌲\"}\r\n\r\n: upstream comment\nid: 02\ndata: second\ndata: line two\n\ndata: [DONE]\r\n\r\n"u8.ToArray();
+    private static readonly byte[] ShortFixture = Encoding.UTF8.GetBytes(
+        CompletePrefix + "data:\n\n: upstream comment\n\nid: 02\nx-extra: ignored\ndata: second\ndata: line two\n\ndata: [DONE]\r\n\r\n");
 
     [Fact]
     public Task Every_Byte_Split_Preserves_The_Short_Stream()
         => CheckSplitsAsync(ShortFixture, Enumerable.Range(0, ShortFixture.Length + 1), ShortFixture.Length);
+
+    [Theory]
+    [InlineData("data: {\"delta\":\"cut", false, "engine_error")]
+    [InlineData("data: {\"delta\":\"cut\"}\r\n", true, "engine_unreachable")]
+    public async Task Incomplete_Upstream_Block_Ends_With_A_Standalone_Error(string unfinished, bool fault, string code)
+    {
+        var prefix = Encoding.UTF8.GetBytes(CompletePrefix);
+        var bytes = Encoding.UTF8.GetBytes(CompletePrefix + unfinished);
+        var releaseEnd = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var upstream = new FragmentedBody(bytes, bytes.Length, 1, releaseEnd.Task, endFailure: fault ? Disconnect() : null);
+        await AssertUpstreamOutcomeAsync(upstream, prefix, code, releaseEnd);
+    }
+
+    [Theory]
+    [InlineData("data: {\"delta\":\"cut\"}\n", false, "engine_error")]
+    [InlineData("data: [DONE]\n", false, "engine_error")]
+    [InlineData("data: {\"delta\":\"cut", true, "engine_unreachable")]
+    public async Task Bytewise_Incomplete_Blocks_Are_Discarded(string unfinished, bool fault, string code)
+    {
+        var bytes = Encoding.UTF8.GetBytes(CompletePrefix + unfinished);
+        using var upstream = new FragmentedBody(bytes, 0, 1, endFailure: fault ? Disconnect() : null);
+        await AssertUpstreamOutcomeAsync(upstream, Encoding.UTF8.GetBytes(CompletePrefix), code);
+    }
+
+    [Theory]
+    [InlineData("data: complete\r\n\r", "\ndata: cut", "data: complete\r\n\r\n")]
+    [InlineData("data: complete\r\r", "data: cut", "data: complete\r\r")]
+    [InlineData("data: complete\r\r", "", "data: complete\r\r")]
+    [InlineData(CompletePrefix + "data: cut\r", "\ndata: next", CompletePrefix)]
+    [InlineData(CompletePrefix + "data: cut\r", "data: next", CompletePrefix)]
+    public async Task Read_Fault_Keeps_Only_The_Complete_Prefix_Across_CR(
+        string first, string second, string completed)
+    {
+        var bytes = Encoding.UTF8.GetBytes(first + second);
+        using var upstream = new FragmentedBody(bytes, Encoding.UTF8.GetByteCount(first), bytes.Length, endFailure: Disconnect());
+        await AssertUpstreamOutcomeAsync(upstream, Encoding.UTF8.GetBytes(completed), "engine_unreachable");
+    }
+
+    [Theory]
+    [InlineData("", null)]
+    [InlineData("data: {\"delta\":\"cut\"}\r\n", "engine_error")]
+    public async Task Upstream_Only_Read_Cancellation_Checks_For_An_Incomplete_Block(string unfinished, string? code)
+    {
+        var bytes = Encoding.UTF8.GetBytes(CompletePrefix + unfinished);
+        var upstreamCancellation = new OperationCanceledException("scripted upstream cancellation", new CancellationToken(canceled: true));
+        using var upstream = new FragmentedBody(bytes, 0, 1, endFailure: upstreamCancellation);
+        await AssertUpstreamOutcomeAsync(upstream, Encoding.UTF8.GetBytes(CompletePrefix), code);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData(CompletePrefix)]
+    public async Task Clean_EOF_At_A_Block_Boundary_Adds_No_Bytes(string complete)
+    {
+        var bytes = Encoding.UTF8.GetBytes(complete);
+        using var upstream = new FragmentedBody(bytes, 0, 1);
+        await AssertUpstreamOutcomeAsync(upstream, bytes, errorCode: null);
+    }
+
+    [Theory]
+    [InlineData("\n", false)]
+    [InlineData("\r\n", false)]
+    [InlineData("\r\n", true)]
+    public async Task Block_Limit_Includes_Split_Nonblank_CRLF_But_Excludes_The_Blank_Line(string delimiter, bool overflow)
+    {
+        const int maxBlockBytes = 1024 * 1024;
+        const string data = "data: {\"delta\":\"";
+        const string lineEnd = "\"}\r\n";
+        var payloadBytes = maxBlockBytes - data.Length - lineEnd.Length + (overflow ? 1 : 0);
+        var line = data + new string('x', payloadBytes) + lineEnd;
+        var bytes = Encoding.UTF8.GetBytes(CompletePrefix + line + delimiter);
+        var split = Encoding.UTF8.GetByteCount(CompletePrefix) + line.Length - 1;
+        using var upstream = new FragmentedBody(bytes, split, 16 * 1024);
+        if (overflow)
+            await AssertUpstreamOutcomeAsync(upstream, Encoding.UTF8.GetBytes(CompletePrefix), "engine_error");
+        else
+            await AssertUpstreamOutcomeAsync(upstream, bytes, errorCode: null);
+    }
+
+    [Fact]
+    public void Overflow_Preserves_An_Earlier_Block_Completed_In_The_Same_Read()
+    {
+        var blocks = new SseBlockBuffer(maxBlockBytes: 7);
+        var (first, firstExceeded) = blocks.Append("data"u8);
+        Assert.True(first.IsEmpty);
+        Assert.False(firstExceeded);
+
+        // The second read completes one block, then includes an over-budget but delimited block.
+        var (complete, limitExceeded) = blocks.Append(":\n\ndata:xx\n\n"u8);
+        Assert.True(limitExceeded);
+        Assert.Equal("data:\n\n"u8.ToArray(), complete.ToArray());
+    }
 
     [Fact]
     public async Task Strict_OpenAI_Sse_Parser_Only_Receives_Upstream_Completion_Chunks()
@@ -97,7 +191,8 @@ public class StreamFrameIdentityTests
         // The fake has been read, so this request owns the only slot before the next request starts.
         await occupyingBody.AtGate.Task.WaitAsync(ct);
 
-        var split = ShortFixture.AsSpan().IndexOf("🌲"u8) + 1;
+        var prefix = Encoding.UTF8.GetBytes(CompletePrefix);
+        var split = prefix.Length + "dat"u8.Length;
         var releaseSuffix = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         using var pendingBody = new FragmentedBody(ShortFixture, split, ShortFixture.Length, releaseSuffix.Task);
         fake.Responses.Enqueue(pendingBody);
@@ -113,13 +208,12 @@ public class StreamFrameIdentityTests
         await ReadExpectedAsync(clientBody, Encoding.UTF8.GetBytes(queuedFrames), ct);
 
         releaseSlot.SetResult();
-        var prefix = ShortFixture.AsMemory(0, split);
         var start = new byte["data: {"u8.Length];
         var nextSequence = 3;
         while (true)
         {
             await clientBody.ReadExactlyAsync(start, ct);
-            if (prefix.Span.StartsWith(start)) break;
+            if (prefix.AsSpan().StartsWith(start)) break;
 
             // Admission can race another tick after the slot is released. Accept only complete,
             // consecutive keepalives before the first upstream byte, including a status change.
@@ -131,14 +225,63 @@ public class StreamFrameIdentityTests
                 $"The relay emitted an unexpected keepalive ending: {end}");
         }
 
-        // The client must see the incomplete frame before the fake can return its suffix.
-        await ReadExpectedAsync(clientBody, prefix[start.Length..], ct);
+        // The first complete block arrives while the next block is still missing its suffix.
+        await ReadExpectedAsync(clientBody, prefix.AsMemory(start.Length), ct);
         await pendingBody.AtGate.Task.WaitAsync(ct);
         releaseSuffix.SetResult();
         using var tail = new MemoryStream();
         await clientBody.CopyToAsync(tail, ct);
-        Assert.True(ShortFixture.AsSpan(split).SequenceEqual(tail.ToArray()),
+        Assert.True(ShortFixture.AsSpan(prefix.Length).SequenceEqual(tail.ToArray()),
             $"The relay tore, changed, duplicated, or inserted a keepalive into the upstream frame split at byte {split}.");
+    }
+
+    private static async Task AssertUpstreamOutcomeAsync(
+        FragmentedBody upstream, byte[] prefix, string? errorCode, TaskCompletionSource? releaseEnd = null)
+    {
+        using var fake = new FragmentedEngine();
+        var (app, _, port) = await WireHarness.StartAsync(fake: fake);
+        await using var server = app;
+        using var http = Client(port);
+        using var bound = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        var ct = bound.Token;
+        fake.Responses.Enqueue(upstream);
+        var (ticketId, response) = await WireHarness.StartStreamAsync(http, "frame-ending", Request, ct);
+        using var res = response;
+
+        if (releaseEnd is not null)
+        {
+            await upstream.AtGate.Task.WaitAsync(ct);
+            releaseEnd.SetResult();
+        }
+
+        // Reading through EOF proves the writer sent a complete HTTP response and closed its body.
+        var wire = await res.Content.ReadAsByteArrayAsync(ct);
+        var output = wire.AsMemory(LeadingKeepaliveLength(wire));
+        Assert.True(output.Span.StartsWith(prefix), "The relay changed or omitted a complete upstream block.");
+        var terminal = Encoding.UTF8.GetString(output.Span[prefix.Length..]);
+        var ticket = app.Services.GetRequiredService<RouterCore>().TryGetTicket(ticketId);
+        Assert.NotNull(ticket);
+
+        if (errorCode is null)
+        {
+            Assert.Empty(terminal);
+            Assert.Equal("Completed", ticket.State);
+            return;
+        }
+
+        const string data = "data: ";
+        const string ending = "\n\ndata: [DONE]\n\n";
+        Assert.StartsWith(data + "{\"error\":", terminal, StringComparison.Ordinal);
+        Assert.EndsWith(ending, terminal, StringComparison.Ordinal);
+        using var json = JsonDocument.Parse(terminal[data.Length..^ending.Length]);
+        Assert.Single(json.RootElement.EnumerateObject());
+        var error = json.RootElement.GetProperty("error");
+        Assert.Equal(3, error.EnumerateObject().Count());
+        Assert.Equal("air_error", error.GetProperty("type").GetString());
+        Assert.Equal(errorCode, error.GetProperty("code").GetString());
+        Assert.False(string.IsNullOrWhiteSpace(error.GetProperty("message").GetString()));
+        Assert.Equal("Failed", ticket.State);
+        Assert.Equal(errorCode, ticket.ErrorCode);
     }
 
     private static async Task CheckSplitsAsync(byte[] fixture, IEnumerable<int> splits, int stride)
@@ -251,9 +394,11 @@ public class StreamFrameIdentityTests
         }
     }
 
+    private static IOException Disconnect() => new("scripted upstream disconnect");
+
     // The HTTP handler supplies this stream directly to the upstream pump, so TCP coalescing
     // cannot erase the scripted boundaries. A zero-length partition is skipped: a zero read is EOF.
-    private sealed class FragmentedBody(byte[] bytes, int split, int stride, Task? gate = null) : Stream
+    private sealed class FragmentedBody(byte[] bytes, int split, int stride, Task? gate = null, Exception? endFailure = null) : Stream
     {
         private int _offset;
         private int _nextBoundary = split == 0 ? stride : split;
@@ -272,6 +417,9 @@ public class StreamFrameIdentityTests
                 AtGate.TrySetResult();
                 await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
             }
+
+            if (endFailure is not null && _offset == bytes.Length)
+                throw endFailure;
 
             var end = Math.Min(_nextBoundary, bytes.Length);
             var count = Math.Min(end - _offset, buffer.Length);
