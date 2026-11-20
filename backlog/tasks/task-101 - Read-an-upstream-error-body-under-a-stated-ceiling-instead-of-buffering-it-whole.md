@@ -3,11 +3,11 @@ id: TASK-101
 title: >-
   Read an upstream error body under a stated ceiling instead of buffering it
   whole
-status: To Do
+status: Preparing
 assignee:
-  - '@qwen3.8-flash-next'
+  - '@gpt-6.2-sol-stream-frames'
 created_date: '2026-11-18T11:29:00Z'
-updated_date: '2026-11-18T19:29:00Z'
+updated_date: '2026-11-20T04:21:00Z'
 labels: []
 milestone: m-1
 dependencies: []
@@ -17,7 +17,7 @@ ordinal: 100000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-An upstream error body is read **whole** before the router takes its 256-byte excerpt: `ReadAsByteArrayAsync` at `RouterCore.cs:708` (again at `:725` for a different read), so a large error response from an engine makes this process hold the entire body before any budget applies. The test comment at `ErrorContractTests.cs:224` asserts the opposite — that the producer "reads at most 256 bytes" — so the suite documents a property the code does not have.
+Frames is preparing a bounded upstream error-body read and a test that counts bytes consumed. The router currently buffers an upstream error response before taking its 256-byte diagnostic excerpt. The plan will distinguish the read ceiling from the size of the excerpt and exercise the production read path.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
