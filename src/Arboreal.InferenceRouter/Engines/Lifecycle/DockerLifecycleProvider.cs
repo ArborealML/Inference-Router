@@ -623,14 +623,16 @@ public sealed partial class DockerLifecycleProvider : IEngineLifecycleProvider, 
         throw new RouterConfigException($"engine.{WireText.Ident(engineName)}: docker.socket must name a Unix socket or an absolute HTTP(S) daemon base");
     }
 
-    internal static void RejectWindowsNamedPipe(string socket, string engineName)
+    internal static void RejectWindowsNamedPipe(string? socket, string engineName)
     {
         if (IsWindowsNamedPipe(socket))
             throw new RouterConfigException($"engine.{WireText.Ident(engineName)}.docker.socket: Windows Docker named-pipe transport is unsupported");
     }
 
-    private static bool IsWindowsNamedPipe(string socket)
+    private static bool IsWindowsNamedPipe(string? socket)
     {
+        if (socket is null)
+            return false;
         if (socket.StartsWith("npipe:", StringComparison.OrdinalIgnoreCase))
             return true;
         if (socket.Length < 3 || !IsPathSeparator(socket[0]) || !IsPathSeparator(socket[1]))

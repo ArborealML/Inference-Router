@@ -86,6 +86,12 @@ public sealed class DockerLifecycleProviderTests
         });
 
         Assert.Equal(LifecycleAuthorityTests.NamedPipeDockerError, error.Message);
+
+        var missingSocket = Assert.Throws<RouterConfigException>(() =>
+        {
+            using var provider = new DockerLifecycleProvider(Cfg(socket: null!), "fixture", daemon);
+        });
+        Assert.Equal("engine.fixture: docker.socket must name a Unix socket or an absolute HTTP(S) daemon base", missingSocket.Message);
         Assert.Empty(daemon.Requests);
     }
 
