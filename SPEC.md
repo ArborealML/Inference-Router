@@ -1,6 +1,6 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.98)
+Status: draft, continuously revised (v0.12.99)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
@@ -352,6 +352,8 @@ daemon transaction per engine. 137 tests green.
   that answers no `upload_url`, an upload that dies or answers no asset id, an asset name listed twice on
   the release, and a tag that moves after the first resolve. No tag has run the gate: still configured,
   not proven.
+- v0.12.99 — verify the selected enrolled pair against an independent current topology head
+  and freeze an inert offline descriptor (§5.3.1).
 - v0.12.98 — document seven HY4 Flash context targets on the shared external Maya listener and
   pin ordinary routing, observed capacity and offline launch projection (§7.6).
 - v0.12.97 — exercise the dedicated DeepSeek and Strata Qwen swap in both directions offline,
@@ -1926,8 +1928,16 @@ instance observations. Each direction checks a canonical POST through certified 
 the current recorded channel. Recovery retains the applied receipt and opens a fresh
 incarnation. The old incarnation cannot mint another grant or authorize the first write of
 a grant it received before closure. Two explicit router-owned engines in one configuration
-still fail the dedicated-engine topology check. Native host enrollment and a live Pi swap
-remain separate acceptance requirements.
+still fail the dedicated-engine topology check on all public configuration paths.
+
+Internal offline preparation checks the selected pair against one independently supplied
+current topology head for the commissioned slot. The head binds the partition, daemon,
+router owner, enrollment generation, revision, digest, members and device grants. Before
+either Docker projection, both members must match the exact commissioned identities, routes,
+socket paths and endpoints. The checker projects the approved targets and compares their
+plan digests, then returns an immutable descriptor with exact Docker create settings, image
+pins and original readiness budgets. The descriptor provides no runtime, lifecycle or serving
+authority. Native host enrollment and a live Pi swap remain separate acceptance requirements.
 
 In the older injected immediate-host fixture, proof publication remains provisional while the
 switch marker is raised. The host records acceptance with a synchronous store under the runtime

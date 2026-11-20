@@ -23,16 +23,24 @@ internal sealed class VerifiedDispatchTargetResolver
     private readonly DockerImageIdentity _image;
     private readonly Uri _endpoint;
     private readonly int _readinessTimeoutMs;
-    private readonly DockerLifecycleProvider _projection;
+    private readonly DockerLifecycleConfig _docker;
+    private readonly DockerLifecycleProvider? _projection;
     private readonly Dictionary<string, EngineModelDefinition> _spellings = new(StringComparer.OrdinalIgnoreCase);
 
-    internal VerifiedDispatchTargetResolver(EngineDefinition engine, DockerLifecycleProvider projection)
+    internal VerifiedDispatchTargetResolver(EngineDefinition engine, DockerLifecycleProvider projection) : this(engine)
+    {
+        if (!projection.ProjectsCapturedConfig(engine.Name, _docker))
+            throw new VerifiedDispatchBindingException(VerifiedDispatchRefusal.Target);
+        _projection = projection;
+    }
+
+    internal VerifiedDispatchTargetResolver(EngineDefinition engine)
     {
         _engine = engine.Name;
-        _projection = projection;
         if (engine.Docker is not { TargetPlans: { } plans, ImageIdentity: { } image, WaitTimeoutMs: > 0 } docker ||
-            !projection.ProjectsCapturedConfig(engine.Name, docker) || !VerifiedDispatchEnvelope.IsHttpEndpoint(engine.Endpoint))
+            !VerifiedDispatchEnvelope.IsHttpEndpoint(engine.Endpoint))
             throw new VerifiedDispatchBindingException(VerifiedDispatchRefusal.Target);
+        _docker = docker;
         _endpoint = engine.Endpoint;
         _plans = plans;
         _image = image;
@@ -63,6 +71,10 @@ internal sealed class VerifiedDispatchTargetResolver
 
     // Use the resident tier only for ordinary reuse. A null tier with no resident selects the launch default.
     internal VerifiedDispatchTarget Resolve(
+        string requestedModel, string? selectedTier, VerifiedDispatchTarget? resident, string configuration, string backendRoute) =>
+        ResolveProjection(requestedModel, selectedTier, resident, configuration, backendRoute).Target;
+
+    internal (VerifiedDispatchTarget Target, HostCheckpointPlan Plan, DockerCreateRequest Create) ResolveProjection(
         string requestedModel, string? selectedTier, VerifiedDispatchTarget? resident, string configuration, string backendRoute)
     {
         if (!_spellings.TryGetValue(requestedModel, out var model) ||
@@ -89,7 +101,8 @@ internal sealed class VerifiedDispatchTargetResolver
                 throw new VerifiedDispatchBindingException(VerifiedDispatchRefusal.Target);
 
             var requested = new LifecycleTarget(_engine, launch.Model, tier, model);
-            create = _projection.BuildCreateRequest(requested, _image);
+            create = _projection is { } provider ? provider.BuildCreateRequest(requested, _image)
+                : DockerLifecycleProvider.ProjectCreateRequest(_docker, _engine, requested, _image);
         }
         catch (RouterConfigException)
         {
@@ -101,7 +114,7 @@ internal sealed class VerifiedDispatchTargetResolver
 
         var plan = new HostCheckpointPlan(_engine, launch.Model, launch.Profile, configuration, _readinessTimeoutMs,
             backendRoute, DigestSettings(create, _image, _endpoint));
-        return new VerifiedDispatchTarget(_engine, launch.Model, launch.Profile, plan.Digest(), _endpoint);
+        return (new VerifiedDispatchTarget(_engine, launch.Model, launch.Profile, plan.Digest(), _endpoint), plan, create);
     }
 
     private bool MatchesProjection(DockerCreateRequest create, DockerTargetLaunch launch) =>

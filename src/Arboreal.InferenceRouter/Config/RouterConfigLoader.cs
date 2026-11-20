@@ -19,6 +19,20 @@ public static class RouterConfigLoader
 
     public static RouterConfig Load(string text, string? source = null, bool isJson = false)
     {
+        var config = ParseAndMap(text, source, isJson);
+        config.ValidateLifecycleTopology();
+        return config;
+    }
+
+    internal static CheckedEnrolledPair PrepareEnrolledPair(string text, string commissionedSlot, EnrolledPairClaim claim,
+        Func<string, EnrolledPairAuthority?> readCurrent, bool isJson = false, Action<ConfigDto>? beforeFreezeForTests = null)
+    {
+        var config = ParseAndMap(text, source: null, isJson, beforeFreezeForTests);
+        return EnrolledPairTopology.Check(config, commissionedSlot, claim, readCurrent);
+    }
+
+    private static RouterConfig ParseAndMap(string text, string? source, bool isJson, Action<ConfigDto>? beforeFreezeForTests = null)
+    {
         try
         {
             ConfigDto dto;
@@ -42,7 +56,8 @@ public static class RouterConfigLoader
                 dto = TomlSerializer.Deserialize(text, ConfigTomlContext.Default.ConfigDto)
                       ?? throw new RouterConfigException("config: empty document");
             }
-            return FromDto(dto, source ?? (isJson ? "config.json" : "config.toml"));
+            beforeFreezeForTests?.Invoke(dto);
+            return Map(dto, source ?? (isJson ? "config.json" : "config.toml"));
         }
         catch (TomlException ex)
         {
@@ -57,6 +72,13 @@ public static class RouterConfigLoader
     // ── DTO → domain mapping (fail-fast, path-precise) ──────────────────────
 
     public static RouterConfig FromDto(ConfigDto dto, string source)
+    {
+        var cfg = Map(dto, source);
+        cfg.ValidateLifecycleTopology();
+        return cfg;
+    }
+
+    private static RouterConfig Map(ConfigDto dto, string source)
     {
         var cfg = new RouterConfig();
         if (dto.Listen is { } listen) cfg.Listen = listen;
@@ -124,7 +146,6 @@ public static class RouterConfigLoader
 
         if (cfg.Engines.Count == 0)
             throw new RouterConfigException($"{source}: at least one [engine.<name>] is required");
-        cfg.ValidateLifecycleTopology();
         return cfg;
     }
 
