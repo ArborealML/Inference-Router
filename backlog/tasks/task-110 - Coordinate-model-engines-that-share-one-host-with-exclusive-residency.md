@@ -5,7 +5,7 @@ status: Waiting
 assignee:
   - '@gpt-6.2-sol-release'
 created_date: '2026-11-18T18:13:00Z'
-updated_date: '2026-11-20T17:54:00Z'
+updated_date: '2026-11-20T18:21:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -21,7 +21,7 @@ ordinal: 108000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Wake: independent review of correction 2e2d549 and qualification of the integrated .108 head for [the launch-record producer](https://github.com/ArborealML/Inference-Router/pull/49). The correction passed all 19 focused Release tests with zero skips. The seven original passes belong to e2bd353, still the published draft head. Delivery will integrate after the keepalive merge is verified.
+Wake: host enrollment supplies a commissioned issuer that can attest the serving process for both readiness reads and confirm their retirement. [PR #49](https://github.com/ArborealML/Inference-Router/pull/49) landed the supervised offline launch record at bc585f1 with ingress closed. Nineteen focused tests passed. [Main CI](https://github.com/ArborealML/Inference-Router/actions/runs/44790929839) passed Release, Linux Native AOT and smoke. Public enrollment remains disabled.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

@@ -3,11 +3,11 @@ id: TASK-97
 title: >-
   Stop the admin ticket snapshot echoing caller identifiers at a length nothing
   bounds
-status: In Progress
+status: Waiting
 assignee:
-  - '@gpt-6.2-sol-stream-frames'
+  - '@gpt-6.2-sol-stream-delivery'
 created_date: '2026-11-18T10:57:00Z'
-updated_date: '2026-11-20T17:57:00Z'
+updated_date: '2026-11-20T18:21:00Z'
 labels: []
 milestone: m-1
 dependencies: []
@@ -17,7 +17,7 @@ ordinal: 96000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Frames has the reviewed implementation release for criterion 4: apply the existing counted request limit to the two admin JSON routes, verify refusal before effects and valid exact-cap requests, and correct the snapshot sizing claim. Whole stored identifiers and existing refusal fields remain unchanged.
+Wake: integration of the two admin body limits with SPEC .108 and hosted review of the resulting .109 candidate. Delivery owns the qualified change. All 18 focused cases passed at b729aa9. On the baseline, six HTTP refusal assertions failed as expected. Removing either route guard independently failed its three assertions. Both review ranges passed. Criteria beyond the two body-consuming routes require a separate identity-policy disposition.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
