@@ -1,21 +1,22 @@
 ---
 id: TASK-104
 title: Make the admin switch verb answer with a category, not a feed account
-status: Preparing
+status: Blocked
 assignee:
   - '@gpt-6.2-sol-stream-frames'
 created_date: '2026-11-18T12:59:00Z'
 updated_date: '2026-11-20T21:21:00Z'
 labels: []
 milestone: m-7
-dependencies: []
+dependencies:
+  - TASK-148
 ordinal: 103000
 ---
 
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Frames is auditing POST /admin/switch on 6588da3. Trace what the caller receives on immediate refusal, what a 202 response establishes, and how the operator learns the eventual outcome. Map existing tests, SPEC and recorded decisions before proposing any wire change.
+Blocked on Claire’s TASK-148 decision about the admin switch response. The shipped POST acknowledges acceptance with 202, then discards the typed outcome. The CLI exits successfully on acknowledgement. The response carries no switch ID, and some ownership refusals produce no feed event. Choose correlated asynchronous lookup or a terminal POST response before designing the wire contract.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
