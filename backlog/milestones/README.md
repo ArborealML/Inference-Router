@@ -6,7 +6,7 @@ The first milestone requires a completed pi turn on the deployed router. An isol
 
 **Pi on a running router is complete (6/6).** The deployed router served streamed Qwen and Swift turns in the same Pi session across an operator-managed selector change. Model discovery and the pinned client agreed on Qwen’s 256,000-token window. [PR #8](https://github.com/ArborealML/Inference-Router/pull/8) qualified the remaining admission check when a serving window shrinks during selection. [PR #33](https://github.com/ArborealML/Inference-Router/pull/33) completed CLI prompt parsing for both verbs, including stdin when only options are supplied.
 
-**Native model swap through Pi has twelve of twenty-one tasks complete.** [PR #31](https://github.com/ArborealML/Inference-Router/pull/31) qualified offline launch projections across 75 model and tier targets. The selected pair is DeepSeek V4.1 Flash 1017 and Qwen 3.8 Flash Next. Earlier Qwen/Swift evidence retains its original scope. The native swap still requires an enrolled host with an authenticated launch record and an observed router-managed transition between real Pi turns.
+**Native model swap through Pi has 13 of 23 tasks complete.** [PR #31](https://github.com/ArborealML/Inference-Router/pull/31) qualified offline launch projections across 75 model and tier targets. The selected pair is DeepSeek V4.1 Flash 1017 and Qwen 3.8 Flash Next. Earlier Qwen/Swift evidence retains its original scope. The native swap still requires an enrolled host with an authenticated launch record and an observed router-managed transition between real Pi turns.
 
 ## Delivery path
 
@@ -30,6 +30,7 @@ Stream integrity, switch safety and bounded admission can advance in parallel. E
 | [Configuration reload during inference](m-8%20-%20configuration-reload-during-inference.md) | Apply a validated configuration generation while active work keeps its claimed configuration. An invalid change leaves the current generation serving. |
 | [Verifiable public release](m-9%20-%20verifiable-public-release.md) | Verify the canary, then publish and identify the stable Linux and Windows binaries with downloadable evidence. |
 | [Repository and architecture checks](m-10%20-%20repository-and-architecture-checks.md) | Pin the lifecycle map, Git identities, board validation and coordinator handoffs with reproducible checks. |
+| [Hardware-specific inference tuning](m-14%20-%20hardware-specific-inference-tuning.md) | Plan the per-engine, per-model sweep of context, stable concurrency and speed, with comparable hardware records across upgrades. |
 
 ## Follow-on work
 
