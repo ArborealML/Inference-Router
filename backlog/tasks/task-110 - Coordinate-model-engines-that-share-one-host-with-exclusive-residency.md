@@ -5,7 +5,7 @@ status: Waiting
 assignee:
   - '@gpt-6.2-sol-lifecycle'
 created_date: '2026-11-18T18:13:00Z'
-updated_date: '2026-11-20T00:04:00Z'
+updated_date: '2026-11-20T00:18:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -21,7 +21,7 @@ ordinal: 108000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Waiting for independent commit review and hosted CI on [PR #36](https://github.com/ArborealML/Inference-Router/pull/36). Their results wake the delivery manager. The closed initial receipt candidate at 0f76243 passed all 15 focused Release cases with zero skips. It covers trusted enrollment, checkpoint freshness and recovery while ingress stays closed. Live enrollment and serving remain separate.
+Waiting for Lifecycle’s correction to [PR #36](https://github.com/ArborealML/Inference-Router/pull/36); its handoff wakes Delivery. At 0f76243, 15 focused cases and hosted CI passed. An offline probe reproduced epoch allocation and a Dispatching rewrite from checksummed enrolled and empty JSON objects in a commissioned legacy slot. Require a genuine legacy record before grant. Exercise both switch entry points, unchanged storage, zero provider effects and a valid legacy control.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
