@@ -503,6 +503,7 @@ public sealed class AdminSwitchOperationTests
     [InlineData(true)]
     public async Task AdminSwitch_AckDeadlineRetiresStartedKestrelCompletionBeforeClosing(bool remainParked)
     {
+        var deadline = TimeSpan.FromSeconds(30);
         var gate = new AckGate();
         using var transport = new AckTransport();
         await using var rig = await Fixture.StartAsync(ackGate: gate, transport: transport);
@@ -512,7 +513,8 @@ public sealed class AdminSwitchOperationTests
             await SendRawAsync(peer, transport.Port, "a", rig.Token);
             await transport.FirstFlush.Task.WaitAsync(rig.Token);
             await ConfigReloadWireTests.WaitUntilAsync(() => rig.Clock.HasTimer, rig.Token);
-            rig.Clock.AdvanceTo(TimeSpan.FromSeconds(20));
+            Assert.Equal(deadline, Assert.Single(rig.Clock.GetScheduledDeadlines()));
+            Assert.Equal(0, rig.Clock.AdvanceTo(TimeSpan.FromSeconds(20)));
             transport.ForwardBody.TrySetResult();
 
             using var reader = new StreamReader(peer.GetStream(), leaveOpen: true);
@@ -533,10 +535,12 @@ public sealed class AdminSwitchOperationTests
             var original = await gate.OriginalCompletion.Task.WaitAsync(rig.Token);
             await rig.AwaitLookupAsync(id, "succeeded", null);
 
-            rig.Clock.AdvanceTo(TimeSpan.FromSeconds(30) - TimeSpan.FromTicks(1));
+            // No timer was dispatched at either advance, so a watchdog abort cannot be queued.
+            Assert.Equal(0, rig.Clock.AdvanceTo(deadline - TimeSpan.FromTicks(1)));
+            Assert.False(transport.AbortLogged.Task.IsCompleted);
             Assert.False(original.IsCompleted);
             Assert.False(transport.Closed.Task.IsCompleted);
-            rig.Clock.AdvanceTo(TimeSpan.FromSeconds(30));
+            Assert.Equal(1, rig.Clock.AdvanceTo(deadline));
             await transport.AbortLogged.Task.WaitAsync(rig.Token);
             await transport.Closed.Task.WaitAsync(rig.Token);
             var continuation = await transport.Scheduler.Parked.Task.WaitAsync(rig.Token);
@@ -1153,7 +1157,12 @@ public sealed class AdminSwitchOperationTests
             get { lock (_gate) return _timers.Count > 0; }
         }
 
-        internal void AdvanceTo(TimeSpan target)
+        internal TimeSpan[] GetScheduledDeadlines()
+        {
+            lock (_gate) return _timers.Select(timer => TimeSpan.FromTicks(timer.Deadline)).ToArray();
+        }
+
+        internal int AdvanceTo(TimeSpan target)
         {
             ClockTimer[] due;
             lock (_gate)
@@ -1162,7 +1171,12 @@ public sealed class AdminSwitchOperationTests
                 Interlocked.Exchange(ref _timestamp, target.Ticks);
                 due = _timers.Where(timer => timer.Deadline <= _timestamp).ToArray();
             }
-            foreach (var timer in due) timer.Fire();
+            var fired = 0;
+            foreach (var timer in due)
+            {
+                if (timer.TryFire()) fired++;
+            }
+            return fired;
         }
 
         public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
@@ -1186,11 +1200,12 @@ public sealed class AdminSwitchOperationTests
             private int _retired;
             internal long Deadline => deadline;
 
-            internal void Fire()
+            internal bool TryFire()
             {
-                if (Interlocked.Exchange(ref _retired, 1) != 0) return;
+                if (Interlocked.Exchange(ref _retired, 1) != 0) return false;
                 clock.Remove(this);
                 callback(state);
+                return true;
             }
 
             public bool Change(TimeSpan dueTime, TimeSpan period) => throw new NotSupportedException();
