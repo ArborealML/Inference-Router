@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Globalization;
 using System.Net;
 using System.Net.Http.Headers;
@@ -35,6 +36,7 @@ public sealed class ConfigReloadWireTests : IDisposable
         await using var app = await StartAsync(path, def => def.Name == "one" ? a : b, ct);
         using var http = Client(app);
         var router = app.Services.GetRequiredService<RouterCore>();
+        Assert.Equal(2, router.Engines.Count);
         await WaitUntilAsync(() => router.Engines.Values.All(engine => engine.Healthy), ct);
         var (firstTag, _) = await ReadGenerationAsync(http, ct);
 
@@ -104,10 +106,20 @@ public sealed class ConfigReloadWireTests : IDisposable
         Assert.Equal("Bearer", Assert.Single(unauthorized.Headers.WwwAuthenticate).Scheme);
         using var malformedTag = await ApplyAsync(http, "W/" + tag, ct);
         await AssertErrorAsync(malformedTag, HttpStatusCode.BadRequest, "invalid_reload_request", ct);
-        using var previousProcess = await ApplyAsync(http, $"\"reload-{Guid.NewGuid():N}-1\"", ct);
-        await AssertErrorAsync(previousProcess, HttpStatusCode.PreconditionFailed, "reload_stale", ct);
-
+        var previousTag = $"\"reload-{Guid.NewGuid():N}-1\"";
         await File.WriteAllTextAsync(path, json ? """{"path-that-must-stay-private":""" : "[path-that-must-stay-private", ct);
+        using var noAuth = new HttpRequestMessage(HttpMethod.Post, ReloadPath);
+        using var missingAuth = await http.SendAsync(noAuth, ct);
+        await AssertErrorAsync(missingAuth, HttpStatusCode.Unauthorized, "reload_unauthorized", ct);
+        using var wrongAuth = ReloadRequest(HttpMethod.Post, "W/" + tag);
+        wrongAuth.Headers.Authorization = new AuthenticationHeaderValue("Bearer", "incorrect");
+        using var badAuth = await http.SendAsync(wrongAuth, ct);
+        await AssertErrorAsync(badAuth, HttpStatusCode.Unauthorized, "reload_unauthorized", ct);
+        using var noTag = ReloadRequest(HttpMethod.Post, null);
+        using var missingTag = await http.SendAsync(noTag, ct);
+        await AssertErrorAsync(missingTag, HttpStatusCode.BadRequest, "invalid_reload_request", ct);
+        using var staleWithInvalid = await ApplyAsync(http, previousTag, ct);
+        await AssertErrorAsync(staleWithInvalid, HttpStatusCode.PreconditionFailed, "reload_stale", ct);
         using var invalid = await ApplyAsync(http, tag, ct);
         await AssertErrorAsync(invalid, HttpStatusCode.UnprocessableEntity, "reload_invalid_config", ct);
         Assert.DoesNotContain("path-that-must-stay-private", await invalid.Content.ReadAsStringAsync(ct), StringComparison.Ordinal);
@@ -129,15 +141,34 @@ public sealed class ConfigReloadWireTests : IDisposable
         using var identical = await ApplyAsync(http, tag, ct);
         Assert.Equal(HttpStatusCode.OK, identical.StatusCode);
         Assert.Equal(tag, identical.Headers.ETag!.Tag);
+        Assert.Equal("{\"Generation\":1}", await identical.Content.ReadAsStringAsync(ct));
+        using var staleWithIdentical = await ApplyAsync(http, previousTag, ct);
+        await AssertErrorAsync(staleWithIdentical, HttpStatusCode.PreconditionFailed, "reload_stale", ct);
+        using var chunked = ReloadRequest(HttpMethod.Post, tag);
+        chunked.Headers.TransferEncodingChunked = true;
+        chunked.Content = new ByteArrayContent([]);
+        using var bodyCapable = await http.SendAsync(chunked, ct);
+        await AssertErrorAsync(bodyCapable, HttpStatusCode.BadRequest, "invalid_reload_request", ct);
+        Assert.Equal((tag, 1L), await ReadGenerationAsync(http, ct));
 
         var changed = json ? config.Replace("\"default_model\":\"a\"", "\"default_model\":\"b\"", StringComparison.Ordinal)
             : config.Replace(Initial, "default_model = \"b\"\n", StringComparison.Ordinal);
         await File.WriteAllTextAsync(path, changed, ct);
+        using var beforeCommit = new ConfigReloadRaceTests.Cut(participants: 2);
+        router.BeforeReloadCommitForTests = beforeCommit.Hold;
         var first = ApplyAsync(http, tag, ct);
         var second = ApplyAsync(http, tag, ct);
+        try
+        {
+            await beforeCommit.Entered.Task.WaitAsync(ct);
+            Assert.Equal((tag, 1L), await ReadGenerationAsync(http, ct));
+        }
+        finally { beforeCommit.Release(); }
         using var firstReply = await first;
         using var secondReply = await second;
         Assert.Equal(ContendingStatuses, new[] { (int)firstReply.StatusCode, (int)secondReply.StatusCode }.Order());
+        var losing = firstReply.StatusCode == HttpStatusCode.PreconditionFailed ? firstReply : secondReply;
+        await AssertErrorAsync(losing, HttpStatusCode.PreconditionFailed, "reload_stale", ct);
         Assert.Equal(2L, (await ReadGenerationAsync(http, ct)).Generation);
     }
 
@@ -163,7 +194,7 @@ public sealed class ConfigReloadWireTests : IDisposable
             profile = "original-options"
             aliases = ["original-alias"]
             """;
-        using var fake = new FakeEngineHandler { LoadedModels = ["a"] };
+        using var fake = new CapturingEngine { LoadedModels = ["a"] };
         var provider = new HeldNativeProvider(fake);
         await File.WriteAllTextAsync(path, Initial + native, ct);
         await using var app = await StartAsync(path, _ => fake, ct, _ => provider);
@@ -189,6 +220,8 @@ public sealed class ConfigReloadWireTests : IDisposable
                 native.Replace("original-options", "replacement-options", StringComparison.Ordinal), ct);
             using var rejected = await ApplyAsync(http, applied.Headers.ETag!.Tag, ct);
             await AssertErrorAsync(rejected, HttpStatusCode.UnprocessableEntity, "reload_requires_restart", ct);
+            Assert.Equal((applied.Headers.ETag.Tag, 2L), await ReadGenerationAsync(http, ct));
+            Assert.Same(engine, router.Engines["native"]);
 
             provider.Release.TrySetResult();
             Assert.True((await first.WaitAsync(ct)).IsReady);
@@ -196,12 +229,14 @@ public sealed class ConfigReloadWireTests : IDisposable
             Assert.Equal("b", provider.Target!.Model);
             Assert.Equal("original-options", provider.Target.EffectiveProfile);
             Assert.Equal("original-alias", Assert.Single(provider.Target.Definition.Aliases));
+            Assert.Equal(1, provider.LaunchCount);
             Assert.Single(router.Events.Replay(0), evt => evt.Kind == "engine.switch_started");
 
             using var freshBody = new StringContent("""{"prompt":"new"}""", Encoding.UTF8, "application/json");
             using var fresh = await http.PostAsync("/v1/completions", freshBody, ct);
             Assert.Equal(HttpStatusCode.OK, fresh.StatusCode);
             Assert.Equal(1, fake.CompletionCalls);
+            Assert.Equal("""{"prompt":"new","model":"b"}""", Assert.Single(fake.Forwarded));
         }
         finally { provider.Release.TrySetResult(); }
     }
@@ -230,14 +265,42 @@ public sealed class ConfigReloadWireTests : IDisposable
         }, ct);
         using var http = Client(app);
         var router = app.Services.GetRequiredService<RouterCore>();
+        Assert.Equal(2, router.Engines.Count);
         await WaitUntilAsync(() => router.Engines.Values.All(engine => engine.Healthy), ct);
         router.RegisterThread("retired-affinity", ThreadPriority.Normal(), new RouterThreadOptions { ModelAffinity = "a" });
         var (tag, _) = await ReadGenerationAsync(http, ct);
         try
         {
-            await File.WriteAllTextAsync(path, "default_model = \"c\"\n" + External("two", "b") + External("three", "c"), ct);
-            using var applied = await ApplyAsync(http, tag, ct);
+            var candidate = "default_model = \"c\"\n" + External("two", "b") + External("three", "c");
+            await File.WriteAllTextAsync(path, candidate + "aliases = [\"a\"]\n", ct);
+            using var reusedAlias = await ApplyAsync(http, tag, ct);
+            await AssertErrorAsync(reusedAlias, HttpStatusCode.UnprocessableEntity, "reload_invalid_config", ct);
+            Assert.Equal((tag, 1L), await ReadGenerationAsync(http, ct));
+            Assert.True(router.Engines.ContainsKey("one"));
+
+            await File.WriteAllTextAsync(path, candidate, ct);
+            using var beforeCommit = new ConfigReloadRaceTests.Cut();
+            router.BeforeReloadCommitForTests = beforeCommit.Hold;
+            var apply = ApplyAsync(http, tag, ct);
+            RouterCore.ConfigurationGeneration previous;
+            try
+            {
+                await beforeCommit.Entered.Task.WaitAsync(ct);
+                previous = router.CurrentGeneration;
+                Assert.Equal("a", previous.Settings.DefaultModel);
+                Assert.True(previous.Engines.ContainsKey("one"));
+                Assert.False(previous.Engines.ContainsKey("three"));
+                Assert.Equal((tag, 1L), await ReadGenerationAsync(http, ct));
+            }
+            finally { beforeCommit.Release(); }
+            using var applied = await apply;
             Assert.Equal(HttpStatusCode.OK, applied.StatusCode);
+            var next = router.CurrentGeneration;
+            Assert.Equal(2L, next.Number);
+            Assert.Equal("c", next.Settings.DefaultModel);
+            Assert.False(next.Engines.ContainsKey("one"));
+            Assert.True(next.Engines.ContainsKey("three"));
+            Assert.Same(previous.Engines["two"], next.Engines["two"]);
             await detecting.Task.WaitAsync(ct);
             Assert.False(router.Engines["three"].Healthy);
             Assert.Equal("c", router.Config.DefaultModel);
@@ -265,6 +328,85 @@ public sealed class ConfigReloadWireTests : IDisposable
     }
 
     [Fact(Timeout = 20_000)]
+    public async Task ClosingTakesPrecedenceOverStaleAfterAuthorizationAndShape()
+    {
+        using var bound = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        var ct = bound.Token;
+        var path = Path.Combine(_dir.FullName, "router.toml");
+        using var fake = new FakeEngineHandler { LoadedModels = ["a"] };
+        await File.WriteAllTextAsync(path, Initial + External("one", "a"), ct);
+        await using var app = await StartAsync(path, _ => fake, ct);
+        using var http = Client(app);
+        var router = app.Services.GetRequiredService<RouterCore>();
+        var (tag, _) = await ReadGenerationAsync(http, ct);
+        var stale = $"\"reload-{Guid.NewGuid():N}-1\"";
+        using var pause = new ConfigReloadRaceTests.Cut();
+        router.BeforeShutdownCancellationForTests = pause.Hold;
+        var shutdown = Task.Run(async () => await router.DisposeAsync());
+        try
+        {
+            await pause.Entered.Task.WaitAsync(ct);
+            Assert.False(router.ShutdownToken.IsCancellationRequested);
+            using var unauthorized = await http.PostAsync(ReloadPath, null, ct);
+            await AssertErrorAsync(unauthorized, HttpStatusCode.Unauthorized, "reload_unauthorized", ct);
+            using var malformed = await ApplyAsync(http, "*", ct);
+            await AssertErrorAsync(malformed, HttpStatusCode.BadRequest, "invalid_reload_request", ct);
+            using var staleWhileClosing = await ApplyAsync(http, stale, ct);
+            await AssertErrorAsync(staleWhileClosing, HttpStatusCode.ServiceUnavailable, "reload_unavailable", ct);
+            using var currentWhileClosing = await ApplyAsync(http, tag, ct);
+            await AssertErrorAsync(currentWhileClosing, HttpStatusCode.ServiceUnavailable, "reload_unavailable", ct);
+            Assert.Equal(1L, router.CurrentGeneration.Number);
+        }
+        finally { pause.Release(); }
+        await shutdown.WaitAsync(ct);
+    }
+
+    [Fact(Timeout = 20_000)]
+    public async Task CancelRouteDeclinesAfterAPendingDeadlineOwnsSettlement()
+    {
+        using var bound = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        var ct = bound.Token;
+        var path = Path.Combine(_dir.FullName, "router.toml");
+        using var fake = new FakeEngineHandler { LoadedModels = ["a"] };
+        await File.WriteAllTextAsync(path, Initial + External("one", "a"), ct);
+        await using var app = await StartAsync(path, _ => fake, ct);
+        using var http = Client(app);
+        var router = app.Services.GetRequiredService<RouterCore>();
+        router.QueueTimestampForTests = Stopwatch.GetTimestamp();
+        using var pause = new ConfigReloadRaceTests.Cut();
+        RouterTicket? pending = null;
+        router.BeforeEnqueueFeedForTests = ticket =>
+        {
+            pending = ticket;
+            pause.Hold();
+        };
+        var enqueue = Task.Run(async () => await router.EnqueueAsync("deadline-owner", new InferenceRequest
+        {
+            Body = """{"prompt":"deadline"}"""u8.ToArray(),
+            Options = new RouterRequestOptions { MaxQueueTime = TimeSpan.FromMilliseconds(20) },
+        }, ct));
+        try
+        {
+            await pause.Entered.Task.WaitAsync(ct);
+            var ticket = Assert.IsType<RouterTicket>(pending);
+            Interlocked.Add(ref router.QueueTimestampForTests, Stopwatch.Frequency);
+            await WaitUntilAsync(() => Volatile.Read(ref ticket.DeferredQueueEnd) == "deadline_exceeded", ct);
+            using var declined = await http.DeleteAsync($"/admin/tickets/{ticket.Id}", ct);
+            Assert.Equal(HttpStatusCode.NotFound, declined.StatusCode);
+            Assert.False(ticket.ExecCts!.IsCancellationRequested);
+            Assert.False(ticket.CompletionTask.IsCompleted);
+        }
+        finally { pause.Release(); }
+
+        var completed = await enqueue.WaitAsync(ct);
+        var error = await Assert.ThrowsAsync<RouterRequestException>(() => completed.CompletionTask.WaitAsync(ct));
+        Assert.Equal("deadline_exceeded", error.Code);
+        Assert.Single(router.Events.Replay(0), evt => evt.TicketId == completed.Id && evt.Kind == "request.failed");
+        Assert.DoesNotContain(router.Events.Replay(0), evt => evt.TicketId == completed.Id && evt.Kind == "request.cancelled");
+        Assert.Equal(0, fake.CompletionCalls);
+    }
+
+    [Fact(Timeout = 20_000)]
     public async Task AConfigOverrideHasNoFileReloadRoute()
     {
         using var bound = new CancellationTokenSource(TimeSpan.FromSeconds(10));
@@ -277,6 +419,9 @@ public sealed class ConfigReloadWireTests : IDisposable
         using var http = Client(app);
         using var disabled = await ApplyAsync(http, "*", ct);
         Assert.Equal(HttpStatusCode.NotFound, disabled.StatusCode);
+        using var get = ReloadRequest(HttpMethod.Get, null);
+        using var disabledGet = await http.SendAsync(get, ct);
+        Assert.Equal(HttpStatusCode.NotFound, disabledGet.StatusCode);
     }
 
     private static async Task<WebApplication> StartAsync(string path, Func<EngineDefinition, HttpMessageHandler> handler,
@@ -420,6 +565,7 @@ public sealed class ConfigReloadWireTests : IDisposable
 
         public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
         {
+            if (buffer.IsEmpty) return 0;
             if (_index == head.Length)
             {
                 cut.TrySetResult();
@@ -438,12 +584,26 @@ public sealed class ConfigReloadWireTests : IDisposable
         public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
     }
 
+    private sealed class CapturingEngine : FakeEngineHandler
+    {
+        internal System.Collections.Concurrent.ConcurrentQueue<string> Forwarded { get; } = new();
+
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
+        {
+            if (request.RequestUri!.AbsolutePath.EndsWith("/completions", StringComparison.Ordinal))
+                Forwarded.Enqueue(await request.Content!.ReadAsStringAsync(ct));
+            return await base.SendAsync(request, ct);
+        }
+    }
+
     private sealed class HeldNativeProvider(FakeEngineHandler upstream) : IEngineLifecycleProvider
     {
+        private int _launches;
         public string Kind => "docker";
         internal TaskCompletionSource Launched { get; } = Gate();
         internal TaskCompletionSource Release { get; } = Gate();
         internal LifecycleTarget? Target { get; private set; }
+        internal int LaunchCount => Volatile.Read(ref _launches);
         public ValueTask<LifecycleResult> PreflightAsync(LifecycleTarget target, CancellationToken ct) =>
             ValueTask.FromResult(LifecycleResult.Ok());
         public ValueTask<IReadOnlyList<EnginePeer>> OwnedPeersAsync(LifecycleTarget target, CancellationToken ct) =>
@@ -454,6 +614,7 @@ public sealed class ConfigReloadWireTests : IDisposable
         public async ValueTask<LifecycleResult> LaunchAsync(LifecycleTarget target, CancellationToken ct)
         {
             Target = target;
+            Interlocked.Increment(ref _launches);
             Launched.TrySetResult();
             await Release.Task.WaitAsync(ct);
             upstream.LoadedModels = [target.Model];

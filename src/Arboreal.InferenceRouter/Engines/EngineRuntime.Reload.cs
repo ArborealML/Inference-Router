@@ -5,6 +5,9 @@ public sealed partial class EngineRuntime
     private bool _retiring;
     private int _inferenceUses;
     private int _externalPublications;
+    private ExternalActivation _reloadActivation;
+
+    internal enum ExternalActivation { Pending, Registration, FirstProbe }
 
     internal bool ReloadableExternal => _reloadSource is not null &&
         _lifecycleBinding is null && _lifecycle is null && _hostEnrollment is null;
@@ -45,7 +48,21 @@ public sealed partial class EngineRuntime
         lock (_transitionGate) _externalPublications--;
     }
 
-    internal bool CanActivateExternal => !_stopped && !_retiring;
+    // Caller holds the router and engine transition gates. Record ownership at the same cut
+    // that arbitrates closing and retirement. The worker performs the claimed action outside.
+    internal bool TryClaimReloadActivation(ExternalActivation next)
+    {
+        var previous = next == ExternalActivation.Registration
+            ? ExternalActivation.Pending : ExternalActivation.Registration;
+        if (_stopped || _retiring || _externalPublications == 0 || _reloadActivation != previous) return false;
+        _reloadActivation = next;
+        return true;
+    }
+
+    internal int ExternalPublicationsForTests
+    {
+        get { lock (_transitionGate) return _externalPublications; }
+    }
 
     private bool PublishExternalProbe(EngineCapability expected, ModelsObservation? observation,
         ServingCapacity serving, Exception? error, bool withdraw)

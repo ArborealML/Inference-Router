@@ -30,6 +30,7 @@ public sealed partial class RouterCore : IInferenceRouter
     private readonly object _gate = new();
     private long _seq;
     private readonly CancellationTokenSource _shutdown = new();
+    private TaskCompletionSource? _shutdownCompletion;
     // Consumers can resume after shutdown cancels and disposes its source. Keep the token
     // for their waits while retaining cancellation and source ownership in the router.
     private readonly CancellationToken _shutdownToken;
@@ -1227,19 +1228,23 @@ public sealed partial class RouterCore : IInferenceRouter
         }
     }
 
-    public async ValueTask DisposeAsync()
+    public ValueTask DisposeAsync()
     {
         // A queued ticket has no execution to cancel, so it needs an explicit terminal transition;
         // without this its relays sit open until the process exits.
-        var pending = new List<QueuedRequest>();
+        List<QueuedRequest> pending;
         ConfigurationGeneration generation;
         Task? housekeeping;
+        TaskCompletionSource completion;
         lock (_gate)
         {
-            if (_closing) return;
-            _closing = true;
+            if (_shutdownCompletion is { } wait) return new ValueTask(wait.Task);
+            completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            _shutdownCompletion = completion;
+            Volatile.Write(ref _closing, true);
             generation = CurrentGeneration;
             housekeeping = _reloadHousekeeping?.Task;
+            pending = [];
             foreach (var q in _queues.Values) pending.AddRange(q.DrainAll());
             _queues.Clear();
             foreach (var queued in pending)
@@ -1247,19 +1252,35 @@ public sealed partial class RouterCore : IInferenceRouter
                     queued.Ticket.DeferredQueueEnd ??= "cancelled";
             pending.RemoveAll(queued => queued.Ticket.PendingEnqueuePublication);
         }
-        BeforeShutdownCancellationForTests?.Invoke();
-        _admission?.Stop();
-        _shutdown.Cancel();
-        foreach (var p in pending)
+        _ = CompleteShutdownAsync(generation, housekeeping, pending, completion);
+        return new ValueTask(completion.Task);
+    }
+
+    private async Task CompleteShutdownAsync(ConfigurationGeneration generation, Task? housekeeping,
+        List<QueuedRequest> pending, TaskCompletionSource completion)
+    {
+        try
         {
-            Fail(p.Ticket, "cancelled", "router shutting down");
-            ReleaseExecutionCancellation(p.Ticket);
+            BeforeShutdownCancellationForTests?.Invoke();
+            _admission?.Stop();
+            _shutdown.Cancel();
+            foreach (var queued in pending)
+            {
+                Fail(queued.Ticket, "cancelled", "router shutting down");
+                ReleaseExecutionCancellation(queued.Ticket);
+            }
+            if (housekeeping is not null) await housekeeping.ConfigureAwait(false);
+            BeforeShutdownUnsubscribeForTests?.Invoke();
+            _events.Unsubscribe(_wakeOnEngineState);
+            foreach (var engine in generation.Engines.Values) await engine.DisposeAsync().ConfigureAwait(false);
+            _shutdown.Dispose();
         }
-        if (housekeeping is not null) await housekeeping.ConfigureAwait(false);
-        BeforeShutdownUnsubscribeForTests?.Invoke();
-        _events.Unsubscribe(_wakeOnEngineState);
-        foreach (var e in generation.Engines.Values) await e.DisposeAsync().ConfigureAwait(false);
-        _shutdown.Dispose();
+        catch (Exception error)
+        {
+            completion.TrySetException(error);
+            return;
+        }
+        completion.TrySetResult();
     }
 }
 

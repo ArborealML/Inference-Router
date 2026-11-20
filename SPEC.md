@@ -2070,9 +2070,10 @@ An enqueue commits its canonical model, queue position and ticket index from one
 generation. An exact take checks the selected generation and engine identity before it removes or
 charges the ticket. A stale selection retries with the accepted canonical model. The admission feed
 reports thread registration, when needed, before enqueue and reports enqueue before selection or
-terminal settlement. A pending enqueue counts toward capacity but cannot dispatch before its feed
-publication. Cancellation and the original monotonic deadline are checked at that publication boundary
-and again before exact take. Shutdown closes both admission cuts before cancelling its wake token.
+terminal settlement. A pending enqueue counts toward capacity. It cannot dispatch before its feed
+publication, and later published tickets can use the queue while it waits. Cancellation and the original
+monotonic deadline are checked at that publication boundary and again before exact take. Shutdown closes
+both admission cuts before cancelling its wake token.
 
 The offline verified binding revalidates the still-current exact preparation and route generation
 before removing a ticket on a strict binding refusal. A stale result cannot settle its replacement.
@@ -2080,7 +2081,7 @@ Temporary capacity loss parks the ticket. A definitive refusal settles once with
 
 - One global priority queue per (model-alias). Dispatch scans model queues by increasing
   observed depth, retaining queue order at equal depths. Each scheduler call evaluates the
-  first ticket in that queue whose thread has capacity. Commit takes that exact ticket only
+  first published ticket in that queue whose thread has capacity. Commit takes that exact ticket only
   while it is still first admissible. If the candidate is removed or displaced before commit,
   dispatch restarts the queue scan.
 - **Offline exact-ticket admission.** The injected sender qualifies the queue handshake.
@@ -2526,7 +2527,8 @@ Admin/control (not OpenAI-compatible, our own contract):
 - `GET /admin/config/reload` reads the current configuration generation. `POST /admin/config/reload`
   applies the startup file to that generation (§7.7). Both routes require the startup reload bearer
   credential. Both return 200, `Cache-Control: no-store`, a strong `ETag` and a PascalCase
-  `{"Generation":n}` body. POST accepts one current strong `If-Match` tag and an empty body.
+  `{"Generation":n}` body. POST accepts one current strong `If-Match` tag and requires bodyless
+  HTTP framing. Chunked or other body-capable framing is refused even if it carries zero decoded bytes.
   Tags are bound to the serving instance and generation. The first generation is 1. A no-op keeps
   the tag. Failures use the lowercase error shape in §6.1 and omit the tag.
 
@@ -3021,9 +3023,11 @@ overrides and servers started without the reload credential have no reload route
 | A retained engine declaration or relative engine order, native or delegated membership, and all other settings | Restart required. Includes endpoint, credentials, lifecycle plans, listener, scheduler, limits and configured threads. |
 
 An engine membership edit preserves the relative order of retained engines and appends additions in
-ordinal name order. Conflicting new aliases, case-folded engine name collisions and duplicate JSON
-properties are refused. The parser and normal startup topology checks also apply to candidate
-files. Restart-only declarations preserve explicit values and ordering where the mapper uses it.
+ordinal name order. A known model token cannot resolve to a different canonical model in the same
+apply, even if its previous engine is being removed. Conflicting new aliases, case-folded engine
+name collisions and duplicate JSON properties are refused. The parser and normal startup topology
+checks also apply to candidate files. Restart-only declarations preserve explicit values and ordering
+where the mapper uses it.
 
 A changed effective default needs a configured model in the candidate or a retained, healthy,
 unclaimed external engine reporting it at publication. The reported evidence is checked under

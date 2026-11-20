@@ -20,7 +20,9 @@ public sealed partial class RouterCore
     private int _engineAdminUses;
     private TaskCompletionSource? _reloadHousekeeping;
     internal Action? BeforeReloadCommitForTests;
+    internal Action<EngineRuntime>? AfterReloadStageForTests;
     internal Action? BeforeReloadActivationHandoffForTests;
+    internal Action? BeforeReloadRegistrationClaimForTests;
     internal Task? ReloadHousekeepingForTests
     {
         get { lock (_gate) return _reloadHousekeeping?.Task; }
@@ -48,8 +50,13 @@ public sealed partial class RouterCore
     internal async Task<(ConfigReloadStatus Status, long Generation)> ApplyConfigurationAsync(
         ReloadConfiguration candidate, long expected, CancellationToken caller)
     {
-        var previous = CurrentGeneration;
-        if (previous.Number != expected) return (ConfigReloadStatus.Stale, previous.Number);
+        ConfigurationGeneration previous;
+        lock (_gate)
+        {
+            previous = CurrentGeneration;
+            if (_closing) return (ConfigReloadStatus.Closing, previous.Number);
+            if (previous.Number != expected) return (ConfigReloadStatus.Stale, previous.Number);
+        }
         var file = previous.File;
         if (file is null || _admission is not null) return (ConfigReloadStatus.RestartRequired, previous.Number);
 
@@ -84,6 +91,7 @@ public sealed partial class RouterCore
                         hostEnrollment: null, _clock, candidate);
                     added.Add(runtime);
                     routes.Add(name, runtime);
+                    AfterReloadStageForTests?.Invoke(runtime);
                 }
             }
             var next = new ConfigurationGeneration(checked(expected + 1), settings, candidate, routes);
@@ -196,9 +204,11 @@ public sealed partial class RouterCore
         {
             try
             {
-                if (!CanActivateReloadEngine(engine)) continue;
+                BeforeReloadRegistrationClaimForTests?.Invoke();
+                if (!TryClaimReloadActivation(engine, EngineRuntime.ExternalActivation.Registration)) continue;
                 _events.Append(new RouterEvent { Kind = "engine.registered", Engine = engine.Name });
-                if (CanActivateReloadEngine(engine)) engine.StartHealthLoop(_shutdownToken);
+                if (TryClaimReloadActivation(engine, EngineRuntime.ExternalActivation.FirstProbe))
+                    engine.StartHealthLoop(_shutdownToken);
             }
             catch (Exception)
             {
@@ -211,10 +221,10 @@ public sealed partial class RouterCore
         }
     }
 
-    private bool CanActivateReloadEngine(EngineRuntime engine)
+    private bool TryClaimReloadActivation(EngineRuntime engine, EngineRuntime.ExternalActivation phase)
     {
         lock (_gate)
         lock (engine.ReloadTransitionGate)
-            return !_closing && engine.CanActivateExternal;
+            return !_closing && engine.TryClaimReloadActivation(phase);
     }
 }

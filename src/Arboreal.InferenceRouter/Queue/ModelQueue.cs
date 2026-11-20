@@ -99,7 +99,7 @@ public sealed class ModelQueue
     private int FirstAdmissibleIndex(Func<RouterThread, bool> admission)
     {
         for (var i = 0; i < _heap.Count; i++)
-            if (admission(_heap[i].Thread)) return _heap[i].Ticket.PendingEnqueuePublication ? -1 : i;
+            if (!_heap[i].Ticket.PendingEnqueuePublication && admission(_heap[i].Thread)) return i;
         return -1;
     }
 

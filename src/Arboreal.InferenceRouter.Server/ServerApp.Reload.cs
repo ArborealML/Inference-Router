@@ -40,15 +40,15 @@ public static partial class ServerApp
                 return;
             }
 
+            if (router.Closing)
+            {
+                await ErrorAsync(context, ConfigReloadStatus.Closing).ConfigureAwait(false);
+                return;
+            }
             if (!string.Equals(instance, _instance, StringComparison.Ordinal) ||
                 generation != router.CurrentGeneration.Number)
             {
                 await ErrorAsync(context, ConfigReloadStatus.Stale).ConfigureAwait(false);
-                return;
-            }
-            if (router.Closing)
-            {
-                await ErrorAsync(context, ConfigReloadStatus.Closing).ConfigureAwait(false);
                 return;
             }
 

@@ -9,6 +9,7 @@ public sealed class ConfigReloadRaceTests
     private const string B = "default_model = \"b\"\n";
     private static readonly string One = ConfigReloadWireTests.External("one", "a", "b");
     private static readonly string[] CancelledFeed = ["thread.registered", "request.enqueued", "request.cancelled"];
+    private static readonly string[] PriorityFeed = ["thread.registered", "thread.priority_changed"];
 
     [Theory(Timeout = 20_000)]
     [InlineData(false, false)]
@@ -62,6 +63,8 @@ public sealed class ConfigReloadRaceTests
                 throw new InvalidOperationException("observer only");
             }
         });
+        var delivered = new List<RouterEvent>();
+        router.Events.Subscribe(delivered.Add);
         var first = await router.EnqueueAsync("reentrant", Request(), bound.Token);
         var second = await (await nested.Task.WaitAsync(bound.Token));
 
@@ -71,6 +74,8 @@ public sealed class ConfigReloadRaceTests
             Assert.Equal("cancelled", error.Code);
             var events = router.Events.Replay(0).Where(evt => evt.TicketId == ticket.Id || evt.Kind == "thread.registered");
             Assert.Equal(CancelledFeed, events.Select(evt => evt.Kind));
+            var observed = delivered.Where(evt => evt.TicketId == ticket.Id || evt.Kind == "thread.registered");
+            Assert.Equal(CancelledFeed, observed.Select(evt => evt.Kind));
         }
         Assert.Equal(2, router.Events.SubscriberFaults);
         Assert.Equal(0, fake.CompletionCalls);
@@ -112,6 +117,67 @@ public sealed class ConfigReloadRaceTests
         await Assert.ThrowsAsync<RouterRequestException>(() => ticket.CompletionTask);
         Assert.Equal(CancelledFeed, router.Events.Replay(0).Where(evt => evt.ThreadId == "pending").Select(evt => evt.Kind));
         Assert.Equal(0, fake.CompletionCalls);
+    }
+
+    [Fact(Timeout = 20_000)]
+    public async Task PublishedSameModelWorkPassesAnEarlierPendingEnqueue()
+    {
+        using var bound = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        using var fake = new FakeEngineHandler { LoadedModels = ["a"] };
+        await using var router = CreateRouter(A + One, _ => fake);
+        await ConfigReloadWireTests.ProbeAllAsync(router, bound.Token);
+        using var pause = new Cut();
+        router.BeforeEnqueueFeedForTests = ticket =>
+        {
+            if (ticket.ThreadId == "earlier") pause.Hold();
+        };
+        var first = Task.Run(async () => await router.EnqueueAsync("earlier", Request(), bound.Token));
+        RouterTicket later;
+        try
+        {
+            await pause.Entered.Task.WaitAsync(bound.Token);
+            later = await router.EnqueueAsync("later", Request(), bound.Token);
+            Assert.Equal(2, router.GetStats().QueueDepths["a"]);
+            Assert.True(router.TryDispatchOnce());
+            await later.CompletionTask.WaitAsync(bound.Token);
+            Assert.Equal(1, fake.CompletionCalls);
+            Assert.DoesNotContain(router.Events.Replay(0), evt => evt.ThreadId == "earlier" &&
+                evt.Kind is "request.enqueued" or "request.selected");
+        }
+        finally { pause.Release(); }
+
+        var earlier = await first.WaitAsync(bound.Token);
+        Assert.True(router.TryDispatchOnce());
+        await earlier.CompletionTask.WaitAsync(bound.Token);
+        Assert.Equal(2, fake.CompletionCalls);
+        foreach (var ticket in new[] { earlier, later })
+        {
+            var feed = router.Events.Replay(0).Where(evt => evt.TicketId == ticket.Id).ToArray();
+            Assert.True(Assert.Single(feed, evt => evt.Kind == "request.enqueued").Seq <
+                Assert.Single(feed, evt => evt.Kind == "request.selected").Seq);
+        }
+    }
+
+    [Fact(Timeout = 20_000)]
+    public async Task PriorityNotificationWaitsForRegistrationWithoutBlockingTheSetter()
+    {
+        using var bound = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        using var fake = new FakeEngineHandler();
+        await using var router = CreateRouter(A + One, _ => fake);
+        using var pause = new Cut();
+        router.BeforeThreadRegistrationFeedForTests = _ => pause.Hold();
+        var registration = Task.Run(() => router.RegisterThread("changing", ThreadPriority.Normal()));
+        try
+        {
+            await pause.Entered.Task.WaitAsync(bound.Token);
+            var setter = Task.Run(() => router.SetThreadPriority("changing", ThreadPriority.High()));
+            await setter.WaitAsync(bound.Token);
+            Assert.DoesNotContain(router.Events.Replay(0), evt => evt.ThreadId == "changing");
+        }
+        finally { pause.Release(); }
+
+        Assert.Equal(ThreadPriority.High(), (await registration.WaitAsync(bound.Token)).Priority);
+        Assert.Equal(PriorityFeed, router.Events.Replay(0).Where(evt => evt.ThreadId == "changing").Select(evt => evt.Kind));
     }
 
     [Fact(Timeout = 20_000)]
@@ -171,8 +237,10 @@ public sealed class ConfigReloadRaceTests
         Assert.Single(router.Events.Replay(0), evt => evt.ThreadId == "new" && evt.Kind == "request.enqueued");
     }
 
-    [Fact(Timeout = 20_000)]
-    public async Task LateResponseKeepsPhysicalUseAfterTimeoutAndBlocksRemoval()
+    [Theory(Timeout = 20_000)]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task LateResponseKeepsPhysicalUseAfterTimeoutThroughRemovalOrShutdown(bool closeRouter)
     {
         using var bound = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         using var late = new LateEngine { LoadedModels = ["a"] };
@@ -195,16 +263,34 @@ public sealed class ConfigReloadRaceTests
             clock.AdvanceTo(101);
             var error = await Assert.ThrowsAsync<RouterRequestException>(() => ticket.CompletionTask.WaitAsync(bound.Token));
             Assert.Equal("engine_timeout", error.Code);
+            var terminal = Assert.Single(router.Events.Replay(0), evt => evt.TicketId == ticket.Id && evt.Kind == "request.failed");
+            Assert.Equal("Failed", router.TryGetTicket(ticket.Id)?.State);
             await ConfigReloadWireTests.WaitUntilAsync(() => engine.Inflight == 0, bound.Token);
             Assert.Equal(1, engine.InferenceUses);
             Assert.Equal((ConfigReloadStatus.Busy, 1L), await ApplyAsync(router, B + two));
 
+            if (closeRouter)
+            {
+                await router.DisposeAsync().AsTask().WaitAsync(bound.Token);
+                Assert.Equal(1, engine.HttpUsesForTests);
+                Assert.Equal(1, engine.InferenceUses);
+                Assert.False(engine.TryBeginForward(bound.Token));
+                Assert.False(late.Disposed.Task.IsCompleted);
+                Assert.False(released.Task.IsCompleted);
+            }
             late.Release.TrySetResult();
             await released.Task.WaitAsync(bound.Token);
             Assert.True(late.Disposed.Task.IsCompleted);
             Assert.Equal(0, engine.InferenceUses);
-            Assert.Equal((ConfigReloadStatus.Applied, 2L), await ApplyAsync(router, B + two));
+            var snapshot = router.TryGetTicket(ticket.Id);
+            Assert.Equal("Failed", snapshot?.State);
+            Assert.Equal("engine_timeout", snapshot?.ErrorCode);
+            Assert.Equal(terminal, Assert.Single(router.Events.Replay(0), evt => evt.TicketId == ticket.Id &&
+                evt.Kind is "request.failed" or "request.completed" or "request.cancelled"));
+            if (!closeRouter)
+                Assert.Equal((ConfigReloadStatus.Applied, 2L), await ApplyAsync(router, B + two));
             Assert.False(engine.TryBeginForward(bound.Token));
+            await Assert.ThrowsAsync<ObjectDisposedException>(() => engine.Http.GetAsync("models", bound.Token));
         }
         finally { late.Release.TrySetResult(); }
     }
@@ -235,8 +321,11 @@ public sealed class ConfigReloadRaceTests
             await pause.Entered.Task.WaitAsync(bound.Token);
             Assert.Equal((ConfigReloadStatus.Busy, 1L), await ApplyAsync(router, A + One));
             Assert.Same(front, router.Engines["drop-a"]);
+            Assert.Same(back, router.Engines["drop-z"]);
             Assert.True(front.TryBeginForward(bound.Token));
             front.EndForward();
+            Assert.True(back.TryBeginForward(bound.Token));
+            back.EndForward();
         }
         finally { pause.Release(); }
 
@@ -267,6 +356,8 @@ public sealed class ConfigReloadRaceTests
             var props = held.Props;
             var capability = old.Capability;
             held.Release.TrySetResult();
+            await held.Returned.Task.WaitAsync(bound.Token);
+            Assert.False(held.CancelledBeforeReturn);
             Assert.False(await probe.WaitAsync(bound.Token));
             Assert.Same(capability, old.Capability);
             Assert.Equal(props, held.Props);
@@ -346,6 +437,60 @@ public sealed class ConfigReloadRaceTests
     }
 
     [Fact(Timeout = 20_000)]
+    public async Task ConcurrentDisposersJoinTheSameHeldShutdown()
+    {
+        using var bound = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        using var fake = new FakeEngineHandler();
+        await using var router = CreateRouter(A + One, _ => fake);
+        using var pause = new Cut();
+        var stopDecisions = 0;
+        var engine = router.Engines["one"];
+        engine.AfterStopDecisionForTests = () =>
+        {
+            Interlocked.Increment(ref stopDecisions);
+            pause.Hold();
+        };
+        var first = Task.Run(async () => await router.DisposeAsync());
+        Task second = Task.CompletedTask;
+        try
+        {
+            await pause.Entered.Task.WaitAsync(bound.Token);
+            second = router.DisposeAsync().AsTask();
+            Assert.False(first.IsCompleted);
+            Assert.False(second.IsCompleted);
+            Assert.Equal(1, Volatile.Read(ref stopDecisions));
+        }
+        finally { pause.Release(); }
+
+        await Task.WhenAll(first, second).WaitAsync(bound.Token);
+        Assert.Equal(1, stopDecisions);
+    }
+
+    [Fact(Timeout = 20_000)]
+    public async Task ClosingBeforeTheRegistrationClaimReleasesTheReservationWithoutStartingAProbe()
+    {
+        using var bound = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        using var fake = new FakeEngineHandler { LoadedModels = ["a"] };
+        await using var router = CreateRouter(A + One, _ => fake);
+        using var pause = new Cut();
+        router.BeforeReloadRegistrationClaimForTests = pause.Hold;
+        Assert.Equal((ConfigReloadStatus.Applied, 2L),
+            await ApplyAsync(router, A + One + ConfigReloadWireTests.External("two", "b")));
+        var added = router.Engines["two"];
+        try
+        {
+            await pause.Entered.Task.WaitAsync(bound.Token);
+            Assert.Equal(1, added.ExternalPublicationsForTests);
+            await router.DisposeAsync().AsTask().WaitAsync(bound.Token);
+        }
+        finally { pause.Release(); }
+
+        await ConfigReloadWireTests.WaitUntilAsync(() => added.ExternalPublicationsForTests == 0, bound.Token);
+        Assert.DoesNotContain(router.Events.Replay(0), evt => evt.Engine == "two");
+        Assert.Empty(fake.SeenRoutes);
+    }
+
+    [Fact(Timeout = 20_000)]
     public async Task RegistrationObserverDoesNotOwnHousekeepingOrPreventProgressToTheRingBoundary()
     {
         using var bound = new CancellationTokenSource(TimeSpan.FromSeconds(10));
@@ -375,7 +520,9 @@ public sealed class ConfigReloadRaceTests
         }
         finally { observer.Release(); }
         await shutdown.WaitAsync(bound.Token);
+        await ConfigReloadWireTests.WaitUntilAsync(() => added.ExternalPublicationsForTests == 0, bound.Token);
         Assert.False(added.TryBeginForward(bound.Token));
+        Assert.Empty(fake.SeenRoutes);
     }
 
     [Fact(Timeout = 20_000)]
@@ -384,14 +531,23 @@ public sealed class ConfigReloadRaceTests
         using var bound = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         using var before = new CancellationTokenSource();
         using var after = new CancellationTokenSource();
-        using var fake = new FakeEngineHandler { LoadedModels = ["a"] };
-        await using var router = CreateRouter(A + One, _ => fake);
+        using var retainedHandler = new FakeEngineHandler { LoadedModels = ["a"] };
+        using var addedHandler = new FakeEngineHandler { LoadedModels = ["b"] };
+        await using var router = CreateRouter(A + One, engine => engine.Name == "one" ? retainedHandler : addedHandler);
         var candidate = RouterConfigLoader.LoadForReload(A + One + ConfigReloadWireTests.External("two", "b"), "fixture.toml");
+        var staged = new List<EngineRuntime>();
+        router.AfterReloadStageForTests = staged.Add;
         router.BeforeReloadCommitForTests = before.Cancel;
         Assert.Equal((ConfigReloadStatus.Cancelled, 1L),
             await router.ApplyConfigurationAsync(candidate, 1, before.Token));
         Assert.False(router.Engines.ContainsKey("two"));
         Assert.DoesNotContain(router.Events.Replay(0), evt => evt.Engine == "two");
+        var cancelled = Assert.Single(staged);
+        Assert.False(cancelled.TryBeginForward(bound.Token));
+        await Assert.ThrowsAsync<ObjectDisposedException>(() => cancelled.Http.GetAsync("models", bound.Token));
+        Assert.Empty(addedHandler.SeenRoutes);
+        Assert.True(await router.Engines["one"].ProbeHealthOnceAsync(bound.Token));
+        Assert.True(router.Engines["one"].Healthy);
 
         router.BeforeReloadCommitForTests = null;
         var registered = ConfigReloadWireTests.Gate();
@@ -403,7 +559,7 @@ public sealed class ConfigReloadRaceTests
         Assert.Equal((ConfigReloadStatus.Applied, 2L),
             await router.ApplyConfigurationAsync(candidate, 1, after.Token));
         Assert.True(after.IsCancellationRequested);
-        Assert.True(router.Engines.ContainsKey("two"));
+        Assert.Same(staged[1], router.Engines["two"]);
         await registered.Task.WaitAsync(bound.Token);
     }
 
@@ -439,13 +595,14 @@ public sealed class ConfigReloadRaceTests
         => router.ApplyConfigurationAsync(RouterConfigLoader.LoadForReload(text, "fixture.toml"),
             router.CurrentGeneration.Number, CancellationToken.None);
 
-    private sealed class Cut : IDisposable
+    internal sealed class Cut(int participants = 1) : IDisposable
     {
         private readonly ManualResetEventSlim _release = new();
+        private int _remaining = participants;
         internal TaskCompletionSource Entered { get; } = ConfigReloadWireTests.Gate();
         internal void Hold()
         {
-            Entered.TrySetResult();
+            if (Interlocked.Decrement(ref _remaining) == 0) Entered.TrySetResult();
             if (!_release.Wait(TimeSpan.FromSeconds(12))) throw new TimeoutException("fixture did not release");
         }
         internal void Release() => _release.Set();
@@ -458,13 +615,19 @@ public sealed class ConfigReloadRaceTests
         internal int Props { get; private set; }
         internal TaskCompletionSource Entered { get; } = ConfigReloadWireTests.Gate();
         internal TaskCompletionSource Release { get; } = ConfigReloadWireTests.Gate();
+        internal TaskCompletionSource Returned { get; } = ConfigReloadWireTests.Gate();
+        internal bool CancelledBeforeReturn { get; private set; }
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
         {
             var path = request.RequestUri!.AbsolutePath;
             if (path.EndsWith("/models", StringComparison.Ordinal) && Hold)
             {
                 Entered.TrySetResult();
-                await Release.Task.WaitAsync(ct);
+                await Release.Task;
+                var response = await base.SendAsync(request, CancellationToken.None);
+                CancelledBeforeReturn = ct.IsCancellationRequested;
+                Returned.TrySetResult();
+                return response;
             }
             if (path.EndsWith("/props", StringComparison.Ordinal)) Props++;
             return await base.SendAsync(request, ct);

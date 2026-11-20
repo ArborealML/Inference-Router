@@ -7,7 +7,14 @@ public sealed partial class RouterCore
 {
     // A newly registered thread can be seen by concurrent or reentrant submitters before its
     // synchronous EventRing observers return. Its publisher owns their initial events.
-    private readonly Dictionary<string, List<QueuedRequest>> _registeringThreads = new(StringComparer.Ordinal);
+    private sealed class PendingThreadRegistration
+    {
+        internal List<QueuedRequest> Enqueues { get; } = [];
+        internal List<ThreadPriority>? PriorityChanges;
+    }
+
+    private readonly Dictionary<string, PendingThreadRegistration> _registeringThreads = new(StringComparer.Ordinal);
+    internal Action<string>? BeforeThreadRegistrationFeedForTests;
     internal Action<RouterTicket>? BeforeEnqueueFeedForTests;
     internal Action? BeforeEnqueueCommitForTests;
     internal Action<RouterTicket>? BeforeEnqueueEligibilityForTests;
@@ -41,6 +48,11 @@ public sealed partial class RouterCore
             {
                 thread.SetPriorityValue(priority);
                 foreach (var queue in _queues.Values) queue.Resort();
+                if (_registeringThreads.TryGetValue(threadId, out var pending))
+                {
+                    (pending.PriorityChanges ??= []).Add(priority);
+                    return;
+                }
             }
         }
         if (created)
@@ -48,8 +60,13 @@ public sealed partial class RouterCore
             PublishThreadRegistration(thread, priority);
             return;
         }
+        PublishThreadPriorityChange(thread, priority);
+    }
+
+    private void PublishThreadPriorityChange(RouterThread thread, ThreadPriority priority)
+    {
         thread.NotifyPriorityChanged(priority);
-        _events.Append(new RouterEvent { Kind = "thread.priority_changed", ThreadId = threadId, Value = priority.Class });
+        _events.Append(new RouterEvent { Kind = "thread.priority_changed", ThreadId = thread.ThreadId, Value = priority.Class });
         SignalDispatch();
     }
 
@@ -57,20 +74,31 @@ public sealed partial class RouterCore
     {
         var thread = new RouterThread(id, priority, weight, affinity);
         _threads.Add(id, thread);
-        _registeringThreads.Add(id, []);
+        _registeringThreads.Add(id, new PendingThreadRegistration());
         return thread;
     }
 
     private void PublishThreadRegistration(RouterThread thread, ThreadPriority priority)
     {
+        BeforeThreadRegistrationFeedForTests?.Invoke(thread.ThreadId);
         _events.Append(new RouterEvent { Kind = "thread.registered", ThreadId = thread.ThreadId, Value = priority.Class });
-        List<QueuedRequest> pending;
+        PendingThreadRegistration pending;
         lock (_gate)
         {
             pending = _registeringThreads[thread.ThreadId];
             _registeringThreads.Remove(thread.ThreadId);
         }
-        foreach (var item in pending) PublishEnqueue(item);
+        if (pending.PriorityChanges is { } changes)
+        {
+            foreach (var change in changes)
+            {
+                // The setter has already returned. A deferred priority callback's exception
+                // cannot propagate back to it or strand this registration's pending tickets.
+                try { PublishThreadPriorityChange(thread, change); }
+                catch (Exception) { }
+            }
+        }
+        foreach (var item in pending.Enqueues) PublishEnqueue(item);
     }
 
     public ValueTask<RouterTicket> EnqueueAsync(string threadId, InferenceRequest request, CancellationToken ct = default)
@@ -153,7 +181,7 @@ public sealed partial class RouterCore
                 }
 
                 publishItem = !_registeringThreads.TryGetValue(threadId, out var pending);
-                if (!publishItem) pending!.Add(queued);
+                if (!publishItem) pending!.Enqueues.Add(queued);
             }
 
             if (publishRegistration) PublishThreadRegistration(queued.Thread, priority);
@@ -212,6 +240,7 @@ public sealed partial class RouterCore
         lock (_gate)
         {
             end = ticket.DeferredQueueEnd ?? (_closing ? "cancelled" : ReadQueueEnd(queued));
+            ticket.DeferredQueueEnd = end;
             // The router gate excludes exact take, queue cancellation and shutdown across the cut.
             if (_queues.TryGetValue(ticket.Model, out var queue))
             {
@@ -261,7 +290,7 @@ public sealed partial class RouterCore
             ReArmQueueTimer(queued, window);
             return;
         }
-        if (ClaimQueuedEnd(queued.Ticket, "deadline_exceeded", out var defer) && !defer)
+        if (ClaimQueuedEnd(queued.Ticket, "deadline_exceeded") == QueueEndClaim.Removed)
             SettleQueueEnd(queued.Ticket, "deadline_exceeded", window);
     }
 
@@ -277,10 +306,15 @@ public sealed partial class RouterCore
         RouterTicket? ticket;
         lock (_ticketGate) ticket = _tickets.GetValueOrDefault(ticketId);
         if (ticket is null || ticket.IsTerminal) return false;
-        if (ClaimQueuedEnd(ticket, "cancelled", out var defer))
+        switch (ClaimQueuedEnd(ticket, "cancelled"))
         {
-            if (!defer) SettleQueueEnd(ticket, "cancelled", null);
-            return true;
+            case QueueEndClaim.Deferred:
+                return true;
+            case QueueEndClaim.Competing:
+                return false;
+            case QueueEndClaim.Removed:
+                SettleQueueEnd(ticket, "cancelled", null);
+                return true;
         }
 
         var cts = ticket.ExecCts;
@@ -289,23 +323,27 @@ public sealed partial class RouterCore
         catch (ObjectDisposedException) { return false; }
     }
 
-    private bool ClaimQueuedEnd(RouterTicket ticket, string code, out bool defer)
+    private enum QueueEndClaim { Absent, Deferred, Competing, Removed }
+
+    private QueueEndClaim ClaimQueuedEnd(RouterTicket ticket, string code)
     {
         lock (_gate)
         {
-            defer = ticket.PendingEnqueuePublication;
-            if (defer)
+            if (ticket.DeferredQueueEnd is { } winner)
+                return winner == code ? QueueEndClaim.Deferred : QueueEndClaim.Competing;
+            if (ticket.PendingEnqueuePublication)
             {
-                ticket.DeferredQueueEnd ??= code;
-                return true;
+                ticket.DeferredQueueEnd = code;
+                return QueueEndClaim.Deferred;
             }
-            return _queues.TryGetValue(ticket.Model, out var queue) && queue.TryRemove(ticket);
+            return _queues.TryGetValue(ticket.Model, out var queue) && queue.TryRemove(ticket)
+                ? QueueEndClaim.Removed : QueueEndClaim.Absent;
         }
     }
 
     private void MaybeFailDeadline(QueuedRequest head)
     {
-        if (ReadQueueEnd(head) is { } end && ClaimQueuedEnd(head.Ticket, end, out var defer) && !defer)
+        if (ReadQueueEnd(head) is { } end && ClaimQueuedEnd(head.Ticket, end) == QueueEndClaim.Removed)
             SettleQueueEnd(head.Ticket, end, head.Request.Options?.MaxQueueTime);
     }
 
