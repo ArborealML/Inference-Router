@@ -1735,8 +1735,9 @@ Exec passes literal argv, attaches stdout and stderr without stdin, privilege el
 uses HTTP/1.1 attachment without Upgrade. Logs requires an explicit non-TTY container and takes one
 snapshot of at most 256 tail lines with both streams enabled. Both read 8-byte headers and binary
 payloads into ordered stdout/stderr frames. A capture keeps at most 64 KiB of payload and 256 frames.
-Overflow of either capture limit truncates the retained prefix while the reader validates and drains
-up to the 1 MiB framed-wire ceiling, including headers. A malformed or oversized stream refuses.
+An empty frame takes one frame slot and zero payload bytes. Dropping a frame or any part of its
+payload ends the retained prefix. The reader continues validating and draining up to the 1 MiB
+framed-wire ceiling, including headers. A malformed or oversized stream refuses.
 Container inspect JSON is capped at 256 KiB, exec create at 4 KiB, exec inspect at 16 KiB and error
 bodies at 4 KiB. The one `docker.call_timeout_ms` budget begins before the shared provider gate and
 covers every response read through terminal inspect.
@@ -1744,7 +1745,8 @@ covers every response read through terminal inspect.
 Exec create requires HTTP `201`. Container inspect, attached start, logs and exec inspect require
 `200`. After a clean attached EOF, exec inspects the exact exec and container IDs and requires
 explicit `Running=false` and a nonnegative exit code. Zero succeeds and nonzero fails with the
-confirmed code and bounded output. Failure to establish terminal evidence leaves exit unconfirmed.
+confirmed code and bounded output. A frame-boundary EOF alone cannot establish that all upstream
+output reached the reader. Failure to establish terminal evidence leaves exit unconfirmed.
 Interrupted capture issues no automatic retry or compensating write. A pending Stop/DELETE still
 blocks exec before any daemon request. These internal operations have fake HTTP coverage and no
 runtime, admin, CLI or readiness call site.

@@ -32,13 +32,19 @@ internal static class DockerOutputReader
             if (length > wireLeft)
                 throw new InvalidDataException("Docker output exceeded its framed wire limit.");
 
-            var retained = frames.Count < RetainedFrames ? Math.Min((int)length, retainLeft) : 0;
-            if (retained != 0)
+            var retained = 0;
+            if (!truncated && frames.Count < RetainedFrames && (length == 0 || retainLeft != 0))
             {
-                var payload = new byte[retained];
-                await stream.ReadExactlyAsync(payload, ct).ConfigureAwait(false);
+                retained = Math.Min((int)length, retainLeft);
+                var payload = retained == 0 ? Array.Empty<byte>() : new byte[retained];
+                if (retained != 0)
+                    await stream.ReadExactlyAsync(payload, ct).ConfigureAwait(false);
                 frames.Add(new(header[0], payload));
                 retainLeft -= retained;
+            }
+            else
+            {
+                truncated = true;
             }
 
             var discard = (int)length - retained;

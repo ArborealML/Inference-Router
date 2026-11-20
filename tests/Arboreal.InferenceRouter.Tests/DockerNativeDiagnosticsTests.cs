@@ -208,10 +208,16 @@ public sealed class DockerNativeDiagnosticsTests
         Assert.Equal(delta > 0, capture.Truncated);
         if (byBytes)
         {
-            var frame = Assert.Single(capture.Frames);
+            Assert.Equal(delta > 0 ? 1 : 2, capture.Frames.Length);
+            var frame = capture.Frames[0];
             Assert.Equal(2, frame.Channel);
             Assert.Equal(RetainedBytes + Math.Min(0, delta), frame.Payload.Length);
             Assert.Equal(0xfd, frame.Payload.Span[^1]);
+            if (delta <= 0)
+            {
+                Assert.Equal(1, capture.Frames[1].Channel);
+                Assert.True(capture.Frames[1].Payload.IsEmpty);
+            }
         }
         else
         {
@@ -223,6 +229,44 @@ public sealed class DockerNativeDiagnosticsTests
         Assert.Equal(wire.Length, response.Body.BytesRead);
         Assert.True(response.Body.SawEof);
         Assert.Equal([Inspect, Logs], daemon.Requests);
+        AssertDisposed(response);
+    }
+
+    [Theory]
+    [InlineData(1, true)]
+    [InlineData(256, false)]
+    [InlineData(257, false)]
+    public async Task EmptyFramesKeepTheirChannelOrderAndCountTowardTheLimit(int emptyCount, bool thenStderr)
+    {
+        var channels = Enumerable.Range(0, emptyCount).Select(index => (byte)(index % 2 + 1)).ToArray();
+        byte[] wire = thenStderr
+            ? [.. Frame(1, []), .. Frame(2, [0xfe])]
+            : channels.SelectMany(channel => Frame(channel, [])).ToArray();
+        using var daemon = new DiagnosticDaemon
+        {
+            Override = key => key == Logs ? new(HttpStatusCode.OK, wire, Multiplexed) : null,
+        };
+        using var provider = Provider(daemon);
+
+        var result = await provider.ReadLogsAsync(ContainerId, CancellationToken.None);
+
+        Assert.True(result.Result.Succeeded);
+        var capture = Assert.IsType<DockerOutputCapture>(result.Capture);
+        Assert.Equal(emptyCount > 256, capture.Truncated);
+        var retainedEmpty = Math.Min(emptyCount, 256);
+        Assert.Equal(retainedEmpty + (thenStderr ? 1 : 0), capture.Frames.Length);
+        var emptyFrames = capture.Frames.Take(retainedEmpty).ToArray();
+        Assert.Equal(channels.Take(retainedEmpty), emptyFrames.Select(frame => frame.Channel));
+        Assert.All(emptyFrames, frame => Assert.True(frame.Payload.IsEmpty));
+        if (thenStderr)
+        {
+            Assert.Equal(2, capture.Frames[^1].Channel);
+            Assert.Equal(new byte[] { 0xfe }, capture.Frames[^1].Payload.ToArray());
+        }
+        Assert.Equal([Inspect, Logs], daemon.Requests);
+        var response = daemon.Responses[^1];
+        Assert.Equal(wire.Length, response.Body.BytesRead);
+        Assert.True(response.Body.SawEof);
         AssertDisposed(response);
     }
 
