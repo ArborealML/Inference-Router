@@ -1,6 +1,6 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.111)
+Status: draft, continuously revised (v0.12.114)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
@@ -352,6 +352,9 @@ daemon transaction per engine. 137 tests green.
   that answers no `upload_url`, an upload that dies or answers no asset id, an asset name listed twice on
   the release, and a tag that moves after the first resolve. No tag has run the gate: still configured,
   not proven.
+- v0.12.114 — report core shutdown on a writable default HTTP stream with one in-band
+  `cancelled` error and `[DONE]` when shutdown wins during an armed upstream read and the
+  acknowledged prefix permits a terminal (§6).
 - v0.12.111 — compare two saved short-grid tuning summaries offline with exact same-concurrency
   matching, bounded versioned inputs and descriptor-based file admission on Linux x64 (§11.1).
 - v0.12.110 — add internal native Docker exec and finite log capture with bounded non-TTY framing,
@@ -2684,6 +2687,17 @@ followed by `data: [DONE]` before closing. Clean EOF at a block boundary adds no
 empty upstream or after complete blocks without a sentinel. A caller disconnect closes the relay
 without an extra terminal frame. The benchmark harness measured the time-to-first-token delay from
 the previous poll-based handoff (§14, `docs/benchmarks.md`).
+
+**Core shutdown during a default active read.** After a complete upstream block has been published,
+the router can attribute cancellation to core shutdown while a subsequent raw read is pending.
+The attribution requires a late positive read or cancellation carrying that read's cancelled token.
+Late bytes in that read are discarded. A committed HTTP 200 with a live caller and a locally
+acknowledged complete data prefix receives the existing lowercase `cancelled` error event followed
+by one `[DONE]`. The writer skips the terminal if any write or flush had uncertain progress or if
+the acknowledged prefix already includes an upstream sentinel. Local acknowledgement describes
+server write progress. The ticket and feed record cancellation once. This behavior applies with
+both HTTP SSE limits disabled and starts after the initial raw read and stream acquisition.
+Queued requests, model waits, opt-in SSE and library streams follow their existing rules.
 
 **Opt-in HTTP SSE limits.** A positive `stream_buffer_limit_bytes` caps outstanding output payload
 per stream, including queued bytes and the bytes still owned by a pending flush. The pump transfers

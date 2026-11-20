@@ -224,7 +224,8 @@ public static partial class ServerApp
                 ctx.Response.Headers.Connection = "keep-alive";
 
             var writer = ctx.Response.BodyWriter;
-            var sink = new InferenceStreamSink(writer, ticket, router, clock);
+            var output = delivery is null && ticket.IsHttpStream ? new DefaultStreamOutput() : null;
+            var sink = new InferenceStreamSink(writer, ticket, router, clock, output);
             ct.ThrowIfCancellationRequested();
             var (reader, first) = await ReadFirstChunkAsync(sink, ticket, clock, ct).ConfigureAwait(false);
             if (reader is not null)
@@ -235,7 +236,10 @@ public static partial class ServerApp
                     while (reader.TryRead(out var chunk))
                         await sink.WritePayloadAsync(chunk, ct).ConfigureAwait(false);
                     if (delivery is null)
-                        await writer.FlushAsync(ct).ConfigureAwait(false);
+                    {
+                        var result = await writer.FlushAsync(ct).ConfigureAwait(false);
+                        output?.Observe(result);
+                    }
                 }
             }
 
@@ -247,7 +251,9 @@ public static partial class ServerApp
                 try { await ticket.CompletionTask.WaitAsync(ct).ConfigureAwait(false); }
                 catch (RouterRequestException) { }
             }
-            if (ticket.State is TicketState.Failed && !ticket.SuppressIdleTerminal)
+            var defaultShutdown = ticket.State is TicketState.Cancelled && ticket.DefaultStreamReadShutdown &&
+                ctx.Response.HasStarted && ctx.Response.StatusCode == 200 && output?.CanAppendTerminal == true;
+            if ((ticket.State is TicketState.Failed && !ticket.SuppressIdleTerminal) || defaultShutdown)
             {
                 var json = JsonSerializer.Serialize(
                     new ErrorBody { Error = new ErrorDetail { Message = ticket.Error ?? "engine error", Code = ticket.ErrorCode ?? "engine_error" } },
@@ -356,7 +362,7 @@ public static partial class ServerApp
             ? ""
             : $" status={JsonSerializer.Serialize(status, AirServerJson.AirServerContext.Default.String)}";
         var frame = string.Create(CultureInfo.InvariantCulture, $": [router keepalive seq={seq}{statusField}]\n\n");
-        await sink.WriteFrameAsync(Encoding.UTF8.GetBytes(frame), ct).ConfigureAwait(false);
+        await sink.WriteKeepaliveAsync(Encoding.UTF8.GetBytes(frame), ct).ConfigureAwait(false);
         return status;
     }
 

@@ -10,7 +10,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Arboreal.InferenceRouter.Tests;
 
-public class StreamRelayTests
+public partial class StreamRelayTests
 {
     private const int Credit = 262_144;
     private const string Chat = """{"model":"test-model","stream":true,"messages":[{"role":"user","content":"ping"}]}""";
