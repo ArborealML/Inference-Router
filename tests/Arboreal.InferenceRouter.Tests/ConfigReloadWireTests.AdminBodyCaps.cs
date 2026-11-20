@@ -74,7 +74,6 @@ public sealed partial class ConfigReloadWireTests
             [engine.native]
             kind = "openai-compatible"
             endpoint = "http://127.0.0.1:9/v1"
-            lifecycle_owner = "router"
             lifecycle = "docker"
             [engine.native.docker]
             image = "offline-image"
