@@ -3,11 +3,11 @@ id: TASK-107
 title: >-
   Reload the configuration at runtime without restarting the router or dropping
   in-flight requests
-status: Preparing
+status: In Progress
 assignee:
   - '@gpt-6.2-sol-stream-reload'
 created_date: '2026-11-18T17:42:00Z'
-updated_date: '2026-11-20T01:34:00Z'
+updated_date: '2026-11-20T02:46:00Z'
 labels:
   - config
   - lifecycle
@@ -21,9 +21,7 @@ ordinal: 105000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Preparing a high-priority reload plan that preserves active streams and switches across configuration generations. Decision 75 sets the first release boundary for live defaults, idle-only external engine changes and historical work.
-
-Owner requirement, relayed 17:38Z: the configuration has to be reloadable while the router runs. Read at `2b751ec`, nothing reloads: no file watcher, no signal handler, no admin reload route (`git grep` for `FileSystemWatcher`, `SIGHUP`, `ReloadConfig` in `src/` returns only the engine's own model-loading paths), and the config is parsed once into immutable domain types at startup. So changing a select block, an engine move, or a ceiling means killing the process and losing the queue — which is also how TASK-77's engine-swap fix would have to be tested today. This row reopens decision-50, which declined an immutable copied engine plan on the rule that the config graph is read-only after boot; reload makes that rule false and the declined option has to be re-argued with revalidation attached.
+Implementing authenticated reload of the startup configuration file. Decision 75 allows new defaults during active work and external topology changes only at router-wide idle. Existing streams and switches retain their starting configuration. Selective native quarantine reset remains open.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -37,6 +35,12 @@ Owner requirement, relayed 17:38Z: the configuration has to be reloadable while 
 - [ ] #7 decision-50 is restated in the same push, its read-only-after-boot premise bounded and the revalidation rule attached
 - [ ] #8 A reload unrelated to a quarantined target leaves its latch intact. Resetting or changing one target permits its next attempt while other quarantined targets remain latched.
 <!-- AC:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Require the expected process identity and configuration generation on apply. Validate before publication. Serialize generation publication with enqueue, exact take and closing. Publish enqueue events before dispatch or terminal events. Fence retired engines against new uses and retain physical inference accounting through detached cleanup and final publication. A reported-only default requires a retained, healthy external engine advertising it through commit. Managed defaults require immutable model declarations. Exercise the authenticated HTTP entry, invalid and stale apply, active stream bytes and switch identity, busy refusal, shutdown and event ordering. Verify source-generated serialization under Native AOT.
+<!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
 
