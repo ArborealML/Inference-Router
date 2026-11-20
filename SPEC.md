@@ -1,6 +1,6 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.105)
+Status: draft, continuously revised (v0.12.103)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
@@ -352,7 +352,7 @@ daemon transaction per engine. 137 tests green.
   that answers no `upload_url`, an upload that dies or answers no asset id, an asset name listed twice on
   the release, and a tag that moves after the first resolve. No tag has run the gate: still configured,
   not proven.
-- v0.12.105 — bound the upstream non-2xx diagnostic read to the first 256 body bytes
+- v0.12.103 — bound the upstream non-2xx diagnostic read to the first 256 body bytes
   or earlier EOF. Keep the existing error excerpt and apply the response deadline to that
   read when the gate is armed (§5.5, §10).
 - v0.12.102 — reload validated defaults and, at router-wide work idle, external engine membership
