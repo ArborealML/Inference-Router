@@ -3,11 +3,11 @@ id: TASK-118
 title: >-
   Resolve each native launch profile and dispatch to its verified serving
   instance
-status: Preparing
+status: Waiting
 assignee:
   - '@gpt-6.2-sol-shutdown'
 created_date: '2026-11-18T18:56:00Z'
-updated_date: '2026-11-20T17:56:00Z'
+updated_date: '2026-11-20T19:00:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -23,7 +23,7 @@ ordinal: 116000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Shutdown is amending the connected-peer authority plan reviewed on f3d2d20. Order issue and revocation durably across host and issuer. Enforce one monotonic cutoff from entry at the broker. Require fresh evidence of the handler for each GET, including a same-socket handoff control. Use the original launch-bound probe and credential approval; missing or revoked approval makes observation unavailable. The external evidence producer is still missing. Reader implementation awaits that producer and plan review.
+Wake: host enrollment supplies a commissioned issuer that attests the actual handler of each readiness GET and conclusively retires both exchanges. The reviewed contract requires shared durable issue and revocation ordering, a broker-owned monotonic cutoff, and original launch-bound probe and credential approval. The offline [launch record](https://github.com/ArborealML/Inference-Router/pull/49) identifies the running container. Serving-process evidence remains outstanding.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

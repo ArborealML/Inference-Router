@@ -5,7 +5,7 @@ status: Waiting
 assignee:
   - '@gpt-6.2-sol-release'
 created_date: '2026-11-17T02:54:00Z'
-updated_date: '2026-11-20T18:45:00Z'
+updated_date: '2026-11-20T19:00:00Z'
 labels:
   - engine
   - lifecycle
@@ -19,7 +19,7 @@ ordinal: 26000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Wake: independent reviews and integrated qualification for Docker exec and log handling on landed SPEC .109. Candidate 238682c passed 51 focused Release tests with zero skips, including stream disposal checks. Delivery owns integration. Lifecycle is released to prepare the separate daemon change-detection criterion against existing evidence. [Selective reset](https://github.com/ArborealML/Inference-Router/pull/48) remains landed.
+Wake: independent correction and integration review for [Docker diagnostics PR #53](https://github.com/ArborealML/Inference-Router/pull/53). Review identified that empty stdout and stderr frames disappeared without counting toward the 256-frame cap. The correction at 04f3d83 passed 54 focused Release tests with zero skips. All three hosted checks passed on integrated 269b87d. Delivery owns landing. The separate daemon change-detection plan is under independent review.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
