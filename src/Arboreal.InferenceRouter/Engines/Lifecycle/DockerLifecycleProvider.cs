@@ -594,7 +594,8 @@ public sealed partial class DockerLifecycleProvider : IEngineLifecycleProvider, 
             return path.Length > 0;
         }
         if (socket.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
-            socket.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+            socket.StartsWith("https://", StringComparison.OrdinalIgnoreCase) ||
+            IsWindowsNamedPipe(socket))
         {
             path = "";
             return false;
@@ -606,6 +607,7 @@ public sealed partial class DockerLifecycleProvider : IEngineLifecycleProvider, 
 
     private static DaemonTransport ResolveDaemon(string socket, string engineName)
     {
+        RejectWindowsNamedPipe(socket, engineName);
         if (!string.IsNullOrWhiteSpace(socket))
         {
             if (TryParseUnixSocket(socket, out var path))
@@ -620,6 +622,46 @@ public sealed partial class DockerLifecycleProvider : IEngineLifecycleProvider, 
         }
         throw new RouterConfigException($"engine.{WireText.Ident(engineName)}: docker.socket must name a Unix socket or an absolute HTTP(S) daemon base");
     }
+
+    internal static void RejectWindowsNamedPipe(string socket, string engineName)
+    {
+        if (IsWindowsNamedPipe(socket))
+            throw new RouterConfigException($"engine.{WireText.Ident(engineName)}.docker.socket: Windows Docker named-pipe transport is unsupported");
+    }
+
+    private static bool IsWindowsNamedPipe(string socket)
+    {
+        if (socket.StartsWith("npipe:", StringComparison.OrdinalIgnoreCase))
+            return true;
+        if (socket.Length < 3 || !IsPathSeparator(socket[0]) || !IsPathSeparator(socket[1]))
+            return false;
+
+        var serverAndShare = socket.AsSpan(2);
+        var serverEnd = serverAndShare.IndexOfAny('\\', '/');
+        if (serverEnd < 1)
+            return false;
+        var share = serverAndShare[(serverEnd + 1)..];
+
+        // The extended UNC namespace adds a UNC component before the actual server name.
+        if (serverEnd == 1 && serverAndShare[0] == '?' && HasPathComponent(share, "UNC"))
+        {
+            if (share.Length == 3)
+                return false;
+            serverAndShare = share[4..];
+            serverEnd = serverAndShare.IndexOfAny('\\', '/');
+            if (serverEnd < 1)
+                return false;
+            share = serverAndShare[(serverEnd + 1)..];
+        }
+
+        return HasPathComponent(share, "pipe");
+    }
+
+    private static bool HasPathComponent(ReadOnlySpan<char> path, string name) =>
+        path.StartsWith(name, StringComparison.OrdinalIgnoreCase) &&
+        (path.Length == name.Length || IsPathSeparator(path[name.Length]));
+
+    private static bool IsPathSeparator(char character) => character is '\\' or '/';
 
     // The socket is not disposed on the success path because its ownership moves to the NetworkStream
     // that wraps it; the analyzers cannot see that transfer.
