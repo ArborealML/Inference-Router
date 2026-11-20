@@ -2928,12 +2928,14 @@ It discovers loaded models through absolute `/v1/models` and reads the engine-re
 window and slots at `/props.default_generation_settings.n_ctx` and `/props.total_slots`.
 HY4 uses canonical `hy4-flash` with request aliases `hy4` and `hy4-flash-maya-xs`.
 The sample declares `32k`, `64k`, `96k`, `128k`, `256k`, `512k` and `1024k`
-at 1,024 tokens per k and one slot per tier. Without an explicit launch tier, the
-default is `32k`. A 32,768-token observation cannot authorize a 65,536-token request.
+at 1,024 tokens per k and one slot per tier. An omitted launch tier resolves to
+`96k`, a 98,304-token window sized for 65,536 input tokens plus 32,768 output tokens.
+`32k` is an explicit smaller launch selection. A 32,768-token observation cannot
+satisfy the 96k launch target or authorize a 65,536-token request.
 An unloaded row cannot authorize a send even when the model probe succeeds and
 `/props` reports positive slots.
 
-The inspected HY4 selector accepts `32k` alone. Its other six configuration targets have
+The inspected HY4 selector accepts `32k` alone and still defaults to it. The other six AIR targets have
 distinct offline create projections and probe expectations. The selector's argument choices
 exclude `64k`, `96k` and `1024k`. Its HY4 profile map excludes all six wider tiers. Native launch
 projection remains gated. Host context fit, memory, artifact identity, exact-instance

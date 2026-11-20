@@ -152,7 +152,7 @@ aliases = ["glm-flash"]
 
 [engine.glm.catalog."hy4-flash"]
 aliases = ["hy4", "hy4-flash-maya-xs"]
-default_profile = "32k"
+default_profile = "96k"
 serving = [
   { name = "32k",   max_context = 32768,   max_slots = 1 },
   { name = "64k",   max_context = 65536,   max_slots = 1 },

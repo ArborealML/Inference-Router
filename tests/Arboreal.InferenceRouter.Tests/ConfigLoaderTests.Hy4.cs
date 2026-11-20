@@ -40,7 +40,7 @@ public partial class ConfigLoaderTests
         var model = maya.Catalog[Hy4Canonical];
         Assert.Collection(model.Aliases, alias => Assert.Equal("hy4", alias),
             alias => Assert.Equal("hy4-flash-maya-xs", alias));
-        Assert.Equal("32k", model.Profile);
+        Assert.Equal("96k", model.Profile);
         Assert.Null(model.Select);
         Assert.Null(maya.Catalog[GlmCanonical].Select);
         Assert.Equal(Hy4SampleTiers, model.ServingProfiles.Select(tier => (tier.Name, tier.MaxContext, tier.MaxSlots)));
@@ -167,16 +167,16 @@ public partial class ConfigLoaderTests
         Assert.Equal(tier, snapshot.Serving.Profile);
         Assert.True(runtime.IsReadyFor(Hy4Canonical, selected));
 
-        if (tier == "1024k")
+        if (tier is "96k" or "1024k")
         {
-            var underfloor = new MayaPhase(Hy4Canonical, true, 1_048_575);
+            var underfloor = new MayaPhase(Hy4Canonical, true, tier == "96k" ? 32_768 : 1_048_575);
             handler.Select(underfloor);
             Assert.True(await runtime.ProbeHealthOnceAsync(ct));
             var narrow = runtime.Capability;
             Assert.True(narrow.Version > snapshot.Version);
             AssertMayaReadback(maya, Assert.IsType<MayaProbePair>(handler.LastPair), underfloor);
             Assert.True(MatchesMayaPhase(narrow, underfloor));
-            Assert.Null(narrow.Serving.Profile);
+            Assert.Equal(tier == "96k" ? "32k" : null, narrow.Serving.Profile);
             Assert.False(runtime.IsReadyFor(Hy4Canonical, selected));
         }
         Assert.Empty(handler.Forwards);

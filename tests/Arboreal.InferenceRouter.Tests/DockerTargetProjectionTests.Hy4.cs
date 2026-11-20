@@ -111,13 +111,18 @@ public sealed partial class DockerTargetProjectionTests
             Assert.True(JsonElement.DeepEquals(expected.RootElement, create.RootElement), create.RootElement.GetRawText());
         }
 
-        if (name == "32k")
+        if (name == "96k")
         {
             foreach (var spelling in Hy4ModelSpellings)
             {
                 var omitted = resolver.Resolve(spelling, null, null, "hy4-fixture-config", "hy4-fixture-route");
                 Assert.Equal(expectedTarget, omitted);
+                Assert.Equal("96k", omitted.Tier);
                 Assert.Equal(Project(provider, native, spelling, name), Project(provider, native, spelling));
+
+                var explicitSmall = resolver.Resolve(spelling, "32k", null, "hy4-fixture-config", "hy4-fixture-route");
+                Assert.Equal("32k", explicitSmall.Tier);
+                Assert.NotEqual(omitted.PlanDigest, explicitSmall.PlanDigest);
             }
             var digests = nativeModel.ServingProfiles.Select(profile =>
                 resolver.Resolve("hy4", profile.Name, null, "hy4-fixture-config", "hy4-fixture-route").PlanDigest);
@@ -127,7 +132,7 @@ public sealed partial class DockerTargetProjectionTests
             Assert.Equal(VerifiedDispatchRefusal.Target, unsupported.Refusal);
         }
 
-        if (name is "32k" or "1024k")
+        if (name is "32k" or "96k")
         {
             var target = new LifecycleTarget(native.Name, Hy4Model, tier, nativeModel);
             AssertHy4ProviderRefusal(await provider.PreflightAsync(target, ct));
