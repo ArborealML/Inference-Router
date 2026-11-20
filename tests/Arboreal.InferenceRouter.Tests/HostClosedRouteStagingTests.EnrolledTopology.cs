@@ -165,7 +165,7 @@ public sealed partial class HostClosedRouteStagingTests
         Assert.Equal(publicFailure.Message, internalFailure.Message);
     }
 
-    private static (string Text, EnrolledPairClaim Claim, EnrolledPairAuthority Authority) EnrolledPairTopologyFixture()
+    private static (string Text, EnrolledPairClaim Claim, EnrolledPairAuthority Authority) EnrolledPairTopologyFixture(string? sharedSocket = null)
     {
         var deepSeek = CorrectDeepSeekEndpoint(ReadDeepSeekQwenConfig("deepseek.toml"));
         var qwen = ReadDeepSeekQwenConfig("strata.toml");
@@ -180,6 +180,16 @@ public sealed partial class HostClosedRouteStagingTests
             DeepSeekPairModel, "32k", "/var/run/docker.sock", oracle.RootElement);
         var second = EnrolledTopologyGrant(LoadDeepSeekQwenEngine(qwen, QwenEngineName),
             QwenPairModel, "256k-4", "/fixture/no-daemon.sock", oracle.RootElement);
+        if (sharedSocket is not null)
+        {
+            foreach (var engine in new[] { DeepSeekEngineName, QwenEngineName })
+            {
+                var docker = Assert.IsType<TomlTable>(DeepSeekQwenEngineTable(combined, engine)["docker"]);
+                docker["socket"] = sharedSocket;
+            }
+            first = first with { SocketPath = sharedSocket };
+            second = second with { SocketPath = sharedSocket };
+        }
         var head = new EnrolledPairHead("fixture-slot", "fixture-partition", "fixture-daemon", "selector-fixture",
             Generation: 4, Revision: 8, Digest: new string('A', 64));
         ImmutableArray<string> devices = ["fixture-device-a", "fixture-device-b"];
