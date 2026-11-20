@@ -5,7 +5,7 @@ status: Waiting
 assignee:
   - '@gpt-6.2-sol-release'
 created_date: '2026-11-17T02:54:00Z'
-updated_date: '2026-11-20T19:00:00Z'
+updated_date: '2026-11-20T19:10:00Z'
 labels:
   - engine
   - lifecycle
@@ -19,14 +19,14 @@ ordinal: 26000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Wake: independent correction and integration review for [Docker diagnostics PR #53](https://github.com/ArborealML/Inference-Router/pull/53). Review identified that empty stdout and stderr frames disappeared without counting toward the 256-frame cap. The correction at 04f3d83 passed 54 focused Release tests with zero skips. All three hosted checks passed on integrated 269b87d. Delivery owns landing. The separate daemon change-detection plan is under independent review.
+Wake: independent review of the daemon-observation amendment. [Docker diagnostics PR #53](https://github.com/ArborealML/Inference-Router/pull/53) landed at b0f8255 with 54 focused Release passes. [Main CI](https://github.com/ArborealML/Inference-Router/actions/runs/44798668380) passed all three jobs. The corrected reader counts empty stdout and stderr frames in order. The independent uncertain-start investigation traces a lost acknowledgment against the recorded operation and immutable container ID.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [x] #1 Verify image Id, RepoDigests and platform independently of tag resolution. A mismatch refuses the switch with one actionable message.
 - [x] #2 GPU device requests, mounts and resource limits are expressible in config and reach the create request
-- [ ] #3 Exec frame demux and log reading exist behind the provider seam with a fake, and a non-zero exec exit is a failure
+- [x] #3 Exec frame demux and log reading exist behind the provider seam with a fake, and a non-zero exec exit is a failure
 - [x] #4 A failed activation after native lifecycle transaction entry latches the target through dispatcher wakes until explicit target reset or relevant configuration change. Earlier claim-hook or scheduling rollback permits retry without reset.
 - [ ] #5 Daemon event subscription (or a documented polling substitute) replaces the assumption that nothing else changed the engine
 - [ ] #6 The Windows named-pipe transport is implemented or explicitly declined in SPEC with the reason

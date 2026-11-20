@@ -1,11 +1,11 @@
 ---
 id: TASK-81
 title: Answer a stopped switch the same way on the wire, the feed, and the stream
-status: To Do
+status: Preparing
 assignee:
-  - '@qwen3.8-flash-next'
+  - '@gpt-6.2-sol-stream-frames'
 created_date: '2026-11-18T04:09:00Z'
-updated_date: '2026-11-18T19:29:00Z'
+updated_date: '2026-11-20T19:09:00Z'
 labels:
   - lifecycle
   - shutdown
@@ -18,7 +18,7 @@ ordinal: 81000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-A shutdown can be answered as a failure, read in the tree. EndSwitch derives `CancelledByShutdown` from the switch token (`EngineRuntime.cs:1054` at `2b751ec`) unconditionally, while teardown sets the stop flag and clears Ready before cancelling that token — so a switch that reads the flag just before the cancel and writes just after it overwrites true with false: a waiter due cancelled/499 gets switch_failed/503 and the feed says the switch failed. The reverse labels an unrelated failure as cancelled. Two gaps ride the path: a stream a shutdown cancels ends bare — the terminal frame and DONE are written only for a failed ticket; and DelegatedExecProvider folds its own wait deadline with the token cancellation, so the feed reads timeout_after_ms for a switch that was stopped. One deliverable: the stop decision is made once, monotonic, reported the same way everywhere.
+Frames is checking how shutdown ends an already committed SSE response on landed b0f8255. Compare the actual wire bytes and strict-client coverage with decision 30 and the existing terminal contract. Return the smallest missing witness or the landed evidence for criterion 3. Other stop-cause and provider criteria remain separate.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
