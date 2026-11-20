@@ -1,11 +1,11 @@
 ---
 id: TASK-26
 title: Close the gaps SPEC 5.3.1 still describes for container-native lifecycle
-status: To Do
+status: Preparing
 assignee:
   - '@gpt-6.2-sol-lifecycle'
 created_date: '2026-11-17T02:54:00Z'
-updated_date: '2026-11-20T04:29:00Z'
+updated_date: '2026-11-20T04:42:00Z'
 labels:
   - engine
   - lifecycle
@@ -19,7 +19,7 @@ ordinal: 26000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-The provider now checks independent evidence of the exact owned container state after a stop conflict. Remaining work includes fencing reentry after an ambiguous effect and preventing runtime readiness restoration after an acknowledged or uncertain stop.
+Lifecycle owns uncertain-stop recovery. Shutdown is revising the selective reset plan: aliases and implicit defaults must share the canonical tier latch, probe publication must stay fenced until the failed claim marker clears, and each failed waiter must receive its own recorded outcome. Verify that a reload-only credential gets 404 on reset before and after reload. Shared terminal changes follow uncertain-stop recovery.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

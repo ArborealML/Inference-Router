@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@gpt-6.2-sol-stream-frames'
 created_date: '2026-11-18T11:29:00Z'
-updated_date: '2026-11-20T04:32:00Z'
+updated_date: '2026-11-20T04:38:00Z'
 labels: []
 milestone: m-1
 dependencies: []
@@ -38,5 +38,5 @@ Stop reading at 256 bytes or EOF. Document transport read-ahead and draining sep
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-The revised plan passed independent review against source at 848ad15. The successful streaming path is covered separately by TASK-30.
+Independent commit review was dispatched for 381f14c. The candidate build stopped at IDISP001 on the acquired stream. The tests-only baseline stopped at CS9007 on the expected JSON literal. Neither run executed a test. Frames owns both corrections; Delivery will qualify the corrected successor and include its delta in review.
 <!-- SECTION:NOTES:END -->
