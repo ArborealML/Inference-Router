@@ -4,7 +4,7 @@ namespace Arboreal.InferenceRouter.Server;
 
 public static partial class ServerApp
 {
-    private readonly record struct InferenceStreamSink(HttpContext Context, PipeWriter Writer,
+    private readonly record struct InferenceStreamSink(PipeWriter Writer,
         RouterTicket Ticket, RouterCore? Router, TimeProvider Clock)
     {
         private static readonly TimeSpan WriteTimeout = TimeSpan.FromSeconds(30);
@@ -18,58 +18,72 @@ public static partial class ServerApp
                 return;
             }
 
-            try { await WriteWatchedAsync(bytes, ct).ConfigureAwait(false); }
-            finally { delivery.Release(bytes.Length); }
+            await WriteWatchedAsync(delivery, bytes, charged: true, ct).ConfigureAwait(false);
         }
 
         internal ValueTask WriteFrameAsync(ReadOnlyMemory<byte> frame, CancellationToken ct) =>
-            Ticket.HttpDelivery is null
-                ? new ValueTask(AirJson.WriteFrameAsync(Writer, frame, ct))
-                : WriteWatchedAsync(frame, ct);
+            Ticket.HttpDelivery is { } delivery
+                ? WriteWatchedAsync(delivery, frame, charged: false, ct)
+                : new ValueTask(AirJson.WriteFrameAsync(Writer, frame, ct));
 
-        private async ValueTask WriteWatchedAsync(ReadOnlyMemory<byte> bytes, CancellationToken ct)
+        private async ValueTask WriteWatchedAsync(HttpStreamDelivery delivery, ReadOnlyMemory<byte> bytes,
+            bool charged, CancellationToken ct)
         {
-            var write = Writer.WriteAsync(bytes, ct);
-            FlushResult result;
-            if (write.IsCompletedSuccessfully)
+            var releaseHere = charged;
+            try
             {
-                result = write.Result;
-            }
-            else
-            {
-                var pending = write.AsTask();
-                try
+                var write = Writer.WriteAsync(bytes, ct);
+                FlushResult result;
+                if (write.IsCompletedSuccessfully)
                 {
-                    result = await pending.WaitAsync(WriteTimeout, Clock, ct).ConfigureAwait(false);
+                    result = write.Result;
                 }
-                catch (TimeoutException) when (!pending.IsCompleted)
+                else
                 {
-                    if (!ct.IsCancellationRequested)
-                        Router?.FailSlowStream(Ticket, ct);
-                    await AbortPendingWriteAsync(pending).ConfigureAwait(false);
+                    var pending = write.AsTask();
+                    try
+                    {
+                        result = await pending.WaitAsync(WriteTimeout, Clock, ct).ConfigureAwait(false);
+                    }
+                    catch (TimeoutException) when (!pending.IsCompleted)
+                    {
+                        releaseHere = false;
+                        _ = RetirePendingWriteAsync(pending, delivery, bytes, charged);
+                        if (!ct.IsCancellationRequested)
+                            Router?.FailSlowStream(Ticket, ct);
+                        Writer.CancelPendingFlush();
+                        throw new OperationCanceledException(ct);
+                    }
+                    catch (OperationCanceledException) when (!pending.IsCompleted)
+                    {
+                        releaseHere = false;
+                        _ = RetirePendingWriteAsync(pending, delivery, bytes, charged);
+                        Writer.CancelPendingFlush();
+                        throw;
+                    }
+                    catch (TimeoutException)
+                    {
+                        // A completed write wins a race with its own deadline.
+                        result = await pending.ConfigureAwait(false);
+                    }
+                }
+                if (result.IsCanceled || result.IsCompleted)
                     throw new OperationCanceledException(ct);
-                }
-                catch (OperationCanceledException) when (!pending.IsCompleted)
-                {
-                    await AbortPendingWriteAsync(pending).ConfigureAwait(false);
-                    throw;
-                }
-                catch (TimeoutException)
-                {
-                    // A completed write wins a race with its own deadline.
-                    result = await pending.ConfigureAwait(false);
-                }
             }
-            if (result.IsCanceled || result.IsCompleted)
-                throw new OperationCanceledException(ct);
+            finally
+            {
+                if (releaseHere) delivery.Release(bytes.Length);
+            }
         }
 
-        private async Task AbortPendingWriteAsync(Task<FlushResult> pending)
+        private static async Task RetirePendingWriteAsync(Task<FlushResult> pending, HttpStreamDelivery delivery,
+            ReadOnlyMemory<byte> bytes, bool charged)
         {
-            Context.Abort();
-            Writer.CancelPendingFlush();
-            // The writer may still own the bytes. Return their credit only after it lets go.
+            // This detached operation owns only the active write's slice and any charged credit.
+            // The exchange can abort and discard its independent queued data while the write settles.
             await ((Task)pending).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+            if (charged) delivery.Release(bytes.Length);
+            GC.KeepAlive(bytes);
         }
     }
 }

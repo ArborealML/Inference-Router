@@ -8,6 +8,7 @@ public sealed partial class RouterCore
     internal Action<string>? AfterOptInTransportTaskForTests;
     internal Action? BeforeSlowStreamDecisionForTests;
     internal Func<string, Task>? BeforeOptInStreamSettlementForTests;
+    internal Func<string, Task>? BeforeOptInTransportStartForTests;
 
     private async Task ExecuteOptInStreamAsync(QueuedRequest candidate, EngineRuntime engine,
         SwitchServingProof? servingProof, ExactTicketAdmission.Invocation? invocation, CancellationToken execution)
@@ -58,15 +59,24 @@ public sealed partial class RouterCore
             _shutdownToken, execution, candidate.CallerToken);
         var ticket = candidate.Ticket;
         var ct = transport.Token;
+        var attempted = false;
         try
         {
+            if (BeforeOptInTransportStartForTests is { } before)
+                await before(ticket.Id).ConfigureAwait(false);
             if (ticket.IsTerminal) return;
             var body = ModelRewriter.Rewrite(candidate.Request.Body, engine.CanonicalModel(ticket.Model) ?? ticket.Model);
             var suffix = LooksLikeCompletion(candidate.Request.Body) ? "completions" : "chat/completions";
             if (invocation is not null)
             {
                 using var request = MakeUpstreamRequest(engine, body, suffix);
-                await invocation.RunAsync(request, response => ConsumeAsync(response, gate: null),
+                await invocation.RunAsync(request, response =>
+                {
+                    // A borrowed response is evidence of an actual send. Returning from abort
+                    // or a failed offer alone says nothing about whether inference was attempted.
+                    attempted = true;
+                    return ConsumeAsync(response, gate: null);
+                },
                     error => ReportFailure(error, gate: null), ct, invocation.VerifiedCredentialEpoch).ConfigureAwait(false);
                 return;
             }
@@ -84,6 +94,8 @@ public sealed partial class RouterCore
                 using var gate = engine.ResponseTimeout is { } ceiling
                     ? new ResponseGate(ceiling, ResponseTimeoutClockForTests) : null;
                 using var headerWait = gate is null ? null : CancellationTokenSource.CreateLinkedTokenSource(ct, gate.Token);
+                ct.ThrowIfCancellationRequested();
+                attempted = true;
                 var send = SendAsync(engine, body, suffix, ticket.Model, servingProof, ct);
                 HttpResponseMessage response;
                 try
@@ -114,8 +126,8 @@ public sealed partial class RouterCore
         }
         finally
         {
-            try { engine.RecordPrefix(candidate.Messages()); }
-            finally { await AbortUnstartedInvocationAsync(ticket, invocation).ConfigureAwait(false); }
+            await AbortUnstartedInvocationAsync(ticket, invocation).ConfigureAwait(false);
+            if (attempted) engine.RecordPrefix(candidate.Messages());
         }
 
         async Task ConsumeAsync(HttpResponseMessage response, ResponseGate? gate)

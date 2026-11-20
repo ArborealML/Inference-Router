@@ -205,17 +205,17 @@ public static partial class ServerApp
         RouterCore? router = null)
     {
         var ct = ctx.RequestAborted;
-        ctx.Response.StatusCode = 200;
-        ctx.Response.Headers.ContentType = "text/event-stream";
-        ctx.Response.Headers.CacheControl = "no-cache";
-        if (HttpProtocol.IsHttp11(ctx.Request.Protocol))
-            ctx.Response.Headers.Connection = "keep-alive";
-
-        var writer = ctx.Response.BodyWriter;
         var delivery = ticket.HttpDelivery;
-        var sink = new InferenceStreamSink(ctx, writer, ticket, router, clock);
         try
         {
+            ctx.Response.StatusCode = 200;
+            ctx.Response.Headers.ContentType = "text/event-stream";
+            ctx.Response.Headers.CacheControl = "no-cache";
+            if (HttpProtocol.IsHttp11(ctx.Request.Protocol))
+                ctx.Response.Headers.Connection = "keep-alive";
+
+            var writer = ctx.Response.BodyWriter;
+            var sink = new InferenceStreamSink(writer, ticket, router, clock);
             ct.ThrowIfCancellationRequested();
             var (reader, first) = await ReadFirstChunkAsync(sink, ticket, clock, ct).ConfigureAwait(false);
             if (reader is not null)
@@ -246,19 +246,17 @@ public static partial class ServerApp
                 await sink.WriteFrameAsync(AirJson.Frame(json, "[DONE]"), ct).ConfigureAwait(false);
             }
         }
+        catch (Exception) when (delivery is not null)
+        {
+            // A failed writer can leave RequestAborted unset. Always end the sink's side of the
+            // exchange, keeping any cause or acknowledgment that already won.
+            delivery.Decide(HttpStreamOutcome.Cancelled);
+            router?.TryCancel(ticket.Id);
+            ctx.Abort();
+        }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
             // The caller went away. HandleInference links the abort to the producer.
-        }
-        catch (OperationCanceledException) when (delivery is not null)
-        {
-            router?.TryCancel(ticket.Id);
-            ctx.Abort();
-        }
-        catch (IOException) when (delivery is not null)
-        {
-            router?.TryCancel(ticket.Id);
-            ctx.Abort();
         }
         finally
         {

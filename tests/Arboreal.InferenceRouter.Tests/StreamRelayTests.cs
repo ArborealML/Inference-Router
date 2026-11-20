@@ -264,6 +264,88 @@ public class StreamRelayTests
     }
 
     [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task NonIoWriterFailureSettlesSealedRelayEvenWithoutRequestAbort(bool initialComment)
+    {
+        using var fake = new StreamEngine(new MemoryStream(initialComment ? [] : [(byte)'\n']));
+        var (app, _, _) = await WireHarness.StartAsync(fake: fake, streamBufferLimit: Credit);
+        await using var server = app;
+        using var bound = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        var router = app.Services.GetRequiredService<RouterCore>();
+        var ticket = await router.EnqueueHttpAsync("writer-fault", Request(), bound.Token);
+        var ctx = new DefaultHttpContext();
+        var lifetime = new PassiveLifetime { RequestAborted = bound.Token };
+        ctx.Features.Set<IHttpRequestLifetimeFeature>(lifetime);
+        var writer = new GatedWriter(initialComment ? 1 : 2);
+        ctx.Features.Set<IHttpResponseBodyFeature>(new BodyFeature(writer));
+        var delivery = Assert.IsType<HttpStreamDelivery>(ticket.HttpDelivery);
+        var relay = ServerApp.StreamTicketAsync(ctx, ticket, TimeProvider.System, router);
+        try
+        {
+            await writer.Blocked.Task.WaitAsync(bound.Token);
+            await delivery.Sealed.WaitAsync(bound.Token);
+            Assert.False(ticket.CompletionTask.IsCompleted);
+            writer.Release.TrySetException(initialComment
+                ? new InvalidOperationException("scripted initial-comment failure")
+                : new ObjectDisposedException("scripted final payload writer"));
+            await relay.WaitAsync(bound.Token);
+            var error = await Assert.ThrowsAsync<RouterRequestException>(
+                () => ticket.CompletionTask.WaitAsync(bound.Token));
+            Assert.Equal("cancelled", error.Code);
+            Assert.False(ctx.RequestAborted.IsCancellationRequested);
+            Assert.True(lifetime.Aborted);
+            Assert.Equal(0, delivery.ReservedBytes);
+            Assert.Single(router.Events.Replay(0), row => row.TicketId == ticket.Id && row.Kind == "request.cancelled");
+        }
+        finally { writer.Release.TrySetResult(new FlushResult(true, false)); }
+    }
+
+    [Fact]
+    public async Task UncooperativeWriteKeepsItsCreditWhileAbortDiscardsTheOtherSlice()
+    {
+        using var body = new SeparateBlankBlocks();
+        using var fake = new StreamEngine(body);
+        var clock = new ReadinessDeadlineTests.ManualClock();
+        var (app, _, _) = await WireHarness.StartAsync(fake: fake, streamBufferLimit: Credit, streamClock: clock);
+        await using var server = app;
+        using var bound = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        var router = app.Services.GetRequiredService<RouterCore>();
+        var ticket = await router.EnqueueHttpAsync("uncooperative-sink", Request(), bound.Token);
+        var ctx = new DefaultHttpContext();
+        var lifetime = new PassiveLifetime { RequestAborted = bound.Token };
+        ctx.Features.Set<IHttpRequestLifetimeFeature>(lifetime);
+        var writer = new GatedWriter(2, ignoreCancel: true);
+        ctx.Features.Set<IHttpResponseBodyFeature>(new BodyFeature(writer));
+        var relay = ServerApp.StreamTicketAsync(ctx, ticket, clock, router);
+        var delivery = Assert.IsType<HttpStreamDelivery>(ticket.HttpDelivery);
+        try
+        {
+            Assert.Equal(1, await writer.Blocked.Task.WaitAsync(bound.Token));
+            await delivery.Sealed.WaitAsync(bound.Token);
+            Assert.Equal(2, delivery.ReservedBytes);
+            await UntilAsync(() => clock.ActiveTimers == 1, bound.Token);
+            clock.AdvanceTo(30_001);
+
+            await relay.WaitAsync(bound.Token);
+            var error = await Assert.ThrowsAsync<RouterRequestException>(
+                () => ticket.CompletionTask.WaitAsync(bound.Token));
+            Assert.Equal("slow_consumer", error.Code);
+            Assert.True(lifetime.Aborted);
+            Assert.False(writer.Release.Task.IsCompleted);
+            Assert.False(ticket.StreamChannel!.Reader.TryRead(out _));
+            Assert.Equal(1, delivery.ReservedBytes);
+            await UntilAsync(() => router.GetStats().Engines.Single().Inflight == 0, bound.Token);
+
+            writer.Release.TrySetException(new IOException("scripted late write fault"));
+            await UntilAsync(() => delivery.ReservedBytes == 0, bound.Token);
+            Assert.Equal("slow_consumer", ticket.ErrorCode);
+            Assert.Equal(2, writer.Received.Count); // Initial comment and the only attempted payload.
+        }
+        finally { writer.Release.TrySetResult(new FlushResult(true, false)); }
+    }
+
+    [Theory]
     [InlineData(false)]
     [InlineData(true)]
     public async Task CancellationAtWatchdogClaimPreservesCallerOrShutdownCause(bool shutdown)
@@ -577,7 +659,13 @@ public class StreamRelayTests
         }
     }
 
-    private sealed class GatedWriter(int blockWrite) : PipeWriter
+    private sealed class SeparateBlankBlocks() : MemoryStream([(byte)'\n', (byte)'\n'])
+    {
+        public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default) =>
+            base.ReadAsync(buffer[..1], cancellationToken);
+    }
+
+    private sealed class GatedWriter(int blockWrite, bool ignoreCancel = false) : PipeWriter
     {
         private int _writes;
         public TaskCompletionSource<int> Blocked { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -592,13 +680,23 @@ public class StreamRelayTests
             return new ValueTask<FlushResult>(Release.Task);
         }
 
-        public override void CancelPendingFlush() => Release.TrySetResult(new FlushResult(true, false));
+        public override void CancelPendingFlush()
+        {
+            if (!ignoreCancel) Release.TrySetResult(new FlushResult(true, false));
+        }
         public override void Complete(Exception? exception = null) { }
         public override void Advance(int bytes) => throw new NotSupportedException();
         public override Memory<byte> GetMemory(int sizeHint = 0) => throw new NotSupportedException();
         public override Span<byte> GetSpan(int sizeHint = 0) => throw new NotSupportedException();
         public override ValueTask<FlushResult> FlushAsync(CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
+    }
+
+    private sealed class PassiveLifetime : IHttpRequestLifetimeFeature
+    {
+        public CancellationToken RequestAborted { get; set; }
+        public bool Aborted { get; private set; }
+        public void Abort() => Aborted = true;
     }
 
     private sealed class BodyFeature(PipeWriter writer) : IHttpResponseBodyFeature

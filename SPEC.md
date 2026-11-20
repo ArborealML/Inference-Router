@@ -2600,7 +2600,10 @@ one validated batch in order using credit-sized slices and pauses upstream reads
 The staging buffer, read scratch, validated batch and transport buffers have separate ownership.
 A continuously pending downstream write times out at 30 s without progress, even with one byte
 pending. The router aborts that HTTP exchange and records ticket code `slow_consumer` and a
-`request.failed` reason beginning with that token. A successful flush restores credit. On clean
+`request.failed` reason beginning with that token. An abnormal writer exit settles the exchange
+as `cancelled` unless another outcome already won. A pending write keeps its own reserved credit
+until the operation settles, even after the exchange ends and unrelated queued output is discarded.
+A successful flush restores credit. On clean
 upstream EOF, the router disarms the response timer and starts transport cleanup. The HTTP ticket
 succeeds after the last required successful flush, including the initial comment on an empty body
 and any upstream `[DONE]`. The first selected terminal outcome stands. Caller or shutdown

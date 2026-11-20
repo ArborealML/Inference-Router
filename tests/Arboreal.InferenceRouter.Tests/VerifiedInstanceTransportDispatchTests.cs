@@ -87,6 +87,62 @@ public sealed partial class VerifiedInstanceTransportTests
     }
 
     [Theory(Timeout = 20_000)]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task OptInExactPreStartCleanupDoesNotRecordUnsentPrefix(bool cleanupFault)
+    {
+        const string prompt = "unsent verified relay prefix";
+        await using var rig = new DispatchRig(streamIdleTimeoutMs: 300_000);
+        using var beforeStart = new HeldCheckout();
+        using var preparation = new HeldCheckout();
+        rig.Publish(generation: 1);
+        rig.Router.BeforeOptInTransportStartForTests = _ => beforeStart.HoldAsync(rig.Token);
+        rig.PreparationCleanup = async () =>
+        {
+            await preparation.HoldAsync(rig.Token);
+            if (cleanupFault) throw new InvalidOperationException("scripted preparation cleanup fault");
+        };
+        var settled = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        rig.Router.AfterOptInTransportTaskForTests = id => settled.TrySetResult(id);
+        Assert.True(await rig.Engine.ProbeHealthOnceAsync(rig.Token));
+        var ticket = await rig.Router.EnqueueHttpAsync("unsent-stream", new InferenceRequest
+        {
+            Model = "ALIAS",
+            Stream = true,
+            Body = "{\"model\":\"alias\",\"messages\":[{\"role\":\"user\",\"content\":\"unsent verified relay prefix\"}],\"stream\":true}"u8.ToArray(),
+            Options = new RouterRequestOptions { RequiredContext = 32_768 },
+        }, rig.Token);
+        rig.Start();
+        try
+        {
+            await beforeStart.Reached.WaitAsync(rig.Token);
+            Assert.True(rig.Router.TryCancel(ticket.Id));
+            var error = await Assert.ThrowsAsync<RouterRequestException>(() => ticket.CompletionTask.WaitAsync(rig.Token));
+            Assert.Equal("cancelled", error.Code);
+            Assert.Equal(0, rig.Engine.MatchedPrefixChars([prompt]));
+
+            beforeStart.Release();
+            await preparation.Reached.WaitAsync(rig.Token);
+            Assert.Equal(0, rig.Issuer.Checkouts);
+            Assert.False(settled.Task.IsCompleted);
+            Assert.Equal(0, rig.Engine.MatchedPrefixChars([prompt]));
+            preparation.Release();
+
+            Assert.Equal(ticket.Id, await settled.Task.WaitAsync(rig.Token));
+            Assert.Equal(0, rig.Issuer.Checkouts);
+            Assert.Equal(0, rig.Engine.MatchedPrefixChars([prompt]));
+            Assert.Equal(1, rig.Terminals(ticket));
+            Assert.Equal(cleanupFault ? 1 : 0, rig.Router.Events.Replay(0)
+                .Count(row => row.TicketId == ticket.Id && row.Kind == "request.cleanup_failed"));
+        }
+        finally
+        {
+            beforeStart.Release();
+            preparation.Release();
+        }
+    }
+
+    [Theory(Timeout = 20_000)]
     [InlineData(null, false, "resident")]
     [InlineData(null, true, "wide")]
     [InlineData("wide", true, "wide")]
