@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@gpt-6.2-sol-frames'
 created_date: '2026-11-18T18:15:00Z'
-updated_date: '2026-11-21T05:01:00Z'
+updated_date: '2026-11-21T05:16:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -23,7 +23,7 @@ ordinal: 110000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Two staged Pi sessions completed through one ordinary AIR listener while a synthetic host switched models. Qwen streamed before the DeepSeek request queued. Qwen finished and its physical use retired before the simulated stop and start. AIR served the original DeepSeek ticket after readiness. The live physical switch remains open.
+Two staged Pi sessions completed through one ordinary AIR listener while a synthetic host switched models. Qwen streamed before the DeepSeek request queued. Qwen finished and its physical use retired before the simulated stop and start. AIR served the original DeepSeek ticket after readiness. Stock Pi can change the selected model during an active turn. Source shows it buffers a steered follow-up locally. The next scoped case observes when that same session sends its second HTTP request to AIR. The live physical switch remains open.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
