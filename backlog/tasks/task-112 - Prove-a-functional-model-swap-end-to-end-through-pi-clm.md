@@ -1,11 +1,11 @@
 ---
 id: TASK-112
 title: Prove a functional model swap end to end through pi-clm
-status: In Progress
+status: Preparing
 assignee:
   - '@gpt-6.2-sol-stream-delivery'
 created_date: '2026-11-18T18:15:00Z'
-updated_date: '2026-11-21T00:24:00Z'
+updated_date: '2026-11-21T02:46:16Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -23,7 +23,7 @@ ordinal: 110000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-The staged Pi launcher has a session-header candidate. Exercise two concurrent processes and inspect physical HTTP headers across same-model, follow-up and mixed-model requests. The primary-host run still requires commissioned host enrollment, cold queue activation and verified readiness.
+Seven staged completion requests carried their expected session IDs across same-model, follow-up, mixed-model and new-session turns. Discovery omitted the header. All five refusal cases stopped before fetch and returned a generic client error. One staged Pi request passed through the ordinary AIR listener with a synthetic upstream. Its exact session identity matched the retained ticket through completion. The paired plan joins two sessions on this listener and waits for idle capacity before each new pair. The primary-host run still requires commissioned host enrollment, cold queue activation and verified readiness.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
