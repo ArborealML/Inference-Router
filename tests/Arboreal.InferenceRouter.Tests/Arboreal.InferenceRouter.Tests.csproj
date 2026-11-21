@@ -21,6 +21,7 @@
   <ItemGroup>
     <Using Include="Xunit" />
     <None Update="AirTuneFixtures/baseline.json;AirTuneFixtures/candidate.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="AirTuneFixtures/workload-golden.toml" CopyToOutputDirectory="PreserveNewest" />
     <EmbeddedResource Include="SelectorFixtures/deepseek.toml;SelectorFixtures/glm.toml;
                                SelectorFixtures/hyperqwen.toml;SelectorFixtures/maya_xs.toml;
                                SelectorFixtures/minimax.toml;SelectorFixtures/strata.toml;

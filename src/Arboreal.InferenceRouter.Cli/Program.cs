@@ -38,7 +38,7 @@ public static class Program
             "switch" => await RunSwitchAsync(args[1..]).ConfigureAwait(false),
             "config" => await RunConfigCommandAsync(args[1..]).ConfigureAwait(false),
             "tickets" => await RunTicketAsync(args[1..]).ConfigureAwait(false),
-            "tune" => AirTuneCompare.Run(args.AsSpan(1), Console.Out, Console.Error),
+            "tune" => RunTune(args.AsSpan(1)),
             "help" or "-h" or "--help" => await RunHelpAsync().ConfigureAwait(false),
             _ => await RunHelpAsync().ConfigureAwait(false),
         };
@@ -65,8 +65,22 @@ public static class Program
                                                       (no sockets, no lifecycle commands)
               tune compare --baseline FILE --candidate FILE
                                                       compare saved tuning summaries (Linux x64)
+              tune plan --config FILE --engine ENGINE --model MODEL --seed HEX
+                        --max-concurrency N [--profile TIER]
+                                                      plan an offline tuning workload (Linux x64)
             """);
         return Task.FromResult(0);
+    }
+
+    private static int RunTune(ReadOnlySpan<string> args)
+    {
+        if (args is ["plan", ..])
+        {
+            using var output = Console.OpenStandardOutput();
+            return AirTuneWorkloadPlan.Run(args[1..], output, Console.Error);
+        }
+
+        return AirTuneCompare.Run(args, Console.Out, Console.Error);
     }
 
     // ── serve ───────────────────────────────────────────────────────────────

@@ -1,6 +1,6 @@
 # Hardware-specific inference tuning
 
-The proposed `air tune run` would measure context capacity and concurrency on one operator-prepared engine and produce a hardware-specific record and advisory configuration. The run command, collector integration and workloads below describe a design. The example results are illustrative. AIR provides an offline comparison command for two saved short-grid summaries on supported Linux x64 systems. [Comparison format and platform requirements](../SPEC.md#111-offline-tuning-comparison)
+The proposed `air tune run` would measure context capacity and concurrency on one operator-prepared engine and produce a hardware-specific record and advisory configuration. The run command, collector integration and workloads below describe a design. The example results are illustrative. AIR provides offline commands to plan a short grid from a saved config and compare two saved short-grid summaries on supported Linux x64 systems. [Manifest contract](../SPEC.md#112-offline-tuning-workload-manifests) · [Comparison format](../SPEC.md#111-offline-tuning-comparison)
 
 ## Choose an engine and profile
 
@@ -16,6 +16,31 @@ Today `air config` validates the engine catalog and prints declared profiles. `a
 Resolve the engine-scoped model alias and exact tier from the parsed catalog. Read `max_context`, `max_slots` and the configured probe paths. For native Docker, the composed create projection supplies launch intent, including effective command, environment, bindings and resource requests. Treat the image lookup, local image ID, named repository digest and platform as separate facts. Compare the intent with the actual resident launch before measuring. An unloaded profile, unsupported launcher input, or mismatched resident yields an explicit refusal. In particular, a request to measure `96k` cannot borrow a resident `32k` launch. The current HY4 selector accepts `32k`; wider launch support and hardware qualification have their own requirements. [Config loader](../src/Arboreal.InferenceRouter/Config/RouterConfigLoader.cs#L190-L245) · [Exact target resolution](../src/Arboreal.InferenceRouter/Config/DockerTargetPlans.cs#L33-L44) · [Docker create projection](../src/Arboreal.InferenceRouter/Engines/Lifecycle/DockerLifecycleProvider.cs#L472-L537) · [HY4 setup](ai-integration.md#hy4-flash-on-the-shared-maya-listener)
 
 The shipped HY4 setup uses 96k as nominal design sizing. The literal 65,536 rendered input plus 32,768 output split cannot fit at the pinned Maya window of 98,304 tokens because Maya reserves eight tokens. [Usable context envelope](#qualify-the-normal-use-context-budget)
+
+## Generate a workload manifest offline
+
+```text
+air tune plan --config tune.toml --engine ENGINE --model MODEL --seed HEX --max-concurrency 4 [--profile TIER]
+```
+
+On supported Linux x64 systems, the offline planner reads the bounded saved
+configuration and emits a versioned manifest for the short grid. With an explicit
+canonical tier it emits one tier. With omission it lists the declared serving
+ladder in ascending context and ordinal-name order, up to 16 tiers. The configured
+default is a label. The seed is exactly 64 lowercase hexadecimal digits. The
+configuration supplies nominal windows and configured slots. No runtime starts and
+the command reads no credentials or contacts an endpoint.
+[Manifest contract and file admission](../SPEC.md#112-offline-tuning-workload-manifests)
+
+The manifest and the hash-pinned [generator definition](../src/Arboreal.InferenceRouter.Cli/AirTuneTextGenerator.v1.txt)
+reproduce candidate user-text bytes from a seed and ordered coordinates. For
+one coordinate the candidate can contain zero or more complete numbered
+records and a byte prefix of the next record. The warmup uses its own derived
+seed and is unmeasured. The actual warmup prompt, like each measured prompt,
+must be counted and fitted. The one-record sample exercises generator bytes.
+A future executor freezes the selected record count and tail, renders with the
+verified template, and records exact corpus and request-body hashes. The
+manifest contains neither fitted inputs nor those measured fingerprints.
 
 ## Verify the resident and isolate each wave
 
@@ -58,7 +83,36 @@ For the first Maya adapter, preflight the exact workload configuration with cont
 
 Send the same effective messages, options, template, framing, thinking and sampling to the count path and the generation path. On Maya use `/api/tokens` with the same render-affecting inputs as `/v1/chat/completions`. Verify that generation-only shared overrides agree with the counted inputs. Unresolved overrides leave the workload unqualified. Record each accepted rendered count and request-body digest. [Maya count and rendering](https://github.com/mw00/project-maya/blob/05e0e2da90cacf174d791b0192f3488a3c61100b/serve/server.py#L3883-L3942) · [Generation settings](https://github.com/mw00/project-maya/blob/05e0e2da90cacf174d791b0192f3488a3c61100b/serve/server.py#L6786-L6809)
 
-Cap counting at 24 calls per prompt and 8 MiB of input. Use bisection to select a full-record prefix with up to 16 calls. Use up to eight remaining calls for a counted tail adjustment. Choose the best counted prefix below the target, breaking ties by longest prefix. For a deficit of `d` tokens, try byte prefixes of the next seeded record at lengths `4d + [0, -1, 1, -2, 2, -4, 4, -8]`, clipped and deduplicated. Count the complete prompt after each change. A miss within the bound is `invalid_workload`. The byte estimate orders candidates, and the count determines acceptance.
+For the short-grid executor, freeze the count-request serialization and all
+render-affecting fields before counting. The 8,388,608-byte count-input budget
+is cumulative per prompt. Charge exact UTF-8 count-request body bytes before
+each submission. With 24 calls the per-submission ceiling is 349,525 bytes.
+Verify that the entire next record bounds the serialized size of every tail.
+Form the initial inclusive prefix range from zero to the largest N whose N+1
+full-record body fits that per-submission ceiling and the raw 8,388,608-byte
+candidate bound. Without that sizing proof, end preflight. If even prefix one
+cannot fit, record `invalid_workload` with no generation for that prompt.
+
+Bisect that range with floor midpoints, at most 16 prefix counts. Retain the
+highest counted value at or below the upper endpoint H, preferring the longest
+raw candidate on ties. Counts at or below H search longer and counts above H
+search shorter. For a retained count below H, try up to eight next-record tail
+offsets using `4*(H-count)` plus `[0,-1,1,-2,2,-4,4,-8]` in that order.
+Use widened checked arithmetic, clip to the remaining bytes and the next
+record's length, and skip byte-identical candidates. Use the same ranking for
+in-band counts and keep the first exact match on ties. On call or byte
+exhaustion, use a previously accepted in-band candidate only while its evidence
+and the tier time outside the drain reserve still hold. Otherwise the prompt is
+`invalid_workload` and sends no generation. A failed count consumes one call
+and its charged bytes and ends the fit with the applicable native or transport
+disposition. It supplies no search direction or retry. A tier deadline bars new
+generation and leaves untouched levels untested.
+
+A qualified warmup must finish with 512 output tokens, reason `length`, terminal
+usage and one clean `[DONE]`, alongside matching counts and native attempt and
+reuse evidence. Under the same otherwise qualifying evidence, 511 tokens with
+reason `stop` is early termination. Drain that attempt and issue zero measured
+wave requests. A warmup that meets all gates starts the first measured wave.
 
 For each owned request require:
 

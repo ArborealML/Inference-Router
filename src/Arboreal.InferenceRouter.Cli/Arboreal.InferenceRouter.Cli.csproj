@@ -27,6 +27,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <EmbeddedResource Include="AirTuneTextGenerator.v1.txt" LogicalName="AirTune/TextGenerator/v1.txt" />
     <InternalsVisibleTo Include="Arboreal.InferenceRouter.Tests" />
   </ItemGroup>
 
