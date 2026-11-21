@@ -1,6 +1,6 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.123)
+Status: draft, continuously revised (v0.12.124)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
@@ -352,7 +352,7 @@ daemon transaction per engine. 137 tests green.
   that answers no `upload_url`, an upload that dies or answers no asset id, an asset name listed twice on
   the release, and a tag that moves after the first resolve. No tag has run the gate: still configured,
   not proven.
-- v0.12.123 — add the separate authenticated service for the supervised initial-launch journal head (§5.3.1).
+- v0.12.124 — add the standalone authenticated Read/TryAdvance service for the supervised initial-launch journal head (§5.3.1).
 - v0.12.122 — authenticate bounded offline commission intake before supervised launch construction (§5.3.1).
 - v0.12.121 — refuse an explicit context minimum before queueing when every declaring engine
   has configured serving tiers and none fits. Keep estimate-based admission (§5.5, §6.1, §7.6).
