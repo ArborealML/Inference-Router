@@ -10,7 +10,6 @@ jobs:
     timeout-minutes: 15
     env:
       QUALIFIED_SHA: "72436aa3287193eee8a6325bba5da0315436986d"
-      QUALIFICATION_DIR: ${{ runner.temp }}/operation-head-qualification
     steps:
       - uses: actions/checkout@v4
         with:
@@ -24,6 +23,8 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$QUALIFIED_SHA"
+          QUALIFICATION_DIR="$RUNNER_TEMP/operation-head-qualification"
+          printf 'QUALIFICATION_DIR=%s\n' "$QUALIFICATION_DIR" >> "$GITHUB_ENV"
           mkdir -p "$QUALIFICATION_DIR"
           git show -s --format='source_sha=%H%ntree_sha=%T' HEAD | tee "$QUALIFICATION_DIR/source.txt"
           printf 'run_url=%s/%s/actions/runs/%s\n' "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" | tee -a "$QUALIFICATION_DIR/source.txt"
