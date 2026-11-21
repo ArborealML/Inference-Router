@@ -420,6 +420,20 @@ public sealed partial class HostClosedRouteStagingTests
         var (text, claim, authority) = EnrolledPairTopologyFixture(SupervisedSocket);
         var scope = HostReservation.ProvisionEnrolled(ReservationPath, new(authority.Head.Partition, authority.Head.Generation));
         var pair = RouterConfigLoader.PrepareEnrolledPair(text, authority.Head.Slot, claim, _ => authority);
+        var commission = new SupervisedLaunchCommission(scope, authority, FixtureCommissionApprovals(pair));
+        var approval = Assert.IsType<SupervisedLaunchApproval>(commission.Approval(engine));
+        var daemon = SeedSupervisedDaemon(scope, engine, wrong);
+        var observer = new SupervisedFixtureObserver(commission, daemon);
+        var head = new SupervisedFixtureHead();
+        var journal = new SupervisedLaunchJournal(scope, head);
+        var port = new SupervisedFixturePort(journal, daemon, Convert.FromBase64String(approval.Intent.CreateBytes));
+        var fixture = new SupervisedLaunchFixture(scope, text, claim, approval, head, journal, observer, daemon, port, ReceiptStaging());
+        fixture.Open().ProvisionJournal();
+        return fixture;
+    }
+
+    private static ImmutableArray<SupervisedLaunchApproval> FixtureCommissionApprovals(CheckedEnrolledPair pair)
+    {
         using var stream = OpenPairResource("selector-reference.json");
         using var oracle = JsonDocument.Parse(stream);
         var approvals = ImmutableArray.CreateBuilder<SupervisedLaunchApproval>();
@@ -432,16 +446,7 @@ public sealed partial class HostClosedRouteStagingTests
             var bytes = JsonSerializer.SerializeToUtf8Bytes(ReadPairCreate(recipe), DockerJsonContext.Default.DockerCreateRequest);
             approvals.Add(new(HostInitialLaunchIntent.Freeze(member.Plan, bytes), member.Image, SupervisedApiVersion));
         }
-        var commission = new SupervisedLaunchCommission(scope, authority, approvals.ToImmutable());
-        var approval = Assert.IsType<SupervisedLaunchApproval>(commission.Approval(engine));
-        var daemon = SeedSupervisedDaemon(scope, engine, wrong);
-        var observer = new SupervisedFixtureObserver(commission, daemon);
-        var head = new SupervisedFixtureHead();
-        var journal = new SupervisedLaunchJournal(scope, head);
-        var port = new SupervisedFixturePort(journal, daemon, Convert.FromBase64String(approval.Intent.CreateBytes));
-        var fixture = new SupervisedLaunchFixture(scope, text, claim, approval, head, journal, observer, daemon, port, ReceiptStaging());
-        fixture.Open().ProvisionJournal();
-        return fixture;
+        return approvals.ToImmutable();
     }
 
     private static SupervisedFixtureDaemon SeedSupervisedDaemon(HostReservationScope scope, string engine, string? wrong)

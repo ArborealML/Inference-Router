@@ -1,4 +1,3 @@
-using System.Text;
 using System.Text.Json;
 
 namespace Arboreal.InferenceRouter.Lifecycle;
@@ -35,11 +34,7 @@ internal sealed class SupervisedInitialLaunch(HostReservationScope scope, string
                     if (frame.FormatVersion != SupervisedLaunchJournal.CurrentFormat ||
                         ReadCommission() is not { } current) return null;
                     var pair = RouterConfigLoader.PrepareEnrolledPair(config, commissionedSlot, claim, _ => current.Topology);
-                    if (current.Approvals.IsDefault || current.Approvals.Length != pair.Members.Length ||
-                        current.Approvals.Select(item => item.Intent.Plan.Engine).Distinct(StringComparer.Ordinal).Count() != pair.Members.Length ||
-                        !current.Approvals.All(approval => approval.HasPinnedApiVersion()) ||
-                        !pair.Members.All(member => MatchesProjection(member, current.Approval(member.Plan.Engine))) ||
-                        current.Approval(engine) is not { } approved) return null;
+                    if (!current.ApprovesPair(pair) || current.Approval(engine) is not { } approved) return null;
                     commission = current;
                     intent = approved.Intent;
                 }
@@ -62,14 +57,8 @@ internal sealed class SupervisedInitialLaunch(HostReservationScope scope, string
     private SupervisedLaunchCommission? ReadCommission()
     {
         var current = observer.ReadCommission(scope);
-        return current is not null && current.Scope == scope && scope.Enrollment is { } enrollment &&
-            current.Topology.Head.Slot == commissionedSlot && current.Topology.Head.Partition == enrollment.Group &&
-            current.Topology.Head.Generation == enrollment.Generation ? current : null;
+        return current is not null && current.AuthorizesScope(scope, commissionedSlot) ? current : null;
     }
-
-    private static bool MatchesProjection(CheckedEnrolledPairMember member, SupervisedLaunchApproval? approved) =>
-        approved is not null && member.Image == approved.Image && member.PlanDigest == approved.Intent.Plan.Digest() &&
-        HostInitialLaunchIntent.Freeze(member.Plan, Encoding.UTF8.GetBytes(member.CreateJson)) == approved.Intent;
 
     private sealed class Authority(HostReservationScope scope, SupervisedLaunchJournal journal,
         SupervisedLaunchCommission? commission, Func<SupervisedLaunchCommission?> readCommission,
