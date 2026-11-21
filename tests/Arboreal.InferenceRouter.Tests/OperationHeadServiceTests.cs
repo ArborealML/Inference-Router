@@ -361,16 +361,19 @@ public sealed class OperationHeadServiceTests
 
     private static string Digest(char fill) => new(fill, 64);
 
-    [System.Runtime.Versioning.SupportedOSPlatform("linux")]
     private sealed class Scratch : IAsyncDisposable
     {
         private const UnixFileMode DirectoryMode = UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute;
-        private readonly DirectoryInfo _directory = Directory.CreateTempSubdirectory("air-oh-");
+        private readonly DirectoryInfo _directory;
         private CancellationTokenSource? _stop;
         private Task? _service;
 
         internal Scratch(bool wrongUid = false)
         {
+            if (!OperatingSystem.IsLinux() || !OperationHeadLinux.Supported)
+                throw new PlatformNotSupportedException("The operation-head fixture requires Linux x64.");
+
+            _directory = Directory.CreateTempSubdirectory("air-oh-");
             Authority = Directory.CreateDirectory(Path.Combine(_directory.FullName, "head"), DirectoryMode).FullName;
             Runtime = Directory.CreateDirectory(Path.Combine(_directory.FullName, "run"), DirectoryMode).FullName;
             Scope = HostReservation.ProvisionEnrolled(Path.Combine(_directory.FullName, "slot"), new HostEnrollmentScope("pair", 1));
@@ -438,6 +441,9 @@ public sealed class OperationHeadServiceTests
 
         internal static void WritePrivate(string path, byte[] bytes)
         {
+            if (!OperatingSystem.IsLinux())
+                throw new PlatformNotSupportedException("The operation-head fixture requires Linux permissions.");
+
             using var file = new FileStream(path, new FileStreamOptions
             {
                 Mode = FileMode.CreateNew,
