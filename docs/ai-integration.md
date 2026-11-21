@@ -154,6 +154,12 @@ Fit checks through dispatch and switch restoration are still in progress.
 | One request's state | `GET /admin/tickets/{id}` |
 | Cancel a queued or running request | `DELETE /admin/tickets/{id}` |
 | Load a model on a running engine | `POST /admin/switch {"engine":…,"model":…}` |
+| Check an explicit model switch | `GET /admin/switch/{operationId}`, using the `OperationId` from the 202 acknowledgement |
+
+Save the operation ID and poll the same running router. Branch on `Status` and the structured
+`Reason`. A terminal result remains queryable for 15 minutes from the later of settlement and
+the server's acknowledgement completing or its send terminating. Retry the POST later if it
+returns `503 too_many_switch_operations`.
 
 ### Headers the router reads
 
