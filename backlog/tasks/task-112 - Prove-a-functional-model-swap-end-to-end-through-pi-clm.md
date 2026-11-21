@@ -1,11 +1,11 @@
 ---
 id: TASK-112
 title: Prove a functional model swap end to end through pi-clm
-status: Testing
+status: In Progress
 assignee:
-  - '@gpt-6.2-sol-stream-delivery'
+  - '@gpt-6.2-sol-frames'
 created_date: '2026-11-18T18:15:00Z'
-updated_date: '2026-11-21T03:16:00Z'
+updated_date: '2026-11-21T04:15:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -35,7 +35,7 @@ Seven staged completion requests carried their expected session IDs across same-
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Prove the full eligible provider/model set in one isolated Pi RPC process. Check launcher arguments, credentials and resource isolation. Bound loopback redirection and observe outbound requests. Select both canonical model IDs in the same process and session; verify that the second request carries the previous user and assistant messages. Preserve ordinary launcher behavior.
+Reuse the staged paired Pi driver with the verified one-slot successor in one ordinary HTTP listener. Hold the incumbent stream until the cold request queues. Join each actual request and session to its own ticket. Observe the incumbent physical use retire before the switch, then verify readiness, first write and streamed completion for the original queued ticket. Record observed context headers and estimated admission where omitted. The offline integration plan passed review and the isolated implementation slot is released.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes

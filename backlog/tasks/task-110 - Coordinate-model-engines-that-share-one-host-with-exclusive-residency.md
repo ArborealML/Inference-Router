@@ -1,11 +1,11 @@
 ---
 id: TASK-110
 title: Coordinate model engines that share one host with exclusive residency
-status: Waiting
+status: Preparing
 assignee:
-  - '@gpt-6.2-sol-release'
+  - '@gpt-6.2-astra'
 created_date: '2026-11-18T18:13:00Z'
-updated_date: '2026-11-21T03:39:00Z'
+updated_date: '2026-11-21T04:04:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -21,7 +21,7 @@ ordinal: 108000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Wake on administrator installation of the observer and rollback-independent floor, pair approvals and host exclusion. [PR #73](https://github.com/ArborealML/Inference-Router/pull/73) landed independently authenticated offline commissioning. [Main CI](https://github.com/ArborealML/Inference-Router/actions/runs/44861808281) passed at 963e65d. Connected readiness and live switching remain open. [Launch receipt](https://github.com/ArborealML/Inference-Router/pull/49).
+The coordinator owns host enrollment (TASK-137). Resolve resident and target from N configured models; two-model qualification uses the same path. Connect queued dispatch to real stop, start and serving. [Offline commissioning](https://github.com/ArborealML/Inference-Router/pull/73) landed with [green CI](https://github.com/ArborealML/Inference-Router/actions/runs/44861808281).
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
