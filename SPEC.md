@@ -1,6 +1,6 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.120)
+Status: draft, continuously revised (v0.12.121)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
@@ -352,6 +352,8 @@ daemon transaction per engine. 137 tests green.
   that answers no `upload_url`, an upload that dies or answers no asset id, an asset name listed twice on
   the release, and a tag that moves after the first resolve. No tag has run the gate: still configured,
   not proven.
+- v0.12.121 — refuse an explicit context minimum before queueing when every declaring engine
+  has configured serving tiers and none fits. Keep estimate-based admission (§5.5, §6.1, §7.6).
 - v0.12.120 — retire each model queue when its last member leaves, remove its status row,
   and give a recreated queue a new equal-depth position (§5.5, §6, Decision 80).
 - v0.12.119 — acknowledge explicit admin switches with a queryable operation ID and retain their
@@ -2342,12 +2344,19 @@ Temporary capacity loss parks the ticket. A definitive refusal settles once with
   reads its loaded list, switch marker and eligibility bit from the same snapshot); **a switch in flight is not
   an absence** (a healthy engine switching toward the model keeps the request waiting — refusing there would kill
   the request that triggered the switch it is waiting for); **no engines is never hopeless** (config validation
-  forbids zero engines, and `CapabilityScan` does not rely on that). Everything that could still resolve — an
-  unhealthy engine, a ladder that does not fit yet — stays a wait under its own ceiling, and the answer for an
-  expired wait is `deadline_exceeded` (408), unchanged. One limit stated rather than papered over: a request
-  admitted while capability was **unknown**, and still queued when absence becomes known, is not reclassified by
-  this rule — it waits, because nothing re-examines it, and that is the remaining unbounded wait the board
-  carries alongside the missing `max_queue_time` ceiling.
+  forbids zero engines, and `CapabilityScan` does not rely on that). An unresolved capability decision
+  leaves the request subject to ordinary admission. If the configured queue deadline expires, it returns
+  `deadline_exceeded` (408). A request admitted while capability was unknown can remain queued after
+  absence becomes known. This admission check runs only before insertion.
+- **Configured context refusal:** With the built-in scheduler, a positive explicit context minimum
+  is refused before queueing when at least one engine declares the resolved canonical model, every
+  declaring engine has an ordinal serving ladder for that key, and every tier is smaller than
+  the minimum. The decision uses the configuration generation that commits the ticket. It returns
+  `model_unavailable` (503 for a nonstream request), names the largest configured tier and the
+  required tokens, and emits one `queue.rejected`. Equality or a larger tier leaves ordinary
+  admission in place. A declaring engine without an applicable ladder can use model-bound serving
+  evidence, so its presence also leaves ordinary admission in place. The custom scheduler admission
+  path and estimate-based demand keep their existing behavior (§7.6).
 - **What an engine claims about itself is current-and-verified or it is unknown.** The capability snapshot is
   evidence for two opposite decisions — route a request here, or refuse one with 503 — so a claim survives only
   while nothing has happened since it was made. Four rules, each a test in `CapabilityPublicationTests`.
@@ -2850,10 +2859,10 @@ The shipped error contract is one lowercase body on every surface —
 `{"error":{"type":"air_error","code":…,"message":…}}` — and the code picks the status:
 `invalid_request` 400, `not_found` 404, `deadline_exceeded` 408, `cancelled` 499, `queue_overflow`
 429, `request_body_too_large` 413 (over `max_request_body_bytes`), `engine_error` / `engine_unreachable` 502,
-`switch_failed` / `model_unavailable` 503 (the first also covers a model switch that outlived
-`switch_wait_timeout_ms`; the second is a model no engine in the configuration declares, reports, or is
-switching toward, refused before it joins a queue — §5.5 — so a 503 here costs the caller no queue time, arrives
-as `queue.rejected` on the feed, and may be retried if the configuration changes), `engine_timeout` 504 (an engine that accepted the request and then went quiet
+`switch_failed` / `model_unavailable` 503. A switch that outlives `switch_wait_timeout_ms` can
+return `switch_failed`. The absence proof and the configured explicit-context proof in §5.5
+return `model_unavailable` before queueing, with `queue.rejected` on the feed. A configuration
+change can make retry possible. `engine_timeout` 504 covers an engine that accepted the request and then went quiet
 past `response_timeout_ms`, **and only where no response has started**: a streaming request has already
 committed its `200`, so the same failure reaches the caller inside the stream as one `engine_timeout`
 error frame followed by `[DONE]` — a 504 therefore always means nothing was emitted yet, and a caller may
@@ -3210,8 +3219,11 @@ and `health_probe.slots_path` to read those gauges. The probe checks described i
 
 Semantics:
 
-- **Tier selection demand**: use a positive `options.required_context` when the client declares
-  it. Otherwise use `ceil(prompt_chars / scheduler.chars_per_token_estimate)` (default 4.0).
+- **Tier selection demand**: use a positive `options.required_context` or the HTTP
+  `X-Inference-Required-Context` minimum when supplied. Otherwise use
+  `ceil(prompt_chars / scheduler.chars_per_token_estimate)` (default 4.0). The estimate guides
+  tier selection. It can overestimate the real rendered token demand, so only an explicit
+  minimum can trigger the configured context refusal before queueing (§5.5).
 - **Explicit context minimum**: a positive declaration stays with the exact selected ticket.
   A loaded route needs a current measured window for that model at least as large as this
   minimum, even without a named tier. Exact take revalidates the capability and slot
@@ -3237,8 +3249,10 @@ Semantics:
   A loaded model needs an observed window that meets that tier. A smaller reported window can
   trigger a switch when `auto_switch = true`. An unknown window on a loaded model leaves a
   capacity-dependent request waiting for evidence. A healthy loaded model can still serve a
-  request with neither an explicit minimum nor a required profile. An engine whose ladder has
-  no fitting tier is skipped.
+  request with neither an explicit minimum nor a required profile. The built-in scheduler
+  skips an engine with a nonempty ladder and no fitting tier before it considers the observed
+  window. An engine with no applicable ladder can serve an explicit minimum on a loaded route
+  with a fitting model-bound observed window.
   A failed switch returns `switch_failed` (§5.5, §6).
 - **Binding**: an engine-wide context window binds to a single non-alias, loaded roster row
   that matches a canonical catalog key case-insensitively. An additional upstream row with a
