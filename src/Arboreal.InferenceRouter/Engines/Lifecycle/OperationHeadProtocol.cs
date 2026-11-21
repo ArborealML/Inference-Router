@@ -39,10 +39,14 @@ internal sealed record OperationHeadSnapshot(int Version, HostReservationScope S
         new(OperationHeadProtocol.Version, head.Scope, OperationHeadProtocol.Current, head.Revision, head.Digest);
 }
 
-[JsonSourceGenerationOptions(UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow,
+[JsonSourceGenerationOptions(IgnoreReadOnlyProperties = true, UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow,
     AllowDuplicateProperties = false, RespectNullableAnnotations = true, RespectRequiredConstructorParameters = true)]
 [JsonSerializable(typeof(OperationHeadRequest))]
 [JsonSerializable(typeof(OperationHeadReply))]
+internal sealed partial class OperationHeadWireJsonContext : JsonSerializerContext;
+
+[JsonSourceGenerationOptions(UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow,
+    AllowDuplicateProperties = false, RespectNullableAnnotations = true, RespectRequiredConstructorParameters = true)]
 [JsonSerializable(typeof(OperationHeadSnapshot))]
 internal sealed partial class OperationHeadJsonContext : JsonSerializerContext;
 

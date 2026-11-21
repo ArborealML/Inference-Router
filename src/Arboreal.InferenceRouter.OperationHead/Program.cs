@@ -156,9 +156,9 @@ internal static class Program
         var request = new OperationHeadRequest(OperationHeadProtocol.Version, OperationHeadProtocol.CompareAdvance,
             scope, digest, head with { Revision = head.Revision - 1 }, head);
         var reply = new OperationHeadReply(request, OperationHeadProtocol.Applied, head);
-        return JsonSerializer.SerializeToUtf8Bytes(request, OperationHeadJsonContext.Default.OperationHeadRequest).Length <=
+        return JsonSerializer.SerializeToUtf8Bytes(request, OperationHeadWireJsonContext.Default.OperationHeadRequest).Length <=
             OperationHeadProtocol.MaxPayload &&
-            JsonSerializer.SerializeToUtf8Bytes(reply, OperationHeadJsonContext.Default.OperationHeadReply).Length <=
+            JsonSerializer.SerializeToUtf8Bytes(reply, OperationHeadWireJsonContext.Default.OperationHeadReply).Length <=
             OperationHeadProtocol.MaxPayload;
     }
 

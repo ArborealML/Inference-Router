@@ -467,6 +467,63 @@ public sealed class OperationHeadServiceTests
         });
     }
 
+    [Fact(Timeout = 20_000)]
+    public async Task RawCasEchoAndAppliedHeadKeepTheExactWireScope()
+    {
+        if (!OperatingSystem.IsLinux() || !OperationHeadLinux.Supported) return;
+
+        await using var test = new Scratch();
+        await test.StartAsync();
+        Assert.True(test.Client.TryAdvance(null, test.Head(0, 'A')));
+        var enrollment = Assert.IsType<HostEnrollmentScope>(test.Scope.Enrollment);
+        var scope = FormattableString.Invariant($$"""
+            {
+              "Slot": "{{JsonEncodedText.Encode(test.Scope.Slot)}}",
+              "Identity": "{{test.Scope.Identity:D}}",
+              "Enrollment": {
+                "Group": "{{JsonEncodedText.Encode(enrollment.Group)}}",
+                "Generation": {{enrollment.Generation}}
+              }
+            }
+            """);
+        var rawRequest = $$"""
+            {
+              "Version": 1,
+              "Operation": "CompareAdvance",
+              "Scope": {{scope}},
+              "Nonce": "{{Digest('C')}}",
+              "Predecessor": {
+                "Scope": {{scope}},
+                "Revision": 0,
+                "Digest": "{{Digest('A')}}"
+              },
+              "Next": {
+                "Scope": {{scope}},
+                "Revision": 1,
+                "Digest": "{{Digest('B')}}"
+              }
+            }
+            """;
+
+        using var deadline = new CancellationTokenSource(WaitLimit);
+        using var socket = new Socket(AddressFamily.Unix, SocketType.Stream, ProtocolType.Unspecified);
+        await socket.ConnectAsync(new UnixDomainSocketEndPoint(test.SocketPath), deadline.Token);
+        using var wire = new NetworkStream(socket, ownsSocket: false);
+        using var tls = new SslStream(wire, leaveInnerStreamOpen: true, (_, remote, _, _) =>
+            remote?.GetCertHashString(HashAlgorithmName.SHA256) == test.Pin);
+        await tls.AuthenticateAsClientAsync(new SslClientAuthenticationOptions { TargetHost = "operation-head" },
+            deadline.Token);
+        await tls.WriteAsync(FrameRawJson(rawRequest), deadline.Token);
+        using var reply = JsonDocument.Parse(
+            await BoundedJsonFrame.ReadPayloadAsync(tls, OperationHeadProtocol.MaxPayload, deadline.Token));
+        using var request = JsonDocument.Parse(rawRequest);
+        Assert.Equal(OperationHeadProtocol.Applied, reply.RootElement.GetProperty("Outcome").GetString());
+        Assert.True(JsonElement.DeepEquals(request.RootElement, reply.RootElement.GetProperty("Request")),
+            "The raw request echo must have exactly the input fields and values, including its nested scopes.");
+        Assert.True(JsonElement.DeepEquals(request.RootElement.GetProperty("Next"), reply.RootElement.GetProperty("Head")),
+            "The raw Applied head must have exactly the proposed head fields and values.");
+    }
+
     private static async Task AssertForgedReplyUnavailableAsync(Scratch test, bool advance,
         Func<OperationHeadRequest, OperationHeadReply> forge)
     {
@@ -493,13 +550,13 @@ public sealed class OperationHeadServiceTests
             using var tls = new SslStream(wire, leaveInnerStreamOpen: true);
             await tls.AuthenticateAsServerAsync(new SslServerAuthenticationOptions { ServerCertificate = test.Certificate },
                 timeout.Token);
-            var request = await BoundedJsonFrame.ReadAsync(tls, OperationHeadJsonContext.Default.OperationHeadRequest,
+            var request = await BoundedJsonFrame.ReadAsync(tls, OperationHeadWireJsonContext.Default.OperationHeadRequest,
                 OperationHeadProtocol.MaxPayload, timeout.Token);
             Assert.True(request.IsValidFor(test.Scope));
             Assert.Equal(advance ? OperationHeadProtocol.CompareAdvance : OperationHeadProtocol.Read, request.Operation);
             Assert.Equal(advance ? old : null, request.Predecessor);
             Assert.Equal(advance ? next : null, request.Next);
-            await BoundedJsonFrame.WriteAsync(tls, forge(request), OperationHeadJsonContext.Default.OperationHeadReply,
+            await BoundedJsonFrame.WriteAsync(tls, forge(request), OperationHeadWireJsonContext.Default.OperationHeadReply,
                 OperationHeadProtocol.MaxPayload, timeout.Token);
         }
     }
@@ -533,8 +590,13 @@ public sealed class OperationHeadServiceTests
     {
         var request = new OperationHeadRequest(OperationHeadProtocol.Version, OperationHeadProtocol.CompareAdvance,
             test.Scope, Digest('C'), null, test.Head(0, 'A'));
-        var json = JsonSerializer.Serialize(request, OperationHeadJsonContext.Default.OperationHeadRequest);
-        var bytes = Encoding.UTF8.GetBytes(json.Insert(1, "\"Version\":1,"));
+        var json = JsonSerializer.Serialize(request, OperationHeadWireJsonContext.Default.OperationHeadRequest);
+        return FrameRawJson(json.Insert(1, "\"Version\":1,"));
+    }
+
+    private static byte[] FrameRawJson(string json)
+    {
+        var bytes = Encoding.UTF8.GetBytes(json);
         var frame = new byte[sizeof(int) + bytes.Length];
         System.Buffers.Binary.BinaryPrimitives.WriteInt32BigEndian(frame, bytes.Length);
         bytes.CopyTo(frame, sizeof(int));

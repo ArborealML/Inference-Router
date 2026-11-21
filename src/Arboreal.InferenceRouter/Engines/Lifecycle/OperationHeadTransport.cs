@@ -61,10 +61,10 @@ internal sealed class OperationHeadClient(UnixDomainSocketEndPoint endpoint, str
         await tls.AuthenticateAsClientAsync(new SslClientAuthenticationOptions { TargetHost = "operation-head" },
             budget.Token).ConfigureAwait(false);
         budget.Check();
-        await BoundedJsonFrame.WriteAsync(tls, request, OperationHeadJsonContext.Default.OperationHeadRequest,
+        await BoundedJsonFrame.WriteAsync(tls, request, OperationHeadWireJsonContext.Default.OperationHeadRequest,
             OperationHeadProtocol.MaxPayload, budget.Token).ConfigureAwait(false);
         budget.Check();
-        var reply = await BoundedJsonFrame.ReadAsync(tls, OperationHeadJsonContext.Default.OperationHeadReply,
+        var reply = await BoundedJsonFrame.ReadAsync(tls, OperationHeadWireJsonContext.Default.OperationHeadReply,
             OperationHeadProtocol.MaxPayload, budget.Token).ConfigureAwait(false);
         if (!reply.Matches(request)) throw new IOException("The operation-head reply is invalid.");
         budget.Check();
@@ -91,14 +91,14 @@ internal static class OperationHeadTransport
             await tls.AuthenticateAsServerAsync(new SslServerAuthenticationOptions { ServerCertificate = certificate },
                 budget.Token).ConfigureAwait(false);
             budget.Check();
-            var request = await BoundedJsonFrame.ReadAsync(tls, OperationHeadJsonContext.Default.OperationHeadRequest,
+            var request = await BoundedJsonFrame.ReadAsync(tls, OperationHeadWireJsonContext.Default.OperationHeadRequest,
                 OperationHeadProtocol.MaxPayload, budget.Token).ConfigureAwait(false);
             if (!request.IsValidFor(scope)) return;
             budget.Check();
             var reply = decide(request, budget);
             if (!reply.Matches(request)) return;
             budget.Check();
-            await BoundedJsonFrame.WriteAsync(tls, reply, OperationHeadJsonContext.Default.OperationHeadReply,
+            await BoundedJsonFrame.WriteAsync(tls, reply, OperationHeadWireJsonContext.Default.OperationHeadReply,
                 OperationHeadProtocol.MaxPayload, budget.Token).ConfigureAwait(false);
         }
         catch (Exception error) when (IsUnavailable(error))
