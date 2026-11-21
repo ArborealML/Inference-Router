@@ -1,11 +1,11 @@
 ---
 id: TASK-114
 title: Start an owned cold engine for a queued model when its host can switch
-status: To Do
+status: In Progress
 assignee:
-  - '@gpt-6.2-sol'
+  - '@gpt-6.2-sol-lifecycle'
 created_date: '2026-11-18T18:21:00Z'
-updated_date: '2026-11-18T19:18:00Z'
+updated_date: '2026-11-21T02:46:16Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -16,7 +16,7 @@ ordinal: 112000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-With one engine instance per model the inactive instance has no responding inference endpoint. At 60849d9 PrefixAwareScheduler.SelectNext discards an unhealthy engine before testing whether the native provider can launch it. Distinguish a proven stopped, owned target from a failed probe or an unreachable lifecycle provider.
+The offline installer and readiness stage are composed; 111 focused Release tests passed. The ordinary one-slot queue proof still requires the selected ticket transfer and verified first write. The guarded settlement records launch readiness once; opening uses that proof and checks the original ticket for cancellation or revocation. A one-slot target must permit that same ticket through once without a second charge. Coordinate the installer with the cohort dispatcher and closed-successor readiness checks. With one engine instance per model the inactive instance has no responding inference endpoint. At 60849d9 PrefixAwareScheduler.SelectNext discards an unhealthy engine before testing whether the native provider can launch it. Distinguish a proven stopped, owned target from a failed probe or an unreachable lifecycle provider.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

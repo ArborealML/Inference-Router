@@ -1,11 +1,11 @@
 ---
 id: TASK-58
 title: Bound the per-model queue map so unseen model names do not accumulate state
-status: Waiting
+status: Done
 assignee:
   - '@gpt-6.2-sol-release'
 created_date: '2026-11-17T20:41:00Z'
-updated_date: '2026-11-21T00:01:00Z'
+updated_date: '2026-11-21T02:46:16Z'
 labels:
   - scheduling
 milestone: m-3
@@ -17,14 +17,14 @@ ordinal: 58000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-The verified workload planner and admin switch lookup landings wake integration of queue retirement. Independent commit review passed 08ee455. Delivery owns the merge preview, review of the integrated change, hosted checks and a separate merge-turn request.
+[Queue retirement](https://github.com/ArborealML/Inference-Router/pull/71) landed at 6c0aad6. Empty queues retire when their last ticket leaves. Concurrently populated queues remain eligible. The unrelated timer fixture failure is resolved by [PR #74](https://github.com/ArborealML/Inference-Router/pull/74).
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 SPEC 5.5 states the bound or eviction rule for distinct model queues, with the default named
-- [ ] #2 a test shows N distinct model names cost a bounded amount of router state
-- [ ] #3 the rule cannot evict or refuse a queue that holds a live ticket
+- [x] #1 SPEC 5.5 states the bound or eviction rule for distinct model queues, with the default named
+- [x] #2 a test shows N distinct model names cost a bounded amount of router state
+- [x] #3 the rule cannot evict or refuse a queue that holds a live ticket
 <!-- AC:END -->
 
 ## Implementation Notes
