@@ -60,9 +60,11 @@ public sealed class SwitchCostDispatchTests
         await using var rig = new SwitchRig(aLoadMs: 20, bLoadMs: 80);
         await rig.TrainAsync();
         rig.Clock.Set(TimeSpan.FromMinutes(1));
-        var a = await rig.EnqueueAsync("a", requiredContext: 8_192);
+        // The default four characters per token gives an 8,192-token estimate.
+        var a = await rig.EnqueueAsync("a", marker: new string('x', 32_768));
         var b = await rig.EnqueueAsync("b");
 
+        Assert.Equal(TicketState.Queued, a.State);
         await rig.AssertDispatchAsync(b);
         Assert.Equal(TicketState.Queued, a.State);
     }
