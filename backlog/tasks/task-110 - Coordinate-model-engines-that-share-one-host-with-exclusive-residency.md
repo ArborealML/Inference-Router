@@ -5,7 +5,7 @@ status: Waiting
 assignee:
   - '@gpt-6.2-sol-release'
 created_date: '2026-11-18T18:13:00Z'
-updated_date: '2026-11-21T02:46:16Z'
+updated_date: '2026-11-21T03:39:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -21,7 +21,7 @@ ordinal: 108000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Wake on .121 landing and refresh of [PR #73](https://github.com/ArborealML/Inference-Router/pull/73). The host administrator separately owns the observer identity and endpoint, independently authenticated ownership records outside router rollback, and the exact pair approvals. [Offline launch receipt](https://github.com/ArborealML/Inference-Router/pull/49).
+Wake on administrator installation of the observer and rollback-independent floor, pair approvals and host exclusion. [PR #73](https://github.com/ArborealML/Inference-Router/pull/73) landed independently authenticated offline commissioning. [Main CI](https://github.com/ArborealML/Inference-Router/actions/runs/44861808281) passed at 963e65d. Connected readiness and live switching remain open. [Launch receipt](https://github.com/ArborealML/Inference-Router/pull/49).
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

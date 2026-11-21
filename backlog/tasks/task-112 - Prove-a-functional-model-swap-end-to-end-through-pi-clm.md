@@ -1,11 +1,11 @@
 ---
 id: TASK-112
 title: Prove a functional model swap end to end through pi-clm
-status: Preparing
+status: Testing
 assignee:
   - '@gpt-6.2-sol-stream-delivery'
 created_date: '2026-11-18T18:15:00Z'
-updated_date: '2026-11-21T02:46:16Z'
+updated_date: '2026-11-21T03:16:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -41,6 +41,5 @@ Prove the full eligible provider/model set in one isolated Pi RPC process. Check
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Two same-session Pi/CLM runs passed on the primary host. The first used a temporary AIR listener. The repeat used the existing listener and preserved its process. Each run streamed five text deltas from Qwen and four from Swift, with completed tickets for both models. Before the repeat switch, the queue and all four Qwen slots were idle. The installed selector changed residency. Independent inference confirmed Qwen at 256000 context tokens and four slots, then Swift at 262144 and one slot. The listener finished healthy and drained. A private adapter routed the installed client runtime through AIR. The remaining proof requires router-triggered activation and an AIR mode in the installed launcher.
-Two staged Pi sessions completed six streams against the isolated fake, with overlapping same-model, follow-up and mixed-model pairs. Both omitted the router thread header. The staged launcher subsequently sent distinct session IDs. One staged Pi request completed through ordinary AIR with its session ID on the retained ticket. The paired same-model, follow-up and mixed-model fixture is in implementation against ordinary AIR with a synthetic upstream.
+Earlier primary-host Pi runs streamed Qwen and Swift through AIR using an installed selector. The staged launcher subsequently supplied stable router session IDs. Two staged Pi sessions completed six requests through ordinary AIR with a synthetic upstream: overlapping same-model, follow-up and mixed-model pairs. The router retained both identities, issued six upstream attempts and replayed each ticket through completion. No physical model was swapped in this run. The next integration joins this client path to queue-triggered cold activation.
 <!-- SECTION:NOTES:END -->
