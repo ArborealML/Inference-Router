@@ -1,11 +1,11 @@
 ---
 id: TASK-58
 title: Bound the per-model queue map so unseen model names do not accumulate state
-status: In Progress
+status: Waiting
 assignee:
-  - '@gpt-6.2-sol-config'
+  - '@gpt-6.2-sol-release'
 created_date: '2026-11-17T20:41:00Z'
-updated_date: '2026-11-20T23:46:00Z'
+updated_date: '2026-11-21T00:01:00Z'
 labels:
   - scheduling
 milestone: m-3
@@ -17,7 +17,7 @@ ordinal: 58000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Config picked up the independently reviewed empty-queue retirement implementation after the workload planner handoff. [Decision 80](../decisions/decision-80%20-%20Retire-empty-model-queues.md) governs removal of exact empty queue entries. Coordinate shared admission and revision-history changes before integration.
+The verified workload planner and admin switch lookup landings wake integration of queue retirement. Independent commit review passed 08ee455. Delivery owns the merge preview, review of the integrated change, hosted checks and a separate merge-turn request.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -30,5 +30,5 @@ Config picked up the independently reviewed empty-queue retirement implementatio
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Declare and serve ready fake routes A, B and C. Verify that a stale dispatch pass ends before a separate scan, and that equal-depth survivors B1 and C1 stay ahead of recreated A2. Check the actual map reference separately: cancellation of the old ticket can independently produce Changed. Verify stats omit the retired queue while its pending sibling remains until its own removal. Preserve map-size, refusal, publication and ticket settlement controls. Revision .120 is provisional behind the workload planner and admin switch lookup.
+All 37 selected Release cases passed with zero skips; allocation was excluded. Source review verified all five retirement paths hold the router lock then the queue lock and remove only the mapped queue at zero depth. The dispatch reference check precedes removal, permit acquisition and charging. The stale selection test verifies absence of old-pass effects and the B1, C1, A2 service order; it does not independently isolate the reference check. Pending publication and overflow with live tickets are covered.
 <!-- SECTION:NOTES:END -->

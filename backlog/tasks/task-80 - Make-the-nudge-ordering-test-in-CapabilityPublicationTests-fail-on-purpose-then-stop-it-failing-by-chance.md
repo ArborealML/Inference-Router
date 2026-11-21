@@ -7,7 +7,7 @@ status: Waiting
 assignee:
   - '@gpt-6.2-sol-release'
 created_date: '2026-11-18T03:46:00Z'
-updated_date: '2026-11-20T22:46:00Z'
+updated_date: '2026-11-20T23:57:00Z'
 labels:
   - concurrency
 milestone: m-2
@@ -19,7 +19,7 @@ ordinal: 80000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Independent plan review will wake this task. Determine whether sampling before the second dispatch hint can explain the historical stale healthy result. Prove separately that the landed fixture detects delivery of a hint before the marker clears.
+Wake on explicit qualification release after first-swap work. Independent rereview passed the marker-order criterion wording. Preserve the separate held-second-hint test and its pending acknowledgment. All four criteria await execution.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -33,5 +33,5 @@ Independent plan review will wake this task. Determine whether sampling before t
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Earlier focused series observed 2/20 and 3/20 failures, and a later run at 3c83ecc failed on attempt eleven. The saved runs establish the symptom. The two controlled schedules replace the former repetition targets for this task; their results establish ordering only. All criteria remain open pending execution. Delivery owns bounded plan review before fixture work.
+Earlier focused series observed 2/20 and 3/20 failures, and a later run at 3c83ecc failed on attempt eleven. Those logs establish the symptom. The temporary early callback runs inside the transition gate before marker clear and readiness. The later acknowledgment establishes completion only. Qualification uses the two controlled schedules and makes no historical incidence claim.
 <!-- SECTION:NOTES:END -->

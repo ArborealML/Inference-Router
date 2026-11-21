@@ -1,11 +1,11 @@
 ---
 id: TASK-149
 title: Generate an offline AIR tuning workload manifest
-status: Waiting
+status: Done
 assignee:
   - '@gpt-6.2-sol-release'
 created_date: '2026-11-20T22:44:00Z'
-updated_date: '2026-11-20T23:48:00Z'
+updated_date: '2026-11-21T00:11:00Z'
 labels: []
 milestone: m-14
 dependencies:
@@ -20,16 +20,16 @@ ordinal: 147000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Wake on the independent integration and documentation review and exact hosted checks. The .118 candidate 8179440 combines the corrected offline workload planner with the landed dashboard specification. The later board-only main advance is disjoint. Delivery owns qualification and the separate merge-turn request.
+The offline workload planner landed in [PR #68](https://github.com/ArborealML/Inference-Router/pull/68) at 6597024. It generates a deterministic manifest from configured models, tiers and slots. All three [post-merge checks](https://github.com/ArborealML/Inference-Router/actions/runs/44841535679) passed. Hardware capacity and performance require measured workloads.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The plan verb accepts the reviewed options, resolves one engine and canonical model or alias, and selects one exact tier or all eligible tiers in deterministic order.
-- [ ] #2 Strict UTF-8 configuration input admits at most 65,536 bytes. Invalid input produces the specified exit status, fixed redacted stderr and empty stdout before any report is written.
-- [ ] #3 The versioned JSON manifest reproduces the independent generator, warmup and grid vectors, respects tier and slot limits and serializes at most 1,744 coordinates within 524,288 bytes including its final LF.
-- [ ] #4 Equivalent TOML and JSON configurations, including alias and canonical requests, yield identical golden bytes in focused Release tests and through the published Linux x64 Native AOT CLI with zero trim warnings.
-- [ ] #5 README, tuning guide and SPEC document the CLI, output and distinction between configured intent and measured hardware capacity.
+- [x] #1 The plan verb accepts the reviewed options, resolves one engine and canonical model or alias, and selects one exact tier or all eligible tiers in deterministic order.
+- [x] #2 Strict UTF-8 configuration input admits at most 65,536 bytes. Invalid input produces the specified exit status, fixed redacted stderr and empty stdout before any report is written.
+- [x] #3 The versioned JSON manifest reproduces the independent generator, warmup and grid vectors, respects tier and slot limits and serializes at most 1,744 coordinates within 524,288 bytes including its final LF.
+- [x] #4 Equivalent TOML and JSON configurations, including alias and canonical requests, yield identical golden bytes in focused Release tests and through the published Linux x64 Native AOT CLI with zero trim warnings.
+- [x] #5 README, tuning guide and SPEC document the CLI, output and distinction between configured intent and measured hardware capacity.
 <!-- AC:END -->
 
 ## Implementation Plan

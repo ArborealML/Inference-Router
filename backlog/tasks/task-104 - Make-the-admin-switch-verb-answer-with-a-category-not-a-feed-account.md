@@ -1,11 +1,11 @@
 ---
 id: TASK-104
 title: Make the admin switch verb answer with a category, not a feed account
-status: Testing
+status: Waiting
 assignee:
   - '@gpt-6.2-sol-stream-delivery'
 created_date: '2026-11-18T12:59:00Z'
-updated_date: '2026-11-20T23:54:00Z'
+updated_date: '2026-11-21T00:11:00Z'
 labels: []
 milestone: m-7
 dependencies:
@@ -16,7 +16,7 @@ ordinal: 103000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Frames owns the independently reviewed admin switch lookup in its dedicated implementation checkout on e8a1fb8. [Decision 79](../decisions/decision-79%20-%20Return-a-queryable-ID-for-an-explicit-admin-switch.md) keeps automatic switches queue-driven. An accepted explicit switch returns an ID for checking its outcome. Keep the result through settlement and acknowledgment, then allow at least 15 minutes for lookup within the running process.
+The workload planner landed at 6597024 with green main CI, releasing the base for admin switch lookup integration. Wake on Stream Delivery’s exact integration, review and hosted checks. Under Decision 79, automatic switches remain queue-driven. Accepted explicit switches return queryable operation IDs.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -37,5 +37,5 @@ Preserve immediate refusal responses. Add OperationId to the accepted 202 respon
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Fixture-only correction 89016dd correlates original write cancellation, endpoint exit and the closed connection. Release built with zero warnings/errors, all six affected tests and all 29 broader focused cases passed. Unchanged server build inputs retain the AOT receipt. Baseline and ten negative controls remain pinned to 9aa7c96. Delivery owns the bounded correction review and integration after .118.
+Independent review passed the final held-write fixture correction on 89016dd. Release built with zero warnings/errors; six affected cases and all 29 broader focused cases passed. Unchanged server inputs retain the zero-warning AOT receipt. The missing-OperationId baseline and ten negative controls remain pinned to their original revisions. Delivery owns composition on the landed .118 base, integration review and exact hosted checks.
 <!-- SECTION:NOTES:END -->

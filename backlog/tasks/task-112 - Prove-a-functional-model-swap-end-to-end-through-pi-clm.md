@@ -5,7 +5,7 @@ status: Waiting
 assignee:
   - '@gpt-6.2-sol-release'
 created_date: '2026-11-18T18:15:00Z'
-updated_date: '2026-11-20T23:50:00Z'
+updated_date: '2026-11-21T00:01:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -23,7 +23,7 @@ ordinal: 110000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Wake on independent rereview of the amended enrollment intake and the host-observer handoff. Public LoadFile refuses the selected DeepSeek/Qwen pair before scheduling. Independent review found no simpler existing native queue path for this pair. Lifecycle owns a plan amendment: authenticate the actual observer before entering the launch journal. Using fresh request binding, distinguish a current head from a stale head in the same generation. Separately refuse the wrong peer, wrong challenge and wrong slot at the client. All cases return without host or serving effects. Shutdown owns observer provisioning research. Both live criteria remain open.
+Wake on independent rereview of the enrollment intake and the separate host-observer handoff. Public LoadFile refuses the selected pair before scheduling. Review accepted peer authentication, request challenge, slot binding and the same-generation stale-head control. Lifecycle is amending the plan because the validator invokes its current-head delegate synchronously. Read the independent head asynchronously with cooperative cancellation under the same absolute monotonic deadline. Compare the complete head, including daemon and router identity, and pass an immutable snapshot into validation. Keep separate negative controls for truncated transport, late transport and a stalled head read. Each must produce no descriptor or effects. Both live criteria remain open.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
