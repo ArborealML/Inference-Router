@@ -48,7 +48,7 @@ internal static partial class OperationHeadLinux
     internal static SafeFileHandle OpenDirectory(string path)
     {
         var owner = EffectiveUid();
-        for (var end = path.LastIndexOf('/'); end > 0; end = path.LastIndexOf('/', end - 1))
+        for (var end = path.AsSpan().LastIndexOf('/'); end > 0; end = path.AsSpan(0, end).LastIndexOf('/'))
         {
             using var parent = OpenPath(AtCurrentDirectory, path[..end], DirectoryOnly | PathOnly,
                 NoSymlinks | NoMagicLinks);
@@ -104,26 +104,32 @@ internal static partial class OperationHeadLinux
     internal static SafeFileHandle ReopenRegular(SafeFileHandle descriptors, SafeFileHandle pinned,
         Entry root, Entry expected, bool write = false)
     {
-        var addedReference = false;
+        SafeFileHandle? data = null;
         try
         {
-            pinned.DangerousAddRef(ref addedReference);
-            var name = pinned.DangerousGetHandle().ToInt32().ToString(CultureInfo.InvariantCulture);
-            var data = Own(OpenAt(descriptors, name, (int)(CloseOnExec | NonBlocking | (write ? ReadWrite : 0)), 0));
+            var addedReference = false;
             try
             {
-                if (CheckRegular(data, root) != expected) throw InvalidObject();
-                return data;
+                pinned.DangerousAddRef(ref addedReference);
+                var name = pinned.DangerousGetHandle().ToInt32().ToString(CultureInfo.InvariantCulture);
+                data = Own(OpenAt(descriptors, name, (int)(CloseOnExec | NonBlocking | (write ? ReadWrite : 0)), 0));
             }
-            catch
+            finally
             {
-                data.Dispose();
-                throw;
+                if (addedReference) pinned.DangerousRelease();
             }
+
+            if (CheckRegular(data, root) != expected) throw InvalidObject();
+            var verified = data;
+            // Ownership transfers to the returned handle. Disposing it here would close the result.
+#pragma warning disable IDISP003
+            data = null;
+#pragma warning restore IDISP003
+            return verified;
         }
         finally
         {
-            if (addedReference) pinned.DangerousRelease();
+            data?.Dispose();
         }
     }
 
