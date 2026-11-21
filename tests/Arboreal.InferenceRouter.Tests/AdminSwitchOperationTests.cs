@@ -488,6 +488,7 @@ public sealed class AdminSwitchOperationTests
     [Fact]
     public async Task AdminSwitch_AckCompletesJustBeforeDeadline()
     {
+        var deadline = TimeSpan.FromSeconds(30);
         var gate = new AckGate(holdWrite: true);
         await using var rig = await Fixture.StartAsync(ackGate: gate);
         var sending = rig.PostAsync("a", gated: true);
@@ -495,13 +496,14 @@ public sealed class AdminSwitchOperationTests
         {
             var id = await gate.Id.Task.WaitAsync(rig.Token);
             await ConfigReloadWireTests.WaitUntilAsync(() => rig.Clock.HasTimer, rig.Token);
-            rig.Clock.AdvanceTo(TimeSpan.FromSeconds(30) - TimeSpan.FromTicks(1));
+            Assert.Equal(deadline, Assert.Single(rig.Clock.GetScheduledDeadlines()));
+            Assert.Equal(0, rig.Clock.AdvanceTo(deadline - TimeSpan.FromTicks(1)));
             gate.Release.TrySetResult();
             using var reply = await sending.WaitAsync(rig.Token);
             Assert.Equal(id, await AckAsync(reply, "a", rig.Token));
             await gate.Exited.Task.WaitAsync(rig.Token);
-            Assert.False(rig.Clock.HasTimer);
-            rig.Clock.AdvanceTo(TimeSpan.FromSeconds(30));
+            await ConfigReloadWireTests.WaitUntilAsync(() => !rig.Clock.HasTimer, rig.Token);
+            Assert.Equal(0, rig.Clock.AdvanceTo(deadline));
             await rig.AwaitLookupAsync(id, "succeeded", null);
         }
         finally { gate.Release.TrySetResult(); }
