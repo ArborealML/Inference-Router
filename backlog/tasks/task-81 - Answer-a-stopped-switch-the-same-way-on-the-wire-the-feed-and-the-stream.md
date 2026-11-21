@@ -1,11 +1,11 @@
 ---
 id: TASK-81
 title: Answer a stopped switch the same way on the wire, the feed, and the stream
-status: To Do
+status: In Progress
 assignee:
-  - '@gpt-6.2-sol-stream-delivery'
+  - '@gpt-6.2-sol-stream-frames'
 created_date: '2026-11-18T04:09:00Z'
-updated_date: '2026-11-20T22:07:00Z'
+updated_date: '2026-11-20T23:55:00Z'
 labels:
   - lifecycle
   - shutdown
@@ -18,7 +18,7 @@ ordinal: 81000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-The [default active-stream shutdown change](https://github.com/ArborealML/Inference-Router/pull/61) landed in v0.12.114. It covers core shutdown during an armed upstream read after ordinary default HTTP streaming has committed. Verified-default callback wiring has static proof only. Queue, switch, idle-only and credited modes remain open under criterion 3. The integrated change passed 154 focused Release cases, server Native AOT and independent review. The disconnect interaction passed against the queue-event change. All three [post-merge checks](https://github.com/ArborealML/Inference-Router/actions/runs/44825528652) passed on 7ee853e.
+Independent review passed the queued HTTP/1.1 shutdown fixture plan. Frames owns the one-test implementation after the admin-switch handoff. The clean empty suffix is a prediction pending execution. The [active-read case](https://github.com/ArborealML/Inference-Router/pull/61) has separate landed evidence.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -35,7 +35,7 @@ The [default active-stream shutdown change](https://github.com/ArborealML/Infere
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-One frozen stop result, read by `EndSwitch` instead of re-derived from the token: the readiness source carries the terminal state and the first **published** outcome wins (TASK-98 carries the gate ordering). Answer with a typed cause mapped to a lowercase wire code, never `OperationCanceledException`. §6.1 already answers a router-initiated cancel as `cancelled` at 499, so naming shutdown `router_stopped`, another router action `router_cancelled` and a client hang-up `client_cancelled` replaces a shipped code: a decision entry and a feed-string audit of the pins land in the same push. `cancelled_during_exec` stays a provider diagnostic.
+Add one Fact in StreamFrameIdentityTests. Hold the only slot and the clock. Using a real HTTP/1.1 client, read the exact first queued comment and capture its ticket. Start CopyToAsync directly on the remaining body and prove it is pending before stopping only the core. Propagate read faults; require clean EOF with zero tail bytes, zero forwards for the subject, and exactly one enqueue followed by one shutdown cancellation for the same ticket. Bound cleanup. Delivery runs the Release build and the single named case. This fixture records existing behavior; broader wire policy remains open.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes

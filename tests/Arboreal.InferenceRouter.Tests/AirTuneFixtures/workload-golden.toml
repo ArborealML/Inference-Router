@@ -1,0 +1,14 @@
+[engine.tune]
+kind = "openai-compatible"
+endpoint = "http://endpoint-canary.invalid/v1/"
+api_key_file = "/private/key-canary"
+lifecycle_owner = "delegated"
+
+[engine.tune.catalog."test.model"]
+aliases = ["model-alias"]
+default_profile = "64k"
+serving = [
+  { name = "64k", max_context = 65536, max_slots = 4 },
+  { name = "32k", max_context = 32768, max_slots = 1 },
+]
+select = { exec = "/private/selector-canary", args = ["private-arg-canary"] }

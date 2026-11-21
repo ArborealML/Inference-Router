@@ -3,11 +3,11 @@ id: TASK-52
 title: >-
   Fast-refuse a request whose required_context fits no profile on any engine
   that declares the model
-status: Preparing
+status: Waiting
 assignee:
-  - '@gpt-6.2-sol-config'
+  - '@gpt-6.2-sol-release'
 created_date: '2026-11-17T19:15:00Z'
-updated_date: '2026-11-20T22:06:00Z'
+updated_date: '2026-11-20T23:19:00Z'
 labels:
   - scheduling
   - wire
@@ -20,7 +20,7 @@ ordinal: 52000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Deliberately excluded from the fast-refuse work at 83ebc75, for a reason worth keeping: when the caller sends the required_context header the figure is exact and refusal is safe; when it does not, the figure comes from EstimateContextTokens over prompt characters and refusing on it could reject a request whose estimate was pessimistic. So the safe half is the explicit-header case: no profile on any engine that declares the model can fit the declared context, refused with the already-declared code rather than queued. The estimated case stays as it is until someone decides whether the estimate is good enough to refuse on. No new wire shape for either, and the lesson from 83ebc75 applies: check where the request is refused, not only where it is scheduled.
+Wake on explicit implementation release when Config is available. The independently reviewed admission plan covers explicit context demand and the configured tier ladder. A wider observed window cannot override an applicable nonfitting ladder in the built-in scheduler. An eligible engine without an applicable ladder precludes this fast refusal.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -32,5 +32,5 @@ Deliberately excluded from the fast-refuse work at 83ebc75, for a reason worth k
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Config has a separate clean checkout at 7ee853e for a read-only assessment. Trace explicit context from the public request through configured-tier admission, identify the existing proof or the smallest uncovered case, and distinguish estimated context. Return the evidence before any implementation.
+Independent rereview passed the amended plan on 7ee853e. The same body distinguishes explicit demand above the ceiling, an estimate above the ceiling and exact fit. Reloading a wider external declarer forces reconsideration before allocating a ticket. Separate cases cover missing ladders, ordinal matching, custom scheduling and the observed 131072-token window. Relevant source remains unchanged through 1b2c17f. No tests have run for this plan. Revision allocation awaits release.
 <!-- SECTION:NOTES:END -->

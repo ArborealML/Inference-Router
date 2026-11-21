@@ -1,11 +1,11 @@
 ---
 id: TASK-26
 title: Close the gaps SPEC 5.3.1 still describes for container-native lifecycle
-status: Waiting
+status: To Do
 assignee:
   - '@gpt-6.2-sol-release'
 created_date: '2026-11-17T02:54:00Z'
-updated_date: '2026-11-20T21:24:00Z'
+updated_date: '2026-11-20T22:28:00Z'
 labels:
   - engine
   - lifecycle
@@ -19,7 +19,7 @@ ordinal: 26000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Wake on .114 landing for integration of the reviewed Windows transport refusal. [Coordinated Docker observation](https://github.com/ArborealML/Inference-Router/pull/57) landed at bbd8bb9 for instances started through the tracked 204 path. The refusal-audit correction passed all 215 focused Release cases and [main CI](https://github.com/ArborealML/Inference-Router/actions/runs/44816063374) passed all three jobs. The [offline supervised hold](https://github.com/ArborealML/Inference-Router/pull/58) landed at a115a30. It records the exact container ID before issuing Start and retains it across reopen after a lost acknowledgment. All 31 focused Release cases passed and [main CI](https://github.com/ArborealML/Inference-Router/actions/runs/44819277351) passed all three jobs. The explicit Windows named-pipe refusal at 1d3329d passed review and 20 focused Release cases. An absent socket retains its constructor error before I/O. External forwarding evidence covers the shipped path and exercised fixture. Delivery will compose .115 after .114 and verify hosted CI. [Docker diagnostics](https://github.com/ArborealML/Inference-Router/pull/53) landed at b0f8255. Full change detection and uncertain-start reconciliation remain open.
+The [explicit Windows named-pipe refusal](https://github.com/ArborealML/Inference-Router/pull/63) landed at d98398f. All three [main checks](https://github.com/ArborealML/Inference-Router/actions/runs/44828497239) passed. Remaining work covers broader daemon change detection and uncertain-start reconciliation. [Coordinated Docker observation](https://github.com/ArborealML/Inference-Router/pull/57) landed at bbd8bb9 for instances started through the tracked 204 path. The refusal-audit correction passed all 215 focused Release cases and [main CI](https://github.com/ArborealML/Inference-Router/actions/runs/44816063374) passed all three jobs. The [offline supervised hold](https://github.com/ArborealML/Inference-Router/pull/58) landed at a115a30. It records the exact container ID before issuing Start and retains it across reopen after a lost acknowledgment. All 31 focused Release cases passed and [main CI](https://github.com/ArborealML/Inference-Router/actions/runs/44819277351) passed all three jobs. The explicit Windows named-pipe refusal at 1d3329d passed review and 20 focused Release cases. An absent socket retains its constructor error before I/O. External forwarding evidence covers the shipped path and exercised fixture. Integrated .115 commit 32a6fd5 passed all 14 transport cases and six compatibility cases with zero skips. [Docker diagnostics](https://github.com/ArborealML/Inference-Router/pull/53) landed at b0f8255. Full change detection and uncertain-start reconciliation remain open.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -29,7 +29,7 @@ Wake on .114 landing for integration of the reviewed Windows transport refusal. 
 - [x] #3 Exec frame demux and log reading exist behind the provider seam with a fake, and a non-zero exec exit is a failure
 - [x] #4 A failed activation after native lifecycle transaction entry latches the target through dispatcher wakes until explicit target reset or relevant configuration change. Earlier claim-hook or scheduling rollback permits retry without reset.
 - [ ] #5 Daemon event subscription (or a documented polling substitute) replaces the assumption that nothing else changed the engine
-- [ ] #6 The Windows named-pipe transport is implemented or explicitly declined in SPEC with the reason
+- [x] #6 The Windows named-pipe transport is implemented or explicitly declined in SPEC with the reason
 - [ ] #7 After an uncertain start, reconcile the exact recorded operation and immutable container ID. Prove cleanup of the owned unit, or retain the host fence until reconciliation establishes the outcome.
 - [x] #8 A shipped native Docker example passes the config loader with every model selector removed from that engine. The shipped-sample load test passes and remaining delegated examples identify exec as legacy.
 - [x] #9 After A fails, repeated scheduler wakeups and cooldown expiry produce zero attempts for its engine/model/profile/config generation. Resetting A permits a fresh attempt without resetting unrelated targets (decision-62).
