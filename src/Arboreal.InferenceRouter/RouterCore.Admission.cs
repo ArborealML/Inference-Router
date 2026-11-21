@@ -127,6 +127,41 @@ public sealed partial class RouterCore
         }
     }
 
+    private static (string Engine, ServingProfile Tier)? LargestInsufficientConfiguredTier(
+        ConfigurationGeneration generation, string model, long requiredContext)
+    {
+        (string Engine, ServingProfile Tier)? largest = null;
+        foreach (var engine in generation.Engines.Values)
+        {
+            if (!engine.DeclaresModel(model)) continue;
+
+            // Dispatch uses the ordinal ladder for the resolved ticket model. With no ladder,
+            // a declaring engine can satisfy the floor with a matching serving observation.
+            var tiers = engine.ProfilesForModel(model);
+            if (tiers.Count == 0) return null;
+
+            for (var i = 0; i < tiers.Count; i++)
+            {
+                var tier = tiers[i];
+                if (tier.MaxContext >= requiredContext) return null;
+
+                if (largest is { } other)
+                {
+                    var contextOrder = tier.MaxContext.CompareTo(other.Tier.MaxContext);
+                    if (contextOrder < 0) continue;
+                    if (contextOrder == 0)
+                    {
+                        var engineOrder = string.CompareOrdinal(engine.Name, other.Engine);
+                        if (engineOrder > 0 || (engineOrder == 0 && string.CompareOrdinal(tier.Name, other.Tier.Name) >= 0))
+                            continue;
+                    }
+                }
+                largest = (engine.Name, tier);
+            }
+        }
+        return largest;
+    }
+
     public ValueTask<RouterTicket> EnqueueAsync(string threadId, InferenceRequest request, CancellationToken ct = default) =>
         EnqueueAsync(threadId, request, httpStream: false, ct);
 
@@ -136,6 +171,7 @@ public sealed partial class RouterCore
     private ValueTask<RouterTicket> EnqueueAsync(string threadId, InferenceRequest request, bool httpStream, CancellationToken ct)
     {
         var opts = request.Options;
+        var explicitContext = opts?.RequiredContext ?? 0;
         var promptChars = PromptCharsProbe(request.Body);
         var createdAt = _clock.GetUtcNow();
         var timestamp = ReadQueueTimestamp();
@@ -155,6 +191,9 @@ public sealed partial class RouterCore
             var requested = request.Model ?? affinity ?? generation.Settings.DefaultModel;
             var model = ResolveCanonical(requested, generation);
             var hopeless = CapabilityScan.DefinitelyHopeless(generation.Capabilities, model);
+            var noFit = !hopeless && explicitContext > 0 && _scheduler is PrefixAwareScheduler
+                ? LargestInsufficientConfiguredTier(generation, model, explicitContext)
+                : null;
             BeforeEnqueueCommitForTests?.Invoke();
             QueuedRequest queued;
             bool publishRegistration;
@@ -189,14 +228,19 @@ public sealed partial class RouterCore
                     EnqueuedAtTimestamp = timestamp,
                     CallerToken = ct,
                     PromptChars = promptChars,
-                    RequiredContextTokens = opts?.RequiredContext is { } context && context > 0
-                        ? context : EstimateContextTokens(promptChars, generation.Settings.Scheduler.CharsPerTokenEstimate),
+                    RequiredContextTokens = explicitContext > 0
+                        ? explicitContext : EstimateContextTokens(promptChars, generation.Settings.Scheduler.CharsPerTokenEstimate),
                 };
 
                 if (hopeless)
                 {
                     IndexRejected(queued, "model_unavailable",
                         $"no engine in this configuration declares or currently reports model '{WireText.Ident(model)}'");
+                }
+                else if (noFit is { } limit)
+                {
+                    IndexRejected(queued, "model_unavailable", FormattableString.Invariant(
+                        $"model '{WireText.Ident(model)}' needs at least {explicitContext} tokens. Largest configured tier '{WireText.Ident(limit.Tier.Name)}' on engine '{WireText.Ident(limit.Engine)}' has {limit.Tier.MaxContext} tokens."));
                 }
                 else
                 {
