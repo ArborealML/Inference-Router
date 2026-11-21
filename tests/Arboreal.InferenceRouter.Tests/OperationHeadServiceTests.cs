@@ -72,24 +72,75 @@ public sealed class OperationHeadServiceTests
         await test.StartAsync();
         var journal = new SupervisedLaunchJournal(test.Scope, test.Client);
         journal.Provision();
-        using var fence = journal.EnterFence();
-        var installed = Assert.IsType<SupervisedLaunchSnapshot>(journal.Read());
-        var bytes = File.ReadAllBytes(journal.JournalPath);
-        Assert.Equal(Convert.ToHexString(SHA256.HashData(bytes.AsSpan(sizeof(int)))), installed.Head.Digest);
+        var (dispatch, commission) = FixtureDispatch(test.Scope);
+        SupervisedLaunchJournalHead advanced;
+        byte[] older;
+        using (journal.EnterFence())
+        {
+            var genesis = Assert.IsType<SupervisedLaunchSnapshot>(journal.Read());
+            Assert.Equal(0, genesis.Head.Revision);
+            older = File.ReadAllBytes(journal.JournalPath);
+            Assert.Equal(Convert.ToHexString(SHA256.HashData(older.AsSpan(sizeof(int)))), genesis.Head.Digest);
 
+            journal.Advance(genesis, genesis.Frame.History with { Dispatch = dispatch }, commission);
+            var installed = Assert.IsType<SupervisedLaunchSnapshot>(journal.Read());
+            Assert.Equal(1, installed.Head.Revision);
+            Assert.Equal(dispatch, installed.Frame.History.Dispatch);
+            Assert.Equal(genesis.Head.Digest, installed.Frame.Predecessor);
+            advanced = installed.Head;
+            Assert.Equal(advanced, test.Client.Read(test.Scope));
+
+            var unanchored = File.ReadAllBytes(journal.JournalPath).Append((byte)42).ToArray();
+            File.WriteAllBytes(journal.JournalPath, unanchored);
+            Assert.Null(journal.Read());
+            Assert.Equal(unanchored, File.ReadAllBytes(journal.JournalPath));
+
+            File.WriteAllBytes(journal.JournalPath, older);
+        }
+
+        var protectedHead = File.ReadAllBytes(test.StatePath);
         await test.StopAsync();
         await test.StartAsync();
-        Assert.Equal(installed, journal.Read());
+        var reopened = new SupervisedLaunchJournal(test.Scope, test.Client);
+        using var reopenFence = reopened.EnterFence();
+        Assert.Equal(advanced, test.Client.Read(test.Scope));
+        Assert.Throws<EndOfStreamException>(() => reopened.Read());
+        Assert.Equal(older, File.ReadAllBytes(reopened.JournalPath));
+        Assert.Equal(protectedHead, File.ReadAllBytes(test.StatePath));
+        Assert.Equal(advanced, test.Client.Read(test.Scope));
+    }
 
-        var unanchored = bytes.Append((byte)42).ToArray();
-        File.WriteAllBytes(journal.JournalPath, unanchored);
-        Assert.Null(journal.Read());
-        Assert.Equal(unanchored, File.ReadAllBytes(journal.JournalPath));
+    private static (HostInitialDispatch Dispatch, SupervisedLaunchCommission Commission) FixtureDispatch(HostReservationScope scope)
+    {
+        var enrollment = Assert.IsType<HostEnrollmentScope>(scope.Enrollment);
+        var head = new EnrolledPairHead("fixture-slot", enrollment.Group, "fixture-daemon", "fixture-router",
+            enrollment.Generation, 0, Digest('C'));
+        var first = Member("first");
+        var second = Member("second");
+        var topology = new EnrolledPairAuthority(head, [first.Grant, second.Grant], ["left", "right"]);
+        var commission = new SupervisedLaunchCommission(scope, topology, [first.Approval, second.Approval]);
+        var intent = first.Approval.Intent;
+        var plan = intent.Plan;
+        using var reservation = HostReservation.OpenEnrolled(scope);
+        var epoch = reservation.Grant(plan.Engine);
+        var operation = reservation.Begin(epoch, HostMutationKind.Launch, plan.Engine, plan.Model, plan.Tier, plan.Digest());
+        reservation.MarkDispatching(operation);
+        var installed = Assert.IsType<HostEnrolledSnapshot>(reservation.Enrolled);
+        var policy = new HostInitialPolicy(scope, 1, 1, CompletePair: true, ExclusiveWriter: true,
+            IngressClosed: true, ForeignResident: false);
+        var dispatch = new HostInitialDispatch(policy, operation, intent, installed.Record.Revision, installed.Digest);
+        Assert.True(dispatch.MatchesDispatching(installed));
+        return (dispatch, commission);
 
-        File.WriteAllBytes(journal.JournalPath, []);
-        Assert.Throws<EndOfStreamException>(() => journal.Read());
-        Assert.Empty(File.ReadAllBytes(journal.JournalPath));
-        Assert.Equal(installed.Head, test.Client.Read(test.Scope));
+        static (EnrolledPairMemberGrant Grant, SupervisedLaunchApproval Approval) Member(string engine)
+        {
+            var plan = new HostCheckpointPlan(engine, engine + "-model", "32k", "fixture-config", 5_000, engine, Digest('D'));
+            var member = new EnrolledPairMember(engine, plan.Model, "32k", plan.Configuration, plan.BackendRoute);
+            var grant = new EnrolledPairMemberGrant(member, "/fixture/docker.sock", new Uri($"http://{engine}.invalid/v1"),
+                plan.Digest());
+            var image = new DockerImageIdentity("sha256:" + Digest('E'), "fixture@sha256:" + Digest('F'), "linux/amd64");
+            return (grant, new(HostInitialLaunchIntent.Freeze(plan, "{}"u8), image, "v1.44"));
+        }
     }
 
     [Theory(Timeout = 25_000)]
@@ -291,6 +342,47 @@ public sealed class OperationHeadServiceTests
         if (!OperatingSystem.IsLinux() || !OperationHeadLinux.Supported) return;
 
         await using var test = new Scratch();
+        await AssertForgedReplyUnavailableAsync(test, advance: true, request =>
+        {
+            var changed = mutatePredecessor
+                ? request with { Predecessor = Assert.IsType<SupervisedLaunchJournalHead>(request.Predecessor) with { Digest = Digest('C') } }
+                : request with { Next = Assert.IsType<SupervisedLaunchJournalHead>(request.Next) with { Digest = Digest('C') } };
+            return new(changed, OperationHeadProtocol.Refused, null);
+        });
+    }
+
+    [Theory(Timeout = 20_000)]
+    [InlineData("applied-nonce")]
+    [InlineData("applied-predecessor")]
+    [InlineData("applied-head")]
+    [InlineData("current-scope")]
+    [InlineData("current-head")]
+    public async Task SuccessfulReplyWithMismatchedEchoOrHeadIsUnavailable(string fault)
+    {
+        if (!OperatingSystem.IsLinux() || !OperationHeadLinux.Supported) return;
+
+        await using var test = new Scratch();
+        var foreign = test.Scope with { Enrollment = new("pair", 2) };
+        var current = test.Head(0, 'A');
+        await AssertForgedReplyUnavailableAsync(test, fault.StartsWith("applied-", StringComparison.Ordinal), request =>
+        {
+            return fault switch
+            {
+                "applied-nonce" => new(request with { Nonce = request.Nonce == Digest('C') ? Digest('D') : Digest('C') },
+                    OperationHeadProtocol.Applied, request.Next),
+                "applied-predecessor" => new(request with { Predecessor = current with { Digest = Digest('C') } },
+                    OperationHeadProtocol.Applied, request.Next),
+                "applied-head" => new(request, OperationHeadProtocol.Applied,
+                    Assert.IsType<SupervisedLaunchJournalHead>(request.Next) with { Digest = Digest('C') }),
+                "current-scope" => new(request with { Scope = foreign }, OperationHeadProtocol.Current, current),
+                _ => new(request, OperationHeadProtocol.Current, current with { Scope = foreign }),
+            };
+        });
+    }
+
+    private static async Task AssertForgedReplyUnavailableAsync(Scratch test, bool advance,
+        Func<OperationHeadRequest, OperationHeadReply> forge)
+    {
         using var listener = new Socket(AddressFamily.Unix, SocketType.Stream, ProtocolType.Unspecified);
         listener.Bind(new UnixDomainSocketEndPoint(test.SocketPath));
         listener.Listen(1);
@@ -299,7 +391,11 @@ public sealed class OperationHeadServiceTests
         var next = test.Head(1, 'B');
 
         var answer = ReplyAsync();
-        var error = await Task.Run(() => Record.Exception(() => test.Client.TryAdvance(old, next)), timeout.Token);
+        var error = await Task.Run(() => Record.Exception(() =>
+        {
+            if (advance) _ = test.Client.TryAdvance(old, next);
+            else _ = test.Client.Read(test.Scope);
+        }), timeout.Token);
         await answer.WaitAsync(timeout.Token);
         Assert.IsType<IOException>(error);
 
@@ -312,12 +408,11 @@ public sealed class OperationHeadServiceTests
                 timeout.Token);
             var request = await BoundedJsonFrame.ReadAsync(tls, OperationHeadJsonContext.Default.OperationHeadRequest,
                 OperationHeadProtocol.MaxPayload, timeout.Token);
-            Assert.Equal(old, request.Predecessor);
-            Assert.Equal(next, request.Next);
-            var changed = mutatePredecessor ? request with { Predecessor = old with { Digest = Digest('C') } }
-                : request with { Next = next with { Digest = Digest('C') } };
-            var reply = new OperationHeadReply(changed, OperationHeadProtocol.Refused, null);
-            await BoundedJsonFrame.WriteAsync(tls, reply, OperationHeadJsonContext.Default.OperationHeadReply,
+            Assert.True(request.IsValidFor(test.Scope));
+            Assert.Equal(advance ? OperationHeadProtocol.CompareAdvance : OperationHeadProtocol.Read, request.Operation);
+            Assert.Equal(advance ? old : null, request.Predecessor);
+            Assert.Equal(advance ? next : null, request.Next);
+            await BoundedJsonFrame.WriteAsync(tls, forge(request), OperationHeadJsonContext.Default.OperationHeadReply,
                 OperationHeadProtocol.MaxPayload, timeout.Token);
         }
     }
