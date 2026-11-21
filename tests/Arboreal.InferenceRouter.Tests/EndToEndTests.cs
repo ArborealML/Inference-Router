@@ -818,6 +818,7 @@ public class EndToEndTests
                          .Select(e => e.Kind)
                          .ToArray();
         Assert.Equal(["queue.rejected"], feed);
+        Assert.DoesNotContain(ticket.Model, router.GetStats().QueueDepths.Keys);
         var rejected = router.Events.Replay(0).Single(e => e.TicketId == ticket.Id);
         Assert.Equal("model_unavailable", rejected.Reason);
         Assert.Equal("not-here", rejected.Model);

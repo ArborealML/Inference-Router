@@ -115,7 +115,7 @@ public class TicketLifetimeTests
             Assert.NotNull(ex);
             Assert.Equal("cancelled", ex!.Code);
             Assert.Equal(TicketState.Cancelled, queued.State);
-            Assert.Equal(0, router.GetStats().QueueDepths["test-model"]);
+            Assert.DoesNotContain("test-model", router.GetStats().QueueDepths.Keys);
             Assert.Equal(0, fake.CancelledCompletions);          // it never reached an engine
             Assert.Equal(1, Inflight(router));                   // the blocker still holds its slot
 
@@ -257,7 +257,7 @@ public class TicketLifetimeTests
             var ex = await FailureOfAsync(queued);
             Assert.NotNull(ex);
             Assert.Equal("deadline_exceeded", ex!.Code);
-            Assert.Equal(0, router.GetStats().QueueDepths["test-model"]);
+            Assert.DoesNotContain("test-model", router.GetStats().QueueDepths.Keys);
             Assert.Equal(TicketState.Failed, queued.State);
 
             fake.ReleaseGate();

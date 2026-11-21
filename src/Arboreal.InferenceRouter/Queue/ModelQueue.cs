@@ -19,7 +19,7 @@ public sealed class QueuedRequest
     internal long ExplicitContextMinimum => Math.Max(0L, Request.Options?.RequiredContext ?? 0);
 }
 
-internal readonly record struct QueueDispatchCandidate(int Depth, int BaselineOrdinal, QueuedRequest? Request);
+internal readonly record struct QueueDispatchCandidate(int Depth, long BaselineOrdinal, QueuedRequest? Request);
 
 /// <summary>Per-model FIFO priority queue. Ordering: thread class, then sub, then seq.
 /// Reorders in place when a thread's priority changes while queued.</summary>
@@ -41,6 +41,7 @@ public sealed class ModelQueue
     // The outer hold keeps exact removal and physical accounting in one critical section.
     internal object Gate => _lock;
 
+    internal long CreationOrdinal { get; init; }
     public string Model { get; }
     public int Depth { get { lock (_lock) return _heap.Count; } }
 
@@ -75,7 +76,7 @@ public sealed class ModelQueue
         }
     }
 
-    internal QueueDispatchCandidate SnapshotCandidate(int baselineOrdinal, Func<RouterThread, bool> admission)
+    internal QueueDispatchCandidate SnapshotCandidate(long baselineOrdinal, Func<RouterThread, bool> admission)
     {
         lock (_lock)
         {

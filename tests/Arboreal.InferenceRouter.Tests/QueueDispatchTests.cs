@@ -99,6 +99,151 @@ public sealed class QueueDispatchTests
         await remaining.CompletionTask.WaitAsync(TimeSpan.FromSeconds(5));
     }
 
+    [Fact(Timeout = 20_000)]
+    public async Task QueueMapLifetimeRetiresDistinctKeysWhileASentinelStaysQueued()
+    {
+        using var bound = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        using var handler = new FakeEngineHandler();
+        await using var router = CreateRouter(handler, scheduler: null);
+        Assert.False(router.Engines["fake"].Healthy);
+        var sentinel = await router.EnqueueAsync("reuse", Request("a", context: null), bound.Token);
+
+        for (var index = 0; index < 8; index++)
+        {
+            var model = FormattableString.Invariant($"unseen-{index}");
+            var ticket = await router.EnqueueAsync("reuse", Request(model, context: null), bound.Token);
+            var live = router.GetStats().QueueDepths;
+            Assert.Equal(2, live.Count);
+            Assert.Equal(1, live[model]);
+            Assert.Equal("Queued", router.TryGetTicket(ticket.Id)?.State);
+
+            Assert.True(router.TryCancel(ticket.Id));
+            var error = await Assert.ThrowsAsync<RouterRequestException>(() => ticket.CompletionTask.WaitAsync(bound.Token));
+            Assert.Equal("cancelled", error.Code);
+            Assert.Single(router.Events.Replay(0), entry => entry.TicketId == ticket.Id && entry.Kind == "request.cancelled");
+
+            var remaining = Assert.Single(router.GetStats().QueueDepths);
+            Assert.Equal("a", remaining.Key);
+            Assert.Equal(1, remaining.Value);
+            Assert.Equal(TicketState.Queued, sentinel.State);
+        }
+
+        Assert.True(router.TryCancel(sentinel.Id));
+        await Assert.ThrowsAsync<RouterRequestException>(() => sentinel.CompletionTask.WaitAsync(bound.Token));
+        Assert.Empty(router.GetStats().QueueDepths);
+        Assert.Equal(0, handler.CompletionCalls);
+    }
+
+    [Theory(Timeout = 20_000)]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public async Task QueueMapLifetimeFailedFirstInsertRetiresItsEmptyQueue(int capacity)
+    {
+        using var bound = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        using var handler = new FakeEngineHandler();
+        await using var router = CreateRouter(handler, scheduler: null, maxQueuePerModel: capacity);
+        var ticket = await router.EnqueueAsync("overflow", Request("a", context: null), bound.Token);
+        var error = await Assert.ThrowsAsync<RouterRequestException>(() => ticket.CompletionTask.WaitAsync(bound.Token));
+
+        Assert.Equal("queue_overflow", error.Code);
+        var rejection = Assert.Single(router.Events.Replay(0), entry => entry.TicketId == ticket.Id);
+        Assert.Equal("queue.rejected", rejection.Kind);
+        Assert.Equal("queue_overflow", rejection.Reason);
+        Assert.Empty(router.GetStats().QueueDepths);
+        Assert.Equal(0, handler.CompletionCalls);
+    }
+
+    [Fact(Timeout = 20_000)]
+    public async Task QueueMapLifetimeRecreatedQueueFollowsBothSurvivorsAfterTheStalePass()
+    {
+        using var bound = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        using var handler = new FakeEngineHandler { LoadedModels = ["a", "b", "c"] };
+        var scheduler = new RecordingScheduler();
+        await using var router = CreateRouter(handler, scheduler);
+        var engine = router.Engines["fake"];
+        Assert.True(await engine.ProbeHealthOnceAsync(bound.Token));
+        foreach (var model in handler.LoadedModels)
+        {
+            Assert.True(engine.DeclaresModel(model));
+            Assert.True(engine.IsReadyFor(model, null));
+        }
+
+        var threadA = router.RegisterThread("a-thread", ThreadPriority.Normal());
+        var threadB = router.RegisterThread("b-thread", ThreadPriority.Normal());
+        var threadC = router.RegisterThread("c-thread", ThreadPriority.Normal());
+        var a1 = await router.EnqueueAsync(threadA.ThreadId, Request("a", context: null), bound.Token);
+        var b1 = await router.EnqueueAsync(threadB.ThreadId, Request("b", context: null), bound.Token);
+        var c1 = await router.EnqueueAsync(threadC.ThreadId, Request("c", context: null), bound.Token);
+        var initial = router.GetStats().QueueDepths;
+        Assert.Equal(3, initial.Count);
+        Assert.All(initial, entry => Assert.Equal(1, entry.Value));
+
+        using var cut = new ConfigReloadRaceTests.Cut();
+        router.BeforeAdmissionCommitForTests = ticket =>
+        {
+            if (ReferenceEquals(ticket, a1))
+                cut.Hold();
+        };
+        var stale = Task.Run(router.TryDispatchOnce, bound.Token);
+        RouterTicket a2;
+        bool staleReturned;
+        try
+        {
+            await cut.Entered.Task.WaitAsync(bound.Token);
+            Assert.Same(a1, Assert.Single(scheduler.Seen).Ticket);
+            Assert.True(router.TryCancel(a1.Id));
+            var error = await Assert.ThrowsAsync<RouterRequestException>(() => a1.CompletionTask.WaitAsync(bound.Token));
+            Assert.Equal("cancelled", error.Code);
+            Assert.DoesNotContain(a1.Model, router.GetStats().QueueDepths.Keys);
+            a2 = await router.EnqueueAsync(threadA.ThreadId, Request("A", context: null), bound.Token);
+            Assert.Equal(a1.Model, a2.Model);
+        }
+        finally
+        {
+            cut.Release();
+            staleReturned = await stale.WaitAsync(TimeSpan.FromSeconds(5), CancellationToken.None);
+        }
+
+        Assert.True(staleReturned);
+        Assert.Same(a1, Assert.Single(scheduler.Seen).Ticket);
+        Assert.DoesNotContain(router.Events.Replay(0), entry => entry.Kind == "request.selected");
+        Assert.Equal(0, handler.CompletionCalls);
+        Assert.Equal(0, engine.Inflight);
+        Assert.Equal(0, threadA.Inflight);
+        Assert.Equal(0, threadB.Inflight);
+        Assert.Equal(0, threadC.Inflight);
+
+        var survivors = new[] { b1, c1, a2 };
+        var queued = router.GetStats().QueueDepths;
+        Assert.Equal(3, queued.Count);
+        foreach (var ticket in survivors)
+        {
+            Assert.Equal(TicketState.Queued, ticket.State);
+            Assert.Equal(1, queued[ticket.Model]);
+            var item = Assert.Single(router.Events.Replay(0), entry => entry.TicketId == ticket.Id);
+            Assert.Equal("request.enqueued", item.Kind);
+        }
+
+        router.BeforeAdmissionCommitForTests = null;
+        var taken = 0;
+        foreach (var ticket in survivors)
+        {
+            Assert.True(router.TryDispatchOnce());
+            var selections = router.Events.Replay(0).Where(entry => entry.Kind == "request.selected").ToArray();
+            taken++;
+            Assert.Equal(taken, selections.Length);
+            Assert.Equal(ticket.Id, selections[^1].TicketId);
+            await ticket.CompletionTask.WaitAsync(bound.Token);
+            Assert.Equal(TicketState.Completed, ticket.State);
+            Assert.DoesNotContain(ticket.Model, router.GetStats().QueueDepths.Keys);
+        }
+
+        var selected = router.Events.Replay(0).Where(entry => entry.Kind == "request.selected").Select(entry => entry.TicketId);
+        Assert.Equal(survivors.Select(ticket => ticket.Id), selected);
+        Assert.Equal(3, handler.CompletionCalls);
+        Assert.Empty(router.GetStats().QueueDepths);
+    }
+
     [Fact]
     public async Task CustomSchedulerIsCalledOnlyForTheFirstDispatchableQueueInDepthOrder()
     {
@@ -182,7 +327,7 @@ public sealed class QueueDispatchTests
             var selection = Assert.Single(router.Events.Replay(0), entry => entry.Kind == "request.selected");
             Assert.Equal(ticket.Id, selection.TicketId);
             Assert.Equal(winner, selection.Engine);
-            Assert.Equal(0, router.GetStats().QueueDepths["m"]);
+            Assert.DoesNotContain("m", router.GetStats().QueueDepths.Keys);
             await ticket.CompletionTask.WaitAsync(TimeSpan.FromSeconds(5));
             Assert.Equal(TicketState.Completed, ticket.State);
             Assert.Equal(winner == "a" ? 1 : 0, firstHandler.CompletionCalls);
@@ -357,10 +502,11 @@ public sealed class QueueDispatchTests
     }
 
     private static RouterCore CreateRouter(FakeEngineHandler handler, IRequestScheduler? scheduler,
-                                           TimeProvider? clock = null) =>
+                                           TimeProvider? clock = null, int maxQueuePerModel = 64) =>
         new(new RouterConfig
         {
             AutoSwitch = false,
+            Scheduler = new SchedulerConfig { MaxQueuePerModel = maxQueuePerModel },
             Engines = new Dictionary<string, EngineDefinition>(StringComparer.Ordinal)
             {
                 ["fake"] = new()
@@ -372,6 +518,7 @@ public sealed class QueueDispatchTests
                     {
                         ["a"] = new() { Name = "a" },
                         ["b"] = new() { Name = "b" },
+                        ["c"] = new() { Name = "c" },
                     },
                 },
             },

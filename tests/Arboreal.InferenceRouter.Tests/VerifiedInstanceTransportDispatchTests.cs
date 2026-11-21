@@ -250,6 +250,7 @@ public sealed partial class VerifiedInstanceTransportTests
 
             var failure = await Assert.ThrowsAsync<RouterRequestException>(() => ticket.CompletionTask.WaitAsync(rig.Token));
             Assert.Equal("engine_unreachable", failure.Code);
+            Assert.DoesNotContain(ticket.Model, rig.Router.GetStats().QueueDepths.Keys);
             Assert.Equal(0, rig.Issuer.Checkouts);
             Assert.Equal(0, rig.OrdinarySends);
             Assert.Empty(rig.Daemon.Requests);

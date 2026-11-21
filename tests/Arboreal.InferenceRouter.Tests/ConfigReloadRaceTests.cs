@@ -37,6 +37,7 @@ public sealed class ConfigReloadRaceTests
         Assert.False(router.TryDispatchOnce());
         var error = await Assert.ThrowsAsync<RouterRequestException>(() => ticket.CompletionTask.WaitAsync(bound.Token));
         Assert.Equal(expiry ? "deadline_exceeded" : "cancelled", error.Code);
+        Assert.DoesNotContain("a", router.GetStats().QueueDepths.Keys);
         Assert.Equal(0, fake.CompletionCalls);
         Assert.Equal(0, router.Engines["one"].Inflight);
         var events = router.Events.Replay(0).Where(evt => evt.ThreadId == "new" || evt.TicketId == ticket.Id);
@@ -108,6 +109,7 @@ public sealed class ConfigReloadRaceTests
             Assert.Equal("Failed", router.TryGetTicket(overflow.Id)?.State);
             var error = await Assert.ThrowsAsync<RouterRequestException>(() => overflow.CompletionTask);
             Assert.Equal("queue_overflow", error.Code);
+            Assert.Equal(1, router.GetStats().QueueDepths["a"]);
             var replay = router.Events.Replay(0);
             Assert.Equal([("queue.rejected", "queue_overflow")],
                 replay.Where(evt => evt.TicketId == overflow.Id).Select(evt => (evt.Kind, evt.Reason)).ToArray());
@@ -116,6 +118,7 @@ public sealed class ConfigReloadRaceTests
         finally { pause.Release(); }
         var ticket = await enqueue.WaitAsync(bound.Token);
         await Assert.ThrowsAsync<RouterRequestException>(() => ticket.CompletionTask);
+        Assert.DoesNotContain("a", router.GetStats().QueueDepths.Keys);
         Assert.Equal(CancelledFeed, router.Events.Replay(0).Where(evt => evt.ThreadId == "pending").Select(evt => evt.Kind));
         Assert.Equal(0, fake.CompletionCalls);
     }
@@ -141,6 +144,7 @@ public sealed class ConfigReloadRaceTests
             Assert.Equal(2, router.GetStats().QueueDepths["a"]);
             Assert.True(router.TryDispatchOnce());
             await later.CompletionTask.WaitAsync(bound.Token);
+            Assert.Equal(1, router.GetStats().QueueDepths["a"]);
             Assert.Equal(1, fake.CompletionCalls);
             Assert.DoesNotContain(router.Events.Replay(0), evt => evt.ThreadId == "earlier" &&
                 evt.Kind is "request.enqueued" or "request.selected");
@@ -150,6 +154,7 @@ public sealed class ConfigReloadRaceTests
         var earlier = await first.WaitAsync(bound.Token);
         Assert.True(router.TryDispatchOnce());
         await earlier.CompletionTask.WaitAsync(bound.Token);
+        Assert.DoesNotContain("a", router.GetStats().QueueDepths.Keys);
         Assert.Equal(2, fake.CompletionCalls);
         foreach (var ticket in new[] { earlier, later })
         {
