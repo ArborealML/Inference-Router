@@ -1,0 +1,65 @@
+name: One-shot operation-head Native AOT qualification
+on:
+  push:
+    branches: ["qualify/task110-operation-head-smoke-72436aa"]
+permissions:
+  contents: read
+jobs:
+  qualify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      QUALIFIED_SHA: "72436aa3287193eee8a6325bba5da0315436986d"
+      QUALIFICATION_DIR: ${{ runner.temp }}/operation-head-qualification
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.QUALIFIED_SHA }}
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - name: Verify source and publish the standalone ELF
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$QUALIFIED_SHA"
+          mkdir -p "$QUALIFICATION_DIR"
+          git show -s --format='source_sha=%H%ntree_sha=%T' HEAD | tee "$QUALIFICATION_DIR/source.txt"
+          printf 'run_url=%s/%s/actions/runs/%s\n' "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" | tee -a "$QUALIFICATION_DIR/source.txt"
+          dotnet publish src/Arboreal.InferenceRouter.OperationHead -c Release -r linux-x64 \
+            -p:PublishAot=true -p:TrimmerSingleWarn=false -o "$QUALIFICATION_DIR/aot" \
+            2>&1 | tee "$QUALIFICATION_DIR/publish.log"
+          if grep -E 'warning (IL|TRIM)' "$QUALIFICATION_DIR/publish.log"; then exit 1; fi
+          test -x "$QUALIFICATION_DIR/aot/air-operation-head"
+          (cd "$QUALIFICATION_DIR/aot" && sha256sum air-operation-head) | tee "$QUALIFICATION_DIR/elf.sha256"
+      - name: Run the checked-in two-UID smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          service_uid="$(sudo -n -- id -u)"
+          producer_uid="$(sudo -n -u '#65534' -- id -u)"
+          printf 'service_euid=%s\nproducer_euid=%s\n' "$service_uid" "$producer_uid" | tee "$QUALIFICATION_DIR/uids.txt"
+          test "$service_uid" = 0
+          test "$producer_uid" = 65534
+          set +e
+          sudo -n -- python3 tools/ci/operation-head-smoke.py "$QUALIFICATION_DIR/aot/air-operation-head" \
+            2>&1 | tee "$QUALIFICATION_DIR/smoke.log"
+          smoke_pipeline=("${PIPESTATUS[@]}")
+          set -e
+          printf 'smoke_exit_status=%s\n' "${smoke_pipeline[0]}" | tee "$QUALIFICATION_DIR/status.txt"
+          test "${smoke_pipeline[0]}" = 0
+          test "${smoke_pipeline[1]}" = 0
+          grep -Fx 'OPERATION_HEAD_AOT_SMOKE_OK' "$QUALIFICATION_DIR/smoke.log"
+      - name: Preserve the exact binary and receipts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: operation-head-aot-qualification
+          path: |
+            ${{ env.QUALIFICATION_DIR }}/*.txt
+            ${{ env.QUALIFICATION_DIR }}/*.log
+            ${{ env.QUALIFICATION_DIR }}/elf.sha256
+            ${{ env.QUALIFICATION_DIR }}/aot/air-operation-head
+          if-no-files-found: warn
+          retention-days: 5
