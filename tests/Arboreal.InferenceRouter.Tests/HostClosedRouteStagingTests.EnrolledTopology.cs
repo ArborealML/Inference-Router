@@ -165,10 +165,13 @@ public sealed partial class HostClosedRouteStagingTests
         Assert.Equal(publicFailure.Message, internalFailure.Message);
     }
 
-    private static (string Text, EnrolledPairClaim Claim, EnrolledPairAuthority Authority) EnrolledPairTopologyFixture(string? sharedSocket = null)
+    private static (string Text, EnrolledPairClaim Claim, EnrolledPairAuthority Authority) EnrolledPairTopologyFixture(
+        string? sharedSocket = null, Uri? deepSeekEndpoint = null, Uri? qwenEndpoint = null)
     {
         var deepSeek = CorrectDeepSeekEndpoint(ReadDeepSeekQwenConfig("deepseek.toml"));
         var qwen = ReadDeepSeekQwenConfig("strata.toml");
+        if (deepSeekEndpoint is not null) deepSeek = ReplaceFixtureEndpoint(deepSeek, DeepSeekEngineName, deepSeekEndpoint);
+        if (qwenEndpoint is not null) qwen = ReplaceFixtureEndpoint(qwen, QwenEngineName, qwenEndpoint);
         var combined = ReadDeepSeekQwenDocument(deepSeek);
         combined["auto_switch"] = false;
         var engines = Assert.IsType<TomlTable>(combined["engine"]);
@@ -195,6 +198,13 @@ public sealed partial class HostClosedRouteStagingTests
         ImmutableArray<string> devices = ["fixture-device-a", "fixture-device-b"];
         return (WriteDeepSeekQwenDocument(combined), new(head, [first.Member, second.Member], devices),
             new(head, [first, second], devices));
+    }
+
+    private static string ReplaceFixtureEndpoint(string text, string engine, Uri endpoint)
+    {
+        var document = ReadDeepSeekQwenDocument(text);
+        DeepSeekQwenEngineTable(document, engine)["endpoint"] = endpoint.AbsoluteUri;
+        return WriteDeepSeekQwenDocument(document);
     }
 
     private static EnrolledPairMemberGrant EnrolledTopologyGrant(EngineDefinition engine, string model, string tier,

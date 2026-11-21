@@ -32,6 +32,12 @@ public static class RouterConfigLoader
         return EnrolledPairTopology.Check(config, commissionedSlot, claim, readCurrent);
     }
 
+    // The closed commission intake takes the approved TOML input. The other loaders retain their format selection.
+    internal static EnrolledPairTopology ValidateEnrolledPair(string toml, string commissionedSlot, EnrolledPairClaim claim,
+        EnrolledPairAuthority authority) =>
+        EnrolledPairTopology.Validate(ParseAndMap(toml, source: null, isJson: false),
+            commissionedSlot, claim, authority);
+
     internal static ReloadConfiguration LoadForReload(string text, string path)
     {
         var isJson = Path.GetExtension(path).Equals(".json", StringComparison.OrdinalIgnoreCase);

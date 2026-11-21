@@ -23,15 +23,33 @@ internal sealed record CheckedEnrolledPair(EnrolledPairHead Head, ImmutableArray
 internal sealed record CheckedEnrolledPairMember(HostCheckpointPlan Plan, string PlanDigest, string SocketPath,
     Uri Endpoint, DockerImageIdentity Image, string CreateJson);
 
-internal static class EnrolledPairTopology
+internal sealed class EnrolledPairTopology
 {
+    private readonly RouterConfig _config;
+    private readonly EnrolledPairClaim _claim;
+    private readonly EnrolledPairAuthority _authority;
+    private readonly Dictionary<string, EnrolledPairMemberGrant> _approved;
+
+    private EnrolledPairTopology(RouterConfig config, EnrolledPairClaim claim, EnrolledPairAuthority authority,
+        Dictionary<string, EnrolledPairMemberGrant> approved) =>
+        (_config, _claim, _authority, _approved) = (config, claim, authority, approved);
+
     // The lookup key is selected by trusted bootstrap. The lookup returns one fresh snapshot
     // from outside the candidate's rollback domain. This check grants no ongoing authority.
     internal static CheckedEnrolledPair Check(RouterConfig config, string commissionedSlot, EnrolledPairClaim claim,
         Func<string, EnrolledPairAuthority?> readCurrent)
     {
+        if (string.IsNullOrWhiteSpace(commissionedSlot) || claim.Head?.Slot != commissionedSlot ||
+            readCurrent(commissionedSlot) is not { } authority)
+            throw Refuse("current commissioned head mismatch");
+        return Validate(config, commissionedSlot, claim, authority).Project();
+    }
+
+    internal static EnrolledPairTopology Validate(RouterConfig config, string commissionedSlot, EnrolledPairClaim claim,
+        EnrolledPairAuthority authority)
+    {
         if (string.IsNullOrWhiteSpace(commissionedSlot) || claim.Head is not { } head || head.Slot != commissionedSlot ||
-            readCurrent(commissionedSlot) is not { } authority || head != authority.Head ||
+            head != authority.Head ||
             string.IsNullOrWhiteSpace(authority.Head.Partition) || string.IsNullOrWhiteSpace(authority.Head.Daemon) ||
             string.IsNullOrWhiteSpace(authority.Head.RouterId) || authority.Head.Generation <= 0 ||
             authority.Head.Revision < 0 || !HostMutation.IsPlanDigest(authority.Head.Digest))
@@ -68,16 +86,20 @@ internal static class EnrolledPairTopology
                 docker.RouterId != authority.Head.RouterId ||
                 !DockerLifecycleProvider.TryParseUnixSocket(docker.Socket, out var path) ||
                 path.Contains('\0', StringComparison.Ordinal) || !Path.IsPathFullyQualified(path) ||
-                path != grant.SocketPath || Path.GetFullPath(path) != path ||
+                path != grant.SocketPath || Path.GetFullPath(path) != path || grant.Endpoint is not { IsAbsoluteUri: true } ||
                 !VerifiedDispatchEnvelope.SameEffectiveUri(engine.Endpoint, grant.Endpoint))
                 throw Refuse("engine ownership, socket or endpoint mismatch");
         }
+        return new(config, claim, authority, approved);
+    }
 
+    internal CheckedEnrolledPair Project()
+    {
         var members = ImmutableArray.CreateBuilder<CheckedEnrolledPairMember>(2);
-        foreach (var member in claim.Members)
+        foreach (var member in _claim.Members)
         {
-            var engine = config.Engines[member.Engine];
-            var grant = approved[member.Engine];
+            var engine = _config.Engines[member.Engine];
+            var grant = _approved[member.Engine];
             try
             {
                 var resolver = new VerifiedDispatchTargetResolver(engine);
@@ -99,7 +121,7 @@ internal static class EnrolledPairTopology
             }
         }
 
-        return new(authority.Head, authority.Devices, members.MoveToImmutable());
+        return new(_authority.Head, _authority.Devices, members.MoveToImmutable());
     }
 
     private static bool IsDistinctPair(IEnumerable<string?> values)

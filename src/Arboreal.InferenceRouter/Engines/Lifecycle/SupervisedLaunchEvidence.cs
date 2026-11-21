@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -21,13 +22,31 @@ internal sealed record SupervisedLaunchApproval(HostInitialLaunchIntent Intent, 
 internal sealed record SupervisedLaunchCommission(HostReservationScope Scope, EnrolledPairAuthority Topology,
     ImmutableArray<SupervisedLaunchApproval> Approvals)
 {
-    internal bool Matches(SupervisedLaunchCommission? other) => other is not null && Scope == other.Scope &&
+    internal bool AuthorizesScope(HostReservationScope scope, string commissionedSlot) =>
+        Scope == scope && scope.Enrollment is { } enrollment &&
+        Topology?.Head is { } head && head.Slot == commissionedSlot &&
+        head.Partition == enrollment.Group && head.Generation == enrollment.Generation;
+
+    internal bool ApprovesPair(CheckedEnrolledPair pair) =>
+        !Approvals.IsDefault && Approvals.Length == pair.Members.Length &&
+        Approvals.All(approval => approval is { Intent.Plan: not null } && approval.HasPinnedApiVersion()) &&
+        Approvals.Select(approval => approval.Intent.Plan.Engine).Distinct(StringComparer.Ordinal).Count() == pair.Members.Length &&
+        pair.Members.All(member =>
+            Approval(member.Plan.Engine) is { } approval && member.Image == approval.Image &&
+            member.PlanDigest == approval.Intent.Plan.Digest() &&
+            HostInitialLaunchIntent.Freeze(member.Plan, Encoding.UTF8.GetBytes(member.CreateJson)) == approval.Intent);
+
+    internal bool Matches(SupervisedLaunchCommission? other) =>
+        other is not null && HasComparableContents() && other.HasComparableContents() && Scope == other.Scope &&
         Topology.Head == other.Topology.Head && SameDevices(Topology.Devices, other.Topology.Devices) &&
-        !Topology.Members.IsDefault && !other.Topology.Members.IsDefault &&
         OrderedGrants(Topology).SequenceEqual(OrderedGrants(other.Topology)) &&
-        !Approvals.IsDefault && !other.Approvals.IsDefault &&
         Approvals.OrderBy(approval => approval.Intent.Plan.Engine, StringComparer.Ordinal).SequenceEqual(
             other.Approvals.OrderBy(approval => approval.Intent.Plan.Engine, StringComparer.Ordinal));
+
+    private bool HasComparableContents() =>
+        Scope is not null && Topology is { Head: not null } && !Topology.Members.IsDefault &&
+        Topology.Members.All(grant => grant is { Member: not null, Endpoint.IsAbsoluteUri: true }) &&
+        !Approvals.IsDefault && Approvals.All(approval => approval is { Intent.Plan: not null, Image: not null });
 
     internal static bool SameDevices(ImmutableArray<string> expected, ImmutableArray<string> observed) =>
         !expected.IsDefault && !observed.IsDefault &&

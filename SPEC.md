@@ -1,6 +1,6 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.121)
+Status: draft, continuously revised (v0.12.122)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
@@ -352,6 +352,7 @@ daemon transaction per engine. 137 tests green.
   that answers no `upload_url`, an upload that dies or answers no asset id, an asset name listed twice on
   the release, and a tag that moves after the first resolve. No tag has run the gate: still configured,
   not proven.
+- v0.12.122 — authenticate bounded offline commission intake before supervised launch construction (§5.3.1).
 - v0.12.121 — refuse an explicit context minimum before queueing when every declaring engine
   has configured serving tiers and none fits. Keep estimate-based admission (§5.5, §6.1, §7.6).
 - v0.12.120 — retire each model queue when its last member leaves, remove its status row,
@@ -2095,6 +2096,22 @@ socket paths and endpoints. The checker projects the approved targets and compar
 plan digests, then returns an immutable descriptor with exact Docker create settings, image
 pins and original readiness budgets. The descriptor provides no runtime, lifecycle or serving
 authority. Native host enrollment and a live Pi swap remain separate acceptance requirements.
+
+The internal offline commission client reads one reply over a Linux Unix-domain socket with
+TLS and a supervisor-pinned observer certificate. It requires the exact slot and a fresh
+challenge. The length-prefixed request and reply have 1 KiB and 512 KiB limits respectively.
+A complete reply is usable while the peer remains open. One five-second monotonic deadline
+and the caller-linked cancellation token cover the exchange and a cooperative asynchronous
+read of the independently provisioned full commission. Before parsing the internal intake's
+TOML input, the claim must match the complete current head and the observer's scope, head,
+grants, devices and approvals must match the independent snapshot by value. Projection uses
+that independent snapshot. Both targets must match its approved image, plan and exact create
+bytes, with a pinned API version for each. Expiry or cancellation before the closed result
+refuses it. Intake has no launch journal, coordinator or engine runtime.
+Public startup and reload still apply the dedicated-engine topology guard. The independent
+head reader verifies the current records snapshot against a separately protected committed
+floor. Deployment requires that floor to resist rollback independently of the records and
+the router, with separately commissioned observation and host providers.
 
 In the older injected immediate-host fixture, proof publication remains provisional while the
 switch marker is raised. The host records acceptance with a synchronous store under the runtime
