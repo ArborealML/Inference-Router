@@ -5,7 +5,7 @@ status: Waiting
 assignee:
   - '@gpt-6.2-sol-release'
 created_date: '2026-11-18T18:13:00Z'
-updated_date: '2026-11-20T23:42:00Z'
+updated_date: '2026-11-21T00:24:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -21,7 +21,7 @@ ordinal: 108000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Host evidence and intake review wake this task. Coordinator owns: observer build and installed identity, protected endpoint and pinned peer, separate authority endpoint and trust identity, persistence outside router restore, authenticated current topology and scope, and approvals for both exact members. Observer and head unverified. [Offline launch receipt](https://github.com/ArborealML/Inference-Router/pull/49).
+Wake on independent review of grant and approval controls. The host administrator separately owns the observer identity and endpoint, independently authenticated ownership records outside router rollback, and the exact pair approvals. [Offline launch receipt](https://github.com/ArborealML/Inference-Router/pull/49).
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -46,11 +46,11 @@ Initial launch and reconciliation return an explicit durable Applied receipt wit
 <!-- SECTION:NOTES:BEGIN -->
 [PR #6](https://github.com/ArborealML/Inference-Router/pull/6) landed the checkpoint and synthetic ledger; [PR #9](https://github.com/ArborealML/Inference-Router/pull/9) landed predecessor, exact stop-effect and fresh vacancy checks. Review of 47ab322 identified two weak observations. [PR #14](https://github.com/ArborealML/Inference-Router/pull/14) merged at 3160a11 after the reconciled df6174e passed hosted CI. This qualifies offline causal retirement with a surviving issuer and independent backend acknowledgment.
 
-Review on 3160a11 required wrong-target recovery fencing and old-grant/fresh-open controls.
+Review required wrong-target fencing and old-grant/fresh-open controls.
 
 [PR #19](https://github.com/ArborealML/Inference-Router/pull/19) preserves the paired 1/1 receipt at 6ef4723. Review identified stale incumbent authority during applied-launch recovery and missing failure controls. Published e7b951c closes after the exact match and before the first occupancy await. Six focused Release cases passed, covering denial during and after a held probe, untouched preflight, both cancellation cuts, completion, installation and drain-disposal faults, and fresh retry without duplicate effects. Both findings cleared review, all hosted checks passed, and PR #19 merged at 0b84766. Deadline equality in the enrolled path remains separate from fixture cancellation.
 
 [PR #23](https://github.com/ArborealML/Inference-Router/pull/23) binds the exact stored proof to the installed runtime attempt and full target before delivery. Review of 0f6245a found foreign proofs could pass on model/tier alone. Correction a99b91c passed independent review and 5/5 focused cases, including substitutions and a notification fault after Open. The deadline fixture passed at 8af4cdd and all seven guard/deadline cases at 8b6a919. Merged at 5d66c8d after all hosted checks passed. Production issuance still requires independently attested live authority.
 
-Future launch proof requires accepted create bytes, independent effective settings and exact running instance. Cutover requires exclusion of competing writers, devices and routes, vacancy, and actual readiness-handler evidence.
+Full commission and stable records passed 89/89 offline; grant-only mutation failed as expected. Provision rollback-independent floor. Future launch proof requires accepted create bytes, independent effective settings and exact running instance. Cutover requires exclusion of competing writers, devices and routes, vacancy, and actual readiness-handler evidence.
 <!-- SECTION:NOTES:END -->

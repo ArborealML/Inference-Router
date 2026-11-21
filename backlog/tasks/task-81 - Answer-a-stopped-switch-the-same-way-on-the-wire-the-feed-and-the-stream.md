@@ -1,11 +1,11 @@
 ---
 id: TASK-81
 title: Answer a stopped switch the same way on the wire, the feed, and the stream
-status: Waiting
+status: To Do
 assignee:
   - '@gpt-6.2-sol-stream-delivery'
 created_date: '2026-11-18T04:09:00Z'
-updated_date: '2026-11-21T00:04:00Z'
+updated_date: '2026-11-21T00:27:00Z'
 labels:
   - lifecycle
   - shutdown
@@ -18,7 +18,7 @@ ordinal: 81000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Exact hosted checks on the [queued HTTP/1.1 shutdown fixture](https://github.com/ArborealML/Inference-Router/pull/69) will wake the next integration decision. The single case passed on ebb3f85 after a clean Release build, and independent commit review passed. With the subject still queued and its response read pending, core shutdown ended the HTTP body cleanly with an empty suffix, issued no subject forward and published one correlated cancellation. Wider shutdown-stream coverage remains open.
+The [queued HTTP shutdown fixture](https://github.com/ArborealML/Inference-Router/pull/69) landed at 0758cff with [green main CI](https://github.com/ArborealML/Inference-Router/actions/runs/44843337240). In the held-slot case the client read clean EOF after its queue comment, the subject never forwarded and its ticket recorded one cancellation. The remaining shutdown modes and wider wire disposition stay open.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

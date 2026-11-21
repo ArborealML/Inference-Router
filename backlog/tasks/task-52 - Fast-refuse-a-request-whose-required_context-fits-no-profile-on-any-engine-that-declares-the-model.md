@@ -7,7 +7,7 @@ status: Waiting
 assignee:
   - '@gpt-6.2-sol-release'
 created_date: '2026-11-17T19:15:00Z'
-updated_date: '2026-11-20T23:19:00Z'
+updated_date: '2026-11-21T00:24:00Z'
 labels:
   - scheduling
   - wire
@@ -20,7 +20,7 @@ ordinal: 52000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Wake on explicit implementation release when Config is available. The independently reviewed admission plan covers explicit context demand and the configured tier ladder. A wider observed window cannot override an applicable nonfitting ladder in the built-in scheduler. An eligible engine without an applicable ladder precludes this fast refusal.
+.120 landing wakes integration of the qualified context-admission candidate 7321cfa. The built-in scheduler uses the configured tier ladder for the explicit-header refusal. An eligible engine without an applicable ladder precludes this refusal.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -32,5 +32,5 @@ Wake on explicit implementation release when Config is available. The independen
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Independent rereview passed the amended plan on 7ee853e. The same body distinguishes explicit demand above the ceiling, an estimate above the ceiling and exact fit. Reloading a wider external declarer forces reconsideration before allocating a ticket. Separate cases cover missing ladders, ordinal matching, custom scheduling and the observed 131072-token window. Relevant source remains unchanged through 1b2c17f. No tests have run for this plan. Revision allocation awaits release.
+The 12 focused Release tests passed. With the prior admission source the intended rejection was queued; restoration passed both focused controls. Source review confirmed PrefixAwareScheduler is sealed, and the unrelated custom scheduler control passed. Delivery owns exact integrated qualification and hosted checks.
 <!-- SECTION:NOTES:END -->
