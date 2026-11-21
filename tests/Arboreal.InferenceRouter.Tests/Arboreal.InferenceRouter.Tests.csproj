@@ -36,6 +36,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Arboreal.InferenceRouter\Arboreal.InferenceRouter.csproj" />
     <ProjectReference Include="..\..\src\Arboreal.InferenceRouter.Server\Arboreal.InferenceRouter.Server.csproj" />
+    <ProjectReference Include="..\..\src\Arboreal.InferenceRouter.OperationHead\Arboreal.InferenceRouter.OperationHead.csproj" />
     <ProjectReference Include="..\Arboreal.InferenceRouter.HostReservationProbe\Arboreal.InferenceRouter.HostReservationProbe.csproj" />
     <ProjectReference Include="..\..\src\Arboreal.InferenceRouter.Cli\Arboreal.InferenceRouter.Cli.csproj" />
   </ItemGroup>

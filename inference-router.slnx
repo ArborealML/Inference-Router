@@ -1,6 +1,7 @@
 <Solution>
   <Project Path="src/Arboreal.InferenceRouter.Cli/Arboreal.InferenceRouter.Cli.csproj" />
   <Project Path="src/Arboreal.InferenceRouter.Server/Arboreal.InferenceRouter.Server.csproj" />
+  <Project Path="src/Arboreal.InferenceRouter.OperationHead/Arboreal.InferenceRouter.OperationHead.csproj" />
   <Project Path="src/Arboreal.InferenceRouter/Arboreal.InferenceRouter.csproj" />
   <Project Path="bench/Arboreal.InferenceRouter.Benchmarks/Arboreal.InferenceRouter.Benchmarks.csproj" />
   <Project Path="tests/Arboreal.InferenceRouter.Tests/Arboreal.InferenceRouter.Tests.csproj" />

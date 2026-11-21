@@ -27,7 +27,7 @@ internal sealed partial class SupervisedLaunchJsonContext : JsonSerializerContex
 internal sealed class SupervisedLaunchJournal(HostReservationScope scope, ISupervisedLaunchHead head)
 {
     internal const int CurrentFormat = 1;
-    private const int LastRevision = 5;
+    internal const int LastRevision = 5;
     private const int MaxFrameLength = 512 * 1024;
     private string FencePath => Path.Combine(scope.AuthorityDirectory, "supervised-launch.lock");
     internal string JournalPath => Path.Combine(scope.AuthorityDirectory, "supervised-launch.journal");

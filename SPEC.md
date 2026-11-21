@@ -1,6 +1,6 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.122)
+Status: draft, continuously revised (v0.12.123)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
@@ -352,6 +352,7 @@ daemon transaction per engine. 137 tests green.
   that answers no `upload_url`, an upload that dies or answers no asset id, an asset name listed twice on
   the release, and a tag that moves after the first resolve. No tag has run the gate: still configured,
   not proven.
+- v0.12.123 — add the separate authenticated service for the supervised initial-launch journal head (§5.3.1).
 - v0.12.122 — authenticate bounded offline commission intake before supervised launch construction (§5.3.1).
 - v0.12.121 — refuse an explicit context minimum before queueing when every declaring engine
   has configured serving tiers and none fits. Keep estimate-based admission (§5.5, §6.1, §7.6).
@@ -1991,6 +1992,22 @@ lookup reads the original bytes from a coherent anchored journal and does not gr
 The producer is qualified with offline ports and a modeled independent head. Service deployment,
 durable host commissioning, authenticated live readiness and serving require separate authority and
 evidence.
+
+The standalone Linux x64 operation-head service implements the existing journal head port for one
+fixed enrolled scope. It checks the Unix peer UID before TLS and requires the client to pin the TLS
+leaf. One bounded exchange binds its response to the nonce and the complete read or advance
+arguments. Only a provisioned, authenticated absence can initialize revision 0. Each later advance
+matches the exact scope, predecessor revision and digest, and commits the immediate successor
+through revision 5. The writer supplies the digest of the exact serialized journal frame.
+
+The authority holds a stable process lock and an independent protected state root. A successful
+advance requires a flushed private state file, atomic replacement and directory sync. A clean
+comparison refusal makes no write. Missing or replaced state, an untrusted exchange or a lost
+acknowledgment gives an unavailable result. Uncertain replacement or sync keeps the live authority
+unavailable until a fresh process verifies the retained protected snapshot. It does not authorize replay, truncation or
+repair of the journal tail. The administrator must commission a restore-independent volume and
+exclude cloned lock domains and alternate writers before installation. This service is separate
+from topology commissioning and does not register a public AIR startup path.
 
 The successor ledger fixture records submissions, worker acceptances, daemon attempts and applied
 records in separate journals. These are synthetic evidence roles and can share a fixture process.
