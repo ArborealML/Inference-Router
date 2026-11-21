@@ -4,6 +4,9 @@ using Microsoft.Win32.SafeHandles;
 
 namespace Arboreal.InferenceRouter.OperationHead;
 
+internal sealed class OperationHeadSocketRemovalException()
+    : IOException("The operation-head authority could not remove its socket.");
+
 // All mutable names are fixed children of an authority-owned directory. Path-only opens
 // pin an inode before opening it for I/O, including when the named path refers to a FIFO.
 internal static partial class OperationHeadLinux
@@ -12,6 +15,8 @@ internal static partial class OperationHeadLinux
     private const long OpenAt2Number = 437;
     private const int AtCurrentDirectory = -100;
     private const int AtEmptyPath = 0x1000;
+    private const int AtSymlinkNoFollow = 0x100;
+    private const int NoEntry = 2;
     private const ulong CloseOnExec = 0x80000;
     private const ulong NonBlocking = 0x800;
     private const ulong DirectoryOnly = 0x10000;
@@ -151,22 +156,49 @@ internal static partial class OperationHeadLinux
         if (FSync(directory) != 0) throw InvalidObject();
     }
 
-    internal static Entry SecureSocket(SafeFileHandle root, string name, Entry rootEntry)
+    internal static Entry BoundSocketEntry(SafeFileHandle pinned, Entry rootEntry)
     {
-        using var pinned = Pin(root, name);
         var entry = Inspect(pinned);
         if (!entry.SameMount(rootEntry) || (entry.Mode & TypeMask) != SocketFile ||
             entry.Uid != rootEntry.Uid || entry.Links != 1)
             throw InvalidObject();
+        return entry;
+    }
 
+    internal static Entry SecureSocket(SafeFileHandle root, string name, Entry owned)
+    {
         // The runtime directory is protected against replacement by the producer.
+        using var pinned = Pin(root, name);
+        if (Inspect(pinned) != owned) throw InvalidObject();
         if (ChmodAt(root, name, GroupSocket, 0) != 0) throw InvalidObject();
         using var secured = Pin(root, name);
         var identity = Inspect(secured);
-        if (identity != (entry with { Mode = SocketFile | GroupSocket })) throw InvalidObject();
+        if (identity != (owned with { Mode = SocketFile | GroupSocket })) throw InvalidObject();
         return identity;
     }
 
+    internal static void RemoveOwnedSocket(SafeFileHandle root, string name, Entry owned, Func<bool>? unlinkForTests = null)
+    {
+        if (!IsNamedSocket(root, name, owned)) return;
+        if (unlinkForTests?.Invoke() ?? (UnlinkAt(root, name, 0) == 0)) return;
+        if (IsNamedSocket(root, name, owned))
+            throw new OperationHeadSocketRemovalException();
+    }
+
+    // The caller pins the bound inode through cleanup. Mode changes during securing do not
+    // change which socket we own. Never follow a replacement symlink to that inode.
+    private static bool IsNamedSocket(SafeFileHandle root, string name, Entry owned)
+    {
+        if (GetStatus(root, name, AtSymlinkNoFollow, StatFields, out var status) != 0)
+        {
+            if (Marshal.GetLastPInvokeError() == NoEntry) return false;
+            throw InvalidObject();
+        }
+        var entry = ReadEntry(status);
+        return entry.SameMount(owned) && entry.Inode == owned.Inode && (entry.Mode & TypeMask) == SocketFile;
+    }
+
+    // Staged temporary file cleanup is best effort and cannot revise a store commit result.
     internal static void RemoveOwned(SafeFileHandle root, string name, Entry owned)
     {
         try
@@ -182,8 +214,13 @@ internal static partial class OperationHeadLinux
 
     internal static Entry Inspect(SafeFileHandle handle)
     {
-        if (GetStatus(handle, "", AtEmptyPath, StatFields, out var status) != 0 ||
-            (status.Mask & StatFields) != StatFields) throw InvalidObject();
+        if (GetStatus(handle, "", AtEmptyPath, StatFields, out var status) != 0) throw InvalidObject();
+        return ReadEntry(status);
+    }
+
+    private static Entry ReadEntry(in Statx status)
+    {
+        if ((status.Mask & StatFields) != StatFields) throw InvalidObject();
         return new(status.Major, status.Minor, status.Mount, status.Inode, status.Mode, status.Uid,
             status.Gid, status.Links);
     }
@@ -233,7 +270,7 @@ internal static partial class OperationHeadLinux
     [LibraryImport(Libc, EntryPoint = "syscall", StringMarshalling = StringMarshalling.Utf8)]
     private static partial long OpenAt2(long number, long directory, string path, in OpenHow options, nuint size);
 
-    [LibraryImport(Libc, EntryPoint = "statx", StringMarshalling = StringMarshalling.Utf8)]
+    [LibraryImport(Libc, EntryPoint = "statx", SetLastError = true, StringMarshalling = StringMarshalling.Utf8)]
     private static partial int GetStatus(SafeFileHandle fd, string path, int flags, uint mask, out Statx status);
 
     [LibraryImport(Libc, EntryPoint = "fstatfs")]

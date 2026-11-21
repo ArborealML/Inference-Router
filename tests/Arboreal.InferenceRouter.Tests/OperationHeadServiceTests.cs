@@ -249,6 +249,93 @@ public sealed class OperationHeadServiceTests
     }
 
     [Theory(Timeout = 20_000)]
+    [InlineData("setup")]
+    [InlineData("mode")]
+    [InlineData("replacement")]
+    public async Task PostBindFailureCleansOnlyTheExactOwnedSocket(string fault)
+    {
+        if (!OperatingSystem.IsLinux() || !OperationHeadLinux.Supported) return;
+
+        await using var test = new Scratch();
+        using var timeout = new CancellationTokenSource(WaitLimit);
+        var original = File.ReadAllBytes(test.StatePath);
+        var renamedSocket = test.SocketPath + ".old";
+        var entered = false;
+        var listened = false;
+        var error = await Record.ExceptionAsync(() => HeadProgram.RunAsync(test.Authority, test.Runtime, timeout.Token,
+            listeningForTests: () => listened = true,
+            afterBindForTests: () =>
+            {
+                entered = true;
+                Assert.True(File.Exists(test.SocketPath));
+                switch (fault)
+                {
+                    case "setup":
+                        throw new IOException("synthetic post-bind failure");
+                    case "mode":
+                        if (!OperatingSystem.IsLinux()) throw new PlatformNotSupportedException();
+                        var mode = File.GetUnixFileMode(test.SocketPath);
+                        File.SetUnixFileMode(test.SocketPath, mode ^ UnixFileMode.UserWrite);
+                        break;
+                    case "replacement":
+                        File.Move(test.SocketPath, renamedSocket);
+                        Scratch.WritePrivate(test.SocketPath, "replacement"u8.ToArray());
+                        break;
+                }
+            }));
+        var failure = Assert.IsType<IOException>(error);
+        Assert.True(entered);
+        Assert.False(listened);
+        if (fault == "setup") Assert.Equal("synthetic post-bind failure", failure.Message);
+
+        if (fault == "replacement")
+        {
+            Assert.True(File.Exists(renamedSocket));
+            Assert.Equal("replacement", File.ReadAllText(test.SocketPath));
+            var occupied = await Assert.ThrowsAsync<SocketException>(() => HeadProgram.RunAsync(test.Authority,
+                test.Runtime, timeout.Token, listeningForTests: () => listened = true));
+            Assert.Equal(SocketError.AddressAlreadyInUse, occupied.SocketErrorCode);
+            Assert.False(listened);
+            Assert.Equal("replacement", File.ReadAllText(test.SocketPath));
+        }
+        else
+        {
+            Assert.False(File.Exists(test.SocketPath));
+            await test.StartAsync();
+            Assert.Null(test.Client.Read(test.Scope));
+        }
+        Assert.Equal(original, File.ReadAllBytes(test.StatePath));
+    }
+
+    [Fact(Timeout = 20_000)]
+    public async Task FailedRemovalOfTheStillOwnedSocketIsReported()
+    {
+        if (!OperatingSystem.IsLinux() || !OperationHeadLinux.Supported) return;
+
+        await using var test = new Scratch();
+        using var runtime = OperationHeadLinux.OpenDirectory(test.Runtime);
+        var directory = OperationHeadLinux.DirectoryEntry(runtime, OperationHeadLinux.EffectiveUid(), runtime: true);
+        using var listener = new Socket(AddressFamily.Unix, SocketType.Stream, ProtocolType.Unspecified);
+        listener.Bind(new UnixDomainSocketEndPoint(test.SocketPath));
+        using var pinned = OperationHeadLinux.Pin(runtime, HeadProgram.SocketName);
+        var owned = OperationHeadLinux.BoundSocketEntry(pinned, directory);
+        var tried = false;
+
+        var error = Assert.Throws<OperationHeadSocketRemovalException>(() =>
+            OperationHeadLinux.RemoveOwnedSocket(runtime, HeadProgram.SocketName, owned, () =>
+            {
+                tried = true;
+                return false;
+            }));
+        Assert.True(tried);
+        Assert.Equal("The operation-head authority could not remove its socket.", error.Message);
+        Assert.True(File.Exists(test.SocketPath));
+
+        OperationHeadLinux.RemoveOwnedSocket(runtime, HeadProgram.SocketName, owned);
+        Assert.False(File.Exists(test.SocketPath));
+    }
+
+    [Theory(Timeout = 20_000)]
     [InlineData("missing")]
     [InlineData("scope")]
     [InlineData("duplicate")]

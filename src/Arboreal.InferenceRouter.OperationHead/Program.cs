@@ -51,6 +51,11 @@ internal static class Program
             await RunAsync(args[0], args[1], stop.Token).ConfigureAwait(false);
             return 0;
         }
+        catch (OperationHeadSocketRemovalException error)
+        {
+            Console.Error.WriteLine(error.Message);
+            return 1;
+        }
         catch (Exception error) when (OperationHeadTransport.IsUnavailable(error) ||
             error is DllNotFoundException or EntryPointNotFoundException or BadImageFormatException)
         {
@@ -61,7 +66,7 @@ internal static class Program
 
     internal static async Task RunAsync(string authorityPath, string runtimePath, CancellationToken ct,
         Action? listeningForTests = null, Action<OperationHeadCut>? cutForTests = null, TimeSpan? timeoutForTests = null,
-        Action? decisionForTests = null)
+        Action? decisionForTests = null, Action? afterBindForTests = null)
     {
         if (!OperationHeadLinux.Supported || !IsDirectoryPath(authorityPath) || !IsDirectoryPath(runtimePath) ||
             Encoding.UTF8.GetByteCount(Path.Combine(runtimePath, SocketName)) > MaxSocketPathBytes)
@@ -93,16 +98,17 @@ internal static class Program
         using var certificate = X509Certificate2.CreateFromPem(Encoding.UTF8.GetString(certFile.Bytes),
             Encoding.UTF8.GetString(keyFile.Bytes));
         var store = new OperationHeadStore(bootstrap.Scope, authority, descriptors, stableLock, cutForTests);
-        OperationHeadLinux.Entry? socketIdentity = null;
+        runtime.Verify();
+        using var listener = new Socket(AddressFamily.Unix, SocketType.Stream, ProtocolType.Unspecified);
+        // Resolve the bind through the held runtime directory, even if a pathname is renamed.
+        var directoryFd = socketDirectory.DangerousGetHandle().ToInt32().ToString(CultureInfo.InvariantCulture);
+        listener.Bind(new AuthorityEndPoint($"/proc/self/fd/{directoryFd}/{SocketName}"));
+        using var pinnedSocket = OperationHeadLinux.Pin(socketDirectory, SocketName);
+        var ownedSocket = OperationHeadLinux.BoundSocketEntry(pinnedSocket, runtime.Identity);
         try
         {
-            runtime.Verify();
-            using var listener = new Socket(AddressFamily.Unix, SocketType.Stream, ProtocolType.Unspecified);
-            // Resolve the bind through the held runtime directory, even if a pathname is renamed.
-            var directoryFd = socketDirectory.DangerousGetHandle().ToInt32().ToString(CultureInfo.InvariantCulture);
-            listener.Bind(new AuthorityEndPoint($"/proc/self/fd/{directoryFd}/{SocketName}"));
-            var bound = OperationHeadLinux.SecureSocket(socketDirectory, SocketName, runtime.Identity);
-            socketIdentity = bound;
+            afterBindForTests?.Invoke();
+            var bound = OperationHeadLinux.SecureSocket(socketDirectory, SocketName, ownedSocket);
             VerifyEndpoint();
             listener.Listen(4);
             listeningForTests?.Invoke();
@@ -135,8 +141,7 @@ internal static class Program
         }
         finally
         {
-            if (socketIdentity is { } owned)
-                OperationHeadLinux.RemoveOwned(socketDirectory, SocketName, owned);
+            OperationHeadLinux.RemoveOwnedSocket(socketDirectory, SocketName, ownedSocket);
         }
     }
 
