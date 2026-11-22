@@ -59,7 +59,8 @@ internal sealed class LocalLifecycleGroup(string name, Action wake)
         {
             if (!_uses.Contains(owner) || !owner.Cold || !ReferenceEquals(_waiting, owner.Request))
                 throw new InvalidOperationException("The original request no longer owns this local switch.");
-            if (owner.Budget.IsExpired) throw new TimeoutException("The original switch wait budget expired.");
+            if (owner.Budget.IsExpired)
+                return Task.FromResult(new EngineRuntime.ObservedSwitchResult(new(EngineRuntime.SwitchOutcome.TimedOut, null)));
             stop.ThrowIfCancellationRequested();
             owner.Request.CallerToken.ThrowIfCancellationRequested();
             if (owner.Request.Ticket.IsTerminal)
@@ -115,7 +116,7 @@ internal sealed class LocalLifecycleGroup(string name, Action wake)
             succeeded = observed.Result.IsReady;
             return observed;
         }
-        catch (InvalidOperationException error)
+        catch (Exception error) when (error is InvalidOperationException or TimeoutException)
         {
             owner.Engine.Emit("engine.switch_failed", model: owner.Request.Ticket.Model, reason: error.Message);
             return new(EngineRuntime.SwitchResult.Failed(SwitchReason.LaunchFailed));

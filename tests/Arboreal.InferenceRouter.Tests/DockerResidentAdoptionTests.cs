@@ -32,6 +32,7 @@ public sealed class DockerResidentAdoptionTests
     [InlineData("readiness", 1, true)]
     [InlineData("failed-start", 1, false)]
     [InlineData("failed-readiness", 1, false)]
+    [InlineData("provider-timeout", 0, false)]
     [InlineData("preflight", 0, false)]
     [InlineData("foreign", 0, false)]
     [InlineData("expired", 0, false)]
@@ -74,6 +75,7 @@ public sealed class DockerResidentAdoptionTests
             if (path.EndsWith("/version", StringComparison.Ordinal)) return (HttpStatusCode.OK, """{"ApiVersion":"1.44"}""");
             if (path.Contains("/images/", StringComparison.Ordinal))
             {
+                if (scenario == "provider-timeout") throw new TimeoutException("fixture daemon timeout");
                 if (scenario == "preflight") return (HttpStatusCode.NotFound, "{}");
                 var info = JsonNode.Parse(DockerLifecycleProviderTests.Inspect())!;
                 info["Config"] = new JsonObject();
@@ -129,9 +131,11 @@ public sealed class DockerResidentAdoptionTests
         }
         else
         {
-            await Assert.ThrowsAsync<RouterRequestException>(() => first.CompletionTask.WaitAsync(TimeSpan.FromSeconds(8)));
+            var failure = await Assert.ThrowsAsync<RouterRequestException>(() => first.CompletionTask.WaitAsync(TimeSpan.FromSeconds(8)));
             Assert.Equal(0, backend.CompletionCalls);
-            if (scenario is "expired" or "preflight") Assert.Equal("switch_failed", first.ErrorCode);
+            if (scenario == "provider-timeout") Assert.Contains("launch_failed", failure.Message, StringComparison.Ordinal);
+            if (scenario is "provider-timeout" or "expired") Assert.DoesNotContain("still running", failure.Message, StringComparison.Ordinal);
+            if (scenario is "expired" or "preflight" or "provider-timeout") Assert.Equal("switch_failed", first.ErrorCode);
         }
         Assert.Equal(expectedStops, daemon.Requests.Count(path => path.StartsWith("POST", StringComparison.Ordinal) &&
             path.Contains($"/{oldId}/stop?", StringComparison.Ordinal)));

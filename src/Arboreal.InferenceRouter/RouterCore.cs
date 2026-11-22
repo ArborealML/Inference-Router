@@ -754,9 +754,9 @@ public sealed partial class RouterCore : IInferenceRouter
                 if (candidate.LocalLease is { Cold: true } localOwner)
                 {
                     using var localWait = CancellationTokenSource.CreateLinkedTokenSource(execCts.Token, candidate.CallerToken, _shutdownToken);
+                    var preparation = localOwner.PrepareAsync(_shutdownToken);
                     try
                     {
-                        var preparation = localOwner.PrepareAsync(_shutdownToken);
                         observed = await preparation.WaitAsync(switchWait, localWait.Token).ConfigureAwait(false);
                     }
                     catch (TimeoutException)
@@ -788,8 +788,8 @@ public sealed partial class RouterCore : IInferenceRouter
                     // its own ceiling and no category, because nothing of the attempt ended (§5.5).
                     var detail = switchResult.Detail is { Length: > 0 } d ? $" ({d})" : "";
                     Fail(ticket, "switch_failed", switchResult.Outcome == EngineRuntime.SwitchOutcome.TimedOut
-                        ? $"engine {WireText.Ident(engine.Name)} did not become ready to serve {what} within {ceilingMs} ms — " +
-                          $"the switch is still running, retry once it completes{detail}"
+                        ? $"engine {WireText.Ident(engine.Name)} did not become ready to serve {what} within {ceilingMs} ms" +
+                          (candidate.LocalLease is null ? " — the switch is still running, retry once it completes" : "") + detail
                         : $"engine {WireText.Ident(engine.Name)} could not serve {what}{detail}");
                     return;
                 }
