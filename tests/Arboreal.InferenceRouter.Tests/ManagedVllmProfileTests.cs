@@ -99,6 +99,20 @@ public sealed class ManagedVllmProfileTests
         Assert.Equal(slots, VllmProcessReader.ParseServingArgv(Argv(flags)));
 
     [Theory]
+    [InlineData("/app/venv/bin/python3.12", 1)]
+    [InlineData("/app/venv/bin/python", 1)]
+    [InlineData("/app/venv/bin/python3", 1)]
+    [InlineData("/app/venv/bin/python3.13", null)]
+    [InlineData("/app/venv/bin/python3.12-extra", null)]
+    [InlineData("/usr/bin/python3.12", null)]
+    public void RecognizesThePinnedPythonLauncherInTheNulArgv(string interpreter, int? slots)
+    {
+        var argv = Encoding.UTF8.GetBytes(interpreter + "\0/app/venv/bin/vllm\0serve\0model\0--api-server-count\0" +
+            "1\0--max-num-seqs\0" + "1\0");
+        Assert.Equal(slots, VllmProcessReader.ParseServingArgv(argv));
+    }
+
+    [Theory]
     [InlineData("--api-server-count=1\0", 1)]
     [InlineData("", null)]
     [InlineData("--api-server-count=2\0", null)]
@@ -378,7 +392,7 @@ public sealed class ManagedVllmProfileTests
             Body = """{"messages":[{"role":"user","content":"hi"}],"stream":true}"""u8.ToArray() });
 
     private static byte[] Argv(string flags, bool includeDefaultApiFlag = true) =>
-        Encoding.UTF8.GetBytes("/app/venv/bin/python3\0/app/venv/bin/vllm\0serve\0model path\0" +
+        Encoding.UTF8.GetBytes("/app/venv/bin/python3.12\0/app/venv/bin/vllm\0serve\0model path\0" +
             (includeDefaultApiFlag ? "--api-server-count=1\0" : "") + flags);
 
     private sealed class ProcFixture : IDisposable

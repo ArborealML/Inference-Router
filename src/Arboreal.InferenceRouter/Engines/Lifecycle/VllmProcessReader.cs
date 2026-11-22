@@ -147,13 +147,9 @@ internal static class VllmProcessReader
             ApiServersFlag.StartsWith(normalized, StringComparison.Ordinal);
     }
 
-    private static bool IsLauncherInterpreter(ReadOnlySpan<byte> path)
-    {
-        if (path.SequenceEqual("/app/venv/bin/python"u8) || path.SequenceEqual("/app/venv/bin/python3"u8)) return true;
-        var prefix = "/app/venv/bin/python3."u8;
-        return path.StartsWith(prefix) && path.Length > prefix.Length &&
-            path[prefix.Length..].IndexOfAnyExceptInRange((byte)'0', (byte)'9') < 0;
-    }
+    private static bool IsLauncherInterpreter(ReadOnlySpan<byte> path) =>
+        path.SequenceEqual("/app/venv/bin/python"u8) || path.SequenceEqual("/app/venv/bin/python3"u8) ||
+        path.SequenceEqual("/app/venv/bin/python3.12"u8);
 
     private static bool ReadToken(ref ReadOnlySpan<byte> remaining, out ReadOnlySpan<byte> token)
     {
