@@ -1,12 +1,13 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.139)
+Status: draft, continuously revised (v0.12.140)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
 
 ## 0. Revision log
 
+- v0.12.140 — cancel a local owner waiting for the target switch claim. The group holds an issued transaction until it unwinds (§7).
 - v0.12.139 — bound local Docker group preparation by the original request lifetime and verify peer inventories at mutation boundaries (§7).
 - v0.12.138 — the CLI reports refused event subscriptions with exit 1, labels unreported serving capacity, and includes probe and selector metadata in JSON config readback (§11).
 - v0.12.137 — allow five minutes per Docker API call by default. Later local-group requests reconcile outstanding Docker operations against fresh group inventory. Unresolved occupancy fails the request (§5.3.1, §7).
@@ -3000,7 +3001,9 @@ its cleanup writes and checks ownership again. A refused Start also retains its 
 for reconciliation. A delayed Create can leave a stopped, owned container, which participates
 in ordinary inventory and configured stopped-container retention. The original request's
 cancellation and remaining switch budget bound group census, preflight and mutation. AIR
-checks each affected inventory again before stop and checks sibling vacancy before launch.
+reports caller or execution cancellation as `cancelled` and budget expiry as `switch_failed`.
+Cancellation releases an unclaimed target wait. Once this owner claims a target transaction,
+its group stays reserved until that transaction unwinds. AIR checks each affected inventory again before stop and checks sibling vacancy before launch.
 The group coordinates this router's requests. Other clients of the Docker daemon can change
 containers between API calls. Local-group failures do not enter the ordinary
 engine's persistent target quarantine. The failed inference is never replayed. The switch

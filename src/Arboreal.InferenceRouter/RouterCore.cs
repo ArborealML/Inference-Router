@@ -809,6 +809,7 @@ public sealed partial class RouterCore : IInferenceRouter
                     {
                         observed = new(new EngineRuntime.SwitchResult(EngineRuntime.SwitchOutcome.TimedOut, null));
                     }
+                    localWait.Token.ThrowIfCancellationRequested();
                 }
                 else
                 {

@@ -57,10 +57,10 @@ internal sealed class LocalLifecycleGroup(string name, Action wake)
         {
             if (!_uses.Contains(owner) || !owner.Cold || !ReferenceEquals(_waiting, owner.Request))
                 throw new InvalidOperationException("The original request no longer owns this local switch.");
+            stop.ThrowIfCancellationRequested();
+            owner.ThrowIfCancelled();
             if (owner.Budget.IsExpired)
                 return Task.FromResult(new EngineRuntime.ObservedSwitchResult(new(EngineRuntime.SwitchOutcome.TimedOut, null)));
-            stop.ThrowIfCancellationRequested();
-            owner.Request.CallerToken.ThrowIfCancellationRequested();
             if (owner.Request.Ticket.IsTerminal)
                 throw new OperationCanceledException("The switch owner has already ended.");
             return _switch ??= RunAsync(owner, stop);
@@ -137,19 +137,22 @@ internal sealed class LocalLifecycleGroup(string name, Action wake)
             lifetime.Token.ThrowIfCancellationRequested();
             engine.WithdrawLocalResident();
             var observed = await engine.EnsureLoadedAsync(owner.Request.Ticket.Model, owner.Profile,
-                Timeout.InfiniteTimeSpan, queue: null, stop,
+                Timeout.InfiniteTimeSpan, queue: null, lifetime.Token,
                 explicitContextMinimum: owner.Request.ExplicitContextMinimum, localOwner: owner,
                 exactProfile: owner.Request.Request.Options?.Profile is not null).ConfigureAwait(false);
+            lifetime.Token.ThrowIfCancellationRequested();
             succeeded = observed.Result.IsReady;
             if (succeeded) residentProfile = owner.Profile?.Name ?? engine.Capability.Serving.Profile;
             return observed;
         }
         catch (OperationCanceledException) when (lifetime.IsCancellationRequested && !stop.IsCancellationRequested)
         {
+            owner.ThrowIfCancelled();
             return new(new(EngineRuntime.SwitchOutcome.TimedOut, null));
         }
         catch (Exception error) when (error is InvalidOperationException or TimeoutException)
         {
+            owner.ThrowIfCancelled();
             owner.Engine.Emit("engine.switch_failed", model: owner.Request.Ticket.Model, reason: error.Message);
             return new(EngineRuntime.SwitchResult.Failed(SwitchReason.LaunchFailed));
         }
@@ -185,6 +188,12 @@ internal sealed class LocalLifecycleGroup(string name, Action wake)
         {
             Execution = execution;
             return group.Prepare(this, stop);
+        }
+
+        internal void ThrowIfCancelled()
+        {
+            Request.CallerToken.ThrowIfCancellationRequested();
+            Execution.ThrowIfCancellationRequested();
         }
 
         internal bool CanRecover => !Budget.IsExpired && !Request.Ticket.IsTerminal &&
