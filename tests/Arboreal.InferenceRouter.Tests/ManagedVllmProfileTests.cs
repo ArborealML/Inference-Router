@@ -23,6 +23,7 @@ public sealed class ManagedVllmProfileTests
         endpoint = "http://127.0.0.1:18021/v1"
         lifecycle_owner = "router"
         lifecycle_group = "shared"
+        models_endpoint = "/v1/models"
         models_context_window_path = "max_model_len"
         health_probe = { path = "/v1/models", slots_source = "vllm_argv", interval_ms = 600000 }
         [engine.strata.docker]
@@ -550,8 +551,12 @@ public sealed class ManagedVllmProfileTests
                 inspect["Config"] = _containerConfig.DeepClone();
                 return Reply(HttpStatusCode.OK, inspect.ToJsonString());
             }
-            if (path == "/v1.44/containers/create")
+            if (request.Method == HttpMethod.Post && request.RequestUri.AbsolutePath == "/v1.44/containers/create")
             {
+                const string namePrefix = "?name=air-";
+                var query = request.RequestUri.Query;
+                Assert.StartsWith(namePrefix, query, StringComparison.Ordinal);
+                Assert.True(Guid.TryParseExact(query.AsSpan(namePrefix.Length), "N", out _));
                 _state = "created";
                 return Reply(HttpStatusCode.Created, $$"""{"Id":"{{Id}}"}""");
             }
