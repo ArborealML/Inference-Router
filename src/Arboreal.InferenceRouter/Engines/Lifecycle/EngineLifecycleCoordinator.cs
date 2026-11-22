@@ -60,7 +60,8 @@ public sealed class EngineLifecycleCoordinator : IDisposable
 
     internal async ValueTask<SwitchReport> SwitchWithReportAsync(
         LifecycleTarget target, SwitchAttempt? timing, SwitchServingProof? incumbent, bool observeLaunch, CancellationToken ct,
-        LocalLifecycleGroup.Lease? owner = null, Func<CancellationToken, Task<bool>>? probe = null)
+        LocalLifecycleGroup.Lease? owner = null, Func<CancellationToken, Task<bool>>? probe = null,
+        bool verifyAdoptedProfileAfterClaim = false)
     {
         await _gate.WaitAsync(ct).ConfigureAwait(false);
         var native = NativeProvider;
@@ -119,7 +120,7 @@ public sealed class EngineLifecycleCoordinator : IDisposable
             {
                 var refused = new SwitchReport(LifecycleResult.Fail("resident_unverified",
                     "could not confirm the same owned resident within the original request budget"), true);
-                if (native is null || probe is null) return refused;
+                if (native is null || probe is null && !verifyAdoptedProfileAfterClaim) return refused;
                 using var checks = CancellationTokenSource.CreateLinkedTokenSource(ct, owner.Request.CallerToken);
                 checks.CancelAfter(owner.Budget.Remaining);
                 var replace = false;
@@ -130,7 +131,10 @@ public sealed class EngineLifecycleCoordinator : IDisposable
                         inventory.Any(p => !p.OwnedByUs || p.QueryFailed)) continue;
                     var candidate = await native.InspectResidentAsync(target, adopt, checks.Token).ConfigureAwait(false);
                     if (candidate is not { } verified) continue;
-                    var ready = verified.SettingsMatch && await probe(checks.Token).ConfigureAwait(false);
+                    // The vLLM profile check shares the post-launch verifier. This gate only
+                    // establishes the resident it will have to prove before admitting traffic.
+                    var ready = verified.SettingsMatch && (verifyAdoptedProfileAfterClaim ||
+                        await probe!(checks.Token).ConfigureAwait(false));
                     if (!await owner.OtherEnginesVacantAsync(target, checks.Token).ConfigureAwait(false)) continue;
                     var latest = await native.OwnedPeersUnderGateAsync(checks.Token).ConfigureAwait(false);
                     if (latest.Any(p => p.QueryFailed || !p.OwnedByUs) ||

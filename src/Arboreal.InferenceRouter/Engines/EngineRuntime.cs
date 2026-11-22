@@ -648,7 +648,10 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
     private async Task<bool> ProbeHealthAsync(EngineCapability capBefore, CancellationToken loopToken)
     {
         if (capBefore.NativeWatch is { } watch && _lifecycle?.NativeProvider is { } native)
-            return await ProbeTrackedNativeAsync(capBefore, watch, native, loopToken).ConfigureAwait(false);
+            return UsesVllmArgv
+                ? await ProbeManagedProfileAsync(capBefore, watch, native, loopToken).ConfigureAwait(false)
+                : await ProbeTrackedNativeAsync(capBefore, watch, native, loopToken).ConfigureAwait(false);
+        if (UsesVllmArgv) return !Volatile.Read(ref _stopped);
 
         // The loop token stops new rounds. An admitted round retains its own timeout and
         // publication fences, including when the loop is cancelled while /models is in flight.
@@ -772,6 +775,10 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
                     windows.Add(model, tokens);
             }
         }
+        // A duplicate property can conceal another model or context. Retain the roster for
+        // timing the opted-in verification window, but withhold the model-bound capacity.
+        if (UsesVllmArgv && HasAmbiguousProfileJson(doc.RootElement))
+            return new(list.ToImmutable(), EngineCapability.NoModelContextWindows);
         return new(list.ToImmutable(), windows?.ToImmutable() ?? EngineCapability.NoModelContextWindows,
             rows == 1 ? servingModel : null);
     }
@@ -787,6 +794,7 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
             var bytes = await res.Content.ReadAsByteArrayAsync(ct).ConfigureAwait(false);
             using var doc = JsonDocument.Parse(bytes);
             var root = doc.RootElement;
+            if (UsesVllmArgv && HasAmbiguousProfileJson(root)) return default;
             var window = ReadGauge(root, _def.Health?.ContextPath ?? "n_ctx");
             var slots = (int)Math.Min(int.MaxValue, ReadGauge(root, _def.Health?.SlotsPath ?? "total_slots"));
             var satisfied = _def.Health?.Expect is not { } expect || ProbeExpect.Evaluate(root, expect);
@@ -1615,7 +1623,7 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
     /// <summary>Why the prove-health loop ended without readiness, as its last poll saw it: the category the
     /// caller is told follows from this, so an engine that is up and wrong is not reported as an engine that is
     /// still starting (§5.5).</summary>
-    private enum ReadinessMiss { NeverHealthy, ModelNotReported, WindowTooSmall, RefreshUnanswered, Error, NativeObservation }
+    private enum ReadinessMiss { NeverHealthy, ModelNotReported, WindowTooSmall, RefreshUnanswered, Error, NativeObservation, LoadedProfile }
 
     private async Task RunSwitchAsync(SwitchState state, LifecycleTarget target, CancellationToken ct)
     {
@@ -1659,7 +1667,8 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
                 nativeTransaction = state.QuarantineTarget is not null;
                 report = await lifecycle.SwitchWithReportAsync(target, timing, state.IncumbentProof?.SwitchProof,
                     observeLaunch: true, operation, state.LocalOwner,
-                    state.AdoptionOwner is null ? null : token => ProbeAdoptionAsync(state, target, token))
+                    state.AdoptionOwner is null || UsesVllmArgv ? null : token => ProbeAdoptionAsync(state, target, token),
+                    verifyAdoptedProfileAfterClaim: UsesVllmArgv)
                     .ConfigureAwait(false);
             }
             if (!report.RefusedBeforeMutation) state.AdoptionProbe = null;
@@ -1707,8 +1716,11 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
                 }
             }
             timing.TryStartStage(SwitchStage.Readiness);
-            await RunLegacyReadinessAsync(state, target, lifecycle.Readiness(target), lifecycle.Kind, operation)
-                .ConfigureAwait(false);
+            var readiness = lifecycle.Readiness(target);
+            if (UsesVllmArgv)
+                await RunManagedReadinessAsync(state, target, readiness, lifecycle.NativeProvider!, operation).ConfigureAwait(false);
+            else
+                await RunLegacyReadinessAsync(state, target, readiness, lifecycle.Kind, operation).ConfigureAwait(false);
         }
         catch (Exception) when (state.ReadinessOutcomeDelivered is not null)
         {
@@ -1850,6 +1862,7 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
             ReadinessMiss.RefreshUnanswered => SwitchReason.RefreshUnanswered,
             ReadinessMiss.Error => SwitchReason.SwitchError,
             ReadinessMiss.NativeObservation => SwitchReason.SwitchError,
+            ReadinessMiss.LoadedProfile => SwitchReason.SwitchError,
             _ => SwitchReason.HealthTimeout,
         };
     }
@@ -2144,7 +2157,7 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
                 $"so nothing confirms it serves {askedFor}: with wait_health = false the exec's exit status is " +
                 "all the router is given, and an exit code is not a loaded model — check that the select " +
                 "command leaves the engine answering /models; the router does not retry or fall back to another engine",
-            ReadinessMiss.Error => failure.Error!,
+            ReadinessMiss.Error or ReadinessMiss.LoadedProfile => failure.Error!,
             ReadinessMiss.NativeObservation => "Docker did not confirm the exact started container.",
             _ => $"{timeout} — engine {engine} never reported {askedFor} serving: " +
                 $"inspect what the {providerKind} provider started " +
@@ -2241,10 +2254,16 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
         return true;
     }
 
-    internal bool RequestedProfileReady(QueuedRequest candidate) =>
-        candidate.Request.Options?.Profile is not { } named ||
-        (GetProfile(candidate.Ticket.Model, named) is { } exact &&
-         ReadyIn(Capability, candidate.Ticket.Model, candidate.RequiredContextTokens, exact));
+    internal bool RequestedProfileReady(QueuedRequest candidate)
+    {
+        var named = candidate.Request.Options?.Profile;
+        if (named is null && !UsesVllmArgv) return true;
+        var cap = Capability;
+        if (UsesVllmArgv && cap.NativeWatch is not { Health: NativeLaunchHealth.Eligible, ServingProcess: not null })
+            return false;
+        var exact = named is null ? null : GetProfile(candidate.Ticket.Model, named);
+        return (named is null || exact is not null) && ReadyIn(cap, candidate.Ticket.Model, candidate.RequiredContextTokens, exact);
+    }
 
     internal static RouterRequestException ProfileNoLongerReady() =>
         new("switch_failed", "The selected serving profile is no longer ready.");

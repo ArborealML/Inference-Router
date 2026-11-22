@@ -211,6 +211,10 @@ public static class RouterConfigLoader
             if (caps.MaxSlots is { } ms) capabilities.MaxSlots = ms;
         }
 
+        var usesVllmArgv = e.HealthProbe?.SlotsSource == "vllm_argv";
+        if (e.HealthProbe?.SlotsSource is not (null or "vllm_argv"))
+            throw new RouterConfigException($"engine.{name}.health_probe.slots_source must be vllm_argv when supplied");
+
         HealthProbeDefinition? health = null;
         if (e.HealthProbe is { } hp)
         {
@@ -261,6 +265,8 @@ public static class RouterConfigLoader
                             throw new RouterConfigException($"engine.{name}.catalog.{modelName}.serving[{i}].max_slots must be >= 1");
                     }
                     def = def with { ServingProfiles = ladder };
+                    if (usesVllmArgv && def.Profile is null && ladder is [var only])
+                        def = def with { Profile = only.Name };
                     if (def.Profile is { } p && Array.Find(ladder, x => x.Name == p) is null)
                         throw new RouterConfigException(
                             $"engine.{name}.catalog.{modelName}.profile '{p}' is not one of the declared serving profiles");
@@ -318,12 +324,20 @@ public static class RouterConfigLoader
             if (d.IpcMode is not (null or "host"))
                 throw new RouterConfigException($"engine.{name}.docker.ipc_mode must be host when supplied");
             var commonResources = d.Resources is { } resources ? DockerLaunchResources.Parse(resources, name) : null;
+            var imageIdentity = ParseDockerImageIdentity(d, name);
+            if (usesVllmArgv && (e.LifecycleOwner != "router" || e.LifecycleGroup is null ||
+                !endpoint.IsLoopback || !DockerLifecycleProvider.TryParseUnixSocket(d.Socket ?? "/var/run/docker.sock", out var socketPath) ||
+                !Path.IsPathFullyQualified(socketPath) || imageIdentity?.Platform.StartsWith("linux/", StringComparison.Ordinal) != true ||
+                d.Init != true || d.Entrypoint is not null || d.WaitHealth == false ||
+                string.IsNullOrWhiteSpace(e.ModelsContextWindowPath) || catalog.Count == 0))
+                throw new RouterConfigException($"engine.{name}.health_probe.slots_source = vllm_argv requires a local router Docker group, pinned Linux image, Docker init, health checks and models_context_window_path");
             docker = new DockerLifecycleConfig
             {
                 Image = d.Image!,
-                ImageIdentity = ParseDockerImageIdentity(d, name),
+                ImageIdentity = imageIdentity,
                 Resources = commonResources,
-                TargetPlans = hasTargetDocker ? DockerTargetPlans.Parse(name, e.Catalog!, d, commonResources) : null,
+                UsesVllmArgv = usesVllmArgv,
+                TargetPlans = hasTargetDocker || usesVllmArgv ? DockerTargetPlans.Parse(name, e.Catalog!, d, commonResources, usesVllmArgv) : null,
                 Socket = d.Socket ?? "unix:///var/run/docker.sock",
                 ApiVersion = d.ApiVersion ?? "v1.44",
                 RouterId = d.RouterId ?? throw new RouterConfigException(
@@ -347,6 +361,10 @@ public static class RouterConfigLoader
         else if (lifecycle == EngineLifecycleKind.Docker)
         {
             throw new RouterConfigException($"engine.{name}.lifecycle = \"docker\" needs an [engine.{name}.docker] block with image = …");
+        }
+        else if (usesVllmArgv)
+        {
+            throw new RouterConfigException($"engine.{name}.health_probe.slots_source = vllm_argv requires native Docker");
         }
         if (docker is not null)
         {

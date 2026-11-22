@@ -20,11 +20,11 @@ internal sealed class ReadinessDeadline : IDisposable
     private bool _retiredByStepCap;
     private bool _disposed;
 
-    private ReadinessDeadline(TimeProvider clock, TimeSpan timeout, CancellationToken engineStop)
+    private ReadinessDeadline(TimeProvider clock, long started, TimeSpan timeout, CancellationToken engineStop)
     {
         _clock = clock;
         _timeout = timeout;
-        _started = clock.GetTimestamp();
+        _started = started;
         _engineStop = engineStop;
 
         var stopped = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -34,7 +34,13 @@ internal sealed class ReadinessDeadline : IDisposable
 
     /// <summary>Nonpositive post-launch timeouts are exhausted at entry.</summary>
     internal static ReadinessDeadline Start(TimeProvider clock, TimeSpan timeout, CancellationToken engineStop) =>
-        new(clock, timeout, engineStop);
+        new(clock, clock.GetTimestamp(), timeout, engineStop);
+
+    internal ReadinessDeadline LimitFrom(long started, TimeSpan cap)
+    {
+        var remaining = RemainingAt(_started, _timeout, started);
+        return new(_clock, started, cap < remaining ? cap : remaining, _engineStop);
+    }
 
     internal TimeSpan Remaining => RemainingAt(_started, _timeout);
     internal bool IsExpired => Remaining == TimeSpan.Zero;
