@@ -20,7 +20,7 @@ The shipped HY4 setup uses 96k as nominal design sizing. The literal 65,536 rend
 ## Generate a workload manifest offline
 
 ```text
-air tune plan --config tune.toml --engine ENGINE --model MODEL --seed HEX --max-concurrency 4 [--profile TIER]
+air tune plan [--config FILE] --engine ENGINE --model MODEL --seed HEX --max-concurrency 4 [--profile TIER]
 ```
 
 On supported Linux x64 systems, the offline planner reads the bounded saved

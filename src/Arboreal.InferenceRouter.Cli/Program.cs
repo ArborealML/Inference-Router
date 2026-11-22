@@ -65,7 +65,7 @@ public static class Program
                                                       (no sockets, no lifecycle commands)
               tune compare --baseline FILE --candidate FILE
                                                       compare saved tuning summaries (Linux x64)
-              tune plan --config FILE --engine ENGINE --model MODEL --seed HEX
+              tune plan [--config FILE] --engine ENGINE --model MODEL --seed HEX
                         --max-concurrency N [--profile TIER]
                                                       plan an offline tuning workload (Linux x64)
             """);
@@ -86,7 +86,8 @@ public static class Program
     // ── serve ───────────────────────────────────────────────────────────────
     private static async Task<int> RunServeAsync(string[] args)
     {
-        string? config = GetOpt(args, ["--config", "-c"]);
+        if (!ServerApp.TryReadConfigOption(args, out var config))
+            return 2;
         string? listen = GetOpt(args, ["--listen", "-l"]);
         var runArgs = listen is { Length: > 0 } ? new[] { $"--urls={listen}" } : [];
         return await ServerApp.RunAsync(runArgs, config).ConfigureAwait(false);
@@ -98,11 +99,11 @@ public static class Program
     /// serving-profile plan. Deliberately touches nothing: no sockets, no lifecycle commands.</summary>
     private static Task<int> RunConfigCommandAsync(string[] args)
     {
-        var path = GetOpt(args, ["--config", "-c"])
-            ?? Environment.GetEnvironmentVariable("ARBOREAL_ROUTER_CONFIG")
-            ?? "router.toml";
+        if (!ServerApp.TryReadConfigOption(args, out var config))
+            return Task.FromResult(2);
         try
         {
+            var path = RouterConfigLoader.ResolveFilePath(config);
             var cfg = RouterConfigLoader.LoadFile(path);
             var s = cfg.Scheduler;
             Console.WriteLine($"config ok: {path}");

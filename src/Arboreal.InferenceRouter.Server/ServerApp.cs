@@ -15,6 +15,26 @@ namespace Arboreal.InferenceRouter.Server;
 /// DTO binding); responses are raw passthrough bytes; admin DTOs use AirServerJson.</summary>
 public static partial class ServerApp
 {
+    public static bool TryReadConfigOption(ReadOnlySpan<string> args, out string? path, List<string>? remaining = null)
+    {
+        path = null;
+        for (var i = 0; i < args.Length; i++)
+        {
+            if (args[i] is not ("--config" or "-c"))
+            {
+                remaining?.Add(args[i]);
+                continue;
+            }
+            if (++i >= args.Length || args[i].Length == 0 || args[i][0] == '-')
+            {
+                Console.Error.WriteLine("error: --config requires a file path");
+                return false;
+            }
+            path ??= args[i];
+        }
+        return true;
+    }
+
     public static WebApplication Build(string[] args, string? configPath = null, RouterConfig? configOverride = null)
         => Build(args, configPath, configOverride, TimeProvider.System);
 
@@ -25,9 +45,7 @@ public static partial class ServerApp
         Func<EngineDefinition, HttpMessageHandler>? httpHandlerFactoryForTests = null, string? reloadTokenForTests = null,
         Func<string?>? readTargetResetOptInForTests = null, TimeProvider? adminSwitchClockForTests = null)
     {
-        configPath ??= Environment.GetEnvironmentVariable("ARBOREAL_ROUTER_CONFIG")
-                       ?? Environment.GetEnvironmentVariable("AIR_CONFIG")
-                       ?? "router.toml";
+        configPath = RouterConfigLoader.ResolveFilePath(configPath);
         var credential = configOverride is null
             ? reloadTokenForTests ?? Environment.GetEnvironmentVariable("ARBOREAL_ROUTER_RELOAD_TOKEN")
             : null;

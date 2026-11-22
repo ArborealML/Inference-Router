@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
+using Arboreal.InferenceRouter.Server;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Logging;
@@ -26,6 +27,17 @@ public sealed class CliCompletionProcessTests
     private static readonly string ProgressOutput = FirstStatus + Environment.NewLine + ChangedStatus + Environment.NewLine;
     private static readonly TimeSpan RunLimit = TimeSpan.FromSeconds(15);
     private static readonly TimeSpan CleanupLimit = TimeSpan.FromSeconds(5);
+
+    [Fact]
+    public void StandaloneConfigOptionPreservesHostOptionValues()
+    {
+        var remaining = new List<string>();
+        Assert.True(ServerApp.TryReadConfigOption(
+            ["--config", "router.toml", "--example-path", "router.toml", "--example-mode", "serve"],
+            out var path, remaining));
+        Assert.Equal("router.toml", path);
+        Assert.Equal(["--example-path", "router.toml", "--example-mode", "serve"], remaining.ToArray());
+    }
 
     [Fact(Timeout = 30_000)]
     public async Task NamedPipeDockerCliConfigRefusesBeforeSuccessOutput()
@@ -191,7 +203,8 @@ public sealed class CliCompletionProcessTests
         }
     }
 
-    internal static async Task<ProcessResult> RunCliAsync(string verb, string[] args, string? stdin, CancellationToken ct)
+    internal static async Task<ProcessResult> RunCliAsync(string verb, string[] args, string? stdin, CancellationToken ct,
+        Action<ProcessStartInfo>? configure = null)
     {
         var dll = Path.Combine(AppContext.BaseDirectory, "air.dll");
         Assert.True(File.Exists(dll), $"CLI project output missing from test directory: {dll}");
@@ -206,6 +219,7 @@ public sealed class CliCompletionProcessTests
         start.ArgumentList.Add(verb);
         foreach (var arg in args) start.ArgumentList.Add(arg);
 
+        configure?.Invoke(start);
         using var child = Process.Start(start) ?? throw new InvalidOperationException("Could not start the CLI.");
         try
         {

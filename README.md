@@ -60,7 +60,7 @@ On Windows, use Git Bash and pass the executable path ending in `air.exe`. A suc
 
 ## Connect an inference engine
 
-Create the ignored directory with `mkdir -p .arboreal/ir` and save this configuration as `.arboreal/ir/router.toml`. Replace the example endpoint and both occurrences of `example-model` with your backend’s base URL and model ID. Set `models_endpoint` to its model-list path. A leading slash resolves from the backend’s root, so an OpenAI-compatible engine mounted at `/v1` typically uses `/v1/models`.
+Create the directory with `mkdir -p ~/arboreal/inference-router` and save this configuration as `~/arboreal/inference-router/router.toml`. This is the default for `air config`, `air serve`, `air tune plan` and the standalone server. To select another file, pass `--config FILE` or set `ARBOREAL_ROUTER_CONFIG`. AIR also accepts `AIR_CONFIG` when the first variable is unset. Replace the example endpoint and both occurrences of `example-model` with your backend’s base URL and model ID. Set `models_endpoint` to its model-list path. A leading slash resolves from the backend’s root, so an OpenAI-compatible engine mounted at `/v1` typically uses `/v1/models`.
 
 ```toml
 listen = "http://127.0.0.1:8399"
@@ -79,8 +79,8 @@ lifecycle_owner = "external"
 With `lifecycle_owner = "external"`, another service must have the model loaded before AIR can route to it. Legacy `remote = true` still gives the same forward-only behavior. For multiple engines and serving profiles, see the [remote-only sample](samples/router.safe-smoke.toml). Keep the router on loopback unless a proxy authenticates callers and terminates TLS.
 
 ```bash
-dotnet run --project src/Arboreal.InferenceRouter.Cli -- config -c "$PWD/.arboreal/ir/router.toml"
-dotnet run --project src/Arboreal.InferenceRouter.Cli -- serve -c "$PWD/.arboreal/ir/router.toml"
+dotnet run --project src/Arboreal.InferenceRouter.Cli -- config
+dotnet run --project src/Arboreal.InferenceRouter.Cli -- serve
 ```
 
 The first command validates the configuration offline. Its output includes resolved endpoints, key-file paths and lifecycle arguments, so keep it local. The second command starts AIR. From another terminal, check the listener and see which models the engines currently report.
