@@ -116,6 +116,8 @@ The [native Docker sample](samples/router.native-docker.toml) uses illustrative 
 
 ## Inspect a running router
 
+Use `air status` for engine health, loaded models, context windows, queue depths and threads. Use `air models` for the observed model roster, `air tickets ID` for one request and `air events` to follow changes. Add `--json` before or after the command for machine-readable output, for example `air --json status`. Each event occupies one line in either mode.
+
 | Question | Request |
 | --- | --- |
 | Is the router listening? | `GET /healthz` |

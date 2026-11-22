@@ -1,11 +1,13 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.135)
+Status: draft, continuously revised (v0.12.136)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
 
 ## 0. Revision log
+
+- v0.12.136 — render CLI operator queries and acknowledgments as human-readable text by default. A global `--json` flag selects machine output (§11).
 
 - v0.12.135 — check exact profile readiness after verified offer validation and before issuer checkout. A changed observation returns `switch_failed` (§6).
 - v0.12.134 — distinguish equal-window serving tiers by measured slots, drain exact profile users before explicit switches, and verify counted transports at submission (§6, §7.6).
@@ -3661,6 +3663,14 @@ air config [--config f.toml]
 air tune compare --baseline FILE --candidate FILE
 air tune plan [--config FILE] --engine ENGINE --model MODEL --seed HEX --max-concurrency N [--profile TIER]
 ```
+
+The global `--json` flag can precede the verb or appear among its options. Models, status, tickets,
+switch acknowledgments and events render as text by default. In JSON mode their HTTP objects retain
+wire field names and values, with one line terminator after each body or event. Switch acknowledgments
+omit the legacy HTTP-status prefix in JSON mode. Thread registration emits a `ThreadId` object for its
+empty HTTP 204 response. Config emits a resolved configuration summary and tune compare emits its text
+report in the JSON string field `Report`. Command usage and local validation diagnostics remain on
+stderr. Help, the serve host, the tune plan manifest and the completion protocol retain their formats.
 
 `air serve`, `air config`, `air tune plan` and the standalone server use the explicit
 configuration path first, then `ARBOREAL_ROUTER_CONFIG`, then `AIR_CONFIG`. With all

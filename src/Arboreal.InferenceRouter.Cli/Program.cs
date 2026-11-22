@@ -26,19 +26,21 @@ public static class Program
 
     public static async Task<int> Main(string[] args)
     {
+        bool json = HasFlag(args, "--json");
+        while (args is ["--json", ..]) args = args[1..];
         if (args.Length == 0) return await RunHelpAsync().ConfigureAwait(false);
         return args[0] switch
         {
             "serve" => await RunServeAsync(args[1..]).ConfigureAwait(false),
-            "chat" or "complete" => await RunChatAsync(args[1..]).ConfigureAwait(false),
-            "models" => await RunModelsAsync(args[1..]).ConfigureAwait(false),
-            "status" => await RunStatusAsync(args[1..]).ConfigureAwait(false),
-            "events" => await RunEventsAsync(args[1..]).ConfigureAwait(false),
-            "threads" => await RunThreadAsync(args[1..]).ConfigureAwait(false),
-            "switch" => await RunSwitchAsync(args[1..]).ConfigureAwait(false),
-            "config" => await RunConfigCommandAsync(args[1..]).ConfigureAwait(false),
-            "tickets" => await RunTicketAsync(args[1..]).ConfigureAwait(false),
-            "tune" => RunTune(args.AsSpan(1)),
+            "chat" or "complete" => await RunChatAsync(args[1..], json).ConfigureAwait(false),
+            "models" => await RunModelsAsync(args[1..], json).ConfigureAwait(false),
+            "status" => await RunStatusAsync(args[1..], json).ConfigureAwait(false),
+            "events" => await RunEventsAsync(args[1..], json).ConfigureAwait(false),
+            "threads" => await RunThreadAsync(args[1..], json).ConfigureAwait(false),
+            "switch" => await RunSwitchAsync(args[1..], json).ConfigureAwait(false),
+            "config" => await RunConfigCommandAsync(args[1..], json).ConfigureAwait(false),
+            "tickets" => await RunTicketAsync(args[1..], json).ConfigureAwait(false),
+            "tune" => RunTune(args[1..].Where(a => a != "--json").ToArray(), json),
             "help" or "-h" or "--help" => await RunHelpAsync().ConfigureAwait(false),
             _ => await RunHelpAsync().ConfigureAwait(false),
         };
@@ -49,13 +51,16 @@ public static class Program
         Console.WriteLine("""
             arboreal inference router
 
-            usage: air <command> [options]
+            usage: air [--json] <command> [options]
+
+            Output is readable text by default. Use --json before or after the command for machine output.
+            Tune plan always writes its JSON manifest. Serve starts the host.
 
             commands:
               serve [--config path] [--listen url]      run the router host in this process
               chat  [-m model] [-t thread] [-p prio]    send a chat completion (prompt args or stdin)
                     [--system text] [--no-stream] [--json] [-s server-url]
-              models [-s server-url]                    list models (OpenAI format)
+              models [-s server-url]                    list observed models and context windows
               status [-s server-url]                    router stats (engines, queues, threads)
               events [-s server-url] [--since seq]      tail the live event stream (SSE)
               threads -i threadId [-p prio]             register a chat thread (admin)
@@ -72,7 +77,7 @@ public static class Program
         return Task.FromResult(0);
     }
 
-    private static int RunTune(ReadOnlySpan<string> args)
+    private static int RunTune(ReadOnlySpan<string> args, bool json)
     {
         if (args is ["plan", ..])
         {
@@ -80,7 +85,11 @@ public static class Program
             return AirTuneWorkloadPlan.Run(args[1..], output, Console.Error);
         }
 
-        return AirTuneCompare.Run(args, Console.Out, Console.Error);
+        if (!json) return AirTuneCompare.Run(args, Console.Out, Console.Error);
+        using var report = new StringWriter(CultureInfo.InvariantCulture);
+        int code = AirTuneCompare.Run(args, report, Console.Error);
+        if (code == 0) WriteJsonString("Report", report.ToString());
+        return code;
     }
 
     // ── serve ───────────────────────────────────────────────────────────────
@@ -97,7 +106,7 @@ public static class Program
 
     /// <summary>Parse + validate a config file and print the resolved engine / model /
     /// serving-profile plan. Deliberately touches nothing: no sockets, no lifecycle commands.</summary>
-    private static Task<int> RunConfigCommandAsync(string[] args)
+    private static Task<int> RunConfigCommandAsync(string[] args, bool json)
     {
         if (!ServerApp.TryReadConfigOption(args, out var config))
             return Task.FromResult(2);
@@ -106,6 +115,11 @@ public static class Program
             var path = RouterConfigLoader.ResolveFilePath(config);
             var cfg = RouterConfigLoader.LoadFile(path);
             var s = cfg.Scheduler;
+            if (json)
+            {
+                WriteConfigJson(path, cfg);
+                return Task.FromResult(0);
+            }
             Console.WriteLine($"config ok: {path}");
             Console.WriteLine($"  listen={cfg.Listen}  default_model={cfg.DefaultModel}  " +
                 $"auto_switch={cfg.AutoSwitch}  switch_cooldown_ms={cfg.SwitchCooldownMs}");
@@ -151,7 +165,7 @@ public static class Program
 
     // ── chat ────────────────────────────────────────────────────────────────
 
-    private static async Task<int> RunChatAsync(string[] args)
+    private static async Task<int> RunChatAsync(string[] args, bool json)
     {
         var model = GetOpt(args, ["-m", "--model"]);
         var thread = GetOpt(args, ["-t", "--thread"]) ?? "anon";
@@ -160,7 +174,6 @@ public static class Program
         var server = GetOpt(args, ["-s", "--server"]) ?? DefaultServer;
         var since = GetOpt(args, ["--since"]);
         bool stream = !HasFlag(args, "--no-stream");
-        bool json = HasFlag(args, "--json");
         var promptArgs = args.Where((arg, i) => !arg.StartsWith('-') &&
             (i == 0 || !IsChatValueOption(args[i - 1]))).ToArray();
         string prompt = promptArgs.Length > 0
@@ -312,31 +325,31 @@ public static class Program
 
     // ── admin commands ──────────────────────────────────────────────────────
 
-    private static async Task<int> RunModelsAsync(string[] args)
+    private static async Task<int> RunModelsAsync(string[] args, bool json)
     {
         var server = GetOpt(args, ["-s", "--server"]) ?? DefaultServer;
-        return await GetPrintAsync(server, "/v1/models").ConfigureAwait(false);
+        return await GetPrintAsync(server, "/v1/models", ResponseView.Models, json).ConfigureAwait(false);
     }
 
-    private static async Task<int> RunStatusAsync(string[] args)
+    private static async Task<int> RunStatusAsync(string[] args, bool json)
     {
         var server = GetOpt(args, ["-s", "--server"]) ?? DefaultServer;
-        return await GetPrintAsync(server, "/admin/status").ConfigureAwait(false);
+        return await GetPrintAsync(server, "/admin/status", ResponseView.Status, json).ConfigureAwait(false);
     }
 
-    private static async Task<int> RunTicketAsync(string[] args)
+    private static async Task<int> RunTicketAsync(string[] args, bool json)
     {
         var server = GetOpt(args, ["-s", "--server"]) ?? DefaultServer;
-        var id = args.FirstOrDefault(a => !a.StartsWith('-')) ?? "";
+        var id = args.Where((a, i) => !a.StartsWith('-') && (i == 0 || args[i - 1] is not ("-s" or "--server"))).FirstOrDefault() ?? "";
         if (id.Length == 0)
         {
             Console.Error.WriteLine("tickets <id>");
             return 2;
         }
-        return await GetPrintAsync(server, $"/admin/tickets/{Uri.EscapeDataString(id)}").ConfigureAwait(false);
+        return await GetPrintAsync(server, $"/admin/tickets/{Uri.EscapeDataString(id)}", ResponseView.Ticket, json).ConfigureAwait(false);
     }
 
-    private static async Task<int> RunEventsAsync(string[] args)
+    private static async Task<int> RunEventsAsync(string[] args, bool json)
     {
         var server = GetOpt(args, ["-s", "--server"]) ?? DefaultServer;
         var since = GetOpt(args, ["--since"]) ?? "0";
@@ -347,12 +360,12 @@ public static class Program
         while (await reader.ReadLineAsync().ConfigureAwait(false) is { } line)
         {
             if (line.StartsWith("data: ", StringComparison.Ordinal))
-                Console.WriteLine(line["data: ".Length..]);
+                CliOutput.Print(line["data: ".Length..], ResponseView.Event, json, (int)res.StatusCode);
         }
         return 0;
     }
 
-    private static async Task<int> RunThreadAsync(string[] args)
+    private static async Task<int> RunThreadAsync(string[] args, bool json)
     {
         var server = GetOpt(args, ["-s", "--server"]) ?? DefaultServer;
         var id = GetOpt(args, ["-i", "--id"]) ?? GetOpt(args, ["--thread"]);
@@ -382,11 +395,17 @@ public static class Program
         req.Content = new ByteArrayContent(body.ToArray());
         req.Content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
         using var res = await http.SendAsync(req).ConfigureAwait(false);
-        Console.WriteLine(res.IsSuccessStatusCode ? $"thread {id} registered" : $"error {(int)res.StatusCode}");
+        if (res.IsSuccessStatusCode)
+        {
+            if (json) WriteJsonString("ThreadId", id);
+            else Console.WriteLine($"thread {id} registered");
+        }
+        else CliOutput.Print(await res.Content.ReadAsStringAsync().ConfigureAwait(false), ResponseView.Thread,
+            json, (int)res.StatusCode);
         return (int)res.StatusCode is >= 200 and < 300 ? 0 : 1;
     }
 
-    private static async Task<int> RunSwitchAsync(string[] args)
+    private static async Task<int> RunSwitchAsync(string[] args, bool json)
     {
         var server = GetOpt(args, ["-s", "--server"]) ?? DefaultServer;
         var engine = GetOpt(args, ["-e", "--engine"]);
@@ -410,19 +429,95 @@ public static class Program
         req.Content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
         using var res = await http.SendAsync(req).ConfigureAwait(false);
         var text = await res.Content.ReadAsStringAsync().ConfigureAwait(false);
-        Console.WriteLine($"[{(int)res.StatusCode}] {text}");
+        CliOutput.Print(text, ResponseView.Switch, json, (int)res.StatusCode);
         return (int)res.StatusCode is >= 200 and < 300 ? 0 : 1;
     }
 
     // ── shared helpers ──────────────────────────────────────────────────────
 
-    private static async Task<int> GetPrintAsync(string server, string path)
+    private static async Task<int> GetPrintAsync(string server, string path, ResponseView view, bool json)
     {
         using var http = new HttpClient();
         using var res = await http.GetAsync($"{server.TrimEnd('/')}{path}").ConfigureAwait(false);
         var text = await res.Content.ReadAsStringAsync().ConfigureAwait(false);
-        Console.WriteLine(text);
+        CliOutput.Print(text, view, json, (int)res.StatusCode);
         return (int)res.StatusCode is >= 200 and < 300 ? 0 : 1;
+    }
+
+    private static void WriteJsonString(string key, string value)
+    {
+        using var output = Console.OpenStandardOutput();
+        using var json = new Utf8JsonWriter(output);
+        json.WriteStartObject();
+        json.WriteString(key, value);
+        json.WriteEndObject();
+        json.Flush();
+        output.WriteByte((byte)'\n');
+    }
+
+    private static void WriteConfigJson(string path, RouterConfig cfg)
+    {
+        using var output = Console.OpenStandardOutput();
+        using var json = new Utf8JsonWriter(output);
+        json.WriteStartObject();
+        json.WriteString("Path", path);
+        json.WriteString("Listen", cfg.Listen);
+        json.WriteString("DefaultModel", cfg.DefaultModel);
+        json.WriteBoolean("AutoSwitch", cfg.AutoSwitch);
+        json.WriteNumber("SwitchCooldownMs", cfg.SwitchCooldownMs);
+        json.WriteStartObject("Scheduler");
+        json.WriteNumber("MaxInflightPerEngine", cfg.Scheduler.MaxInflightPerEngine);
+        json.WriteNumber("MaxQueuePerModel", cfg.Scheduler.MaxQueuePerModel);
+        json.WriteNumber("CharsPerTokenEstimate", cfg.Scheduler.CharsPerTokenEstimate);
+        json.WriteNumber("PrefixAffinityThresholdChars", cfg.Scheduler.PrefixAffinityThresholdChars);
+        json.WriteEndObject();
+        json.WriteStartArray("Engines");
+        foreach (var (name, engine) in cfg.Engines)
+        {
+            json.WriteStartObject();
+            json.WriteString("Name", name);
+            json.WriteString("Endpoint", engine.Endpoint.ToString());
+            json.WriteBoolean("Remote", engine.Remote);
+            json.WriteString("LifecycleOwner", engine.LifecycleOwner.ToString());
+            json.WriteStartArray("Models");
+            foreach (var (id, model) in engine.Catalog)
+            {
+                json.WriteStartObject();
+                json.WriteString("Id", id);
+                json.WriteString("DefaultProfile", model.Profile);
+                json.WriteStartArray("Aliases");
+                foreach (var alias in model.Aliases) json.WriteStringValue(alias);
+                json.WriteEndArray();
+                json.WriteStartArray("Profiles");
+                foreach (var profile in model.ServingProfiles)
+                {
+                    json.WriteStartObject();
+                    json.WriteString("Name", profile.Name);
+                    json.WriteNumber("MaxContext", profile.MaxContext);
+                    json.WriteNumber("MaxSlots", profile.MaxSlots);
+                    json.WriteEndObject();
+                }
+                json.WriteEndArray();
+                json.WriteEndObject();
+            }
+            json.WriteEndArray();
+            json.WriteEndObject();
+        }
+        json.WriteEndArray();
+        json.WriteStartArray("Threads");
+        foreach (var (id, thread) in cfg.Threads)
+        {
+            json.WriteStartObject();
+            json.WriteString("Id", id);
+            json.WriteString("Priority", thread.Priority.ToString());
+            json.WriteNumber("Weight", thread.Weight);
+            json.WriteString("ModelAffinity", thread.ModelAffinity);
+            json.WriteEndObject();
+        }
+        json.WriteEndArray();
+        json.WriteEndObject();
+        json.Flush();
+        output.WriteByte((byte)'\n');
     }
 
     private static string? GetOpt(string[] args, string[] keys)
