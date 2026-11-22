@@ -1,5 +1,6 @@
 import { estimateTokens } from "@earendil-works/pi-coding-agent";
 import { openAICompletionsApi } from "@earendil-works/pi-ai/compat";
+import { randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 
 import { contextFits, observedWindow, parseCatalog, piModel, requestFits, tier } from "./catalog.mjs";
@@ -17,7 +18,6 @@ export default async function air(pi) {
     const auth = process.env.AIR_API_KEY;
     const adapter = openAICompletionsApi();
     let catalog, etag, ctx, lifetime, branch, latest;
-    let sequence = 0;
     let engines = [];
     let choices = new Map();
     let budgetRefused = false;
@@ -133,7 +133,7 @@ export default async function air(pi) {
         budgetRefused = false;
         const thread = ctx?.sessionManager.getSessionId() || options.sessionId;
         if (!thread) throw new Error("AIR needs a Pi session identity");
-        const req = {thread, model: model.id, branch, clientId: "request-" + ++sequence, watch: new AbortController(), abort: new AbortController()};
+        const req = {thread, model: model.id, branch, clientId: "request-" + randomUUID(), watch: new AbortController(), abort: new AbortController()};
         active.add(req);
         latest = req;
         req.text = snapshotText(requestKey(req), {State: "submitting", Model: model.id});

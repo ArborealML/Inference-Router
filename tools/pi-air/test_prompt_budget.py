@@ -14,6 +14,7 @@ import unittest
 class PromptBudgetTest(unittest.TestCase):
     def test_running_upgrade_then_oversized_prompt_after_downgrade(self):
         posts = []
+        old_entry_markers = []
         shutdown = threading.Event()
         profiles = [{"Name": name, "MaxContext": window, "MaxSlots": 1}
                     for name, window in [("short", 32768), ("long", 262144)]]
@@ -43,6 +44,7 @@ class PromptBudgetTest(unittest.TestCase):
                 self.wfile.write(json.dumps(data).encode())
 
             def do_POST(self):
+                old_entry_markers.append(self.headers.get("X-Fixture-Old-Entry"))
                 posts.append((self.headers["X-Inference-Profile"], self.headers["X-Inference-Thread"]))
                 self.rfile.read(int(self.headers["Content-Length"]))
                 self.send_response(200)
@@ -61,7 +63,9 @@ class PromptBudgetTest(unittest.TestCase):
             entry = installation / "index.mjs"
             helper = installation / "catalog.mjs"
             # The earlier installation used a separate helper with a different export.
-            entry.write_text((source / entry.name).read_text().replace("requestFits", "previousFits"))
+            old_entry = (source / entry.name).read_text().replace("requestFits", "previousFits")
+            entry.write_text(old_entry.replace("const headers = new Headers(init.headers);",
+                                               'const headers = new Headers(init.headers); headers.set("X-Fixture-Old-Entry", "yes");'))
             helper.write_text((source / helper.name).read_text().replace("requestFits", "previousFits"))
             launcher = directory / "pi-clm.py"
             launcher.write_text("from pi_air_launcher import router_provider\n")
@@ -110,6 +114,7 @@ class PromptBudgetTest(unittest.TestCase):
                     self.assertIn("reserve", failure["message"]["errorMessage"])
                     wait(lambda e: e["type"] == "agent_settled")
                     self.assertEqual(["short", "long"], [profile for profile, _ in posts])
+                    self.assertEqual(["yes", None], old_entry_markers)
                     self.assertTrue(posts[0][1])
                     self.assertEqual(posts[0][1], posts[1][1])
                 finally:
