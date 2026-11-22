@@ -20,6 +20,80 @@ public sealed partial class ConfigReloadWireTests : IDisposable
     private readonly DirectoryInfo _dir = Directory.CreateTempSubdirectory("air-reload-wire-");
 
     [Fact(Timeout = 30_000)]
+    public async Task AddLocalEnginesAndAliasesToIdleGroupThroughAuthenticatedReload()
+    {
+        using var bound = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        var ct = bound.Token;
+        var path = Path.Combine(_dir.FullName, "router.toml");
+        static string Member(string name, int port) => $$"""
+            [engine.{{name}}]
+            kind = "openai-compatible"
+            endpoint = "http://127.0.0.1:{{port}}/v1"
+            lifecycle_owner = "router"
+            lifecycle = "docker"
+            lifecycle_group = "gpu"
+            [engine.{{name}}.docker]
+            image = "offline-image"
+            router_id = "fixture"
+            [engine.{{name}}.catalog.{{name}}]
+            """ + "\n";
+        var initial = Initial + "auto_switch = true\n" + Member("a", 9001);
+        var candidate = initial + "aliases = [\"first\"]\n" + Member("b", 9002) + Member("c", 9003);
+        using var a = new FakeEngineHandler();
+        using var b = new FakeEngineHandler();
+        using var c = new FakeEngineHandler();
+        var handlers = new Dictionary<string, FakeEngineHandler>(StringComparer.Ordinal) { ["a"] = a, ["b"] = b, ["c"] = c };
+        var providers = handlers.ToDictionary(pair => pair.Key, pair => new HeldNativeProvider(pair.Value), StringComparer.Ordinal);
+        await File.WriteAllTextAsync(path, initial, ct);
+        await using var app = await StartAsync(path, def => handlers[def.Name], ct, def => providers[def.Name]);
+        using var http = Client(app);
+        var router = app.Services.GetRequiredService<RouterCore>();
+        var original = router.Engines["a"];
+        var (tag, _) = await ReadGenerationAsync(http, ct);
+        using var initialBody = new StringContent("""{"model":"a","prompt":"first"}""", Encoding.UTF8, "application/json");
+        var running = http.PostAsync("/v1/completions", initialBody, ct);
+        try
+        {
+            await providers["a"].Launched.Task.WaitAsync(ct);
+            await File.WriteAllTextAsync(path, candidate, ct);
+            using var busy = await ApplyAsync(http, tag, ct);
+            await AssertErrorAsync(busy, HttpStatusCode.Conflict, "reload_busy", ct);
+        }
+        finally { providers["a"].Release.TrySetResult(); }
+        using var completed = await running;
+        completed.EnsureSuccessStatusCode();
+        foreach (var invalid in new[]
+        {
+            candidate.Replace("aliases = [\"first\"]", "aliases = [\"b\"]", StringComparison.Ordinal),
+            candidate.Replace("9003/v1", "9001/v1", StringComparison.Ordinal),
+        })
+        {
+            await File.WriteAllTextAsync(path, invalid, ct);
+            using var refused = await ApplyAsync(http, tag, ct);
+            await AssertErrorAsync(refused, HttpStatusCode.UnprocessableEntity, "reload_invalid_config", ct);
+            Assert.Single(router.Engines);
+            Assert.Equal((tag, 1L), await ReadGenerationAsync(http, ct));
+        }
+        await File.WriteAllTextAsync(path, candidate, ct);
+        using var apply = await ApplyAsync(http, tag, ct);
+        apply.EnsureSuccessStatusCode();
+        Assert.Same(original, router.Engines["a"]);
+        Assert.Equal(3, router.Engines.Count);
+        Assert.Equal(0, providers["b"].LaunchCount);
+        Assert.Equal(0, providers["c"].LaunchCount);
+        using var aliasBody = new StringContent("""{"model":"first","prompt":"alias"}""", Encoding.UTF8, "application/json");
+        using var alias = await http.PostAsync("/v1/completions", aliasBody, ct);
+        alias.EnsureSuccessStatusCode();
+        Assert.Equal(1, providers["a"].LaunchCount);
+        providers["b"].Release.TrySetResult();
+        using var streamBody = new StringContent("""{"model":"b","prompt":"next","stream":true}""", Encoding.UTF8, "application/json");
+        using var response = await http.PostAsync("/v1/completions", streamBody, ct);
+        response.EnsureSuccessStatusCode();
+        Assert.Contains("[DONE]", await response.Content.ReadAsStringAsync(ct), StringComparison.Ordinal);
+        Assert.Equal(1, providers["b"].LaunchCount);
+    }
+
+    [Fact(Timeout = 30_000)]
     public async Task DefaultCutoverKeepsTheOriginalStreamBytesAndBusyRemovalPreservesTheGeneration()
     {
         using var bound = new CancellationTokenSource(TimeSpan.FromSeconds(15));

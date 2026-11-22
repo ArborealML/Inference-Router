@@ -62,8 +62,12 @@ internal sealed class ReloadConfiguration(RouterConfig config, ConfigDeclaration
             throw new RouterConfigException("engine names must be distinct ignoring case");
     }
 
-    internal ConfigReloadStatus Compare(ReloadConfiguration candidate, out string[] added, out string[] removed)
+    internal ConfigReloadStatus Compare(ReloadConfiguration candidate, out string[] added, out string[] removed) =>
+        Compare(candidate, out added, out removed, out _);
+
+    internal ConfigReloadStatus Compare(ReloadConfiguration candidate, out string[] added, out string[] removed, out bool aliasesChanged)
     {
+        aliasesChanged = false;
         candidate.ValidateNames();
         var before = Config.Engines;
         var after = candidate.Config.Engines;
@@ -78,24 +82,56 @@ internal sealed class ReloadConfiguration(RouterConfig config, ConfigDeclaration
         var oldEngines = oldRoot["engine"].Fields!;
         var newEngines = newRoot["engine"].Fields!;
         if (!before.Keys.Where(after.ContainsKey).SequenceEqual(after.Keys.Where(before.ContainsKey), StringComparer.Ordinal) ||
-            before.Keys.Where(after.ContainsKey).Any(key => !oldEngines[key].Matches(newEngines[key])) ||
             removed.Any(key => before[key].ResolveLifecycleOwner() != EngineLifecycleOwner.External) ||
-            added.Any(key => after[key].ResolveLifecycleOwner() != EngineLifecycleOwner.External ||
+            added.Any(key => (after[key].ResolveLifecycleOwner() != EngineLifecycleOwner.External &&
+                !(after[key].LifecycleGroup is { } group && before.Values.Any(e => e.LifecycleGroup == group))) ||
                 before.Keys.Contains(key, StringComparer.OrdinalIgnoreCase)))
             return ConfigReloadStatus.RestartRequired;
 
+        foreach (var name in before.Keys.Where(after.ContainsKey))
+        {
+            if (oldEngines[name].Matches(newEngines[name])) continue;
+            if (before[name].LifecycleGroup is null || !OnlyAddsAliases(oldEngines[name], newEngines[name]))
+                return ConfigReloadStatus.RestartRequired;
+            aliasesChanged = true;
+        }
+        candidate.Config.ValidateLifecycleTopology();
         foreach (var name in added)
         {
             ValidateAddedEngine(newEngines[name]);
             if (after[name].Health is { } probe && (probe.IntervalMs <= 0 || probe.TimeoutMs < -1))
                 throw new RouterConfigException("invalid external health probe timing");
         }
-        if (added.Length != 0) ValidateAliases(before, after, added);
+        if (added.Length != 0 || aliasesChanged) ValidateAliases(before, after, aliasesChanged ? [.. after.Keys] : added);
 
-        return added.Length == 0 && removed.Length == 0 &&
+        return !aliasesChanged && added.Length == 0 && removed.Length == 0 &&
             string.Equals(Config.DefaultModel, candidate.Config.DefaultModel, StringComparison.Ordinal)
             ? ConfigReloadStatus.Unchanged : ConfigReloadStatus.Applied;
     }
+
+    private static bool OnlyAddsAliases(ConfigDeclaration oldEngine, ConfigDeclaration newEngine)
+    {
+        var oldFields = oldEngine.Fields!;
+        var newFields = newEngine.Fields!;
+        if (!ExceptField(oldFields, "catalog").Matches(ExceptField(newFields, "catalog")) ||
+            !oldFields.TryGetValue("catalog", out var oldCatalog) || !newFields.TryGetValue("catalog", out var newCatalog) ||
+            oldCatalog.Fields is not { } models || newCatalog.Fields is not { } next ||
+            !models.Keys.SequenceEqual(next.Keys, StringComparer.Ordinal)) return false;
+
+        foreach (var (name, model) in models)
+        {
+            if (model.Fields is not { } fields || next[name].Fields is not { } updated ||
+                !ExceptField(fields, "aliases").Matches(ExceptField(updated, "aliases"))) return false;
+            if (!fields.TryGetValue("aliases", out var aliases)) continue;
+            if (!updated.TryGetValue("aliases", out var replacement) || aliases.Items is not { } oldItems ||
+                replacement.Items is not { } newItems || !oldItems.All(old => newItems.Any(item => item.Matches(old))))
+                return false;
+        }
+        return true;
+    }
+
+    private static ConfigDeclaration ExceptField(Dictionary<string, ConfigDeclaration> fields, string name) =>
+        new(Fields: fields.Where(pair => pair.Key != name).ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal));
 
     private static Dictionary<string, ConfigDeclaration> WithoutLiveSettings(Dictionary<string, ConfigDeclaration> fields) =>
         fields.Where(pair => pair.Key is not ("engine" or "default_model"))

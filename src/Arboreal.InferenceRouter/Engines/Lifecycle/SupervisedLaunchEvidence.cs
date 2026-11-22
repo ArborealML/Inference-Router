@@ -124,7 +124,7 @@ internal static class SupervisedLaunchEvidence
         return new(command.Operation, instance, digest, CompletePair: true);
     }
 
-    private static bool EffectiveSettingsMatch(DockerCreateRequest approved, DockerCreateRequest observed)
+    internal static bool EffectiveSettingsMatch(DockerCreateRequest approved, DockerCreateRequest observed)
     {
         if (approved.HostConfig is not { } expectedHost || observed.HostConfig is not { } actualHost ||
             NetworkMode(expectedHost.NetworkMode) != NetworkMode(actualHost.NetworkMode) ||

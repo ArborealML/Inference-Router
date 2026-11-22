@@ -199,6 +199,8 @@ public sealed class EngineDefinition
     public bool Remote { get; init; }
     /// <summary>Configured lifecycle owner. Null uses the legacy provider declarations.</summary>
     public EngineLifecycleOwner? LifecycleOwner { get; init; }
+    /// <summary>Local shared-resource admission group, coordinated by this router on its existing daemon.</summary>
+    public string? LifecycleGroup { get; init; }
     public EngineLifecycleKind Lifecycle { get; init; } = EngineLifecycleKind.Delegated;
     public DockerLifecycleConfig? Docker { get; init; }
 
@@ -299,9 +301,25 @@ public sealed class RouterConfig
 
     internal void ValidateLifecycleTopology(EngineDefinition? runtimeEngine = null)
     {
+        foreach (var member in Engines.Values)
+        {
+            if (member.LifecycleGroup is not { } group) continue;
+            if (string.IsNullOrWhiteSpace(group) || group != group.Trim() ||
+                member.ResolveLifecycleOwner() != EngineLifecycleOwner.Router ||
+                member.Lifecycle != EngineLifecycleKind.Docker || member.Docker is null)
+                throw new RouterConfigException("A local lifecycle group requires a named native Docker router-owned engine.");
+            foreach (var peer in Engines.Values)
+            {
+                if (ReferenceEquals(peer, member) || peer.LifecycleGroup != group) continue;
+                if (peer.Docker?.Socket != member.Docker.Socket || peer.Docker.RouterId != member.Docker.RouterId)
+                    throw new RouterConfigException("Members of a local lifecycle group must use the same Docker daemon and router identity.");
+                if (peer.Endpoint == member.Endpoint)
+                    throw new RouterConfigException("Local lifecycle engines require distinct endpoints for readiness verification.");
+            }
+        }
         if (runtimeEngine is not null)
         {
-            if (runtimeEngine.HasExplicitRouterLifecycle &&
+            if (runtimeEngine.HasExplicitRouterLifecycle && runtimeEngine.LifecycleGroup is null &&
                 (Engines.Count > 1 || (Engines.Count == 1 &&
                     !string.Equals(Engines.Values.Single().Name, runtimeEngine.Name, StringComparison.Ordinal))))
                 throw DedicatedEngineRequired(runtimeEngine.Name);
@@ -310,7 +328,7 @@ public sealed class RouterConfig
 
         if (Engines.Count <= 1) return;
         foreach (var engine in Engines.Values)
-            if (engine.HasExplicitRouterLifecycle) throw DedicatedEngineRequired(engine.Name);
+            if (engine.HasExplicitRouterLifecycle && engine.LifecycleGroup is null) throw DedicatedEngineRequired(engine.Name);
     }
 
     private static RouterConfigException DedicatedEngineRequired(string engine) => new(

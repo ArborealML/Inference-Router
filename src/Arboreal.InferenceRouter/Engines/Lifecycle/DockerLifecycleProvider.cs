@@ -40,6 +40,7 @@ public sealed partial class DockerLifecycleProvider : IEngineLifecycleProvider, 
     private readonly record struct NativeScope(string EngineName, string RouterId, DaemonTransport Daemon);
 
     private readonly DockerLifecycleConfig _cfg;
+    private readonly bool _localManaged;
     private readonly string[] _command;
     private readonly string[] _env;
     private readonly NativeScope _scope;
@@ -56,7 +57,11 @@ public sealed partial class DockerLifecycleProvider : IEngineLifecycleProvider, 
     private readonly record struct PendingPeerWrite(PeerWriteKind Kind, string ContainerId);
 
     public DockerLifecycleProvider(DockerLifecycleConfig cfg, string engineName, HttpMessageHandler? handler = null)
+        : this(cfg, engineName, handler, localManaged: false) { }
+
+    internal DockerLifecycleProvider(DockerLifecycleConfig cfg, string engineName, HttpMessageHandler? handler, bool localManaged)
     {
+        _localManaged = localManaged;
         _scope = new NativeScope(engineName, cfg.RouterId, ResolveDaemon(cfg.Socket, engineName));
         _cfg = cfg;
         _command = cfg.Command.ToArray();
@@ -162,6 +167,7 @@ public sealed partial class DockerLifecycleProvider : IEngineLifecycleProvider, 
 
     private LifecycleResult? UnqualifiedLaunch()
     {
+        if (_localManaged) return null;
         if (_cfg.HasUnqualifiedTargetDocker)
             return LifecycleResult.Fail("docker_target_not_qualified",
                 "serving-tier Docker targets are available for offline configuration checks only; use an externally managed engine until target qualification is available");
@@ -309,6 +315,7 @@ public sealed partial class DockerLifecycleProvider : IEngineLifecycleProvider, 
             var profile = c.Labels is not null && c.Labels.TryGetValue(LabelProfile, out var p) ? p : null;
             peers.Add(new EnginePeer(c.Id ?? "", c.Image ?? "", model, ours)
             {
+                ContainerState = c.State,
                 EffectiveProfile = profile,
                 ImageId = c.ImageId,
             });
@@ -329,7 +336,8 @@ public sealed partial class DockerLifecycleProvider : IEngineLifecycleProvider, 
     }
 
     internal async ValueTask<LifecycleResult> StopUnderGateAsync(
-        IReadOnlyList<EnginePeer> peers, Action<NativePeerStop>? observe, CancellationToken ct)
+        IReadOnlyList<EnginePeer> peers, Action<NativePeerStop>? observe, CancellationToken ct,
+        LocalLifecycleGroup.Lease? recovery = null)
     {
         if (PeerWriteRefusal() is { } blocked) return blocked;
         if (UnqualifiedLaunch() is { } refusal) return refusal;
@@ -348,6 +356,8 @@ public sealed partial class DockerLifecycleProvider : IEngineLifecycleProvider, 
 
             var t = Math.Max(1, _cfg.StopTimeoutMs / 1000);
             var containerPath = $"{_cfg.ApiVersion}/containers/{Uri.EscapeDataString(peer.Id)}";
+            if (recovery is { CanRecover: false })
+                return LifecycleResult.Fail("recovery_owner_ended", "the original request ended before stop");
             var stop = await CallAsync(
                 HttpMethod.Post, $"{containerPath}/stop?t={t}", null, ct,
                 already: [304, 404], requiredStatus: 204, peerWrite: new(PeerWriteKind.Stop, peer.Id)).ConfigureAwait(false);
@@ -363,6 +373,8 @@ public sealed partial class DockerLifecycleProvider : IEngineLifecycleProvider, 
             var mayContinue = disposition is NativeStopDisposition.Stopped or NativeStopDisposition.AlreadyStopped
                 or NativeStopDisposition.Absent;
             if (mayContinue) _pendingPeerWrite = null;
+            if (recovery is not null && stop.Status != 204)
+                return LifecycleResult.Fail("resident_stop_unconfirmed", "the exact running resident did not acknowledge stop");
             var conflict = stop.Status == 409;
             var remove = mayContinue && _cfg.RemoveStopped && !(conflict && disposition == NativeStopDisposition.Absent);
             var observation = new NativePeerStop(peer, disposition, remove
@@ -383,7 +395,7 @@ public sealed partial class DockerLifecycleProvider : IEngineLifecycleProvider, 
                 // A peer observed exited after a conflict can restart before DELETE. An unforced
                 // DELETE lets the daemon refuse removal of the running peer.
                 var removal = await CallAsync(
-                    HttpMethod.Delete, conflict ? containerPath : $"{containerPath}?force=true", null, ct,
+                    HttpMethod.Delete, conflict || recovery is not null ? containerPath : $"{containerPath}?force=true", null, ct,
                     already: [404], requiredStatus: 204, peerWrite: new(PeerWriteKind.Delete, peer.Id)).ConfigureAwait(false);
                 if (removal.Ok) _pendingPeerWrite = null;
                 observation = observation with

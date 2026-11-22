@@ -3,6 +3,7 @@ namespace Arboreal.InferenceRouter;
 /// <summary>One queued request with scheduler metadata.</summary>
 public sealed class QueuedRequest
 {
+    internal LocalLifecycleGroup.Lease? LocalLease { get; set; }
     public required RouterTicket Ticket { get; init; }
     public required InferenceRequest Request { get; init; }
     internal string? OriginalModel { get; init; }
@@ -90,12 +91,21 @@ public sealed class ModelQueue
     {
         lock (_lock)
         {
-            var index = FirstAdmissibleIndex(admission);
-            if (index < 0 || !ReferenceEquals(_heap[index], candidate.Request)) return false;
-            _heap.RemoveAt(index);
+            var index = FindExactTakeIndexUnderGate(candidate, admission);
+            if (index < 0) return false;
+            RemoveExactTakeUnderGate(index);
             return true;
         }
     }
+
+    // The router holds Gate across validation, the deadline check and removal.
+    internal int FindExactTakeIndexUnderGate(QueueDispatchCandidate candidate, Func<RouterThread, bool> admission)
+    {
+        var index = FirstAdmissibleIndex(admission);
+        return index >= 0 && ReferenceEquals(_heap[index], candidate.Request) ? index : -1;
+    }
+
+    internal void RemoveExactTakeUnderGate(int index) => _heap.RemoveAt(index);
 
     private int FirstAdmissibleIndex(Func<RouterThread, bool> admission)
     {

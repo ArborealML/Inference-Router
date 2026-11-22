@@ -1,11 +1,23 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.122)
+Status: draft, continuously revised (v0.12.130)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
 
 ## 0. Revision log
+
+- v0.12.130 — a local group may replace one confirmed owned resident on launch-setting drift or failed backend readiness. It rechecks group occupancy and the same container generation before stopping. The original queued request owns the replacement and keeps its switch deadline. Failed replacement is terminal for that request.
+- v0.12.129 — on first admission a local Docker group can reuse its verified running target. The group checks its inventory, effective Docker configuration, backend readiness and container start identity before dispatch. Ambiguous occupancy or contradictory adoption evidence refuses the request before mutation.
+- v0.12.128 — authenticated idle reload accepts additional native engines in existing local groups and additional aliases on retained group members (§7.7).
+
+- v0.12.127 — dotted readiness probe paths can traverse zero-based JSON array indices, allowing model-list context gauges without a separate backend endpoint (§7.6). Invalid indices and missing values remain failed observations.
+
+- v0.12.126 — local Python backend startup creates configured log, temporary and slot directories automatically. Native readiness retries a refused listener connection within the original readiness deadline rather than failing a container that is still loading. Between unsuccessful probe rounds it rechecks the exact started container and fails on exit or replacement.
+
+- v0.12.125 — local lifecycle groups bind ordinary queue admission to shared-resource drain and native Docker switching on an existing daemon. Original request ownership, detached transport cleanup and independent group progress are exercised with three shared engines and four clients. Live acceptance remains pending (§7).
+
+- Pending — initial topology validation accepts any nonempty configured engine and device set, requires exact complete membership and distinct routes, and projects every approved target. The two-engine example is not a cardinality limit.
 
 - v0.1 — initial architecture + scope.
 - v0.2 — added TOML config schema, engine lifecycle contract, thread model, AOT strategy, research questions.
@@ -2936,6 +2948,37 @@ code table for integrators.
 
 ## 7. Configuration (TOML)
 
+**Local lifecycle groups.** An engine may opt into a named
+`lifecycle_group` with native Docker lifecycle owned by this router. Every member of a group
+uses the same daemon and router identity, with distinct inference endpoints. Group size,
+client count and catalog size have no fixed two-member limit. A selected cold request closes
+new admission to its group while existing transport uses drain; that original queued request
+then owns stop, launch and readiness. Each admitted use holds its group charge through actual
+response disposal, including detached cleanup after a client timeout. Independent groups can
+progress concurrently. A failed group operation fences further group admission. The switch
+wait budget starts at exact queue removal and is not renewed during preparation. Group-bound
+engines reject direct administrative switching and configuration reload in this initial binding.
+
+On first admission after router startup, a matching AIR-owned Docker container can serve the
+original request once its launch settings and backend readiness are verified. If either check
+finds a mismatch, AIR can replace that container once. Before Stop, AIR checks the other group
+members for vacancy and rechecks the incumbent's ownership, container ID, start time and restart
+count. Inconclusive Docker observations get one more discovery pass within the original request
+budget. Cancellation or expiry before Stop prevents replacement. The newly launched backend must
+pass readiness before the waiting request is dispatched.
+
+This opt-in coordinates requests and labeled containers owned by this router on the existing
+Docker daemon. It does not certify exclusion of unrelated GPU processes, other Docker clients,
+or foreign containers. Operators must assign overlapping exclusive resources to the same group.
+The existing commissioned path and its stronger host-enforcement contracts remain separate.
+Live Pi acceptance verified a Qwen request completing before the original queued DeepSeek
+request selected its target, stopped the incumbent and streamed its reply. Both Pi clients
+disabled automatic retries. Container state, native GPU process membership and authenticated
+backend model/context/slot readback corroborated residency. Three shared engines and a fourth
+independent engine are covered by focused multi-client fixtures; the live pair is an input, not
+a cardinality limit. The detailed host transcript is held outside the repository.
+
+
 The server loads its startup file before serving. A file-backed server can optionally apply changes
 from that same path as described in §7.7.
 For HTTP SSE, `stream_buffer_limit_bytes` is a top-level nonnegative byte count and
@@ -3232,7 +3275,7 @@ serving = [
 The Docker `command` template passes the chosen profile name to the image as `--profile`.
 A plain model switch uses `default_profile`. A switch targeting `64k-2` passes that name to the
 new container. The image configures the window and slots, and the router uses `health_probe.context_path`
-and `health_probe.slots_path` to read those gauges. The probe checks described in §5.3.1 apply.
+and `health_probe.slots_path` to read those gauges. Dotted paths traverse object keys and zero-based array indices, for example `data.0.max_model_len`. Invalid or out-of-range indices, missing fields and null values yield no gauge; numeric object keys remain literal keys. The probe checks described in §5.3.1 apply.
 
 Semantics:
 
@@ -3312,6 +3355,13 @@ tokens on that path and separate workload qualification.
 
 ### 7.7 Runtime configuration reload
 
+At idle, authenticated apply can add native Docker engines to an existing local lifecycle group
+and add aliases to its existing catalog models. Existing engines retain their runtime, resident
+and failure state. Reload publishes a single generation and performs no Docker lifecycle operation.
+Queued requests, active switches and outstanding transport uses return the existing busy response.
+Changes to existing launch settings or removal of a managed engine still require restart.
+
+
 Set `ARBOREAL_ROUTER_RELOAD_TOKEN` before starting a file-backed server to enable the reload
 routes in §6. The startup file is selected by the explicit command-line path, then
 `ARBOREAL_ROUTER_CONFIG`, then `AIR_CONFIG`, then `router.toml`. The server captures that absolute
@@ -3323,7 +3373,8 @@ overrides and servers started without the reload credential have no reload route
 | --- | --- |
 | `default_model` | Live. Applies to new requests with neither an explicit model nor thread affinity. |
 | Addition or removal of externally managed engines | Router-wide work idle only. Can combine with a new default in the same apply. |
-| A retained engine declaration or relative engine order, native or delegated membership, and all other settings | Restart required. Includes endpoint, credentials, lifecycle plans, listener, scheduler, limits and configured threads. |
+| Addition of native engines to an existing local group or aliases to existing group models | Router-wide work idle only. |
+| Other retained engine edits, relative engine order changes, other native or delegated membership changes, and all other settings | Restart required. Includes endpoint, credentials, lifecycle plans, listener, scheduler, limits and configured threads. |
 
 An engine membership edit preserves the relative order of retained engines and appends additions in
 ordinal name order. A known model token cannot resolve to a different canonical model in the same

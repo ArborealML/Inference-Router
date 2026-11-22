@@ -1,0 +1,143 @@
+using System.Net;
+using System.Text.Json;
+using System.Text.Json.Nodes;
+using Arboreal.InferenceRouter.Lifecycle;
+
+namespace Arboreal.InferenceRouter.Tests;
+
+public sealed class DockerResidentAdoptionTests
+{
+    [Theory]
+    [InlineData("serve", "gpu", 0, true)]
+    [InlineData("other", "gpu", 0, false)]
+    [InlineData("serve", "cpu", 0, false)]
+    [InlineData("serve", "gpu", 1024, false)]
+    public void ComparesEffectiveContainerWithImageDefaultsAndLaunchOverrides(
+        string command, string device, long memory, bool matches)
+    {
+        var plan = new DockerCreateRequest { Image = "pinned", Labels = new(StringComparer.Ordinal),
+            Cmd = ["serve"], Env = ["DEVICE=gpu"] };
+        using var image = JsonDocument.Parse("""{"Env":["BASE=1","DEVICE=cpu"],"Entrypoint":["/start"]}""");
+        using var inspect = JsonDocument.Parse($$$$$"""
+            {"Config":{"Image":"pinned","Labels":{},"Entrypoint":["/start"],"Cmd":["{{{{{command}}}}}"],"Env":["DEVICE={{{{{device}}}}}","BASE=1"]},
+             "HostConfig":{"IpcMode":"private","ShmSize":67108864,"Memory":{{{{{memory}}}}},"MemorySwap":0,"NanoCpus":0,
+             "RestartPolicy":{"Name":"no","MaximumRetryCount":0},"LogConfig":{"Type":"json-file","Config":{}}}}
+            """);
+        Assert.Equal(matches, DockerLifecycleProvider.MatchesResidentCreate(plan, inspect.RootElement, image.RootElement));
+    }
+
+    [Theory(Timeout = 20_000)]
+    [InlineData("healthy", 0, true)]
+    [InlineData("settings", 1, true)]
+    [InlineData("readiness", 1, true)]
+    [InlineData("failed-start", 1, false)]
+    [InlineData("failed-readiness", 1, false)]
+    [InlineData("foreign", 0, false)]
+    [InlineData("expired", 0, false)]
+    [InlineData("unstable", 0, false)]
+    [InlineData("cancel", 0, false)]
+    public async Task FirstRequestOwnsAtMostOneReplacement(string scenario, int expectedStops, bool completes)
+    {
+        const string model = "test-model";
+        const string oldId = DockerLifecycleProviderTests.FullPeerId;
+        var newId = new string('d', 64);
+        var docker = DockerLifecycleProviderTests.Cfg(removeStopped: false, waitTimeoutMs: 2000);
+        var definition = new EngineDefinition
+        {
+            Name = "strata", Lifecycle = EngineLifecycleKind.Docker, LifecycleOwner = EngineLifecycleOwner.Router,
+            LifecycleGroup = "shared", Endpoint = new Uri("http://localhost:18021/v1"), Docker = docker,
+            Catalog = new Dictionary<string, EngineModelDefinition> { [model] = new() { Name = model } },
+        };
+        using var request = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        using var backend = new FakeEngineHandler { LoadedModels = [model], NCtx = 4096,
+            ModelsStatus = scenario == "readiness" ? 503 : 200 };
+        using var daemon = new FakeDockerDaemonHandler();
+        using var provider = new DockerLifecycleProvider(docker, "strata", daemon);
+        var image = docker.ImageIdentity!;
+        var plan = provider.BuildCreateRequest(new("strata", model, null, definition.Catalog[model]), image);
+        var config = JsonSerializer.SerializeToNode(plan, DockerJsonContext.Default.DockerCreateRequest)!.AsObject();
+        var host = config["HostConfig"]!.DeepClone();
+        config.Remove("HostConfig");
+        host["IpcMode"] = "private";
+        host["ShmSize"] = 67108864;
+        host["NanoCpus"] = 0;
+        host["Memory"] = 0;
+        host["MemorySwap"] = 0;
+        host["RestartPolicy"] = new JsonObject { ["Name"] = "no", ["MaximumRetryCount"] = 0 };
+        host["LogConfig"] = new JsonObject { ["Type"] = "json-file", ["Config"] = new JsonObject() };
+        if (scenario is "settings" or "failed-start" or "failed-readiness") config["Cmd"] = new JsonArray("stale");
+        var current = oldId;
+        var inspections = 0;
+        daemon.Responder = path =>
+        {
+            if (path.EndsWith("/version", StringComparison.Ordinal)) return (HttpStatusCode.OK, """{"ApiVersion":"1.44"}""");
+            if (path.Contains("/images/", StringComparison.Ordinal))
+            {
+                var info = JsonNode.Parse(DockerLifecycleProviderTests.Inspect())!;
+                info["Config"] = new JsonObject();
+                return (HttpStatusCode.OK, info.ToJsonString());
+            }
+            if (path.Contains("/containers/json?", StringComparison.Ordinal))
+            {
+                var entry = new JsonObject { ["Id"] = current, ["ImageID"] = image.Id, ["State"] = "running",
+                    ["Labels"] = config["Labels"]!.DeepClone() };
+                return (HttpStatusCode.OK, new JsonArray(entry).ToJsonString());
+            }
+            if (path.EndsWith("/json", StringComparison.Ordinal))
+            {
+                var sample = JsonNode.Parse(DockerLifecycleProviderTests.NativeContainerInspect(current, model))!;
+                sample["Config"] = config.DeepClone();
+                sample["HostConfig"] = host.DeepClone();
+                if (scenario == "foreign") sample["Config"]!["Labels"]!["arboreal.router"] = "another-router";
+                if (scenario == "unstable") sample["RestartCount"] = ++inspections;
+                if (scenario == "cancel") request.Cancel();
+                return (HttpStatusCode.OK, sample.ToJsonString());
+            }
+            if (path.Contains("/stop?", StringComparison.Ordinal)) return (HttpStatusCode.NoContent, "");
+            if (path.Contains("/containers/create", StringComparison.Ordinal)) return (HttpStatusCode.Created, $$"""{"Id":"{{newId}}"}""");
+            if (path.EndsWith("/start", StringComparison.Ordinal))
+            {
+                current = newId;
+                backend.ModelsStatus = scenario == "failed-readiness" ? 503 : 200;
+                return (scenario == "failed-start" ? HttpStatusCode.Conflict : HttpStatusCode.NoContent, "");
+            }
+            return (HttpStatusCode.NotFound, "{}");
+        };
+        var settings = new RouterConfig { AutoSwitch = true, Engines = new Dictionary<string, EngineDefinition>
+            { ["strata"] = definition }, HttpHandlerFactory = _ => backend };
+        if (scenario == "expired")
+        {
+            settings.Scheduler.SwitchWaitTimeoutMs = 200;
+            daemon.AsyncResponder = async (path, token) =>
+            {
+                if (path.EndsWith($"/{oldId}/json", StringComparison.Ordinal))
+                    await Task.Delay(TimeSpan.FromSeconds(1), token);
+                return daemon.Responder(path);
+            };
+        }
+        await using var router = new RouterCore(settings, scheduler: null, events: null, clock: TimeProvider.System,
+            lifecycleFactory: _ => provider);
+        router.Start();
+        var first = await Enqueue();
+        if (completes)
+        {
+            var second = await Enqueue();
+            await Task.WhenAll(first.CompletionTask, second.CompletionTask).WaitAsync(request.Token);
+            Assert.Equal(2, backend.CompletionCalls);
+        }
+        else
+        {
+            await Assert.ThrowsAsync<RouterRequestException>(() => first.CompletionTask.WaitAsync(TimeSpan.FromSeconds(8)));
+            Assert.Equal(0, backend.CompletionCalls);
+        }
+        Assert.Equal(expectedStops, daemon.Requests.Count(path => path.StartsWith("POST", StringComparison.Ordinal) &&
+            path.Contains($"/{oldId}/stop?", StringComparison.Ordinal)));
+        Assert.Equal(expectedStops * 3, daemon.Requests.Count(path => !path.StartsWith("GET", StringComparison.Ordinal)));
+
+        async Task<RouterTicket> Enqueue() => await router.EnqueueAsync("client", new InferenceRequest
+        {
+            Model = model, Body = """{"model":"test-model","messages":[{"role":"user","content":"hello"}]}"""u8.ToArray(),
+            Options = new(),
+        }, request.Token);
+    }
+}

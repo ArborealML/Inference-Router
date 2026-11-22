@@ -49,6 +49,23 @@ public class LifecycleCommandTests
         }
     }
 
+    [Theory]
+    [InlineData("data.0.max_model_len", true)]
+    [InlineData("data.1.max_model_len", false)]
+    [InlineData("data.-1.max_model_len", false)]
+    [InlineData("data.2147483648.max_model_len", false)]
+    [InlineData("data.name.max_model_len", false)]
+    [InlineData("data.0.max_model_len.child", false)]
+    [InlineData("data.0.absent", false)]
+    [InlineData("data.0.null", false)]
+    [InlineData("numeric.0", true)]
+    public void Gauge_Parsing_Resolves_Array_Indices_Without_Confusing_Object_Keys(string path, bool expected)
+    {
+        using var doc = JsonDocument.Parse("""{"data":[{"max_model_len":262144,"null":null}],"numeric":{"0":262144}}""");
+        Assert.Equal(expected, ProbeExpect.TryResolvePath(doc.RootElement, path, out var value));
+        if (expected) Assert.Equal(262144, value.GetInt32());
+    }
+
     [Fact]
     public void Gauge_Parsing_Reads_Dotted_Paths_From_Numbers_And_Strings()
     {

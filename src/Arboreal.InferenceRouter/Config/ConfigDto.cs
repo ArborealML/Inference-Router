@@ -62,6 +62,7 @@ public sealed class EngineDto
     [JsonPropertyName("stream_idle_timeout_ms")][TomlPropertyName("stream_idle_timeout_ms")] public int? StreamIdleTimeoutMs { get; set; }
     [JsonPropertyName("remote")][TomlPropertyName("remote")] public bool? Remote { get; set; }
     [JsonPropertyName("lifecycle_owner")][TomlPropertyName("lifecycle_owner")] public string? LifecycleOwner { get; set; }
+    [JsonPropertyName("lifecycle_group")][TomlPropertyName("lifecycle_group")] public string? LifecycleGroup { get; set; }
     [JsonPropertyName("health_probe")][TomlPropertyName("health_probe")] public HealthProbeDto? HealthProbe { get; set; }
     [JsonPropertyName("capabilities")][TomlPropertyName("capabilities")] public CapabilitiesDto? Capabilities { get; set; }
     [JsonPropertyName("catalog")][TomlPropertyName("catalog")] public Dictionary<string, ModelDto>? Catalog { get; set; }

@@ -13,6 +13,19 @@ public sealed class NativeDaemonObservationTests
     private const string ChangedStamp = "2026-01-01T00:00:00.123456782Z";
     private static readonly TimeSpan Limit = TimeSpan.FromSeconds(10);
 
+    [Fact]
+    public async Task ExitedContainerEndsReadinessWhileListenerIsStillUnavailable()
+    {
+        await using var fixture = new Fixture(proveHealth: true);
+        fixture.Probe = _ => throw new HttpRequestException("Listener not bound.");
+        fixture.Inspect = id => Task.FromResult(fixture.InspectCount(id) == 1
+            ? InspectReply(id) : new HttpResponseMessage(HttpStatusCode.NotFound));
+        Assert.False((await fixture.SwitchAsync("a").WaitAsync(Limit)).IsReady);
+        Assert.Equal(2, fixture.InspectCount(A));
+        fixture.AssertUnreadyOnce();
+        Assert.Equal(2, fixture.Writes.Count);
+    }
+
     [Theory]
     [InlineData(true, true)]
     [InlineData(true, false)]
