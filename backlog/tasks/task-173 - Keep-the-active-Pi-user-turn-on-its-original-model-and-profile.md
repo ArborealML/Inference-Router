@@ -1,11 +1,11 @@
 ---
 id: TASK-173
 title: Keep the active Pi user turn on its original model and profile
-status: In Progress
+status: Done
 assignee:
-  - '@gpt-6.2-sol-scheduling'
+  - '@gpt-6.2-astra'
 created_date: '2026-11-22T09:40:00Z'
-updated_date: '2026-11-22T10:13:00Z'
+updated_date: '2026-11-22T10:56:00Z'
 labels: []
 milestone: m-4
 dependencies: []
@@ -24,12 +24,12 @@ Capture the AIR model and profile at Pi user-turn start. Carry both through tool
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Changing /model or /context and enqueueing a follow-up issues no inference or backend lifecycle request.
-- [ ] #2 With a Hy4 tool call held open, selecting Qwen and releasing the tool sends every continuation and retry to the original Hy4 model and profile.
-- [ ] #3 After the active turn completes, the original follow-up submits exactly once with the newly selected model and profile.
-- [ ] #4 Cancellation releases the turn selection. Concurrent sessions and subagents retain independent selections across arbitrary catalog entries.
-- [ ] #5 A foreground child inheriting the parent provider callback sends its own model and thread ID. Only a matching options.sessionId can use the parent pin. A child loading AIR independently uses its own turn pin.
-- [ ] #6 Before follow-up dispatch, threshold compaction respects the active turn capacity. A smaller pending profile cannot trigger summarization on its model. Legitimate automatic summaries retain separate routing identity, and manual compaction keeps its existing behavior.
+- [x] #1 Changing /model or /context and enqueueing a follow-up issues no inference or backend lifecycle request.
+- [x] #2 With a Hy4 tool call held open, selecting Qwen and releasing the tool sends every continuation and retry to the original Hy4 model and profile.
+- [x] #3 After the active turn completes, the original follow-up submits exactly once with the newly selected model and profile.
+- [x] #4 Cancellation releases the turn selection. Concurrent sessions and subagents retain independent selections across arbitrary catalog entries.
+- [x] #5 A foreground child inheriting the parent provider callback sends its own model and thread ID. Only a matching options.sessionId can use the parent pin. A child loading AIR independently uses its own turn pin.
+- [x] #6 Before follow-up dispatch, threshold compaction respects the active turn capacity. A smaller pending profile cannot trigger summarization on its model. Legitimate automatic summaries retain separate routing identity, and manual compaction keeps its existing behavior.
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -41,5 +41,5 @@ Trace the installed Pi user-message dispatch and follow-up dequeue events. Captu
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-The candidate in PR 80 passed eleven Pi fixture tests and the catalog check. Independent review of the two preceding commits identified summary-thread attribution and explicit per-call output bounds. The writer is addressing these plus legitimate active-window compaction; the inherited child and registry-call attribution changes are under review. Cross-provider pinning is outside the configured AIR-model scope.
+The coordinator qualified [PR 80](https://github.com/ArborealML/Inference-Router/pull/80) at 77fa193. Sixteen Pi loopback tests and the catalog check passed. An installed CLM run exposed replacement of the system message; the fix retains the prepared turn across that replacement. The installed Pi session then submitted exactly three tickets in order: Hy4 initial, Hy4 continuation, and the original Qwen follow-up. All three streamed and completed. The compaction hook uses active retention when Pi invokes it; Pi can omit the hook when only the active threshold is crossed.
 <!-- SECTION:NOTES:END -->
