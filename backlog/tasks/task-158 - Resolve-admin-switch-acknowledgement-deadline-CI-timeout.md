@@ -1,11 +1,11 @@
 ---
 id: TASK-158
 title: Resolve admin switch acknowledgement deadline CI timeout
-status: Waiting
+status: Done
 assignee:
-  - '@gpt-6.2-sol-scheduling'
+  - '@gpt-6.2-astra'
 created_date: '2026-11-22T02:39:00Z'
-updated_date: '2026-11-22T02:42:00Z'
+updated_date: '2026-11-22T02:48:00Z'
 labels: []
 dependencies: []
 priority: high
@@ -20,7 +20,7 @@ The hosted Release test result wakes this task. On fe7be9b the Ubuntu build and 
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Verify the original acknowledgement deadline assertions locally and in the hosted Release run.
+- [x] #1 Verify the original acknowledgement deadline assertions locally and in the hosted Release run.
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -32,5 +32,5 @@ Inspect the timed-out wait and its scheduling handshake, fix the demonstrated fa
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Waiting for hosted CI. The test now holds its close observer through the original peer assertion. The corrected theory and related transport cases passed 11/11 locally. [Correction](https://github.com/ArborealML/Inference-Router/commit/70625b4).
+Keeping the close observer through the peer assertion fixed the fixture race. Both original theory rows and related focused checks passed. The full hosted suite and Native AOT passed. [Merged fix](https://github.com/ArborealML/Inference-Router/pull/77) and [passing CI](https://github.com/ArborealML/Inference-Router/actions/runs/44977307978).
 <!-- SECTION:NOTES:END -->
