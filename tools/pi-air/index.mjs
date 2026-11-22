@@ -5,7 +5,10 @@ import { setTimeout as delay } from "node:timers/promises";
 
 import { contextFits, observedWindow, parseCatalog, piModel, requestFits, tier } from "./catalog.mjs";
 
+class PermanentTicketError extends Error {}
+
 const entryType = "air-context";
+const ticketStates = new Set(["Queued", "WaitingForModel", "Executing", "Completed", "Cancelled", "Failed"]);
 const clean = value => String(value ?? "").replace(/[\x00-\x1f\x7f-\x9f]/g, " ").slice(0, 450);
 
 export default async function air(pi) {
@@ -97,9 +100,14 @@ export default async function air(pi) {
 
     async function inspect(req, signal) {
         const response = await admin("tickets/" + encodeURIComponent(req.ticket), {signal: boundedSignal(signal)});
-        if (!response.ok) throw new Error("Ticket HTTP " + response.status);
+        if (!response.ok) {
+            const message = "Ticket HTTP " + response.status;
+            if (response.status >= 500 || response.status === 429 || response.status === 408) throw new Error(message);
+            throw new PermanentTicketError(message);
+        }
         const state = await response.json();
-        if (state.Id !== req.ticket || state.ThreadId !== req.thread) throw new Error("Ticket identity mismatch");
+        if (state?.Id !== req.ticket || state.ThreadId !== req.thread) throw new PermanentTicketError("Ticket identity mismatch");
+        if (!ticketStates.has(state.State)) throw new PermanentTicketError("Unrecognized ticket state");
         if (req.branch === branch) {
             // A manual status read and the poll may return out of order. A dispatched ticket never requeues.
             if (req.dispatched && state.State === "Queued") return false;
@@ -116,15 +124,22 @@ export default async function air(pi) {
     }
 
     async function watchTicket(req) {
+        let failures = 0;
         while (!req.watch.signal.aborted) {
             try {
                 if (await inspect(req, req.watch.signal)) return;
-            } catch {
-                // The ticket can dispatch while the admin connection is down.
-                req.queued = false;
-                if (req.branch === branch) updateTicketUI();
+                failures = 0;
+            } catch (error) {
+                if (req.watch.signal.aborted || req.branch !== branch) return;
+                // Failed reads do not change the last confirmed ticket state.
+                failures++;
+                if (error instanceof PermanentTicketError || error instanceof SyntaxError || failures >= 4) {
+                    req.text += " · status unavailable (" + clean(error.message) + ")";
+                    updateTicketUI();
+                    return;
+                }
             }
-            await delay(700, undefined, {signal: req.watch.signal}).catch(() => {});
+            await delay(700 * 2 ** failures, undefined, {signal: req.watch.signal}).catch(() => {});
         }
     }
 
