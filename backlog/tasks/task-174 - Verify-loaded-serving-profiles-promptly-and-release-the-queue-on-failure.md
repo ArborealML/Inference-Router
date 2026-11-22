@@ -1,11 +1,11 @@
 ---
 id: TASK-174
 title: Verify loaded serving profiles promptly and release the queue on failure
-status: To Do
+status: In Progress
 assignee:
   - '@gpt-6.2-sol-lifecycle'
 created_date: '2026-11-22T09:41:00Z'
-updated_date: '2026-11-22T09:53:00Z'
+updated_date: '2026-11-22T09:57:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -32,6 +32,12 @@ Qwen reported its expected context and ran with one sequence, but its models end
 - [ ] #4 For both mismatch and missing evidence, the affected ticket terminates, SwitchingToward clears and the next eligible queued request streams after Docker mutations settle. Preserve cancellation and failed-target retry protection.
 - [ ] #5 In a live Pi session, observe Hy4 remain resident through its final tool continuation and response. Observe the original follow-up drive the switch, stream on Qwen and verify its 262144-token context and one sequence.
 <!-- AC:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Implement opt-in vLLM capacity verification for local Docker using the exact container ID, host cgroup membership, process start identity and bounded token-preserving argv reads. Derive the common launch slot argument from the named profile. Use the same verified capacity for launch, adoption and warm polling. Arm the residual verification deadline on the first matching model response. Settle failure through existing queue cleanup and test a waiting successor. Integrate after the Pi fix.
+<!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
 

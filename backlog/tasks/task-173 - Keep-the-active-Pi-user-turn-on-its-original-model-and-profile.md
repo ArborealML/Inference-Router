@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@gpt-6.2-sol-scheduling'
 created_date: '2026-11-22T09:40:00Z'
-updated_date: '2026-11-22T09:54:00Z'
+updated_date: '2026-11-22T10:13:00Z'
 labels: []
 milestone: m-4
 dependencies: []
@@ -29,6 +29,7 @@ Capture the AIR model and profile at Pi user-turn start. Carry both through tool
 - [ ] #3 After the active turn completes, the original follow-up submits exactly once with the newly selected model and profile.
 - [ ] #4 Cancellation releases the turn selection. Concurrent sessions and subagents retain independent selections across arbitrary catalog entries.
 - [ ] #5 A foreground child inheriting the parent provider callback sends its own model and thread ID. Only a matching options.sessionId can use the parent pin. A child loading AIR independently uses its own turn pin.
+- [ ] #6 Before follow-up dispatch, threshold compaction respects the active turn capacity. A smaller pending profile cannot trigger summarization on its model. Legitimate automatic summaries retain separate routing identity, and manual compaction keeps its existing behavior.
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -40,5 +41,5 @@ Trace the installed Pi user-message dispatch and follow-up dequeue events. Captu
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Baseline reproduction with real Pi RPC showed one original request while a tool was held. After release the tool continuation and its retry used the pending model before the follow-up started. Busy context selection was refused. The regression changes the pending profile after follow-up acknowledgment and checks JSON and headers at dispatch.
+The candidate in PR 80 passed eleven Pi fixture tests and the catalog check. Independent review of the two preceding commits identified summary-thread attribution and explicit per-call output bounds. The writer is addressing these plus legitimate active-window compaction; the inherited child and registry-call attribution changes are under review. Cross-provider pinning is outside the configured AIR-model scope.
 <!-- SECTION:NOTES:END -->
