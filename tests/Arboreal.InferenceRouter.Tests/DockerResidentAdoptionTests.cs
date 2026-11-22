@@ -28,6 +28,8 @@ public sealed class DockerResidentAdoptionTests
 
     [Theory(Timeout = 20_000)]
     [InlineData("healthy", 0, true)]
+    [InlineData("retained-exited", 1, true)]
+    [InlineData("retained-created", 1, true)]
     [InlineData("settings", 1, true)]
     [InlineData("readiness", 1, true)]
     [InlineData("failed-start", 1, false)]
@@ -54,7 +56,7 @@ public sealed class DockerResidentAdoptionTests
         using var backend = new FakeEngineHandler { LoadedModels = [model], NCtx = 4096,
             ModelsStatus = scenario == "readiness" ? 503 : 200 };
         using var daemon = new FakeDockerDaemonHandler();
-        using var provider = new DockerLifecycleProvider(docker, "strata", daemon);
+        using var provider = new DockerLifecycleProvider(docker, "strata", daemon, localManaged: true);
         var image = docker.ImageIdentity!;
         var plan = provider.BuildCreateRequest(new("strata", model, null, definition.Catalog[model]), image);
         var config = JsonSerializer.SerializeToNode(plan, DockerJsonContext.Default.DockerCreateRequest)!.AsObject();
@@ -70,20 +72,24 @@ public sealed class DockerResidentAdoptionTests
         if (scenario is "settings" or "failed-start" or "failed-readiness") config["Cmd"] = new JsonArray("stale");
         var current = oldId;
         var inspections = 0;
+        var transientPreflight = scenario == "preflight";
         daemon.Responder = path =>
         {
             if (path.EndsWith("/version", StringComparison.Ordinal)) return (HttpStatusCode.OK, """{"ApiVersion":"1.44"}""");
             if (path.Contains("/images/", StringComparison.Ordinal))
             {
                 if (scenario == "provider-timeout") throw new TimeoutException("fixture daemon timeout");
-                if (scenario == "preflight") return (HttpStatusCode.NotFound, "{}");
+                if (transientPreflight) return (HttpStatusCode.NotFound, "{}");
                 var info = JsonNode.Parse(DockerLifecycleProviderTests.Inspect())!;
                 info["Config"] = new JsonObject();
                 return (HttpStatusCode.OK, info.ToJsonString());
             }
             if (path.Contains("/containers/json?", StringComparison.Ordinal))
             {
-                var entry = new JsonObject { ["Id"] = current, ["ImageID"] = image.Id, ["State"] = "running",
+                var entry = new JsonObject { ["Id"] = current, ["ImageID"] = image.Id, ["State"] = current != oldId ? "running" : scenario switch
+                    {
+                        "retained-exited" => "exited", "retained-created" => "created", _ => "running",
+                    },
                     ["Labels"] = config["Labels"]!.DeepClone() };
                 return (HttpStatusCode.OK, new JsonArray(entry).ToJsonString());
             }
@@ -97,7 +103,8 @@ public sealed class DockerResidentAdoptionTests
                 if (scenario == "cancel") request.Cancel();
                 return (HttpStatusCode.OK, sample.ToJsonString());
             }
-            if (path.Contains("/stop?", StringComparison.Ordinal)) return (HttpStatusCode.NoContent, "");
+            if (path.Contains("/stop?", StringComparison.Ordinal))
+                return (scenario is "retained-exited" or "retained-created" ? HttpStatusCode.NotModified : HttpStatusCode.NoContent, "");
             if (path.Contains("/containers/create", StringComparison.Ordinal)) return (HttpStatusCode.Created, $$"""{"Id":"{{newId}}"}""");
             if (path.EndsWith("/start", StringComparison.Ordinal))
             {
@@ -133,6 +140,14 @@ public sealed class DockerResidentAdoptionTests
         {
             var failure = await Assert.ThrowsAsync<RouterRequestException>(() => first.CompletionTask.WaitAsync(TimeSpan.FromSeconds(8)));
             Assert.Equal(0, backend.CompletionCalls);
+            if (scenario is "failed-start" or "preflight")
+            {
+                transientPreflight = false;
+                config["Cmd"] = JsonSerializer.SerializeToNode(plan, DockerJsonContext.Default.DockerCreateRequest)!["Cmd"]!.DeepClone();
+                var successor = await Enqueue();
+                await successor.CompletionTask.WaitAsync(request.Token);
+                Assert.Equal(1, backend.CompletionCalls);
+            }
             if (scenario == "provider-timeout") Assert.Contains("launch_failed", failure.Message, StringComparison.Ordinal);
             if (scenario is "provider-timeout" or "expired") Assert.DoesNotContain("still running", failure.Message, StringComparison.Ordinal);
             if (scenario is "expired" or "preflight" or "provider-timeout") Assert.Equal("switch_failed", first.ErrorCode);

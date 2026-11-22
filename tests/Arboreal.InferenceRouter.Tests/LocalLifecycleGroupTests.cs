@@ -85,6 +85,92 @@ public sealed class LocalLifecycleGroupTests
         }, index == 1 ? queuedCancellation.Token : ct);
     }
 
+    [Theory(Timeout = 20_000)]
+    [InlineData("vacant", true)]
+    [InlineData("exited", true)]
+    [InlineData("running", true)]
+    [InlineData("foreign", false)]
+    [InlineData("unreadable", false)]
+    public async Task QueuedSuccessorReconcilesPeerStopOnceOrReceivesSwitchFailure(string state, bool serves)
+    {
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(12));
+        var ct = deadline.Token;
+        var stopping = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var stopped = 0;
+        var inventories = 0;
+        var previous = new Provider
+        {
+            Inventory = () =>
+            {
+                Interlocked.Increment(ref inventories);
+                if (Volatile.Read(ref stopped) == 0) return [Peer("running")];
+                return state == "vacant" ? [] : [Peer(state)];
+            },
+            OnStop = async () =>
+            {
+                if (Interlocked.Increment(ref stopped) > 1) return LifecycleResult.Ok();
+                stopping.TrySetResult();
+                await release.Task.WaitAsync(ct);
+                return LifecycleResult.Fail("daemon_call_timeout", "stop was not confirmed");
+            },
+        };
+        var next = new Provider();
+        using var incumbent = new FakeEngineHandler { LoadedModels = ["old"] };
+        using var requested = new FakeEngineHandler { LoadedModels = ["new"] };
+        string[] names = ["old", "new"];
+        var engines = names.ToDictionary(name => name, name => new EngineDefinition
+        {
+            Name = name, Endpoint = new Uri(name == "old" ? "http://localhost:12351/v1" : "http://localhost:12352/v1"),
+            Lifecycle = EngineLifecycleKind.Docker, LifecycleOwner = EngineLifecycleOwner.Router, LifecycleGroup = "shared",
+            Docker = new DockerLifecycleConfig { Image = "fixture", RouterId = "fixture" },
+            Catalog = new Dictionary<string, EngineModelDefinition> { [name] = new() { Name = name } },
+        }, StringComparer.Ordinal);
+        var config = new RouterConfig { AutoSwitch = true, Engines = engines,
+            HttpHandlerFactory = def => def.Name == "old" ? incumbent : requested };
+        await using var router = new RouterCore(config, null, null, TimeProvider.System,
+            lifecycleFactory: def => def.Name == "old" ? previous : next);
+        router.Start();
+        var first = await Enqueue("first");
+        RouterTicket successor;
+        try
+        {
+            await stopping.Task.WaitAsync(ct);
+            successor = await Enqueue("second");
+            Assert.Equal(TicketState.Queued, successor.State);
+        }
+        finally { release.TrySetResult(); }
+        var failed = await Assert.ThrowsAsync<RouterRequestException>(() => first.CompletionTask.WaitAsync(ct));
+        Assert.Equal("switch_failed", failed.Code);
+        if (serves) await successor.CompletionTask.WaitAsync(ct);
+        else
+        {
+            var refused = await Assert.ThrowsAsync<RouterRequestException>(() => successor.CompletionTask.WaitAsync(ct));
+            Assert.Equal("switch_failed", refused.Code);
+            Assert.Contains(router.Events.Replay(0), item => item.Kind == "engine.switch_failed" &&
+                item.Reason?.Contains("group", StringComparison.OrdinalIgnoreCase) == true);
+        }
+        Assert.Equal(2, Volatile.Read(ref inventories));
+        Assert.Equal(serves ? 2 : 1, Volatile.Read(ref stopped));
+        Assert.Equal(serves ? 1 : 0, next.Calls.Count(call => call == "launch"));
+        Assert.Equal(serves ? 1 : 0, requested.CompletionCalls);
+        Assert.Single(router.Events.Replay(0), item => item.Kind == "request.selected" && item.TicketId == successor.Id);
+        if (!serves)
+        {
+            state = "vacant";
+            var recovered = await Enqueue("third");
+            await recovered.CompletionTask.WaitAsync(ct);
+            Assert.Equal(1, requested.CompletionCalls);
+            Assert.Equal(3, Volatile.Read(ref inventories));
+        }
+
+        static EnginePeer Peer(string status) => new("container", "fixture", "old", status != "foreign",
+            QueryFailed: status == "unreadable") { ContainerState = status, EffectiveProfile = "" };
+
+        async Task<RouterTicket> Enqueue(string thread) => await router.EnqueueAsync(thread,
+            new InferenceRequest { Model = "new", Body = """{"model":"new","prompt":"hi"}"""u8.ToArray(), Options = new() }, ct);
+    }
+
     [Fact(Timeout = 20_000)]
     public async Task RequestsShareAnAlreadyLoadedNamedProfile()
     {
@@ -214,12 +300,14 @@ public sealed class LocalLifecycleGroupTests
     private sealed class Provider : IEngineLifecycleProvider
     {
         internal ConcurrentQueue<string> Calls { get; } = new();
+        internal Func<IReadOnlyList<EnginePeer>>? Inventory { get; init; }
+        internal Func<ValueTask<LifecycleResult>>? OnStop { get; init; }
         internal Action<LifecycleTarget>? OnLaunch { get; init; }
         public string Kind => "docker";
         public ValueTask<LifecycleResult> PreflightAsync(LifecycleTarget target, CancellationToken ct) => Result("preflight");
         public ValueTask<IReadOnlyList<EnginePeer>> OwnedPeersAsync(LifecycleTarget target, CancellationToken ct) =>
-            ValueTask.FromResult<IReadOnlyList<EnginePeer>>([]);
-        public ValueTask<LifecycleResult> StopAsync(LifecycleTarget target, IReadOnlyList<EnginePeer> peers, CancellationToken ct) => Result("stop");
+            ValueTask.FromResult<IReadOnlyList<EnginePeer>>(Inventory?.Invoke() ?? []);
+        public ValueTask<LifecycleResult> StopAsync(LifecycleTarget target, IReadOnlyList<EnginePeer> peers, CancellationToken ct) => OnStop?.Invoke() ?? Result("stop");
         public ValueTask<LifecycleResult> LaunchAsync(LifecycleTarget target, CancellationToken ct)
         {
             OnLaunch?.Invoke(target);

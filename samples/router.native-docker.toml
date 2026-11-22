@@ -29,6 +29,8 @@ command = ["--model", "{{model}}", "--profile", "{{profile}}"]
 host_ip = "127.0.0.1"
 host_port = 18021
 container_port = 8080
+stop_timeout_ms = 30000
+call_timeout_ms = 300000
 wait_health = true
 wait_timeout_ms = 600000
 

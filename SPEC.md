@@ -1,14 +1,14 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.136)
+Status: draft, continuously revised (v0.12.137)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
 
 ## 0. Revision log
 
+- v0.12.137 — allow five minutes per Docker API call by default. Later local-group requests reconcile outstanding Docker operations against fresh group inventory. Unresolved occupancy fails the request (§5.3.1, §7).
 - v0.12.136 — render CLI operator queries and acknowledgments as human-readable text by default. A global `--json` flag selects machine output (§11).
-
 - v0.12.135 — check exact profile readiness after verified offer validation and before issuer checkout. A changed observation returns `switch_failed` (§6).
 - v0.12.134 — distinguish equal-window serving tiers by measured slots, drain exact profile users before explicit switches, and verify counted transports at submission (§6, §7.6).
 - v0.12.133 — expose the applied catalog with conditional reads and changes on the event feed. Inference clients can select an exact named serving profile per request (§6, §7.6).
@@ -1654,7 +1654,7 @@ name, such as `strata`.
 Give each router sharing a daemon a distinct `router_id`. Published ports default to loopback
 (`host_ip = "127.0.0.1"`). `remove_stopped` defaults to `true`, so switched-out containers are
 removed. `stop_timeout_ms` defaults to 30,000 ms and sets the Docker stop grace in whole seconds
-(minimum one second). `call_timeout_ms` defaults to 15,000 ms per Engine API call, independently of
+(minimum one second). `call_timeout_ms` defaults to 300,000 ms per Engine API call, independently of
 the readiness wait after launch.
 
 **Shipped provider seam.** `EngineLifecycleCoordinator` calls `IEngineLifecycleProvider`
@@ -2982,7 +2982,20 @@ client count and catalog size have no fixed two-member limit. A selected cold re
 new admission to its group while existing transport uses drain; that original queued request
 then owns stop, launch and readiness. Each admitted use holds its group charge through actual
 response disposal, including detached cleanup after a client timeout. Independent groups can
-progress concurrently. A failed group operation fences further group admission. The switch
+progress concurrently. After a failed operation each later cold request takes fresh ownership inventory of
+every group member. A single identified running resident may be verified for reuse or switched
+out. Created and exited containers occupy no serving slots. Multiple running residents or
+inconclusive ownership return `switch_failed` with the reason on the event feed. The next
+request checks again. For an uncertain write the local provider first inspects the exact
+container, then cross-checks its state against fresh inventory. A confirmed, inactive container settles Stop. If Stop never took effect, the next owner can
+stop that exact running container again. Pending Delete requires exact absence and can retry
+unforced removal after a verified stop. AIR checks an uncertain Create by its unique name.
+If the name is absent, any delayed Create can only leave a stopped container because the
+failed caller has already returned. An uncertain Start can settle through exact-ID absence or
+evidence that the instance started. If the instance remains created, the next owner can remove
+that exact ID without force and confirm absence before launching. Each recovery attempt bounds
+its cleanup writes and checks ownership again. Local-group failures do not enter the ordinary
+engine's persistent target quarantine. The failed inference is never replayed. The switch
 wait budget starts at exact queue removal and is not renewed during preparation. Group-bound
 engines reject direct administrative switching and configuration reload in this initial binding.
 
@@ -3084,6 +3097,8 @@ command = ["--model", "{{model}}", "--profile", "{{profile}}"]
 host_ip = "127.0.0.1"
 host_port = 18021
 container_port = 8080
+stop_timeout_ms = 30000
+call_timeout_ms = 300000
 wait_health = true
 wait_timeout_ms = 600000
 

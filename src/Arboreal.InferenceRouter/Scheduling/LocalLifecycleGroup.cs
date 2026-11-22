@@ -13,8 +13,6 @@ internal sealed class LocalLifecycleGroup(string name, Action wake)
     private QueuedRequest? _waiting;
     private Task<EngineRuntime.ObservedSwitchResult>? _switch;
     private (string Engine, string Model, string? Profile)? _resident;
-    private bool _uncertain;
-
     internal string Name => name;
 
     internal bool IsIdle
@@ -26,14 +24,14 @@ internal sealed class LocalLifecycleGroup(string name, Action wake)
 
     internal bool IsResident(string engine, string model)
     {
-        lock (_gate) return !_uncertain && _resident is { } resident && resident.Engine == engine && resident.Model == model;
+        lock (_gate) return _resident is { } resident && resident.Engine == engine && resident.Model == model;
     }
 
     internal Lease? TryReserve(QueuedRequest request, EngineRuntime engine, ServingProfile? profile, bool switchRequired, OwnerSwitchBudget budget)
     {
         lock (_gate)
         {
-            if (_uncertain || _switch is { IsCompleted: false }) return null;
+            if (_switch is { IsCompleted: false }) return null;
             if (_switch is { IsCompleted: true }) _switch = null;
             if (_waiting is { } waiting && (waiting.Ticket.IsTerminal || waiting.CallerToken.IsCancellationRequested))
                 _waiting = null;
@@ -80,25 +78,37 @@ internal sealed class LocalLifecycleGroup(string name, Action wake)
             var engine = owner.Engine;
             var target = engine.LocalTarget(owner.Request.Ticket.Model, owner.Profile);
             var provider = engine.LocalLifecycle;
-            var preflight = await provider.PreflightAsync(target, stop).ConfigureAwait(false);
-            if (!preflight.Succeeded) throw new InvalidOperationException(preflight.ToString());
             var inventories = new List<(EngineRuntime Engine, IReadOnlyList<EnginePeer> Peers)>();
             foreach (var peer in _engines.Values)
             {
-                var peers = await peer.LocalLifecycle.OwnedPeersAsync(target, stop).ConfigureAwait(false);
+                var peers = peer.LocalLifecycle is DockerLifecycleProvider docker
+                    ? await docker.ReadLocalInventoryAsync(stop).ConfigureAwait(false)
+                    : await peer.LocalLifecycle.OwnedPeersAsync(target, stop).ConfigureAwait(false);
                 if (peers.Any(static value => value.QueryFailed || !value.OwnedByUs))
                     throw new InvalidOperationException("The local group could not establish container ownership.");
                 inventories.Add((peer, peers));
             }
-            if (_resident is null && provider is DockerLifecycleProvider)
+            await PreflightAsync(provider, target, stop).ConfigureAwait(false);
+            if (!owner.CanRecover)
+                throw new InvalidOperationException("The request ended before group inventory and preflight completed.");
+            for (var i = 0; i < inventories.Count; i++)
+            {
+                var (member, peers) = inventories[i];
+                if (member.LocalLifecycle is not DockerLifecycleProvider native) continue;
+                var settled = await native.RecoverLocalInventoryAsync(peers, () => owner.CanRecover, stop).ConfigureAwait(false);
+                if (settled.Any(value => value.QueryFailed || !value.OwnedByUs))
+                    throw new InvalidOperationException("The local group could not reconcile the previous Docker operation.");
+                inventories[i] = (member, settled);
+            }
+            if (_resident is null)
             {
                 var active = inventories.SelectMany(item => item.Peers
-                    .Where(value => value.ContainerState != "exited")
+                    .Where(value => value.ContainerState is not ("exited" or "created"))
                     .Select(value => (item.Engine, Peer: value))).ToArray();
                 if (active.Length > 1 || active.Any(item => item.Peer.ContainerState != "running" ||
                     string.IsNullOrEmpty(item.Peer.Model) || item.Peer.EffectiveProfile is null))
                     throw new InvalidOperationException("Cannot identify one running resident in the local group.");
-                if (active is [var incumbent] && ReferenceEquals(incumbent.Engine, engine) &&
+                if (provider is DockerLifecycleProvider && active is [var incumbent] && ReferenceEquals(incumbent.Engine, engine) &&
                     incumbent.Peer.Model == target.Model && incumbent.Peer.EffectiveProfile == target.EffectiveProfile)
                     owner.Adopt = incumbent.Peer;
             }
@@ -129,12 +139,16 @@ internal sealed class LocalLifecycleGroup(string name, Action wake)
             lock (_gate)
             {
                 _resident = succeeded ? (owner.Engine.Name, owner.Request.Ticket.Model, residentProfile) : null;
-                // A failed operation never infers vacancy or restarts itself from an empty queue.
-                _uncertain = !succeeded;
                 _waiting = null;
             }
             _wake();
         }
+    }
+
+    private static async ValueTask PreflightAsync(IEngineLifecycleProvider provider, LifecycleTarget target, CancellationToken stop)
+    {
+        var result = await provider.PreflightAsync(target, stop).ConfigureAwait(false);
+        if (!result.Succeeded) throw new InvalidOperationException(result.ToString());
     }
 
     internal sealed class Lease(LocalLifecycleGroup group, QueuedRequest request, EngineRuntime engine,
@@ -157,7 +171,7 @@ internal sealed class LocalLifecycleGroup(string name, Action wake)
             {
                 if (ReferenceEquals(peer, Engine)) continue;
                 var inventory = await peer.LocalLifecycle.OwnedPeersAsync(target, ct).ConfigureAwait(false);
-                if (inventory.Any(value => value.QueryFailed || !value.OwnedByUs || value.ContainerState != "exited"))
+                if (inventory.Any(value => value.QueryFailed || !value.OwnedByUs || value.ContainerState is not ("exited" or "created")))
                     return false;
             }
             return true;

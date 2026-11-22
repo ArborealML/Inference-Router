@@ -63,7 +63,8 @@ public sealed class DockerLifecycleConfig
     /// <summary>Deadline for one Engine API call. A wedged daemon must not be able to hold a switch
     /// open forever: the wait above is how long a model may take to load, not how long one HTTP call
     /// may take.</summary>
-    public int CallTimeoutMs { get; init; } = 15_000;
+    public int CallTimeoutMs { get; init; } = DefaultCallTimeoutMs;
+    internal const int DefaultCallTimeoutMs = 300_000;
 }
 
 /// <summary>The local image ID, named manifest digest and platform a native switch must verify.</summary>

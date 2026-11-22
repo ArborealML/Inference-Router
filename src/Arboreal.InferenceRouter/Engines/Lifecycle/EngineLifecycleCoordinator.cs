@@ -122,7 +122,7 @@ public sealed class EngineLifecycleCoordinator : IDisposable
                 for (var attempt = 0; attempt < 2 && owner.CanRecover; attempt++)
                 {
                     var inventory = attempt == 0 ? peers : await native.OwnedPeersUnderGateAsync(checks.Token).ConfigureAwait(false);
-                    if (!inventory.Where(p => p.ContainerState != "exited").SequenceEqual([adopt]) ||
+                    if (!inventory.Where(p => p.ContainerState is not ("exited" or "created")).SequenceEqual([adopt]) ||
                         inventory.Any(p => !p.OwnedByUs || p.QueryFailed)) continue;
                     var candidate = await native.InspectResidentAsync(target, adopt, checks.Token).ConfigureAwait(false);
                     if (candidate is not { } verified) continue;
@@ -130,7 +130,7 @@ public sealed class EngineLifecycleCoordinator : IDisposable
                     if (!await owner.OtherEnginesVacantAsync(target, checks.Token).ConfigureAwait(false)) continue;
                     var latest = await native.OwnedPeersUnderGateAsync(checks.Token).ConfigureAwait(false);
                     if (latest.Any(p => p.QueryFailed || !p.OwnedByUs) ||
-                        !latest.Where(p => p.ContainerState != "exited").SequenceEqual([adopt])) continue;
+                        !latest.Where(p => p.ContainerState is not ("exited" or "created")).SequenceEqual([adopt])) continue;
                     if (!await native.StillSameResidentAsync(verified, checks.Token).ConfigureAwait(false)) continue;
                     if (!owner.CanRecover || checks.IsCancellationRequested) return refused;
                     if (ready)
@@ -162,6 +162,8 @@ public sealed class EngineLifecycleCoordinator : IDisposable
 
             // 4. Launch the exact target. Readiness is proved by whoever owns the engine's health probe
             // (the runtime), not here: this step only claims the launch was accepted.
+            if (owner is { CanRecover: false })
+                return new SwitchReport(LifecycleResult.Fail("recovery_owner_ended", "the switch owner ended before launch"), false);
             var delegated = string.Equals(_provider.Kind, DelegatedExecProvider.ProviderKind, StringComparison.Ordinal);
             timing?.TryStartStage(delegated ? SwitchStage.DelegatedCommand : SwitchStage.Launch);
             var launched = native is not null

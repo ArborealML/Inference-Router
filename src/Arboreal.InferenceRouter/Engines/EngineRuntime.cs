@@ -1753,7 +1753,7 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
     {
         if (state.QuarantineTarget is not { } target) return;
         var failure = SwitchResult.FailedFromRecord(state.FailureReason);
-        _nativeQuarantine!.Remember(target, failure);
+        if (_def.LifecycleGroup is null) _nativeQuarantine!.Remember(target, failure);
         state.NativeFailure = failure;
     }
 

@@ -55,6 +55,7 @@ internal sealed class DockerContainerInspectState
 
 internal sealed class DockerObservationResponse
 {
+    [JsonPropertyName("Name")] public string? Name { get; set; }
     [JsonPropertyName("Id")] public string? Id { get; set; }
     [JsonPropertyName("Image")] public string? Image { get; set; }
     [JsonPropertyName("RestartCount")] public long? RestartCount { get; set; }

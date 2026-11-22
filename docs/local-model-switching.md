@@ -15,8 +15,16 @@ Docker clients.
 A cold request waits in the ordinary queue while active transport uses drain.
 The original request then owns launch and readiness, including its existing wait
 budget. Cancellation before selection does not launch its target. A detached
-transport still holds its charge until cleanup completes. A failed group operation
-fences admission; it does not automatically retry or roll back. Authenticated idle reload can add engines to an existing group and aliases to its models. Direct admin switching remains disabled for group-bound engines.
+transport still holds its charge until cleanup completes. After a failed switch, each later request checks the outstanding operation and the
+current inventory of every group member. AIR can verify and reuse one running resident,
+switch it out, or launch when the resources are vacant. An unresolved write or ambiguous
+ownership fails that request with `switch_failed`. A later request checks again. AIR never
+replays the failed inference. Authenticated idle reload can add engines to an existing group and aliases to its models. Direct admin switching remains disabled for group-bound engines.
+
+The default Docker API call budget is five minutes (`call_timeout_ms = 300000`).
+Docker's default graceful stop is 30 seconds (`stop_timeout_ms = 30000`), and
+AIR's default readiness wait after launch is ten minutes (`wait_timeout_ms = 600000`).
+An explicit value in the engine configuration takes precedence for its own setting.
 
 Configure loaded-status filtering and backend health/context/slot probes for the
 chosen catalog. Native readiness retries temporary listener failures within its
