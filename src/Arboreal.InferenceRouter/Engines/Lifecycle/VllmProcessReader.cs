@@ -102,7 +102,7 @@ internal static class VllmProcessReader
         while (ReadToken(ref remaining, out var arg))
         {
             if (arg.SequenceEqual("--"u8)) return null;
-            if (!arg.StartsWith("--"u8)) continue;
+            if (!arg.StartsWith("-"u8)) continue;
             var equals = arg.IndexOf((byte)'=');
             var option = equals < 0 ? arg : arg[..equals];
             if (option.SequenceEqual("--api-server-count"u8))
@@ -139,7 +139,7 @@ internal static class VllmProcessReader
     {
         var equals = argument.IndexOf('=', StringComparison.Ordinal);
         var option = equals < 0 ? argument : argument[..equals];
-        if (option == "--") return true;
+        if (option is "--" or "-asc" or "-as" or "-a") return true;
         if (!option.StartsWith("--", StringComparison.Ordinal)) return false;
         var normalized = option.Replace('_', '-');
         return SlotsFlag.StartsWith(normalized, StringComparison.Ordinal) ||

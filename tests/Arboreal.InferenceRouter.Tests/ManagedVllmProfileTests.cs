@@ -69,6 +69,7 @@ public sealed class ManagedVllmProfileTests
     [InlineData("MAX_SEQS={{max_slots}}", "MAX_SEQS=1")]
     [InlineData("\"API_SERVERS=1\"", "\"API_SERVERS=1\", \"EXTRA_ARGS=--max_num_seqs=2\"")]
     [InlineData("\"API_SERVERS=1\"", "\"API_SERVERS=1\", \"MAX_SEQS=3\"")]
+    [InlineData("\"API_SERVERS=1\"", "\"API_SERVERS=1\", \"EXTRA_ARGS=-asc=2\"")]
     public void RefusesUnsupportedSourceOnLoadAndReload(string from, string to)
     {
         var invalid = Settings.Replace(from, to, StringComparison.Ordinal);
@@ -96,6 +97,8 @@ public sealed class ManagedVllmProfileTests
     [InlineData("--max-num-seqs=1\0--max_num_seqs=3\0", null)]
     [InlineData("--max-num-seqs=1\0--config\0settings\0", null)]
     [InlineData("--max-num-seqs=1", null)]
+    [InlineData("--max-num-seqs=1\0-asc\0" + "2\0", null)]
+    [InlineData("--max-num-seqs=1\0-asc=2\0", null)]
     public void ReadsOnlyWholeNulDelimitedTokens(string flags, int? slots) =>
         Assert.Equal(slots, VllmProcessReader.ParseServingArgv(Argv(flags)));
 
