@@ -191,7 +191,8 @@ public sealed class CliCompletionProcessTests
         }
     }
 
-    internal static async Task<ProcessResult> RunCliAsync(string verb, string[] args, string? stdin, CancellationToken ct)
+    internal static async Task<ProcessResult> RunCliAsync(string verb, string[] args, string? stdin, CancellationToken ct,
+        Action<ProcessStartInfo>? configure = null)
     {
         var dll = Path.Combine(AppContext.BaseDirectory, "air.dll");
         Assert.True(File.Exists(dll), $"CLI project output missing from test directory: {dll}");
@@ -206,6 +207,7 @@ public sealed class CliCompletionProcessTests
         start.ArgumentList.Add(verb);
         foreach (var arg in args) start.ArgumentList.Add(arg);
 
+        configure?.Invoke(start);
         using var child = Process.Start(start) ?? throw new InvalidOperationException("Could not start the CLI.");
         try
         {

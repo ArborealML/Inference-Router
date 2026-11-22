@@ -9,7 +9,7 @@ internal static class AirTuneWorkloadPlan
     private const int MaxTiers = 16;
     internal const int MaxManifestBytes = 524_288;
     private const string Usage =
-        "usage: air tune plan --config FILE --engine ENGINE --model MODEL --seed HEX --max-concurrency N [--profile TIER]";
+        "usage: air tune plan [--config FILE] --engine ENGINE --model MODEL --seed HEX --max-concurrency N [--profile TIER]";
     private static readonly UTF8Encoding StrictUtf8 = new(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
 
     internal static int Run(ReadOnlySpan<string> args, Stream output, TextWriter error)
@@ -185,7 +185,7 @@ internal static class AirTuneWorkloadPlan
 
     private static PlanArguments? ParseArguments(ReadOnlySpan<string> args)
     {
-        if (args.Length is not (10 or 12))
+        if (args.Length is not (8 or 10 or 12))
             return null;
         string? path = null, engine = null, model = null, seed = null, profile = null;
         var cap = 0;
@@ -196,7 +196,7 @@ internal static class AirTuneWorkloadPlan
                 return null;
             switch (args[i])
             {
-                case "--config" when path is null && IsDirectPath(value):
+                case "--config" when path is null:
                     path = value;
                     break;
                 case "--engine" when engine is null:
@@ -219,13 +219,15 @@ internal static class AirTuneWorkloadPlan
             }
         }
 
-        return path is null || engine is null || model is null || seed is null || cap == 0
-            ? null : new PlanArguments(path, engine, model, seed, cap, profile);
+        if (engine is null || model is null || seed is null || cap == 0)
+            return null;
+        path = RouterConfigLoader.ResolveFilePath(path);
+        return IsDirectPath(path) ? new PlanArguments(path, engine, model, seed, cap, profile) : null;
     }
 
     private static bool IsDirectPath(string path)
     {
-        if (path[0] == '\\' || path.StartsWith("//", StringComparison.Ordinal))
+        if (path.Length == 0 || path[0] == '-' || path[0] == '\\' || path.StartsWith("//", StringComparison.Ordinal))
             return false;
         var colon = path.AsSpan().IndexOf(':');
         var slash = path.AsSpan().IndexOf('/');

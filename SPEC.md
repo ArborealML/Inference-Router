@@ -1,12 +1,13 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.131)
+Status: draft, continuously revised (v0.12.132)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
 
 ## 0. Revision log
 
+- v0.12.132 — local configuration commands and the standalone server default to `~/arboreal/inference-router/router.toml` (§11).
 - v0.12.131 — local requests share available slots on a fitting resident profile. A local switch wait expiry or lifecycle refusal returns the existing switch failure response, with the refusal reason on the event feed. A local deadline reports the wait ceiling even when preparation has yet to start.
 - v0.12.130 — a local group may replace one confirmed owned resident on launch-setting drift or failed backend readiness. It rechecks group occupancy and the same container generation before stopping. The original queued request owns the replacement and keeps its switch deadline. Failed replacement is terminal for that request.
 - v0.12.129 — on first admission a local Docker group can reuse its verified running target. The group checks its inventory, effective Docker configuration, backend readiness and container start identity before dispatch. Ambiguous occupancy or contradictory adoption evidence refuses the request before mutation.
@@ -3365,7 +3366,7 @@ Changes to existing launch settings or removal of a managed engine still require
 
 Set `ARBOREAL_ROUTER_RELOAD_TOKEN` before starting a file-backed server to enable the reload
 routes in §6. The startup file is selected by the explicit command-line path, then
-`ARBOREAL_ROUTER_CONFIG`, then `AIR_CONFIG`, then `router.toml`. The server captures that absolute
+`ARBOREAL_ROUTER_CONFIG`, then `AIR_CONFIG`, then `~/arboreal/inference-router/router.toml`. The server captures that absolute
 path and reloads from it. The operator replaces the file and supplies the ETag from an authenticated
 GET to POST. The request supplies neither a file path nor its contents. Programmatic configuration
 overrides and servers started without the reload credential have no reload routes.
@@ -3635,8 +3636,12 @@ air threads --id id [--priority high:200] [--server url]
 air tickets id [--server url]
 air config [--config f.toml]
 air tune compare --baseline FILE --candidate FILE
-air tune plan --config FILE --engine ENGINE --model MODEL --seed HEX --max-concurrency N [--profile TIER]
+air tune plan [--config FILE] --engine ENGINE --model MODEL --seed HEX --max-concurrency N [--profile TIER]
 ```
+
+`air serve`, `air config`, `air tune plan` and the standalone server use the explicit
+configuration path first, then `ARBOREAL_ROUTER_CONFIG`, then `AIR_CONFIG`. With all
+three omitted they open `~/arboreal/inference-router/router.toml` in the user's home directory.
 
 `air serve` starts the router host in the CLI process. Client verbs construct HTTP requests and
 read the router's responses directly.
@@ -3741,9 +3746,9 @@ Two synthetic example inputs exercise the contract. [Baseline](tests/Arboreal.In
 
 ### 11.2 Offline tuning workload manifests
 
-`air tune plan --config FILE --engine ENGINE --model MODEL --seed HEX --max-concurrency N [--profile TIER]`
+`air tune plan [--config FILE] --engine ENGINE --model MODEL --seed HEX --max-concurrency N [--profile TIER]`
 reads one AIR configuration with the file admission rules in §11.1. It takes each
-required option exactly once, in any order, and accepts one optional profile. The seed
+required option exactly once, in any order, and accepts one optional configuration path and one optional profile. The seed
 is 64 lowercase hexadecimal characters and the cap is a single digit from 1 through 8.
 The command selects JSON for a case-insensitive `.json` extension and TOML otherwise.
 The admitted config must contain at most 65,536 bytes of valid UTF-8 without a BOM.

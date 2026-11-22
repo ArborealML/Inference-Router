@@ -14,7 +14,7 @@ public sealed class AirTuneWorkloadPlanOfflineTests : IDisposable
     private const string GeneratorDigest = "d98b0ad601e8466b478a5bb92a9033567e5b05a8874b10465e0795c0d6e46ee8";
     private const string GoldenDigest = "69682ac5cda290a65818fc8715836c89e85eec84a327da3397f21d8c395d1444";
     private const string Usage =
-        "usage: air tune plan --config FILE --engine ENGINE --model MODEL --seed HEX --max-concurrency N [--profile TIER]";
+        "usage: air tune plan [--config FILE] --engine ENGINE --model MODEL --seed HEX --max-concurrency N [--profile TIER]";
     private const string BadTarget = "error: invalid tuning workload target or tier";
     private const string BadConfig = "error: invalid tuning workload config";
     private static readonly TimeSpan RunLimit = TimeSpan.FromSeconds(8);
@@ -80,6 +80,49 @@ public sealed class AirTuneWorkloadPlanOfflineTests : IDisposable
         using var single = Parse(selected);
         var selectedTiers = single.RootElement.GetProperty("tiers");
         Assert.Equal(tiers[1].GetRawText(), Assert.Single(selectedTiers.EnumerateArray()).GetRawText());
+    }
+
+    [Fact(Timeout = 30_000)]
+    public async Task DefaultConfigUsesHomeAndHonorsOverrides()
+    {
+        if (!LinuxX64)
+            return;
+
+        var home = _directory.CreateSubdirectory("home");
+        var configDir = home.CreateSubdirectory(Path.Combine("arboreal", "inference-router"));
+        var path = Path.Combine(configDir.FullName, "router.toml");
+        File.Copy(GoldenPath, path);
+        var cwd = _directory.CreateSubdirectory("cwd");
+        File.WriteAllText(Path.Combine(cwd.FullName, "router.toml"), "invalid toml");
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(25));
+
+        async Task<ProcessResult> Run(string verb, string[] args, string? primary = null, string? legacy = null)
+        {
+            return await RunCliAsync(verb, args, null, deadline.Token, start =>
+            {
+                start.WorkingDirectory = cwd.FullName;
+                start.Environment["HOME"] = home.FullName;
+                start.Environment.Remove("ARBOREAL_ROUTER_CONFIG");
+                start.Environment.Remove("AIR_CONFIG");
+                if (primary is not null) start.Environment["ARBOREAL_ROUTER_CONFIG"] = primary;
+                if (legacy is not null) start.Environment["AIR_CONFIG"] = legacy;
+            });
+        }
+
+        string[] omitted = ["plan", .. Arguments(GoldenPath)[3..]];
+        Assert.Equal(GoldenDigest, Digest((await Run("tune", omitted)).Stdout));
+        AssertError(await Run("tune", omitted, primary: "https://invalid.example"), 2, Usage);
+        foreach (var result in new[]
+        {
+            await Run("config", []),
+            await Run("config", [], legacy: GoldenPath),
+            await Run("config", [], primary: GoldenPath, legacy: "router.toml"),
+            await Run("config", ["-c", GoldenPath], primary: "router.toml"),
+        })
+            Assert.Equal(0, result.ExitCode);
+        Assert.Equal(2, (await Run("config", ["--config"])).ExitCode);
+        Assert.Equal(2, (await Run("serve", ["-c"])).ExitCode);
+        AssertError(await Run("tune", [.. omitted, "--config"]), 2, Usage);
     }
 
     [Fact]

@@ -12,6 +12,19 @@ namespace Arboreal.InferenceRouter;
 /// Deliberately reflection-free: both parsers are Roslyn-generated (Native AOT clean).</summary>
 public static class RouterConfigLoader
 {
+    public static string ResolveFilePath(string? path)
+    {
+        var configured = path ?? Environment.GetEnvironmentVariable("ARBOREAL_ROUTER_CONFIG")
+            ?? Environment.GetEnvironmentVariable("AIR_CONFIG");
+        if (configured is not null)
+            return configured;
+
+        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile, Environment.SpecialFolderOption.DoNotVerify);
+        if (!Path.IsPathFullyQualified(home))
+            throw new RouterConfigException("Could not locate the user home directory. Specify --config FILE.");
+        return Path.Combine(home, "arboreal", "inference-router", "router.toml");
+    }
+
     public static RouterConfig LoadFile(string path)
     {
         var text = File.ReadAllText(path);
