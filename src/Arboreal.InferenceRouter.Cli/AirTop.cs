@@ -7,6 +7,8 @@ namespace Arboreal.InferenceRouter.Cli;
 internal sealed class AirTop(RouterMonitor monitor)
 {
     private string? _queue;
+    private MonitorGauges? _lastGauges;
+    private TopRow[] _gaugeRows = [];
     private TopFrame? _frame;
     private long _revision = -1;
     private long _second = -1;
@@ -62,7 +64,12 @@ internal sealed class AirTop(RouterMonitor monitor)
     internal void Open(TopRow row)
     {
         if (row.Ticket is not null) monitor.Follow(row.Ticket);
-        else if (row.Queue is not null) { _queue = row.Queue; _frame = null; }
+        else if (row.Queue is not null)
+        {
+            monitor.Follow(null);
+            _queue = RouterMonitor.ReportedModel(row.Queue);
+            _frame = null;
+        }
     }
 
     internal void Back()
@@ -82,34 +89,24 @@ internal sealed class AirTop(RouterMonitor monitor)
         var age = state.SnapshotTime is { } t
             ? FormattableString.Invariant($"{Math.Max(0, second - t.ToUnixTimeSeconds())}s") : "unavailable";
         var status = $"feed {state.Feed} | status {age}" + (state.StatusError is null ? "" : $" stale ({state.StatusError})");
-        var rows = new List<TopRow>();
+        TopRow? followed = null;
         if (state.TicketId is { } id)
         {
             var item = state.Ticket;
             var phase = item?.State ?? state.TicketError ?? "looking up";
-            rows.Add(new("followed", "Ticket", $"{Text(id)}  {Text(phase)}",
+            if (item is not null && state.TicketError is not null) phase += " (stale: " + state.TicketError + ")";
+            followed = new("followed", "Ticket", $"{Text(id)}  {Text(phase)}",
                 $"Following {Text(id)}\nState {Text(phase)}\nModel {Text(item?.Model)}   Engine {Text(item?.Engine)}" +
-                $"\nThread {Text(item?.ThreadId)}\nError {Text(item?.ErrorCode)} {Text(item?.Error, 1600)}"));
+                $"\nThread {Text(item?.ThreadId)}\nError {Text(item?.ErrorCode)} {Text(item?.Error, 1600)}");
         }
-        if (state.Gauges is { } gauges)
+        if (!ReferenceEquals(_lastGauges, state.Gauges))
         {
-            foreach (var engine in gauges.Engines.OrderByDescending(e => e.Inflight > 0 || !e.Healthy || e.SwitchingToward is not null)
-                         .ThenBy(e => e.Engine, StringComparer.Ordinal))
-            {
-                var loaded = engine.LoadedModels.Length == 0 ? "none" : string.Join(", ", engine.LoadedModels.Take(16).Select(m => Text(m)));
-                if (engine.LoadedModels.Length > 16) loaded += " …";
-                var label = engine.Healthy ? "healthy" : "unhealthy";
-                var summary = FormattableString.Invariant($"{Text(engine.Engine)}  {label}  inflight {engine.Inflight}  loaded {loaded}");
-                if (engine.SwitchingToward is not null) summary += "  target " + Text(engine.SwitchingToward);
-                rows.Add(new("engine/" + engine.Engine, "Engine", summary,
-                    summary + $"\nSwitch target {Text(engine.SwitchingToward)}\nReported profile {Text(engine.ActiveProfile)}" +
-                    $"   Context {Count(engine.ActiveContextWindow)}   Slots {Count(engine.ActiveSlots)}"));
-            }
-            foreach (var (model, depth) in gauges.QueueDepths.OrderByDescending(pair => pair.Value).ThenBy(pair => pair.Key, StringComparer.Ordinal))
-                rows.Add(new("queue/" + model, "Queue", FormattableString.Invariant($"{Text(model)}  {depth} queued"),
-                    "Global queue depth from status. Enter filters observed activity for " + Text(model), Queue: model));
+            _lastGauges = state.Gauges;
+            _gaugeRows = GaugeRows(_lastGauges);
         }
-        var scope = _queue is null ? "all models" : Text(_queue);
+        var rows = new List<TopRow>();
+        var scope = state.TicketId is { } ticket ? "ticket " + Text(ticket) :
+            _queue is null ? "all models" : "reported model " + Text(_queue);
         rows.Add(new("history", "History", "Observed history · " + scope,
             FormattableString.Invariant($"Retained {state.History.Length} events and boundaries; evicted {state.Evicted}. Queue depths come from status.\nEnter follows a ticket or filters a queue. Esc returns. Tab focuses details. q quits.")));
         foreach (var entry in state.History.Reverse())
@@ -128,8 +125,32 @@ internal sealed class AirTop(RouterMonitor monitor)
                 FormattableString.Invariant($"{e.Timestamp:O}  {Text(e.Kind)}\nTicket {Text(e.TicketId)}   Thread {Text(e.ThreadId)}\nEngine {Text(e.Engine)}   Model {Text(e.Model)}\nReason {Text(e.Reason, 1600)}"),
                 Ticket: e.TicketId));
         }
-        _frame = new("AIR | " + status + " | Enter open · Esc back · q quit", rows.ToArray());
+        _frame = new("AIR | " + status + " | Enter open · Esc back · q quit", new TopRows(followed, _gaugeRows, rows.ToArray()));
         return _frame;
+    }
+
+    private static TopRow[] GaugeRows(MonitorGauges? gauges)
+    {
+        var rows = new List<TopRow>();
+        if (gauges is not null)
+        {
+            foreach (var engine in gauges.Engines.OrderByDescending(e => e.Inflight > 0 || !e.Healthy || e.SwitchingToward is not null)
+                         .ThenBy(e => e.Engine, StringComparer.Ordinal))
+            {
+                var loaded = engine.LoadedModels.Length == 0 ? "none" : string.Join(", ", engine.LoadedModels.Take(16).Select(m => Text(m)));
+                if (engine.LoadedModels.Length > 16) loaded += " …";
+                var label = engine.Healthy ? "healthy" : "unhealthy";
+                var summary = FormattableString.Invariant($"{Text(engine.Engine)}  {label}  inflight {engine.Inflight}  loaded {loaded}");
+                if (engine.SwitchingToward is not null) summary += "  target " + Text(engine.SwitchingToward);
+                rows.Add(new("engine/" + engine.Engine, "Engine", summary,
+                    summary + $"\nSwitch target {Text(engine.SwitchingToward)}\nReported profile {Text(engine.ActiveProfile)}" +
+                    $"   Context {Count(engine.ActiveContextWindow)}   Slots {Count(engine.ActiveSlots)}"));
+            }
+            foreach (var (model, depth) in gauges.QueueDepths.OrderByDescending(pair => pair.Value).ThenBy(pair => pair.Key, StringComparer.Ordinal))
+                rows.Add(new("queue/" + model, "Queue", FormattableString.Invariant($"{Text(model)}  {depth} queued"),
+                    "Global queue depth from status. Enter filters observed activity for " + Text(model), Queue: model));
+        }
+        return rows.ToArray();
     }
 
     private static string Count(long value) => value > 0 ? value.ToString(CultureInfo.InvariantCulture) : "unreported";

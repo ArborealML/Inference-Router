@@ -29,10 +29,29 @@ public sealed class AirTopTests
         top.Open(activity);
         await monitor.RefreshAsync(CancellationToken.None);
         Assert.Contains("same  unknown or expired", top.Read().Rows[0].Summary, StringComparison.Ordinal);
-        top.Back();
+        Assert.Contains("ticket same", Assert.Single(top.Read().Rows, r => r.Kind == "History").Summary, StringComparison.Ordinal);
+        top.Open(queue);
+        Assert.Null(monitor.Snapshot().TicketId);
+        Assert.Contains("reported model cold", Assert.Single(top.Read().Rows, r => r.Kind == "History").Summary, StringComparison.Ordinal);
         Assert.Single(top.Read().Rows, r => r.Kind == "Activity");
         top.Back();
         Assert.Equal(2, top.Read().Rows.Count(r => r.Kind == "Activity"));
+    }
+
+    [Fact]
+    public void LongQueueNamesUseTheSameReportingKeyAsEvents()
+    {
+        using var http = new HttpClient();
+        using var monitor = new RouterMonitor(http);
+        string longName = new('m', 180);
+        var ring = new EventRing();
+        ring.Append(new RouterEvent { Kind = "queued", Model = longName, TicketId = "ticket" });
+        var e = Assert.Single(ring.Replay(0));
+        Assert.NotEqual(longName, e.Model);
+        monitor.Observe(e, false);
+        var top = new AirTop(monitor);
+        top.Open(new("queue", "Queue", "model", "detail", Queue: longName));
+        Assert.Equal("ticket", Assert.Single(top.Read().Rows, r => r.Kind == "Activity").Ticket);
     }
 
     private sealed class Fixture : HttpMessageHandler

@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using System.Net;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -8,8 +9,20 @@ namespace Arboreal.InferenceRouter.Monitoring;
 /// <summary>Current reported gauges. The monitor has no use for the status document's thread registry.</summary>
 public sealed record MonitorGauges
 {
-    public required EngineStats[] Engines { get; init; }
-    public required Dictionary<string, int> QueueDepths { get; init; }
+    public required ImmutableArray<MonitorEngine> Engines { get; init; }
+    public required ImmutableDictionary<string, int> QueueDepths { get; init; }
+}
+
+public sealed record MonitorEngine
+{
+    public required string Engine { get; init; }
+    public required bool Healthy { get; init; }
+    public required ImmutableArray<string> LoadedModels { get; init; }
+    public required int Inflight { get; init; }
+    public required string? SwitchingToward { get; init; }
+    public string? ActiveProfile { get; init; }
+    public long ActiveContextWindow { get; init; }
+    public int ActiveSlots { get; init; }
 }
 
 public sealed record MonitorEntry(long Number, RouterEvent? Event, string? Boundary);
@@ -35,6 +48,9 @@ public sealed class RouterMonitor(HttpClient http) : IDisposable
     private string? _statusError, _ticketId, _ticketError;
     private TicketSnapshot? _ticket;
     private string _feed = "connecting";
+
+    /// <summary>The feed comparison key for a full model name from status. Reporting keys can collide.</summary>
+    public static string ReportedModel(string model) => WireText.Ident(model);
 
     public MonitorSnapshot Snapshot()
     {
@@ -77,8 +93,8 @@ public sealed class RouterMonitor(HttpClient http) : IDisposable
         try
         {
             var gauges = await GetAsync("admin/status", MonitorJson.Default.MonitorGauges, 1_048_576, ct).ConfigureAwait(false);
-            if (gauges.Engines is null || gauges.QueueDepths is null ||
-                gauges.Engines.Any(e => e is null || e.Engine is null || e.LoadedModels is null))
+            if (gauges.Engines.IsDefault || gauges.QueueDepths is null ||
+                gauges.Engines.Any(e => e is null || e.Engine is null || e.LoadedModels.IsDefault))
                 throw new JsonException("Invalid engine gauges.");
             lock (_gate) { _gauges = gauges; _snapshotTime = DateTimeOffset.UtcNow; _statusError = null; _revision++; }
         }
@@ -92,6 +108,7 @@ public sealed class RouterMonitor(HttpClient http) : IDisposable
         if (id is null) return;
         TicketSnapshot? found = null;
         string? error = null;
+        bool unavailable = false;
         try
         {
             var item = await GetAsync("admin/tickets/" + Uri.EscapeDataString(id),
@@ -104,11 +121,11 @@ public sealed class RouterMonitor(HttpClient http) : IDisposable
         {
             error = "unknown or expired";
         }
-        catch (Exception e) when (Recoverable(e, ct)) { error = ReadError(e); }
+        catch (Exception e) when (Recoverable(e, ct)) { error = ReadError(e); unavailable = true; }
         lock (_gate)
         {
             if (!string.Equals(id, _ticketId, StringComparison.Ordinal)) return;
-            _ticket = found;
+            if (!unavailable) _ticket = found;
             _ticketError = error;
             _revision++;
         }
@@ -143,6 +160,7 @@ public sealed class RouterMonitor(HttpClient http) : IDisposable
         bool reconnect = false;
         while (!ct.IsCancellationRequested)
         {
+            bool opened = false;
             long since;
             lock (_gate) since = _cursor;
             try
@@ -152,13 +170,26 @@ public sealed class RouterMonitor(HttpClient http) : IDisposable
                 handshake.CancelAfter(TimeSpan.FromSeconds(5));
                 using var response = await http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, handshake.Token).ConfigureAwait(false);
                 response.EnsureSuccessStatusCode();
-                lock (_gate) { _feed = "connected"; _revision++; if (reconnect) WakePoll(); }
+                handshake.CancelAfter(Timeout.InfiniteTimeSpan);
+                if (!string.Equals(response.Content.Headers.ContentType?.MediaType, "text/event-stream", StringComparison.OrdinalIgnoreCase))
+                    throw new IOException("Expected an event stream.");
+                opened = true;
+                lock (_gate)
+                {
+                    _feed = "connected";
+                    if (reconnect)
+                    {
+                        Add(null, "Reconnected; history continuity uncertain");
+                        WakePoll();
+                    }
+                    _revision++;
+                }
                 using var stream = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
-                bool first = true;
+                bool firstAfterReconnect = reconnect;
                 await foreach (var e in MonitorEventReader.ReadAsync(stream, ct).ConfigureAwait(false))
                 {
-                    Observe(e, reconnect && first);
-                    first = false;
+                    Observe(e, firstAfterReconnect);
+                    firstAfterReconnect = false;
                     delay = TimeSpan.FromMilliseconds(250);
                 }
                 throw new EndOfStreamException();
@@ -168,7 +199,7 @@ public sealed class RouterMonitor(HttpClient http) : IDisposable
                 lock (_gate)
                 {
                     _feed = "disconnected (" + ReadError(e) + ")";
-                    if (!reconnect || _history.LastOrDefault()?.Boundary is null)
+                    if (!reconnect || opened)
                         Add(null, "Connection lost; history continuity uncertain");
                     _revision++;
                     WakePoll();
@@ -187,7 +218,9 @@ public sealed class RouterMonitor(HttpClient http) : IDisposable
             if (item.Seq <= 0 || item.Kind is null) throw new JsonException("Invalid feed event.");
             if (item.Seq <= _cursor)
             {
-                if (!firstAfterReconnect || _history.Any(h => h.Event == item)) return;
+                // The server cursor is exclusive. A non-advancing first record may belong to a
+                // restarted listener even if its complete payload matches an old record.
+                if (!firstAfterReconnect) return;
                 Add(null, "Event sequence reset; history incomplete");
                 WakePoll();
             }

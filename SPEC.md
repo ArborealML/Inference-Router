@@ -1,11 +1,13 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.145)
+Status: draft, continuously revised (v0.12.146)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
 
 ## 0. Revision log
+
+- v0.12.146 — recover terminal monitor observations after disconnect, replay overlap and gaps, preserving stale data and the followed ticket (§11).
 
 - v0.12.145 — expose interactive `air top` with engine, queue and ticket views, bounded terminal text and keyboard navigation (§11).
 
@@ -3689,6 +3691,8 @@ The terminal monitor uses a selectable table and detail pane. The table keeps th
 The read-only monitor client polls status every two seconds, excluding the response time. Global queue depths and engine gauges come from status. It retains up to 256 global events and continuity markers combined. A followed ticket is fetched by its exact ID, which remains selected when the ticket is unknown or expired. Status and ticket reads are capped at 1 MiB and 64 KiB respectively. SSE lines are capped at 16 KiB.
 
 `air top` requires an interactive terminal. Enter on a queue filters the observed model history. Enter on an event follows its full ticket ID. Escape leaves the ticket or queue view, Tab moves to the scrollable details, and q exits. Engine rows show reported loaded models separately from the switch target. Zero context and slots mean unreported. Control characters and Unicode formatting controls in displayed server text are replaced with spaces.
+
+The monitor resumes the unfiltered feed with the last JSON `Seq`. Every reconnect adds a continuity warning because the feed has no instance identifier. A sequence gap or detected reset adds a timeline marker and schedules a fresh status and exact-ticket read. The exclusive cursor makes a non-advancing first event after reconnect evidence of a possible restart even when its payload repeats. The monitor starts a new segment and deduplicates sequences within it. Engine, residency and queue snapshots are immutable. Entering a queue exits ticket follow and compares the same reporting identifier used on the feed. Long model names can share a reporting identifier. Each successful snapshot sorts gauge rows once, and the terminal reads visible cells by index as events arrive. A failed gauge poll retains the last successful snapshot and its age. Ticket lookup failures mark the last known state stale; an explicit 404 replaces it with unknown or expired. Retry delay ranges from 250 ms to five seconds. An idle connected feed has no heartbeat requirement.
 
 ```
 air completion bash|powershell|zsh|fish
