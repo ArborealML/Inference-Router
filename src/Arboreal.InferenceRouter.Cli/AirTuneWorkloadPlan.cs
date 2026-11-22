@@ -14,7 +14,16 @@ internal static class AirTuneWorkloadPlan
 
     internal static int Run(ReadOnlySpan<string> args, Stream output, TextWriter error)
     {
-        if (ParseArguments(args) is not { } options)
+        PlanArguments? options;
+        try
+        {
+            options = ParseArguments(args);
+        }
+        catch (RouterConfigException)
+        {
+            return Error(error, "error: could not locate the user home directory; specify --config FILE");
+        }
+        if (options is null)
             return Error(error, Usage, 2);
 
         using var proc = AirTuneFile.OpenProcDescriptors();

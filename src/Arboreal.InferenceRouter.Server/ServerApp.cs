@@ -15,13 +15,16 @@ namespace Arboreal.InferenceRouter.Server;
 /// DTO binding); responses are raw passthrough bytes; admin DTOs use AirServerJson.</summary>
 public static partial class ServerApp
 {
-    public static bool TryReadConfigOption(string[] args, out string? path)
+    public static bool TryReadConfigOption(ReadOnlySpan<string> args, out string? path, List<string>? remaining = null)
     {
         path = null;
         for (var i = 0; i < args.Length; i++)
         {
             if (args[i] is not ("--config" or "-c"))
+            {
+                remaining?.Add(args[i]);
                 continue;
+            }
             if (++i >= args.Length || args[i].Length == 0 || args[i][0] == '-')
             {
                 Console.Error.WriteLine("error: --config requires a file path");

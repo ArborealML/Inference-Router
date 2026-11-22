@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
+using Arboreal.InferenceRouter.Server;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Logging;
@@ -26,6 +27,17 @@ public sealed class CliCompletionProcessTests
     private static readonly string ProgressOutput = FirstStatus + Environment.NewLine + ChangedStatus + Environment.NewLine;
     private static readonly TimeSpan RunLimit = TimeSpan.FromSeconds(15);
     private static readonly TimeSpan CleanupLimit = TimeSpan.FromSeconds(5);
+
+    [Fact]
+    public void StandaloneConfigOptionPreservesHostOptionValues()
+    {
+        var remaining = new List<string>();
+        Assert.True(ServerApp.TryReadConfigOption(
+            ["--config", "router.toml", "--example-path", "router.toml", "--example-mode", "serve"],
+            out var path, remaining));
+        Assert.Equal("router.toml", path);
+        Assert.Equal(["--example-path", "router.toml", "--example-mode", "serve"], remaining.ToArray());
+    }
 
     [Fact(Timeout = 30_000)]
     public async Task NamedPipeDockerCliConfigRefusesBeforeSuccessOutput()
