@@ -1,12 +1,13 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.137)
+Status: draft, continuously revised (v0.12.138)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
 
 ## 0. Revision log
 
+- v0.12.138 — the CLI reports refused event subscriptions with exit 1, labels unreported serving capacity, and includes probe and selector metadata in JSON config readback (§11).
 - v0.12.137 — allow five minutes per Docker API call by default. Later local-group requests reconcile outstanding Docker operations against fresh group inventory. Unresolved occupancy fails the request (§5.3.1, §7).
 - v0.12.136 — render CLI operator queries and acknowledgments as human-readable text by default. A global `--json` flag selects machine output (§11).
 - v0.12.135 — check exact profile readiness after verified offer validation and before issuer checkout. A changed observation returns `switch_failed` (§6).
@@ -3681,7 +3682,9 @@ air tune plan [--config FILE] --engine ENGINE --model MODEL --seed HEX --max-con
 
 The global `--json` flag can precede the verb or appear among its options. Models, status, tickets,
 switch acknowledgments and events render as text by default. In JSON mode their HTTP objects retain
-wire field names and values, with one line terminator after each body or event. Switch acknowledgments
+wire field names and values, with one line terminator after each body or event. An HTTP refusal
+before the event stream starts prints the error in the selected format and exits 1. Human status
+labels an unreported window and the configured fallback for unknown slots. Switch acknowledgments
 omit the legacy HTTP-status prefix in JSON mode. Thread registration emits a `ThreadId` object for its
 empty HTTP 204 response. Config emits a resolved configuration summary and tune compare emits its text
 report in the JSON string field `Report`. Command usage and local validation diagnostics remain on

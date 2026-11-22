@@ -77,8 +77,10 @@ internal static class CliOutput
                 JsonValueKind.True => "healthy", JsonValueKind.False => "unhealthy", _ => "unknown health",
             };
             Console.WriteLine($"  {Text(engine, "Engine")}  {health}  loaded: {Text(engine, "LoadedModels")}");
-            Console.WriteLine($"    Profile: {Text(engine, "ActiveProfile")}  context: {Text(engine, "ActiveContextWindow")} tokens" +
-                $"  slots: {Text(engine, "ActiveSlots")}  in flight: {Text(engine, "Inflight")}");
+            string window = Gauge(engine, "ActiveContextWindow", " tokens", "unreported");
+            string slots = Gauge(engine, "ActiveSlots", "", "fallback (max_inflight_per_engine)");
+            Console.WriteLine($"    Profile: {Text(engine, "ActiveProfile")}  context: {window}" +
+                $"  slots: {slots}  in flight: {Text(engine, "Inflight")}");
             if (Field(engine, "SwitchingToward").ValueKind == JsonValueKind.String)
                 Console.WriteLine($"    Switching to {Text(engine, "SwitchingToward")}");
         }
@@ -92,9 +94,25 @@ internal static class CliOutput
         var threads = Field(root, "Threads");
         if (!Rows(threads)) Console.WriteLine("  None");
         else foreach (var thread in threads.EnumerateArray())
-            Console.WriteLine($"  {Text(thread, "ThreadId")}  priority: {Text(thread, "Priority")}  weight: {Text(thread, "Weight")}" +
+            Console.WriteLine($"  {Text(thread, "ThreadId")}  priority: {Priority(Field(thread, "Priority"))}  weight: {Text(thread, "Weight")}" +
                 $"  enqueued: {Text(thread, "Enqueued")}  completed: {Text(thread, "Completed")}");
         Console.WriteLine($"Feed subscriber faults: {Text(root, "FeedSubscriberFaults")}");
+    }
+
+    private static string Gauge(JsonElement engine, string key, string unit, string fallback)
+    {
+        var field = Field(engine, key);
+        return field.ValueKind == JsonValueKind.Number && field.TryGetInt64(out long value) && value > 0
+            ? value.ToString(CultureInfo.InvariantCulture) + unit : fallback;
+    }
+
+    private static string Priority(JsonElement priority)
+    {
+        var kind = Field(priority, "Class");
+        var sub = Field(priority, "Sub");
+        return kind.ValueKind == JsonValueKind.Number && kind.TryGetByte(out byte code) && code > 0 &&
+            sub.ValueKind == JsonValueKind.Number && sub.TryGetByte(out byte value)
+            ? new ThreadPriority(code, value).ToString() : Display(priority);
     }
 
     private static void Detail(JsonElement root)

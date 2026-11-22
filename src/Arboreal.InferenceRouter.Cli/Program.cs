@@ -54,7 +54,8 @@ public static class Program
             usage: air [--json] <command> [options]
 
             Output is readable text by default. Use --json before or after the command for machine output.
-            Tune plan always writes its JSON manifest. Serve starts the host.
+            Tune compare --json wraps the existing text in a Report string. Tune plan always writes its
+            JSON manifest. Serve starts the host.
 
             commands:
               serve [--config path] [--listen url]      run the router host in this process
@@ -130,12 +131,7 @@ public static class Program
             foreach (var (name, e) in cfg.Engines)
             {
                 var key = e.ApiKey is { Length: > 0 } ? "inline" : e.ApiKeyFile is { Length: > 0 } ? $"file:{e.ApiKeyFile}" : "none";
-                var (owner, provider) = e.LifecycleOwner switch
-                {
-                    EngineLifecycleOwner.Router => ("router", "docker"),
-                    EngineLifecycleOwner.Delegated => ("delegated", "exec"),
-                    _ => ("external", "none"),
-                };
+                var (owner, provider) = LifecycleNames(e.LifecycleOwner);
                 Console.WriteLine($"engine {name}: kind={e.Kind} endpoint={e.Endpoint} remote={e.Remote} " +
                     $"lifecycle_owner={owner} provider={provider} " +
                     $"health={(e.Health?.Path ?? "/props (default)")} ctx={(e.Health?.ContextPath ?? "n_ctx (default)")} " +
@@ -356,6 +352,11 @@ public static class Program
         using var http = new HttpClient();
         using var res = await http.GetAsync($"{server.TrimEnd('/')}/admin/events?since={since}",
             HttpCompletionOption.ResponseHeadersRead).ConfigureAwait(false);
+        if (!res.IsSuccessStatusCode)
+        {
+            CliOutput.Print(await res.Content.ReadAsStringAsync().ConfigureAwait(false), ResponseView.Event, json, (int)res.StatusCode);
+            return 1;
+        }
         using var reader = new StreamReader(await res.Content.ReadAsStreamAsync().ConfigureAwait(false));
         while (await reader.ReadLineAsync().ConfigureAwait(false) is { } line)
         {
@@ -455,6 +456,13 @@ public static class Program
         output.WriteByte((byte)'\n');
     }
 
+    private static (string Owner, string Provider) LifecycleNames(EngineLifecycleOwner? owner) => owner switch
+    {
+        EngineLifecycleOwner.Router => ("router", "docker"),
+        EngineLifecycleOwner.Delegated => ("delegated", "exec"),
+        _ => ("external", "none"),
+    };
+
     private static void WriteConfigJson(string path, RouterConfig cfg)
     {
         using var output = Console.OpenStandardOutput();
@@ -478,13 +486,34 @@ public static class Program
             json.WriteString("Name", name);
             json.WriteString("Endpoint", engine.Endpoint.ToString());
             json.WriteBoolean("Remote", engine.Remote);
+            var (_, provider) = LifecycleNames(engine.LifecycleOwner);
+            json.WriteString("Kind", engine.Kind.ToString());
             json.WriteString("LifecycleOwner", engine.LifecycleOwner.ToString());
+            json.WriteString("Provider", provider);
+            json.WriteString("ApiKeySource", engine.ApiKey is { Length: > 0 } ? "inline" :
+                engine.ApiKeyFile is { Length: > 0 } ? "file" : "none");
+            json.WriteStartObject("HealthProbe");
+            json.WriteString("Path", engine.Health?.Path ?? "/props");
+            json.WriteString("ContextPath", engine.Health?.ContextPath ?? "n_ctx");
+            json.WriteString("SlotsPath", engine.Health?.SlotsPath ?? "total_slots");
+            json.WriteEndObject();
             json.WriteStartArray("Models");
             foreach (var (id, model) in engine.Catalog)
             {
                 json.WriteStartObject();
                 json.WriteString("Id", id);
                 json.WriteString("DefaultProfile", model.Profile);
+                if (model.Select is { } selector)
+                {
+                    json.WriteStartObject("Select");
+                    json.WriteString("Exec", selector.Exec);
+                    json.WriteStartArray("Args");
+                    foreach (var arg in selector.Args) json.WriteStringValue(arg);
+                    json.WriteEndArray();
+                    json.WriteBoolean("WaitHealth", selector.WaitHealth);
+                    json.WriteNumber("WaitTimeoutMs", selector.WaitTimeoutMs);
+                    json.WriteEndObject();
+                }
                 json.WriteStartArray("Aliases");
                 foreach (var alias in model.Aliases) json.WriteStringValue(alias);
                 json.WriteEndArray();
