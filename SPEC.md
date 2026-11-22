@@ -1,11 +1,13 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.143)
+Status: draft, continuously revised (v0.12.144)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
 
 ## 0. Revision log
+
+- v0.12.144 — poll reported engine and queue gauges, follow one exact ticket, and retain bounded global activity for read-only monitors (§11).
 
 - v0.12.143 — qualify the terminal monitor’s selectable table and detail pane under Native AOT (§11).
 
@@ -3681,6 +3683,8 @@ exclusive cursor described above.
 ## 11. CLI
 
 The terminal monitor uses a selectable table and detail pane. The table keeps the selected identity through row reordering and terminal resizing. All widgets update on the terminal event loop.
+
+The read-only monitor client polls status every two seconds, excluding the response time. Global queue depths and engine gauges come from status. It retains up to 256 global events and continuity markers combined. A followed ticket is fetched by its exact ID, which remains selected when the ticket is unknown or expired. Status and ticket reads are capped at 1 MiB and 64 KiB respectively. SSE lines are capped at 16 KiB.
 
 ```
 air completion bash|powershell|zsh|fish
