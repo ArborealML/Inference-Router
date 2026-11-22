@@ -5,7 +5,10 @@ import { setTimeout as delay } from "node:timers/promises";
 
 import { contextFits, observedWindow, parseCatalog, piModel, requestFits, tier } from "./catalog.mjs";
 
+class PermanentTicketError extends Error {}
+
 const entryType = "air-context";
+const ticketStates = new Set(["Queued", "WaitingForModel", "Executing", "Completed", "Cancelled", "Failed"]);
 const clean = value => String(value ?? "").replace(/[\x00-\x1f\x7f-\x9f]/g, " ").slice(0, 450);
 
 export default async function air(pi) {
@@ -21,12 +24,19 @@ export default async function air(pi) {
     let engines = [];
     let choices = new Map();
     let budgetRefused = false;
+    let showingWaiting = false;
     const active = new Set();
     const currentRequests = () => Array.from(active).filter(req => req.branch === branch);
     const requestKey = req => req.ticket || req.clientId;
     const matchesRequest = (req, id) => req && (req.ticket === id || req.clientId === id);
-    function updateFooter() {
-        ctx?.ui.setStatus("air-ticket", currentRequests().at(-1)?.text);
+    function updateTicketUI() {
+        const current = currentRequests().at(-1);
+        ctx?.ui.setStatus("air-ticket", current?.observationWarning ?? current?.text);
+        const waiting = current?.queued === true && !current.signal.aborted;
+        if (waiting !== showingWaiting) {
+            ctx?.ui.setWorkingMessage(waiting ? "Waiting" : undefined);
+            showingWaiting = waiting;
+        }
     }
     const admin = (path, options = {}) => fetch(url.origin + "/admin/" + path, {
         ...options, redirect: "error", headers: {...(auth ? {Authorization: "Bearer " + auth} : {}), ...options.headers}
@@ -90,12 +100,24 @@ export default async function air(pi) {
 
     async function inspect(req, signal) {
         const response = await admin("tickets/" + encodeURIComponent(req.ticket), {signal: boundedSignal(signal)});
-        if (!response.ok) throw new Error("Ticket HTTP " + response.status);
+        if (!response.ok) {
+            const message = "Ticket HTTP " + response.status;
+            if (response.status >= 500 || response.status === 429 || response.status === 408) throw new Error(message);
+            throw new PermanentTicketError(message);
+        }
         const state = await response.json();
-        if (state.Id !== req.ticket || state.ThreadId !== req.thread) throw new Error("Ticket identity mismatch");
+        if (state?.Id !== req.ticket || state.ThreadId !== req.thread) throw new PermanentTicketError("Ticket identity mismatch");
+        if (!ticketStates.has(state.State)) throw new PermanentTicketError("Unrecognized ticket state");
         if (req.branch === branch) {
+            // A manual status read and the poll may return out of order. A dispatched ticket never requeues.
+            if (req.dispatched && state.State === "Queued") return false;
+            req.lastState = state.State;
+            req.missedPolls = 0;
+            req.observationWarning = undefined;
+            req.queued = state.State === "Queued";
+            req.dispatched = !req.queued;
             req.text = snapshotText(req.ticket, state);
-            if (currentRequests().at(-1) === req) updateFooter();
+            if (currentRequests().at(-1) === req) updateTicketUI();
             if (state.ErrorCode && !req.reported) {
                 req.reported = true;
                 notify(req.text, "error");
@@ -105,12 +127,31 @@ export default async function air(pi) {
     }
 
     async function watchTicket(req) {
-        try {
-            while (!req.watch.signal.aborted) {
-                if (await inspect(req, req.watch.signal)) break;
-                await delay(700, undefined, {signal: req.watch.signal});
+        const pollIntervalMs = 700;
+        let intervalMs = pollIntervalMs;
+        while (!req.watch.signal.aborted) {
+            try {
+                if (await inspect(req, req.watch.signal)) return;
+                intervalMs = pollIntervalMs;
+            } catch (error) {
+                if (req.watch.signal.aborted || req.branch !== branch) return;
+                // Failed reads do not change the last confirmed ticket state.
+                if (error instanceof PermanentTicketError) {
+                    req.observationWarning = req.text + " · status unavailable (" + clean(error.message) + ")";
+                    updateTicketUI();
+                    return;
+                }
+                req.missedPolls = (req.missedPolls ?? 0) + 1;
+                if (req.missedPolls === 4) {
+                    req.observationWarning = snapshotText(req.ticket, {
+                        State: "status unavailable (last known " + (req.lastState ?? "admitted") + ")", Model: req.model
+                    });
+                    updateTicketUI();
+                }
+                intervalMs = Math.min(intervalMs * 2, 4 * pollIntervalMs);
             }
-        } catch { /* A lost admin connection never interrupts the inference stream. */ }
+            await delay(intervalMs, undefined, {signal: req.watch.signal}).catch(() => {});
+        }
     }
 
     function streamSimple(model, transcript, options = {}) {
@@ -134,15 +175,17 @@ export default async function air(pi) {
         const thread = ctx?.sessionManager.getSessionId() || options.sessionId;
         if (!thread) throw new Error("AIR needs a Pi session identity");
         const req = {thread, model: model.id, branch, clientId: "request-" + randomUUID(), watch: new AbortController(), abort: new AbortController()};
+        req.signal = options.signal ? AbortSignal.any([options.signal, req.abort.signal]) : req.abort.signal;
+        const onAbort = () => { if (req.branch === branch) updateTicketUI(); };
+        req.signal.addEventListener("abort", onAbort, {once: true});
         active.add(req);
         latest = req;
         req.text = snapshotText(requestKey(req), {State: "submitting", Model: model.id});
-        updateFooter();
-        const signal = options.signal ? AbortSignal.any([options.signal, req.abort.signal]) : req.abort.signal;
+        updateTicketUI();
         const underlying = options.fetch ?? fetch;
         let sent = false;
         const original = adapter.streamSimple({...model, contextWindow: capacity, maxTokens: current.maxTokens}, transcript, {
-            ...options, signal, maxTokens: reserve, maxRetries: 0,
+            ...options, signal: req.signal, maxTokens: reserve, maxRetries: 0,
             fetch: async (input, init) => {
                 if (sent) throw new Error("AIR already received this Pi request");
                 if (String(input) !== base + "/chat/completions" || init?.method?.toUpperCase() !== "POST")
@@ -163,24 +206,24 @@ export default async function air(pi) {
                 req.ticket = response.headers.get("X-Inference-Ticket");
                 if (req.ticket && req.branch === branch) {
                     req.text = snapshotText(req.ticket, {State: "admitted"});
-                    updateFooter();
+                    updateTicketUI();
                     void watchTicket(req);
                 }
                 return response;
             }
         });
-        void original.result().then(async message => {
+        void original.result().finally(() => req.signal.removeEventListener("abort", onAbort)).then(async message => {
             req.watch.abort();
             active.delete(req);
             if (req.branch !== branch) return;
-            updateFooter();
+            updateTicketUI();
             if (req.ticket) await inspect(req, req.branch.signal).catch(() => {});
             if (message.stopReason === "error" && req.branch === branch && !req.reported)
                 notify(snapshotText(req.ticket, {State: "Failed", Error: message.errorMessage}), "error");
         }).catch(() => {
             req.watch.abort();
             active.delete(req);
-            if (req.branch === branch) updateFooter();
+            if (req.branch === branch) updateTicketUI();
         });
         return original;
     }
@@ -242,7 +285,7 @@ export default async function air(pi) {
         branch = new AbortController();
         latest = undefined;
         ctx = context;
-        updateFooter();
+        updateTicketUI();
         budgetRefused = false;
         choices = new Map();
         for (const entry of ctx.sessionManager.getBranch()) {
@@ -263,6 +306,8 @@ export default async function air(pi) {
         for (const req of active) { req.abort.abort(); req.watch.abort(); }
         branch?.abort();
         ctx?.ui.setStatus("air-ticket", undefined);
+        if (showingWaiting) ctx?.ui.setWorkingMessage(undefined);
+        showingWaiting = false;
         ctx = lifetime = branch = latest = undefined;
     });
     pi.on("agent_settled", async () => { if (ctx) await publish(); });

@@ -285,6 +285,11 @@ public partial class ConfigLoaderTests
         Assert.True(engine.Docker.RemoveStopped);           // a switch does not leave stopped containers behind
         Assert.True(engine.Docker.WaitHealth);          // readiness is proved unless the operator says otherwise
         Assert.Equal(30_000, engine.Docker.StopTimeoutMs);
+        Assert.Equal(600_000, engine.Docker.WaitTimeoutMs);
+        Assert.Equal(300_000, engine.Docker.CallTimeoutMs);
+        Assert.Equal(300_000, new DockerLifecycleConfig { Image = "fixture", RouterId = "fixture" }.CallTimeoutMs);
+        var overridden = Text.Replace("container_port = 8080", "container_port = 8080\ncall_timeout_ms = 19000", StringComparison.Ordinal);
+        Assert.Equal(19_000, RouterConfigLoader.Load(overridden).Engines["native"].Docker!.CallTimeoutMs);
     }
 
     [Fact]
@@ -452,6 +457,7 @@ public partial class ConfigLoaderTests
         Assert.Equal(EngineLifecycleKind.Docker, native.Lifecycle);
         Assert.Equal<EngineLifecycleOwner?>(EngineLifecycleOwner.Router, native.LifecycleOwner);
         Assert.NotNull(native.Docker?.ImageIdentity);
+        Assert.Equal(300_000, native.Docker!.CallTimeoutMs);
         Assert.NotEmpty(native.Catalog);
         Assert.All(native.Catalog.Values, entry => Assert.Null(entry.Select));
 

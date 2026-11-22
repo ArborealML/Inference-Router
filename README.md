@@ -10,9 +10,9 @@ AIR gives OpenAI-compatible clients one HTTP endpoint for local inference engine
 
 ## Features
 
-- **Local queue-driven model switching.** Named resource groups coordinate N clients and N configured Docker engines on an existing daemon. Active requests finish before an original queued request drives the next model launch and streams its reply. After router restart, the first request can reuse the matching running container after Docker and backend readiness checks. If its launch settings have drifted or its backend fails readiness, the same request can replace the verified container once. Independent groups progress separately. Verified through live Pi selection and backend residency readback. [Setup and verified scope](docs/local-model-switching.md)
+- **Local queue-driven model switching.** Named resource groups coordinate N clients and N configured Docker engines on an existing daemon. Active requests finish before an original queued request drives the next model launch and streams its reply. After router restart, the first request can reuse the matching running container after Docker and backend readiness checks. If its launch settings have drifted or its backend fails readiness, the same request can replace the verified container once. After a failed switch, each later request rechecks the group and can proceed once the outstanding Docker operation and current occupancy are established. An unresolved operation returns a switch failure to the waiting client. Independent groups progress separately. Verified through live Pi selection and backend residency readback. [Setup and verified scope](docs/local-model-switching.md)
 
-- **Pi model and context selection.** Pi CLM lists cold and resident AIR models in its native model picker, remembers serving profiles per session and model, and shows the current request’s ticket state. Live Pi sessions served 32k and 256k profiles, and cancelling one request allowed a concurrent request to finish. [Pi setup and commands](tools/pi-air/README.md)
+- **Pi model and context selection.** Pi CLM lists cold and resident AIR models in its native model picker, remembers serving profiles per session and model, and shows the current request’s ticket state. Live Pi sessions served 32k and 256k profiles, and cancelling one request allowed a concurrent request to finish. On the qualified local DeepSeek IQ2 deployment, the default is 256k. Selecting `/context 1m` served a short reply with an observed 1,048,576-token window and one slot. [Pi setup and commands](tools/pi-air/README.md)
 - **OpenAI-compatible inference.** Send chat or legacy text completions with optional SSE streaming. AIR preserves complete upstream blocks across read boundaries and reports a cut-off block as a stream error. [Client integration guide](docs/ai-integration.md)
 - **Model discovery.** `GET /v1/models` lists each engine’s last accepted roster and can include observed context windows in tokens. [Model discovery contract](docs/ai-integration.md#discover-loaded-models)
 - **Routing and serving profiles.** Queue requests by model, apply thread priorities, and route to configured local and remote engines using health and available slots. The built-in scheduler checks explicit context minimums and required serving profiles against the window observed for that model. It can refuse an explicit minimum before queueing when every declaring engine has configured tiers and none fits. [Serving profiles specification](SPEC.md#76-serving-profiles-and-context-window-escalation)
@@ -116,6 +116,8 @@ The [native Docker sample](samples/router.native-docker.toml) uses illustrative 
 
 ## Inspect a running router
 
+Use `air status` for engine health, loaded models, context windows, queue depths and threads. Use `air models` for the observed model roster, `air tickets ID` for one request and `air events` to follow changes. Add `--json` before or after the command for machine-readable output, for example `air --json status`. Each event occupies one line in either mode.
+
 | Question | Request |
 | --- | --- |
 | Is the router listening? | `GET /healthz` |
@@ -124,6 +126,19 @@ The [native Docker sample](samples/router.native-docker.toml) uses illustrative 
 | What is changing across engines and queues? | `GET /admin/events` for the replayable SSE feed |
 
 Anyone who can reach AIR can call the admin endpoints and claim a thread priority. Engine credentials are configured separately for each backend. Router events omit prompt text, but upstream error bodies can expose backend details to clients.
+
+### Shell tab completion
+
+On Linux or macOS, put this build’s `air` executable on `PATH`. On Windows, put the folder containing `air.exe` on `PATH`. Run the matching line to enable completion in the current session. To keep it, add the line once to `~/.bashrc` (or the Bash login profile on macOS), `~/.zshrc`, `~/.config/fish/config.fish`, or the PowerShell file named by `$PROFILE`. After replacing the binary, rerun the line or start a new shell. The profile line loads the installed version each time.
+
+| Shell | Load completion for `air` |
+| --- | --- |
+| Bash | `source <(air completion bash)` |
+| Zsh, after `autoload -Uz compinit && compinit` | `source <(air completion zsh)` |
+| fish | `air completion fish \| source` |
+| PowerShell | `air completion powershell \| Out-String \| Invoke-Expression` |
+
+Try `air sw<Tab>`, then `air switch --engine <Tab>` and `--model <Tab>` after selecting an engine. The picker includes cold model IDs and aliases. `air tune plan --config FILE --engine <Tab>` uses that file offline. Client commands first read `GET /admin/catalog` from the same listener they use for inference. If the applied catalog is unavailable, the local configuration supplies candidates. Completion only reads configuration and catalog data.
 
 ## Builds and releases
 

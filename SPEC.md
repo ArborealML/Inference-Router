@@ -1,12 +1,20 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.135)
+Status: draft, continuously revised (v0.12.142)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
 
 ## 0. Revision log
 
+- v0.12.142 — client tab completion prefers the listener’s applied catalog, falls back to disk on failure and completes home-relative file operands (§11).
+
+- v0.12.141 — the CLI prints native Bash, PowerShell, Zsh and fish completion registrations. One read-only candidate service supplies positional options and configured engines, models, aliases and profiles (§11).
+- v0.12.140 — cancel a local owner waiting for the target switch claim. The group holds an issued transaction until it unwinds (§7).
+- v0.12.139 — bound local Docker group preparation by the original request lifetime and verify peer inventories at mutation boundaries (§7).
+- v0.12.138 — the CLI reports refused event subscriptions with exit 1, labels unreported serving capacity, and includes probe and selector metadata in JSON config readback (§11).
+- v0.12.137 — allow five minutes per Docker API call by default. Later local-group requests reconcile outstanding Docker operations against fresh group inventory. Unresolved occupancy fails the request (§5.3.1, §7).
+- v0.12.136 — render CLI operator queries and acknowledgments as human-readable text by default. A global `--json` flag selects machine output (§11).
 - v0.12.135 — check exact profile readiness after verified offer validation and before issuer checkout. A changed observation returns `switch_failed` (§6).
 - v0.12.134 — distinguish equal-window serving tiers by measured slots, drain exact profile users before explicit switches, and verify counted transports at submission (§6, §7.6).
 - v0.12.133 — expose the applied catalog with conditional reads and changes on the event feed. Inference clients can select an exact named serving profile per request (§6, §7.6).
@@ -1652,7 +1660,7 @@ name, such as `strata`.
 Give each router sharing a daemon a distinct `router_id`. Published ports default to loopback
 (`host_ip = "127.0.0.1"`). `remove_stopped` defaults to `true`, so switched-out containers are
 removed. `stop_timeout_ms` defaults to 30,000 ms and sets the Docker stop grace in whole seconds
-(minimum one second). `call_timeout_ms` defaults to 15,000 ms per Engine API call, independently of
+(minimum one second). `call_timeout_ms` defaults to 300,000 ms per Engine API call, independently of
 the readiness wait after launch.
 
 **Shipped provider seam.** `EngineLifecycleCoordinator` calls `IEngineLifecycleProvider`
@@ -2980,7 +2988,28 @@ client count and catalog size have no fixed two-member limit. A selected cold re
 new admission to its group while existing transport uses drain; that original queued request
 then owns stop, launch and readiness. Each admitted use holds its group charge through actual
 response disposal, including detached cleanup after a client timeout. Independent groups can
-progress concurrently. A failed group operation fences further group admission. The switch
+progress concurrently. After a failed operation each later cold request takes fresh ownership inventory of
+every group member. A single identified running resident may be verified for reuse or switched
+out. Created and exited containers occupy no serving slots. Multiple running residents or
+inconclusive ownership return `switch_failed` with the reason on the event feed. The next
+request checks again. For an uncertain write the local provider first inspects the exact
+container, then cross-checks its state against fresh inventory. A confirmed, inactive container settles Stop. If Stop never took effect, the next owner can
+stop that exact running container again. Pending Delete requires exact absence and can retry
+unforced removal after a verified stop. AIR checks an uncertain Create by its unique name.
+If the name is absent, any delayed Create can only leave a stopped container because the
+failed caller has already returned. An uncertain Start can settle through exact-ID absence or
+evidence that the instance started. If the instance remains created, the next owner can remove
+that exact ID without force and confirm absence before launching. Each recovery attempt bounds
+its cleanup writes and checks ownership again. A refused Start also retains its created ID
+for reconciliation. A delayed Create can leave a stopped, owned container, which participates
+in ordinary inventory and configured stopped-container retention. The original request's
+cancellation and remaining switch budget bound group census, preflight and mutation. AIR
+reports caller or execution cancellation as `cancelled` and budget expiry as `switch_failed`.
+Cancellation releases an unclaimed target wait. Once this owner claims a target transaction,
+its group stays reserved until that transaction unwinds. AIR checks each affected inventory again before stop and checks sibling vacancy before launch.
+The group coordinates this router's requests. Other clients of the Docker daemon can change
+containers between API calls. Local-group failures do not enter the ordinary
+engine's persistent target quarantine. The failed inference is never replayed. The switch
 wait budget starts at exact queue removal and is not renewed during preparation. Group-bound
 engines reject direct administrative switching and configuration reload in this initial binding.
 
@@ -3082,6 +3111,8 @@ command = ["--model", "{{model}}", "--profile", "{{profile}}"]
 host_ip = "127.0.0.1"
 host_port = 18021
 container_port = 8080
+stop_timeout_ms = 30000
+call_timeout_ms = 300000
 wait_health = true
 wait_timeout_ms = 600000
 
@@ -3648,6 +3679,7 @@ exclusive cursor described above.
 ## 11. CLI
 
 ```
+air completion bash|powershell|zsh|fish
 air serve [--config f.toml] [--listen url]
 air chat [--server url] [--thread id] [--priority high:200] [--model name] [--system text] [--no-stream] [--json] [prompt ...]
 air complete [--server url] [--thread id] [--priority high:200] [--model name] [--system text] [--no-stream] [--json] [prompt ...]
@@ -3661,6 +3693,25 @@ air config [--config f.toml]
 air tune compare --baseline FILE --candidate FILE
 air tune plan [--config FILE] --engine ENGINE --model MODEL --seed HEX --max-concurrency N [--profile TIER]
 ```
+
+`air completion SHELL` writes the shell registration script to stdout. Its read-only backend
+accepts the current word and preceding arguments as separate strings and emits one candidate per
+line. The command and option vocabulary is available offline. Engine/model candidates include
+cold configured entries and aliases, scoped to an engine when one precedes the cursor.
+Offline tuning uses its explicit `--config` or the usual config lookup. Other commands first read the applied catalog from `/admin/catalog` on their normal listener,
+including the default listener. A failed read falls back to local configuration. Each completion
+reads its own snapshot with a 750 ms HTTP timeout. File options support home-relative paths. With neither source available,
+dynamic lists are empty. Catalog text is completion data and is never executed as a shell command.
+
+The global `--json` flag can precede the verb or appear among its options. Models, status, tickets,
+switch acknowledgments and events render as text by default. In JSON mode their HTTP objects retain
+wire field names and values, with one line terminator after each body or event. An HTTP refusal
+before the event stream starts prints the error in the selected format and exits 1. Human status
+labels an unreported window and the configured fallback for unknown slots. Switch acknowledgments
+omit the legacy HTTP-status prefix in JSON mode. Thread registration emits a `ThreadId` object for its
+empty HTTP 204 response. Config emits a resolved configuration summary and tune compare emits its text
+report in the JSON string field `Report`. Command usage and local validation diagnostics remain on
+stderr. Help, the serve host, the tune plan manifest and the completion protocol retain their formats.
 
 `air serve`, `air config`, `air tune plan` and the standalone server use the explicit
 configuration path first, then `ARBOREAL_ROUTER_CONFIG`, then `AIR_CONFIG`. With all

@@ -125,7 +125,8 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
         /// <summary>Set when the switch targets a serving profile (context-window escalation)
         /// rather than a model load; carries "profile:<name>" for observability.</summary>
         public string? Profile;
-        public LocalLifecycleGroup.Lease? AdoptionOwner;
+        public LocalLifecycleGroup.Lease? LocalOwner;
+        public LocalLifecycleGroup.Lease? AdoptionOwner => LocalOwner?.Adopt is null ? null : LocalOwner;
         public LegacyReadinessObservation? AdoptionProbe;
         public ServingProfile? ExactProfile;
         public long RequiredWindow;
@@ -1103,6 +1104,7 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
             LifecycleTarget? claimTarget = null;
             var entryMiss = EntryGuard.Ok;
             var retryClaim = false;
+            Task? localTransaction = null;
             Task? waitForNamedUses = null;
             var offered = Capability;
             BeforeSwitchWaitForTests?.Invoke();
@@ -1174,7 +1176,7 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
                                 {
                                     Model = canonical,
                                     Profile = profileOverride?.Name,
-                                    AdoptionOwner = localOwner?.Adopt is null ? null : localOwner,
+                                    LocalOwner = localOwner,
                                     ExactProfile = exact,
                                     RequiredWindow = requiredWindow,
                                     QuarantineTarget = quarantineTarget,
@@ -1229,12 +1231,13 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
                         // waiter source above — it runs on the engine's own switch token — so the using scope cannot
                         // dispose anything this task is still using.
 #pragma warning disable IDISP013 // await-in-using not applicable: intentionally detached Task, no shared source
-                        _ = Task.Run(
+                        var transaction = Task.Run(
                             () => RunSwitchAsync(claim, claimTarget!, switchToken),
                             // Deliberately not the caller's token: the switch's own token above decides whether the
                             // transaction runs, and a request that hangs up must not be able to abort it halfway
                             // through a model load.
                             CancellationToken.None);
+                        if (localOwner is not null) localTransaction = transaction;
 #pragma warning restore IDISP013
                     }
                     catch (Exception)
@@ -1260,6 +1263,14 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
             finally
             {
                 _switchLock.Release();
+            }
+
+            // A local group can abandon admission immediately, but once this owner issues
+            // a transaction its group stays reserved until the provider has unwound.
+            if (localTransaction is not null)
+            {
+                await localTransaction.ConfigureAwait(false);
+                ct.ThrowIfCancellationRequested();
             }
 
             if (waitForNamedUses is not null)
@@ -1613,6 +1624,9 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
         var lifecycle = _lifecycle!;
         var timing = state.Timing!;
         var nativeTransaction = false;
+        using var ownerLifetime = state.LocalOwner is { } owner
+            ? CancellationTokenSource.CreateLinkedTokenSource(ct, owner.MutationToken) : null;
+        var operation = ownerLifetime?.Token ?? ct;
         // The idle claim already validated this target against the runtime binding.
         try
         {
@@ -1644,7 +1658,7 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
             {
                 nativeTransaction = state.QuarantineTarget is not null;
                 report = await lifecycle.SwitchWithReportAsync(target, timing, state.IncumbentProof?.SwitchProof,
-                    observeLaunch: true, ct, state.AdoptionOwner,
+                    observeLaunch: true, operation, state.LocalOwner,
                     state.AdoptionOwner is null ? null : token => ProbeAdoptionAsync(state, target, token))
                     .ConfigureAwait(false);
             }
@@ -1693,7 +1707,7 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
                 }
             }
             timing.TryStartStage(SwitchStage.Readiness);
-            await RunLegacyReadinessAsync(state, target, lifecycle.Readiness(target), lifecycle.Kind, ct)
+            await RunLegacyReadinessAsync(state, target, lifecycle.Readiness(target), lifecycle.Kind, operation)
                 .ConfigureAwait(false);
         }
         catch (Exception) when (state.ReadinessOutcomeDelivered is not null)
@@ -1753,7 +1767,7 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
     {
         if (state.QuarantineTarget is not { } target) return;
         var failure = SwitchResult.FailedFromRecord(state.FailureReason);
-        _nativeQuarantine!.Remember(target, failure);
+        if (_def.LifecycleGroup is null) _nativeQuarantine!.Remember(target, failure);
         state.NativeFailure = failure;
     }
 

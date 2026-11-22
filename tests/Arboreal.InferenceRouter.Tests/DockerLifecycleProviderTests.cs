@@ -76,6 +76,163 @@ public sealed class DockerLifecycleProviderTests
         "strata", "strata-8b", null,
         new EngineModelDefinition { Name = "strata-8b" });
 
+    [Theory(Timeout = 20_000)]
+    [InlineData("create", "created")]
+    [InlineData("start", "running")]
+    [InlineData("start", "exited")]
+    [InlineData("start", "absent")]
+    [InlineData("stop", "exited")]
+    [InlineData("create", "absent")]
+    [InlineData("start", "created")]
+    [InlineData("stop", "running")]
+    [InlineData("delete", "exited")]
+    public async Task LocalMutationNeedsExactObservationAndFreshInventory(string mutation, string settledState)
+    {
+        using var bound = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        var ct = bound.Token;
+        using var daemon = new FakeDockerDaemonHandler();
+        using var provider = new DockerLifecycleProvider(Cfg(), "strata", daemon, localManaged: true);
+        var target = Target();
+        var state = "unavailable";
+        var cleanupWrites = 0;
+        var rowsMatch = false;
+        string? name = null;
+        daemon.Responder = path =>
+        {
+            if (path.Contains("/containers/create?name=", StringComparison.Ordinal))
+            {
+                name = path[(path.LastIndexOf('=') + 1)..];
+                Assert.StartsWith("POST /v1.44/containers/create?name=air-", daemon.Requests[^1], StringComparison.Ordinal);
+                using var body = JsonDocument.Parse(daemon.Bodies[^1]);
+                var labels = body.RootElement.GetProperty("Labels");
+                Assert.Equal("r1", labels.GetProperty("arboreal.router").GetString());
+                Assert.Equal("strata", labels.GetProperty("arboreal.engine").GetString());
+                Assert.Equal(target.Model, labels.GetProperty("arboreal.model").GetString());
+                Assert.Equal("", labels.GetProperty("arboreal.profile").GetString());
+                if (mutation == "create") throw new HttpRequestException("lost create response");
+                return (HttpStatusCode.Created, $$"""{"Id":"{{Ours}}"}""");
+            }
+            if (path.EndsWith("/start", StringComparison.Ordinal))
+            {
+                Assert.Equal($"POST /v1.44/containers/{Ours}/start", daemon.Requests[^1]);
+                throw new HttpRequestException("lost start response");
+            }
+            if (path.Contains("/stop?", StringComparison.Ordinal))
+            {
+                Assert.StartsWith($"POST /v1.44/containers/{Ours}/stop?t=", daemon.Requests[^1], StringComparison.Ordinal);
+                if (mutation == "delete") return (HttpStatusCode.NoContent, "");
+                if (!rowsMatch) throw new HttpRequestException("lost stop response");
+                AssertPriorProof();
+                cleanupWrites++;
+                state = "exited";
+                return (HttpStatusCode.NoContent, "");
+            }
+            if (daemon.Requests[^1].StartsWith("DELETE ", StringComparison.Ordinal))
+            {
+                Assert.StartsWith($"DELETE /v1.44/containers/{Ours}", daemon.Requests[^1], StringComparison.Ordinal);
+                if (!rowsMatch) throw new HttpRequestException("lost delete response");
+                AssertPriorProof();
+                Assert.EndsWith($"/containers/{Ours}", path, StringComparison.Ordinal);
+                cleanupWrites++;
+                state = "absent";
+                return (HttpStatusCode.NoContent, "");
+            }
+            if (path.Contains("/containers/json?", StringComparison.Ordinal))
+            {
+                if (state == "absent" || !rowsMatch) return (HttpStatusCode.OK, "[]");
+                var body = $$$"""[{"Id":"{{{Ours}}}","State":"{{{state}}}","ImageID":"{{{ImageId}}}","Labels":{"arboreal.router":"r1","arboreal.engine":"strata","arboreal.model":"strata-8b","arboreal.profile":""}}]""";
+                return (HttpStatusCode.OK, body);
+            }
+            Assert.EndsWith($"/{(mutation == "create" ? name : Ours)}/json", path, StringComparison.Ordinal);
+            if (state == "unavailable") return (HttpStatusCode.ServiceUnavailable, "{}");
+            if (state is "absent" or "contradiction") return (HttpStatusCode.NotFound, "{}");
+            var inspect = NativeContainerInspect(Ours, target.Model, state: state, running: state == "running");
+            if (name is not null) inspect = inspect.Insert(1, $"\"Name\":\"/{name}\",");
+            return (HttpStatusCode.OK, inspect);
+        };
+        var failed = mutation is "stop" or "delete"
+            ? await provider.StopAsync(target, [new EnginePeer(Ours, ImageId, target.Model, true)], ct)
+            : await provider.LaunchAsync(target, ct);
+        Assert.False(failed.Succeeded);
+        var writes = daemon.Requests.Count(request => !request.StartsWith("GET", StringComparison.Ordinal));
+        for (var attempt = 0; attempt < 2; attempt++)
+        {
+            Assert.True(Assert.Single(await provider.OwnedPeersAsync(target, ct)).QueryFailed);
+            Assert.False((await provider.LaunchAsync(target, ct)).Succeeded);
+        }
+        if (mutation != "create")
+        {
+            state = "contradiction";
+            rowsMatch = true;
+            Assert.True(Assert.Single(await provider.RecoverLocalInventoryAsync([], static () => true, ct)).QueryFailed);
+            Assert.False((await provider.LaunchAsync(target, ct)).Succeeded);
+            rowsMatch = false;
+        }
+        state = settledState;
+        if (state != "absent")
+            Assert.True(Assert.Single(await provider.OwnedPeersAsync(target, ct)).QueryFailed);
+        rowsMatch = true;
+        var needsCleanup = (mutation, state) is ("start", "created") or ("stop", "running") or ("delete", "exited");
+        if (needsCleanup)
+            Assert.True(Assert.Single(await provider.RecoverLocalInventoryAsync([], static () => false, ct)).QueryFailed);
+        var recovered = await provider.RecoverLocalInventoryAsync([], static () => true, ct);
+        if (state == "absent") Assert.Empty(recovered);
+        else Assert.Equal(Ours, Assert.Single(recovered).Id);
+        Assert.Equal(needsCleanup ? 1 : 0, cleanupWrites);
+        Assert.Equal(writes + cleanupWrites, daemon.Requests.Count(request => !request.StartsWith("GET", StringComparison.Ordinal)));
+
+        void AssertPriorProof()
+        {
+            Assert.Equal($"GET /v1.44/containers/{Ours}/json", daemon.Requests[^3]);
+            Assert.StartsWith("GET /v1.44/containers/json?", daemon.Requests[^2], StringComparison.Ordinal);
+        }
+    }
+
+    [Fact(Timeout = 20_000)]
+    public async Task TimedOutCreateCannotStartItsLateContainer()
+    {
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        using var daemon = new FakeDockerDaemonHandler();
+        using var provider = new DockerLifecycleProvider(Cfg(callTimeoutMs: 100), "strata", daemon, localManaged: true);
+        var creates = 0;
+        var lateId = new string('d', 64);
+        var lateVisible = false;
+        string? oldName = null;
+        daemon.AsyncResponder = async (path, token) =>
+        {
+            if (path.Contains("/create?name=", StringComparison.Ordinal))
+            {
+                if (++creates == 1)
+                {
+                    oldName = path[(path.LastIndexOf('=') + 1)..];
+                    await Task.Delay(Timeout.InfiniteTimeSpan, token);
+                }
+                Assert.DoesNotContain(oldName!, path, StringComparison.Ordinal);
+                return (HttpStatusCode.Created, $$"""{"Id":"{{Ours}}"}""");
+            }
+            if (path.Contains("/containers/json?", StringComparison.Ordinal))
+                return (HttpStatusCode.OK, lateVisible ?
+                    $$$"""[{"Id":"{{{lateId}}}","State":"created","Labels":{"arboreal.engine":"strata","arboreal.router":"r1"}}]""" : "[]");
+            if (path.EndsWith("/start", StringComparison.Ordinal))
+            {
+                Assert.Equal($"POST /v1.44/containers/{Ours}/start", daemon.Requests[^1]);
+                return (HttpStatusCode.NoContent, "");
+            }
+            Assert.EndsWith($"/containers/{oldName}/json", path, StringComparison.Ordinal);
+            return (HttpStatusCode.NotFound, "{}");
+        };
+        var target = Target();
+        var failed = await provider.LaunchAsync(target, deadline.Token);
+        Assert.Equal("daemon_call_timeout_100ms", failed.Reason);
+        Assert.Empty(await provider.OwnedPeersAsync(target, deadline.Token));
+        lateVisible = true;
+        var late = Assert.Single(await provider.OwnedPeersAsync(target, deadline.Token));
+        Assert.Equal(lateId, late.Id);
+        Assert.Equal("created", late.ContainerState);
+        Assert.True((await provider.LaunchAsync(target, deadline.Token)).Succeeded);
+        Assert.Single(daemon.Requests, request => request.EndsWith("/start", StringComparison.Ordinal));
+    }
+
     [Fact]
     public void NamedPipeDockerDirectProviderRefusesBeforeIo()
     {

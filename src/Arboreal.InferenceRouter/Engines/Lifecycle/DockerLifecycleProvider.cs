@@ -51,6 +51,8 @@ public sealed partial class DockerLifecycleProvider : IEngineLifecycleProvider, 
     private readonly SemaphoreSlim _operations = new(1, 1);
     private readonly HashSet<string> _issuedPeerIds = new(StringComparer.OrdinalIgnoreCase);
     private PendingPeerWrite? _pendingPeerWrite;
+    private PendingLocalLaunch? _pendingLocalLaunch;
+    private sealed record PendingLocalLaunch(string Locator, string Model, string Profile, string Image, bool Starting);
     private int _disposed;
 
     private enum PeerWriteKind { Stop, Delete }
@@ -120,11 +122,13 @@ public sealed partial class DockerLifecycleProvider : IEngineLifecycleProvider, 
 
     // Only Stop/DELETE contributes this incumbent evidence. The caller holds the operation gate.
     internal bool CanRestoreIncumbentUnderGate(string? id) =>
-        Volatile.Read(ref _disposed) == 0 && _pendingPeerWrite is null &&
+        Volatile.Read(ref _disposed) == 0 && _pendingPeerWrite is null && _pendingLocalLaunch is null &&
         (IsFullContainerId(id) ? !_issuedPeerIds.Contains(id!) : _issuedPeerIds.Count == 0);
 
     private LifecycleResult? PeerWriteRefusal() => Volatile.Read(ref _disposed) != 0
         ? LifecycleResult.Fail("native_provider_disposed", "the Docker lifecycle provider has been closed")
+        : _pendingLocalLaunch is not null
+            ? LifecycleResult.Fail("native_launch_unresolved", "Inspect the outstanding local launch before another mutation.")
         : _pendingPeerWrite is { } pending
             ? LifecycleResult.Fail("native_peer_mutation_unresolved",
                 $"{pending.Kind} of container {pending.ContainerId} requires verified absence and fresh ownership inventory")
@@ -255,6 +259,8 @@ public sealed partial class DockerLifecycleProvider : IEngineLifecycleProvider, 
     internal async ValueTask<IReadOnlyList<EnginePeer>> OwnedPeersUnderGateAsync(CancellationToken ct)
     {
         if (Volatile.Read(ref _disposed) != 0) return [FailedPeer("native_provider_disposed")];
+        if (_localManaged && (_pendingLocalLaunch is not null || _pendingPeerWrite is not null))
+            return await ReconcileLocalWriteAsync(ownerActive: null, ct).ConfigureAwait(false);
         var pending = _pendingPeerWrite;
         if (pending is { } held)
         {
@@ -285,7 +291,7 @@ public sealed partial class DockerLifecycleProvider : IEngineLifecycleProvider, 
         var filter = System.Text.Json.JsonSerializer.Serialize(filterBody, DockerJsonContext.Default.DockerListFilter);
         var (ok, bodies, failure) = await CallAsync(
             HttpMethod.Get, $"{_cfg.ApiVersion}/containers/json?all=true&filters={WebUtility.UrlEncode(filter)}", null, ct,
-            requiredStatus: recoveringId is null ? null : 200).ConfigureAwait(false);
+            requiredStatus: recoveringId is null && !_localManaged ? null : 200).ConfigureAwait(false);
         if (!ok)
         {
             // An unreachable daemon is not "no peers": pretending otherwise would let a switch proceed
@@ -293,7 +299,7 @@ public sealed partial class DockerLifecycleProvider : IEngineLifecycleProvider, 
             return [FailedPeer(failure!.Reason ?? "unknown")];
         }
 
-        if (string.IsNullOrWhiteSpace(bodies) && recoveringId is null) return [];
+        if (string.IsNullOrWhiteSpace(bodies) && recoveringId is null && !_localManaged) return [];
         var list = TryRead(bodies, DockerJsonContext.Default.ListDockerContainerSummary);
         if (list is null)
         {
@@ -302,7 +308,7 @@ public sealed partial class DockerLifecycleProvider : IEngineLifecycleProvider, 
             return [FailedPeer("unparsable_container_list")];
         }
         var peers = new List<EnginePeer>(list.Count);
-        var ids = recoveringId is null ? null : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var ids = recoveringId is null && !_localManaged ? null : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var c in list)
         {
             if (c is null || (ids is not null &&
@@ -373,7 +379,7 @@ public sealed partial class DockerLifecycleProvider : IEngineLifecycleProvider, 
             var mayContinue = disposition is NativeStopDisposition.Stopped or NativeStopDisposition.AlreadyStopped
                 or NativeStopDisposition.Absent;
             if (mayContinue) _pendingPeerWrite = null;
-            if (recovery is not null && stop.Status != 204)
+            if (recovery?.Adopt is not null && stop.Status != 204)
                 return LifecycleResult.Fail("resident_stop_unconfirmed", "the exact running resident did not acknowledge stop");
             var conflict = stop.Status == 409;
             var remove = mayContinue && _cfg.RemoveStopped && !(conflict && disposition == NativeStopDisposition.Absent);
@@ -392,6 +398,8 @@ public sealed partial class DockerLifecycleProvider : IEngineLifecycleProvider, 
 
             if (remove)
             {
+                if (recovery is { CanRecover: false })
+                    return LifecycleResult.Fail("recovery_owner_ended", "the switch owner ended before removal");
                 // A peer observed exited after a conflict can restart before DELETE. An unforced
                 // DELETE lets the daemon refuse removal of the running peer.
                 var removal = await CallAsync(
@@ -458,21 +466,37 @@ public sealed partial class DockerLifecycleProvider : IEngineLifecycleProvider, 
         var body = BuildCreateRequest(target, identity);
         var json = System.Text.Json.JsonSerializer.Serialize(body, DockerJsonContext.Default.DockerCreateRequest);
         using var payload = new StringContent(json, Encoding.UTF8, "application/json");
-        var (created, bodies, failure) = await CallAsync(
-            HttpMethod.Post, $"{_cfg.ApiVersion}/containers/create", payload, ct).ConfigureAwait(false);
-        if (!created) return failure!;
+        var createPath = $"{_cfg.ApiVersion}/containers/create";
+        if (_localManaged)
+        {
+            ct.ThrowIfCancellationRequested();
+            var name = "air-" + Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture);
+            _pendingLocalLaunch = new(name, target.Model, target.EffectiveProfile, identity.Id, Starting: false);
+            createPath += "?name=" + name;
+        }
+        var create = await CallAsync(HttpMethod.Post, createPath, payload, ct).ConfigureAwait(false);
+        if (!create.Ok)
+        {
+            if (create.Status is >= 400 and < 500) _pendingLocalLaunch = null;
+            return create.Failure!;
+        }
 
-        var response = TryRead(bodies, DockerJsonContext.Default.DockerCreateResponse);
+        var response = TryRead(create.Body, DockerJsonContext.Default.DockerCreateResponse);
         var id = response?.Id;
-        if (string.IsNullOrEmpty(id))
+        if (string.IsNullOrEmpty(id) || (_localManaged && !IsFullContainerId(id)))
             return LifecycleResult.Fail("create_returned_no_id", "the daemon created a container but did not name it: check the daemon's logs");
 
-        // 304 means it was already running. 404 must be a failure: the container we were just given an
-        // id for is gone, and reporting a successful launch with nothing running is worse than failing.
+        if (_pendingLocalLaunch is { } creating)
+            _pendingLocalLaunch = creating with { Locator = id, Starting = true };
         var start = await CallAsync(
             HttpMethod.Post, $"{_cfg.ApiVersion}/containers/{Uri.EscapeDataString(id)}/start", null, ct,
             already: [304]).ConfigureAwait(false);
-        if (!start.Ok) return start.Failure!;
+        if (!start.Ok)
+        {
+            // Keep the exact created ID for the next local owner even when Docker definitively refused Start.
+            return start.Failure!;
+        }
+        _pendingLocalLaunch = null;
 
         return new LifecycleResult
         {
@@ -749,6 +773,7 @@ public sealed partial class DockerLifecycleProvider : IEngineLifecycleProvider, 
                 _issuedPeerIds.Add(write.ContainerId);
                 _pendingPeerWrite = write;
             }
+            callCts.Token.ThrowIfCancellationRequested();
             response = await _http.SendAsync(request, callCts.Token).ConfigureAwait(false);
             var body = await response.Content.ReadAsStringAsync(callCts.Token).ConfigureAwait(false);
             var status = (int)response.StatusCode;

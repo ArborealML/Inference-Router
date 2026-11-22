@@ -341,7 +341,7 @@ public static class RouterConfigLoader
                 NetworkMode = d.NetworkMode,
                 WaitHealth = d.WaitHealth ?? true,
                 WaitTimeoutMs = d.WaitTimeoutMs ?? 600_000,
-                CallTimeoutMs = d.CallTimeoutMs ?? 15_000,
+                CallTimeoutMs = d.CallTimeoutMs ?? DockerLifecycleConfig.DefaultCallTimeoutMs,
             };
         }
         else if (lifecycle == EngineLifecycleKind.Docker)
