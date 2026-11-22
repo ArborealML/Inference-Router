@@ -1,10 +1,11 @@
 ---
 id: TASK-161
 title: Make air command output readable by default and support --json
-status: In Progress
+status: Ready for Review
 assignee:
-  - '@gpt-6.2-sol-config'
+  - '@gpt-6.2-astra'
 created_date: '2026-11-22T03:06:00Z'
+updated_date: '2026-11-22T03:37:00Z'
 labels: []
 dependencies: []
 priority: high
@@ -28,3 +29,9 @@ Give people readable status, model, queue, switch and event output while retaini
 <!-- SECTION:PLAN:BEGIN -->
 Give people readable status, model, queue, switch and event output while retaining machine-readable output on request.
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Readable air status and machine-readable air --json status both verified against the installed ten-engine catalog. Focused Release tests passed, including refused event streams. [Integration](https://github.com/ArborealML/Inference-Router/pull/78).
+<!-- SECTION:NOTES:END -->

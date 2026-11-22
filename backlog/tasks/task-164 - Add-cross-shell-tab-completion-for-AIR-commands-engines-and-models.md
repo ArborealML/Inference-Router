@@ -1,11 +1,11 @@
 ---
 id: TASK-164
 title: Add cross-shell tab completion for AIR commands, engines and models
-status: In Progress
+status: Ready for Review
 assignee:
-  - '@gpt-6.2-sol-config'
+  - '@gpt-6.2-astra'
 created_date: '2026-11-22T03:14:00Z'
-updated_date: '2026-11-22T03:26:00Z'
+updated_date: '2026-11-22T03:37:00Z'
 labels: []
 dependencies: []
 priority: low
@@ -34,5 +34,5 @@ Reuse one candidate source across shell adapters. Check supported shells and con
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-The five higher-priority items have reached installed verification. Implementing one completion candidate source and Bash, PowerShell, Zsh and fish adapters; all four real shell runtimes are available for testing.
+Native Bash, PowerShell, Zsh and fish registration and candidate insertion were exercised, including cold catalog choices and quoting. The installed CLI resolved ten engines. Final review checks live-catalog precedence over stale disk and home-relative paths.
 <!-- SECTION:NOTES:END -->
