@@ -1,7 +1,7 @@
 import { estimateTokens } from "@earendil-works/pi-coding-agent";
 import { openAICompletionsApi } from "@earendil-works/pi-ai";
 import { setTimeout as delay } from "node:timers/promises";
-import { contextFits, observedWindow, parseCatalog, piModel, tier } from "./catalog.mjs";
+import { contextFits, observedWindow, parseCatalog, piModel, requestFits, tier } from "./catalog.mjs";
 
 const entryType = "air-context";
 const clean = value => String(value ?? "").replace(/[\x00-\x1f\x7f-\x9f]/g, " ").slice(0, 450);
@@ -18,6 +18,7 @@ export default async function air(pi) {
     let catalog, etag, ctx, lifetime, latest;
     let engines = [];
     let choices = new Map();
+    let budgetRefused = false;
     const active = new Set();
     const admin = (path, options = {}) => fetch(url.origin + "/admin/" + path, {
         ...options, redirect: "error", headers: {...(auth ? {Authorization: "Bearer " + auth} : {}), ...options.headers}
@@ -112,9 +113,17 @@ export default async function air(pi) {
         const capacity = target.window || observedWindow(row, engines);
         if (!capacity) throw new Error("AIR has no configured or observed context budget for " + model.id);
         const current = definition(row);
-        const held = ctx?.model;
-        if (held?.id === model.id && !contextFits(ctx, capacity, held.contextWindow, () => projectedTokens(ctx)))
-            throw new Error("The AIR window shrank. Switch to a larger profile or compact the session first.");
+        // The new prompt and tool definitions can arrive after /context validated the prior turn.
+        // Compaction and other auxiliary calls may have their own, shorter transcript.
+        const estimatedInput = transcript.messages.reduce((total, message) => total + estimateTokens(message), 0);
+        const sessionTokens = options.sessionId && options.sessionId === ctx?.sessionManager.getSessionId()
+            ? ctx.getContextUsage()?.tokens : undefined;
+        if (!requestFits(capacity, Math.max(estimatedInput, sessionTokens ?? 0),
+            Math.min(current.maxTokens, options.maxTokens ?? current.maxTokens))) {
+            budgetRefused = true;
+            throw new Error("The estimated AIR prompt and output reserve exceed this window. Select a larger /context or use /compact.");
+        }
+        budgetRefused = false;
         const thread = ctx?.sessionManager.getSessionId() || options.sessionId;
         if (!thread) throw new Error("AIR needs a Pi session identity");
         const req = {thread, model: model.id, owner: lifetime, watch: new AbortController(), abort: new AbortController()};
@@ -212,6 +221,7 @@ export default async function air(pi) {
 
     async function bind(context) {
         ctx = context;
+        budgetRefused = false;
         choices = new Map();
         for (const entry of ctx.sessionManager.getBranch()) {
             if (entry.type === "custom" && entry.customType === entryType)
@@ -236,7 +246,7 @@ export default async function air(pi) {
         if (context.model?.provider === "air") return {action: "stop"};
     });
     pi.on("session_before_compact", (event, context) => {
-        if (context.model?.provider === "air" && event.willRetry) {
+        if (context.model?.provider === "air" && (event.willRetry || (budgetRefused && event.reason !== "manual"))) {
             notify("AIR request ended. Use /compact or select a larger profile before submitting again.", "warning");
             return {cancel: true};
         }

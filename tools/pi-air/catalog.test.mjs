@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {contextFits, observedWindow, parseCatalog, piModel, tier} from "./catalog.mjs";
+import {contextFits, observedWindow, parseCatalog, piModel, requestFits, tier} from "./catalog.mjs";
 
 const engine = (name, window, defaultProfile = "short") => ({Name: name, Models: [{
     Id: "example", Aliases: ["ex"], DefaultProfile: defaultProfile, Profiles: [
@@ -40,4 +40,10 @@ test("downsizing includes generation reserve and can estimate the post-compactio
     ctx.getContextUsage = () => ({tokens: null});
     assert.equal(contextFits(ctx, 32768, 262144), false);
     assert.equal(contextFits(ctx, 32768, 262144, () => 10000), true);
+});
+
+test("a later prompt must fit even when the selected profile has stayed the same", () => {
+    assert.equal(requestFits(32768, 24576), true);
+    assert.equal(requestFits(32768, 24577), false);
+    assert.equal(requestFits(32768, 32770, 1), false);
 });

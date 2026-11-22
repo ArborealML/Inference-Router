@@ -16,4 +16,4 @@ The launcher reads the local AIR listener from the configuration. Set `AIR_API_K
 
 The extension uses read-only admin discovery and ticket snapshots. Pi streams the original response through its OpenAI adapter. AIR launcher settings disable automatic transport and agent-error retries. The client sends its session ID as `X-Inference-Thread`, the chosen capacity as `X-Inference-Required-Context`, and an exact `X-Inference-Profile` when a named profile applies.
 
-Run the catalog and budget checks with `node --test tools/pi-air/catalog.test.mjs`.
+Run the catalog checks with `node --test tools/pi-air/catalog.test.mjs`. With Pi 1.3 on the path, `python3 tools/pi-air/test_prompt_budget.py` verifies that a new prompt exceeding the selected window reaches the user as an error before an inference or automatic compaction request reaches the loopback fixture.

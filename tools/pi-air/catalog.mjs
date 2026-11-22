@@ -38,10 +38,14 @@ export function tier(model, name) {
 
 export const outputBudget = window => Math.min(8192, Math.max(1, Math.floor(window / 4)));
 
+export function requestFits(window, estimatedInput, reserve = outputBudget(window)) {
+    return Number.isFinite(estimatedInput) && estimatedInput + reserve <= window;
+}
+
 export function contextFits(ctx, target, current, estimate) {
     if (target >= current) return true;
     const usage = ctx.getContextUsage()?.tokens ?? estimate?.();
-    return Number.isFinite(usage) && usage + outputBudget(target) <= target;
+    return requestFits(target, usage);
 }
 
 export function observedWindow(model, engines) {
