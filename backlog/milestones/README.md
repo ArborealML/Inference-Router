@@ -30,7 +30,7 @@ Stream integrity, switch safety and bounded admission can advance in parallel. E
 | [Configuration reload during inference](m-8%20-%20configuration-reload-during-inference.md) | Apply a validated configuration generation while active work keeps its claimed configuration. An invalid change leaves the current generation serving. |
 | [Verifiable public release](m-9%20-%20verifiable-public-release.md) | Verify the canary, then publish and identify the stable Linux and Windows binaries with downloadable evidence. |
 | [Repository and architecture checks](m-10%20-%20repository-and-architecture-checks.md) | Pin the lifecycle map, Git identities, board validation and coordinator handoffs with reproducible checks. |
-| [Hardware-specific inference tuning](m-14%20-%20hardware-specific-inference-tuning.md) | Plan the per-engine, per-model sweep of context, stable concurrency and speed, with comparable hardware records across upgrades. |
+| [Hardware-specific inference tuning](m-14%20-%20hardware-specific-inference-tuning.md) | Measure one model, search verified configurations under workload constraints, then repeat across the configured catalog with resumable runs and per-model recommendations. |
 
 ## Follow-on work
 
