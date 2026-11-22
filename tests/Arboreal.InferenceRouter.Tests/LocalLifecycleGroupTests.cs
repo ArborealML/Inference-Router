@@ -130,6 +130,69 @@ public sealed class LocalLifecycleGroupTests
         }, deadline.Token);
     }
 
+    [Theory(Timeout = 30_000)]
+    [InlineData(2048)]
+    [InlineData(8192)]
+    public async Task ExactSmallerProfileWaitsForDrainAndSurvivesAnotherCallersCancellation(long smallerWindow)
+    {
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        var ct = deadline.Token;
+        using var cancelled = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        using var backend = new FakeEngineHandler { LoadedModels = ["model"], HoldCompletions = true };
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        backend.AfterHeldCompletionEnteredForTests = () => entered.TrySetResult();
+        var switched = new ConcurrentQueue<string>();
+        var provider = new Provider { OnLaunch = target =>
+        {
+            var tier = target.Profile!;
+            switched.Enqueue(tier.Name);
+            backend.NCtx = tier.MaxContext;
+            backend.TotalSlots = tier.MaxSlots;
+        } };
+        var engine = new EngineDefinition
+        {
+            Name = "engine", Endpoint = new Uri("http://localhost:12000/v1"),
+            Lifecycle = EngineLifecycleKind.Docker, LifecycleOwner = EngineLifecycleOwner.Router, LifecycleGroup = "gpu",
+            Docker = new DockerLifecycleConfig { Image = "fixture", RouterId = "fixture" },
+            Catalog = new Dictionary<string, EngineModelDefinition>
+            {
+                ["model"] = new() { Name = "model", Aliases = ["alias"], ServingProfiles =
+                    [ new() { Name = "large", MaxContext = 8192, MaxSlots = 2 },
+                      new() { Name = "small", MaxContext = smallerWindow, MaxSlots = 4 } ] },
+            },
+        };
+        var settings = new RouterConfig { AutoSwitch = true, Engines = new Dictionary<string, EngineDefinition>
+            { ["engine"] = engine }, HttpHandlerFactory = _ => backend };
+        settings.Scheduler.MaxInflightPerEngine = 4;
+        await using var router = new RouterCore(settings, scheduler: null, events: null, clock: TimeProvider.System,
+            lifecycleFactory: _ => provider);
+        router.Start();
+        var large = await Enqueue("first", "large", ct);
+        RouterTicket survivor;
+        try
+        {
+            await entered.Task.WaitAsync(ct);
+            var withdrawn = await Enqueue("second", "small", cancelled.Token);
+            survivor = await Enqueue("third", "small", ct);
+            await cancelled.CancelAsync();
+            await Assert.ThrowsAsync<RouterRequestException>(() => withdrawn.CompletionTask.WaitAsync(ct));
+            Assert.Equal("cancelled", withdrawn.ErrorCode);
+            Assert.Equal("large", Assert.Single(switched));
+        }
+        finally { backend.ReleaseGate(); }
+        await Task.WhenAll(large.CompletionTask, survivor.CompletionTask).WaitAsync(ct);
+        Assert.Collection(switched, first => Assert.Equal("large", first), second => Assert.Equal("small", second));
+        Assert.Equal(2, backend.CompletionCalls);
+        Assert.Equal("small", Assert.Single(router.GetStats().Engines).ActiveProfile);
+
+        async Task<RouterTicket> Enqueue(string client, string profile, CancellationToken token) =>
+            await router.EnqueueAsync(client, new InferenceRequest
+            {
+                Model = "alias", Body = """{"model":"alias","prompt":"hello"}"""u8.ToArray(),
+                Options = new() { Profile = profile },
+            }, token);
+    }
+
     private sealed class HeldHandler : FakeEngineHandler
     {
         internal TaskCompletionSource Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -151,12 +214,17 @@ public sealed class LocalLifecycleGroupTests
     private sealed class Provider : IEngineLifecycleProvider
     {
         internal ConcurrentQueue<string> Calls { get; } = new();
+        internal Action<LifecycleTarget>? OnLaunch { get; init; }
         public string Kind => "docker";
         public ValueTask<LifecycleResult> PreflightAsync(LifecycleTarget target, CancellationToken ct) => Result("preflight");
         public ValueTask<IReadOnlyList<EnginePeer>> OwnedPeersAsync(LifecycleTarget target, CancellationToken ct) =>
             ValueTask.FromResult<IReadOnlyList<EnginePeer>>([]);
         public ValueTask<LifecycleResult> StopAsync(LifecycleTarget target, IReadOnlyList<EnginePeer> peers, CancellationToken ct) => Result("stop");
-        public ValueTask<LifecycleResult> LaunchAsync(LifecycleTarget target, CancellationToken ct) => Result("launch");
+        public ValueTask<LifecycleResult> LaunchAsync(LifecycleTarget target, CancellationToken ct)
+        {
+            OnLaunch?.Invoke(target);
+            return Result("launch");
+        }
         public ReadinessPolicy Readiness(LifecycleTarget target) => new(true, TimeSpan.FromSeconds(5));
         private ValueTask<LifecycleResult> Result(string operation)
         {

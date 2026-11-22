@@ -10,6 +10,9 @@ internal sealed record NativeLaunchWatch(SwitchAttemptId Attempt, NativeLaunch L
 
 internal readonly record struct ServingCapacity(string? Model, long ContextWindow, int TotalSlots, string? Profile)
 {
+    internal bool Matches(string model, ServingProfile profile) =>
+        WindowFor(model) == profile.MaxContext && TotalSlots == profile.MaxSlots && Profile == profile.Name;
+
     public long WindowFor(string model) =>
         string.Equals(Model, model, StringComparison.OrdinalIgnoreCase) ? ContextWindow : 0;
 }

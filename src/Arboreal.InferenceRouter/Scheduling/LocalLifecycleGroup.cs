@@ -74,6 +74,7 @@ internal sealed class LocalLifecycleGroup(string name, Action wake)
         // Leave the short admission gate before provider I/O or readiness publication.
         await Task.Yield();
         var succeeded = false;
+        string? residentProfile = null;
         try
         {
             var engine = owner.Engine;
@@ -112,8 +113,10 @@ internal sealed class LocalLifecycleGroup(string name, Action wake)
             engine.WithdrawLocalResident();
             var observed = await engine.EnsureLoadedAsync(owner.Request.Ticket.Model, owner.Profile,
                 Timeout.InfiniteTimeSpan, queue: null, stop,
-                explicitContextMinimum: owner.Request.ExplicitContextMinimum, localOwner: owner).ConfigureAwait(false);
+                explicitContextMinimum: owner.Request.ExplicitContextMinimum, localOwner: owner,
+                exactProfile: owner.Request.Request.Options?.Profile is not null).ConfigureAwait(false);
             succeeded = observed.Result.IsReady;
+            if (succeeded) residentProfile = owner.Profile?.Name ?? engine.Capability.Serving.Profile;
             return observed;
         }
         catch (Exception error) when (error is InvalidOperationException or TimeoutException)
@@ -125,7 +128,7 @@ internal sealed class LocalLifecycleGroup(string name, Action wake)
         {
             lock (_gate)
             {
-                _resident = succeeded ? (owner.Engine.Name, owner.Request.Ticket.Model, owner.Profile?.Name) : null;
+                _resident = succeeded ? (owner.Engine.Name, owner.Request.Ticket.Model, residentProfile) : null;
                 // A failed operation never infers vacancy or restarts itself from an empty queue.
                 _uncertain = !succeeded;
                 _waiting = null;

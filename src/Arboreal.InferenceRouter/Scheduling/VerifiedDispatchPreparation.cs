@@ -48,11 +48,17 @@ internal sealed class VerifiedPreparedSender : IAsyncDisposable
     internal bool Matches(ExactTicketAdmission.Claim claim) =>
         _claim == claim && ReferenceEquals(_claim.Resident, claim.Resident);
 
-    internal async ValueTask<VerifiedTransportOperation> StartAsync(
-        HttpRequestMessage request, long credentialEpoch, CancellationToken ct)
+    internal Func<Task>? AfterOfferValidatedForTests { get; set; }
+
+    // A null operation means the local serving observation changed before checkout. Offer
+    // bytes and credentials have already been validated. Issuer errors stay on the fault path.
+    internal async ValueTask<VerifiedTransportOperation?> StartIfProfileReadyAsync(
+        EngineRuntime runtime, HttpRequestMessage request, long credentialEpoch, CancellationToken ct)
     {
         await _envelope.CheckOfferAsync(_envelope.Invocation, request, credentialEpoch, ct).ConfigureAwait(false);
-        return _transport.SendVerified(_envelope, ct);
+        if (AfterOfferValidatedForTests is { } after) await after().ConfigureAwait(false);
+        ct.ThrowIfCancellationRequested();
+        return runtime.RequestedProfileReady(_claim.Request) ? _transport.SendVerified(_envelope, ct) : null;
     }
 
     public ValueTask DisposeAsync() => _cleanup?.Invoke() ?? ValueTask.CompletedTask;

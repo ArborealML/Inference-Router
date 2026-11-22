@@ -421,6 +421,9 @@ public sealed class AdminSwitchOperationTests
             await SendRawAsync(peer, transport?.Port ?? rig.Port, completion ? "b" : "a", rig.Token);
             var accepted = transport is null ? null : await transport.Accepted.Task.WaitAsync(rig.Token);
             if (accepted is not null) Assert.Equal(peer.Client.LocalEndPoint, accepted.RemoteEndPoint);
+            // The socket can close after the connection middleware returns. Keep observing
+            // the original transport token until this test has verified the peer and write.
+            using var socketClose = accepted?.ObserveClose();
             var id = await gate.Id.Task.WaitAsync(rig.Token);
             var originalWrite = await gate.OriginalWrite.Task.WaitAsync(rig.Token);
             await ConfigReloadWireTests.WaitUntilAsync(() => rig.Clock.HasTimer, rig.Token);
@@ -1098,8 +1101,7 @@ public sealed class AdminSwitchOperationTests
         {
             if (!holdOutput)
             {
-                var accepted = new PassiveConnection(connection.ConnectionId, connection.RemoteEndPoint);
-                using var passiveClosed = connection.ConnectionClosed.Register(() => accepted.Closed.TrySetResult());
+                var accepted = new PassiveConnection(connection.ConnectionId, connection.RemoteEndPoint, connection.ConnectionClosed);
                 if (Interlocked.CompareExchange(ref _passiveConnection, accepted, null) is null)
                     Accepted.TrySetResult(accepted);
                 await next(connection);
@@ -1174,8 +1176,9 @@ public sealed class AdminSwitchOperationTests
 
         public void Dispose() { }
 
-        internal sealed record PassiveConnection(string ConnectionId, EndPoint? RemoteEndPoint)
+        internal sealed record PassiveConnection(string ConnectionId, EndPoint? RemoteEndPoint, CancellationToken TransportClosed)
         {
+            internal CancellationTokenRegistration ObserveClose() => TransportClosed.Register(() => Closed.TrySetResult());
             internal TaskCompletionSource Closed { get; } = Gate();
             internal TaskCompletionSource<string> AbortedRequest { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         }

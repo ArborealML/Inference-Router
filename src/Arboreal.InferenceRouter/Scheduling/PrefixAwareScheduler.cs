@@ -17,6 +17,7 @@ public sealed class EngineRuntimeInfo
     public required bool CanServeModel { get; init; }
     /// <summary>The local lifecycle coordinator can start a configured cold target.</summary>
     internal bool CanLoad { get; init; }
+    internal bool CanSwitchProfile { get; init; }
     public required int Inflight { get; init; }
     /// <summary>Estimated token-proxy load: sum of prompt chars + expected output of in-flight.</summary>
     public required long InflightTokenProxy { get; init; }
@@ -68,10 +69,11 @@ public sealed class PrefixAwareScheduler : IRequestScheduler
 
         var scored = new List<(EngineRuntimeInfo E, double Score, bool Loaded)>();
         var loadable = new List<(EngineRuntimeInfo E, double Score, ServingProfile? Profile)>();
+        var named = request.Request.Options?.Profile;
         var explicitMinimum = request.ExplicitContextMinimum;
         foreach (var e in view.Engines)
         {
-            if ((!e.Healthy && !e.CanLoad) || e.Switching) continue;
+            if ((!e.Healthy && !e.CanLoad) || e.Switching || (named is not null && !e.DispatchObservation.HasCapacity)) continue;
             // Compare on the canonical model (Ticket.Model), not the raw requested alias.
             var model = request.Ticket.Model;
             var loaded = e.Healthy && e.LoadedModels.Contains(model, StringComparer.OrdinalIgnoreCase);
@@ -81,26 +83,32 @@ public sealed class PrefixAwareScheduler : IRequestScheduler
             // A ladder change is a switch even when the model is already loaded; small windows buy
             // concurrency, so we never de-escalate automatically (§7.6 non-goal).
             ServingProfile? target = null;
-            if (request.RequiredContextTokens > 0 && e.ServingProfiles.Count > 0)
+            if (named is not null)
+            {
+                target = EngineRuntime.UniqueNamedProfile(e.ServingProfiles, named);
+                if (target is null || target.MaxContext < request.RequiredContextTokens) continue;
+            }
+            else if (request.RequiredContextTokens > 0 && e.ServingProfiles.Count > 0)
             {
                 target = SmallestFittingProfile(e.ServingProfiles, request.RequiredContextTokens);
                 if (target is null) continue;   // ladder exists but nothing fits: wrong engine
             }
-            if (loaded && target is not null && e.ActiveContextWindow <= 0) continue;
+            if (named is null && loaded && target is not null && e.ActiveContextWindow <= 0) continue;
             if (loaded && target is null && explicitMinimum > 0 && e.ActiveContextWindow < explicitMinimum) continue;
-            var needsEscalation = target is not null && e.ActiveContextWindow < target.MaxContext;
+            var needsEscalation = target is not null && (named is null ? e.ActiveContextWindow < target.MaxContext
+                : !e.DispatchObservation.Capability.Serving.Matches(model, target));
 
             var affinity = AffinityScore(e);
             var busy = BusyScore(e, request, config);
             var score = affinity - busy;
             if (loaded && !needsEscalation) scored.Add((e, score, true));
-            else if (config.AutoSwitch) loadable.Add((e, score, target));
+            else if (config.AutoSwitch && (named is null || e.CanSwitchProfile && (e.CanLoad || e.Inflight == 0))) loadable.Add((e, score, target));
         }
 
         if (scored.Count > 0)
         {
             var best = Best(scored.Select(s => (s.E, s.Score)));
-            return new SchedulerDecision { Engine = best.Name, SwitchRequired = false };
+            return new SchedulerDecision { Engine = best.Name, SwitchRequired = false, TargetProfile = named };
         }
         if (loadable.Count > 0)
         {

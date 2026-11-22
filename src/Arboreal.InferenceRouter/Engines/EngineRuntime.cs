@@ -127,6 +127,7 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
         public string? Profile;
         public LocalLifecycleGroup.Lease? AdoptionOwner;
         public LegacyReadinessObservation? AdoptionProbe;
+        public ServingProfile? ExactProfile;
         public long RequiredWindow;
         public long CommittedWindow;
         public EngineCapability? IncumbentProof;
@@ -811,13 +812,19 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
         if (boundModel is null) return new(null, 0, probe.Slots, null);
 
         string? profile = null;
+        string? exact = null;
+        var windows = 0;
+        var pairs = 0;
         foreach (var candidate in _catalog[boundModel].ServingProfiles)
         {
             if (candidate.MaxContext != probe.Window) continue;
-            if (profile is not null) return new(boundModel, probe.Window, probe.Slots, null);
+            windows++;
             profile = candidate.Name;
+            if (candidate.MaxSlots != probe.Slots) continue;
+            pairs++;
+            exact = candidate.Name;
         }
-        return new(boundModel, probe.Window, probe.Slots, profile);
+        return new(boundModel, probe.Window, probe.Slots, windows == 1 ? profile : pairs == 1 ? exact : null);
     }
 
     private void NotifyServingChange(ServingCapacity previous, ServingCapacity next)
@@ -865,6 +872,22 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
             if (best is null || p.MaxContext < best.MaxContext) best = p;
         }
         return best;
+    }
+
+    internal bool CanSwitchTo(string model) => _lifecycleBinding is { } binding &&
+        _catalog.TryGetValue(model, out var entry) &&
+        (binding.Owner != EngineLifecycleOwner.Delegated || DelegatedExecProvider.HasUsableSelector(entry));
+
+    internal static ServingProfile? UniqueNamedProfile(IReadOnlyList<ServingProfile> tiers, string name)
+    {
+        ServingProfile? result = null;
+        foreach (var tier in tiers)
+        {
+            if (tier.Name != name) continue;
+            if (result is not null) return null;
+            result = tier;
+        }
+        return result;
     }
 
     public ServingProfile? GetProfile(string canonical, string? name)
@@ -941,9 +964,9 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
     /// <summary>The same predicate against a snapshot the caller already holds. The claim path needs that form:
     /// the readiness decision and the switch marker have to come from one snapshot, or a poll that proves the
     /// model in between buys a second launch (§5.5).</summary>
-    private static bool ReadyIn(EngineCapability cap, string canonical, long requiredWindow)
+    private static bool ReadyIn(EngineCapability cap, string canonical, long requiredWindow, ServingProfile? exact = null)
     {
-        if (!cap.Healthy || cap.SwitchingToward is not null) return false;
+        if (!cap.Healthy || cap.SwitchingToward is not null || (exact is not null && !cap.Serving.Matches(canonical, exact))) return false;
         foreach (var name in cap.ModelRoster)
         {
             if (string.Equals(name, canonical, StringComparison.OrdinalIgnoreCase))
@@ -1044,15 +1067,16 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
 
     internal async Task<ObservedSwitchResult> EnsureLoadedAsync(
         string model, ServingProfile? profileOverride, TimeSpan timeout, SwitchQueueTiming? queue, CancellationToken ct,
-        long explicitContextMinimum = 0, LocalLifecycleGroup.Lease? localOwner = null)
+        long explicitContextMinimum = 0, LocalLifecycleGroup.Lease? localOwner = null, bool exactProfile = false)
     {
         if (Volatile.Read(ref _stopped) || Volatile.Read(ref _retiring)) return new(SwitchResult.RouterStopped);
         var canonical = CanonicalModel(model) ?? model;
         var requiredWindow = RequiredWindow(profileOverride, explicitContextMinimum);
         if (localOwner is not null && (!ReferenceEquals(localOwner.Engine, this) || !localOwner.Cold))
             return new(SwitchResult.Failed(SwitchReason.NoLifecycleOwner));
+        var exact = exactProfile ? profileOverride : null;
         var initial = Capability;
-        if (localOwner is null && ReadyIn(initial, canonical, requiredWindow))
+        if (localOwner is null && ReadyIn(initial, canonical, requiredWindow, exact))
             return Volatile.Read(ref _stopped) || Volatile.Read(ref _retiring)
                 ? new(SwitchResult.RouterStopped) : ReadyFrom(initial.SwitchProof, canonical, profileOverride);
         // `timeout` bounds the *waiting*, never the switch: the transaction belongs to the engine and
@@ -1079,6 +1103,7 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
             LifecycleTarget? claimTarget = null;
             var entryMiss = EntryGuard.Ok;
             var retryClaim = false;
+            Task? waitForNamedUses = null;
             var offered = Capability;
             BeforeSwitchWaitForTests?.Invoke();
             try
@@ -1115,11 +1140,16 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
                     {
                         // An active claim takes precedence over the optimistic offer. An idle attempt can publish
                         // only from the exact snapshot it evaluated, and retries release both locks.
-                        if (localOwner is null && ReadyIn(offered, canonical, requiredWindow))
+                        if (localOwner is null && ReadyIn(offered, canonical, requiredWindow, exact))
                         {
                             if (ReferenceEquals(Capability, offered))
                                 return ReadyFrom(offered.SwitchProof, canonical, profileOverride);
                             retryClaim = true;
+                        }
+                        else if (!exactProfile && _namedUses > 0)
+                        {
+                            _namedDrain ??= new(TaskCreationOptions.RunContinuationsAsynchronously);
+                            waitForNamedUses = _namedDrain.Task;
                         }
                         else
                         {
@@ -1145,6 +1175,7 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
                                     Model = canonical,
                                     Profile = profileOverride?.Name,
                                     AdoptionOwner = localOwner?.Adopt is null ? null : localOwner,
+                                    ExactProfile = exact,
                                     RequiredWindow = requiredWindow,
                                     QuarantineTarget = quarantineTarget,
                                     IncumbentProof = offered.Healthy ? offered : null,
@@ -1231,6 +1262,18 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
                 _switchLock.Release();
             }
 
+            if (waitForNamedUses is not null)
+            {
+                var left = RemainingSwitchWait(deadline);
+                if (left != Timeout.InfiniteTimeSpan && left <= TimeSpan.Zero) return UnclaimedWaitExpired(ct);
+                try { await waitForNamedUses.WaitAsync(left, waiter).ConfigureAwait(false); }
+                catch (TimeoutException) { return UnclaimedWaitExpired(ct); }
+                catch (OperationCanceledException) when (!ct.IsCancellationRequested && Volatile.Read(ref _stopped))
+                {
+                    return new(SwitchResult.RouterStopped);
+                }
+                continue;
+            }
             if (retryClaim)
             {
                 ct.ThrowIfCancellationRequested();
@@ -1270,7 +1313,7 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
 
             var remaining = RemainingSwitchWait(deadline);
             if (deadline != DateTimeOffset.MaxValue && remaining <= TimeSpan.Zero)
-                return await AnswerExpiredSwitchWaitAsync(state, canonical, profileOverride, requiredWindow, null, ct).ConfigureAwait(false);
+                return await AnswerExpiredSwitchWaitAsync(state, canonical, profileOverride, exact, requiredWindow, null, ct).ConfigureAwait(false);
 
             var wokeByCancellation = false;
             try
@@ -1281,7 +1324,7 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
             }
             catch (TimeoutException)
             {
-                return await AnswerExpiredSwitchWaitAsync(state, canonical, profileOverride, requiredWindow, timeout, ct).ConfigureAwait(false);
+                return await AnswerExpiredSwitchWaitAsync(state, canonical, profileOverride, exact, requiredWindow, timeout, ct).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (!ct.IsCancellationRequested && Volatile.Read(ref _stopped))
             {
@@ -1294,7 +1337,7 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
             if (wokeByCancellation && FindReadinessDelivery(state, canonical, profileOverride) is { } delivery)
                 await WaitForOutcomeDeliveryAsync(delivery.Task, ct).ConfigureAwait(false);
 
-            if (ReadSwitchAnswer(state, canonical, profileOverride, requiredWindow, woke: true) is { } answer) return answer;
+            if (ReadSwitchAnswer(state, canonical, profileOverride, exact, requiredWindow, woke: true) is { } answer) return answer;
             // A contradicted proof or an unrelated outcome sends the caller back through the claim gate.
         }
     }
@@ -1330,7 +1373,7 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
             ? SwitchResult.RouterStopped : new SwitchResult(SwitchOutcome.TimedOut, null));
     }
 
-    private ObservedSwitchResult? ReadSwitchAnswer(SwitchState state, string canonical, ServingProfile? profile,
+    private ObservedSwitchResult? ReadSwitchAnswer(SwitchState state, string canonical, ServingProfile? profile, ServingProfile? exact,
                                                    long requiredWindow, bool woke)
     {
         var end = state.End;
@@ -1353,8 +1396,10 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
             return new ObservedSwitchResult(failure);
 
         var cap = Capability;
-        if (ReadyIn(cap, canonical, requiredWindow)) return ReadyFrom(cap.SwitchProof, canonical, profile);
+        if (ReadyIn(cap, canonical, requiredWindow, exact)) return ReadyFrom(cap.SwitchProof, canonical, profile);
         if (!own) return null;
+        if (exact is not null && end == SwitchEnd.Ready)
+            return new ObservedSwitchResult(SwitchResult.Failed(SwitchReason.WindowTooSmall));
 
         // Same target and tier can have waiters with different explicit minima.
         if (end == SwitchEnd.Ready)
@@ -1386,7 +1431,7 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
     }
 
     private async ValueTask<ObservedSwitchResult> AnswerExpiredSwitchWaitAsync(
-        SwitchState state, string canonical, ServingProfile? profile, long requiredWindow, TimeSpan? wait,
+        SwitchState state, string canonical, ServingProfile? profile, ServingProfile? exact, long requiredWindow, TimeSpan? wait,
         CancellationToken caller)
     {
         TaskCompletionSource? delivery;
@@ -1394,19 +1439,19 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
         {
             delivery = FindReadinessDelivery(state, canonical, profile);
             if (delivery is null)
-                return ExpiredSwitchAnswer(state, canonical, profile, requiredWindow, wait);
+                return ExpiredSwitchAnswer(state, canonical, profile, exact, requiredWindow, wait);
         }
 
         await WaitForOutcomeDeliveryAsync(delivery.Task, caller).ConfigureAwait(false);
         lock (_transitionGate)
-            return ExpiredSwitchAnswer(state, canonical, profile, requiredWindow, wait);
+            return ExpiredSwitchAnswer(state, canonical, profile, exact, requiredWindow, wait);
     }
 
-    private ObservedSwitchResult ExpiredSwitchAnswer(SwitchState state, string canonical, ServingProfile? profile,
+    private ObservedSwitchResult ExpiredSwitchAnswer(SwitchState state, string canonical, ServingProfile? profile, ServingProfile? exact,
                                                      long requiredWindow, TimeSpan? wait) =>
         // A foreign terminal outcome leaves this caller owing another claim. The stop latch can
         // refuse that claim even after the foreign attempt has left the runtime idle.
-        ReadSwitchAnswer(state, canonical, profile, requiredWindow, woke: false) ??
+        ReadSwitchAnswer(state, canonical, profile, exact, requiredWindow, woke: false) ??
         new ObservedSwitchResult(_stopped ? SwitchResult.RouterStopped :
             new SwitchResult(SwitchOutcome.TimedOut, wait is { } elapsed ?
             $"still switching after {FormatWait(elapsed)}; a switch for another request is in flight" : null));
@@ -1867,7 +1912,8 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
                             result = new(Failure: NativeObservationFailure);
                             break;
                         }
-                        else if (!WindowFits(window, state.RequiredWindow))
+                        else if (!WindowFits(window, state.RequiredWindow) ||
+                            (state.ExactProfile is { } exact && !serving.Matches(target.Model, exact)))
                             lastMiss = new(ReadinessMiss.WindowTooSmall, Window: window);
                         else
                         {
@@ -1979,7 +2025,8 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
             var window = result.Serving.WindowFor(state.Model!);
             while (true)
             {
-                if (watchAllowsReady && result.Models is { } models && WindowFits(window, state.RequiredWindow))
+                if (watchAllowsReady && result.Models is { } models && WindowFits(window, state.RequiredWindow) &&
+                    (state.ExactProfile is not { } exact || result.Serving.Matches(state.Model!, exact)))
                 {
                     // The shared writer rechecks the deadline after preparing the snapshot, before its CAS.
                     ready = TryPublishClaimProof(state, models, result.Serving, deadline, out settlement,
@@ -2141,16 +2188,68 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
 
     // Historical switch readiness and switch timing do not enter this decision.
     // The first-send claim and engine-local stop use the same short ordering.
-    internal bool TryBeginForward(CancellationToken ct) => TryBeginHttpUse(ct, inference: true);
+    // A named use starts at queue removal and extends through the last physical sender.
+    // A switch that needs a new claim checks this count under the same transition gate.
+    private int _namedUses;
+    private TaskCompletionSource? _namedDrain;
+    internal bool HasNamedUse => Volatile.Read(ref _namedUses) > 0;
+
+    internal bool TryReserveNamedUse(DispatchObservation expected)
+    {
+        lock (_transitionGate)
+        {
+            if (_stopped || _retiring || Capability.SwitchingToward is not null ||
+                !IsDispatchObservationCurrent(expected)) return false;
+            _namedUses++;
+            return true;
+        }
+    }
+
+    internal void RetainNamedUse()
+    {
+        lock (_transitionGate) _namedUses++;
+    }
+
+    internal void ReleaseNamedUse()
+    {
+        lock (_transitionGate)
+        {
+            if (--_namedUses != 0) return;
+            _namedDrain?.TrySetResult();
+            _namedDrain = null;
+        }
+    }
+
+    internal bool TryBeginForward(CancellationToken ct, bool named = false)
+    {
+        if (!TryBeginHttpUse(ct, inference: true)) return false;
+        if (named) RetainNamedUse();
+        return true;
+    }
+
+    internal bool RequestedProfileReady(QueuedRequest candidate) =>
+        candidate.Request.Options?.Profile is not { } named ||
+        (GetProfile(candidate.Ticket.Model, named) is { } exact &&
+         ReadyIn(Capability, candidate.Ticket.Model, candidate.RequiredContextTokens, exact));
+
+    internal static RouterRequestException ProfileNoLongerReady() =>
+        new("switch_failed", "The selected serving profile is no longer ready.");
+
+    internal void VerifyRequestedProfile(QueuedRequest candidate)
+    {
+        if (!RequestedProfileReady(candidate)) throw ProfileNoLongerReady();
+    }
 
     internal int HttpUsesForTests
     {
         get { lock (_transitionGate) return _httpUses; }
     }
 
-    internal void EndForward()
+    internal void EndForward(bool named = false)
     {
+        if (named) ReleaseNamedUse();
         EndHttpUse(inference: true);
+        NudgeDispatch();
         AfterForwardReleaseForTests?.Invoke();
     }
 

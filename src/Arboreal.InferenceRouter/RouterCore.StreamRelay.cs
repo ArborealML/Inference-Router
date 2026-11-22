@@ -82,7 +82,7 @@ public sealed partial class RouterCore
             }
 
             ct.ThrowIfCancellationRequested();
-            if (!engine.TryBeginForward(ct))
+            if (!engine.TryBeginForward(ct, candidate.Request.Options?.Profile is not null))
             {
                 Fail(ticket, "cancelled", "cancelled");
                 return;
@@ -96,7 +96,7 @@ public sealed partial class RouterCore
                 using var headerWait = gate is null ? null : CancellationTokenSource.CreateLinkedTokenSource(ct, gate.Token);
                 ct.ThrowIfCancellationRequested();
                 attempted = true;
-                var send = SendAsync(engine, body, suffix, ticket.Model, servingProof, ct);
+                var send = SendAsync(engine, body, suffix, candidate, servingProof, ct);
                 HttpResponseMessage response;
                 try
                 {
@@ -117,7 +117,7 @@ public sealed partial class RouterCore
             }
             finally
             {
-                engine.EndForward();
+                engine.EndForward(candidate.Request.Options?.Profile is not null);
             }
         }
         catch (Exception error) when (!ticket.IsTerminal && ticket.HttpDelivery?.Sealed.IsCompletedSuccessfully != true)
@@ -188,6 +188,8 @@ public sealed partial class RouterCore
                     $"{engine.ResponseTimeout!.Value.TotalMilliseconds.ToString(CultureInfo.InvariantCulture)} ms");
             else if (error is OperationCanceledException)
                 Fail(ticket, "cancelled", "cancelled");
+            else if (error is RouterRequestException refusal)
+                Fail(ticket, refusal.Code, refusal.Message);
             else
                 Fail(ticket, "engine_unreachable", error.Message);
         }

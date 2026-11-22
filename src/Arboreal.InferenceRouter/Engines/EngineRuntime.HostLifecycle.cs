@@ -151,6 +151,7 @@ public sealed partial class EngineRuntime
                 var serving = evidence.Serving;
                 if (((serving.Model is not null || serving.ContextWindow > 0) && serving.Model != evidence.CanonicalModel) ||
                     !WindowFits(serving.WindowFor(evidence.CanonicalModel), requiredWindow) ||
+                    (state.ExactProfile is { } exact && !serving.Matches(evidence.CanonicalModel, exact)) ||
                     (profile is not null && (serving.Profile != profile.Name || serving.TotalSlots <= 0)))
                     return Retire(deadline.OutcomeForSettlement);
 
