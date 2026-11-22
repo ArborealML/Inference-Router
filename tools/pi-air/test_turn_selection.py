@@ -372,20 +372,26 @@ class TurnSelectionTest(unittest.TestCase):
                               and event["message"]["role"] == "user"
                               and message_text(event["message"]["content"]) == follow_up)
             self.assertLess(skipped, dispatched)
-            requests = router.snapshot()[:4]
-            self.check_requests(requests, thread, [
+            requests = router.snapshot()
+            self.assertEqual([False, False, False, False, True, True], [post["summary"] for post in requests])
+            self.check_requests(requests[:4], thread, [
                 ("hy4.fixture", "wide", "Earlier user message", False),
                 ("hy4.fixture", "wide", THRESHOLD_PROMPT, False),
                 ("hy4.fixture", "wide", THRESHOLD_PROMPT, True),
                 ("qwen.fixture", "compact", follow_up, True),
             ])
-            self.assertFalse(any(post["summary"] for post in requests))
             self.assertEqual([8192, 8192, 8192], [post["output_limit"] for post in requests[:3]])
             self.assertLessEqual(requests[3]["output_limit"], 2048)
+            summary_threads = {post["thread"] for post in requests[4:]}
+            self.assertTrue(all(summary_threads))
+            self.assertEqual(3, len(summary_threads | {thread}))
+            for post in requests[4:]:
+                self.assertEqual(("qwen.fixture", "compact", "8192"),
+                                 (post["model"], post["profile"], post["context"]))
 
     def test_active_window_can_compact_before_tool_continuation_with_its_own_thread(self):
         settings = {"enabled": True, "reserveTokens": 30000, "keepRecentTokens": 1,
-                    "modelOverrides": {"air/hy4.fixture": {"reserveTokens": 62000}}}
+                    "modelOverrides": {"air/hy4.fixture": {"reserveTokens": 62000, "keepRecentTokens": 6000}}}
         with FakeRouter(retry_summaries=True).running() as router, pi_session(router, settings) as pi:
             thread = pi.send("get_state")["sessionId"]
             pi.model("qwen.fixture")
@@ -397,28 +403,49 @@ class TurnSelectionTest(unittest.TestCase):
             pi.model("qwen.fixture")
             pi.prompt("/fixture-release")
             pi.settled()
+            pi.prompt("/fixture-compaction-boundary")
+            boundary = next(event["message"].split()[-2:] for event in pi.seen if event.get("method") == "notify"
+                            and event["message"].startswith("Compaction boundary "))
+            self.assertEqual(boundary[1], boundary[0], "The held user message should be the first retained entry")
             self.assertTrue(any(event["type"] == "compaction_end" and event["reason"] == "threshold"
                                 and event.get("result") for event in pi.seen))
             requests = router.snapshot()
-            self.check_requests(requests[:2], thread, [
+            self.assertEqual([False, False, True, True, False], [post["summary"] for post in requests])
+            self.check_requests(requests[:2] + requests[-1:], thread, [
                 ("hy4.fixture", "standard", "Earlier user message", False),
                 ("hy4.fixture", "standard", LARGE_PROMPT, False),
+                ("hy4.fixture", "standard", LARGE_PROMPT, True),
             ])
-            continuation = next(index for index in range(2, len(requests)) if requests[index]["thread"] == thread)
-            summaries = requests[2:continuation]
-            self.assertGreaterEqual(len(summaries), 2)
+            summaries = requests[2:4]
+            self.assertTrue(summaries[0]["thread"])
+            self.assertNotEqual(thread, summaries[0]["thread"])
+            self.assertEqual(summaries[0], summaries[1])
             for post in summaries:
-                self.assertTrue(post["summary"])
-                self.assertNotEqual(thread, post["thread"])
                 self.assertEqual(("hy4.fixture", "standard", "65536"),
                                  (post["model"], post["profile"], post["context"]))
-            by_thread = {post["thread"] for post in summaries}
-            for summary_thread in by_thread:
-                self.assertTrue(summary_thread)
-                self.assertEqual(2, sum(post["thread"] == summary_thread for post in summaries))
-            self.assertEqual(("hy4.fixture", "standard", "65536"),
-                             (requests[continuation]["model"], requests[continuation]["profile"],
-                              requests[continuation]["context"]))
+                self.assertIn("Earlier user message", post["user"])
+                self.assertNotIn(LARGE_PROMPT, post["user"])
+            self.assertNotIn("Earlier user message", requests[-1]["users"])
+
+    def test_pi_can_skip_hook_when_only_active_threshold_is_crossed(self):
+        settings = {"enabled": True, "reserveTokens": 30000, "keepRecentTokens": 1,
+                    "modelOverrides": {"air/hy4.fixture": {"reserveTokens": 62000}}}
+        with FakeRouter().running() as router, pi_session(router, settings) as pi:
+            thread = pi.send("get_state")["sessionId"]
+            pi.prompt("Earlier user message")
+            pi.settled()
+            pi.hold(LARGE_PROMPT)
+            # Both models have a 65536-token window. Only Hy4's reserve puts this input above threshold.
+            pi.model("qwen.fixture")
+            self.assertEqual(65536, pi.send("get_state")["model"]["contextWindow"])
+            pi.prompt("/fixture-release")
+            pi.settled()
+            self.assertFalse(any(event["type"] == "compaction_start" for event in pi.seen))
+            self.check_requests(router.snapshot(), thread, [
+                ("hy4.fixture", "standard", "Earlier user message", False),
+                ("hy4.fixture", "standard", LARGE_PROMPT, False),
+                ("hy4.fixture", "standard", LARGE_PROMPT, True),
+            ])
 
     def test_manual_compaction_uses_selected_profile_and_separate_thread(self):
         settings = {"enabled": False, "keepRecentTokens": 1}
@@ -430,8 +457,13 @@ class TurnSelectionTest(unittest.TestCase):
             pi.model("qwen.fixture")
             pi.prompt("/context narrow")
             pi.send("compact")
-            summaries = router.snapshot()[2:]
-            self.assertTrue(summaries)
+            requests = router.snapshot()
+            self.assertEqual([False, False, True, True], [post["summary"] for post in requests])
+            self.check_requests(requests[:2], thread, [
+                ("hy4.fixture", "standard", "Earlier user message", False),
+                ("hy4.fixture", "standard", "Recent user message", False),
+            ])
+            summaries = requests[2:]
             for post in summaries:
                 self.assertTrue(post["summary"])
                 self.assertTrue(post["thread"])

@@ -7,7 +7,7 @@ Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 
 ## 0. Revision log
 
-- v0.12.147 — capture the AIR model, serving selection and output limit at Pi user dispatch. Keep that selection through tool use and retries, evaluate pre-dispatch compaction against the active window, and preserve separate request identities (§13.2).
+- v0.12.147 — capture the AIR model, serving selection and output limit at Pi user dispatch. Keep that selection through tool use and retries, apply the active window and retention settings to Pi-triggered compaction, and preserve separate request identities (§13.2).
 
 - v0.12.146 — recover terminal monitor observations after disconnect, replay overlap and gaps, preserving stale data and the followed ticket (§11).
 
@@ -3995,7 +3995,7 @@ unverified external analysis), and (13.3) what AIR must expose to make it work.
 | P7 | Catalog is live: `/v1/models` drives Pi's model list, with availability + loaded/switching state | `refreshModels` reflects an engine that just loaded a model |
 | P8 | Thread identity + priority ride every request (Pi session → AIR chat thread) | admin `/admin/threads` shows the Pi thread and its priority |
 | P9 | Failure modes are distinguishable and actionable (model unavailable, switch failed, engine died, ticket expired) | error `code`s are stable, terminal ones do not retry-storm |
-| P10 | No Pi core patch required: built on the shipped extension API only | extension loads against current pi + the vendored fork package |
+| P10 | No Pi core patch required. Session and provider integration uses shipped extension hooks | extension loads against the supported Pi release |
 
 ### 13.2 Design (research-pass disposition)
 
@@ -4049,8 +4049,12 @@ unverified external analysis), and (13.3) what AIR must expose to make it work.
   next user message, the extension checks the prepared transcript against the active
   turn's captured capacity and that model's compaction reserve. If the active window
   still fits, Pi proceeds without summarizing. If it crosses the threshold, the verified
-  compaction call uses the active AIR model and profile with its own routing ID. Manual
-  compaction uses the current selection.
+  compaction call uses the active AIR model and profile with its own routing ID. A different
+  retention budget replaces the prepared cut using the compaction helper shipped in the
+  Pi 1.3 npm package. If the helper is unavailable, AIR reports the problem and cancels
+  that compaction attempt. Pi decides whether to attempt compaction using its selected model.
+  When that check yields no hook, the active turn proceeds subject to AIR's ordinary
+  request budget check. Manual compaction uses the current selection.
 - **Anti-thrash (server-side, visible to Pi)**: schedule **model cohorts** — never preempt
   active generation, drain the loaded-model cohort, enforce minimum residency/hysteresis,
   then switch once to the highest effective-priority/oldest cohort. Thread stickiness

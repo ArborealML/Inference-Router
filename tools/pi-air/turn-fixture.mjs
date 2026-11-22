@@ -130,6 +130,12 @@ export default function(pi) {
     pi.registerCommand("fixture-release", {handler: () => hold.release()});
     pi.registerCommand("fixture-child", {handler: (args, ctx) => runChild(ctx, args.trim())});
     pi.registerCommand("fixture-registry", {handler: runRegistryCall});
+    pi.registerCommand("fixture-compaction-boundary", {handler: (_, ctx) => {
+        const entries = ctx.sessionManager.getBranch();
+        const compaction = entries.findLast(entry => entry.type === "compaction");
+        const latestUser = entries.findLast(entry => entry.type === "message" && entry.message.role === "user");
+        ctx.ui.notify("Compaction boundary " + compaction.firstKeptEntryId + " " + latestUser.id);
+    }});
     pi.registerCommand("fixture-custom", {handler: () => pi.sendMessage({
         customType: "fixture", content: "Run a custom turn", display: false
     }, {triggerTurn: true})});

@@ -1,7 +1,9 @@
-import { estimateTokens, SettingsManager, shouldCompact } from "@earendil-works/pi-coding-agent";
+import { estimateTokens, getPackageDir, SettingsManager, shouldCompact } from "@earendil-works/pi-coding-agent";
 import { openAICompletionsApi } from "@earendil-works/pi-ai/compat";
 import { randomUUID } from "node:crypto";
+import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
+import { pathToFileURL } from "node:url";
 
 import { contextFits, observedWindow, outputBudget, parseCatalog, piModel, requestFits, tier } from "./catalog.mjs";
 
@@ -351,7 +353,8 @@ export default async function air(pi) {
     pi.on("cache_warming_decision", (_event, context) => {
         if (context.model?.provider === "air") return {action: "stop"};
     });
-    pi.on("session_before_compact", (event, context) => {
+    pi.on("session_before_compact", async (event, context) => {
+        const originBranch = branch;
         const pending = context.model;
         if (pending?.provider === "air" && (event.willRetry || (budgetRefused && event.reason !== "manual"))) {
             notify("AIR request ended. Use /compact or select a larger profile before submitting again.", "warning");
@@ -360,16 +363,32 @@ export default async function air(pi) {
         const selection = event.reason === "manual" ? undefined : turnSelection;
         if (selection) {
             if (pending?.provider !== "air" || !selection.capacity) return {cancel: true};
+            const {preparation} = event;
+            const settings = selection.model.id === pending.id ? preparation.settings :
+                SettingsManager.inMemory(pi.getSettings()).getCompactionSettings(selection.model);
             // Pi checked the pending window before dispatching any queued user message.
             if (event.reason === "threshold" &&
-                (selection.model.id !== pending.id || selection.capacity !== pending.contextWindow)) {
-                const settings = selection.model.id === pending.id ? event.preparation.settings :
-                    SettingsManager.inMemory(pi.getSettings()).getCompactionSettings(selection.model);
-                if (!shouldCompact(event.preparation.tokensBefore, selection.capacity, settings))
+                (selection.model.id !== pending.id || selection.capacity !== pending.contextWindow) &&
+                !shouldCompact(preparation.tokensBefore, selection.capacity, settings)) return {cancel: true};
+            if (preparation.settings.keepRecentTokens !== settings.keepRecentTokens) {
+                try {
+                    // Pi 1.3 ships the projected preparation helper outside its public barrel.
+                    const helperUrl = pathToFileURL(join(getPackageDir(), "dist", "core", "compaction", "compaction.js"));
+                    const {prepareCompaction} = await import(helperUrl.href);
+                    if (event.signal.aborted || originBranch !== branch) return {cancel: true};
+                    const replacement = prepareCompaction(event.branchEntries, settings);
+                    if (!replacement) return {cancel: true};
+                    // Pi uses this same preparation for its built-in summary and retry path.
+                    Object.assign(preparation, replacement);
+                } catch {
+                    if (!event.signal.aborted && originBranch === branch)
+                        notify("AIR could not apply the active model's compaction retention with this Pi installation.", "warning");
                     return {cancel: true};
+                }
             }
+            preparation.settings = settings;
         }
-        if (pending?.provider === "air" && branch) summaries.set(event.signal, {branch, selection});
+        if (pending?.provider === "air" && originBranch) summaries.set(event.signal, {branch: originBranch, selection});
     });
     pi.on("session_before_tree", (event, context) => {
         if (context.model?.provider === "air" && branch) summaries.set(event.signal, {branch});
