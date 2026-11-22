@@ -2227,12 +2227,17 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
         return true;
     }
 
+    internal bool RequestedProfileReady(QueuedRequest candidate) =>
+        candidate.Request.Options?.Profile is not { } named ||
+        (GetProfile(candidate.Ticket.Model, named) is { } exact &&
+         ReadyIn(Capability, candidate.Ticket.Model, candidate.RequiredContextTokens, exact));
+
+    internal static RouterRequestException ProfileNoLongerReady() =>
+        new("switch_failed", "The selected serving profile is no longer ready.");
+
     internal void VerifyRequestedProfile(QueuedRequest candidate)
     {
-        if (candidate.Request.Options?.Profile is { } named &&
-            (GetProfile(candidate.Ticket.Model, named) is not { } exact ||
-             !ReadyIn(Capability, candidate.Ticket.Model, candidate.RequiredContextTokens, exact)))
-            throw new RouterRequestException("switch_failed", "The selected serving profile is no longer ready.");
+        if (!RequestedProfileReady(candidate)) throw ProfileNoLongerReady();
     }
 
     internal int HttpUsesForTests

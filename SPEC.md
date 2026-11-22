@@ -1,12 +1,13 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.134)
+Status: draft, continuously revised (v0.12.135)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
 
 ## 0. Revision log
 
+- v0.12.135 — check exact profile readiness after verified offer validation and before issuer checkout. A changed observation returns `switch_failed` (§6).
 - v0.12.134 — distinguish equal-window serving tiers by measured slots, drain exact profile users before explicit switches, and verify counted transports at submission (§6, §7.6).
 - v0.12.133 — expose the applied catalog with conditional reads and changes on the event feed. Inference clients can select an exact named serving profile per request (§6, §7.6).
 - v0.12.132 — local configuration commands and the standalone server default to `~/arboreal/inference-router/router.toml` (§11).
@@ -2874,7 +2875,9 @@ including a smaller tier after drain. Readiness uses the model-bound profile, co
 observations. Equal windows with distinct slot counts identify distinct tiers. An explicit switch
 that requires a new lifecycle claim waits for named requests and their physical forwards to drain,
 including requests selected before their first send. Counted transports check the serving profile
-again at submission. Without this header, automatic tier selection follows §7.6.
+again at submission. Verified transports perform this check after validating the offered request
+and before starting issuer checkout. A changed observation fails the ticket with `switch_failed`.
+The issuer then enforces its existing route and first-write authorization. Without this header, automatic tier selection follows §7.6.
 
 `X-Inference-Required-Context: <tokens>` declares a positive measured context minimum for the
 request. With the header absent, the prompt estimate informs serving-tier selection (§7.6). Every admitted request

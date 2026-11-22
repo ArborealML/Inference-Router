@@ -119,6 +119,20 @@ public sealed partial class ConfigReloadWireTests
         try
         {
             await beforeSend.Task.WaitAsync(ct);
+            // The admin profile argument promises a fitting window. The two-slot resident
+            // already meets the four-slot tier's equal window, so this switch needs no claim.
+            using var fitting = new StringContent("""{"engine":"one","model":"a","profile":"four"}""", Encoding.UTF8, "application/json");
+            using var readyAck = await http.PostAsync("/admin/switch", fitting, ct);
+            Assert.Equal(HttpStatusCode.Accepted, readyAck.StatusCode);
+            using var readyJson = JsonDocument.Parse(await readyAck.Content.ReadAsByteArrayAsync(ct));
+            var readyId = readyJson.RootElement.GetProperty("OperationId").GetString()!;
+            await WaitUntilAsync(() => ops.Lookup(Guid.ParseExact(readyId, "N"))?.Status == "succeeded", ct);
+            using var lookup = await http.GetAsync("/admin/switch/" + readyId, ct);
+            lookup.EnsureSuccessStatusCode();
+            using var result = JsonDocument.Parse(await lookup.Content.ReadAsByteArrayAsync(ct));
+            Assert.Equal("succeeded", result.RootElement.GetProperty("Status").GetString());
+            Assert.Equal(0, provider.LaunchCount);
+
             using var switchBody = new StringContent("""{"engine":"one","model":"b"}""", Encoding.UTF8, "application/json");
             using var ack = await http.PostAsync("/admin/switch", switchBody, ct);
             Assert.Equal(HttpStatusCode.Accepted, ack.StatusCode);

@@ -9,6 +9,39 @@ public sealed partial class VerifiedInstanceTransportTests
     private static readonly Uri VerifiedEndpoint = new("http://127.0.0.1:8123/prefix/v1?mode=exact");
 
     [Fact(Timeout = 20_000)]
+    public async Task NamedProfileDriftAfterVerifiedOfferValidationRefusesBeforeCheckout()
+    {
+        await using var rig = new DispatchRig(singleTier: true);
+        using var validated = new HeldCheckout();
+        rig.AfterPrepare = (_, sender) =>
+        {
+            sender.AfterOfferValidatedForTests = () => validated.HoldAsync(rig.Token);
+            return Task.CompletedTask;
+        };
+        rig.Discovery.NCtx = 32_768;
+        rig.Discovery.TotalSlots = 2;
+        rig.Publish(generation: 1, tier: "wide", slots: 2);
+        var released = rig.WaitForRelease();
+        var ticket = await rig.EnqueueAsync(profile: "wide");
+        rig.Start();
+        try
+        {
+            await validated.Reached.WaitAsync(rig.Token);
+            rig.Discovery.TotalSlots = 1;
+            Assert.True(await rig.Engine.ProbeHealthOnceAsync(rig.Token));
+        }
+        finally { validated.Release(); }
+        var failure = await Assert.ThrowsAsync<RouterRequestException>(() => ticket.CompletionTask.WaitAsync(rig.Token));
+        Assert.Equal("switch_failed", failure.Code);
+        Assert.Equal("The selected serving profile is no longer ready.", failure.Message);
+        await released.WaitAsync(rig.Token);
+        Assert.Equal(0, rig.Issuer.Checkouts);
+        Assert.Equal(0, rig.Admission.PhysicalUses);
+        Assert.Equal(0, rig.OrdinarySends);
+        Assert.Equal(1, rig.Terminals(ticket));
+    }
+
+    [Fact(Timeout = 20_000)]
     public async Task OptInIdleReleasesLogicalSlotWhileVerifiedIssuerRetirementIsHeld()
     {
         const string prefix = "data: valid\n\n";
@@ -589,9 +622,9 @@ public sealed partial class VerifiedInstanceTransportTests
         private int _preparations;
 
         internal DispatchRig(string? tier = null, bool switches = false, string runtimeKey = "fixture-key",
-            Uri? runtimeEndpoint = null, int streamIdleTimeoutMs = 0)
+            Uri? runtimeEndpoint = null, int streamIdleTimeoutMs = 0, bool singleTier = false)
         {
-            var parsed = VerifiedDispatchTargetTests.Load(endpoint: VerifiedEndpoint.AbsoluteUri);
+            var parsed = VerifiedDispatchTargetTests.Load(endpoint: VerifiedEndpoint.AbsoluteUri, singleton: singleTier);
             Daemon = new FakeDockerDaemonHandler();
             _projection = new DockerLifecycleProvider(parsed.Docker!, parsed.Name, Daemon);
             _resolver = new VerifiedDispatchTargetResolver(parsed, _projection);
@@ -646,14 +679,14 @@ public sealed partial class VerifiedInstanceTransportTests
             return resident;
         }
 
-        internal async ValueTask<RouterTicket> EnqueueAsync(byte[]? body = null, CancellationToken callerToken = default)
+        internal async ValueTask<RouterTicket> EnqueueAsync(byte[]? body = null, string? profile = null, CancellationToken callerToken = default)
         {
             Assert.True(await Engine.ProbeHealthOnceAsync(Token));
             return await Router.EnqueueAsync(Guid.NewGuid().ToString(), new InferenceRequest
             {
                 Model = "ALIAS",
                 Body = body ?? """{ "model":"alias", "prompt": "two  spaces" }"""u8.ToArray(),
-                Options = new RouterRequestOptions { RequiredContext = 32_768 },
+                Options = new RouterRequestOptions { RequiredContext = 32_768, Profile = profile },
             }, callerToken);
         }
 

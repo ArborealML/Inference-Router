@@ -579,8 +579,13 @@ internal sealed class ExactTicketAdmission(
                 else
                 {
                     admission.BeforeVerifiedOfferForTests?.Invoke(request);
-                    runtime.VerifyRequestedProfile(claim.Request);
-                    operation = await verifiedSender.StartAsync(request, credentialEpoch, ct).ConfigureAwait(false);
+                    operation = await verifiedSender.StartIfProfileReadyAsync(runtime, request, credentialEpoch, ct)
+                        .ConfigureAwait(false);
+                    if (operation is null)
+                    {
+                        reportFailure?.Invoke(EngineRuntime.ProfileNoLongerReady());
+                        return;
+                    }
                     var response = await operation.Primary.ConfigureAwait(false);
                     await consume(response).ConfigureAwait(false);
                     admission.AfterVerifiedConsumeForTests?.Invoke(response);
