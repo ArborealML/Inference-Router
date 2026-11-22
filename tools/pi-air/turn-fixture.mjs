@@ -27,11 +27,15 @@ function heldTool(onHold) {
     };
 }
 
-async function runChild(ctx, inherit) {
-    const settingsManager = SettingsManager.inMemory({retry: {enabled: false}, compaction: {enabled: false}});
+async function runChild(ctx, mode) {
+    const inherit = mode === "inherited";
+    const capped = mode === "capped";
+    const settingsManager = SettingsManager.inMemory({
+        retry: {enabled: capped, maxRetries: 1, baseDelayMs: 10}, compaction: {enabled: false},
+    });
     const agentDir = process.env.PI_CODING_AGENT_DIR;
     const modelRuntime = await ModelRuntime.create();
-    const model = ctx.modelRegistry.find("air", "child.fixture");
+    const model = ctx.modelRegistry.find("air", capped ? "hy4.fixture" : "child.fixture");
     const ready = Promise.withResolvers();
     const hold = heldTool(ready.resolve);
     if (inherit) modelRuntime.registerProvider("air", ctx.modelRegistry.getRegisteredProviderConfig("air"));
@@ -55,20 +59,30 @@ async function runChild(ctx, inherit) {
             if (session.messages.at(-1)?.stopReason !== "stop")
                 throw new Error("Inherited child did not complete");
         } else {
-            await session.prompt("/context narrow");
-            const work = session.prompt("independent child");
+            const profile = capped ? "compact" : "narrow";
+            if (capped) {
+                const stream = session.agent.streamFunction;
+                session.agent.streamFunction = (model, transcript, options) =>
+                    stream(model, transcript, {...options, maxTokens: 512});
+            }
+            await session.prompt("/context " + profile);
+            const work = session.prompt(capped ? "Start capped turn" : "independent child");
             try {
                 await Promise.race([ready.promise, work.then(() => { throw new Error("Child tool did not hold"); })]);
                 await session.setModel(modelRuntime.getModel("air", "qwen.fixture"));
                 hold.release();
                 await work;
+                if (capped) {
+                    await session.setModel(modelRuntime.getModel("air", "hy4.fixture"));
+                    await session.prompt("Near window with cap " + "x".repeat(26000));
+                }
             } catch (error) {
                 await session.abort();
                 throw error;
             }
         }
         if (errors.length) throw new Error(JSON.stringify(errors));
-        ctx.ui.notify("Child thread " + (inherit ? "inherited " : "independent ") + session.sessionId);
+        ctx.ui.notify("Child thread " + mode + " " + session.sessionId);
     } finally {
         await session.extensionRunner.emit({type: "session_shutdown", reason: "quit"});
         session.dispose();
@@ -91,7 +105,7 @@ export default function(pi) {
     pi.on("session_start", (_event, ctx) => { holdContext = ctx; });
     pi.registerTool(hold.tool);
     pi.registerCommand("fixture-release", {handler: () => hold.release()});
-    pi.registerCommand("fixture-child", {handler: (args, ctx) => runChild(ctx, args.trim() === "inherited")});
+    pi.registerCommand("fixture-child", {handler: (args, ctx) => runChild(ctx, args.trim())});
     pi.registerCommand("fixture-registry", {handler: runRegistryCall});
     pi.registerCommand("fixture-custom", {handler: () => pi.sendMessage({
         customType: "fixture", content: "Run a custom turn", display: false

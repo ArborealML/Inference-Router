@@ -16,8 +16,11 @@ ROOT = Path(__file__).resolve().parent
 WINDOWS = {"compact": 8192, "narrow": 32768, "standard": 65536, "wide": 131072}
 MODELS = ["hy4.fixture", "qwen.fixture", "child.fixture", "mixed.fixture"]
 LARGE_PROMPT = "Large input " + "x" * 35000
+CAP_PROMPT = "Start capped turn"
+CAP_FIT_PROMPT = "Near window with cap " + "x" * 26000
+THRESHOLD_PROMPT = "Cross only the pending threshold " + "x" * 16000
 HELD_PROMPTS = {"start Hy4", "interrupt Hy4", "independent child", "start Hy4 compact",
-                "mixed default turn", LARGE_PROMPT}
+                "mixed default turn", LARGE_PROMPT, CAP_PROMPT, THRESHOLD_PROMPT}
 
 
 def message_text(content):
@@ -27,13 +30,14 @@ def message_text(content):
 
 
 class FakeRouter(ThreadingHTTPServer):
-    def __init__(self):
+    def __init__(self, retry_summaries=False):
         super().__init__(("127.0.0.1", 0), RouterHandler)
         self.posts = []
         self.lock = threading.Lock()
         self.stop_feed = threading.Event()
         self.inherited_started = threading.Event()
         self.release_inherited = threading.Event()
+        self.retry_summaries = retry_summaries
 
     @contextmanager
     def running(self):
@@ -92,18 +96,21 @@ class RouterHandler(BaseHTTPRequestHandler):
     def do_POST(self):
         body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
         messages = body.get("messages", [])
+        summary = any(message["role"] == "system" and
+                      message_text(message["content"]).startswith("You are a context summarization assistant.")
+                      for message in messages)
         users = [message_text(message["content"]) for message in messages if message["role"] == "user"]
         last_user = users[-1] if users else None
         count = self.server.record({
             "path": self.path, "model": body.get("model"), "user": last_user, "users": users,
             "thread": self.headers["X-Inference-Thread"], "profile": self.headers["X-Inference-Profile"],
             "context": self.headers["X-Inference-Required-Context"], "output_limit": body.get("max_tokens"),
-            "has_tool_result": any(message["role"] == "tool" for message in messages),
+            "has_tool_result": any(message["role"] == "tool" for message in messages), "summary": summary,
         })
         if self.path != "/v1/chat/completions":
             self.send_error(404)
             return
-        if last_user == "start Hy4" and count == 2:
+        if (last_user in {"start Hy4", CAP_PROMPT} and count == 2) or (summary and self.server.retry_summaries and count == 1):
             self.write_response(503, "application/json", b'{"error":{"message":"fixture overloaded"}}')
             return
         if last_user in HELD_PROMPTS and count == 1:
@@ -342,30 +349,94 @@ class TurnSelectionTest(unittest.TestCase):
             self.assertEqual(["AIR could not resolve one serving profile for mixed.fixture. "
                               "This turn uses automatic routing with a 65536-token minimum."], notices)
 
-    def test_pending_model_defers_automatic_compaction(self):
-        settings = {"enabled": True, "reserveTokens": 66000, "keepRecentTokens": 1}
+    def test_pending_smaller_window_cannot_trigger_compaction_before_follow_up(self):
+        settings = {"enabled": True, "reserveTokens": 7000, "keepRecentTokens": 1}
         with FakeRouter().running() as router, pi_session(router, settings) as pi:
             thread = pi.send("get_state")["sessionId"]
+            pi.model("qwen.fixture")
+            pi.prompt("/context compact")
+            pi.model("hy4.fixture")
             pi.prompt("/context wide")
             pi.prompt("Earlier user message")
             pi.settled()
-            pi.hold("interrupt Hy4")
+            pi.hold(THRESHOLD_PROMPT)
+            pi.model("qwen.fixture")
+            follow_up = "Use the narrower selection"
+            pi.send("follow_up", message=follow_up)
+            pi.prompt("/fixture-release")
+            pi.settled()
+            skipped = next(index for index, event in enumerate(pi.seen)
+                           if event["type"] == "compaction_end" and event["reason"] == "threshold" and event["aborted"])
+            dispatched = next(index for index, event in enumerate(pi.seen) if event["type"] == "message_start"
+                              and event["message"]["role"] == "user"
+                              and message_text(event["message"]["content"]) == follow_up)
+            self.assertLess(skipped, dispatched)
+            requests = router.snapshot()[:4]
+            self.check_requests(requests, thread, [
+                ("hy4.fixture", "wide", "Earlier user message", False),
+                ("hy4.fixture", "wide", THRESHOLD_PROMPT, False),
+                ("hy4.fixture", "wide", THRESHOLD_PROMPT, True),
+                ("qwen.fixture", "compact", follow_up, True),
+            ])
+            self.assertFalse(any(post["summary"] for post in requests))
+            self.assertEqual([8192, 8192, 8192], [post["output_limit"] for post in requests[:3]])
+            self.assertLessEqual(requests[3]["output_limit"], 2048)
+
+    def test_active_window_can_compact_before_tool_continuation_with_its_own_thread(self):
+        settings = {"enabled": True, "reserveTokens": 30000, "keepRecentTokens": 1,
+                    "modelOverrides": {"air/hy4.fixture": {"reserveTokens": 62000}}}
+        with FakeRouter(retry_summaries=True).running() as router, pi_session(router, settings) as pi:
+            thread = pi.send("get_state")["sessionId"]
+            pi.model("qwen.fixture")
+            pi.prompt("/context narrow")
+            pi.model("hy4.fixture")
+            pi.prompt("Earlier user message")
+            pi.settled()
+            pi.hold(LARGE_PROMPT)
             pi.model("qwen.fixture")
             pi.prompt("/fixture-release")
             pi.settled()
             self.assertTrue(any(event["type"] == "compaction_end" and event["reason"] == "threshold"
-                                and event["aborted"] for event in pi.seen))
-            self.check_requests(router.snapshot(), thread, [
-                ("hy4.fixture", "wide", "Earlier user message", False),
-                ("hy4.fixture", "wide", "interrupt Hy4", False),
-                ("hy4.fixture", "wide", "interrupt Hy4", True),
+                                and event.get("result") for event in pi.seen))
+            requests = router.snapshot()
+            self.check_requests(requests[:2], thread, [
+                ("hy4.fixture", "standard", "Earlier user message", False),
+                ("hy4.fixture", "standard", LARGE_PROMPT, False),
             ])
+            continuation = next(index for index in range(2, len(requests)) if requests[index]["thread"] == thread)
+            summaries = requests[2:continuation]
+            self.assertGreaterEqual(len(summaries), 2)
+            for post in summaries:
+                self.assertTrue(post["summary"])
+                self.assertNotEqual(thread, post["thread"])
+                self.assertEqual(("hy4.fixture", "standard", "65536"),
+                                 (post["model"], post["profile"], post["context"]))
+            by_thread = {post["thread"] for post in summaries}
+            for summary_thread in by_thread:
+                self.assertTrue(summary_thread)
+                self.assertEqual(2, sum(post["thread"] == summary_thread for post in summaries))
+            self.assertEqual(("hy4.fixture", "standard", "65536"),
+                             (requests[continuation]["model"], requests[continuation]["profile"],
+                              requests[continuation]["context"]))
+
+    def test_manual_compaction_uses_selected_profile_and_separate_thread(self):
+        settings = {"enabled": False, "keepRecentTokens": 1}
+        with FakeRouter().running() as router, pi_session(router, settings) as pi:
+            thread = pi.send("get_state")["sessionId"]
+            for prompt in ("Earlier user message", "Recent user message"):
+                pi.prompt(prompt)
+                pi.settled()
+            pi.model("qwen.fixture")
+            pi.prompt("/context narrow")
             pi.send("compact")
-            summaries = router.snapshot()[3:]
+            summaries = router.snapshot()[2:]
             self.assertTrue(summaries)
             for post in summaries:
-                self.assertEqual(("qwen.fixture", "standard", "65536", thread),
-                                 (post["model"], post["profile"], post["context"], post["thread"]))
+                self.assertTrue(post["summary"])
+                self.assertTrue(post["thread"])
+                self.assertNotEqual(thread, post["thread"])
+                self.assertEqual(("qwen.fixture", "narrow", "32768"),
+                                 (post["model"], post["profile"], post["context"]))
 
     def test_sdk_children_inherit_callback_or_load_air_independently(self):
         with FakeRouter().running() as router, pi_session(router) as pi:
@@ -424,6 +495,22 @@ class TurnSelectionTest(unittest.TestCase):
             replies = [event["message"] for event in pi.seen
                        if event.get("method") == "notify" and event["message"].startswith("Registry call ")]
             self.assertEqual(["Registry call stop", "Registry call error: AIR needs a Pi session identity"], replies)
+
+    def test_explicit_output_cap_controls_fit_and_survives_retry(self):
+        with FakeRouter().running() as router, pi_session(router) as pi:
+            pi.prompt("/fixture-child capped")
+            request_thread = next(event["message"].removeprefix("Child thread capped ") for event in pi.seen
+                                  if event.get("method") == "notify" and
+                                  event["message"].startswith("Child thread capped "))
+            requests = router.snapshot()
+            self.check_requests(requests, request_thread, [
+                ("hy4.fixture", "compact", CAP_PROMPT, False),
+                ("hy4.fixture", "compact", CAP_PROMPT, True),
+                ("hy4.fixture", "compact", CAP_PROMPT, True),
+                ("hy4.fixture", "compact", CAP_FIT_PROMPT, True),
+            ])
+            self.assertEqual([512, 512, 512], [post["output_limit"] for post in requests[:3]])
+            self.assertLessEqual(requests[-1]["output_limit"], 512)
 
 
 if __name__ == "__main__":

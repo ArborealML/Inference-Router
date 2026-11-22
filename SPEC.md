@@ -7,7 +7,7 @@ Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 
 ## 0. Revision log
 
-- v0.12.147 — keep Pi tool continuations and retries on the AIR model, serving selection and output limit captured when Pi dispatches the user message. Isolate calls from child sessions and direct registry callers (§13.2).
+- v0.12.147 — capture the AIR model, serving selection and output limit at Pi user dispatch. Keep that selection through tool use and retries, evaluate pre-dispatch compaction against the active window, and preserve separate request identities (§13.2).
 
 - v0.12.146 — recover terminal monitor observations after disconnect, replay overlap and gaps, preserving stale data and the followed ticket (§11).
 
@@ -4022,8 +4022,10 @@ unverified external analysis), and (13.3) what AIR must expose to make it work.
   `X-Inference-Request`, and `X-Inference-Ticket` once ready.
 - **AIR selection within a Pi turn**: Pi dispatches the initial prompt and each delivered
   queued user message through `message_start` with role `user`. The extension captures the
-  selected AIR model, resolved profile, context budget and output limit at that event. Every assistant
-  request for that turn, including tool continuations and Pi retries, uses that capture.
+  selected AIR model, resolved profile, context budget and default output limit at that
+  event. Every assistant request for that turn, including tool continuations and Pi retries,
+  uses that capture. An explicit smaller request output cap applies to both the fit check
+  and the provider request.
   Selecting another AIR model or context profile and queueing a message update local Pi state.
   Busy profile changes defer the transcript fit check to the next turn's actual request.
   The queued message takes the selection in effect when Pi delivers it. The extension clears
@@ -4037,10 +4039,16 @@ unverified external analysis), and (13.3) what AIR must expose to make it work.
   and signal uses the supplied model and the session's ordinary profile choice. Children
   loading AIR capture their own selections. A child inheriting the parent provider sends
   its own model and thread ID and uses the catalog default. Its caller owns cancellation
-  and the parent's ticket UI tracks only its own requests. Compaction and branch summaries
-  use their own request selection, with ownership established by their Pi lifecycle events.
-  An otherwise unverified call requires an explicit session ID. A pending AIR selection
-  change defers automatic compaction during an active turn.
+  and the parent's ticket UI tracks only its own requests. Summary lifecycle events associate
+  compaction and branch summaries with the branch. The AIR thread header uses the summary's
+  separate Pi routing ID, including on summary retries. An otherwise unverified call requires
+  an explicit session ID.
+- **Automatic compaction**: When Pi attempts threshold compaction before dispatching the
+  next user message, the extension checks the prepared transcript against the active
+  turn's captured capacity and that model's compaction reserve. If the active window
+  still fits, Pi proceeds without summarizing. If it crosses the threshold, the verified
+  compaction call uses the active AIR model and profile with its own routing ID. Manual
+  compaction uses the current selection.
 - **Anti-thrash (server-side, visible to Pi)**: schedule **model cohorts** — never preempt
   active generation, drain the loaded-model cohort, enforce minimum residency/hysteresis,
   then switch once to the highest effective-priority/oldest cohort. Thread stickiness

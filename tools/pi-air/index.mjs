@@ -1,4 +1,4 @@
-import { estimateTokens } from "@earendil-works/pi-coding-agent";
+import { estimateTokens, SettingsManager, shouldCompact } from "@earendil-works/pi-coding-agent";
 import { openAICompletionsApi } from "@earendil-works/pi-ai/compat";
 import { randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
@@ -26,7 +26,7 @@ export default async function air(pi) {
     let budgetRefused = false;
     let showingWaiting = false;
     const active = new Set();
-    const summaryBranches = new WeakMap();
+    const summaries = new WeakMap();
     const currentRequests = () => Array.from(active).filter(req => req.branch === branch);
     const requestKey = req => req.ticket || req.clientId;
     const matchesRequest = (req, id) => req && (req.ticket === id || req.clientId === id);
@@ -169,14 +169,15 @@ export default async function air(pi) {
         // share the active signal and session ID without coming from the agent loop.
         const mainRequest = ownsThread && options.signal && options.signal === ctx.signal &&
             typeof options.getFollowUpMessages === "function";
-        const requestBranch = ownsThread ? branch : summaryBranches.get(options.signal);
+        const summary = summaries.get(options.signal);
+        const requestBranch = ownsThread ? branch : summary?.branch;
         if (requestBranch && requestBranch !== branch) throw new Error("AIR session branch changed before dispatch.");
-        const thread = requestBranch ? sessionId : options.sessionId;
+        const thread = options.sessionId;
         if (!thread) throw new Error("AIR needs a Pi session identity");
         // A child can inherit this callback from its parent without loading the extension.
         const choice = requestBranch ? selected(model.id) : null;
         const captured = mainRequest ? turnSelection : undefined;
-        const selection = captured ?? resolveSelection(model, choice);
+        const selection = captured ?? summary?.selection ?? resolveSelection(model, choice);
         const {model: requestModel, profile: target, capacity, maxTokens} = selection;
         if (!target) throw new Error("AIR selection was removed. Choose an available /model or /context default.");
         if (!capacity) throw new Error("AIR has no configured or observed context budget for " + requestModel.id);
@@ -184,7 +185,8 @@ export default async function air(pi) {
         // Compaction and other auxiliary calls may have their own, shorter transcript.
         const estimatedInput = transcript.messages.reduce((total, message) => total + estimateTokens(message), 0);
         const sessionTokens = mainRequest ? ctx.getContextUsage()?.tokens : undefined;
-        const reserve = captured ? maxTokens : Math.min(maxTokens, options.maxTokens ?? maxTokens);
+        // Pi's agent loop carries defaults in its model, while maxTokens is a request limit.
+        const reserve = Math.min(maxTokens, options.maxTokens ?? maxTokens);
         if (!requestFits(capacity, Math.max(estimatedInput, sessionTokens ?? 0), reserve)) {
             if (mainRequest) budgetRefused = true;
             throw new Error("The estimated AIR prompt and output reserve exceed this window. Select a larger /context or use /compact.");
@@ -353,16 +355,22 @@ export default async function air(pi) {
             notify("AIR request ended. Use /compact or select a larger profile before submitting again.", "warning");
             return {cancel: true};
         }
-        // Pi can check the pending model's window before it dispatches a queued user message.
-        if (turnSelection && event.reason !== "manual") {
-            const next = pending?.provider === "air" ? resolveSelection(pending, selected(pending.id)) : undefined;
-            if (next?.model.id !== turnSelection.model.id || next?.profile?.name !== turnSelection.profile?.name ||
-                next?.capacity !== turnSelection.capacity) return {cancel: true};
+        const selection = event.reason === "manual" ? undefined : turnSelection;
+        if (selection) {
+            if (pending?.provider !== "air" || !selection.capacity) return {cancel: true};
+            // Pi checked the pending window before dispatching any queued user message.
+            if (event.reason === "threshold" &&
+                (selection.model.id !== pending.id || selection.capacity !== pending.contextWindow)) {
+                const settings = selection.model.id === pending.id ? event.preparation.settings :
+                    SettingsManager.inMemory(pi.getSettings()).getCompactionSettings(selection.model);
+                if (!shouldCompact(event.preparation.tokensBefore, selection.capacity, settings))
+                    return {cancel: true};
+            }
         }
-        if (pending?.provider === "air" && branch) summaryBranches.set(event.signal, branch);
+        if (pending?.provider === "air" && branch) summaries.set(event.signal, {branch, selection});
     });
     pi.on("session_before_tree", (event, context) => {
-        if (context.model?.provider === "air" && branch) summaryBranches.set(event.signal, branch);
+        if (context.model?.provider === "air" && branch) summaries.set(event.signal, {branch});
     });
     pi.registerCommand("context", {description: "Show or select this AIR model’s context profile",
         handler: async (args, context) => {
