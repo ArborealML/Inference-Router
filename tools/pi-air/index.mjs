@@ -31,7 +31,7 @@ export default async function air(pi) {
     const matchesRequest = (req, id) => req && (req.ticket === id || req.clientId === id);
     function updateTicketUI() {
         const current = currentRequests().at(-1);
-        ctx?.ui.setStatus("air-ticket", current?.text);
+        ctx?.ui.setStatus("air-ticket", current?.observationWarning ?? current?.text);
         const waiting = current?.queued === true && !current.signal.aborted;
         if (waiting !== showingWaiting) {
             ctx?.ui.setWorkingMessage(waiting ? "Waiting" : undefined);
@@ -111,6 +111,9 @@ export default async function air(pi) {
         if (req.branch === branch) {
             // A manual status read and the poll may return out of order. A dispatched ticket never requeues.
             if (req.dispatched && state.State === "Queued") return false;
+            req.lastState = state.State;
+            req.missedPolls = 0;
+            req.observationWarning = undefined;
             req.queued = state.State === "Queued";
             req.dispatched = !req.queued;
             req.text = snapshotText(req.ticket, state);
@@ -134,9 +137,16 @@ export default async function air(pi) {
                 if (req.watch.signal.aborted || req.branch !== branch) return;
                 // Failed reads do not change the last confirmed ticket state.
                 if (error instanceof PermanentTicketError) {
-                    req.text += " · status unavailable (" + clean(error.message) + ")";
+                    req.observationWarning = req.text + " · status unavailable (" + clean(error.message) + ")";
                     updateTicketUI();
                     return;
+                }
+                req.missedPolls = (req.missedPolls ?? 0) + 1;
+                if (req.missedPolls === 4) {
+                    req.observationWarning = snapshotText(req.ticket, {
+                        State: "status unavailable (last known " + (req.lastState ?? "admitted") + ")", Model: req.model
+                    });
+                    updateTicketUI();
                 }
                 intervalMs = Math.min(intervalMs * 2, 4 * pollIntervalMs);
             }

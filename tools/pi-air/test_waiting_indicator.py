@@ -101,6 +101,7 @@ class WaitingIndicatorTest(unittest.TestCase):
                     screen = (screen + os.read(master, 32768))[-64000:]
                     if forbidden:
                         self.assertNotIn(forbidden, screen, "composer changed before AIR confirmed dispatch")
+                return next(row for row in reversed(screen.split(b"\x1b[2K")) if text in row)
 
             env = {**os.environ, "PI_CODING_AGENT_DIR": tmp, "PI_OFFLINE": "1",
                    "PI_AIR_BASE_URL": f"http://127.0.0.1:{server.server_port}/v1", "TERM": "xterm-256color"}
@@ -113,7 +114,9 @@ class WaitingIndicatorTest(unittest.TestCase):
                     try:
                         expect(b"Waiting")
                         if failure_status == 503:
-                            expect(b"fixture-reobserved", forbidden=b"Working")
+                            expect(b"status unavailable (last known Queued)", forbidden=b"Working")
+                            recovered = expect(b"fixture-reobserved", forbidden=b"Working")
+                            self.assertNotIn(b"status unavailable", recovered)
                             executing.set()
                             expect(b"Working")
                         else:
