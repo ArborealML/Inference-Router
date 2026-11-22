@@ -124,6 +124,11 @@ async function runRegistryCall(args, ctx) {
 }
 
 export default function(pi) {
+    // The installed CLM stack replaces the initial system message during preparation.
+    pi.on("context_with_system", ({messages}) => {
+        if (messages[0]?.role === "system")
+            return {messages: [{...messages[0]}, ...messages.slice(1)]};
+    });
     let holdContext;
     const hold = heldTool(() => holdContext.ui.notify("Tool held"));
     pi.on("session_start", (_event, ctx) => { holdContext = ctx; });

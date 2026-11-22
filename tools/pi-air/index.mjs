@@ -29,7 +29,8 @@ export default async function air(pi) {
     let showingWaiting = false;
     const active = new Set();
     const agentRequestHeaders = new WeakSet();
-    let preparedMessage;
+    // CLM can replace the system message while preserving the rest of Pi's prepared turn.
+    let preparedMessages;
     const summaries = new WeakMap();
     const currentRequests = () => Array.from(active).filter(req => req.branch === branch);
     const requestKey = req => req.ticket || req.clientId;
@@ -172,8 +173,8 @@ export default async function air(pi) {
         // Pi's SDK passes the header object from its extension hook to the provider.
         // Direct registry calls merge their own headers, even when reusing loop options.
         const mainRequest = sameSession && options.signal && options.signal === ctx.signal &&
-            agentRequestHeaders.delete(options.headers) && preparedMessage && transcript.messages.includes(preparedMessage);
-        if (mainRequest) preparedMessage = undefined;
+            agentRequestHeaders.delete(options.headers) && preparedMessages && transcript.messages.some(message => preparedMessages.has(message));
+        if (mainRequest) preparedMessages = undefined;
         const summary = summaries.get(options.signal);
         const requestBranch = mainRequest ? branch : summary?.branch;
         if (requestBranch && requestBranch !== branch) throw new Error("AIR session branch changed before dispatch.");
@@ -351,7 +352,7 @@ export default async function air(pi) {
         turnSelection = undefined;
         if (ctx) await publish();
     });
-    pi.on("context_with_system", event => { preparedMessage = event.messages[0]; });
+    pi.on("context_with_system", event => { preparedMessages = new WeakSet(event.messages); });
     pi.on("before_provider_headers", event => { agentRequestHeaders.add(event.headers); });
     pi.on("cache_warming_decision", (_event, context) => {
         if (context.model?.provider === "air") return {action: "stop"};

@@ -4036,7 +4036,7 @@ unverified external analysis), and (13.3) what AIR must expose to make it work.
   request-specific profile.
 - **Pi request ownership**: The turn capture requires a matching Pi session ID, the active
   agent signal, the transcript prepared for that agent request, and the request headers prepared by Pi's SDK hook. AIR recognizes the
-  header object in memory without adding a wire header. A direct registry call with the
+  header object and a message from the prepared turn in memory, including when CLM replaces the system message. A direct registry call with the
   same ID and signal sends the supplied model and session profile on that thread. The
   direct caller owns cancellation, and the call stays outside the agent footer and
   ticket commands. Children loading AIR capture their own selections. A child inheriting
