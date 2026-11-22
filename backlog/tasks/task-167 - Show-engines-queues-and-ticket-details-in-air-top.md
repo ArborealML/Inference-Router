@@ -1,11 +1,11 @@
 ---
 id: TASK-167
 title: Show engines, queues and ticket details in air top
-status: To Do
+status: Testing
 assignee:
-  - '@gpt-6.2-astra'
+  - '@gpt-6.2-sol-release'
 created_date: '2026-11-22T04:09:00Z'
-updated_date: '2026-11-22T04:20:00Z'
+updated_date: '2026-11-22T04:33:00Z'
 labels: []
 milestone: m-15
 dependencies:
@@ -33,3 +33,9 @@ Build the keyboard-driven monitor over the shared monitoring state.
 <!-- SECTION:PLAN:BEGIN -->
 Render engine state and switch target separately, router-provided queue depths, and retained activity. Select by stable ticket ID across updates. Sanitize server strings and marshal redraws to the UI thread.
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Public air top at 4b5034b compiled and three focused cases passed. The table retains its viewport, details can scroll, and frames have an explicit ownership contract. Actual terminal checks and independent review are underway.
+<!-- SECTION:NOTES:END -->

@@ -1,11 +1,11 @@
 ---
 id: TASK-165
 title: Validate Terminal.Gui for air top under Native AOT
-status: In Progress
+status: Ready for Review
 assignee:
-  - '@gpt-6.2-sol-config'
+  - '@gpt-6.2-astra'
 created_date: '2026-11-22T04:09:00Z'
-updated_date: '2026-11-22T04:23:00Z'
+updated_date: '2026-11-22T04:26:00Z'
 labels: []
 milestone: m-15
 dependencies: []
@@ -22,7 +22,7 @@ Exercise a selectable table and detail pane in the existing CLI using Terminal.G
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Linux x64 Native AOT publish has zero trim warnings.
+- [x] #1 Linux x64 Native AOT publish has zero trim warnings.
 - [ ] #2 Over SSH, a selected row survives updates and resize. Quitting restores the terminal.
 <!-- AC:END -->
 
@@ -35,5 +35,5 @@ Pin Terminal.Gui v2 centrally. Exercise a selectable table, stable identity duri
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-The design review confirmed the five-task sequence. Terminal.Gui v2 table and selection APIs are available. The implementer is building the first terminal view. Qualification uses a real SSH session.
+Native x64 CLI qualification at 9eaa015 used the real terminal view and a private probe entry point. Zero warnings. Across a real SSH session the selected row survived reordering and resize, q restored terminal state, and the shell remained usable. Independent commit review is pending.
 <!-- SECTION:NOTES:END -->

@@ -1,11 +1,11 @@
 ---
 id: TASK-166
 title: Build the read-only AIR monitoring state from admin reads and events
-status: To Do
+status: Ready for Review
 assignee:
   - '@gpt-6.2-astra'
 created_date: '2026-11-22T04:09:00Z'
-updated_date: '2026-11-22T04:23:00Z'
+updated_date: '2026-11-22T04:29:00Z'
 labels: []
 milestone: m-15
 dependencies:
@@ -33,3 +33,9 @@ Read status periodically, follow the global event stream and fetch known tickets
 <!-- SECTION:PLAN:BEGIN -->
 Reuse public admin DTOs or explicit source-generated read models. Bound retained ticket data. Integrate unfiltered event sequences and status snapshots without double counting. Keep UI dependencies out of state.
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Shared read-only client at 5e4579f passed both focused tests covering authoritative gauges, bounded history, JSON feed cursor and exact ticket lookup. Independent review dispatched.
+<!-- SECTION:NOTES:END -->

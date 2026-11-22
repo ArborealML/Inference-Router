@@ -1,11 +1,11 @@
 ---
 id: TASK-168
 title: Recover the terminal monitor after disconnects and event gaps
-status: To Do
+status: In Progress
 assignee:
-  - '@gpt-6.2-astra'
+  - '@gpt-6.2-sol-config'
 created_date: '2026-11-22T04:10:00Z'
-updated_date: '2026-11-22T04:23:00Z'
+updated_date: '2026-11-22T04:33:00Z'
 labels: []
 milestone: m-15
 dependencies:
@@ -34,3 +34,9 @@ Keep partial history and stale observations explicit during outages.
 <!-- SECTION:PLAN:BEGIN -->
 Reconnect with cancellation and bounded backoff. Refresh gauges independently of event traffic. On uncertain continuity or sequence reset, refresh status and label incomplete history. Test overload, gaps, restart and quit.
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Reconcile snapshots and the exact followed ticket on reconnect. The client review identified mutable gauge storage and ambiguity at a lower first sequence after reconnect. Verify snapshot isolation and the new observation segment.
+<!-- SECTION:NOTES:END -->
