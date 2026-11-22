@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@gpt-6.2-sol-scheduling'
 created_date: '2026-11-22T09:40:00Z'
-updated_date: '2026-11-22T09:53:00Z'
+updated_date: '2026-11-22T09:54:00Z'
 labels: []
 milestone: m-4
 dependencies: []
@@ -28,6 +28,7 @@ Capture the AIR model and profile at Pi user-turn start. Carry both through tool
 - [ ] #2 With a Hy4 tool call held open, selecting Qwen and releasing the tool sends every continuation and retry to the original Hy4 model and profile.
 - [ ] #3 After the active turn completes, the original follow-up submits exactly once with the newly selected model and profile.
 - [ ] #4 Cancellation releases the turn selection. Concurrent sessions and subagents retain independent selections across arbitrary catalog entries.
+- [ ] #5 A foreground child inheriting the parent provider callback sends its own model and thread ID. Only a matching options.sessionId can use the parent pin. A child loading AIR independently uses its own turn pin.
 <!-- AC:END -->
 
 ## Implementation Plan
