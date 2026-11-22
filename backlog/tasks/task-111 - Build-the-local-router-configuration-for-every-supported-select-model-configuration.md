@@ -3,11 +3,11 @@ id: TASK-111
 title: >-
   Build the local router configuration for every supported select-model
   configuration
-status: Waiting
+status: To Do
 assignee:
   - '@gpt-6.2-astra'
 created_date: '2026-11-18T18:15:00Z'
-updated_date: '2026-11-19T15:41:00Z'
+updated_date: '2026-11-22T01:16:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -19,7 +19,7 @@ ordinal: 109000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Shared-host fencing in TASK-110 and host/provider and instance evidence in TASK-26 and TASK-118 wake the remaining qualification. [PR #32](https://github.com/ArborealML/Inference-Router/pull/32) qualified 75 normalized defaults across six dedicated inputs and 10,150 offline differential cases. One unified native input requires shared-host and port fencing; alternate choices require separate immutable configuration resolution. TASK-125 qualifies the chosen pair and TASK-112 owns the client-driven swap.
+The local ten-model configuration passed offline validation, including fifteen aliases. The [merged Pi integration](https://github.com/ArborealML/Inference-Router/pull/75) supports idle catalog additions, and the [published live verification](../../docs/local-model-switching.md#verification) covers the selected Qwen and DeepSeek configurations. Full selector parameter parity remains open pending the remaining configuration comparisons.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

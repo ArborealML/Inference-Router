@@ -5,7 +5,7 @@ status: Waiting
 assignee:
   - '@gpt-6.2-sol-config'
 created_date: '2026-11-18T20:36:00Z'
-updated_date: '2026-11-20T00:23:00Z'
+updated_date: '2026-11-22T01:16:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -18,7 +18,7 @@ ordinal: 123000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Waiting for enrolled topology, host fencing and authenticated serving observation for the live Pi swap. Evidence of those prerequisites wakes live qualification. [PR #37](https://github.com/ArborealML/Inference-Router/pull/37) landed the selected DeepSeek and Qwen offline proof. Two dedicated config-only inputs passed, and six bidirectional transport and refusal cases passed at 73dce891. The remaining criterion requires real host evidence.
+Commissioned host enforcement evidence from TASK-110 and TASK-118 wakes the remaining enrollment check. The existing-daemon Qwen and DeepSeek pair passed the live Pi run with backend and GPU residency readback. [Live verification](../../docs/local-model-switching.md#verification)
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

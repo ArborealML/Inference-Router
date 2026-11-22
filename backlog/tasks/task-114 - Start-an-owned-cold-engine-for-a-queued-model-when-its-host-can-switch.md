@@ -1,11 +1,11 @@
 ---
 id: TASK-114
 title: Start an owned cold engine for a queued model when its host can switch
-status: Testing
+status: Waiting
 assignee:
   - '@gpt-6.2-sol-release'
 created_date: '2026-11-18T18:21:00Z'
-updated_date: '2026-11-21T05:01:00Z'
+updated_date: '2026-11-22T01:15:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -16,7 +16,7 @@ ordinal: 112000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-The configured catalog passed ten focused Release cases, including targets sharing an engine. Delivery is checking independent socket, image, endpoint, route and launch-plan evidence before integration. Lifecycle is preparing the ordinary installer connection. Four offline one-slot cases passed. The live host still requires exclusive host control and readiness tied to the connected process.
+Waiting for shared-host enforcement in TASK-110 to qualify cross-process and restart fencing. The original queued request already drives cold dispatch in the shipped local group. See the [published live verification](../../docs/local-model-switching.md#verification).
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

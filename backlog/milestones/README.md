@@ -2,11 +2,11 @@
 
 The first milestone requires a completed pi turn on the deployed router. An isolated pi session has already completed turns on two resident models. The native swap milestone requires observing a host change its resident model between turns. The cluster milestone adds shared admission and activation from either ingress.
 
-## Delivery evidence as of November 19
+## Delivery evidence as of November 22
 
 **Pi on a running router is complete (6/6).** The deployed router served streamed Qwen and Swift turns in the same Pi session across an operator-managed selector change. Model discovery and the pinned client agreed on Qwen’s 256,000-token window. [PR #8](https://github.com/ArborealML/Inference-Router/pull/8) qualified the remaining admission check when a serving window shrinks during selection. [PR #33](https://github.com/ArborealML/Inference-Router/pull/33) completed CLI prompt parsing for both verbs, including stdin when only options are supplied.
 
-**Native model swap through Pi has 13 of 23 tasks complete.** [PR #31](https://github.com/ArborealML/Inference-Router/pull/31) qualified offline launch projections across 75 model and tier targets. The selected pair is DeepSeek V4.1 Flash 1017 and Qwen 3.8 Flash Next. Earlier Qwen/Swift evidence retains its original scope. The native swap still requires an enrolled host with an authenticated launch record and an observed router-managed transition between real Pi turns.
+**Local queue-driven switching passed live and shipped.** Qwen completed before the original queued DeepSeek request drove the resident change and streamed. Docker, the backend and native GPU-process observations confirmed residency. Named resource groups support N clients and N configured engines. Authenticated idle catalog reload also shipped. Exclusive control across independent processes on a shared host remains open. [Live evidence](../../docs/local-model-switching.md#verification) · [Merged implementation](https://github.com/ArborealML/Inference-Router/pull/75)
 
 ## Delivery path
 

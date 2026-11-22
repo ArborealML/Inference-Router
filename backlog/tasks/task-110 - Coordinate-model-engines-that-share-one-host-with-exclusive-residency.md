@@ -1,11 +1,11 @@
 ---
 id: TASK-110
 title: Coordinate model engines that share one host with exclusive residency
-status: In Progress
+status: To Do
 assignee:
-  - '@gpt-6.2-sol-config'
+  - '@gpt-6.2-astra'
 created_date: '2026-11-18T18:13:00Z'
-updated_date: '2026-11-21T05:16:00Z'
+updated_date: '2026-11-22T01:15:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -21,7 +21,7 @@ ordinal: 108000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-The operation-head service passed 26 focused Release cases. Config is strengthening journal rollback and reply validation fixtures. Published two-UID qualification and installation remain open. The coordinator owns host enrollment (TASK-137). Resolve resident and target from N configured models; two-model qualification uses the same path. Connect queued dispatch to real stop, start and serving. [Offline commissioning](https://github.com/ArborealML/Inference-Router/pull/73) landed with [green CI](https://github.com/ArborealML/Inference-Router/actions/runs/44861808281).
+Local coordination on the existing Docker daemon shipped in the [merged Pi integration](https://github.com/ArborealML/Inference-Router/pull/75). Named groups coordinate configured engines and clients. The [published live verification](../../docs/local-model-switching.md#verification) covers drain, handoff and verified residency. The remaining criteria concern exclusive control across independent processes on a shared host. That work is parked.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
