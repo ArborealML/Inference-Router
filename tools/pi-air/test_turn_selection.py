@@ -32,6 +32,8 @@ class FakeRouter(ThreadingHTTPServer):
         self.posts = []
         self.lock = threading.Lock()
         self.stop_feed = threading.Event()
+        self.inherited_started = threading.Event()
+        self.release_inherited = threading.Event()
 
     @contextmanager
     def running(self):
@@ -42,6 +44,7 @@ class FakeRouter(ThreadingHTTPServer):
                 yield self
             finally:
                 self.stop_feed.set()
+                self.release_inherited.set()
                 self.shutdown()
                 worker.join()
 
@@ -113,12 +116,19 @@ class RouterHandler(BaseHTTPRequestHandler):
             delta = {"role": "assistant", "content": "ok"}
             finish = "stop"
         chunk = json.dumps({"choices": [{"index": 0, "delta": delta, "finish_reason": finish}]}).encode()
-        self.write_response(200, "text/event-stream", b"data: " + chunk + b"\n\ndata: [DONE]\n\n")
+        self.write_response(200, "text/event-stream", b"data: " + chunk + b"\n\ndata: [DONE]\n\n",
+                            hold=last_user == "inherited child")
 
-    def write_response(self, status, mime, body):
+    def write_response(self, status, mime, body, hold=False):
         self.send_response(status)
         self.send_header("Content-Type", mime)
+        if hold:
+            self.send_header("X-Inference-Ticket", "inherited-ticket")
         self.end_headers()
+        if hold:
+            self.wfile.flush()
+            self.server.inherited_started.set()
+            self.server.release_inherited.wait(12)
         self.wfile.write(body)
 
 
@@ -152,15 +162,21 @@ class Pi:
             raise AssertionError(f"Pi event timed out. Recent event types: "
                                  f"{[event['type'] for event in self.seen[-20:]]}") from None
 
-    def send(self, command, **kwargs):
+    def request(self, command, **kwargs):
         self.counter += 1
         request_id = str(self.counter)
         self.process.stdin.write(json.dumps({"type": command, "id": request_id, **kwargs}) + "\n")
         self.process.stdin.flush()
+        return request_id
+
+    def response(self, request_id):
         response = self.wait(lambda event: event["type"] == "response" and event["id"] == request_id)
         if not response["success"]:
             raise AssertionError(response)
         return response.get("data")
+
+    def send(self, command, **kwargs):
+        return self.response(self.request(command, **kwargs))
 
     def prompt(self, message):
         return self.send("prompt", message=message)
@@ -357,21 +373,57 @@ class TurnSelectionTest(unittest.TestCase):
             pi.model("child.fixture")
             pi.prompt("/context wide")
             pi.model("hy4.fixture")
+            pi.prompt("/context compact")
             pi.hold("interrupt Hy4")
-            pi.prompt("/fixture-child inherited")
-            pi.prompt("/fixture-child independent")
-            children = [event["message"].removeprefix("Child thread ") for event in pi.seen
-                        if isinstance(event.get("message"), str) and event["message"].startswith("Child thread ")]
-            self.assertEqual(3, len({thread, *children}))
+            pi.model("qwen.fixture")
+            offset = len(pi.seen)
+            command = pi.request("prompt", message="/fixture-child inherited")
+            try:
+                self.assertTrue(router.inherited_started.wait(5), "Inherited child did not submit while parent was held")
+                pi.prompt("/air-cancel")
+                self.assertTrue(any(event.get("message") == "No matching active AIR request to cancel."
+                                    for event in pi.seen[offset:]))
+                pi.prompt("/fixture-child independent")
+            finally:
+                router.release_inherited.set()
+            pi.response(command)
+            self.assertFalse(any(event.get("method") == "setStatus" for event in pi.seen[offset:]))
+            children = dict(event["message"].removeprefix("Child thread ").split(" ") for event in pi.seen
+                            if isinstance(event.get("message"), str) and event["message"].startswith("Child thread "))
+            self.assertEqual({"inherited", "independent"}, children.keys())
+            self.assertEqual(3, len({thread, *children.values()}))
+            pi.prompt("/fixture-release")
+            pi.settled()
             requests = router.snapshot()
-            self.check_requests(requests[:1], thread, [("hy4.fixture", "standard", "interrupt Hy4", False)])
-            self.check_requests(requests[1:2], children[0], [("child.fixture", "standard", "inherited child", False)])
-            self.check_requests(requests[2:], children[1], [
+            self.check_requests(requests[:1] + requests[-1:], thread, [
+                ("hy4.fixture", "compact", "interrupt Hy4", False),
+                ("hy4.fixture", "compact", "interrupt Hy4", True),
+            ])
+            self.check_requests(requests[1:2], children["inherited"], [
+                ("child.fixture", "standard", "inherited child", False),
+            ])
+            self.check_requests(requests[2:-1], children["independent"], [
                 ("child.fixture", "narrow", "independent child", False),
                 ("child.fixture", "narrow", "independent child", True),
             ])
-            pi.send("abort")
-            self.assertEqual(requests, router.snapshot())
+
+    def test_direct_registry_call_cannot_take_parent_pin_or_infer_missing_thread(self):
+        with FakeRouter().running() as router, pi_session(router) as pi:
+            thread = pi.send("get_state")["sessionId"]
+            pi.model("child.fixture")
+            pi.prompt("/context wide")
+            pi.model("hy4.fixture")
+            pi.prompt("/context compact")
+            pi.hold("interrupt Hy4")
+            pi.prompt("/fixture-registry same-session")
+            pi.prompt("/fixture-registry missing-session")
+            self.check_requests(router.snapshot(), thread, [
+                ("hy4.fixture", "compact", "interrupt Hy4", False),
+                ("child.fixture", "wide", "direct registry call", False),
+            ])
+            replies = [event["message"] for event in pi.seen
+                       if event.get("method") == "notify" and event["message"].startswith("Registry call ")]
+            self.assertEqual(["Registry call stop", "Registry call error: AIR needs a Pi session identity"], replies)
 
 
 if __name__ == "__main__":

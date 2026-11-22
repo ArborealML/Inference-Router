@@ -7,7 +7,7 @@ Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 
 ## 0. Revision log
 
-- v0.12.147 — keep Pi tool continuations and retries on the AIR model, serving selection and output limit captured when Pi dispatches the user message (§13.2).
+- v0.12.147 — keep Pi tool continuations and retries on the AIR model, serving selection and output limit captured when Pi dispatches the user message. Isolate calls from child sessions and direct registry callers (§13.2).
 
 - v0.12.146 — recover terminal monitor observations after disconnect, replay overlap and gaps, preserving stale data and the followed ticket (§11).
 
@@ -4032,11 +4032,15 @@ unverified external analysis), and (13.3) what AIR must expose to make it work.
   Pi reports the ambiguity and sends the captured context minimum using AIR's automatic
   tier selection. The ticket snapshot identifies the assigned engine. It carries no
   request-specific profile.
-- **Pi request ownership**: The turn capture applies to requests carrying that Pi session ID.
-  Children loading AIR capture their own selections. A child inheriting the parent provider
-  sends its own model and thread ID and uses the catalog default. Compaction and branch
-  summaries use their own request selection. A pending AIR selection change defers automatic
-  compaction during an active turn.
+- **Pi request ownership**: The turn capture requires a matching Pi session ID, the active
+  agent signal, and the Pi 1.3 agent-loop options. A direct registry call with the same ID
+  and signal uses the supplied model and the session's ordinary profile choice. Children
+  loading AIR capture their own selections. A child inheriting the parent provider sends
+  its own model and thread ID and uses the catalog default. Its caller owns cancellation
+  and the parent's ticket UI tracks only its own requests. Compaction and branch summaries
+  use their own request selection, with ownership established by their Pi lifecycle events.
+  An otherwise unverified call requires an explicit session ID. A pending AIR selection
+  change defers automatic compaction during an active turn.
 - **Anti-thrash (server-side, visible to Pi)**: schedule **model cohorts** — never preempt
   active generation, drain the loaded-model cohort, enforce minimum residency/hysteresis,
   then switch once to the highest effective-priority/oldest cohort. Thread stickiness

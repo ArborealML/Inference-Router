@@ -52,6 +52,8 @@ async function runChild(ctx, inherit) {
         await session.bindExtensions({mode: "print", onError: error => errors.push(error)});
         if (inherit) {
             await session.prompt("inherited child");
+            if (session.messages.at(-1)?.stopReason !== "stop")
+                throw new Error("Inherited child did not complete");
         } else {
             await session.prompt("/context narrow");
             const work = session.prompt("independent child");
@@ -66,11 +68,21 @@ async function runChild(ctx, inherit) {
             }
         }
         if (errors.length) throw new Error(JSON.stringify(errors));
-        ctx.ui.notify("Child thread " + session.sessionId);
+        ctx.ui.notify("Child thread " + (inherit ? "inherited " : "independent ") + session.sessionId);
     } finally {
         await session.extensionRunner.emit({type: "session_shutdown", reason: "quit"});
         session.dispose();
     }
+}
+
+async function runRegistryCall(args, ctx) {
+    if (!ctx.signal) throw new Error("The parent tool is not held");
+    const sessionId = args.trim() === "same-session" ? ctx.sessionManager.getSessionId() : undefined;
+    const model = ctx.modelRegistry.find("air", "child.fixture");
+    const result = await ctx.modelRegistry.streamSimple(model, {
+        messages: [{role: "user", content: "direct registry call", timestamp: Date.now()}],
+    }, {sessionId, signal: ctx.signal, onPayload: payload => payload}).result();
+    ctx.ui.notify("Registry call " + result.stopReason + (result.errorMessage ? ": " + result.errorMessage : ""));
 }
 
 export default function(pi) {
@@ -80,6 +92,7 @@ export default function(pi) {
     pi.registerTool(hold.tool);
     pi.registerCommand("fixture-release", {handler: () => hold.release()});
     pi.registerCommand("fixture-child", {handler: (args, ctx) => runChild(ctx, args.trim() === "inherited")});
+    pi.registerCommand("fixture-registry", {handler: runRegistryCall});
     pi.registerCommand("fixture-custom", {handler: () => pi.sendMessage({
         customType: "fixture", content: "Run a custom turn", display: false
     }, {triggerTurn: true})});

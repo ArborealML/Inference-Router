@@ -165,9 +165,14 @@ export default async function air(pi) {
     function streamSimple(model, transcript, options = {}) {
         const sessionId = ctx?.sessionManager.getSessionId();
         const ownsThread = !!branch && options.sessionId === sessionId;
-        const mainRequest = ownsThread && options.signal && options.signal === ctx.signal;
+        // Pi 1.3 passes the agent-loop options through here. A direct registry call can
+        // share the active signal and session ID without coming from the agent loop.
+        const mainRequest = ownsThread && options.signal && options.signal === ctx.signal &&
+            typeof options.getFollowUpMessages === "function";
         const requestBranch = ownsThread ? branch : summaryBranches.get(options.signal);
         if (requestBranch && requestBranch !== branch) throw new Error("AIR session branch changed before dispatch.");
+        const thread = requestBranch ? sessionId : options.sessionId;
+        if (!thread) throw new Error("AIR needs a Pi session identity");
         // A child can inherit this callback from its parent without loading the extension.
         const choice = requestBranch ? selected(model.id) : null;
         const captured = mainRequest ? turnSelection : undefined;
@@ -185,8 +190,6 @@ export default async function air(pi) {
             throw new Error("The estimated AIR prompt and output reserve exceed this window. Select a larger /context or use /compact.");
         }
         if (mainRequest) budgetRefused = false;
-        const thread = requestBranch ? sessionId : options.sessionId;
-        if (!thread) throw new Error("AIR needs a Pi session identity");
         let req;
         if (requestBranch) {
             req = {thread, model: requestModel.id, branch, clientId: "request-" + randomUUID(), watch: new AbortController(), abort: new AbortController()};
