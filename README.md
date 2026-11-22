@@ -138,7 +138,7 @@ On Linux or macOS, put this build’s `air` executable on `PATH`. On Windows, pu
 | fish | `air completion fish \| source` |
 | PowerShell | `air completion powershell \| Out-String \| Invoke-Expression` |
 
-Try `air sw<Tab>`, then `air switch --engine <Tab>` and `--model <Tab>` after selecting an engine. The picker includes cold model IDs and aliases. `air tune plan --config FILE --engine <Tab>` uses that file offline. Client commands use the normal configuration file or query a specified listener with `GET /admin/catalog`. If the listener is unavailable, the local catalog supplies candidates. Completion only reads configuration and catalog data.
+Try `air sw<Tab>`, then `air switch --engine <Tab>` and `--model <Tab>` after selecting an engine. The picker includes cold model IDs and aliases. `air tune plan --config FILE --engine <Tab>` uses that file offline. Client commands first read `GET /admin/catalog` from the same listener they use for inference. If the applied catalog is unavailable, the local configuration supplies candidates. Completion only reads configuration and catalog data.
 
 ## Builds and releases
 

@@ -24,7 +24,12 @@ Register-ArgumentCompleter -Native -CommandName air, air.exe -ScriptBlock {
     foreach ($candidate in @(& air completion candidates "--current=$current" @arguments)) {
         if (-not $candidate) { continue }
         $insert = $candidate
-        if ($insert -notmatch '^[a-zA-Z0-9_./:-]+$') { $insert = "'" + [System.Management.Automation.Language.CodeGeneration]::EscapeSingleQuotedStringContent($candidate) + "'" }
+        if ($arguments.Count -gt 0 -and $arguments[-1] -in '-c', '--config', '--baseline', '--candidate' -and
+            ($insert.StartsWith('~/') -or $insert.StartsWith('~\'))) {
+            # Native programs receive a literal tilde from PowerShell, even in an unquoted word.
+            $insert = [System.IO.Path]::Combine($HOME, $insert.Substring(2))
+        }
+        if ($insert -notmatch '^[a-zA-Z0-9_./:-]+$') { $insert = "'" + [System.Management.Automation.Language.CodeGeneration]::EscapeSingleQuotedStringContent($insert) + "'" }
         [System.Management.Automation.CompletionResult]::new($insert, $candidate, 'ParameterValue', $candidate)
     }
 }

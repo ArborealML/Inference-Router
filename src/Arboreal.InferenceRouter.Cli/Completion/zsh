@@ -6,6 +6,15 @@ _air_complete() {
     while IFS= read -r item; do matches+=("$item"); done < <(
         command air completion candidates "--current=${(Q)PREFIX}" "${prior[@]}"
     )
+    if [[ "$PREFIX" == '~/'* ]]; then
+        case ${prior[-1]} in
+            -c|--config|--baseline|--candidate)
+                local -a paths
+                for item in "${matches[@]}"; do paths+=("~/${(q)item[3,-1]}"); done
+                (( ${#paths} )) && compadd -U -Q -- "${paths[@]}"
+                return ;;
+        esac
+    fi
     (( ${#matches} )) && compadd -- "${matches[@]}"
 }
 compdef _air_complete air

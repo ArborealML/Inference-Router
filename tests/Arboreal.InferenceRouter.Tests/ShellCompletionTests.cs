@@ -94,6 +94,75 @@ public sealed class ShellCompletionTests
         }
     }
 
+    [Fact(Timeout = 30_000)]
+    public async Task DefaultClientUsesAppliedCatalogWhileTuneUsesDisk()
+    {
+        var directory = Directory.CreateTempSubdirectory("air-shell-default-");
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        var builder = WebApplication.CreateSlimBuilder();
+        builder.WebHost.UseUrls("http://127.0.0.1:0");
+        builder.Logging.ClearProviders();
+        await using var app = builder.Build();
+        var gets = 0;
+        var status = 200;
+        app.Run(async context =>
+        {
+            Assert.Equal("GET", context.Request.Method);
+            Assert.Equal("/admin/catalog", context.Request.Path);
+            int generation = Interlocked.Increment(ref gets);
+            context.Response.StatusCode = Volatile.Read(ref status);
+            if (context.Response.StatusCode == 200)
+            {
+                var snapshot = $$$"""{"Engines":[{"Name":"applied-{{{generation}}}","Models":[]}]}""";
+                await context.Response.Body.WriteAsync(Encoding.UTF8.GetBytes(snapshot), deadline.Token);
+            }
+        });
+        await app.StartAsync(deadline.Token);
+        try
+        {
+            var config = Path.Combine(directory.FullName, "stale.toml");
+            await File.WriteAllTextAsync(config, Config, deadline.Token);
+            var listener = app.Urls.Single();
+            async Task<string[]> Engines(bool offline) => (await Cli.ShellCompletion.CatalogAsync(null, listener, config, offline))
+                .Select(engine => engine.Name).ToArray();
+            Assert.Equal(["applied-1"], await Engines(false));
+            Assert.Equal(["applied-2"], await Engines(false));
+            Assert.Equal(["engine one", "other"], await Engines(true));
+            Assert.Equal(2, Volatile.Read(ref gets));
+            Volatile.Write(ref status, 503);
+            Assert.Equal(["engine one", "other"], await Engines(false));
+            Assert.Equal(3, Volatile.Read(ref gets));
+        }
+        finally
+        {
+            await app.StopAsync(deadline.Token);
+            directory.Delete(recursive: true);
+        }
+    }
+
+    [Fact(Timeout = 30_000)]
+    public async Task FileCandidatesPreserveHomeRelativeSpelling()
+    {
+        var home = Directory.CreateTempSubdirectory("air-shell-home-");
+        try
+        {
+            using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            var sub = home.CreateSubdirectory("nested");
+            await File.WriteAllTextAsync(Path.Combine(sub.FullName, "sample input.json"), "{}", deadline.Token);
+            var result = await RunCliAsync("completion", ["candidates", "--current=~/nested/sam", "tune", "compare", "--baseline"],
+                null, deadline.Token, process =>
+                {
+                    process.Environment["HOME"] = home.FullName;
+                    process.Environment["USERPROFILE"] = home.FullName;
+                });
+            Assert.Equal(["~/nested/sample input.json"], Lines(result));
+        }
+        finally
+        {
+            home.Delete(recursive: true);
+        }
+    }
+
     [Theory]
     [InlineData("bash", "complete -o")]
     [InlineData("powershell", "Register-ArgumentCompleter -Native")]

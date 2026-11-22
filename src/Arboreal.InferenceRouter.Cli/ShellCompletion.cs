@@ -81,7 +81,8 @@ internal static class ShellCompletion
             if (previous is "-p" or "--priority") return ["background", "low", "normal", "high", "interactive"];
             if (previous is not ("-m" or "--model" or "-e" or "--engine" or "--profile")) return [];
 
-            var engines = await CatalogAsync(words, command == "tune plan").ConfigureAwait(false);
+            var engines = await CatalogAsync(Program.GetOpt(words, ServerOptions), Program.DefaultServer,
+                Program.GetOpt(words, ["--config"]), command == "tune plan").ConfigureAwait(false);
             if (previous is "-e" or "--engine") return engines.Select(e => e.Name);
             var engine = Program.GetOpt(words, ["-e", "--engine"]);
             var models = engines.Where(e => engine is null || e.Name.Equals(engine, StringComparison.OrdinalIgnoreCase))
@@ -96,23 +97,36 @@ internal static class ShellCompletion
 
     private static IEnumerable<string> PathCandidates(string prefix)
     {
+        if (prefix == "~")
+        {
+            yield return "~" + Path.DirectorySeparatorChar;
+            yield break;
+        }
         var directory = Path.GetDirectoryName(prefix);
         var start = prefix.Length - Path.GetFileName(prefix).Length;
+        // Preserve the typed prefix in the result; only expand it when reading the directory.
+        if (directory == "~" || (directory is { Length: >= 2 } && directory[0] == '~' &&
+            (directory[1] == Path.DirectorySeparatorChar || directory[1] == Path.AltDirectorySeparatorChar)))
+        {
+            var home = Environment.GetEnvironmentVariable(OperatingSystem.IsWindows() ? "USERPROFILE" : "HOME")
+                ?? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile, Environment.SpecialFolderOption.DoNotVerify);
+            if (!Path.IsPathFullyQualified(home)) yield break;
+            directory = directory.Length > 2 ? Path.Join(home, directory.AsSpan(2)) : home;
+        }
         foreach (var entry in Directory.EnumerateFileSystemEntries(string.IsNullOrEmpty(directory) ? "." : directory))
             yield return prefix[..start] + Path.GetFileName(entry) + (Directory.Exists(entry) ? Path.DirectorySeparatorChar.ToString() : "");
     }
 
-    private static async Task<IEnumerable<CompletionEngine>> CatalogAsync(string[] words, bool offline)
+    internal static async Task<IEnumerable<CompletionEngine>> CatalogAsync(string? server, string defaultServer,
+        string? configPath, bool offline)
     {
-        var path = RouterConfigLoader.ResolveFilePath(Program.GetOpt(words, ["--config"]));
-        // Offline tuning always uses its own input. An explicitly addressed client uses that listener.
-        var server = Program.GetOpt(words, ServerOptions) ?? Environment.GetEnvironmentVariable("AIR_ROUTER_URL");
-        var local = File.Exists(path);
-        if (!offline && (!local || server is not null))
+        if (!offline)
         {
-            var live = await ReadCatalogAsync(server ?? Program.DefaultServer).ConfigureAwait(false);
+            var live = await ReadCatalogAsync(server ?? defaultServer).ConfigureAwait(false);
             if (live is not null) return live;
         }
+        var path = RouterConfigLoader.ResolveFilePath(configPath);
+        var local = File.Exists(path);
         if (!local || new FileInfo(path).Length is <= 0 or > 4 * 1024 * 1024) return [];
         var config = RouterConfigLoader.LoadFile(path);
         return config.Engines.Select(engine => new CompletionEngine(engine.Key, engine.Value.Catalog.Select(model =>

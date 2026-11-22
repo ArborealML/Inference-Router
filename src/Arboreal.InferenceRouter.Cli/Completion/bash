@@ -31,7 +31,15 @@ _air_complete() {
             "'") literal=${literal//\'/\'\\\'\'} ;;
             '"') literal=${literal//\\/\\\\}; literal=${literal//\$/\\\$}
                  literal=${literal//\`/\\\`}; literal=${literal//\"/\\\"} ;;
-            *) printf -v literal '%q' "$literal" ;;
+            *) case ${words[${#words[@]}-1]} in
+                   -c|--config|--baseline|--candidate)
+                       if [[ $literal == '~/'* ]]; then
+                           if [[ $literal == '~/' ]]; then COMPREPLY+=('~/'); continue; fi
+                           printf -v literal '%q' "${literal:2}"; literal="~/${literal}"
+                           COMPREPLY+=("$literal"); continue
+                       fi ;;
+               esac
+               printf -v literal '%q' "$literal" ;;
         esac
         COMPREPLY+=("$literal")
     done < <(command air completion candidates "--current=$word" "${words[@]:1}")

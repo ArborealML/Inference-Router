@@ -1,11 +1,13 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.141)
+Status: draft, continuously revised (v0.12.142)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
 
 ## 0. Revision log
+
+- v0.12.142 — client tab completion prefers the listener’s applied catalog, falls back to disk on failure and completes home-relative file operands (§11).
 
 - v0.12.141 — the CLI prints native Bash, PowerShell, Zsh and fish completion registrations. One read-only candidate service supplies positional options and configured engines, models, aliases and profiles (§11).
 - v0.12.140 — cancel a local owner waiting for the target switch claim. The group holds an issued transaction until it unwinds (§7).
@@ -3696,9 +3698,9 @@ air tune plan [--config FILE] --engine ENGINE --model MODEL --seed HEX --max-con
 accepts the current word and preceding arguments as separate strings and emits one candidate per
 line. The command and option vocabulary is available offline. Engine/model candidates include
 cold configured entries and aliases, scoped to an engine when one precedes the cursor.
-Offline tuning uses its explicit `--config` or the usual config lookup. Other commands consult
-the local configuration or a bounded read of the explicitly addressed listener’s `/admin/catalog`;
-an unavailable listener falls back to the local configuration. With neither source available,
+Offline tuning uses its explicit `--config` or the usual config lookup. Other commands first read the applied catalog from `/admin/catalog` on their normal listener,
+including the default listener. A failed read falls back to local configuration. Each completion
+reads its own snapshot with a 750 ms HTTP timeout. File options support home-relative paths. With neither source available,
 dynamic lists are empty. Catalog text is completion data and is never executed as a shell command.
 
 The global `--json` flag can precede the verb or appear among its options. Models, status, tickets,
