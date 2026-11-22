@@ -812,13 +812,19 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
         if (boundModel is null) return new(null, 0, probe.Slots, null);
 
         string? profile = null;
+        string? exact = null;
+        var windows = 0;
+        var pairs = 0;
         foreach (var candidate in _catalog[boundModel].ServingProfiles)
         {
             if (candidate.MaxContext != probe.Window) continue;
-            if (profile is not null) return new(boundModel, probe.Window, probe.Slots, null);
+            windows++;
             profile = candidate.Name;
+            if (candidate.MaxSlots != probe.Slots) continue;
+            pairs++;
+            exact = candidate.Name;
         }
-        return new(boundModel, probe.Window, probe.Slots, profile);
+        return new(boundModel, probe.Window, probe.Slots, windows == 1 ? profile : pairs == 1 ? exact : null);
     }
 
     private void NotifyServingChange(ServingCapacity previous, ServingCapacity next)
@@ -1097,6 +1103,7 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
             LifecycleTarget? claimTarget = null;
             var entryMiss = EntryGuard.Ok;
             var retryClaim = false;
+            Task? waitForNamedUses = null;
             var offered = Capability;
             BeforeSwitchWaitForTests?.Invoke();
             try
@@ -1138,6 +1145,11 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
                             if (ReferenceEquals(Capability, offered))
                                 return ReadyFrom(offered.SwitchProof, canonical, profileOverride);
                             retryClaim = true;
+                        }
+                        else if (!exactProfile && _namedUses > 0)
+                        {
+                            _namedDrain ??= new(TaskCreationOptions.RunContinuationsAsynchronously);
+                            waitForNamedUses = _namedDrain.Task;
                         }
                         else
                         {
@@ -1250,6 +1262,18 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
                 _switchLock.Release();
             }
 
+            if (waitForNamedUses is not null)
+            {
+                var left = RemainingSwitchWait(deadline);
+                if (left != Timeout.InfiniteTimeSpan && left <= TimeSpan.Zero) return UnclaimedWaitExpired(ct);
+                try { await waitForNamedUses.WaitAsync(left, waiter).ConfigureAwait(false); }
+                catch (TimeoutException) { return UnclaimedWaitExpired(ct); }
+                catch (OperationCanceledException) when (!ct.IsCancellationRequested && Volatile.Read(ref _stopped))
+                {
+                    return new(SwitchResult.RouterStopped);
+                }
+                continue;
+            }
             if (retryClaim)
             {
                 ct.ThrowIfCancellationRequested();
@@ -2164,13 +2188,42 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
 
     // Historical switch readiness and switch timing do not enter this decision.
     // The first-send claim and engine-local stop use the same short ordering.
-    private int _namedForwards;
-    internal bool HasNamedForward => Volatile.Read(ref _namedForwards) > 0;
+    // A named use starts at queue removal and extends through the last physical sender.
+    // A switch that needs a new claim checks this count under the same transition gate.
+    private int _namedUses;
+    private TaskCompletionSource? _namedDrain;
+    internal bool HasNamedUse => Volatile.Read(ref _namedUses) > 0;
+
+    internal bool TryReserveNamedUse(DispatchObservation expected)
+    {
+        lock (_transitionGate)
+        {
+            if (_stopped || _retiring || Capability.SwitchingToward is not null ||
+                !IsDispatchObservationCurrent(expected)) return false;
+            _namedUses++;
+            return true;
+        }
+    }
+
+    internal void RetainNamedUse()
+    {
+        lock (_transitionGate) _namedUses++;
+    }
+
+    internal void ReleaseNamedUse()
+    {
+        lock (_transitionGate)
+        {
+            if (--_namedUses != 0) return;
+            _namedDrain?.TrySetResult();
+            _namedDrain = null;
+        }
+    }
 
     internal bool TryBeginForward(CancellationToken ct, bool named = false)
     {
         if (!TryBeginHttpUse(ct, inference: true)) return false;
-        if (named) Interlocked.Increment(ref _namedForwards);
+        if (named) RetainNamedUse();
         return true;
     }
 
@@ -2189,7 +2242,7 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
 
     internal void EndForward(bool named = false)
     {
-        if (named) Interlocked.Decrement(ref _namedForwards);
+        if (named) ReleaseNamedUse();
         EndHttpUse(inference: true);
         NudgeDispatch();
         AfterForwardReleaseForTests?.Invoke();

@@ -76,6 +76,86 @@ public sealed partial class ConfigReloadWireTests
     }
 
     [Fact(Timeout = 30_000)]
+    public async Task AdminSwitchWaitsBeforeNamedForwardAndThroughLastStreamByte()
+    {
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        var ct = deadline.Token;
+        var path = Path.Combine(_dir.FullName, "router.toml");
+        var config = """
+            default_model = "a"
+            [engine.one]
+            kind = "openai-compatible"
+            endpoint = "http://127.0.0.1:9/v1"
+            lifecycle = "docker"
+            [engine.one.docker]
+            image = "offline-image"
+            router_id = "fixture"
+            [engine.one.catalog.a]
+            serving = [{name="two",max_context=1024,max_slots=2},{name="four",max_context=1024,max_slots=4}]
+            [engine.one.catalog.b]
+            """;
+        await File.WriteAllTextAsync(path, config, ct);
+        using var backend = new HeldProfileStream { LoadedModels = ["a"], NCtx = 1024, TotalSlots = 2 };
+        var provider = new HeldNativeProvider(backend);
+        provider.Release.TrySetResult();
+        await using var app = await StartAsync(path, _ => backend, ct, _ => provider);
+        using var http = Client(app);
+        var core = app.Services.GetRequiredService<RouterCore>();
+        var ops = app.Services.GetRequiredService<Arboreal.InferenceRouter.Server.AdminSwitchOperations>();
+        var adminWaiting = Gate();
+        ops.ObserveWaiterForTests = (_, pending) => { if (pending) adminWaiting.TrySetResult(); };
+        var beforeSend = Gate();
+        var letSend = Gate();
+        core.Engines["one"].AfterForwardAdmissionForTests = () =>
+        {
+            beforeSend.TrySetResult();
+            return letSend.Task;
+        };
+        await ProbeAllAsync(core, ct);
+        using var inference = new HttpRequestMessage(HttpMethod.Post, "/v1/completions");
+        inference.Headers.Add("X-Inference-Profile", "two");
+        inference.Content = new StringContent("""{"model":"a","prompt":"hi","stream":true}""", Encoding.UTF8, "application/json");
+        var stream = http.SendAsync(inference, ct);
+        try
+        {
+            await beforeSend.Task.WaitAsync(ct);
+            using var switchBody = new StringContent("""{"engine":"one","model":"b"}""", Encoding.UTF8, "application/json");
+            using var ack = await http.PostAsync("/admin/switch", switchBody, ct);
+            Assert.Equal(HttpStatusCode.Accepted, ack.StatusCode);
+            await adminWaiting.Task.WaitAsync(ct);
+            Assert.Equal(0, provider.LaunchCount);
+            letSend.TrySetResult();
+            await backend.First.Task.WaitAsync(ct);
+            Assert.Equal(0, provider.LaunchCount);
+        }
+        finally
+        {
+            letSend.TrySetResult();
+            backend.Finish.TrySetResult();
+        }
+        using var complete = await stream;
+        complete.EnsureSuccessStatusCode();
+        Assert.Contains("[DONE]", await complete.Content.ReadAsStringAsync(ct), StringComparison.Ordinal);
+        await provider.Launched.Task.WaitAsync(ct);
+        Assert.Equal("b", provider.Target!.Model);
+    }
+
+    private sealed class HeldProfileStream : FakeEngineHandler
+    {
+        internal TaskCompletionSource First { get; } = Gate();
+        internal TaskCompletionSource Finish { get; } = Gate();
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
+        {
+            if (request.Method != HttpMethod.Post) return base.SendAsync(request, ct);
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StreamContent(new GatedSse("data: {}\n\n"u8.ToArray(), "data: [DONE]\n\n"u8.ToArray(), First, Finish.Task))
+                    { Headers = { ContentType = new MediaTypeHeaderValue("text/event-stream") } },
+            });
+        }
+    }
+
+    [Fact(Timeout = 30_000)]
     public async Task NamedProfileUsesCompatibleEngineAndRejectsUnknownOrUndersizedChoices()
     {
         using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(15));

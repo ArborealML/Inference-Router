@@ -488,7 +488,7 @@ public sealed partial class RouterCore : IInferenceRouter
             var uses = _profileUsers.GetValueOrDefault(engine);
             var named = candidate.Request.Options?.Profile is not null;
             if ((uses.Switching != 0 && (named || uses.Named != 0)) ||
-                ((uses.Named != 0 || engine.HasNamedForward) && selection.Decision.SwitchRequired))
+                ((uses.Named != 0 || engine.HasNamedUse) && selection.Decision.SwitchRequired))
                 return new(TakeResult.Ineligible);
             var index = head.Queue.FindExactTakeIndexUnderGate(head.Candidate, HasThreadCapacity);
             if (index < 0) return new(TakeResult.Changed);
@@ -503,11 +503,17 @@ public sealed partial class RouterCore : IInferenceRouter
                 if (lease is null) return new(TakeResult.Ineligible);
                 candidate.LocalLease = lease;
             }
+            if (terminal is null && named && (expected is not { } current || !engine.TryReserveNamedUse(current)))
+            {
+                candidate.LocalLease?.Release();
+                candidate.LocalLease = null;
+                return new(TakeResult.Changed);
+            }
             head.Queue.RemoveExactTakeUnderGate(index);
             RetireQueueIfEmpty(head.Queue);
             if (terminal is not null) return new(TakeResult.Terminal, TerminalCode: terminal);
 
-            var invocation = claim is { } exact ? _admission!.Authorize(exact) : null;
+            var invocation = claim is { } exact ? _admission!.Authorize(exact, engine) : null;
             candidate.ReservedSwitch = selection.Decision.SwitchRequired;
             if (named || candidate.ReservedSwitch)
                 _profileUsers[engine] = (uses.Named + (named ? 1 : 0), uses.Switching + (candidate.ReservedSwitch ? 1 : 0));
@@ -631,6 +637,7 @@ public sealed partial class RouterCore : IInferenceRouter
                                          ExactTicketAdmission.Invocation? invocation)
     {
         var named = candidate.Request.Options?.Profile is not null;
+        if (named) engine.ReleaseNamedUse();
         if (named || candidate.ReservedSwitch)
         {
             lock (_gate)
@@ -776,7 +783,8 @@ public sealed partial class RouterCore : IInferenceRouter
         try
         {
 
-            if (invocation is null && (candidate.LocalLease is { Cold: true } || WillWaitForModel(settings, switchRequired, targetProfile)))
+            if (invocation is null && (candidate.LocalLease is { Cold: true } ||
+                (WillWaitForModel(settings, switchRequired, targetProfile) && (switchRequired || candidate.Request.Options?.Profile is null))))
             {
                 ticket.State = TicketState.WaitingForModel;
                 // A ticket's own deadline bounds only its time in the queue, so the wait for a model

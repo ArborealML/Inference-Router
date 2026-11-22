@@ -240,7 +240,7 @@ internal sealed class ExactTicketAdmission(
             var observation = engine.ReadDispatchObservation();
             if (!OpeningOwnerEligible(owner, observation.Capability) || !CanTake(owner, observation))
                 return null;
-            invocation = Authorize(owner, detachedOwner: true);
+            invocation = Authorize(owner, engine, detachedOwner: true);
         }
         // The detached caller has no dispatch loop iteration to observe this freed preparation slot.
         _wake?.Invoke();
@@ -487,7 +487,7 @@ internal sealed class ExactTicketAdmission(
     internal bool IsPrepared(Claim claim) => _preparations.TryGetValue(claim.Ticket, out var entry) &&
         claim.Ticket.CanPrepareAdmission && !entry.Retiring && entry.Claim == claim && entry.Ready;
 
-    internal Invocation Authorize(Claim claim, bool detachedOwner = false)
+    internal Invocation Authorize(Claim claim, EngineRuntime engine, bool detachedOwner = false)
     {
         var prepared = _preparations[claim.Ticket];
         prepared.Borrowed = true;
@@ -496,10 +496,11 @@ internal sealed class ExactTicketAdmission(
         if (state.OpeningOwner == claim) state.ClearOpeningOwner();
         state.PhysicalUses++;
         if (!detachedOwner) state.LogicalOverlap++;
-        return new Invocation(this, claim, prepared.FinishAsync, detachedOwner, prepared.VerifiedSender);
+        if (claim.Request.Request.Options?.Profile is not null) engine.RetainNamedUse();
+        return new Invocation(this, claim, engine, prepared.FinishAsync, detachedOwner, prepared.VerifiedSender);
     }
 
-    internal sealed class Invocation(ExactTicketAdmission admission, Claim claim,
+    internal sealed class Invocation(ExactTicketAdmission admission, Claim claim, EngineRuntime runtime,
                                      Func<ValueTask> finishPreparation, bool detachedOwner,
                                      VerifiedPreparedSender? verifiedSender)
     {
@@ -539,6 +540,7 @@ internal sealed class ExactTicketAdmission(
                 var state = admission._engines[claim.Target.Engine];
                 RemoveOverlap(state);
                 state.PhysicalUses--;
+                if (claim.Request.Request.Options?.Profile is not null) runtime.ReleaseNamedUse();
                 admission._releases++;
             }
             admission._wake?.Invoke();
@@ -570,12 +572,14 @@ internal sealed class ExactTicketAdmission(
 
                 if (verifiedSender is null)
                 {
+                    runtime.VerifyRequestedProfile(claim.Request);
                     using var response = await admission.SendAsync(request, ct).ConfigureAwait(false);
                     await consume(response).ConfigureAwait(false);
                 }
                 else
                 {
                     admission.BeforeVerifiedOfferForTests?.Invoke(request);
+                    runtime.VerifyRequestedProfile(claim.Request);
                     operation = await verifiedSender.StartAsync(request, credentialEpoch, ct).ConfigureAwait(false);
                     var response = await operation.Primary.ConfigureAwait(false);
                     await consume(response).ConfigureAwait(false);

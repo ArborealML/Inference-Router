@@ -130,8 +130,10 @@ public sealed class LocalLifecycleGroupTests
         }, deadline.Token);
     }
 
-    [Fact(Timeout = 30_000)]
-    public async Task ExactSmallerProfileWaitsForDrainAndSurvivesAnotherCallersCancellation()
+    [Theory(Timeout = 30_000)]
+    [InlineData(2048)]
+    [InlineData(8192)]
+    public async Task ExactSmallerProfileWaitsForDrainAndSurvivesAnotherCallersCancellation(long smallerWindow)
     {
         using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(15));
         var ct = deadline.Token;
@@ -156,7 +158,7 @@ public sealed class LocalLifecycleGroupTests
             {
                 ["model"] = new() { Name = "model", Aliases = ["alias"], ServingProfiles =
                     [ new() { Name = "large", MaxContext = 8192, MaxSlots = 2 },
-                      new() { Name = "small", MaxContext = 2048, MaxSlots = 4 } ] },
+                      new() { Name = "small", MaxContext = smallerWindow, MaxSlots = 4 } ] },
             },
         };
         var settings = new RouterConfig { AutoSwitch = true, Engines = new Dictionary<string, EngineDefinition>

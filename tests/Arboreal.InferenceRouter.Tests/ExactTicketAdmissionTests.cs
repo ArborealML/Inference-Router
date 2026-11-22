@@ -8,6 +8,34 @@ namespace Arboreal.InferenceRouter.Tests;
 public sealed class ExactTicketAdmissionTests
 {
     [Fact(Timeout = 20_000)]
+    public async Task InjectedNamedSendRechecksTheObservationAfterSubmitIsReleased()
+    {
+        await using var rig = new Rig(singleModel: true, namedProfile: true);
+        await rig.ProbeAsync();
+        rig.Admission.Publish(new ExactTicketAdmission.Route("fixture", "a", "one"), 1, true);
+        var ticket = await rig.EnqueueAsync("a", "named", profile: "one");
+        await rig.PrepareAsync(ticket);
+        var reached = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        rig.Admission.BeforeSendForTests = _ =>
+        {
+            reached.TrySetResult();
+            return release.Task;
+        };
+        Assert.True(rig.Router.TryDispatchOnce());
+        try
+        {
+            await reached.Task.WaitAsync(rig.Token);
+            rig.SetWindow(2048);
+            await rig.ProbeAsync();
+        }
+        finally { release.TrySetResult(); }
+        var error = await Assert.ThrowsAsync<RouterRequestException>(() => ticket.CompletionTask.WaitAsync(rig.Token));
+        Assert.Equal("switch_failed", error.Code);
+        Assert.Equal(0, rig.Sink.Calls);
+    }
+
+    [Fact(Timeout = 20_000)]
     public async Task DispatchParkCanObserveShutdownAfterTheRouterDisposesItsCancellationSource()
     {
         using var parked = new AdmissionFixtureBarrier();
@@ -1330,7 +1358,7 @@ public sealed class ExactTicketAdmissionTests
         private readonly FakeEngineHandler _discovery;
 
         internal Rig(Func<ExactTicketAdmission.Claim, CancellationToken, ValueTask<IAsyncDisposable?>>? prepare = null,
-                     Func<Task<HttpResponseMessage>>? respond = null, bool singleModel = false, int? slots = null)
+                     Func<Task<HttpResponseMessage>>? respond = null, bool singleModel = false, int? slots = null, bool namedProfile = false)
         {
             _discovery = singleModel
                 ? new FakeEngineHandler { LoadedModels = ["a"], NCtx = 1_024, TotalSlots = 1 }
@@ -1350,7 +1378,8 @@ public sealed class ExactTicketAdmissionTests
                         Endpoint = new Uri("http://fixture.invalid/v1/"),
                         Catalog = new Dictionary<string, EngineModelDefinition>(StringComparer.Ordinal)
                         {
-                            ["a"] = new() { Name = "a" },
+                            ["a"] = new() { Name = "a", ServingProfiles = namedProfile ?
+                                [new ServingProfile { Name = "one", MaxContext = 1024, MaxSlots = 1 }] : [] },
                         },
                     },
                 },
@@ -1398,13 +1427,13 @@ public sealed class ExactTicketAdmissionTests
         internal void Publish(string model, long generation, bool open) =>
             Admission.Publish(new ExactTicketAdmission.Route("fixture", model, null), generation, open);
 
-        internal async Task<RouterTicket> EnqueueAsync(string model, string marker, TimeSpan? deadline = null, long? context = null)
+        internal async Task<RouterTicket> EnqueueAsync(string model, string marker, TimeSpan? deadline = null, long? context = null, string? profile = null)
         {
             var ticket = await Router.EnqueueAsync(marker, new InferenceRequest
             {
                 Model = model,
                 Body = Payload(model, marker),
-                Options = new RouterRequestOptions { MaxQueueTime = deadline, RequiredContext = context },
+                Options = new RouterRequestOptions { MaxQueueTime = deadline, RequiredContext = context, Profile = profile },
             });
             Started[ticket.Id] = new(TaskCreationOptions.RunContinuationsAsynchronously);
             Prepared[ticket.Id] = new(TaskCreationOptions.RunContinuationsAsynchronously);
