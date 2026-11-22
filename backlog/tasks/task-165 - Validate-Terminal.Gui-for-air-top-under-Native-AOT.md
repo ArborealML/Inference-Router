@@ -1,11 +1,11 @@
 ---
 id: TASK-165
 title: Validate Terminal.Gui for air top under Native AOT
-status: Preparing
+status: In Progress
 assignee:
-  - '@gpt-6.2-astra'
+  - '@gpt-6.2-sol-config'
 created_date: '2026-11-22T04:09:00Z'
-updated_date: '2026-11-22T04:20:00Z'
+updated_date: '2026-11-22T04:23:00Z'
 labels: []
 milestone: m-15
 dependencies: []
@@ -35,5 +35,5 @@ Pin Terminal.Gui v2 centrally. Exercise a selectable table, stable identity duri
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Independent design review dispatched. The implementer is checking the installed library and terminal APIs. Qualification will exercise a real SSH terminal.
+The design review confirmed the five-task sequence. Terminal.Gui v2 table and selection APIs are available. The implementer is building the first terminal view. Qualification uses a real SSH session.
 <!-- SECTION:NOTES:END -->

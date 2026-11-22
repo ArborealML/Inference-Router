@@ -5,7 +5,7 @@ status: To Do
 assignee:
   - '@gpt-6.2-astra'
 created_date: '2026-11-22T04:10:00Z'
-updated_date: '2026-11-22T04:20:00Z'
+updated_date: '2026-11-22T04:23:00Z'
 labels: []
 milestone: m-15
 dependencies:
@@ -26,6 +26,7 @@ Keep partial history and stale observations explicit during outages.
 - [ ] #1 A disconnected monitor displays the last snapshot and its age, then resumes with the last sequence and refreshes status.
 - [ ] #2 A retention gap is marked in the timeline. Reconnect and replay do not duplicate observed events.
 - [ ] #3 Exercise concurrent clients, rapid queue changes and a failed switch while a ticket is selected.
+- [ ] #4 Reconnect always marks continuity uncertain because the feed lacks a process epoch. Refresh status and the followed ticket on reconnect or a detected gap.
 <!-- AC:END -->
 
 ## Implementation Plan
