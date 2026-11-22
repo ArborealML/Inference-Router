@@ -1,11 +1,11 @@
 ---
 id: TASK-168
 title: Recover the terminal monitor after disconnects and event gaps
-status: In Progress
+status: Done
 assignee:
-  - '@gpt-6.2-sol-config'
+  - '@gpt-6.2-astra'
 created_date: '2026-11-22T04:10:00Z'
-updated_date: '2026-11-22T04:33:00Z'
+updated_date: '2026-11-22T04:48:00Z'
 labels: []
 milestone: m-15
 dependencies:
@@ -23,10 +23,10 @@ Keep partial history and stale observations explicit during outages.
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 A disconnected monitor displays the last snapshot and its age, then resumes with the last sequence and refreshes status.
-- [ ] #2 A retention gap is marked in the timeline. Reconnect and replay do not duplicate observed events.
-- [ ] #3 Exercise concurrent clients, rapid queue changes and a failed switch while a ticket is selected.
-- [ ] #4 Reconnect always marks continuity uncertain because the feed lacks a process epoch. Refresh status and the followed ticket on reconnect or a detected gap.
+- [x] #1 A disconnected monitor displays the last snapshot and its age, then resumes with the last sequence and refreshes status.
+- [x] #2 A retention gap is marked in the timeline. Reconnect and replay do not duplicate observed events.
+- [x] #3 Exercise concurrent clients, rapid queue changes and a failed switch while a ticket is selected.
+- [x] #4 Reconnect always marks continuity uncertain because the feed lacks a process epoch. Refresh status and the followed ticket on reconnect or a detected gap.
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -38,5 +38,5 @@ Reconnect with cancellation and bounded backoff. Refresh gauges independently of
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Reconcile snapshots and the exact followed ticket on reconnect. The client review identified mutable gauge storage and ambiguity at a lower first sequence after reconnect. Verify snapshot isolation and the new observation segment.
+The eight focused tests passed at 3339404. Reconnect marks uncertain continuity, a lower first sequence opens a new segment, and fresh status and ticket reads reconcile current state. Independent review found no outstanding material issue in the correction. [Implementation and verification](https://github.com/ArborealML/Inference-Router/pull/79).
 <!-- SECTION:NOTES:END -->

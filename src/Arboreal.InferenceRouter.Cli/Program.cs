@@ -35,6 +35,7 @@ public static class Program
             "serve" => await RunServeAsync(args[1..]).ConfigureAwait(false),
             "chat" or "complete" => await RunChatAsync(args[1..], json).ConfigureAwait(false),
             "models" => await RunModelsAsync(args[1..], json).ConfigureAwait(false),
+            "top" => await AirTop.RunAsync(args[1..], json).ConfigureAwait(false),
             "status" => await RunStatusAsync(args[1..], json).ConfigureAwait(false),
             "events" => await RunEventsAsync(args[1..], json).ConfigureAwait(false),
             "threads" => await RunThreadAsync(args[1..], json).ConfigureAwait(false),
@@ -64,6 +65,7 @@ public static class Program
               chat  [-m model] [-t thread] [-p prio]    send a chat completion (prompt args or stdin)
                     [--system text] [--no-stream] [--json] [-s server-url]
               models [-s server-url]                    list observed models and context windows
+              top [-s server-url] [--ticket ID]         monitor engines, queues and ticket activity
               status [-s server-url]                    router stats (engines, queues, threads)
               events [-s server-url] [--since seq]      tail the live event stream (SSE)
               threads -i threadId [-p prio]             register a chat thread (admin)
