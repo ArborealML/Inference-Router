@@ -1,10 +1,11 @@
 ---
 id: TASK-173
 title: Keep the active Pi user turn on its original model and profile
-status: To Do
+status: In Progress
 assignee:
   - '@gpt-6.2-sol-scheduling'
 created_date: '2026-11-22T09:40:00Z'
+updated_date: '2026-11-22T09:53:00Z'
 labels: []
 milestone: m-4
 dependencies: []
@@ -28,3 +29,15 @@ Capture the AIR model and profile at Pi user-turn start. Carry both through tool
 - [ ] #3 After the active turn completes, the original follow-up submits exactly once with the newly selected model and profile.
 - [ ] #4 Cancellation releases the turn selection. Concurrent sessions and subagents retain independent selections across arbitrary catalog entries.
 <!-- AC:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Trace the installed Pi user-message dispatch and follow-up dequeue events. Capture the AIR model and serving profile at that boundary within the session and retain them through retries and tool continuations. Keep selection changes local. Exercise the actual extension with a held tool result, queued follow-up, cancellation and concurrent sessions. Check the provider request headers and model bytes for each submission.
+<!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Baseline reproduction with real Pi RPC showed one original request while a tool was held. After release the tool continuation and its retry used the pending model before the follow-up started. Busy context selection was refused. The regression changes the pending profile after follow-up acknowledgment and checks JSON and headers at dispatch.
+<!-- SECTION:NOTES:END -->

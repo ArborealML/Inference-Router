@@ -5,6 +5,7 @@ status: To Do
 assignee:
   - '@gpt-6.2-sol-lifecycle'
 created_date: '2026-11-22T09:41:00Z'
+updated_date: '2026-11-22T09:53:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -31,3 +32,9 @@ Qwen reported its expected context and ran with one sequence, but its models end
 - [ ] #4 For both mismatch and missing evidence, the affected ticket terminates, SwitchingToward clears and the next eligible queued request streams after Docker mutations settle. Preserve cancellation and failed-target retry protection.
 - [ ] #5 In a live Pi session, observe Hy4 remain resident through its final tool continuation and response. Observe the original follow-up drive the switch, stream on Qwen and verify its 262144-token context and one sequence.
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Independent review identified the need to reuse capacity verification on launch, adoption and warm reuse. A host observation confirmed the vLLM serving process is an immediate child of the container init, with one sequence argument. Bind token-preserving evidence to the exact running generation and avoid reacquiring the lifecycle operation lock during adoption.
+<!-- SECTION:NOTES:END -->
