@@ -90,7 +90,8 @@ async function runChild(ctx, mode) {
                     const model = modelRegistry.find("air", "child.fixture");
                     const result = await modelRegistry.streamSimple(model, {
                         messages: [{role: "user", content: "registry with loop options", timestamp: Date.now()}]
-                    }, loopOptions).result();
+                    }, {...loopOptions, transformHeaders: headers =>
+                        session.extensionRunner.emitBeforeProviderHeaders(headers ?? {})}).result();
                     if (result.stopReason !== "stop") throw new Error("Nested registry call did not complete");
                 }
                 hold.release();
