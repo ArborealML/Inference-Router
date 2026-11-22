@@ -1,11 +1,13 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.144)
+Status: draft, continuously revised (v0.12.145)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
 
 ## 0. Revision log
+
+- v0.12.145 — expose interactive `air top` with engine, queue and ticket views, bounded terminal text and keyboard navigation (§11).
 
 - v0.12.144 — poll reported engine and queue gauges, follow one exact ticket, and retain bounded global activity for read-only monitors (§11).
 
@@ -3686,6 +3688,8 @@ The terminal monitor uses a selectable table and detail pane. The table keeps th
 
 The read-only monitor client polls status every two seconds, excluding the response time. Global queue depths and engine gauges come from status. It retains up to 256 global events and continuity markers combined. A followed ticket is fetched by its exact ID, which remains selected when the ticket is unknown or expired. Status and ticket reads are capped at 1 MiB and 64 KiB respectively. SSE lines are capped at 16 KiB.
 
+`air top` requires an interactive terminal. Enter on a queue filters the observed model history. Enter on an event follows its full ticket ID. Escape leaves the ticket or queue view, Tab moves to the scrollable details, and q exits. Engine rows show reported loaded models separately from the switch target. Zero context and slots mean unreported. Control characters and Unicode formatting controls in displayed server text are replaced with spaces.
+
 ```
 air completion bash|powershell|zsh|fish
 air serve [--config f.toml] [--listen url]
@@ -3694,6 +3698,7 @@ air complete [--server url] [--thread id] [--priority high:200] [--model name] [
 air models [--server url]
 air switch --engine e --model m [--server url]
 air status [--server url]
+air top [--server url] [--ticket ID]
 air events [--server url] [--since seq]
 air threads --id id [--priority high:200] [--server url]
 air tickets id [--server url]
