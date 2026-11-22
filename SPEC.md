@@ -1,11 +1,13 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.146)
+Status: draft, continuously revised (v0.12.147)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
 
 ## 0. Revision log
+
+- v0.12.147 — keep Pi tool continuations and retries on the AIR model and profile selected when Pi dispatches the user message (§13.2).
 
 - v0.12.146 — recover terminal monitor observations after disconnect, replay overlap and gaps, preserving stale data and the followed ticket (§11).
 
@@ -4018,8 +4020,20 @@ unverified external analysis), and (13.3) what AIR must expose to make it work.
   State machine: `IDLE → PREPARING → QUEUED|SWITCHING → READY → STREAMING → DONE`.
 - **Headers**: `X-Inference-Thread: pi:<sessionId>`, `X-Inference-Priority`,
   `X-Inference-Request`, and `X-Inference-Ticket` once ready.
-- **Switch semantics**: switching applies to the *next* provider call; neither the fork nor
-  current Pi replaces an in-flight completion (P2 constraint).
+- **AIR selection within a Pi turn**: Pi dispatches the initial prompt and each delivered
+  queued user message through `message_start` with role `user`. The extension captures the
+  selected AIR model, resolved profile and context budget at that event. Every assistant
+  request for that turn, including tool continuations and Pi retries, uses that capture.
+  Selecting another AIR model or context profile and queueing a message update local Pi state.
+  The queued message takes the selection in effect when Pi delivers it. The extension clears
+  the capture on settlement or session or branch change. A catalog change that invalidates
+  the capture fails the request. When engine defaults differ, automatic tier selection
+  remains available with the captured context minimum.
+- **Pi request ownership**: The turn capture applies to requests carrying that Pi session ID.
+  Children loading AIR capture their own selections. A child inheriting the parent provider
+  sends its own model and thread ID and uses the catalog default. Compaction and branch
+  summaries use their own request selection. A pending AIR selection change defers automatic
+  compaction during an active turn.
 - **Anti-thrash (server-side, visible to Pi)**: schedule **model cohorts** — never preempt
   active generation, drain the loaded-model cohort, enforce minimum residency/hysteresis,
   then switch once to the highest effective-priority/oldest cohort. Thread stickiness
