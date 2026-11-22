@@ -36,6 +36,7 @@ Stream integrity, switch safety and bounded admission can advance in parallel. E
 
 | Outcome | What must work |
 | --- | --- |
+| [AIR terminal serving monitor](m-15%20-%20air-terminal-serving-monitor.md) | Follow engines, queues and a selected Pi ticket through a model switch with `air top`. |
 | [Operator live view](m-11%20-%20operator-live-view.md) | Bootstrap a bounded status view and follow ticket progress with the replayable event feed. |
 | [Inference API qualification](m-12%20-%20inference-api-qualification.md) | Qualify adapter choices against actual client behavior, including a real tool round before introducing a Responses surface. |
 
