@@ -800,7 +800,7 @@ public sealed partial class RouterCore : IInferenceRouter
                 if (candidate.LocalLease is { Cold: true } localOwner)
                 {
                     using var localWait = CancellationTokenSource.CreateLinkedTokenSource(execCts.Token, candidate.CallerToken, _shutdownToken);
-                    var preparation = localOwner.PrepareAsync(_shutdownToken);
+                    var preparation = localOwner.PrepareAsync(execCts.Token, _shutdownToken);
                     try
                     {
                         observed = await preparation.WaitAsync(switchWait, localWait.Token).ConfigureAwait(false);

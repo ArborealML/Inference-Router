@@ -171,6 +171,46 @@ public sealed class LocalLifecycleGroupTests
             new InferenceRequest { Model = "new", Body = """{"model":"new","prompt":"hi"}"""u8.ToArray(), Options = new() }, ct);
     }
 
+    [Theory(Timeout = 20_000)]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task EndingOwnerPreventsFurtherSiblingStops(bool afterFirstStop)
+    {
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        using var caller = CancellationTokenSource.CreateLinkedTokenSource(deadline.Token);
+        using var backend = new FakeEngineHandler { LoadedModels = ["target"] };
+        var stops = 0;
+        var first = new Provider { OnStop = () =>
+        {
+            Interlocked.Increment(ref stops);
+            if (afterFirstStop) caller.Cancel();
+            return ValueTask.FromResult(LifecycleResult.Ok());
+        } };
+        var second = new Provider { OnStop = () =>
+        {
+            Interlocked.Increment(ref stops);
+            return ValueTask.FromResult(LifecycleResult.Ok());
+        } };
+        var target = new Provider { OnPreflight = () => { if (!afterFirstStop) caller.Cancel(); } };
+        string[] names = ["first", "second", "target"];
+        var engines = names.ToDictionary(name => name, name => new EngineDefinition
+        {
+            Name = name, Endpoint = new Uri($"http://localhost:{12350 + Array.IndexOf(names, name)}/v1"),
+            Lifecycle = EngineLifecycleKind.Docker, LifecycleOwner = EngineLifecycleOwner.Router, LifecycleGroup = "shared",
+            Docker = new DockerLifecycleConfig { Image = "fixture", RouterId = "fixture" },
+            Catalog = new Dictionary<string, EngineModelDefinition> { [name] = new() { Name = name } },
+        }, StringComparer.Ordinal);
+        var config = new RouterConfig { AutoSwitch = true, Engines = engines, HttpHandlerFactory = _ => backend };
+        await using var router = new RouterCore(config, null, null, TimeProvider.System,
+            lifecycleFactory: def => def.Name switch { "first" => first, "second" => second, _ => target });
+        router.Start();
+        var ticket = await router.EnqueueAsync("caller", new InferenceRequest
+            { Model = "target", Body = """{"model":"target","prompt":"hi"}"""u8.ToArray(), Options = new() }, caller.Token);
+        await Assert.ThrowsAsync<RouterRequestException>(() => ticket.CompletionTask.WaitAsync(deadline.Token));
+        Assert.Equal(afterFirstStop ? 1 : 0, Volatile.Read(ref stops));
+        Assert.DoesNotContain("launch", target.Calls);
+    }
+
     [Fact(Timeout = 20_000)]
     public async Task RequestsShareAnAlreadyLoadedNamedProfile()
     {
@@ -300,11 +340,16 @@ public sealed class LocalLifecycleGroupTests
     private sealed class Provider : IEngineLifecycleProvider
     {
         internal ConcurrentQueue<string> Calls { get; } = new();
+        internal Action? OnPreflight { get; init; }
         internal Func<IReadOnlyList<EnginePeer>>? Inventory { get; init; }
         internal Func<ValueTask<LifecycleResult>>? OnStop { get; init; }
         internal Action<LifecycleTarget>? OnLaunch { get; init; }
         public string Kind => "docker";
-        public ValueTask<LifecycleResult> PreflightAsync(LifecycleTarget target, CancellationToken ct) => Result("preflight");
+        public ValueTask<LifecycleResult> PreflightAsync(LifecycleTarget target, CancellationToken ct)
+        {
+            OnPreflight?.Invoke();
+            return Result("preflight");
+        }
         public ValueTask<IReadOnlyList<EnginePeer>> OwnedPeersAsync(LifecycleTarget target, CancellationToken ct) =>
             ValueTask.FromResult<IReadOnlyList<EnginePeer>>(Inventory?.Invoke() ?? []);
         public ValueTask<LifecycleResult> StopAsync(LifecycleTarget target, IReadOnlyList<EnginePeer> peers, CancellationToken ct) => OnStop?.Invoke() ?? Result("stop");

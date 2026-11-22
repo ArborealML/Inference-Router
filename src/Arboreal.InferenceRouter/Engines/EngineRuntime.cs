@@ -125,7 +125,8 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
         /// <summary>Set when the switch targets a serving profile (context-window escalation)
         /// rather than a model load; carries "profile:<name>" for observability.</summary>
         public string? Profile;
-        public LocalLifecycleGroup.Lease? AdoptionOwner;
+        public LocalLifecycleGroup.Lease? LocalOwner;
+        public LocalLifecycleGroup.Lease? AdoptionOwner => LocalOwner?.Adopt is null ? null : LocalOwner;
         public LegacyReadinessObservation? AdoptionProbe;
         public ServingProfile? ExactProfile;
         public long RequiredWindow;
@@ -1174,7 +1175,7 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
                                 {
                                     Model = canonical,
                                     Profile = profileOverride?.Name,
-                                    AdoptionOwner = localOwner?.Adopt is null ? null : localOwner,
+                                    LocalOwner = localOwner,
                                     ExactProfile = exact,
                                     RequiredWindow = requiredWindow,
                                     QuarantineTarget = quarantineTarget,
@@ -1613,6 +1614,9 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
         var lifecycle = _lifecycle!;
         var timing = state.Timing!;
         var nativeTransaction = false;
+        using var ownerLifetime = state.LocalOwner is { } owner
+            ? CancellationTokenSource.CreateLinkedTokenSource(ct, owner.MutationToken) : null;
+        var operation = ownerLifetime?.Token ?? ct;
         // The idle claim already validated this target against the runtime binding.
         try
         {
@@ -1644,7 +1648,7 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
             {
                 nativeTransaction = state.QuarantineTarget is not null;
                 report = await lifecycle.SwitchWithReportAsync(target, timing, state.IncumbentProof?.SwitchProof,
-                    observeLaunch: true, ct, state.AdoptionOwner,
+                    observeLaunch: true, operation, state.LocalOwner,
                     state.AdoptionOwner is null ? null : token => ProbeAdoptionAsync(state, target, token))
                     .ConfigureAwait(false);
             }
@@ -1693,7 +1697,7 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
                 }
             }
             timing.TryStartStage(SwitchStage.Readiness);
-            await RunLegacyReadinessAsync(state, target, lifecycle.Readiness(target), lifecycle.Kind, ct)
+            await RunLegacyReadinessAsync(state, target, lifecycle.Readiness(target), lifecycle.Kind, operation)
                 .ConfigureAwait(false);
         }
         catch (Exception) when (state.ReadinessOutcomeDelivered is not null)

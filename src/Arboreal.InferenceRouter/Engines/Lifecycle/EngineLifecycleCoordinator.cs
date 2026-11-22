@@ -111,6 +111,10 @@ public sealed class EngineLifecycleCoordinator : IDisposable
             }
             Record("preflight:ok");
 
+            if (owner is not null && native is not null &&
+                !DockerLifecycleProvider.SameLocalInventory(peers, await native.ReadOwnedLocalPeersUnderGateAsync(ct).ConfigureAwait(false)))
+                return new SwitchReport(LifecycleResult.Fail("group_changed", "target inventory changed during preflight"), true);
+
             if (owner?.Adopt is { } adopt)
             {
                 var refused = new SwitchReport(LifecycleResult.Fail("resident_unverified",
@@ -162,6 +166,8 @@ public sealed class EngineLifecycleCoordinator : IDisposable
 
             // 4. Launch the exact target. Readiness is proved by whoever owns the engine's health probe
             // (the runtime), not here: this step only claims the launch was accepted.
+            if (owner is not null && native is not null && !await owner.OtherEnginesVacantAsync(target, ct).ConfigureAwait(false))
+                return new SwitchReport(LifecycleResult.Fail("group_changed", "another group member is active before launch"), false);
             if (owner is { CanRecover: false })
                 return new SwitchReport(LifecycleResult.Fail("recovery_owner_ended", "the switch owner ended before launch"), false);
             var delegated = string.Equals(_provider.Kind, DelegatedExecProvider.ProviderKind, StringComparison.Ordinal);

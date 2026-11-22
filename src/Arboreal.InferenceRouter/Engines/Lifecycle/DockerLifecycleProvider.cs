@@ -398,6 +398,8 @@ public sealed partial class DockerLifecycleProvider : IEngineLifecycleProvider, 
 
             if (remove)
             {
+                if (recovery is { CanRecover: false })
+                    return LifecycleResult.Fail("recovery_owner_ended", "the switch owner ended before removal");
                 // A peer observed exited after a conflict can restart before DELETE. An unforced
                 // DELETE lets the daemon refuse removal of the running peer.
                 var removal = await CallAsync(
@@ -491,7 +493,7 @@ public sealed partial class DockerLifecycleProvider : IEngineLifecycleProvider, 
             already: [304]).ConfigureAwait(false);
         if (!start.Ok)
         {
-            if (start.Status is >= 400 and < 500) _pendingLocalLaunch = null;
+            // Keep the exact created ID for the next local owner even when Docker definitively refused Start.
             return start.Failure!;
         }
         _pendingLocalLaunch = null;
@@ -771,6 +773,7 @@ public sealed partial class DockerLifecycleProvider : IEngineLifecycleProvider, 
                 _issuedPeerIds.Add(write.ContainerId);
                 _pendingPeerWrite = write;
             }
+            callCts.Token.ThrowIfCancellationRequested();
             response = await _http.SendAsync(request, callCts.Token).ConfigureAwait(false);
             var body = await response.Content.ReadAsStringAsync(callCts.Token).ConfigureAwait(false);
             var status = (int)response.StatusCode;

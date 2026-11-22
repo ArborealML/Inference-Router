@@ -9,6 +9,26 @@ public sealed partial class DockerLifecycleProvider
         finally { ExitOperation(); }
     }
 
+    internal ValueTask<IReadOnlyList<EnginePeer>> ReadOwnedLocalPeersUnderGateAsync(CancellationToken ct) =>
+        ReadOwnedPeersAsync(null, ct);
+
+    internal static bool SameLocalInventory(IReadOnlyList<EnginePeer> expected, IReadOnlyList<EnginePeer> current) =>
+        current.Count == expected.Count && current.All(peer => peer.OwnedByUs && !peer.QueryFailed && expected.Contains(peer));
+
+    internal async ValueTask<LifecycleResult> StopLocalPeersAsync(IReadOnlyList<EnginePeer> peers,
+        LocalLifecycleGroup.Lease owner, CancellationToken ct)
+    {
+        await EnterOperationAsync(ct).ConfigureAwait(false);
+        try
+        {
+            var current = await ReadOwnedPeersAsync(null, ct).ConfigureAwait(false);
+            if (!SameLocalInventory(peers, current))
+                return LifecycleResult.Fail("group_changed", "the owned peer inventory changed before stop");
+            return await StopUnderGateAsync(current, null, ct, owner).ConfigureAwait(false);
+        }
+        finally { ExitOperation(); }
+    }
+
     internal async ValueTask<IReadOnlyList<EnginePeer>> RecoverLocalInventoryAsync(
         IReadOnlyList<EnginePeer> inventory, Func<bool> ownerActive, CancellationToken ct)
     {

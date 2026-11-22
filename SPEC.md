@@ -1,12 +1,13 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.138)
+Status: draft, continuously revised (v0.12.139)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
 
 ## 0. Revision log
 
+- v0.12.139 — bound local Docker group preparation by the original request lifetime and verify peer inventories at mutation boundaries (§7).
 - v0.12.138 — the CLI reports refused event subscriptions with exit 1, labels unreported serving capacity, and includes probe and selector metadata in JSON config readback (§11).
 - v0.12.137 — allow five minutes per Docker API call by default. Later local-group requests reconcile outstanding Docker operations against fresh group inventory. Unresolved occupancy fails the request (§5.3.1, §7).
 - v0.12.136 — render CLI operator queries and acknowledgments as human-readable text by default. A global `--json` flag selects machine output (§11).
@@ -2995,7 +2996,13 @@ If the name is absent, any delayed Create can only leave a stopped container bec
 failed caller has already returned. An uncertain Start can settle through exact-ID absence or
 evidence that the instance started. If the instance remains created, the next owner can remove
 that exact ID without force and confirm absence before launching. Each recovery attempt bounds
-its cleanup writes and checks ownership again. Local-group failures do not enter the ordinary
+its cleanup writes and checks ownership again. A refused Start also retains its created ID
+for reconciliation. A delayed Create can leave a stopped, owned container, which participates
+in ordinary inventory and configured stopped-container retention. The original request's
+cancellation and remaining switch budget bound group census, preflight and mutation. AIR
+checks each affected inventory again before stop and checks sibling vacancy before launch.
+The group coordinates this router's requests. Other clients of the Docker daemon can change
+containers between API calls. Local-group failures do not enter the ordinary
 engine's persistent target quarantine. The failed inference is never replayed. The switch
 wait budget starts at exact queue removal and is not renewed during preparation. Group-bound
 engines reject direct administrative switching and configuration reload in this initial binding.
