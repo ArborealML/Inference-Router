@@ -61,7 +61,7 @@ export function piModel(model, selected, engines) {
         id: model.id, name: model.id + (loaded.length ? ' (loaded on ' + loaded.join(', ') + ')' : ' (configured)'),
         contextWindow: window || 4096, maxTokens: outputBudget(window || 4096),
         ...(model.id === "qwen-3.8-27b" ? {
-            thinkingLevelMap: {minimal: "low", low: "low", medium: "medium", high: "xhigh", xhigh: "xhigh"}
+            thinkingLevelMap: {minimal: null, low: "low", medium: "medium", high: null, xhigh: "xhigh"}
         } : {}),
         reasoning: true, input: ["text"], cost: {input: 0, output: 0, cacheRead: 0, cacheWrite: 0},
         compat: {supportsStore: false, supportsDeveloperRole: false, supportsStrictMode: false,

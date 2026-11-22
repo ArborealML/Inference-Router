@@ -248,9 +248,15 @@ class TurnSelectionTest(unittest.TestCase):
 
     def test_qwen_27b_high_uses_xhigh_template_effort(self):
         with FakeRouter().running() as router, pi_session(router) as pi:
-            for model, expected in [("qwen-3.8-27b", "xhigh"), ("hy4.fixture", "high")]:
+            pi.model("hy4.fixture")
+            pi.send("set_thinking_level", level="high")
+            for model, expected, levels in [
+                ("qwen-3.8-27b", "xhigh", ["off", "low", "medium", "xhigh"]),
+                ("hy4.fixture", "high", ["off", "minimal", "low", "medium", "high"]),
+            ]:
                 pi.model(model)
-                pi.send("set_thinking_level", level="high")
+                self.assertEqual(levels, pi.send("get_available_thinking_levels")["levels"])
+                self.assertEqual(expected, pi.send("get_state")["thinkingLevel"])
                 pi.prompt("Check effort")
                 pi.settled()
                 self.assertEqual(expected, router.snapshot()[-1]["template"]["reasoning_effort"])
