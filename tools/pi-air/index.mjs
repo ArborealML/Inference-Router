@@ -1,5 +1,5 @@
 import { estimateTokens } from "@earendil-works/pi-coding-agent";
-import { openAICompletionsApi } from "@earendil-works/pi-ai";
+import { openAICompletionsApi } from "@earendil-works/pi-ai/compat";
 import { setTimeout as delay } from "node:timers/promises";
 import { contextFits, observedWindow, parseCatalog, piModel, requestFits, tier } from "./catalog.mjs";
 
@@ -15,11 +15,17 @@ export default async function air(pi) {
     }
     const auth = process.env.AIR_API_KEY;
     const adapter = openAICompletionsApi();
-    let catalog, etag, ctx, lifetime, latest;
+    let catalog, etag, ctx, lifetime, branch, latest;
+    let sequence = 0;
     let engines = [];
     let choices = new Map();
     let budgetRefused = false;
     const active = new Set();
+    const currentRequests = () => Array.from(active).filter(req => req.branch === branch);
+    const requestKey = req => req.ticket || "pending-" + req.sequence;
+    function updateFooter() {
+        ctx?.ui.setStatus("air-ticket", currentRequests().at(-1)?.text);
+    }
     const admin = (path, options = {}) => fetch(url.origin + "/admin/" + path, {
         ...options, redirect: "error", headers: {...(auth ? {Authorization: "Bearer " + auth} : {}), ...options.headers}
     });
@@ -67,8 +73,7 @@ export default async function air(pi) {
             notify("AIR removed " + current.id + ". Choose an available model with /model.", "warning");
         } else if (selected(current.id) && !tier(catalog.models.get(current.id), selected(current.id))) {
             notify("AIR removed the selected profile " + selected(current.id) + ". Choose /context default or another profile.", "warning");
-        } else if (updated.contextWindow !== current.contextWindow || updated.name !== current.name ||
-                   updated.maxTokens !== current.maxTokens) {
+        } else if (updated.contextWindow !== current.contextWindow || updated.maxTokens !== current.maxTokens) {
             if (!contextFits(ctx, updated.contextWindow, current.contextWindow, () => projectedTokens(ctx))) {
                 notify("AIR reduced the window below this transcript’s budget. Select a larger profile or compact first.", "warning");
                 return;
@@ -86,9 +91,9 @@ export default async function air(pi) {
         if (!response.ok) throw new Error("Ticket HTTP " + response.status);
         const state = await response.json();
         if (state.Id !== req.ticket || state.ThreadId !== req.thread) throw new Error("Ticket identity mismatch");
-        if (req.owner === lifetime && latest === req) {
+        if (req.branch === branch) {
             req.text = snapshotText(req.ticket, state);
-            if (active.has(req)) ctx?.ui.setStatus("air-ticket", req.text);
+            if (currentRequests().at(-1) === req) updateFooter();
             if (state.ErrorCode && !req.reported) {
                 req.reported = true;
                 notify(req.text, "error");
@@ -126,9 +131,11 @@ export default async function air(pi) {
         budgetRefused = false;
         const thread = ctx?.sessionManager.getSessionId() || options.sessionId;
         if (!thread) throw new Error("AIR needs a Pi session identity");
-        const req = {thread, model: model.id, owner: lifetime, watch: new AbortController(), abort: new AbortController()};
+        const req = {thread, model: model.id, branch, sequence: ++sequence, watch: new AbortController(), abort: new AbortController()};
         active.add(req);
         latest = req;
+        req.text = snapshotText(requestKey(req), {State: "submitting", Model: model.id});
+        updateFooter();
         const signal = options.signal ? AbortSignal.any([options.signal, req.abort.signal]) : req.abort.signal;
         const underlying = options.fetch ?? fetch;
         let sent = false;
@@ -140,7 +147,7 @@ export default async function air(pi) {
                     throw new Error("Unexpected AIR inference destination");
                 const liveRow = catalog.models.get(model.id);
                 const liveTier = liveRow && tier(liveRow, selected(model.id));
-                if (!liveTier || liveTier.name !== target.name ||
+                if (req.branch !== branch || !liveTier || liveTier.name !== target.name ||
                     (liveTier.window || observedWindow(liveRow, engines)) !== capacity)
                     throw new Error("AIR changed the selected model or profile before dispatch. Check /context.");
                 const headers = new Headers(init.headers);
@@ -152,9 +159,9 @@ export default async function air(pi) {
                 sent = true;
                 const response = await underlying(input, {...init, headers, redirect: "error"});
                 req.ticket = response.headers.get("X-Inference-Ticket");
-                if (req.ticket && req.owner === lifetime) {
+                if (req.ticket && req.branch === branch) {
                     req.text = snapshotText(req.ticket, {State: "admitted"});
-                    if (latest === req) ctx?.ui.setStatus("air-ticket", req.text);
+                    updateFooter();
                     void watchTicket(req);
                 }
                 return response;
@@ -163,12 +170,16 @@ export default async function air(pi) {
         void original.result().then(async message => {
             req.watch.abort();
             active.delete(req);
-            if (req.owner !== lifetime) return;
-            if (req.ticket) await inspect(req, req.owner?.signal).catch(() => {});
-            if (latest === req) ctx?.ui.setStatus("air-ticket", undefined);
-            if (message.stopReason === "error" && latest === req && !req.reported)
+            if (req.branch !== branch) return;
+            updateFooter();
+            if (req.ticket) await inspect(req, req.branch.signal).catch(() => {});
+            if (message.stopReason === "error" && req.branch === branch && !req.reported)
                 notify(snapshotText(req.ticket, {State: "Failed", Error: message.errorMessage}), "error");
-        }).catch(() => { req.watch.abort(); active.delete(req); });
+        }).catch(() => {
+            req.watch.abort();
+            active.delete(req);
+            if (req.branch === branch) updateFooter();
+        });
         return original;
     }
 
@@ -186,11 +197,15 @@ export default async function air(pi) {
                 }
             };
             function schedule() {
+                if (observing.aborted) return;
                 dirty = true;
                 if (timer || running) return;
                 timer = setTimeout(() => {
                     timer = undefined;
-                    running = reconcile().catch(() => connection.abort()).finally(() => { running = undefined; });
+                    running = reconcile().catch(() => connection.abort()).finally(() => {
+                        running = undefined;
+                        if (dirty) schedule();
+                    });
                 }, 100);
             }
             try {
@@ -220,7 +235,12 @@ export default async function air(pi) {
     }
 
     async function bind(context) {
+        branch?.abort();
+        for (const req of currentRequests()) req.watch.abort();
+        branch = new AbortController();
+        latest = undefined;
         ctx = context;
+        updateFooter();
         budgetRefused = false;
         choices = new Map();
         for (const entry of ctx.sessionManager.getBranch()) {
@@ -239,7 +259,9 @@ export default async function air(pi) {
     pi.on("session_shutdown", () => {
         lifetime?.abort();
         for (const req of active) { req.abort.abort(); req.watch.abort(); }
-        ctx = lifetime = latest = undefined;
+        branch?.abort();
+        ctx?.ui.setStatus("air-ticket", undefined);
+        ctx = lifetime = branch = latest = undefined;
     });
     pi.on("agent_settled", async () => { if (ctx) await publish(); });
     pi.on("cache_warming_decision", (_event, context) => {
@@ -253,6 +275,7 @@ export default async function air(pi) {
     });
     pi.registerCommand("context", {description: "Show or select this AIR model’s context profile",
         handler: async (args, context) => {
+            const originBranch = branch;
             const model = context.model;
             const row = model?.provider === "air" && catalog.models.get(model.id);
             if (!row) return notify("Select an available AIR model first.", "warning");
@@ -275,10 +298,13 @@ export default async function air(pi) {
                 name = options[summary.indexOf(picked)];
             }
             if (!options.includes(name)) return notify("Unknown AIR profile. Available: " + summary.join(", "), "warning");
+            if (originBranch !== branch || ctx?.model?.provider !== "air" ||
+                ctx.model.id !== model.id || catalog.models.get(row.id) !== row)
+                return notify("AIR selection or catalog changed while the picker was open. Open /context again.", "warning");
             if (!context.isIdle()) return notify("Wait for the current request before changing context.", "warning");
             const preference = name === "default" ? null : name;
             const next = tier(row, preference).window || observedWindow(row, engines);
-            if (!next || !contextFits(context, next, model.contextWindow, () => projectedTokens(context)))
+            if (!next || !contextFits(context, next, ctx.model.contextWindow, () => projectedTokens(context)))
                 return notify("The transcript and output reserve do not fit this context. Use /compact on the current profile, then retry /context.", "warning");
             choices.set(row.id, preference);
             pi.appendEntry(entryType, {model: row.id, profile: preference});
@@ -286,18 +312,29 @@ export default async function air(pi) {
             notify(row.id + " · " + name + " · " + next + " tokens");
         }});
     pi.registerCommand("air-status", {description: "Show this session’s latest AIR ticket",
-        handler: async () => {
-            const req = latest;
-            if (!req?.ticket) return notify("No admitted AIR ticket in this session yet.");
-            try { await inspect(req, lifetime?.signal); notify(req.text); }
-            catch (error) { notify(error.message, "warning"); }
+        handler: async args => {
+            const requests = currentRequests();
+            const key = args.trim();
+            const req = key ? [...requests, latest].find(r => r && requestKey(r) === key) : requests.at(-1) ?? latest;
+            if (!req) return notify("No matching AIR request on this branch.");
+            if (!req.ticket) return notify(req.text);
+            try {
+                await inspect(req, req.branch.signal);
+                if (req.branch === branch) notify(req.text);
+            } catch (error) {
+                if (req.branch === branch) notify(error.message, "warning");
+            }
         }});
-    pi.registerCommand("air-cancel", {description: "Cancel this session’s active AIR request",
-        handler: async () => {
-            const req = latest;
-            if (!req || !active.has(req)) return notify("No active AIR request to cancel.");
+    pi.registerCommand("air-cancel", {description: "Cancel this branch’s active AIR request by ticket",
+        handler: async args => {
+            const requests = currentRequests();
+            const key = args.trim();
+            if (!key && requests.length > 1)
+                return notify("Choose an active request with /air-cancel ID: " + requests.map(requestKey).join(", "));
+            const req = key ? requests.find(r => requestKey(r) === key) : requests[0];
+            if (!req) return notify("No matching active AIR request to cancel.");
             req.abort.abort();
-            notify(snapshotText(req.ticket, {State: "cancellation requested"}));
+            notify(snapshotText(requestKey(req), {State: "cancellation requested"}));
         }});
     await refresh();
 }
