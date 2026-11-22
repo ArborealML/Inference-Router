@@ -17,7 +17,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 @unittest.skipUnless(shutil.which("pi"), "requires an installed Pi terminal")
 class WaitingIndicatorTest(unittest.TestCase):
-    def test_queued_survives_a_transient_failure_then_dispatches(self):
+    def test_queued_recovers_after_repeated_outages_and_truncated_json(self):
         self.exercise(503)
 
     def test_refused_admin_access_stops_polling_and_the_stream_completes(self):
@@ -50,8 +50,13 @@ class WaitingIndicatorTest(unittest.TestCase):
                     polls.append(1)
                     if len(polls) > 2:
                         polled_again.set()
-                    if len(polls) == 2:
+                    if len(polls) == 2 or (failure_status == 503 and 3 <= len(polls) <= 5):
                         self.send_error(failure_status)
+                        return
+                    if failure_status == 503 and len(polls) == 6:
+                        self.send_response(200)
+                        self.end_headers()
+                        self.wfile.write(b'{"Id":"test-ticket",')
                         return
                     result = {"Id": "test-ticket", "ThreadId": self.server.thread_id,
                               "Model": model["Id"], "State": "Executing" if executing.is_set() else "Queued"}
@@ -86,7 +91,7 @@ class WaitingIndicatorTest(unittest.TestCase):
             termios.tcsetwinsize(slave, (40, 130))
 
             def expect(text, forbidden=None):
-                deadline = time.monotonic() + 20
+                deadline = time.monotonic() + 30
                 screen = b""
                 while text not in screen:
                     remaining = deadline - time.monotonic()

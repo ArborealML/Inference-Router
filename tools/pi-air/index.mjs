@@ -124,22 +124,23 @@ export default async function air(pi) {
     }
 
     async function watchTicket(req) {
-        let failures = 0;
+        const pollIntervalMs = 700;
+        let intervalMs = pollIntervalMs;
         while (!req.watch.signal.aborted) {
             try {
                 if (await inspect(req, req.watch.signal)) return;
-                failures = 0;
+                intervalMs = pollIntervalMs;
             } catch (error) {
                 if (req.watch.signal.aborted || req.branch !== branch) return;
                 // Failed reads do not change the last confirmed ticket state.
-                failures++;
-                if (error instanceof PermanentTicketError || error instanceof SyntaxError || failures >= 4) {
+                if (error instanceof PermanentTicketError) {
                     req.text += " · status unavailable (" + clean(error.message) + ")";
                     updateTicketUI();
                     return;
                 }
+                intervalMs = Math.min(intervalMs * 2, 4 * pollIntervalMs);
             }
-            await delay(700 * 2 ** failures, undefined, {signal: req.watch.signal}).catch(() => {});
+            await delay(intervalMs, undefined, {signal: req.watch.signal}).catch(() => {});
         }
     }
 
