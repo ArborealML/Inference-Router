@@ -1,11 +1,11 @@
 ---
 id: TASK-160
 title: Verify active cancellation reaches the native inference engine
-status: Testing
+status: Done
 assignee:
-  - '@gpt-6.2-sol-shutdown'
+  - '@gpt-6.2-astra'
 created_date: '2026-11-22T03:06:00Z'
-updated_date: '2026-11-22T03:12:00Z'
+updated_date: '2026-11-22T03:30:00Z'
 labels: []
 dependencies: []
 priority: high
@@ -20,8 +20,8 @@ Trace client cancellation through AIR and the running backend. Separate a queued
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Correlate the original AIR ticket with backend cancellation and release of its active slot.
-- [ ] #2 Verify that another client can still finish on its own ticket.
+- [x] #1 Correlate the original AIR ticket with backend cancellation and release of its active slot.
+- [x] #2 Verify that another client can still finish on its own ticket.
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -33,5 +33,5 @@ Trace client cancellation through AIR and the running backend. Separate a queued
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-The one-slot Maya backend reported disconnect and cancel=true 256 ms after the corresponding streamed AIR ticket was cancelled, before the next request. Strata live verification will match the native request and subsequent slot use.
+On installed Pi, /air-cancel after the first Qwen text delta produced a matching Strata disconnect 33 ms later and native completion accounting. One-slot Maya logged cancel=true 256 ms after AIR cancelled its active ticket. Another client finished on its original ticket in the previously qualified multi-client run. [Installed Pi cancellation path](https://github.com/ArborealML/Inference-Router/pull/77).
 <!-- SECTION:NOTES:END -->

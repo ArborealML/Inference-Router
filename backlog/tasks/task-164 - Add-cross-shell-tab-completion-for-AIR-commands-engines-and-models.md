@@ -1,10 +1,11 @@
 ---
 id: TASK-164
 title: Add cross-shell tab completion for AIR commands, engines and models
-status: To Do
+status: In Progress
 assignee:
   - '@gpt-6.2-sol-config'
 created_date: '2026-11-22T03:14:00Z'
+updated_date: '2026-11-22T03:26:00Z'
 labels: []
 dependencies: []
 priority: low
@@ -29,3 +30,9 @@ Last in the current queue, after the five active follow-ups. Provide shell-nativ
 <!-- SECTION:PLAN:BEGIN -->
 Reuse one candidate source across shell adapters. Check supported shells and conventions, implement Bash and PowerShell registration, then exercise the installed air command in both shells.
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+The five higher-priority items have reached installed verification. Implementing one completion candidate source and Bash, PowerShell, Zsh and fish adapters; all four real shell runtimes are available for testing.
+<!-- SECTION:NOTES:END -->

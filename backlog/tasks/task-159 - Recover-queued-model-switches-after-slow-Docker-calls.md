@@ -1,11 +1,11 @@
 ---
 id: TASK-159
 title: Recover queued model switches after slow Docker calls
-status: In Progress
+status: Testing
 assignee:
   - '@gpt-6.2-sol-lifecycle'
 created_date: '2026-11-22T03:06:00Z'
-updated_date: '2026-11-22T03:12:00Z'
+updated_date: '2026-11-22T03:30:00Z'
 labels: []
 dependencies: []
 priority: high
@@ -34,5 +34,5 @@ Five-minute Docker calls must allow slow model shutdown while retaining the inde
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-The owner authorized one restart after the fix for the already-stranded ticket. The live stop took 29 seconds against a 15-second Docker call timeout. The global settings now specify five minutes for all ten native engines.
+The five-minute setting is installed. A new Pi Qwen request streamed at 262144 tokens and one slot. The lifecycle writer is correcting the cancel-after-first-sibling-stop regression seen on ebb071d: CI expected one earlier stop and observed zero. Related local rows exposed incorrect cancellation error mapping. Verify both cases and the full hosted Release job. [Failing CI](https://github.com/ArborealML/Inference-Router/actions/runs/44980530915/job/137079837258).
 <!-- SECTION:NOTES:END -->
