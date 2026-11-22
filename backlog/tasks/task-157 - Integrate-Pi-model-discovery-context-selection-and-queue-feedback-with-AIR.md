@@ -1,11 +1,11 @@
 ---
 id: TASK-157
 title: Integrate Pi model discovery, context selection and queue feedback with AIR
-status: In Progress
+status: Ready for Review
 assignee:
-  - '@gpt-6.2-sol-config'
+  - '@gpt-6.2-astra'
 created_date: '2026-11-22T02:15:00Z'
-updated_date: '2026-11-22T02:25:00Z'
+updated_date: '2026-11-22T02:41:00Z'
 labels: []
 dependencies: []
 priority: high
@@ -34,5 +34,5 @@ Register the AIR provider, reconcile changes, persist per-model profile choices 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-A running native Pi model picker selected a newly added cold model after applied reload. Session resume, profile removal and concurrent cancellation passed with an isolated upstream. Installed GPU acceptance follows the current host requests.
+Installed Pi streamed DeepSeek at 32768 and 262144 tokens, each independently measured through the model and properties endpoints at one slot. The owner session retained its identity across reload. A second client aborted its queued ticket and the third streamed on its original ticket. Code and the installer are on [PR 77](https://github.com/ArborealML/Inference-Router/pull/77).
 <!-- SECTION:NOTES:END -->

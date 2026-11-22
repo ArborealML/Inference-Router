@@ -5,7 +5,7 @@ status: Ready for Review
 assignee:
   - '@gpt-6.2-astra'
 created_date: '2026-11-22T02:14:00Z'
-updated_date: '2026-11-22T02:25:00Z'
+updated_date: '2026-11-22T02:41:00Z'
 labels: []
 dependencies: []
 priority: high
@@ -35,5 +35,5 @@ Read one applied generation with instance and conditional ETag. Emit catalog.cha
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-The focused Release run passed 54 tests. The native CLI published with full trim diagnostics. Code review is pending on [the integration pull request](https://github.com/ArborealML/Inference-Router/pull/77).
+Applied-catalog and exact-profile checks passed locally. Follow-up review identified equal-window slot identity, admin drain and the verified transport submission boundary. The fixes include original-ticket and no-checkout assertions. [Backend implementation and review corrections](https://github.com/ArborealML/Inference-Router/pull/77).
 <!-- SECTION:NOTES:END -->
