@@ -186,6 +186,7 @@ public sealed partial class RouterCore
                 }
             }
 
+            _events.Append(new RouterEvent { Kind = "catalog.changed" });
             if (housekeeping is not null)
                 await FinishTopologyReloadAsync(removed, added, housekeeping).ConfigureAwait(false);
             SignalDispatch();

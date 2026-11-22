@@ -1,12 +1,13 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.132)
+Status: draft, continuously revised (v0.12.133)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
 
 ## 0. Revision log
 
+- v0.12.133 — expose the applied catalog with conditional reads and changes on the event feed. Inference clients can select an exact named serving profile per request (§6, §7.6).
 - v0.12.132 — local configuration commands and the standalone server default to `~/arboreal/inference-router/router.toml` (§11).
 - v0.12.131 — local requests share available slots on a fitting resident profile. A local switch wait expiry or lifecycle refusal returns the existing switch failure response, with the refusal reason on the event feed. A local deadline reports the wait ceiling even when preparation has yet to start.
 - v0.12.130 — a local group may replace one confirmed owned resident on launch-setting drift or failed backend readiness. It rechecks group occupancy and the same container generation before stopping. The original queued request owns the replacement and keeps its switch deadline. Failed replacement is terminal for that request.
@@ -2753,6 +2754,13 @@ Admin/control (not OpenAI-compatible, our own contract):
   204 and keeps the generation. A malformed request returns 400 `invalid_target_reset`.
   An unknown, unlatched or busy target returns 409 `target_reset_unavailable`. Authentication,
   staleness and shutdown use the reload error envelope and codes above.
+- `GET /admin/catalog` reads one applied configuration. The response contains `Instance`,
+  `Generation`, `DefaultModel` and `Engines`. Each engine names its `Name` and configured
+  `Models`, including cold entries. Each model carries `Id`, `Aliases`, nullable
+  `DefaultProfile` and `Profiles` with `Name`, `MaxContext` and `MaxSlots`. A matching
+  `If-None-Match` yields 304 with an empty body. The ETag changes on restart or a new
+  applied generation. Each changed publication emits `catalog.changed` as an invalidation
+  hint. Clients re-read the catalog after that event and when reconnecting.
 - `GET /admin/status` — current engine health, loaded models, switch target, serving profile, context
   window, slots and in-flight requests. Also reports depths for populated model queues, including
   members awaiting enqueue publication. A retired queue's model key is omitted (§5.5). The
@@ -2856,6 +2864,14 @@ awaiting `CompletionTask`.
 `X-Inference-Thread: agent-42`, `X-Inference-Priority: high:200`
 (`class[:sub]`), `X-Inference-Affinity: <normalized-prefix-hash>` (optional,
 server-side prefix normalization is authoritative anyway (§7.6),
+`X-Inference-Profile: <name>` selects one case-sensitive named serving tier for this inference
+request. AIR resolves the model or alias in the applied generation. The tier on a candidate
+engine must fit both the estimated prompt tokens and any explicit minimum. Malformed, unknown
+or undersized choices return 400 `invalid_profile` before queuing. The scheduler may share a
+ready matching resident or switch to the requested tier under the configured switching policy,
+including a smaller tier after drain. Readiness uses the model-bound profile, context and slot
+observations. Without this header, automatic tier selection follows §7.6.
+
 `X-Inference-Required-Context: <tokens>` declares a positive measured context minimum for the
 request. With the header absent, the prompt estimate informs serving-tier selection (§7.6). Every admitted request
 carries its ticket id back on the response as `X-Inference-Ticket`, which is how a client reaches

@@ -190,6 +190,11 @@ public sealed partial class RouterCore
 
             var requested = request.Model ?? affinity ?? generation.Settings.DefaultModel;
             var model = ResolveCanonical(requested, generation);
+            var estimated = EstimateContextTokens(promptChars, generation.Settings.Scheduler.CharsPerTokenEstimate);
+            var required = opts?.Profile is not null ? Math.Max(estimated, explicitContext)
+                : explicitContext > 0 ? explicitContext : estimated;
+            var profileFits = opts?.Profile is not { } profile || generation.Engines.Values.Any(engine =>
+                EngineRuntime.UniqueNamedProfile(engine.ProfilesForModel(model), profile) is { } tier && tier.MaxContext >= required);
             var hopeless = CapabilityScan.DefinitelyHopeless(generation.Capabilities, model);
             var noFit = !hopeless && explicitContext > 0 && _scheduler is PrefixAwareScheduler
                 ? LargestInsufficientConfiguredTier(generation, model, explicitContext)
@@ -206,6 +211,10 @@ public sealed partial class RouterCore
                 if (!ReferenceEquals(generation, CurrentGeneration) ||
                     !ReferenceEquals(thread, observedThread) ||
                     !string.Equals(affinity, thread?.ModelAffinity, StringComparison.Ordinal)) continue;
+
+                if (!profileFits)
+                    throw new RouterRequestException("invalid_profile", FormattableString.Invariant(
+                        $"Model '{WireText.Ident(model)}' has no serving profile '{WireText.Ident(opts!.Profile!)}' that fits {required} tokens."));
 
                 publishRegistration = thread is null;
                 thread ??= AddThread(threadId, opts?.Priority ?? generation.Settings.DefaultPriority, 1.0, null);
@@ -228,8 +237,7 @@ public sealed partial class RouterCore
                     EnqueuedAtTimestamp = timestamp,
                     CallerToken = ct,
                     PromptChars = promptChars,
-                    RequiredContextTokens = explicitContext > 0
-                        ? explicitContext : EstimateContextTokens(promptChars, generation.Settings.Scheduler.CharsPerTokenEstimate),
+                    RequiredContextTokens = required,
                 };
 
                 if (hopeless)

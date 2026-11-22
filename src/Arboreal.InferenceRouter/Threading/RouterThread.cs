@@ -70,6 +70,8 @@ public sealed record RouterRequestOptions
     /// <summary>Context tokens this request needs. When absent the router estimates from prompt
     /// chars (scheduler.chars_per_token_estimate); a value above the active window escalates.</summary>
     public long? RequiredContext { get; init; }
+    /// <summary>The exact configured serving profile requested by this caller.</summary>
+    public string? Profile { get; init; }
 }
 
 public enum TicketState : byte { Queued, WaitingForModel, Executing, Completed, Cancelled, Failed }

@@ -16,11 +16,16 @@ internal static partial class AirServerJson
     [JsonSerializable(typeof(TicketSnapshot))]
     [JsonSerializable(typeof(SwitchAck))]
     [JsonSerializable(typeof(SwitchOperationSnapshot))]
+    [JsonSerializable(typeof(CatalogSnapshot))]
     [JsonSerializable(typeof(ReloadAck))]
     [JsonSerializable(typeof(ErrorBody))]
     [JsonSerializable(typeof(string))]
     internal sealed partial class AirServerContext : JsonSerializerContext;
 }
+
+internal sealed record CatalogSnapshot(string Instance, long Generation, string DefaultModel, CatalogEngine[] Engines);
+internal sealed record CatalogEngine(string Name, CatalogModel[] Models);
+internal sealed record CatalogModel(string Id, string[] Aliases, string? DefaultProfile, IReadOnlyList<ServingProfile> Profiles);
 
 internal sealed record ReloadAck(long Generation);
 

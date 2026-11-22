@@ -52,11 +52,11 @@ public static partial class ServerApp
         FileReloadEndpoint? reload = null;
         ReloadConfiguration? loaded = null;
         string? targetResetInstance = null;
+        var instance = Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture);
         if (!string.IsNullOrWhiteSpace(credential))
         {
             var path = Path.GetFullPath(configPath);
             loaded = RouterConfigLoader.LoadForReload(File.ReadAllText(path), path);
-            var instance = Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture);
             reload = new FileReloadEndpoint(path, credential, instance);
             var resetOptIn = readTargetResetOptInForTests is { } readOptIn
                 ? readOptIn() : Environment.GetEnvironmentVariable("ARBOREAL_ROUTER_TARGET_RESET_ENABLED");
@@ -90,6 +90,7 @@ public static partial class ServerApp
         app.MapGet("/v1/models", (HttpContext ctx, RouterCore r) => HandleModels(ctx, r));
 
         // Admin / control surface.
+        app.MapGet("/admin/catalog", (HttpContext ctx, RouterCore r) => HandleCatalog(ctx, r, instance));
         app.MapGet("/admin/status", (HttpContext ctx, RouterCore r) => HandleStatus(ctx, r));
         app.MapGet("/admin/events", (HttpContext ctx, RouterCore r) => HandleEvents(ctx, r));
         app.MapPost("/admin/threads", (HttpContext ctx, RouterCore r) => HandleThreads(ctx, r));
@@ -177,6 +178,7 @@ public static partial class ServerApp
                 {
                     Priority = priority,
                     CacheAffinityHash = affinity,
+                    Profile = ProfileFromHeader(ctx),
                     RequiredContext = RequiredContextFromHeader(ctx),
                 },
             }, ct).ConfigureAwait(false);
@@ -227,6 +229,14 @@ public static partial class ServerApp
         var raw = ctx.Request.Headers["X-Inference-Required-Context"].ToString();
         if (raw.Length == 0) return null;
         return long.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var v) && v > 0 ? v : null;
+    }
+
+    private static string? ProfileFromHeader(HttpContext ctx)
+    {
+        if (!ctx.Request.Headers.TryGetValue("X-Inference-Profile", out var values)) return null;
+        if (values.Count != 1 || values[0] is not { } name || string.IsNullOrWhiteSpace(name) || name.Contains(',', StringComparison.Ordinal))
+            throw new RouterRequestException("invalid_profile", "Send a single named serving profile.");
+        return name;
     }
 
     private static readonly TimeSpan StreamKeepaliveInterval = TimeSpan.FromSeconds(4);
@@ -439,6 +449,7 @@ public static partial class ServerApp
 
     private static int MapStatus(string code) => code switch
     {
+        "invalid_profile" => 400,
         "queue_overflow" => 429,
         "deadline_exceeded" => 408,
         "cancelled" => 499,
@@ -480,6 +491,27 @@ public static partial class ServerApp
         ctx.Response.Headers.ContentType = "application/json";
         ctx.Response.Headers.CacheControl = "no-store";
         await ctx.Response.Body.WriteAsync(ms.ToArray().AsMemory(), ctx.RequestAborted).ConfigureAwait(false);
+    }
+
+    private static Task HandleCatalog(HttpContext ctx, RouterCore router, string instance)
+    {
+        var generation = router.CurrentGeneration;
+        var tag = FormattableString.Invariant($"\"catalog-{instance}-{generation.Number}\"");
+        ctx.Response.Headers.ETag = tag;
+        ctx.Response.Headers.CacheControl = "no-cache";
+        if (ctx.Request.GetTypedHeaders().IfNoneMatch?.Any(item => item.Tag.Value == tag || item.Tag.Value == "*") == true)
+        {
+            ctx.Response.StatusCode = StatusCodes.Status304NotModified;
+            return Task.CompletedTask;
+        }
+        var settings = generation.Settings;
+        var engines = settings.Engines.Values.OrderBy(engine => engine.Name, StringComparer.Ordinal)
+            .Select(engine => new CatalogEngine(engine.Name, engine.Catalog.Values.OrderBy(model => model.Name, StringComparer.Ordinal)
+                .Select(model => new CatalogModel(model.Name, model.Aliases,
+                    model.Profile ?? (engine.Lifecycle == EngineLifecycleKind.Docker && model.ServingProfiles.Count == 1
+                        ? model.ServingProfiles[0].Name : null), model.ServingProfiles)).ToArray())).ToArray();
+        var catalog = new CatalogSnapshot(instance, generation.Number, settings.DefaultModel, engines);
+        return AirJson.WriteAsync(ctx.Response, catalog, AirServerJson.AirServerContext.Default.CatalogSnapshot, ctx.RequestAborted);
     }
 
     private static async Task HandleStatus(HttpContext ctx, RouterCore router)

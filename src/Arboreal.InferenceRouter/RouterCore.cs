@@ -14,6 +14,9 @@ public sealed partial class RouterCore : IInferenceRouter
     private readonly EventRing _events;
     private readonly TimeProvider _clock;
     private readonly ExactTicketAdmission? _admission;
+    // An exact caller may share a proven resident. Keep a conflicting ordinary switch
+    // from entering between that caller's queue removal and its first transport use.
+    private readonly Dictionary<EngineRuntime, (int Named, int Switching)> _profileUsers = [];
     private readonly Dictionary<string, ModelQueue> _queues = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, RouterThread> _threads = new(StringComparer.Ordinal);
     // Ticket lookup has its own lock. A full queue rejects a ticket from inside the queue's lock,
@@ -362,6 +365,14 @@ public sealed partial class RouterCore : IInferenceRouter
             var observation = comparison?.Observation ?? FindDispatchObservation(infos, engine.Name);
             var explicitMinimum = candidate.ExplicitContextMinimum;
             var profile = engine.GetProfile(candidate.Ticket.Model, selection.Decision.TargetProfile);
+            if (candidate.Request.Options?.Profile is { } named &&
+                (profile?.Name != named || profile.MaxContext < candidate.RequiredContextTokens ||
+                 (!selection.Decision.SwitchRequired && !observation.Capability.Serving.Matches(candidate.Ticket.Model, profile)) ||
+                 (selection.Decision.SwitchRequired && !_localGroups.ContainsKey(engine.Name) && (engine.Inflight != 0 || engine.InferenceUses != 0))))
+            {
+                MaybeFailDeadline(candidate);
+                continue;
+            }
             var requiredWindow = EngineRuntime.RequiredWindow(profile, explicitMinimum);
             var needsCurrentObservation = comparison is not null || requiredWindow > 0 ||
                 selection.Decision.TargetProfile is not null ||
@@ -460,6 +471,12 @@ public sealed partial class RouterCore : IInferenceRouter
                     !engine.CanServeModel(candidate.Ticket.Model, observation.Capability))
                     return new(TakeResult.Ineligible);
 
+                if (candidate.Request.Options?.Profile is { } requested &&
+                    (engine.GetProfile(candidate.Ticket.Model, requested) is not { } tier ||
+                     !observation.Capability.Serving.Matches(candidate.Ticket.Model, tier) ||
+                     stamped.Resident is { } resident && (resident.Target.Tier != requested ||
+                         resident.MeasuredWindow != tier.MaxContext || resident.TotalSlots != tier.MaxSlots)))
+                    return new(TakeResult.Ineligible);
                 if (!AdmissionWindowFits(admission, stamped, observation.Capability, requiredWindow) ||
                     !admission.CanTake(stamped, observation))
                     return new(TakeResult.Ineligible);
@@ -468,6 +485,11 @@ public sealed partial class RouterCore : IInferenceRouter
             if (expected is { } observationAtSelection && !engine.IsDispatchObservationCurrent(observationAtSelection))
                 return new(TakeResult.Changed);
             if (!engine.HasCapacity) return new(TakeResult.Ineligible);
+            var uses = _profileUsers.GetValueOrDefault(engine);
+            var named = candidate.Request.Options?.Profile is not null;
+            if ((uses.Switching != 0 && (named || uses.Named != 0)) ||
+                ((uses.Named != 0 || engine.HasNamedForward) && selection.Decision.SwitchRequired))
+                return new(TakeResult.Ineligible);
             var index = head.Queue.FindExactTakeIndexUnderGate(head.Candidate, HasThreadCapacity);
             if (index < 0) return new(TakeResult.Changed);
             var takenAt = _clock.GetTimestamp();
@@ -486,6 +508,9 @@ public sealed partial class RouterCore : IInferenceRouter
             if (terminal is not null) return new(TakeResult.Terminal, TerminalCode: terminal);
 
             var invocation = claim is { } exact ? _admission!.Authorize(exact) : null;
+            candidate.ReservedSwitch = selection.Decision.SwitchRequired;
+            if (named || candidate.ReservedSwitch)
+                _profileUsers[engine] = (uses.Named + (named ? 1 : 0), uses.Switching + (candidate.ReservedSwitch ? 1 : 0));
             candidate.Thread.IncrementInflight();
             engine.BeginRequest(candidate.PromptChars);
             return new(TakeResult.Taken, invocation);
@@ -602,9 +627,21 @@ public sealed partial class RouterCore : IInferenceRouter
         }
     }
 
-    private static void EndEngineRequest(QueuedRequest candidate, EngineRuntime engine,
+    private void EndEngineRequest(QueuedRequest candidate, EngineRuntime engine,
                                          ExactTicketAdmission.Invocation? invocation)
     {
+        var named = candidate.Request.Options?.Profile is not null;
+        if (named || candidate.ReservedSwitch)
+        {
+            lock (_gate)
+            {
+                var uses = _profileUsers[engine];
+                uses.Named -= named ? 1 : 0;
+                uses.Switching -= candidate.ReservedSwitch ? 1 : 0;
+                if (uses == default) _profileUsers.Remove(engine);
+                else _profileUsers[engine] = uses;
+            }
+        }
         if (invocation is null)
             engine.EndRequest(candidate.PromptChars);
         else
@@ -694,6 +731,7 @@ public sealed partial class RouterCore : IInferenceRouter
                 LoadedModels = _localGroups.TryGetValue(e.Name, out var local) &&
                     !local.IsResident(e.Name, head.Ticket.Model) ? [] : cap.ModelRoster,
                 CanLoad = local is not null,
+                CanSwitchProfile = head.Request.Options?.Profile is not null && e.CanSwitchTo(head.Ticket.Model),
                 CatalogModels = e.CatalogModelNames.ToArray(),
                 SwitchingToward = cap.SwitchingToward is null ? [] : [cap.SwitchingToward],
                 CanServeModel = e.CanServeModel(head.Ticket.Model, cap),
@@ -768,7 +806,8 @@ public sealed partial class RouterCore : IInferenceRouter
                 {
                     observed = await engine.EnsureLoadedAsync(ticket.Model, targetProfile, switchWait,
                         new SwitchQueueTiming(candidate.EnqueuedAtTimestamp, selectedAt), execCts.Token,
-                        explicitContextMinimum: candidate.ExplicitContextMinimum).ConfigureAwait(false);
+                        explicitContextMinimum: candidate.ExplicitContextMinimum,
+                        exactProfile: candidate.Request.Options?.Profile is not null).ConfigureAwait(false);
                 }
                 var switchResult = observed.Result;
                 AfterModelReadinessForTests?.Invoke(ticket.Id, switchResult.Outcome);
@@ -792,6 +831,17 @@ public sealed partial class RouterCore : IInferenceRouter
                           (candidate.LocalLease is null ? " — the switch is still running, retry once it completes" : "") + detail
                         : $"engine {WireText.Ident(engine.Name)} could not serve {what}{detail}");
                     return;
+                }
+                if (candidate.ReservedSwitch)
+                {
+                    lock (_gate)
+                    {
+                        var uses = _profileUsers[engine];
+                        if (--uses.Switching == 0 && uses.Named == 0) _profileUsers.Remove(engine);
+                        else _profileUsers[engine] = uses;
+                        candidate.ReservedSwitch = false;
+                    }
+                    SignalDispatch();
                 }
                 servingProof = observed.Proof;
                 ticket.State = TicketState.Executing;
@@ -830,7 +880,7 @@ public sealed partial class RouterCore : IInferenceRouter
                     return;
                 }
 
-                if (!engine.TryBeginForward(cts.Token))
+                if (!engine.TryBeginForward(cts.Token, candidate.Request.Options?.Profile is not null))
                 {
                     Fail(ticket, "cancelled", "cancelled");
                     return;
@@ -848,7 +898,7 @@ public sealed partial class RouterCore : IInferenceRouter
                 var responseTimeout = engine.ResponseTimeout;
                 if (responseTimeout is null)
                 {
-                    using var res = await SendAsync(engine, body, suffix, ticket.Model, servingProof, cts.Token)
+                    using var res = await SendAsync(engine, body, suffix, candidate, servingProof, cts.Token)
                         .ConfigureAwait(false);
                     await FinishWithResponseAsync(engine, ticket, res, candidate, gate: null, cts.Token,
                         executionToken).ConfigureAwait(false);
@@ -861,7 +911,7 @@ public sealed partial class RouterCore : IInferenceRouter
                     // which is disarmed when the request ends or when the engine delivers what it owed.
                     using var gate = new ResponseGate(responseTimeout.Value, ResponseTimeoutClockForTests);
                     var delay = Task.Delay(Timeout.Infinite, gate.Token);
-                    var send = SendAsync(engine, body, suffix, ticket.Model, servingProof, cts.Token);
+                    var send = SendAsync(engine, body, suffix, candidate, servingProof, cts.Token);
                     HttpResponseMessage? res = null;
                     bool silent;
                     try
@@ -898,7 +948,7 @@ public sealed partial class RouterCore : IInferenceRouter
                         {
                             ownsForward = false;
                             lateForwardOwnsLocalLease = true;
-                            _ = DisposeLateForwardAsync(engine, send, candidate.LocalLease);
+                            _ = DisposeLateForwardAsync(engine, send, candidate);
                         }
                     }
 
@@ -923,7 +973,7 @@ public sealed partial class RouterCore : IInferenceRouter
             }
             finally
             {
-                if (ownsForward) engine.EndForward();
+                if (ownsForward) engine.EndForward(candidate.Request.Options?.Profile is not null);
                 engine.RecordPrefix(candidate.Messages());
             }
         }
@@ -948,6 +998,7 @@ public sealed partial class RouterCore : IInferenceRouter
         void ReportExecutionFailure(Exception error)
         {
             if (error is OperationCanceledException) Fail(ticket, "cancelled", "cancelled");
+            else if (error is RouterRequestException refusal) Fail(ticket, refusal.Code, refusal.Message);
             else Fail(ticket, "engine_unreachable", error.Message);
         }
 
@@ -973,7 +1024,7 @@ public sealed partial class RouterCore : IInferenceRouter
         });
 
     private static async Task DisposeLateForwardAsync(EngineRuntime engine, Task<HttpResponseMessage> send,
-        LocalLifecycleGroup.Lease? localLease)
+        QueuedRequest candidate)
     {
         try
         {
@@ -986,16 +1037,17 @@ public sealed partial class RouterCore : IInferenceRouter
         }
         finally
         {
-            engine.EndForward();
-            localLease?.Release();
+            engine.EndForward(candidate.Request.Options?.Profile is not null);
+            candidate.LocalLease?.Release();
         }
     }
 
     private static async Task<HttpResponseMessage> SendAsync(
-        EngineRuntime engine, byte[] body, string suffix, string model, SwitchServingProof? proof, CancellationToken ct)
+        EngineRuntime engine, byte[] body, string suffix, QueuedRequest candidate, SwitchServingProof? proof, CancellationToken ct)
     {
         using var req = MakeUpstreamRequest(engine, body, suffix);
-        engine.ObserveFirstForward(proof, model, ct);
+        engine.VerifyRequestedProfile(candidate);
+        engine.ObserveFirstForward(proof, candidate.Ticket.Model, ct);
         return await engine.Http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
     }
 
