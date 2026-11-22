@@ -1055,7 +1055,7 @@ public sealed partial class RouterCore : IInferenceRouter
         EngineRuntime engine, byte[] body, string suffix, QueuedRequest candidate, SwitchServingProof? proof, CancellationToken ct)
     {
         using var req = MakeUpstreamRequest(engine, body, suffix);
-        engine.VerifyRequestedProfile(candidate);
+        await engine.VerifyRequestedProfileAsync(candidate, ct).ConfigureAwait(false);
         engine.ObserveFirstForward(proof, candidate.Ticket.Model, ct);
         return await engine.Http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
     }

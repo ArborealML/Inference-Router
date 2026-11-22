@@ -572,7 +572,7 @@ internal sealed class ExactTicketAdmission(
 
                 if (verifiedSender is null)
                 {
-                    runtime.VerifyRequestedProfile(claim.Request);
+                    await runtime.VerifyRequestedProfileAsync(claim.Request, ct).ConfigureAwait(false);
                     using var response = await admission.SendAsync(request, ct).ConfigureAwait(false);
                     await consume(response).ConfigureAwait(false);
                 }

@@ -2268,9 +2268,27 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
     internal static RouterRequestException ProfileNoLongerReady() =>
         new("switch_failed", "The selected serving profile is no longer ready.");
 
-    internal void VerifyRequestedProfile(QueuedRequest candidate)
+    internal async ValueTask VerifyRequestedProfileAsync(QueuedRequest candidate, CancellationToken ct)
     {
         if (!RequestedProfileReady(candidate)) throw ProfileNoLongerReady();
+        if (!UsesVllmArgv) return;
+        var expected = Capability;
+        if (expected.NativeWatch is not { Baseline: { } baseline, ServingProcess: { } process } watch ||
+            _lifecycle?.NativeProvider is not { } native) throw ProfileNoLongerReady();
+        using var deadline = ReadinessDeadline.Start(_clock, native.ObservationTimeout, ct);
+        var read = await native.ObserveVllmAsync(watch.Launch, baseline, deadline).ConfigureAwait(false);
+        ct.ThrowIfCancellationRequested();
+        if (read.Outcome != ReadinessStepOutcome.Completed || read.Observation.Evidence is not { } observed ||
+            observed.Process != process || observed.Slots != expected.Serving.TotalSlots)
+        {
+            var invalid = read.Observation.Status == NativeContainerStatus.Invalid ||
+                read.Observation.Evidence is { } changed && changed.Process != process;
+            var change = CommitNativePoll(expected, watch, invalid ? NativeLaunchHealth.Invalid : NativeLaunchHealth.Unknown);
+            if (change is { } serving) NotifyServingChange(serving.Previous, serving.Current);
+            throw ProfileNoLongerReady();
+        }
+        if (Capability.NativeWatch?.Attempt != watch.Attempt || !RequestedProfileReady(candidate))
+            throw ProfileNoLongerReady();
     }
 
     internal int HttpUsesForTests

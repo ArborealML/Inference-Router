@@ -259,10 +259,10 @@ public sealed class ManagedVllmProfileTests
         Assert.Equal(1, fixture.App.CompletionCalls);
         var engine = router.Engines["strata"];
         Assert.Equal(1, engine.Capability.Serving.TotalSlots);
-        engine.AfterForwardAdmissionForTests = async () =>
+        engine.AfterForwardAdmissionForTests = () =>
         {
             fixture.Proc.Write(Argv("--max-num-seqs=1\0"), 202);
-            await engine.ProbeHealthOnceAsync(CancellationToken.None);
+            return Task.CompletedTask;
         };
         var next = await EnqueueAsync(router, Model);
         var failure = await Assert.ThrowsAsync<RouterRequestException>(() => next.CompletionTask.WaitAsync(Limit));
@@ -293,6 +293,26 @@ public sealed class ManagedVllmProfileTests
             _ => "vllm_launch_unsupported",
         }, reason, StringComparison.Ordinal);
         Assert.Empty(fixture.Writes);
+        Assert.Equal(0, fixture.App.CompletionCalls);
+    }
+
+    [Theory(Timeout = 15_000)]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ProcessReplacementDuringModelReadRefusesReadiness(bool adopt)
+    {
+        using var fixture = new Fixture(adopt);
+        fixture.App.HoldFirstRead = true;
+        await using var router = fixture.Start();
+        var ticket = await EnqueueAsync(router, Model);
+        try
+        {
+            await fixture.App.FirstRead.Task.WaitAsync(Limit);
+            fixture.Proc.Write(Argv("--max-num-seqs=1\0"), 201);
+        }
+        finally { fixture.App.ReleaseRead.TrySetResult(); }
+        var failure = await Assert.ThrowsAsync<RouterRequestException>(() => ticket.CompletionTask.WaitAsync(Limit));
+        Assert.Equal("switch_failed", failure.Code);
         Assert.Equal(0, fixture.App.CompletionCalls);
     }
 

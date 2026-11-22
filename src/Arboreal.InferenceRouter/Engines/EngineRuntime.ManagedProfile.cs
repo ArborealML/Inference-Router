@@ -36,7 +36,7 @@ public sealed partial class EngineRuntime
             Error: FormattableString.Invariant($"Loaded profile mismatch for {field}: expected={expected} observed={observed}.")),
             Mismatch: true);
 
-    private async Task<ManagedProfileRound> VerifyManagedProfileAsync(ModelsObservation? models, ServingProfile tier,
+    private async Task<ManagedProfileRound> VerifyManagedProfileAsync(NativeVllmObservation before, ModelsObservation? models, ServingProfile tier,
         NativeLaunchWatch watch, DockerLifecycleProvider native, ReadinessDeadline deadline)
     {
         var health = default(ServingProbe);
@@ -50,13 +50,15 @@ public sealed partial class EngineRuntime
 
         var observation = await native.ObserveVllmAsync(watch.Launch, watch.Baseline!.Value, deadline).ConfigureAwait(false);
         var sample = observation.Outcome == ReadinessStepOutcome.Completed ? observation.Observation : default;
-        if (sample.Status == NativeContainerStatus.Invalid || sample.Evidence is { } process &&
+        if (before.Status == NativeContainerStatus.Invalid || sample.Status == NativeContainerStatus.Invalid ||
+            before.Evidence is { } initial && sample.Evidence is { } final && initial.Process != final.Process ||
+            sample.Evidence is { } process &&
             watch.ServingProcess is { } previous && previous != process.Process)
             return new(new(NativeContainerStatus.Invalid), null, MissingProfileField("serving process generation"));
         var model = watch.Launch.Model;
         if (models is not { } roster || !string.Equals(roster.ServingModel, model, StringComparison.OrdinalIgnoreCase))
             return new(sample, null, MissingProfileField("the unique loaded model row"));
-        if (sample.Evidence is not { } evidence)
+        if (sample.Evidence is not { } evidence || before.Evidence != evidence)
             return new(sample, null, MissingProfileField("--max-num-seqs from the exact serving process"));
 
         var window = roster.ContextWindows.GetValueOrDefault(model);
@@ -97,6 +99,7 @@ public sealed partial class EngineRuntime
             while (true)
             {
                 var deadline = verification ?? startup;
+                var before = await native.ObserveVllmAsync(watch.Launch, watch.Baseline.Value, deadline).ConfigureAwait(false);
                 var read = await deadline.ObserveAsync(async ct =>
                 {
                     var models = await ReadManagedModelsAsync(ct).ConfigureAwait(false);
@@ -107,7 +110,7 @@ public sealed partial class EngineRuntime
                 {
                     verification ??= startup.LimitFrom(read.Observation.Timestamp, ProfileVerificationLimit);
                     deadline = verification;
-                    var round = await VerifyManagedProfileAsync(models, tier, watch, native, deadline).ConfigureAwait(false);
+                    var round = await VerifyManagedProfileAsync(before.Observation, models, tier, watch, native, deadline).ConfigureAwait(false);
                     if (!deadline.IsExpired || failure.Miss != ReadinessMiss.LoadedProfile) failure = round.Failure;
                     if (round.Native.Status == NativeContainerStatus.Invalid || round.Mismatch || round.Capacity is not null)
                     {
@@ -179,9 +182,10 @@ public sealed partial class EngineRuntime
         var probeMs = _def.Health?.TimeoutMs ?? 5_000;
         var limit = probeMs == Timeout.Infinite ? ProfileVerificationLimit : TimeSpan.FromMilliseconds(probeMs);
         using var deadline = ReadinessDeadline.Start(_clock, Shorter(limit, native.ObservationTimeout), stop.Token);
+        var before = await native.ObserveVllmAsync(watch.Launch, watch.Baseline.Value, deadline).ConfigureAwait(false);
         var read = await deadline.ObserveAsync(ReadManagedModelsAsync).ConfigureAwait(false);
         var models = read.Outcome == ReadinessStepOutcome.Completed ? read.Observation : null;
-        var round = await VerifyManagedProfileAsync(models, tier, watch, native, deadline).ConfigureAwait(false);
+        var round = await VerifyManagedProfileAsync(before.Observation, models, tier, watch, native, deadline).ConfigureAwait(false);
         if (stop.IsCancellationRequested) return false;
 
         (ServingCapacity Previous, ServingCapacity Current)? published;
