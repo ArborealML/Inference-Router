@@ -1,11 +1,11 @@
 ---
 id: TASK-164
 title: Add cross-shell tab completion for AIR commands, engines and models
-status: Ready for Review
+status: Done
 assignee:
   - '@gpt-6.2-astra'
 created_date: '2026-11-22T03:14:00Z'
-updated_date: '2026-11-22T03:37:00Z'
+updated_date: '2026-11-22T03:47:00Z'
 labels: []
 dependencies: []
 priority: low
@@ -20,9 +20,9 @@ Last in the current queue, after the five active follow-ups. Provide shell-nativ
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Tab completes supported commands, options, engine names and model IDs or aliases in the argument positions that accept them.
-- [ ] #2 Engine and model candidates come from the configured catalog, including cold models, without triggering inference or a model switch.
-- [ ] #3 Document how to enable completion and verify completion in real Bash and PowerShell sessions, including quoting and an unavailable listener.
+- [x] #1 Tab completes supported commands, options, engine names and model IDs or aliases in the argument positions that accept them.
+- [x] #2 Engine and model candidates come from the configured catalog, including cold models, without triggering inference or a model switch.
+- [x] #3 Document how to enable completion and verify completion in real Bash and PowerShell sessions, including quoting and an unavailable listener.
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -34,5 +34,5 @@ Reuse one candidate source across shell adapters. Check supported shells and con
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Native Bash, PowerShell, Zsh and fish registration and candidate insertion were exercised, including cold catalog choices and quoting. The installed CLI resolved ten engines. Final review checks live-catalog precedence over stale disk and home-relative paths.
+Verified native completion in Bash, PowerShell, Zsh and fish. The applied catalog takes precedence for client verbs, including cold choices. Offline tuning reads its selected file. Reviewed server selection uses an explicit URL first, then AIR_ROUTER_URL, then loopback. Home-relative paths retain their shell spelling. [Merged implementation](https://github.com/ArborealML/Inference-Router/pull/78).
 <!-- SECTION:NOTES:END -->
