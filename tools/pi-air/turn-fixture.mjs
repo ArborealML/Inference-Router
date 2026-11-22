@@ -30,12 +30,13 @@ function heldTool(onHold) {
 async function runChild(ctx, mode) {
     const inherit = mode === "inherited";
     const capped = mode === "capped";
+    const reuseLoopOptions = mode === "registry-options";
     const settingsManager = SettingsManager.inMemory({
         retry: {enabled: capped, maxRetries: 1, baseDelayMs: 10}, compaction: {enabled: false},
     });
     const agentDir = process.env.PI_CODING_AGENT_DIR;
     const modelRuntime = await ModelRuntime.create();
-    const model = ctx.modelRegistry.find("air", capped ? "hy4.fixture" : "child.fixture");
+    const model = ctx.modelRegistry.find("air", capped || reuseLoopOptions ? "hy4.fixture" : "child.fixture");
     const ready = Promise.withResolvers();
     const hold = heldTool(ready.resolve);
     if (inherit) modelRuntime.registerProvider("air", ctx.modelRegistry.getRegisteredProviderConfig("air"));
@@ -59,17 +60,39 @@ async function runChild(ctx, mode) {
             if (session.messages.at(-1)?.stopReason !== "stop")
                 throw new Error("Inherited child did not complete");
         } else {
-            const profile = capped ? "compact" : "narrow";
+            let loopOptions;
             if (capped) {
                 const stream = session.agent.streamFunction;
                 session.agent.streamFunction = (model, transcript, options) =>
                     stream(model, transcript, {...options, maxTokens: 512});
             }
-            await session.prompt("/context " + profile);
-            const work = session.prompt(capped ? "Start capped turn" : "independent child");
+            if (reuseLoopOptions) {
+                const stream = session.agent.streamFunction;
+                session.agent.streamFunction = (model, transcript, options) => {
+                    loopOptions = options;
+                    return stream(model, transcript, options);
+                };
+                await session.setModel(modelRuntime.getModel("air", "child.fixture"));
+                await session.prompt("/context wide");
+                await session.setModel(modelRuntime.getModel("air", "hy4.fixture"));
+            }
+            await session.prompt(capped || reuseLoopOptions ? "/context compact" : "/context narrow");
+            const prompt = capped ? "Start capped turn" : reuseLoopOptions ? "interrupt Hy4" : "independent child";
+            const work = session.prompt(prompt);
             try {
                 await Promise.race([ready.promise, work.then(() => { throw new Error("Child tool did not hold"); })]);
                 await session.setModel(modelRuntime.getModel("air", "qwen.fixture"));
+                if (reuseLoopOptions) {
+                    const {modelRegistry, signal} = session.extensionRunner.createContext();
+                    if (loopOptions.sessionId !== session.sessionId || loopOptions.signal !== signal ||
+                        typeof loopOptions.getFollowUpMessages !== "function")
+                        throw new Error("Fixture did not capture the agent-loop options");
+                    const model = modelRegistry.find("air", "child.fixture");
+                    const result = await modelRegistry.streamSimple(model, {
+                        messages: [{role: "user", content: "registry with loop options", timestamp: Date.now()}]
+                    }, loopOptions).result();
+                    if (result.stopReason !== "stop") throw new Error("Nested registry call did not complete");
+                }
                 hold.release();
                 await work;
                 if (capped) {

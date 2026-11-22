@@ -21,4 +21,4 @@ The extension uses read-only admin discovery and ticket snapshots. Pi streams th
 
 Run the catalog checks with `node --test tools/pi-air/catalog.test.mjs`. With Pi 1.3 on the path, `python3 tools/pi-air/test_prompt_budget.py` verifies a same-session extension upgrade and that a new prompt exceeding the selected window reaches the user as an error before an inference or automatic compaction request reaches the loopback fixture.
 
-`python3 tools/pi-air/test_turn_selection.py` checks the request model and profile during a held tool call, retry, queued follow-up, and cancellation. It also checks child-session and registry-call attribution, threshold compaction against the active window, and separate routing for manual and automatic summaries.
+`python3 tools/pi-air/test_turn_selection.py` checks the request model and profile during a held tool call, retry, queued follow-up, and cancellation. It also checks child-session attribution, direct registry calls with the caller's thread and cancellation, threshold compaction against the active window, and separate routing for manual and automatic summaries.

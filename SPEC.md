@@ -4035,12 +4035,14 @@ unverified external analysis), and (13.3) what AIR must expose to make it work.
   tier selection. The ticket snapshot identifies the assigned engine. It carries no
   request-specific profile.
 - **Pi request ownership**: The turn capture requires a matching Pi session ID, the active
-  agent signal, and the Pi 1.3 agent-loop options. A direct registry call with the same ID
-  and signal uses the supplied model and the session's ordinary profile choice. Children
-  loading AIR capture their own selections. A child inheriting the parent provider sends
-  its own model and thread ID and uses the catalog default. Its caller owns cancellation
-  and the parent's ticket UI tracks only its own requests. Summary lifecycle events associate
-  compaction and branch summaries with the branch. The AIR thread header uses the summary's
+  agent signal, and the request headers prepared by Pi's SDK hook. AIR recognizes the
+  header object in memory without adding a wire header. A direct registry call with the
+  same ID and signal sends the supplied model and session profile on that thread. The
+  direct caller owns cancellation, and the call stays outside the agent footer and
+  ticket commands. Children loading AIR capture their own selections. A child inheriting
+  the parent provider sends its own model and thread ID and uses the catalog default.
+  Summary lifecycle events associate compaction and branch summaries with the branch.
+  The AIR thread header uses the summary's
   separate Pi routing ID, including on summary retries. An otherwise unverified call requires
   an explicit session ID.
 - **Automatic compaction**: When Pi attempts threshold compaction before dispatching the

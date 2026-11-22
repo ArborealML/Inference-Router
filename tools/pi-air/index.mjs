@@ -26,6 +26,7 @@ export default async function air(pi) {
     let budgetRefused = false;
     let showingWaiting = false;
     const active = new Set();
+    const agentRequestHeaders = new WeakSet();
     const summaries = new WeakMap();
     const currentRequests = () => Array.from(active).filter(req => req.branch === branch);
     const requestKey = req => req.ticket || req.clientId;
@@ -164,18 +165,18 @@ export default async function air(pi) {
 
     function streamSimple(model, transcript, options = {}) {
         const sessionId = ctx?.sessionManager.getSessionId();
-        const ownsThread = !!branch && options.sessionId === sessionId;
-        // Pi 1.3 passes the agent-loop options through here. A direct registry call can
-        // share the active signal and session ID without coming from the agent loop.
-        const mainRequest = ownsThread && options.signal && options.signal === ctx.signal &&
-            typeof options.getFollowUpMessages === "function";
+        const sameSession = !!branch && options.sessionId === sessionId;
+        // Pi's SDK passes the header object from its extension hook to the provider.
+        // Direct registry calls merge their own headers, even when reusing loop options.
+        const mainRequest = sameSession && options.signal && options.signal === ctx.signal &&
+            agentRequestHeaders.delete(options.headers);
         const summary = summaries.get(options.signal);
-        const requestBranch = ownsThread ? branch : summary?.branch;
+        const requestBranch = mainRequest ? branch : summary?.branch;
         if (requestBranch && requestBranch !== branch) throw new Error("AIR session branch changed before dispatch.");
         const thread = options.sessionId;
         if (!thread) throw new Error("AIR needs a Pi session identity");
         // A child can inherit this callback from its parent without loading the extension.
-        const choice = requestBranch ? selected(model.id) : null;
+        const choice = sameSession || requestBranch ? selected(model.id) : null;
         const captured = mainRequest ? turnSelection : undefined;
         const selection = captured ?? summary?.selection ?? resolveSelection(model, choice);
         const {model: requestModel, profile: target, capacity, maxTokens} = selection;
@@ -346,6 +347,7 @@ export default async function air(pi) {
         turnSelection = undefined;
         if (ctx) await publish();
     });
+    pi.on("before_provider_headers", event => { agentRequestHeaders.add(event.headers); });
     pi.on("cache_warming_decision", (_event, context) => {
         if (context.model?.provider === "air") return {action: "stop"};
     });

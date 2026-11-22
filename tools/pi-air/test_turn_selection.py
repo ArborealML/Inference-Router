@@ -35,8 +35,8 @@ class FakeRouter(ThreadingHTTPServer):
         self.posts = []
         self.lock = threading.Lock()
         self.stop_feed = threading.Event()
-        self.inherited_started = threading.Event()
-        self.release_inherited = threading.Event()
+        self.held_response_started = threading.Event()
+        self.release_held_response = threading.Event()
         self.retry_summaries = retry_summaries
 
     @contextmanager
@@ -48,7 +48,7 @@ class FakeRouter(ThreadingHTTPServer):
                 yield self
             finally:
                 self.stop_feed.set()
-                self.release_inherited.set()
+                self.release_held_response.set()
                 self.shutdown()
                 worker.join()
 
@@ -123,19 +123,20 @@ class RouterHandler(BaseHTTPRequestHandler):
             delta = {"role": "assistant", "content": "ok"}
             finish = "stop"
         chunk = json.dumps({"choices": [{"index": 0, "delta": delta, "finish_reason": finish}]}).encode()
+        tickets = {"inherited child": "inherited-ticket", "direct registry call": "registry-ticket"}
         self.write_response(200, "text/event-stream", b"data: " + chunk + b"\n\ndata: [DONE]\n\n",
-                            hold=last_user == "inherited child")
+                            ticket=tickets.get(last_user))
 
-    def write_response(self, status, mime, body, hold=False):
+    def write_response(self, status, mime, body, ticket=None):
         self.send_response(status)
         self.send_header("Content-Type", mime)
-        if hold:
-            self.send_header("X-Inference-Ticket", "inherited-ticket")
+        if ticket:
+            self.send_header("X-Inference-Ticket", ticket)
         self.end_headers()
-        if hold:
+        if ticket:
             self.wfile.flush()
-            self.server.inherited_started.set()
-            self.server.release_inherited.wait(12)
+            self.server.held_response_started.set()
+            self.server.release_held_response.wait(12)
         self.wfile.write(body)
 
 
@@ -450,13 +451,13 @@ class TurnSelectionTest(unittest.TestCase):
             offset = len(pi.seen)
             command = pi.request("prompt", message="/fixture-child inherited")
             try:
-                self.assertTrue(router.inherited_started.wait(5), "Inherited child did not submit while parent was held")
+                self.assertTrue(router.held_response_started.wait(5), "Inherited child did not submit while parent was held")
                 pi.prompt("/air-cancel")
                 self.assertTrue(any(event.get("message") == "No matching active AIR request to cancel."
                                     for event in pi.seen[offset:]))
                 pi.prompt("/fixture-child independent")
             finally:
-                router.release_inherited.set()
+                router.release_held_response.set()
             pi.response(command)
             self.assertFalse(any(event.get("method") == "setStatus" for event in pi.seen[offset:]))
             children = dict(event["message"].removeprefix("Child thread ").split(" ") for event in pi.seen
@@ -478,7 +479,7 @@ class TurnSelectionTest(unittest.TestCase):
                 ("child.fixture", "narrow", "independent child", True),
             ])
 
-    def test_direct_registry_call_cannot_take_parent_pin_or_infer_missing_thread(self):
+    def test_direct_registry_call_keeps_session_routing_without_parent_status_or_cancel(self):
         with FakeRouter().running() as router, pi_session(router) as pi:
             thread = pi.send("get_state")["sessionId"]
             pi.model("child.fixture")
@@ -486,15 +487,45 @@ class TurnSelectionTest(unittest.TestCase):
             pi.model("hy4.fixture")
             pi.prompt("/context compact")
             pi.hold("interrupt Hy4")
-            pi.prompt("/fixture-registry same-session")
+            offset = len(pi.seen)
+            command = pi.request("prompt", message="/fixture-registry same-session")
+            try:
+                self.assertTrue(router.held_response_started.wait(5), "Direct registry call did not submit")
+                pi.prompt("/air-cancel")
+                self.assertTrue(any(event.get("message") == "No matching active AIR request to cancel."
+                                    for event in pi.seen[offset:]))
+                status_offset = len(pi.seen)
+                pi.prompt("/air-status")
+                self.assertTrue(any(event.get("method") == "notify" and "hy4.fixture" in event["message"]
+                                    for event in pi.seen[status_offset:]))
+            finally:
+                router.release_held_response.set()
+            pi.response(command)
+            self.assertFalse(any(event.get("method") == "setStatus" for event in pi.seen[offset:]))
             pi.prompt("/fixture-registry missing-session")
-            self.check_requests(router.snapshot(), thread, [
+            requests = router.snapshot()
+            self.check_requests(requests, thread, [
                 ("hy4.fixture", "compact", "interrupt Hy4", False),
                 ("child.fixture", "wide", "direct registry call", False),
             ])
+            self.assertEqual([2048, 8192], [post["output_limit"] for post in requests])
             replies = [event["message"] for event in pi.seen
                        if event.get("method") == "notify" and event["message"].startswith("Registry call ")]
             self.assertEqual(["Registry call stop", "Registry call error: AIR needs a Pi session identity"], replies)
+
+    def test_registry_call_with_real_loop_options_cannot_take_active_turn_selection(self):
+        with FakeRouter().running() as router, pi_session(router) as pi:
+            pi.prompt("/fixture-child registry-options")
+            prefix = "Child thread registry-options "
+            thread = next(event["message"].removeprefix(prefix) for event in pi.seen
+                          if event.get("method") == "notify" and event["message"].startswith(prefix))
+            requests = router.snapshot()
+            self.check_requests(requests, thread, [
+                ("hy4.fixture", "compact", "interrupt Hy4", False),
+                ("child.fixture", "wide", "registry with loop options", False),
+                ("hy4.fixture", "compact", "interrupt Hy4", True),
+            ])
+            self.assertEqual([2048, 8192, 2048], [post["output_limit"] for post in requests])
 
     def test_explicit_output_cap_controls_fit_and_survives_retry(self):
         with FakeRouter().running() as router, pi_session(router) as pi:
