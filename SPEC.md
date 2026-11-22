@@ -1,12 +1,13 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.130)
+Status: draft, continuously revised (v0.12.131)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
 
 ## 0. Revision log
 
+- v0.12.131 — local requests share available slots on a fitting resident profile. A local switch wait expiry or lifecycle refusal returns the existing switch failure response, with the refusal reason on the event feed.
 - v0.12.130 — a local group may replace one confirmed owned resident on launch-setting drift or failed backend readiness. It rechecks group occupancy and the same container generation before stopping. The original queued request owns the replacement and keeps its switch deadline. Failed replacement is terminal for that request.
 - v0.12.129 — on first admission a local Docker group can reuse its verified running target. The group checks its inventory, effective Docker configuration, backend readiness and container start identity before dispatch. Ambiguous occupancy or contradictory adoption evidence refuses the request before mutation.
 - v0.12.128 — authenticated idle reload accepts additional native engines in existing local groups and additional aliases on retained group members (§7.7).

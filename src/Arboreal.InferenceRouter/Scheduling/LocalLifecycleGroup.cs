@@ -38,8 +38,9 @@ internal sealed class LocalLifecycleGroup(string name, Action wake)
             if (_waiting is { } waiting && (waiting.Ticket.IsTerminal || waiting.CallerToken.IsCancellationRequested))
                 _waiting = null;
             if (_waiting is not null && !ReferenceEquals(_waiting, request)) return null;
-            var target = (engine.Name, request.Ticket.Model, profile?.Name);
-            var cold = switchRequired || _resident is not { } resident || resident != target;
+            var cold = switchRequired || _resident is not { } resident ||
+                resident.Engine != engine.Name || resident.Model != request.Ticket.Model ||
+                (profile is not null && profile.Name != resident.Profile);
             if (cold)
             {
                 _waiting ??= request;
@@ -113,6 +114,11 @@ internal sealed class LocalLifecycleGroup(string name, Action wake)
                 explicitContextMinimum: owner.Request.ExplicitContextMinimum, localOwner: owner).ConfigureAwait(false);
             succeeded = observed.Result.IsReady;
             return observed;
+        }
+        catch (InvalidOperationException error)
+        {
+            owner.Engine.Emit("engine.switch_failed", model: owner.Request.Ticket.Model, reason: error.Message);
+            return new(EngineRuntime.SwitchResult.Failed(SwitchReason.LaunchFailed));
         }
         finally
         {

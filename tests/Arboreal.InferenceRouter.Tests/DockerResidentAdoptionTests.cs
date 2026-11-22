@@ -32,6 +32,7 @@ public sealed class DockerResidentAdoptionTests
     [InlineData("readiness", 1, true)]
     [InlineData("failed-start", 1, false)]
     [InlineData("failed-readiness", 1, false)]
+    [InlineData("preflight", 0, false)]
     [InlineData("foreign", 0, false)]
     [InlineData("expired", 0, false)]
     [InlineData("unstable", 0, false)]
@@ -73,6 +74,7 @@ public sealed class DockerResidentAdoptionTests
             if (path.EndsWith("/version", StringComparison.Ordinal)) return (HttpStatusCode.OK, """{"ApiVersion":"1.44"}""");
             if (path.Contains("/images/", StringComparison.Ordinal))
             {
+                if (scenario == "preflight") return (HttpStatusCode.NotFound, "{}");
                 var info = JsonNode.Parse(DockerLifecycleProviderTests.Inspect())!;
                 info["Config"] = new JsonObject();
                 return (HttpStatusCode.OK, info.ToJsonString());
@@ -129,6 +131,7 @@ public sealed class DockerResidentAdoptionTests
         {
             await Assert.ThrowsAsync<RouterRequestException>(() => first.CompletionTask.WaitAsync(TimeSpan.FromSeconds(8)));
             Assert.Equal(0, backend.CompletionCalls);
+            if (scenario is "expired" or "preflight") Assert.Equal("switch_failed", first.ErrorCode);
         }
         Assert.Equal(expectedStops, daemon.Requests.Count(path => path.StartsWith("POST", StringComparison.Ordinal) &&
             path.Contains($"/{oldId}/stop?", StringComparison.Ordinal)));

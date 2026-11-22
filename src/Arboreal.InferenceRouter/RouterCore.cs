@@ -738,7 +738,7 @@ public sealed partial class RouterCore : IInferenceRouter
         try
         {
 
-            if (invocation is null && WillWaitForModel(settings, switchRequired, targetProfile))
+            if (invocation is null && (candidate.LocalLease is { Cold: true } || WillWaitForModel(settings, switchRequired, targetProfile)))
             {
                 ticket.State = TicketState.WaitingForModel;
                 // A ticket's own deadline bounds only its time in the queue, so the wait for a model
@@ -754,8 +754,15 @@ public sealed partial class RouterCore : IInferenceRouter
                 if (candidate.LocalLease is { Cold: true } localOwner)
                 {
                     using var localWait = CancellationTokenSource.CreateLinkedTokenSource(execCts.Token, candidate.CallerToken, _shutdownToken);
-                    var preparation = localOwner.PrepareAsync(_shutdownToken);
-                    observed = await preparation.WaitAsync(switchWait, localWait.Token).ConfigureAwait(false);
+                    try
+                    {
+                        var preparation = localOwner.PrepareAsync(_shutdownToken);
+                        observed = await preparation.WaitAsync(switchWait, localWait.Token).ConfigureAwait(false);
+                    }
+                    catch (TimeoutException)
+                    {
+                        observed = new(new EngineRuntime.SwitchResult(EngineRuntime.SwitchOutcome.TimedOut, null));
+                    }
                 }
                 else
                 {

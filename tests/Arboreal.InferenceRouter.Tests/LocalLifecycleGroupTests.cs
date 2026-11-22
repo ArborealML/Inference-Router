@@ -85,6 +85,51 @@ public sealed class LocalLifecycleGroupTests
         }, index == 1 ? queuedCancellation.Token : ct);
     }
 
+    [Fact(Timeout = 20_000)]
+    public async Task RequestsShareAnAlreadyLoadedNamedProfile()
+    {
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        using var backend = new FakeEngineHandler { LoadedModels = ["model"], NCtx = 8192, TotalSlots = 4 };
+        var provider = new Provider();
+        var engine = new EngineDefinition
+        {
+            Name = "engine", Endpoint = new Uri("http://localhost:12000/v1"),
+            Lifecycle = EngineLifecycleKind.Docker, LifecycleOwner = EngineLifecycleOwner.Router, LifecycleGroup = "gpu",
+            Docker = new DockerLifecycleConfig { Image = "fixture", RouterId = "fixture" },
+            Catalog = new Dictionary<string, EngineModelDefinition>
+            {
+                ["model"] = new() { Name = "model", ServingProfiles = [new() { Name = "large", MaxContext = 8192, MaxSlots = 4 }] },
+            },
+        };
+        var settings = new RouterConfig { AutoSwitch = true, Engines = new Dictionary<string, EngineDefinition>
+            { ["engine"] = engine }, HttpHandlerFactory = _ => backend };
+        settings.Scheduler.MaxInflightPerEngine = 4;
+        await using var router = new RouterCore(settings, scheduler: null, events: null, clock: TimeProvider.System,
+            lifecycleFactory: _ => provider);
+        router.Start();
+        var first = await Enqueue("initial", 6000);
+        await first.CompletionTask.WaitAsync(deadline.Token);
+        var bothEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var count = 0;
+        backend.HoldCompletions = true;
+        backend.AfterHeldCompletionEnteredForTests = () =>
+        {
+            if (Interlocked.Increment(ref count) == 2) bothEntered.TrySetResult();
+        };
+        var second = await Enqueue("second", null);
+        var third = await Enqueue("third", null);
+        try { await bothEntered.Task.WaitAsync(deadline.Token); }
+        finally { backend.ReleaseGate(); }
+        await Task.WhenAll(second.CompletionTask, third.CompletionTask).WaitAsync(deadline.Token);
+        Assert.Single(provider.Calls, call => call == "launch");
+
+        async Task<RouterTicket> Enqueue(string client, long? required) => await router.EnqueueAsync(client, new InferenceRequest
+        {
+            Model = "model", Body = """{"model":"model","messages":[{"role":"user","content":"hello"}]}"""u8.ToArray(),
+            Options = new() { RequiredContext = required },
+        }, deadline.Token);
+    }
+
     private sealed class HeldHandler : FakeEngineHandler
     {
         internal TaskCompletionSource Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
