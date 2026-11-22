@@ -1,0 +1,11 @@
+# Load after compinit with: source <(air completion zsh)
+_air_complete() {
+    local -a prior matches
+    local i item
+    for (( i=2; i<CURRENT; i++ )); do prior+=("${(Q)words[i]}"); done
+    while IFS= read -r item; do matches+=("$item"); done < <(
+        command air completion candidates "--current=${(Q)PREFIX}" "${prior[@]}"
+    )
+    (( ${#matches} )) && compadd -- "${matches[@]}"
+}
+compdef _air_complete air

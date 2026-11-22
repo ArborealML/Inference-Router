@@ -1,12 +1,13 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.140)
+Status: draft, continuously revised (v0.12.141)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
 
 ## 0. Revision log
 
+- v0.12.141 — the CLI prints native Bash, PowerShell, Zsh and fish completion registrations. One read-only candidate service supplies positional options and configured engines, models, aliases and profiles (§11).
 - v0.12.140 — cancel a local owner waiting for the target switch claim. The group holds an issued transaction until it unwinds (§7).
 - v0.12.139 — bound local Docker group preparation by the original request lifetime and verify peer inventories at mutation boundaries (§7).
 - v0.12.138 — the CLI reports refused event subscriptions with exit 1, labels unreported serving capacity, and includes probe and selector metadata in JSON config readback (§11).
@@ -3676,6 +3677,7 @@ exclusive cursor described above.
 ## 11. CLI
 
 ```
+air completion bash|powershell|zsh|fish
 air serve [--config f.toml] [--listen url]
 air chat [--server url] [--thread id] [--priority high:200] [--model name] [--system text] [--no-stream] [--json] [prompt ...]
 air complete [--server url] [--thread id] [--priority high:200] [--model name] [--system text] [--no-stream] [--json] [prompt ...]
@@ -3689,6 +3691,15 @@ air config [--config f.toml]
 air tune compare --baseline FILE --candidate FILE
 air tune plan [--config FILE] --engine ENGINE --model MODEL --seed HEX --max-concurrency N [--profile TIER]
 ```
+
+`air completion SHELL` writes the shell registration script to stdout. Its read-only backend
+accepts the current word and preceding arguments as separate strings and emits one candidate per
+line. The command and option vocabulary is available offline. Engine/model candidates include
+cold configured entries and aliases, scoped to an engine when one precedes the cursor.
+Offline tuning uses its explicit `--config` or the usual config lookup. Other commands consult
+the local configuration or a bounded read of the explicitly addressed listener’s `/admin/catalog`;
+an unavailable listener falls back to the local configuration. With neither source available,
+dynamic lists are empty. Catalog text is completion data and is never executed as a shell command.
 
 The global `--json` flag can precede the verb or appear among its options. Models, status, tickets,
 switch acknowledgments and events render as text by default. In JSON mode their HTTP objects retain

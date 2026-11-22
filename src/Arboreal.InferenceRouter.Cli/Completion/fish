@@ -1,0 +1,22 @@
+# Load with: air completion fish | source
+function __air_candidates
+    set -l prior (commandline -opc)
+    set -e prior[1]
+    set -l token (commandline -ct)
+    set -l current ''
+    if test -n "$token"
+        set current (string unescape -- "$token")
+        if test $status -ne 0
+            # An unfinished quoted word is valid during tab completion.
+            for quote in "'" '"'
+                set current (string unescape -- "$token$quote")
+                and break
+            end
+        end
+    end
+    command air completion candidates "--current=$current" $prior
+end
+if not set -q __air_completion_registered
+    complete -c air -f -a '(__air_candidates)'
+    set -g __air_completion_registered 1
+end

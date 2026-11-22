@@ -16,7 +16,7 @@ namespace Arboreal.InferenceRouter.Cli;
 /// Parsing is hand-rolled (no reflection-dependent command frameworks; AOT-safe).</summary>
 public static class Program
 {
-    private static string DefaultServer =>
+    internal static string DefaultServer =>
         Environment.GetEnvironmentVariable("AIR_ROUTER_URL") ?? "http://127.0.0.1:8321";
 
     /// <summary>Absolutises a router path against the configured server. HttpClient rejects relative
@@ -31,6 +31,7 @@ public static class Program
         if (args.Length == 0) return await RunHelpAsync().ConfigureAwait(false);
         return args[0] switch
         {
+            "completion" => await ShellCompletion.RunAsync(args[1..]).ConfigureAwait(false),
             "serve" => await RunServeAsync(args[1..]).ConfigureAwait(false),
             "chat" or "complete" => await RunChatAsync(args[1..], json).ConfigureAwait(false),
             "models" => await RunModelsAsync(args[1..], json).ConfigureAwait(false),
@@ -58,6 +59,7 @@ public static class Program
             JSON manifest. Serve starts the host.
 
             commands:
+              completion bash|powershell|zsh|fish       print the shell’s tab-completion registration
               serve [--config path] [--listen url]      run the router host in this process
               chat  [-m model] [-t thread] [-p prio]    send a chat completion (prompt args or stdin)
                     [--system text] [--no-stream] [--json] [-s server-url]
@@ -549,7 +551,7 @@ public static class Program
         output.WriteByte((byte)'\n');
     }
 
-    private static string? GetOpt(string[] args, string[] keys)
+    internal static string? GetOpt(string[] args, string[] keys)
     {
         for (var i = 0; i < args.Length; i++)
             foreach (var k in keys)
