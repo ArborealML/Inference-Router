@@ -5,6 +5,7 @@ status: To Do
 assignee:
   - '@gpt-6.2-astra'
 created_date: '2026-11-22T04:10:00Z'
+updated_date: '2026-11-22T04:20:00Z'
 labels: []
 milestone: m-15
 dependencies:
@@ -26,3 +27,9 @@ Keep partial history and stale observations explicit during outages.
 - [ ] #2 A retention gap is marked in the timeline. Reconnect and replay do not duplicate observed events.
 - [ ] #3 Exercise concurrent clients, rapid queue changes and a failed switch while a ticket is selected.
 <!-- AC:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Reconnect with cancellation and bounded backoff. Refresh gauges independently of event traffic. On uncertain continuity or sequence reset, refresh status and label incomplete history. Test overload, gaps, restart and quit.
+<!-- SECTION:PLAN:END -->

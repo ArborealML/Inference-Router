@@ -5,6 +5,7 @@ status: To Do
 assignee:
   - '@gpt-6.2-astra'
 created_date: '2026-11-22T04:10:00Z'
+updated_date: '2026-11-22T04:20:00Z'
 labels: []
 milestone: m-15
 dependencies:
@@ -26,3 +27,9 @@ Exercise the installed monitor with ordinary Pi traffic and publish usage and ob
 - [ ] #2 The monitor follows that ticket through dispatch and the reported residency change agrees with an independent backend readback.
 - [ ] #3 Opening and quitting the monitor leave active requests intact. README documents the command, keys and stale-data indicators.
 <!-- AC:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Exercise the installed binary with two ordinary Pi clients in an idle window. Capture the first request completing, the original queued request dispatching and streaming, the monitor view and independent backend residency. Document the verified entry point and controls.
+<!-- SECTION:PLAN:END -->
