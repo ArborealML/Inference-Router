@@ -141,6 +141,8 @@ public sealed partial class DockerLifecycleProvider : IEngineLifecycleProvider, 
     {
         if (UnqualifiedLaunch() is { } refusal) return refusal;
         if (_cfg.ImageIdentity is not { } identity) return MissingImageIdentity();
+        if (_cfg.UsesVllmArgv && (!OperatingSystem.IsLinux() || _scope.Daemon.UnixPath is null))
+            return LifecycleResult.Fail("vllm_argv_unavailable", "The vLLM process source requires a local Linux Docker daemon.");
 
         // Reachability first: every later failure is ambiguous if the daemon is not answering at all.
         var (ok, versionBody, failure) = await CallAsync(
@@ -166,7 +168,12 @@ public sealed partial class DockerLifecycleProvider : IEngineLifecycleProvider, 
         }
 
         var image = TryRead(imageBody, DockerJsonContext.Default.DockerImageInspectResponse);
-        return ImageIdentityFailure(image, identity) ?? LifecycleResult.Ok($"daemon_ok image={imageRef}");
+        if (ImageIdentityFailure(image, identity) is { } identityFailure) return identityFailure;
+        if (_cfg.UsesVllmArgv &&
+            (image?.Config?.Entrypoint is not ["bash", "docker/entrypoint.sh"] ||
+             (BuildCreateRequest(target, identity).Cmd ?? image.Config.Cmd) is not ["single"]))
+            return LifecycleResult.Fail("vllm_launch_unsupported", "The pinned image must use the supported single vLLM launcher.");
+        return LifecycleResult.Ok($"daemon_ok image={imageRef}");
     }
 
     private LifecycleResult? UnqualifiedLaunch()

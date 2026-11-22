@@ -91,6 +91,7 @@ public sealed partial class RouterCore
             {
                 if (engine.AfterForwardAdmissionForTests is { } afterAdmission)
                     await afterAdmission().ConfigureAwait(false);
+                await engine.VerifyRequestedProfileAsync(candidate, ct).ConfigureAwait(false);
                 using var gate = engine.ResponseTimeout is { } ceiling
                     ? new ResponseGate(ceiling, ResponseTimeoutClockForTests) : null;
                 using var headerWait = gate is null ? null : CancellationTokenSource.CreateLinkedTokenSource(ct, gate.Token);

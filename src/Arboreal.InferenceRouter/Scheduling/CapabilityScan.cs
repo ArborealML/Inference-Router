@@ -6,7 +6,7 @@ namespace Arboreal.InferenceRouter;
 internal enum NativeLaunchHealth { Pending, Eligible, Unknown, Invalid }
 
 internal sealed record NativeLaunchWatch(SwitchAttemptId Attempt, NativeLaunch Launch, NativeContainerStamp? Baseline,
-    NativeLaunchHealth Health);
+    NativeLaunchHealth Health, VllmProcessStamp? ServingProcess = null);
 
 internal readonly record struct ServingCapacity(string? Model, long ContextWindow, int TotalSlots, string? Profile)
 {

@@ -13,6 +13,14 @@ internal sealed partial class DockerTargetPlans
         {
             if (engineValue is not TomlTable engine) continue;
             var enginePath = $"engine.{engineName}";
+            foreach (var health in TomlMembers(engine, "health_probe").OfType<TomlTable>())
+            {
+                if (!HasTomlMember(health, "slots_source")) continue;
+                CheckTomlMember(root, "engine", "engine");
+                CheckTomlMember(engines, engineName, enginePath);
+                CheckTomlMember(engine, "health_probe", $"{enginePath}.health_probe");
+                CheckTomlMember(health, "slots_source", $"{enginePath}.health_probe.slots_source");
+            }
             RejectMisplacedTierResourceToml(engine, enginePath);
             CheckCommonTargetOptionsToml(root, engines, engineName, engine, enginePath);
             CheckContainerPolicyToml(root, engines, engineName, engine, enginePath);

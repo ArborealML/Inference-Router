@@ -196,6 +196,7 @@ public sealed class HealthProbeDto
     [JsonPropertyName("timeout_ms")][TomlPropertyName("timeout_ms")] public int? TimeoutMs { get; set; }
     [JsonPropertyName("context_path")][TomlPropertyName("context_path")] public string? ContextPath { get; set; }
     [JsonPropertyName("slots_path")][TomlPropertyName("slots_path")] public string? SlotsPath { get; set; }
+    [JsonPropertyName("slots_source")][TomlPropertyName("slots_source")] public string? SlotsSource { get; set; }
 }
 
 public sealed class CapabilitiesDto

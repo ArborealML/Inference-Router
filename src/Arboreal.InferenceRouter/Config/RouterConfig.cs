@@ -33,6 +33,7 @@ public sealed class DockerLifecycleConfig
     public DockerImageIdentity? ImageIdentity { get; init; }
     internal DockerLaunchResources? Resources { get; init; }
     internal DockerTargetPlans? TargetPlans { get; init; }
+    internal bool UsesVllmArgv { get; init; }
     internal bool HasUnqualifiedTargetDocker => TargetPlans is not null;
     internal DockerContainerPolicy? ContainerPolicy { get; init; }
     internal bool HasUnqualifiedLaunchOptions => Entrypoint is not null || IpcMode is not null || ContainerPolicy is not null;

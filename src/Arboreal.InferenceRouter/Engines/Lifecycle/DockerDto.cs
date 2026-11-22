@@ -20,6 +20,13 @@ public sealed class DockerImageInspectResponse
     [JsonPropertyName("Os")] public string? Os { get; set; }
     [JsonPropertyName("Architecture")] public string? Architecture { get; set; }
     [JsonPropertyName("Variant")] public string? Variant { get; set; }
+    [JsonPropertyName("Config")] public DockerImageLaunchDefaults? Config { get; set; }
+}
+
+public sealed class DockerImageLaunchDefaults
+{
+    [JsonPropertyName("Entrypoint")] public string[]? Entrypoint { get; set; }
+    [JsonPropertyName("Cmd")] public string[]? Cmd { get; set; }
 }
 
 public sealed class DockerContainerSummary
@@ -60,7 +67,14 @@ internal sealed class DockerObservationResponse
     [JsonPropertyName("Image")] public string? Image { get; set; }
     [JsonPropertyName("RestartCount")] public long? RestartCount { get; set; }
     [JsonPropertyName("Config")] public DockerContainerInspectConfig? Config { get; set; }
+    [JsonPropertyName("HostConfig")] public DockerProcessHostConfig? HostConfig { get; set; }
     [JsonPropertyName("State")] public DockerObservationState? State { get; set; }
+}
+
+internal sealed class DockerProcessHostConfig
+{
+    [JsonPropertyName("PidMode")] public string? PidMode { get; set; }
+    [JsonPropertyName("Init")] public bool? Init { get; set; }
 }
 
 internal sealed class DockerObservationState
@@ -71,6 +85,7 @@ internal sealed class DockerObservationState
     [JsonPropertyName("Restarting")] public bool? Restarting { get; set; }
     [JsonPropertyName("Dead")] public bool? Dead { get; set; }
     [JsonPropertyName("StartedAt")] public string? StartedAt { get; set; }
+    [JsonPropertyName("Pid")] public int? Pid { get; set; }
 }
 
 public sealed class DockerCreateRequest
@@ -219,5 +234,11 @@ internal sealed class DockerExecInspectResponse
 [JsonSerializable(typeof(DockerExecInspectResponse))]
 [JsonSerializable(typeof(DockerListFilter))]
 internal sealed partial class DockerJsonContext : JsonSerializerContext
+{
+}
+
+[JsonSourceGenerationOptions(AllowDuplicateProperties = false)]
+[JsonSerializable(typeof(DockerObservationResponse))]
+internal sealed partial class DockerProcessObservationJsonContext : JsonSerializerContext
 {
 }

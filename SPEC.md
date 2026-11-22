@@ -1,11 +1,13 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.147)
+Status: draft, continuously revised (v0.12.148)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
 
 ## 0. Revision log
+
+- v0.12.148 — verify opted-in local vLLM profile capacity from the exact serving process and bound post-load verification (§5.3.1, §7.6).
 
 - v0.12.147 — capture the AIR model, serving selection and output limit at Pi user dispatch. Keep that selection through tool use and retries, apply the active window and retention settings to Pi-triggered compaction, and preserve separate request identities (§13.2).
 
@@ -1817,6 +1819,31 @@ Polling covers tracked launches at completed samples. Startup-existing container
 application process inside a matching container, and authentication of the connected serving peer
 remain separate. This supplies no host-wide vacancy, retirement or mutation authority.
 
+**Local vLLM profile verification.** A router-owned local Docker group can opt in to the vLLM
+slot source in §7.6. The canonical model and its context come from one unambiguous loaded model
+row. Slots come from the running server's single positive `--max-num-seqs` argument. AIR reads
+bounded NUL-delimited argv from the single immediate `vllm serve` child of `docker-init` and
+checks the same process identity and slot count before and after the model and health reads. Before forwarding an inference request AIR checks the running process and slot count against that proof again. This check finishes before the upstream response timer starts. It requires one explicit `--api-server-count` to establish one server. The short alias `-asc` and its abbreviations invalidate this proof. The executable must be `/app/venv/bin/vllm`,
+optionally preceded by `/app/venv/bin/python`, `/app/venv/bin/python3` or `/app/venv/bin/python3.12`.
+The Docker identity, image, labels, running generation and init PID bracket the read. Linux procfs
+checks exact full-container-ID cgroup v2 membership for init before enumerating its immediate children.
+It verifies the candidate's parent,
+start time and membership before opening its argv and repeats these checks afterwards. The exact
+Docker inspect must report private or default PID mode. Missing or ambiguous mode evidence and
+host or container-shared modes prevent argv reads, including during adoption. AIR retains the
+process identity and measured count without logging argv or environment. Process proof uses Docker
+GET and local procfs reads.
+
+The first completed model probe that reports the requested model starts one monotonic
+verification window of at most ten seconds, further limited by the remaining startup and local
+owner budgets. Later failed probes, gate waits and final publication all use the same deadline.
+A confirmed mismatch reports its field and expected and observed values immediately. Missing,
+invalid or ambiguous evidence leaves the field unknown and names it at expiry. Capacity proof
+applies to cold launches, adoption of a settings-matching resident and warm refresh. A stable
+resident with failed runtime proof fails the selected request without attempting a replacement.
+Warm publication and first send require current verified capacity, including for requests with
+an implicit profile. A failed ticket follows the existing switch failure and group release paths.
+
 **Internal Docker exec and logs.** The native provider inspects the full container ID on the scoped
 daemon and checks the exact returned ID and both ownership labels before exec or log capture.
 Exec passes literal argv, attaches stdout and stderr without stdin, privilege elevation or TTY, and
@@ -3388,6 +3415,19 @@ Semantics:
   changes. `EngineStats` reads `active_profile` / `active_context_window` / `active_slots` from one snapshot.
 - **Non-goal for now**: automatic *de*-escalation (shrinking a window when big-context
   demand goes away). Escalation is demand-driven; release policy is an open question (§15).
+
+Set `health_probe.slots_source = "vllm_argv"` for the supported local vLLM launcher. The source
+requires an explicit router-owned local Docker group with a local Unix daemon, pinned Linux
+image, Docker init, `wait_health` enabled, named serving tiers and a per-model
+`models_context_window_path` such as `max_model_len`. Use `command = ["single"]` with the pinned
+image entrypoint and include `MAX_SEQS={{max_slots}}` in common Docker environment assignments.
+Set `API_SERVERS=1` in the effective environment. The selected tier supplies the positive slot
+count to the launcher and the running server supplies the observed count. Duplicate environment
+assignments and flags that can override capacity are refused. The source accepts the split and
+equals spellings of `--max-num-seqs`. Positive HTTP context and slot gauges, when present,
+must agree with the profile. Omit `slots_source` to use the ordinary HTTP gauge behavior.
+Startup and reload validate the source and its launch settings. Changing this source on a
+retained engine requires a restart (§7.7).
 
 The shipped Maya example keeps GLM, HY4 Flash and MiniMax M3.1 Flash in the same
 externally owned engine.

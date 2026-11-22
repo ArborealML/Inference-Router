@@ -898,6 +898,8 @@ public sealed partial class RouterCore : IInferenceRouter
                 if (engine.AfterForwardAdmissionForTests is { } afterAdmission)
                     await afterAdmission().ConfigureAwait(false);
 
+                await engine.VerifyRequestedProfileAsync(candidate, cts.Token).ConfigureAwait(false);
+
                 // The cap bounds the wait for the engine to *answer*: the whole response body for a
                 // non-stream call, the first byte of the body for a stream. Response headers are not an
                 // answer — an engine may send 200 and then go quiet, and holding a slot, a ticket and a
@@ -1055,7 +1057,6 @@ public sealed partial class RouterCore : IInferenceRouter
         EngineRuntime engine, byte[] body, string suffix, QueuedRequest candidate, SwitchServingProof? proof, CancellationToken ct)
     {
         using var req = MakeUpstreamRequest(engine, body, suffix);
-        engine.VerifyRequestedProfile(candidate);
         engine.ObserveFirstForward(proof, candidate.Ticket.Model, ct);
         return await engine.Http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
     }

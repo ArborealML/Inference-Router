@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using System.Globalization;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Arboreal.InferenceRouter.Lifecycle;
@@ -15,6 +16,7 @@ internal sealed record DockerTargetHealthcheck(string Command, long? IntervalNs,
 /// <summary>Immutable Docker create inputs. They describe launch intent, not a verified serving instance.</summary>
 internal sealed partial class DockerTargetPlans
 {
+    private const string SlotsTemplate = "MAX_SEQS={{max_slots}}";
     private sealed record ModelPlans(string Canonical, string? DefaultProfile,
         ImmutableDictionary<string, DockerTargetLaunch> Profiles);
 
@@ -59,17 +61,22 @@ internal sealed partial class DockerTargetPlans
     }
 
     internal static DockerTargetPlans Parse(string engine, Dictionary<string, ModelDto> catalog, DockerDto docker,
-        DockerLaunchResources? common)
+        DockerLaunchResources? common, bool usesVllmArgv = false)
     {
         if (docker.Command is { } command)
             ValidateCommandArguments(command, $"engine.{engine}.docker.command");
+        if (usesVllmArgv && (docker.Env is not { } commonEnv || commonEnv.Count(value => value == SlotsTemplate) != 1 ||
+            commonEnv.Any(value => value != SlotsTemplate && value?.Contains("{{max_slots}}", StringComparison.Ordinal) == true)))
+            throw new RouterConfigException($"engine.{engine}.docker.env requires exactly one {SlotsTemplate} assignment for vllm_argv");
         var models = ImmutableDictionary.CreateBuilder<string, ModelPlans>(StringComparer.OrdinalIgnoreCase);
         foreach (var (canonical, model) in catalog)
         {
             var path = $"engine.{engine}.catalog.{canonical}";
             var tiers = model.Serving;
-            var plans = tiers is not null && tiers.Any(tier => tier.Docker is not null)
-                ? ParseModel(engine, canonical, model, tiers, docker, common, path)
+            if (usesVllmArgv && tiers is not { Count: > 0 })
+                throw new RouterConfigException($"{path}.serving requires a named profile for vllm_argv");
+            var plans = tiers is not null && (usesVllmArgv || tiers.Any(tier => tier.Docker is not null))
+                ? ParseModel(engine, canonical, model, tiers, docker, common, path, usesVllmArgv)
                 : new ModelPlans(canonical, null, ImmutableDictionary<string, DockerTargetLaunch>.Empty);
             AddModelSpelling(canonical);
             foreach (var alias in model.Aliases ?? [])
@@ -89,7 +96,7 @@ internal sealed partial class DockerTargetPlans
     }
 
     private static ModelPlans ParseModel(string engine, string canonical, ModelDto model, List<ServingDto> tiers,
-        DockerDto docker, DockerLaunchResources? common, string path)
+        DockerDto docker, DockerLaunchResources? common, string path, bool usesVllmArgv)
     {
         if (model.Profile is { } legacy && model.DefaultProfile is { } configured &&
             !string.Equals(legacy, configured, StringComparison.Ordinal))
@@ -105,7 +112,8 @@ internal sealed partial class DockerTargetPlans
                 throw new RouterConfigException($"{tierPath}.name must contain a serving profile name");
             if (plans.ContainsKey(tier.Name))
                 throw new RouterConfigException($"{tierPath}.name duplicates a serving profile");
-            plans.Add(tier.Name, Compose(engine, canonical, tier.Name, docker, common, tier.Docker, tierPath));
+            plans.Add(tier.Name, Compose(engine, canonical, tier.Name, docker, common, tier.Docker, tierPath,
+                usesVllmArgv ? tier.MaxSlots ?? 1 : null));
         }
         if (!plans.ContainsKey(defaultProfile))
             throw new RouterConfigException($"{path}.default_profile must name a canonical serving tier");
@@ -127,7 +135,7 @@ internal sealed partial class DockerTargetPlans
         target.Env is { Length: > 0 } || target.BindMounts is { Length: > 0 } || target.Healthcheck is not null;
 
     private static DockerTargetLaunch Compose(string engine, string model, string profile, DockerDto docker,
-        DockerLaunchResources? common, DockerTargetDto? tier, string path)
+        DockerLaunchResources? common, DockerTargetDto? tier, string path, int? vllmSlots)
     {
         if (tier?.Unknown is { Count: > 0 } unknown)
             throw new RouterConfigException($"{path}.docker.{unknown.Keys.First()} is not a target setting");
@@ -140,9 +148,15 @@ internal sealed partial class DockerTargetPlans
         var env = ImmutableArray.CreateBuilder<string>();
         var names = new HashSet<string>(StringComparer.Ordinal);
         foreach (var value in docker.Env ?? [])
-            AddEnv(value is null ? null : ExpandTargetTemplate(value, model, profile, engine));
+            AddEnv(value == SlotsTemplate && vllmSlots is { } slots
+                ? $"MAX_SEQS={slots.ToString(CultureInfo.InvariantCulture)}"
+                : value is null ? null : ExpandTargetTemplate(value, model, profile, engine));
         foreach (var value in tier?.Env ?? [])
             AddEnv(value);
+        if (vllmSlots is not null && (command is not ["single"] || !env.Contains("API_SERVERS=1") ||
+            env.Any(value => value.StartsWith("EXTRA_ARGS=", StringComparison.Ordinal) &&
+                value[11..].Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).Any(VllmProcessReader.IsUnsupportedOverride))))
+            throw new RouterConfigException($"{path}.docker requires the single vLLM launcher with API_SERVERS=1 and no capacity overrides");
 
         var bindPath = $"{path}.docker.bind_mounts";
         var additions = DockerLaunchResources.ParseBinds(tier?.BindMounts, bindPath, isTier: true);
@@ -250,6 +264,19 @@ internal sealed partial class DockerTargetPlans
     internal static void CheckJson(JsonElement root)
     {
         CheckLaunchOptionsJson(root);
+        foreach (var engines in Members(root, "engine"))
+        foreach (var engine in Properties(engines.Value))
+        foreach (var health in Members(engine.Value, "health_probe"))
+        foreach (var source in Members(health.Value, "slots_source"))
+        {
+            var path = $"engine.{engine.Name}.health_probe";
+            CheckMember(root, "engine", "engine");
+            CheckMember(engines.Value, engine.Name, $"engine.{engine.Name}", exactKey: true);
+            CheckMember(engine.Value, "health_probe", path);
+            CheckMember(health.Value, "slots_source", $"{path}.slots_source");
+            if (source.Value.ValueKind != JsonValueKind.String)
+                throw new RouterConfigException($"{path}.slots_source must be a string");
+        }
         foreach (var engines in Members(root, "engine"))
         foreach (var engine in Properties(engines.Value))
         foreach (var catalog in Members(engine.Value, "catalog"))
