@@ -13,9 +13,11 @@ import unittest
 
 
 ROOT = Path(__file__).resolve().parent
-WINDOWS = {"narrow": 32768, "standard": 65536, "wide": 131072}
-MODELS = ["hy4.fixture", "qwen.fixture", "child.fixture"]
-HELD_PROMPTS = {"start Hy4", "interrupt Hy4", "independent child"}
+WINDOWS = {"compact": 8192, "narrow": 32768, "standard": 65536, "wide": 131072}
+MODELS = ["hy4.fixture", "qwen.fixture", "child.fixture", "mixed.fixture"]
+LARGE_PROMPT = "Large input " + "x" * 35000
+HELD_PROMPTS = {"start Hy4", "interrupt Hy4", "independent child", "start Hy4 compact",
+                "mixed default turn", LARGE_PROMPT}
 
 
 def message_text(content):
@@ -72,7 +74,12 @@ class RouterHandler(BaseHTTPRequestHandler):
                       for model in MODELS]
             self.write_response(200, "application/json", json.dumps({
                 "Instance": "fixture", "Generation": 1, "DefaultModel": MODELS[0],
-                "Engines": [{"Name": "fake", "Models": models}],
+                "Engines": [
+                    {"Name": "fake", "Models": models},
+                    {"Name": "second", "Models": [
+                        {"Id": "mixed.fixture", "DefaultProfile": "wide", "Aliases": [], "Profiles": profiles},
+                    ]},
+                ],
             }).encode())
         elif self.path == "/admin/status":
             self.write_response(200, "application/json", b'{"Engines":[]}')
@@ -87,7 +94,7 @@ class RouterHandler(BaseHTTPRequestHandler):
         count = self.server.record({
             "path": self.path, "model": body.get("model"), "user": last_user, "users": users,
             "thread": self.headers["X-Inference-Thread"], "profile": self.headers["X-Inference-Profile"],
-            "context": self.headers["X-Inference-Required-Context"],
+            "context": self.headers["X-Inference-Required-Context"], "output_limit": body.get("max_tokens"),
             "has_tool_result": any(message["role"] == "tool" for message in messages),
         })
         if self.path != "/v1/chat/completions":
@@ -217,22 +224,23 @@ class TurnSelectionTest(unittest.TestCase):
     def test_held_tool_retry_and_native_follow_up(self):
         with FakeRouter().running() as router, pi_session(router) as pi:
             thread = pi.send("get_state")["sessionId"]
-            pi.prompt("/context narrow")
+            pi.prompt("/context compact")
             pi.hold("start Hy4")
             pi.prompt("/context wide")
             pi.model("qwen.fixture")
             self.assertEqual("queued", pi.send("follow_up", message="next user")["disposition"])
             pi.prompt("/context wide")
-            self.check_requests(router.snapshot(), thread, [("hy4.fixture", "narrow", "start Hy4", False)])
+            self.check_requests(router.snapshot(), thread, [("hy4.fixture", "compact", "start Hy4", False)])
             pi.prompt("/fixture-release")
             self.assertFalse(pi.settled()["aborted"])
             requests = router.snapshot()
             self.check_requests(requests, thread, [
-                ("hy4.fixture", "narrow", "start Hy4", False),
-                ("hy4.fixture", "narrow", "start Hy4", True),
-                ("hy4.fixture", "narrow", "start Hy4", True),
+                ("hy4.fixture", "compact", "start Hy4", False),
+                ("hy4.fixture", "compact", "start Hy4", True),
+                ("hy4.fixture", "compact", "start Hy4", True),
                 ("qwen.fixture", "wide", "next user", True),
             ])
+            self.assertEqual([2048, 2048, 2048, 8192], [post["output_limit"] for post in requests])
             self.assertEqual(["start Hy4", "next user"], requests[-1]["users"])
             self.assertEqual(1, sum(event["type"] == "auto_retry_start" for event in pi.seen))
 
@@ -259,6 +267,64 @@ class TurnSelectionTest(unittest.TestCase):
                 ("hy4.fixture", "standard", "interrupt Hy4", False),
                 ("qwen.fixture", "wide", "Run a custom turn", True),
             ])
+
+    def test_same_model_keeps_profile_and_output_limit_until_identical_follow_up(self):
+        with FakeRouter().running() as router, pi_session(router) as pi:
+            thread = pi.send("get_state")["sessionId"]
+            prompt = "start Hy4 compact"
+            pi.prompt("/context compact")
+            pi.hold(prompt)
+            pi.send("follow_up", message=prompt)
+            pi.prompt("/context wide")
+            self.assertEqual(1, len(router.snapshot()))
+            pi.prompt("/fixture-release")
+            pi.settled()
+            requests = router.snapshot()
+            self.check_requests(requests, thread, [
+                ("hy4.fixture", "compact", prompt, False),
+                ("hy4.fixture", "compact", prompt, True),
+                ("hy4.fixture", "wide", prompt, True),
+            ])
+            self.assertEqual([2048, 2048, 8192], [post["output_limit"] for post in requests])
+            self.assertEqual([prompt, prompt], requests[-1]["users"])
+
+    def test_pending_downgrade_revalidates_at_dispatch(self):
+        with FakeRouter().running() as router, pi_session(router) as pi:
+            thread = pi.send("get_state")["sessionId"]
+            pi.prompt("/context wide")
+            pi.hold(LARGE_PROMPT)
+            pi.prompt("/context compact")
+            self.assertTrue(any(event.get("message") == "hy4.fixture · compact · 8192 tokens" for event in pi.seen))
+            pi.send("follow_up", message="Too large for the newly selected window")
+            pi.prompt("/fixture-release")
+            pi.settled()
+            self.check_requests(router.snapshot(), thread, [
+                ("hy4.fixture", "wide", LARGE_PROMPT, False),
+                ("hy4.fixture", "wide", LARGE_PROMPT, True),
+            ])
+            failures = [event["message"]["errorMessage"] for event in pi.seen
+                        if event["type"] == "message_end" and event["message"].get("stopReason") == "error"]
+            self.assertEqual(1, len(failures))
+            self.assertIn("prompt and output reserve exceed this window", failures[0])
+
+    def test_mixed_defaults_report_ambiguity_and_keep_automatic_routing(self):
+        with FakeRouter().running() as router, pi_session(router) as pi:
+            thread = pi.send("get_state")["sessionId"]
+            pi.model("mixed.fixture")
+            pi.hold("mixed default turn")
+            pi.prompt("/context wide")
+            pi.send("follow_up", message="explicit profile turn")
+            pi.prompt("/fixture-release")
+            pi.settled()
+            requests = router.snapshot()
+            self.assertEqual(["mixed.fixture"] * 3, [post["model"] for post in requests])
+            self.assertEqual([thread] * 3, [post["thread"] for post in requests])
+            self.assertEqual([None, None, "wide"], [post["profile"] for post in requests])
+            self.assertEqual(["65536", "65536", "131072"], [post["context"] for post in requests])
+            notices = [event["message"] for event in pi.seen
+                       if event.get("method") == "notify" and "automatic routing" in event["message"]]
+            self.assertEqual(["AIR could not resolve one serving profile for mixed.fixture. "
+                              "This turn uses automatic routing with a 65536-token minimum."], notices)
 
     def test_pending_model_defers_automatic_compaction(self):
         settings = {"enabled": True, "reserveTokens": 66000, "keepRecentTokens": 1}

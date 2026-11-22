@@ -53,7 +53,8 @@ export default async function air(pi) {
     function resolveSelection(model, preference) {
         const row = catalog.models.get(model.id);
         const profile = row && tier(row, preference);
-        return {model, profile, capacity: profile && (profile.window || observedWindow(row, engines))};
+        const capacity = profile && (profile.window || observedWindow(row, engines));
+        return {model, profile, capacity, maxTokens: capacity && outputBudget(capacity)};
     }
 
     async function refresh(signal) {
@@ -169,16 +170,16 @@ export default async function air(pi) {
         if (requestBranch && requestBranch !== branch) throw new Error("AIR session branch changed before dispatch.");
         // A child can inherit this callback from its parent without loading the extension.
         const choice = requestBranch ? selected(model.id) : null;
-        const selection = (mainRequest && turnSelection) || resolveSelection(model, choice);
-        const {model: requestModel, profile: target, capacity} = selection;
+        const captured = mainRequest ? turnSelection : undefined;
+        const selection = captured ?? resolveSelection(model, choice);
+        const {model: requestModel, profile: target, capacity, maxTokens} = selection;
         if (!target) throw new Error("AIR selection was removed. Choose an available /model or /context default.");
         if (!capacity) throw new Error("AIR has no configured or observed context budget for " + requestModel.id);
-        const maxTokens = outputBudget(capacity);
         // The new prompt and tool definitions can arrive after /context validated the prior turn.
         // Compaction and other auxiliary calls may have their own, shorter transcript.
         const estimatedInput = transcript.messages.reduce((total, message) => total + estimateTokens(message), 0);
         const sessionTokens = mainRequest ? ctx.getContextUsage()?.tokens : undefined;
-        const reserve = Math.min(maxTokens, options.maxTokens ?? maxTokens);
+        const reserve = captured ? maxTokens : Math.min(maxTokens, options.maxTokens ?? maxTokens);
         if (!requestFits(capacity, Math.max(estimatedInput, sessionTokens ?? 0), reserve)) {
             if (mainRequest) budgetRefused = true;
             throw new Error("The estimated AIR prompt and output reserve exceed this window. Select a larger /context or use /compact.");
@@ -332,6 +333,9 @@ export default async function air(pi) {
         if (event.message.role !== "user") return;
         const model = context.model;
         turnSelection = model?.provider === "air" ? resolveSelection(model, selected(model.id)) : undefined;
+        if (turnSelection?.profile?.name === null && turnSelection.capacity)
+            notify("AIR could not resolve one serving profile for " + model.id +
+                ". This turn uses automatic routing with a " + turnSelection.capacity + "-token minimum.", "warning");
     });
     pi.on("agent_settled", async () => {
         turnSelection = undefined;
@@ -387,7 +391,7 @@ export default async function air(pi) {
                 return notify("AIR selection or catalog changed while the picker was open. Open /context again.", "warning");
             const preference = name === "default" ? null : name;
             const next = tier(row, preference).window || observedWindow(row, engines);
-            if (!next || !contextFits(context, next, ctx.model.contextWindow, () => projectedTokens(context)))
+            if (!next || (context.isIdle() && !contextFits(context, next, ctx.model.contextWindow, () => projectedTokens(context))))
                 return notify("The transcript and output reserve do not fit this context. Use /compact on the current profile, then retry /context.", "warning");
             choices.set(row.id, preference);
             pi.appendEntry(entryType, {model: row.id, profile: preference});
