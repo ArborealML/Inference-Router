@@ -14,7 +14,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parent
 WINDOWS = {"compact": 8192, "narrow": 32768, "standard": 65536, "wide": 131072}
-MODELS = ["hy4.fixture", "qwen.fixture", "child.fixture", "mixed.fixture"]
+MODELS = ["hy4.fixture", "qwen.fixture", "child.fixture", "mixed.fixture", "qwen-3.8-27b"]
 LARGE_PROMPT = "Large input " + "x" * 35000
 CAP_PROMPT = "Start capped turn"
 CAP_FIT_PROMPT = "Near window with cap " + "x" * 26000
@@ -102,6 +102,7 @@ class RouterHandler(BaseHTTPRequestHandler):
         users = [message_text(message["content"]) for message in messages if message["role"] == "user"]
         last_user = users[-1] if users else None
         count = self.server.record({
+            "template": body.get("chat_template_kwargs", {}),
             "path": self.path, "model": body.get("model"), "user": last_user, "users": users,
             "thread": self.headers["X-Inference-Thread"], "profile": self.headers["X-Inference-Profile"],
             "context": self.headers["X-Inference-Required-Context"], "output_limit": body.get("max_tokens"),
@@ -244,6 +245,15 @@ class TurnSelectionTest(unittest.TestCase):
              post["user"], post["has_tool_result"])
             for post in requests
         ])
+
+    def test_qwen_27b_high_uses_xhigh_template_effort(self):
+        with FakeRouter().running() as router, pi_session(router) as pi:
+            for model, expected in [("qwen-3.8-27b", "xhigh"), ("hy4.fixture", "high")]:
+                pi.model(model)
+                pi.send("set_thinking_level", level="high")
+                pi.prompt("Check effort")
+                pi.settled()
+                self.assertEqual(expected, router.snapshot()[-1]["template"]["reasoning_effort"])
 
     def test_held_tool_retry_and_native_follow_up(self):
         with FakeRouter().running() as router, pi_session(router) as pi:

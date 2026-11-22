@@ -1,11 +1,13 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.148)
+Status: draft, continuously revised (v0.12.149)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
 
 ## 0. Revision log
+
+- v0.12.149 — map Pi high effort to the configured Qwen 27B chat template’s xhigh setting (§13.2).
 
 - v0.12.148 — verify opted-in local vLLM profile capacity from the exact serving process and bound post-load verification (§5.3.1, §7.6).
 
@@ -4074,6 +4076,7 @@ unverified external analysis), and (13.3) what AIR must expose to make it work.
   Pi reports the ambiguity and sends the captured context minimum using AIR's automatic
   tier selection. The ticket snapshot identifies the assigned engine. It carries no
   request-specific profile.
+- The Qwen 27B model (`qwen-3.8-27b`) maps Pi’s minimal and low thinking levels to `low`, medium to `medium`, and high and xhigh to `xhigh` in the chat template.
 - **Pi request ownership**: The turn capture requires a matching Pi session ID, the active
   agent signal, the transcript prepared for that agent request, and the request headers prepared by Pi's SDK hook. AIR recognizes the
   header object and a message from the prepared turn in memory, including when CLM replaces the system message. A direct registry call with the
