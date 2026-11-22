@@ -1,5 +1,39 @@
 # Offline Docker selector coverage
 
+## Current local catalog port
+
+The November 21 local configuration contains all ten models and fifteen aliases from the
+installed selector. It preserves the two live-qualified entries and adds the other eight
+using their default launch profiles. All entries use native Docker lifecycle in the same
+local resource group, with installed image identities and distinct engine endpoints.
+No selector host command runs during a router switch. Maya's in-container launch modules
+are retained as backend entrypoints.
+
+| Model | Configured default | Context | Slots |
+| --- | --- | ---: | ---: |
+| Qwen Flash Next | 256k-4 (existing live setting) | 256000 | 4 |
+| DeepSeek Flash IQ2 XXS | 32k (existing live setting) | 32768 | 1 |
+| Swift Flash Next | max | 262144 | 1 |
+| Qwen Flash Next Coder | max | 262144 | 1 |
+| Swift 27B | max | 262144 | 1 |
+| Qwen 27B | max | 262144 | 1 |
+| DeepSeek Maya-XS | 32k | 32768 | 1 |
+| GLM Flash | 1m | 1048576 | 1 |
+| MiniMax Flash | 32k | 32768 | 1 |
+| HY4 Flash | 32k | 32768 | 1 |
+
+HyperQwen uses distinct served-model names for Swift and Qwen, and reads its actual context
+from `data.0.max_model_len` in `/v1/models`. The router accepts bounded numeric array
+indices in dotted probe paths. The installed selector currently exposes only HY4's `32k`
+profile; earlier speculative larger HY4 tiers are not included.
+
+This is a model-catalog port, not qualification of every selector profile or tuning option.
+The existing live pair retains its acceptance evidence. Added models have offline config,
+mount and image-identity checks; live inference for those eight models remains unmeasured.
+The private configuration and source receipts are held outside the repository.
+
+## Earlier profile qualification
+
 The inspected reference selector accepted 169 of 506 explicit model/profile spelling combinations and refused 337. Its nine canonical models and thirteen model aliases resolve to 75 distinct model/profile targets. The inventory also checked 22 omitted-profile defaults, 12 spellings that require an explicit single GPU, and 1,248 valid parking parameter combinations. Local installer paths, deployment configuration and raw inventory are held outside the repository.
 
 | Backend family | Normalized targets | Launch settings that still need representation or verification |

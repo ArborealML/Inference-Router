@@ -18,6 +18,7 @@ public sealed record LifecycleTarget(
 /// coordinator will never hand an unowned unit to <see cref="IEngineLifecycleProvider.StopAsync"/>.</summary>
 public sealed record EnginePeer(string Id, string Image, string? Model, bool OwnedByUs, bool QueryFailed = false)
 {
+    internal string? ContainerState { get; init; }
     internal string? EffectiveProfile { get; init; }
     internal string? ImageId { get; init; }
 }

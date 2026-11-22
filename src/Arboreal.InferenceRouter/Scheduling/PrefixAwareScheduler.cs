@@ -15,6 +15,8 @@ public sealed class EngineRuntimeInfo
     /// the admission path ask one question of one implementation (§7, "a model nothing here can serve").
     /// It says nothing about health or switching, which the scheduler weighs separately.</summary>
     public required bool CanServeModel { get; init; }
+    /// <summary>The local lifecycle coordinator can start a configured cold target.</summary>
+    internal bool CanLoad { get; init; }
     public required int Inflight { get; init; }
     /// <summary>Estimated token-proxy load: sum of prompt chars + expected output of in-flight.</summary>
     public required long InflightTokenProxy { get; init; }
@@ -69,10 +71,10 @@ public sealed class PrefixAwareScheduler : IRequestScheduler
         var explicitMinimum = request.ExplicitContextMinimum;
         foreach (var e in view.Engines)
         {
-            if (!e.Healthy || e.Switching) continue;
+            if ((!e.Healthy && !e.CanLoad) || e.Switching) continue;
             // Compare on the canonical model (Ticket.Model), not the raw requested alias.
             var model = request.Ticket.Model;
-            var loaded = e.LoadedModels.Contains(model, StringComparer.OrdinalIgnoreCase);
+            var loaded = e.Healthy && e.LoadedModels.Contains(model, StringComparer.OrdinalIgnoreCase);
             if (!e.CanServeModel) continue;
 
             // Context-window escalation: the request needs more context than the engine serves.

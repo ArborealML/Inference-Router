@@ -125,6 +125,8 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
         /// <summary>Set when the switch targets a serving profile (context-window escalation)
         /// rather than a model load; carries "profile:<name>" for observability.</summary>
         public string? Profile;
+        public LocalLifecycleGroup.Lease? AdoptionOwner;
+        public LegacyReadinessObservation? AdoptionProbe;
         public long RequiredWindow;
         public long CommittedWindow;
         public EngineCapability? IncumbentProof;
@@ -165,18 +167,20 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
 
     internal EngineRuntime(EngineDefinition def, RouterConfig config, EventRing events, HttpMessageHandler? handler,
                            IEngineLifecycleProvider? lifecycle, Action? dispatchHint, HostEngineEnrollment? hostEnrollment,
-                           TimeProvider? clock = null, ReloadConfiguration? reloadSource = null)
+                           TimeProvider? clock = null, ReloadConfiguration? reloadSource = null, bool localManaged = false)
     {
+        if (def.LifecycleGroup is not null && !localManaged)
+            throw new RouterConfigException("Local lifecycle engines must be bound through their router group.");
         config.ValidateLifecycleTopology(def);
-        if (def.Docker?.HasUnqualifiedTargetDocker == true)
+        if (!localManaged && def.Docker?.HasUnqualifiedTargetDocker == true)
             throw new RouterConfigException($"engine.{WireText.Ident(def.Name)}: serving-tier Docker targets require host qualification before activation");
-        if (def.Docker?.HasUnqualifiedLaunchOptions == true)
+        if (!localManaged && def.Docker?.HasUnqualifiedLaunchOptions == true)
         {
             var fields = def.Docker.ContainerPolicy is null
                 ? "docker.entrypoint and docker.ipc_mode" : "Docker container policy options";
             throw new RouterConfigException($"engine.{WireText.Ident(def.Name)}: {fields} require host qualification before activation");
         }
-        _lifecycleBinding = BindLifecycle(def, lifecycle);
+        _lifecycleBinding = BindLifecycle(def, lifecycle, localManaged);
         if (hostEnrollment is { } enrollment &&
             (!def.HasExplicitRouterLifecycle || enrollment.Engine != def.Name || enrollment.RouterId != def.Docker?.RouterId ||
              lifecycle is not null))
@@ -196,7 +200,7 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
         _dispatchHint = dispatchHint;
         if (_lifecycleBinding is { } binding && _hostEnrollment is null)
         {
-            _lifecycle = new EngineLifecycleCoordinator(lifecycle ?? CreateLifecycleProvider(def, binding.Owner),
+            _lifecycle = new EngineLifecycleCoordinator(lifecycle ?? CreateLifecycleProvider(def, binding.Owner, localManaged),
                 ownsProvider: lifecycle is null);
         }
         _maxInflight = Math.Max(1, config.Scheduler.MaxInflightPerEngine);
@@ -224,7 +228,7 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
     internal TimeSpan? ResponseTimeout { get; }
     internal TimeSpan? StreamIdleTimeout { get; }
 
-    private static LifecycleBinding? BindLifecycle(EngineDefinition def, IEngineLifecycleProvider? provider)
+    private static LifecycleBinding? BindLifecycle(EngineDefinition def, IEngineLifecycleProvider? provider, bool localManaged)
     {
         var owner = def.ResolveLifecycleOwner();
         if (owner == EngineLifecycleOwner.External) return null;
@@ -233,7 +237,7 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
             ? DockerLifecycleProvider.ProviderKind : DelegatedExecProvider.ProviderKind;
         if (provider is not null)
         {
-            if (def.Docker?.Resources is not null)
+            if (!localManaged && def.Docker?.Resources is not null)
                 throw new RouterConfigException($"engine.{WireText.Ident(def.Name)}: Docker resources require host qualification before activation");
 
             var actualKind = provider.Kind;
@@ -247,9 +251,9 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
         return new LifecycleBinding(owner, providerKind, def.Name);
     }
 
-    private static IEngineLifecycleProvider CreateLifecycleProvider(EngineDefinition def, EngineLifecycleOwner owner) =>
+    private static IEngineLifecycleProvider CreateLifecycleProvider(EngineDefinition def, EngineLifecycleOwner owner, bool localManaged) =>
         owner == EngineLifecycleOwner.Router
-            ? new DockerLifecycleProvider(def.Docker!, def.Name)
+            ? new DockerLifecycleProvider(def.Docker!, def.Name, handler: null, localManaged: localManaged)
             : new DelegatedExecProvider();
 
     private static EngineModelDefinition CopyCatalogEntry(EngineModelDefinition entry) => entry with
@@ -265,6 +269,12 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
             WaitTimeoutMs = select.WaitTimeoutMs,
         } : null,
     };
+
+    internal IEngineLifecycleProvider LocalLifecycle => _lifecycle?.Provider ??
+        throw new InvalidOperationException("The engine has no local lifecycle provider.");
+    internal LifecycleTarget LocalTarget(string model, ServingProfile? profile) =>
+        new(Name, model, profile, _catalog[model]);
+    internal void WithdrawLocalResident() => PublishUnknown();
 
     public string Name => _def.Name;
     public EngineDefinition Definition => _reloadSource?.Observe().Engines[Name] ?? _def;
@@ -1034,13 +1044,15 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
 
     internal async Task<ObservedSwitchResult> EnsureLoadedAsync(
         string model, ServingProfile? profileOverride, TimeSpan timeout, SwitchQueueTiming? queue, CancellationToken ct,
-        long explicitContextMinimum = 0)
+        long explicitContextMinimum = 0, LocalLifecycleGroup.Lease? localOwner = null)
     {
         if (Volatile.Read(ref _stopped) || Volatile.Read(ref _retiring)) return new(SwitchResult.RouterStopped);
         var canonical = CanonicalModel(model) ?? model;
         var requiredWindow = RequiredWindow(profileOverride, explicitContextMinimum);
+        if (localOwner is not null && (!ReferenceEquals(localOwner.Engine, this) || !localOwner.Cold))
+            return new(SwitchResult.Failed(SwitchReason.NoLifecycleOwner));
         var initial = Capability;
-        if (ReadyIn(initial, canonical, requiredWindow))
+        if (localOwner is null && ReadyIn(initial, canonical, requiredWindow))
             return Volatile.Read(ref _stopped) || Volatile.Read(ref _retiring)
                 ? new(SwitchResult.RouterStopped) : ReadyFrom(initial.SwitchProof, canonical, profileOverride);
         // `timeout` bounds the *waiting*, never the switch: the transaction belongs to the engine and
@@ -1103,7 +1115,7 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
                     {
                         // An active claim takes precedence over the optimistic offer. An idle attempt can publish
                         // only from the exact snapshot it evaluated, and retries release both locks.
-                        if (ReadyIn(offered, canonical, requiredWindow))
+                        if (localOwner is null && ReadyIn(offered, canonical, requiredWindow))
                         {
                             if (ReferenceEquals(Capability, offered))
                                 return ReadyFrom(offered.SwitchProof, canonical, profileOverride);
@@ -1132,6 +1144,7 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
                                 {
                                     Model = canonical,
                                     Profile = profileOverride?.Name,
+                                    AdoptionOwner = localOwner?.Adopt is null ? null : localOwner,
                                     RequiredWindow = requiredWindow,
                                     QuarantineTarget = quarantineTarget,
                                     IncumbentProof = offered.Healthy ? offered : null,
@@ -1586,9 +1599,11 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
             {
                 nativeTransaction = state.QuarantineTarget is not null;
                 report = await lifecycle.SwitchWithReportAsync(target, timing, state.IncumbentProof?.SwitchProof,
-                    observeLaunch: true, ct)
+                    observeLaunch: true, ct, state.AdoptionOwner,
+                    state.AdoptionOwner is null ? null : token => ProbeAdoptionAsync(state, target, token))
                     .ConfigureAwait(false);
             }
+            if (!report.RefusedBeforeMutation) state.AdoptionProbe = null;
             var launched = report.Result;
             if (!launched.Succeeded)
             {
@@ -1783,15 +1798,45 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
     private readonly record struct LegacyReadinessObservation(
         ModelsObservation? Models = null, ServingCapacity Serving = default, ReadinessFailure Failure = default);
 
+    private static bool MatchesAdoptionProfile(LifecycleTarget target, ServingCapacity serving) =>
+        serving.Model == target.Model &&
+        (target.Definition.ServingProfiles.FirstOrDefault(p => p.Name == target.EffectiveProfile) is not { } tier ||
+            serving.ContextWindow == tier.MaxContext && serving.TotalSlots == tier.MaxSlots);
+
+    private async Task<bool> ProbeAdoptionAsync(SwitchState state, LifecycleTarget target, CancellationToken ct)
+    {
+        using var deadline = ReadinessDeadline.Start(ReadinessClockForTests, _lifecycle!.NativeProvider!.ObservationTimeout, ct);
+        try
+        {
+            var models = await deadline.ObserveAsync(ReadReadinessModelsAsync).ConfigureAwait(false);
+            if (models.Outcome != ReadinessStepOutcome.Completed) return false;
+            var health = await deadline.ObserveAsync(ReadReadinessStateAsync).ConfigureAwait(false);
+            if (health.Outcome != ReadinessStepOutcome.Completed || !health.Observation.Satisfied) return false;
+            var serving = BindServing(models.Observation, health.Observation);
+            if (!MatchesAdoptionProfile(target, serving) || !WindowFits(serving.WindowFor(target.Model), state.RequiredWindow))
+                return false;
+            state.AdoptionProbe = new(models.Observation, serving);
+            return true;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or JsonException or IOException)
+        {
+            return false;
+        }
+    }
+
     private async Task RunLegacyReadinessAsync(SwitchState state, LifecycleTarget target,
         ReadinessPolicy readiness, string providerKind, CancellationToken stop)
     {
-        using var deadline = ReadinessDeadline.Start(ReadinessClockForTests, readiness.Timeout, stop);
+        var timeout = readiness.Timeout;
+        if (state.AdoptionOwner is { } owner && owner.Budget.Remaining is var remaining && remaining != Timeout.InfiniteTimeSpan)
+            timeout = Shorter(timeout, remaining);
+        using var deadline = ReadinessDeadline.Start(ReadinessClockForTests, timeout, stop);
         var lastMiss = default(ReadinessFailure);
         var result = default(LegacyReadinessObservation);
         try
         {
-            if (!readiness.ProveHealth)
+            if (state.AdoptionProbe is { } verified) result = verified;
+            else if (!readiness.ProveHealth && state.AdoptionOwner is null)
             {
                 result = await ReadTrustedLaunchAsync(target, state.RequiredWindow, deadline).ConfigureAwait(false);
                 // A retired or out-of-budget read returns no diagnosis.
@@ -1801,28 +1846,60 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
             {
                 while (true)
                 {
-                    // Changing one half of a round cannot replace the diagnosis from its last complete round.
-                    var modelsStep = await deadline.ObserveAsync(ReadReadinessModelsAsync).ConfigureAwait(false);
-                    if (modelsStep.Outcome != ReadinessStepOutcome.Completed) break;
-                    var stateStep = await deadline.ObserveAsync(ReadReadinessStateAsync).ConfigureAwait(false);
-                    if (stateStep.Outcome != ReadinessStepOutcome.Completed) break;
-
-                    var models = modelsStep.Observation;
-                    var stateProbe = stateStep.Observation;
-                    var serving = BindServing(models, stateProbe);
-                    var window = serving.WindowFor(target.Model);
-                    if (!stateProbe.Satisfied)
-                        lastMiss = new(ReadinessMiss.NeverHealthy);
-                    else if (!models.LoadedModels.Contains(target.Model, StringComparer.OrdinalIgnoreCase))
-                        lastMiss = new(ReadinessMiss.ModelNotReported, models.LoadedModels);
-                    else if (!WindowFits(window, state.RequiredWindow))
-                        lastMiss = new(ReadinessMiss.WindowTooSmall, Window: window);
-                    else
+                    try
                     {
-                        result = new(models, serving);
-                        break;
+                        // Changing one half of a round cannot replace the diagnosis from its last complete round.
+                        var modelsStep = await deadline.ObserveAsync(ReadReadinessModelsAsync).ConfigureAwait(false);
+                        if (modelsStep.Outcome != ReadinessStepOutcome.Completed) break;
+                        var stateStep = await deadline.ObserveAsync(ReadReadinessStateAsync).ConfigureAwait(false);
+                        if (stateStep.Outcome != ReadinessStepOutcome.Completed) break;
+
+                        var models = modelsStep.Observation;
+                        var stateProbe = stateStep.Observation;
+                        var serving = BindServing(models, stateProbe);
+                        var window = serving.WindowFor(target.Model);
+                        if (!stateProbe.Satisfied)
+                            lastMiss = new(ReadinessMiss.NeverHealthy);
+                        else if (!models.LoadedModels.Contains(target.Model, StringComparer.OrdinalIgnoreCase))
+                            lastMiss = new(ReadinessMiss.ModelNotReported, models.LoadedModels);
+                        else if (state.AdoptionOwner is not null && !MatchesAdoptionProfile(target, serving))
+                        {
+                            result = new(Failure: NativeObservationFailure);
+                            break;
+                        }
+                        else if (!WindowFits(window, state.RequiredWindow))
+                            lastMiss = new(ReadinessMiss.WindowTooSmall, Window: window);
+                        else
+                        {
+                            result = new(models, serving);
+                            break;
+                        }
+                    }
+                    catch (HttpRequestException) when (!stop.IsCancellationRequested)
+                    {
+                        // A newly started container can be running before its listener binds.
+                        // Keep the original readiness deadline while retrying this incomplete round.
+                        lastMiss = new(ReadinessMiss.NeverHealthy);
                     }
 
+                    if (Capability.NativeWatch is { } pending && _lifecycle?.NativeProvider is { } provider)
+                    {
+                        var resident = await provider.ObserveContainerAsync(pending.Launch, deadline,
+                            provider.ObservationTimeout).ConfigureAwait(false);
+                        if (resident.Outcome != ReadinessStepOutcome.Completed) break;
+                        if (resident.Observation.Status == NativeContainerStatus.Invalid ||
+                            resident.Observation.Status == NativeContainerStatus.Running && resident.Observation.Stamp != pending.Baseline)
+                        {
+                            result = new(Failure: NativeObservationFailure);
+                            break;
+                        }
+                        if (resident.Observation.Status != NativeContainerStatus.Running)
+                        {
+                            lastMiss = NativeObservationFailure;
+                            if (await deadline.DelayAsync(TimeSpan.FromSeconds(2)).ConfigureAwait(false) != ReadinessStepOutcome.Completed) break;
+                            continue;
+                        }
+                    }
                     var delay = await deadline.DelayAsync(TimeSpan.FromSeconds(2)).ConfigureAwait(false);
                     if (delay != ReadinessStepOutcome.Completed) break;
                 }
@@ -2292,8 +2369,17 @@ public static class ProbeExpect
         var cur = root;
         foreach (var seg in dottedPath.Split('.', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
         {
-            if (cur.ValueKind != JsonValueKind.Object || !cur.TryGetProperty(seg, out cur))
-                return false;
+            if (cur.ValueKind == JsonValueKind.Object)
+            {
+                if (!cur.TryGetProperty(seg, out cur)) return false;
+            }
+            else if (cur.ValueKind == JsonValueKind.Array &&
+                     int.TryParse(seg, NumberStyles.None, CultureInfo.InvariantCulture, out var index) &&
+                     index < cur.GetArrayLength())
+            {
+                cur = cur[index];
+            }
+            else return false;
         }
         if (cur.ValueKind == JsonValueKind.Null) return false;
         value = cur;

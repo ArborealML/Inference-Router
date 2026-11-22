@@ -393,12 +393,16 @@ public static class RouterConfigLoader
             Catalog = catalog,
             Remote = e.Remote ?? false,
             LifecycleOwner = owner,
+            LifecycleGroup = e.LifecycleGroup,
             LegacyLifecycleConfiguration = e.LifecycleOwner is null,
             ResponseTimeoutMs = responseTimeoutMs,
             StreamIdleTimeoutMs = streamIdleTimeout,
             Lifecycle = lifecycle,
             Docker = docker,
         };
+        if (e.LifecycleGroup is { } group && (string.IsNullOrWhiteSpace(group) || group != group.Trim() ||
+            owner != EngineLifecycleOwner.Router || lifecycle != EngineLifecycleKind.Docker))
+            throw new RouterConfigException($"engine.{name}.lifecycle_group requires an explicit nonempty Docker resource group");
         _ = definition.ResolveLifecycleOwner();
         return definition;
     }

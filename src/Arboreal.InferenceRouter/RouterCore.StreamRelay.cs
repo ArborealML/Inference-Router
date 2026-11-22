@@ -127,6 +127,7 @@ public sealed partial class RouterCore
         finally
         {
             await AbortUnstartedInvocationAsync(ticket, invocation).ConfigureAwait(false);
+            candidate.LocalLease?.Release();
             if (attempted) engine.RecordPrefix(candidate.Messages());
         }
 

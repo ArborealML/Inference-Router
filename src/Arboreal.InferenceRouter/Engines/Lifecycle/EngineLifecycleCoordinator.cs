@@ -27,6 +27,7 @@ public sealed class EngineLifecycleCoordinator : IDisposable
     }
 
     public string Kind => _provider.Kind;
+    internal IEngineLifecycleProvider Provider => _provider;
     internal DockerLifecycleProvider? NativeProvider => _provider as DockerLifecycleProvider;
 
     /// <summary>Most recent journal lines, oldest first. Advisory: it explains to an operator why a
@@ -58,7 +59,8 @@ public sealed class EngineLifecycleCoordinator : IDisposable
         => SwitchWithReportAsync(target, timing, incumbent, observeLaunch: false, ct);
 
     internal async ValueTask<SwitchReport> SwitchWithReportAsync(
-        LifecycleTarget target, SwitchAttempt? timing, SwitchServingProof? incumbent, bool observeLaunch, CancellationToken ct)
+        LifecycleTarget target, SwitchAttempt? timing, SwitchServingProof? incumbent, bool observeLaunch, CancellationToken ct,
+        LocalLifecycleGroup.Lease? owner = null, Func<CancellationToken, Task<bool>>? probe = null)
     {
         await _gate.WaitAsync(ct).ConfigureAwait(false);
         var native = NativeProvider;
@@ -109,13 +111,45 @@ public sealed class EngineLifecycleCoordinator : IDisposable
             }
             Record("preflight:ok");
 
+            if (owner?.Adopt is { } adopt)
+            {
+                var refused = new SwitchReport(LifecycleResult.Fail("resident_unverified",
+                    "could not confirm the same owned resident within the original request budget"), true);
+                if (native is null || probe is null) return refused;
+                using var checks = CancellationTokenSource.CreateLinkedTokenSource(ct, owner.Request.CallerToken);
+                checks.CancelAfter(owner.Budget.Remaining);
+                var replace = false;
+                for (var attempt = 0; attempt < 2 && owner.CanRecover; attempt++)
+                {
+                    var inventory = attempt == 0 ? peers : await native.OwnedPeersUnderGateAsync(checks.Token).ConfigureAwait(false);
+                    if (!inventory.Where(p => p.ContainerState != "exited").SequenceEqual([adopt]) ||
+                        inventory.Any(p => !p.OwnedByUs || p.QueryFailed)) continue;
+                    var candidate = await native.InspectResidentAsync(target, adopt, checks.Token).ConfigureAwait(false);
+                    if (candidate is not { } verified) continue;
+                    var ready = verified.SettingsMatch && await probe(checks.Token).ConfigureAwait(false);
+                    if (!await owner.OtherEnginesVacantAsync(target, checks.Token).ConfigureAwait(false)) continue;
+                    var latest = await native.OwnedPeersUnderGateAsync(checks.Token).ConfigureAwait(false);
+                    if (latest.Any(p => p.QueryFailed || !p.OwnedByUs) ||
+                        !latest.Where(p => p.ContainerState != "exited").SequenceEqual([adopt])) continue;
+                    if (!await native.StillSameResidentAsync(verified, checks.Token).ConfigureAwait(false)) continue;
+                    if (!owner.CanRecover || checks.IsCancellationRequested) return refused;
+                    if (ready)
+                        return new(new LifecycleResult { Succeeded = true, Reason = "resident_reused",
+                            NativeLaunch = verified.Launch }, true, verified.Baseline);
+                    ours = [adopt];
+                    replace = true;
+                    break;
+                }
+                if (!replace || !owner.CanRecover || checks.IsCancellationRequested) return refused;
+            }
+
             // 3. Stop only what the ownership proof claims. An unowned peer never reaches the provider,
             // so a provider that reports foreign containers cannot be talked into stopping them.
             if (ours.Count > 0)
             {
                 timing?.TryStartStage(SwitchStage.Shutdown);
                 var stopped = native is not null
-                    ? await native.StopUnderGateAsync(ours, timing is null ? null : timing.ObserveNativeStop, ct).ConfigureAwait(false)
+                    ? await native.StopUnderGateAsync(ours, timing is null ? null : timing.ObserveNativeStop, ct, owner).ConfigureAwait(false)
                     : await _provider.StopAsync(target, ours, ct).ConfigureAwait(false);
                 timing?.TryCompleteShutdown(stopped.Succeeded, VerifiedShutdown(stopped, incumbent), stopped.NativeStops);
                 if (!stopped.Succeeded)

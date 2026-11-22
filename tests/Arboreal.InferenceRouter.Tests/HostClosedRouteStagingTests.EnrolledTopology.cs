@@ -8,6 +8,51 @@ namespace Arboreal.InferenceRouter.Tests;
 
 public sealed partial class HostClosedRouteStagingTests
 {
+    [Theory]
+    [InlineData(1)]
+    [InlineData(3)]
+    [InlineData(5)]
+    public void EnrolledTopologyProjectsEveryConfiguredEngineAndRejectsIncompleteCoverage(int count)
+    {
+        var (text, originalClaim, originalAuthority) = EnrolledPairTopologyFixture();
+        var document = ReadDeepSeekQwenDocument(text);
+        var engines = Assert.IsType<TomlTable>(document["engine"]);
+        engines.Clear();
+        for (var i = 0; i < count; i++)
+        {
+            var source = ReadDeepSeekQwenDocument(text);
+            var engine = DeepSeekQwenEngineTable(source, DeepSeekEngineName);
+            engine["endpoint"] = $"http://127.0.0.1:{19000 + i}/v1";
+            engines.Add($"engine{i}", engine);
+        }
+        var configured = WriteDeepSeekQwenDocument(document);
+        var grants = ImmutableArray.CreateBuilder<EnrolledPairMemberGrant>(count);
+        foreach (var (name, entry) in engines)
+        {
+            var single = ReadDeepSeekQwenDocument(configured);
+            single["engine"] = new TomlTable { [name] = entry };
+            var engine = RouterConfigLoader.Load(WriteDeepSeekQwenDocument(single)).Engines[name];
+            var resolver = new VerifiedDispatchTargetResolver(engine);
+            var (target, plan, _) = resolver.ResolveProjection(DeepSeekPairModel, "32k", resident: null,
+                engine.Name + "-configuration", engine.Name + "-route");
+            grants.Add(new(new(engine.Name, DeepSeekPairModel, "32k", plan.Configuration, plan.BackendRoute),
+                engine.Docker!.Socket["unix://".Length..], engine.Endpoint, target.PlanDigest));
+        }
+        var authority = originalAuthority with { Members = grants.MoveToImmutable() };
+        var claim = originalClaim with { Members = [.. authority.Members.Select(grant => grant.Member)] };
+        var projected = RouterConfigLoader.PrepareEnrolledPair(configured, authority.Head.Slot, claim, _ => authority);
+        Assert.Equal(count, projected.Members.Length);
+        Assert.Equal(engines.Keys.Order(StringComparer.Ordinal),
+            projected.Members.Select(member => member.Plan.Engine).Order(StringComparer.Ordinal));
+        for (var i = 0; i < count; i++)
+        {
+            var missing = authority with { Members = authority.Members.RemoveAt(i) };
+            var error = Assert.Throws<RouterConfigException>(() =>
+                RouterConfigLoader.PrepareEnrolledPair(configured, authority.Head.Slot, claim, _ => missing));
+            Assert.Equal("enrolled topology refused: member or route coverage mismatch", error.Message);
+        }
+    }
+
     [Fact]
     public void EnrolledPairTopologyAcceptsTheCurrentPairAndOwnsTheFrozenSnapshot()
     {

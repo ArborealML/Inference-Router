@@ -118,9 +118,14 @@ public partial class RefusalCategoryTests
     private static (string Source, int Line) MutateEngineRuntime(string before, string after)
     {
         var source = ReadEngineRuntime();
-        var start = source.IndexOf(before, StringComparison.Ordinal);
+        // Both owner checks return this refusal. Mutate the specific entry guard while
+        // continuing to audit every exit in the file.
+        const string guard = "if (entryMiss == EntryGuard.NoLifecycleOwner)";
+        var anchor = before == DirectExit ? guard + "\n                " + before : before;
+        var start = source.IndexOf(anchor, StringComparison.Ordinal);
         Assert.True(start >= 0, $"Mutation anchor was not found: {before}");
-        Assert.Equal(start, source.LastIndexOf(before, StringComparison.Ordinal));
+        Assert.Equal(start, source.LastIndexOf(anchor, StringComparison.Ordinal));
+        start += anchor.Length - before.Length;
         var line = source.AsSpan(0, start).Count('\n') + 1;
         return (source[..start] + after + source[(start + before.Length)..], line);
     }

@@ -7,6 +7,18 @@ public sealed partial class RouterCore
     internal sealed class ConfigurationGeneration(long number, RouterConfig settings, ReloadConfiguration? file,
         Dictionary<string, EngineRuntime> engines)
     {
+        internal Dictionary<string, string> Aliases { get; } = BuildAliases(settings);
+        private static Dictionary<string, string> BuildAliases(RouterConfig config)
+        {
+            var aliases = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var engine in config.Engines.Values)
+                foreach (var (name, model) in engine.Catalog)
+                {
+                    aliases.TryAdd(name, name);
+                    foreach (var alias in model.Aliases) aliases.TryAdd(alias, name);
+                }
+            return aliases;
+        }
         internal long Number { get; } = number;
         internal RouterConfig Settings { get; } = settings;
         internal ReloadConfiguration? File { get; } = file;
@@ -39,7 +51,7 @@ public sealed partial class RouterCore
     {
         lock (_gate)
         {
-            var engine = _closing ? null : CurrentGeneration.Engines.GetValueOrDefault(name);
+            var engine = _closing || _localGroups.ContainsKey(name) ? null : CurrentGeneration.Engines.GetValueOrDefault(name);
             if (engine is not null) _engineAdminUses++;
             return engine;
         }
@@ -87,7 +99,7 @@ public sealed partial class RouterCore
         var file = previous.File;
         if (file is null || _admission is not null) return (ConfigReloadStatus.RestartRequired, previous.Number);
 
-        var change = file.Compare(candidate, out var addedNames, out var removedNames);
+        var change = file.Compare(candidate, out var addedNames, out var removedNames, out var aliasesChanged);
         if (change is ConfigReloadStatus.RestartRequired) return (change, previous.Number);
         if (change is ConfigReloadStatus.Unchanged)
         {
@@ -113,9 +125,7 @@ public sealed partial class RouterCore
                 foreach (var name in addedNames)
                 {
                     caller.ThrowIfCancellationRequested();
-                    var runtime = new EngineRuntime(settings.Engines[name], settings, _events,
-                        _config.HttpHandlerFactory?.Invoke(settings.Engines[name]), lifecycle: null, SignalDispatch,
-                        hostEnrollment: null, _clock, candidate);
+                    var runtime = CreateOrdinaryEngine(settings.Engines[name], settings, candidate);
                     added.Add(runtime);
                     routes.Add(name, runtime);
                     AfterReloadStageForTests?.Invoke(runtime);
@@ -130,7 +140,7 @@ public sealed partial class RouterCore
                 if (witness is null) return (ConfigReloadStatus.Invalid, previous.Number);
             }
 
-            var topology = added.Count != 0 || removed.Length != 0;
+            var topology = aliasesChanged || added.Count != 0 || removed.Length != 0;
             var housekeeping = topology ? new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously) : null;
             var guarded = removed.Append(witness).OfType<EngineRuntime>().OrderBy(engine => engine.Name, StringComparer.Ordinal).ToArray();
             BeforeReloadCommitForTests?.Invoke();
@@ -155,7 +165,16 @@ public sealed partial class RouterCore
                         return (ConfigReloadStatus.Invalid, previous.Number);
                     if (caller.IsCancellationRequested) return (ConfigReloadStatus.Cancelled, previous.Number);
 
-                    foreach (var engine in added) engine.TryReserveExternalPublication();
+                    foreach (var engine in added)
+                    {
+                        if (settings.Engines[engine.Name].LifecycleGroup is { } groupName)
+                        {
+                            var group = _localGroups.Values.First(group => group.Name == groupName);
+                            group.Attach(engine);
+                            _localGroups[engine.Name] = group;
+                        }
+                        engine.TryReserveExternalPublication();
+                    }
                     foreach (var engine in removed) engine.FenceExternalRetirement();
                     _reloadHousekeeping = housekeeping;
                     Volatile.Write(ref _generation, next);
@@ -181,7 +200,7 @@ public sealed partial class RouterCore
 
     private bool IsReloadIdle(ConfigurationGeneration generation)
     {
-        if (_engineAdminUses != 0 || _queues.Values.Any(queue => queue.Depth != 0)) return false;
+        if (_localGroups.Values.Any(group => !group.IsIdle) || _engineAdminUses != 0 || _queues.Values.Any(queue => queue.Depth != 0)) return false;
         // A first-send lease is only taken by an admitted request. Under the router gate no new
         // logical use can start; detached cleanup can only lower the remaining physical counts.
         return !generation.Engines.Values.Any(engine => engine.Inflight != 0 || engine.Switching || engine.InferenceUses != 0);

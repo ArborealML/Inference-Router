@@ -44,6 +44,9 @@ public sealed partial class RouterCore : IInferenceRouter
     internal Action? BeforeShutdownUnsubscribeForTests;
     internal TimeProvider ResponseTimeoutClockForTests = TimeProvider.System;
 
+    private readonly Func<EngineDefinition, IEngineLifecycleProvider>? _lifecycleFactory;
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, LocalLifecycleGroup> _localGroups = new(StringComparer.Ordinal);
+
     public RouterCore(RouterConfig config, IRequestScheduler? scheduler = null, EventRing? events = null)
         : this(config, scheduler, events, TimeProvider.System)
     {
@@ -56,26 +59,42 @@ public sealed partial class RouterCore : IInferenceRouter
         config.ValidateLifecycleTopology();
         _shutdownToken = _shutdown.Token;
         _config = config;
+        _lifecycleFactory = lifecycleFactory;
         _nativeResetStartupInstance = nativeResetStartupInstance;
         _clock = clock;
         _wakeOnEngineState = WakeOnEngineState;
         _scheduler = scheduler ?? new PrefixAwareScheduler();
         _events = events ?? new EventRing(maxLiveSubscribers: config.MaxEventSubscribers);
         reload?.ValidateNames();
+        if (config.Engines.Values.Any(static definition => definition.LifecycleGroup is not null) &&
+            admission is not null)
+            throw new RouterConfigException("Local lifecycle groups require ordinary queue admission.");
         var engines = new Dictionary<string, EngineRuntime>(StringComparer.OrdinalIgnoreCase);
         foreach (var (name, def) in config.Engines)
             // The dispatch hint closes the one wake gap the event feed leaves: switch outcome events are
             // emitted before the capability transition commits, so a dispatcher woken by them still sees the
             // engine marked as switching. Committing the transition nudges the loop again (§5.5).
-            engines[name] = new EngineRuntime(def, config, _events, config.HttpHandlerFactory?.Invoke(def),
-                lifecycleFactory?.Invoke(def), SignalDispatch, hostEnrollment: null, clock: clock,
-                reloadSource: reload);
+            engines[name] = CreateOrdinaryEngine(def, config, reload);
+        var groups = new Dictionary<string, LocalLifecycleGroup>(StringComparer.Ordinal);
+        foreach (var engine in engines.Values)
+        {
+            if (engine.Definition.LifecycleGroup is not { } groupName) continue;
+            if (!groups.TryGetValue(groupName, out var group))
+                groups.Add(groupName, group = new(groupName, SignalDispatch));
+            group.Attach(engine);
+            _localGroups[engine.Name] = group;
+        }
         foreach (var (id, td) in config.Threads)
             _threads[id] = new RouterThread(id, td.Priority, td.Weight, td.ModelAffinity);
         _generation = new ConfigurationGeneration(1, config, reload, engines);
         _admission = admission;
         admission?.Attach(engines.Count, _clock, SignalDispatch, ReportAdmissionCleanupFailure, RejectVerifiedBinding);
     }
+
+    private EngineRuntime CreateOrdinaryEngine(EngineDefinition definition, RouterConfig settings, ReloadConfiguration? source) =>
+        new(definition, settings, _events, _config.HttpHandlerFactory?.Invoke(definition),
+            _lifecycleFactory?.Invoke(definition), SignalDispatch, hostEnrollment: null, _clock, source,
+            localManaged: definition.LifecycleGroup is not null);
 
     public EventRing Events => _events;
     public RouterConfig Config => CurrentGeneration.File?.Observe() ?? _config;
@@ -411,6 +430,7 @@ public sealed partial class RouterCore : IInferenceRouter
                 continue;
             }
             if (take.Result == TakeResult.Changed) return DispatchResult.StateChanged;
+            if (take.Result == TakeResult.Ineligible) MaybeFailDeadline(candidate);
         }
         return DispatchResult.Parked;
     }
@@ -448,8 +468,20 @@ public sealed partial class RouterCore : IInferenceRouter
             if (expected is { } observationAtSelection && !engine.IsDispatchObservationCurrent(observationAtSelection))
                 return new(TakeResult.Changed);
             if (!engine.HasCapacity) return new(TakeResult.Ineligible);
+            var index = head.Queue.FindExactTakeIndexUnderGate(head.Candidate, HasThreadCapacity);
+            if (index < 0) return new(TakeResult.Changed);
+            var takenAt = _clock.GetTimestamp();
             var terminal = ReadQueueEnd(candidate);
-            if (!head.Queue.TryTakeExact(head.Candidate, HasThreadCapacity)) return new(TakeResult.Changed);
+            if (terminal is null && _localGroups.TryGetValue(engine.Name, out var local))
+            {
+                var selectedProfile = engine.GetProfile(candidate.Ticket.Model, selection.Decision.TargetProfile);
+                var lease = local.TryReserve(candidate, engine, selectedProfile, selection.Decision.SwitchRequired,
+                    new OwnerSwitchBudget(_clock, takenAt,
+                        generation.Settings.Scheduler.SwitchWaitTimeoutMs));
+                if (lease is null) return new(TakeResult.Ineligible);
+                candidate.LocalLease = lease;
+            }
+            head.Queue.RemoveExactTakeUnderGate(index);
             RetireQueueIfEmpty(head.Queue);
             if (terminal is not null) return new(TakeResult.Terminal, TerminalCode: terminal);
 
@@ -564,6 +596,7 @@ public sealed partial class RouterCore : IInferenceRouter
             EndEngineRequest(candidate, engine, invocation);
             candidate.Thread.DecrementInflight();
             Fail(candidate.Ticket, "cancelled", "router is shutting down");
+            candidate.LocalLease?.Release();
             ReleaseExecutionCancellation(candidate.Ticket);
             SignalDispatch();
         }
@@ -643,7 +676,7 @@ public sealed partial class RouterCore : IInferenceRouter
         throw new InvalidOperationException("The selected engine is missing from the scheduler view.");
     }
 
-    private static EngineRuntimeInfo[] BuildEngineInfos(QueuedRequest head, ConfigurationGeneration generation,
+    private EngineRuntimeInfo[] BuildEngineInfos(QueuedRequest head, ConfigurationGeneration generation,
         SwitchComparison? comparison)
     {
         var messages = head.Messages();
@@ -658,7 +691,9 @@ public sealed partial class RouterCore : IInferenceRouter
             list.Add(new EngineRuntimeInfo
             {
                 Name = e.Name,
-                LoadedModels = cap.ModelRoster,
+                LoadedModels = _localGroups.TryGetValue(e.Name, out var local) &&
+                    !local.IsResident(e.Name, head.Ticket.Model) ? [] : cap.ModelRoster,
+                CanLoad = local is not null,
                 CatalogModels = e.CatalogModelNames.ToArray(),
                 SwitchingToward = cap.SwitchingToward is null ? [] : [cap.SwitchingToward],
                 CanServeModel = e.CanServeModel(head.Ticket.Model, cap),
@@ -687,6 +722,7 @@ public sealed partial class RouterCore : IInferenceRouter
         var decremented = false;
         var ended = false;
         var optInOwnsInvocation = false;
+        var lateForwardOwnsLocalLease = false;
         void DecrementOnce()
         {
             if (decremented) return;
@@ -702,7 +738,7 @@ public sealed partial class RouterCore : IInferenceRouter
         try
         {
 
-            if (invocation is null && WillWaitForModel(settings, switchRequired, targetProfile))
+            if (invocation is null && (candidate.LocalLease is { Cold: true } || WillWaitForModel(settings, switchRequired, targetProfile)))
             {
                 ticket.State = TicketState.WaitingForModel;
                 // A ticket's own deadline bounds only its time in the queue, so the wait for a model
@@ -710,12 +746,30 @@ public sealed partial class RouterCore : IInferenceRouter
                 // long as the engine's lifecycle wait allows (two hours for a strata select). 0 = no
                 // ceiling, which is the old behaviour.
                 var ceilingMs = settings.Scheduler.SwitchWaitTimeoutMs;
-                var switchWait = ceilingMs <= 0 ? Timeout.InfiniteTimeSpan : TimeSpan.FromMilliseconds(ceilingMs);
+                var switchWait = candidate.LocalLease?.Budget.Remaining ??
+                    (ceilingMs <= 0 ? Timeout.InfiniteTimeSpan : TimeSpan.FromMilliseconds(ceilingMs));
                 // The caller's token bounds only its own wait: the switch transaction runs on the engine's
                 // token, so giving up here never leaves the engine half-switched with nothing loaded.
-                var observed = await engine.EnsureLoadedAsync(ticket.Model, targetProfile, switchWait,
-                    new SwitchQueueTiming(candidate.EnqueuedAtTimestamp, selectedAt), execCts.Token,
-                    explicitContextMinimum: candidate.ExplicitContextMinimum).ConfigureAwait(false);
+                EngineRuntime.ObservedSwitchResult observed;
+                if (candidate.LocalLease is { Cold: true } localOwner)
+                {
+                    using var localWait = CancellationTokenSource.CreateLinkedTokenSource(execCts.Token, candidate.CallerToken, _shutdownToken);
+                    var preparation = localOwner.PrepareAsync(_shutdownToken);
+                    try
+                    {
+                        observed = await preparation.WaitAsync(switchWait, localWait.Token).ConfigureAwait(false);
+                    }
+                    catch (TimeoutException)
+                    {
+                        observed = new(new EngineRuntime.SwitchResult(EngineRuntime.SwitchOutcome.TimedOut, null));
+                    }
+                }
+                else
+                {
+                    observed = await engine.EnsureLoadedAsync(ticket.Model, targetProfile, switchWait,
+                        new SwitchQueueTiming(candidate.EnqueuedAtTimestamp, selectedAt), execCts.Token,
+                        explicitContextMinimum: candidate.ExplicitContextMinimum).ConfigureAwait(false);
+                }
                 var switchResult = observed.Result;
                 AfterModelReadinessForTests?.Invoke(ticket.Id, switchResult.Outcome);
                 if (switchResult.Outcome == EngineRuntime.SwitchOutcome.RouterStopped)
@@ -734,8 +788,8 @@ public sealed partial class RouterCore : IInferenceRouter
                     // its own ceiling and no category, because nothing of the attempt ended (§5.5).
                     var detail = switchResult.Detail is { Length: > 0 } d ? $" ({d})" : "";
                     Fail(ticket, "switch_failed", switchResult.Outcome == EngineRuntime.SwitchOutcome.TimedOut
-                        ? $"engine {WireText.Ident(engine.Name)} did not become ready to serve {what} within {ceilingMs} ms — " +
-                          $"the switch is still running, retry once it completes{detail}"
+                        ? $"engine {WireText.Ident(engine.Name)} did not become ready to serve {what} within {ceilingMs} ms" +
+                          (candidate.LocalLease is null ? " — the switch is still running, retry once it completes" : "") + detail
                         : $"engine {WireText.Ident(engine.Name)} could not serve {what}{detail}");
                     return;
                 }
@@ -843,7 +897,8 @@ public sealed partial class RouterCore : IInferenceRouter
                         if (res is null)
                         {
                             ownsForward = false;
-                            _ = DisposeLateForwardAsync(engine, send);
+                            lateForwardOwnsLocalLease = true;
+                            _ = DisposeLateForwardAsync(engine, send, candidate.LocalLease);
                         }
                     }
 
@@ -880,6 +935,7 @@ public sealed partial class RouterCore : IInferenceRouter
         {
             try
             {
+                if (!lateForwardOwnsLocalLease && !optInOwnsInvocation) candidate.LocalLease?.Release();
                 if (!optInOwnsInvocation)
                     await AbortUnstartedInvocationAsync(ticket, invocation).ConfigureAwait(false);
             }
@@ -916,7 +972,8 @@ public sealed partial class RouterCore : IInferenceRouter
             Reason = error.Message,
         });
 
-    private static async Task DisposeLateForwardAsync(EngineRuntime engine, Task<HttpResponseMessage> send)
+    private static async Task DisposeLateForwardAsync(EngineRuntime engine, Task<HttpResponseMessage> send,
+        LocalLifecycleGroup.Lease? localLease)
     {
         try
         {
@@ -930,6 +987,7 @@ public sealed partial class RouterCore : IInferenceRouter
         finally
         {
             engine.EndForward();
+            localLease?.Release();
         }
     }
 
@@ -1226,6 +1284,7 @@ public sealed partial class RouterCore : IInferenceRouter
 
     private static string ResolveCanonical(string requested, ConfigurationGeneration generation)
     {
+        if (generation.Aliases.TryGetValue(requested, out var mapped)) return mapped;
         foreach (var e in generation.Engines.Values)
         {
             var canonical = e.CanonicalModel(requested);

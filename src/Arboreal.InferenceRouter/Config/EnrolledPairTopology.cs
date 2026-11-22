@@ -56,19 +56,20 @@ internal sealed class EnrolledPairTopology
             throw Refuse("current commissioned head mismatch");
 
         if (claim.Devices.IsDefaultOrEmpty || authority.Devices.IsDefaultOrEmpty ||
-            !IsDistinctPair(claim.Devices) || !IsDistinctPair(authority.Devices) ||
+            !IsDistinctNonemptySet(claim.Devices) || !IsDistinctNonemptySet(authority.Devices) ||
             !claim.Devices.ToHashSet(StringComparer.Ordinal).SetEquals(authority.Devices))
             throw Refuse("device coverage mismatch");
 
-        if (config.Engines.Count != 2 || claim.Members.IsDefaultOrEmpty || authority.Members.IsDefaultOrEmpty ||
-            !IsDistinctPair(claim.Members.Select(member => member?.Engine)) ||
-            !IsDistinctPair(authority.Members.Select(grant => grant?.Member?.Engine)) ||
-            !IsDistinctPair(claim.Members.Select(member => member.BackendRoute)) ||
-            !IsDistinctPair(authority.Members.Select(grant => grant.Member.BackendRoute)))
+        if (config.Engines.Count == 0 || claim.Members.IsDefaultOrEmpty || authority.Members.IsDefaultOrEmpty ||
+            claim.Members.Length != config.Engines.Count || authority.Members.Length != config.Engines.Count ||
+            !IsDistinctNonemptySet(claim.Members.Select(member => member?.Engine)) ||
+            !IsDistinctNonemptySet(authority.Members.Select(grant => grant?.Member?.Engine)) ||
+            !IsDistinctNonemptySet(claim.Members.Select(member => member.BackendRoute)) ||
+            !IsDistinctNonemptySet(authority.Members.Select(grant => grant.Member.BackendRoute)))
             throw Refuse("member or route coverage mismatch");
 
         var approved = authority.Members.ToDictionary(grant => grant.Member.Engine, StringComparer.Ordinal);
-        // Check both members before invoking the first Docker projection. Projection consumes the
+        // Check every member before invoking the first Docker projection. Projection consumes the
         // authority's identities and therefore cannot detect a substituted candidate identity.
         foreach (var member in claim.Members)
         {
@@ -95,7 +96,7 @@ internal sealed class EnrolledPairTopology
 
     internal CheckedEnrolledPair Project()
     {
-        var members = ImmutableArray.CreateBuilder<CheckedEnrolledPairMember>(2);
+        var members = ImmutableArray.CreateBuilder<CheckedEnrolledPairMember>(_claim.Members.Length);
         foreach (var member in _claim.Members)
         {
             var engine = _config.Engines[member.Engine];
@@ -107,7 +108,7 @@ internal sealed class EnrolledPairTopology
                     grant.Member.Configuration, grant.Member.BackendRoute);
                 if (target.Model != member.Model || target.Tier != member.Tier || target.PlanDigest != grant.PlanDigest)
                     throw Refuse("effective launch plan mismatch");
-                // Both selected targets request the entire commissioned two-device partition.
+                // Each selected target requests the entire commissioned device partition.
                 // The independently sourced grant supplies its device identities.
                 if (create.HostConfig is not { Devices: null, DeviceRequests: [{ Count: -1, DeviceIds: null }] })
                     throw Refuse("effective launch device coverage mismatch");
@@ -124,11 +125,12 @@ internal sealed class EnrolledPairTopology
         return new(_authority.Head, _authority.Devices, members.MoveToImmutable());
     }
 
-    private static bool IsDistinctPair(IEnumerable<string?> values)
+    private static bool IsDistinctNonemptySet(IEnumerable<string?> values)
     {
-        var pair = values.ToArray();
-        return pair is [var first, var second] && !string.IsNullOrWhiteSpace(first) &&
-            !string.IsNullOrWhiteSpace(second) && first != second;
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var value in values)
+            if (string.IsNullOrWhiteSpace(value) || !seen.Add(value)) return false;
+        return seen.Count > 0;
     }
 
     private static RouterConfigException Refuse(string reason) => new($"enrolled topology refused: {reason}");
