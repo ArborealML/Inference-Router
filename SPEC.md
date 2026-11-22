@@ -1821,7 +1821,7 @@ remain separate. This supplies no host-wide vacancy, retirement or mutation auth
 slot source in §7.6. The canonical model and its context come from one unambiguous loaded model
 row. Slots come from the running server's single positive `--max-num-seqs` argument. AIR reads
 bounded NUL-delimited argv from the single immediate `vllm serve` child of `docker-init` and
-checks the same process identity and slot count before and after the model and health reads. Before forwarding an inference request AIR checks the running process and slot count against that proof again. It requires one explicit `--api-server-count` to establish one server. The short alias `-asc` and its abbreviations invalidate this proof. The executable must be `/app/venv/bin/vllm`,
+checks the same process identity and slot count before and after the model and health reads. Before forwarding an inference request AIR checks the running process and slot count against that proof again. This check finishes before the upstream response timer starts. It requires one explicit `--api-server-count` to establish one server. The short alias `-asc` and its abbreviations invalidate this proof. The executable must be `/app/venv/bin/vllm`,
 optionally preceded by `/app/venv/bin/python`, `/app/venv/bin/python3` or `/app/venv/bin/python3.12`.
 The Docker identity, image, labels, running generation and init PID bracket the read. Linux procfs
 checks exact full-container-ID cgroup v2 membership for init before enumerating its immediate children.
