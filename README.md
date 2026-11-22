@@ -28,6 +28,8 @@ AIR gives OpenAI-compatible clients one HTTP endpoint for local inference engine
 
 ### In progress
 
+- **Terminal monitor.** A keyboard-driven table and detail pane for following router activity is undergoing Linux Native AOT and SSH qualification.
+
 - **Current selector catalog.** All ten current selector models and fifteen aliases are ported into the local configuration, preserving the live pair and using default profiles for the eight additions. Offline validation passed; those eight additions are not yet live-qualified. [Coverage](docs/selector-launch-coverage.md#current-local-catalog-port)
 
 

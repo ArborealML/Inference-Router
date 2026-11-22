@@ -1,11 +1,13 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.142)
+Status: draft, continuously revised (v0.12.143)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
 
 ## 0. Revision log
+
+- v0.12.143 — qualify the terminal monitor’s selectable table and detail pane under Native AOT (§11).
 
 - v0.12.142 — client tab completion prefers the listener’s applied catalog, falls back to disk on failure and completes home-relative file operands (§11).
 
@@ -3677,6 +3679,8 @@ schema and casing work (§15.1). The current feed supports filtering and reconne
 exclusive cursor described above.
 
 ## 11. CLI
+
+The terminal monitor uses a selectable table and detail pane. The table keeps the selected identity through row reordering and terminal resizing. All widgets update on the terminal event loop.
 
 ```
 air completion bash|powershell|zsh|fish
