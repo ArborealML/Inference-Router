@@ -3,6 +3,7 @@ import json
 import os
 from pathlib import Path
 import queue
+import sys
 import subprocess
 import tempfile
 import threading
@@ -11,7 +12,7 @@ import unittest
 
 
 class PromptBudgetTest(unittest.TestCase):
-    def test_large_prompt_after_valid_downgrade_sends_no_inference_or_compaction(self):
+    def test_running_upgrade_then_oversized_prompt_after_downgrade(self):
         posts = []
         shutdown = threading.Event()
         profiles = [{"Name": name, "MaxContext": window, "MaxSlots": 1}
@@ -42,7 +43,7 @@ class PromptBudgetTest(unittest.TestCase):
                 self.wfile.write(json.dumps(data).encode())
 
             def do_POST(self):
-                posts.append(self.headers.get("X-Inference-Profile"))
+                posts.append((self.headers["X-Inference-Profile"], self.headers["X-Inference-Thread"]))
                 self.rfile.read(int(self.headers["Content-Length"]))
                 self.send_response(200)
                 self.send_header("Content-Type", "text/event-stream")
@@ -54,7 +55,20 @@ class PromptBudgetTest(unittest.TestCase):
             threading.Thread(target=server.serve_forever, daemon=True).start()
             directory = Path(tmp)
             (directory / "settings.json").write_text(json.dumps({"retry": {"enabled": False}}))
-            args = ["pi", "--no-extensions", "-e", str(Path(__file__).with_name("index.mjs").resolve()),
+            source = Path(__file__).resolve().parent
+            installation = directory / "pi-air"
+            installation.mkdir()
+            entry = installation / "index.mjs"
+            helper = installation / "catalog.mjs"
+            # The earlier installation used a separate helper with a different export.
+            entry.write_text((source / entry.name).read_text().replace("requestFits", "previousFits"))
+            helper.write_text((source / helper.name).read_text().replace("requestFits", "previousFits"))
+            launcher = directory / "pi-clm.py"
+            launcher.write_text("from pi_air_launcher import router_provider\n")
+            reload_command = directory / "reload.mjs"
+            reload_command.write_text('export default pi => pi.registerCommand("fixture-reload", '
+                                      '{handler: async (_, ctx) => ctx.reload()});')
+            args = ["pi", "--no-extensions", "-e", str(entry), "-e", str(reload_command),
                     "--mode", "rpc", "--no-tools", "--no-session", "--provider", "air", "--model", "demo"]
             env = {**os.environ, "PI_CODING_AGENT_DIR": tmp, "PI_OFFLINE": "1",
                    "PI_AIR_BASE_URL": f"http://127.0.0.1:{server.server_port}/v1"}
@@ -81,6 +95,11 @@ class PromptBudgetTest(unittest.TestCase):
 
                 threading.Thread(target=read, daemon=True).start()
                 try:
+                    prompt("/context short")
+                    prompt("first")
+                    wait(lambda e: e["type"] == "agent_settled")
+                    subprocess.run([sys.executable, str(source / "install.py"), str(launcher)], check=True)
+                    prompt("/fixture-reload")
                     prompt("/context long")
                     prompt("fits")
                     wait(lambda e: e["type"] == "agent_settled")
@@ -90,7 +109,9 @@ class PromptBudgetTest(unittest.TestCase):
                     self.assertEqual("error", failure["message"]["stopReason"])
                     self.assertIn("reserve", failure["message"]["errorMessage"])
                     wait(lambda e: e["type"] == "agent_settled")
-                    self.assertEqual(["long"], posts)
+                    self.assertEqual(["short", "long"], [profile for profile, _ in posts])
+                    self.assertTrue(posts[0][1])
+                    self.assertEqual(posts[0][1], posts[1][1])
                 finally:
                     pi.terminate()
                     shutdown.set()

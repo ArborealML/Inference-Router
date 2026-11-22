@@ -1,6 +1,7 @@
 import { estimateTokens } from "@earendil-works/pi-coding-agent";
 import { openAICompletionsApi } from "@earendil-works/pi-ai/compat";
 import { setTimeout as delay } from "node:timers/promises";
+
 import { contextFits, observedWindow, parseCatalog, piModel, requestFits, tier } from "./catalog.mjs";
 
 const entryType = "air-context";
@@ -22,7 +23,8 @@ export default async function air(pi) {
     let budgetRefused = false;
     const active = new Set();
     const currentRequests = () => Array.from(active).filter(req => req.branch === branch);
-    const requestKey = req => req.ticket || "pending-" + req.sequence;
+    const requestKey = req => req.ticket || req.clientId;
+    const matchesRequest = (req, id) => req && (req.ticket === id || req.clientId === id);
     function updateFooter() {
         ctx?.ui.setStatus("air-ticket", currentRequests().at(-1)?.text);
     }
@@ -123,15 +125,15 @@ export default async function air(pi) {
         const estimatedInput = transcript.messages.reduce((total, message) => total + estimateTokens(message), 0);
         const sessionTokens = options.sessionId && options.sessionId === ctx?.sessionManager.getSessionId()
             ? ctx.getContextUsage()?.tokens : undefined;
-        if (!requestFits(capacity, Math.max(estimatedInput, sessionTokens ?? 0),
-            Math.min(current.maxTokens, options.maxTokens ?? current.maxTokens))) {
+        const reserve = Math.min(current.maxTokens, options.maxTokens ?? current.maxTokens);
+        if (!requestFits(capacity, Math.max(estimatedInput, sessionTokens ?? 0), reserve)) {
             budgetRefused = true;
             throw new Error("The estimated AIR prompt and output reserve exceed this window. Select a larger /context or use /compact.");
         }
         budgetRefused = false;
         const thread = ctx?.sessionManager.getSessionId() || options.sessionId;
         if (!thread) throw new Error("AIR needs a Pi session identity");
-        const req = {thread, model: model.id, branch, sequence: ++sequence, watch: new AbortController(), abort: new AbortController()};
+        const req = {thread, model: model.id, branch, clientId: "request-" + ++sequence, watch: new AbortController(), abort: new AbortController()};
         active.add(req);
         latest = req;
         req.text = snapshotText(requestKey(req), {State: "submitting", Model: model.id});
@@ -140,7 +142,7 @@ export default async function air(pi) {
         const underlying = options.fetch ?? fetch;
         let sent = false;
         const original = adapter.streamSimple({...model, contextWindow: capacity, maxTokens: current.maxTokens}, transcript, {
-            ...options, signal, maxRetries: 0,
+            ...options, signal, maxTokens: reserve, maxRetries: 0,
             fetch: async (input, init) => {
                 if (sent) throw new Error("AIR already received this Pi request");
                 if (String(input) !== base + "/chat/completions" || init?.method?.toUpperCase() !== "POST")
@@ -236,7 +238,7 @@ export default async function air(pi) {
 
     async function bind(context) {
         branch?.abort();
-        for (const req of currentRequests()) req.watch.abort();
+        for (const req of currentRequests()) { req.abort.abort(); req.watch.abort(); }
         branch = new AbortController();
         latest = undefined;
         ctx = context;
@@ -315,7 +317,7 @@ export default async function air(pi) {
         handler: async args => {
             const requests = currentRequests();
             const key = args.trim();
-            const req = key ? [...requests, latest].find(r => r && requestKey(r) === key) : requests.at(-1) ?? latest;
+            const req = key ? [...requests, latest].find(r => matchesRequest(r, key)) : requests.at(-1) ?? latest;
             if (!req) return notify("No matching AIR request on this branch.");
             if (!req.ticket) return notify(req.text);
             try {
@@ -331,7 +333,7 @@ export default async function air(pi) {
             const key = args.trim();
             if (!key && requests.length > 1)
                 return notify("Choose an active request with /air-cancel ID: " + requests.map(requestKey).join(", "));
-            const req = key ? requests.find(r => requestKey(r) === key) : requests[0];
+            const req = key ? requests.find(r => matchesRequest(r, key)) : requests[0];
             if (!req) return notify("No matching active AIR request to cancel.");
             req.abort.abort();
             notify(snapshotText(requestKey(req), {State: "cancellation requested"}));

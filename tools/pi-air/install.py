@@ -51,6 +51,16 @@ def install(path, data, mode):
     os.replace(handle.name, path)
 
 
+def extension_source():
+    # Pi reloads the entry but can retain imported local modules in its process cache.
+    # Embed the helper in the published entry so a single rename changes both.
+    entry = (HERE / "index.mjs").read_text()
+    lines = [line for line in entry.splitlines() if line.endswith('from "./catalog.mjs";')]
+    if len(lines) != 1:
+        raise ValueError("Expected one catalog import in the AIR extension")
+    return replace(entry, lines[0], (HERE / "catalog.mjs").read_text()).encode()
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("launcher", type=Path)
@@ -59,8 +69,7 @@ def main():
     source = patch(launcher.read_text())
     dest = launcher.parent / "pi-air"
     dest.mkdir(exist_ok=True)
-    for name in ("catalog.mjs", "index.mjs"):
-        install(dest / name, (HERE / name).read_bytes(), 0o644)
+    install(dest / "index.mjs", extension_source(), 0o644)
     install(launcher.parent / "pi_air_launcher.py", (HERE / "pi_air_launcher.py").read_bytes(), 0o644)
     install(launcher, source.encode(), launcher.stat().st_mode & 0o777)
 
