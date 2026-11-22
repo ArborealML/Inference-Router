@@ -5,7 +5,7 @@ status: Waiting
 assignee:
   - '@gpt-6.2-sol-scheduling'
 created_date: '2026-11-22T02:39:00Z'
-updated_date: '2026-11-22T02:41:00Z'
+updated_date: '2026-11-22T02:42:00Z'
 labels: []
 dependencies: []
 priority: high
@@ -15,7 +15,7 @@ ordinal: 153000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-The Ubuntu build and test job on fe7be9b timed out after 45 seconds in the write case of AdminSwitch_AckDeadlineWriteOrCompletionOrchestration. The rest of the suite passed. [Failing run](https://github.com/ArborealML/Inference-Router/actions/runs/44976514347/job/137067582227).
+The hosted Release test result wakes this task. On fe7be9b the Ubuntu build and test job timed out after 45 seconds in the write case of AdminSwitch_AckDeadlineWriteOrCompletionOrchestration. The other 2014 cases passed. [Failing run](https://github.com/ArborealML/Inference-Router/actions/runs/44976514347/job/137067582227).
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
