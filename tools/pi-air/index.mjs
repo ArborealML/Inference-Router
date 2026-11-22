@@ -1,9 +1,11 @@
-import { estimateTokens } from "@earendil-works/pi-coding-agent";
+import { estimateTokens, getPackageDir, SettingsManager, shouldCompact } from "@earendil-works/pi-coding-agent";
 import { openAICompletionsApi } from "@earendil-works/pi-ai/compat";
 import { randomUUID } from "node:crypto";
+import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
+import { pathToFileURL } from "node:url";
 
-import { contextFits, observedWindow, parseCatalog, piModel, requestFits, tier } from "./catalog.mjs";
+import { contextFits, observedWindow, outputBudget, parseCatalog, piModel, requestFits, tier } from "./catalog.mjs";
 
 class PermanentTicketError extends Error {}
 
@@ -20,12 +22,16 @@ export default async function air(pi) {
     }
     const auth = process.env.AIR_API_KEY;
     const adapter = openAICompletionsApi();
-    let catalog, etag, ctx, lifetime, branch, latest;
+    let catalog, etag, ctx, lifetime, branch, latest, turnSelection;
     let engines = [];
     let choices = new Map();
     let budgetRefused = false;
     let showingWaiting = false;
     const active = new Set();
+    const agentRequestHeaders = new WeakSet();
+    // CLM can replace the system message while preserving the rest of Pi's prepared turn.
+    let preparedMessages;
+    const summaries = new WeakMap();
     const currentRequests = () => Array.from(active).filter(req => req.branch === branch);
     const requestKey = req => req.ticket || req.clientId;
     const matchesRequest = (req, id) => req && (req.ticket === id || req.clientId === id);
@@ -48,6 +54,13 @@ export default async function air(pi) {
         return messages.reduce((total, message) => total + estimateTokens(message), 0);
     }
     const selected = id => choices.get(id) || null;
+
+    function resolveSelection(model, preference) {
+        const row = catalog.models.get(model.id);
+        const profile = row && tier(row, preference);
+        const capacity = profile && (profile.window || observedWindow(row, engines));
+        return {model, profile, capacity, maxTokens: capacity && outputBudget(capacity)};
+    }
 
     async function refresh(signal) {
         const options = {signal: boundedSignal(signal)};
@@ -155,46 +168,58 @@ export default async function air(pi) {
     }
 
     function streamSimple(model, transcript, options = {}) {
-        const row = catalog.models.get(model.id);
-        const target = row && tier(row, selected(row.id));
+        const sessionId = ctx?.sessionManager.getSessionId();
+        const sameSession = !!branch && options.sessionId === sessionId;
+        // Pi's SDK passes the header object from its extension hook to the provider.
+        // Direct registry calls merge their own headers, even when reusing loop options.
+        const mainRequest = sameSession && options.signal && options.signal === ctx.signal &&
+            agentRequestHeaders.delete(options.headers) && preparedMessages && transcript.messages.some(message => preparedMessages.has(message));
+        if (mainRequest) preparedMessages = undefined;
+        const summary = summaries.get(options.signal);
+        const requestBranch = mainRequest ? branch : summary?.branch;
+        if (requestBranch && requestBranch !== branch) throw new Error("AIR session branch changed before dispatch.");
+        const thread = options.sessionId;
+        if (!thread) throw new Error("AIR needs a Pi session identity");
+        // A child can inherit this callback from its parent without loading the extension.
+        const choice = sameSession || requestBranch ? selected(model.id) : null;
+        const captured = mainRequest ? turnSelection : undefined;
+        const selection = captured ?? summary?.selection ?? resolveSelection(model, choice);
+        const {model: requestModel, profile: target, capacity, maxTokens} = selection;
         if (!target) throw new Error("AIR selection was removed. Choose an available /model or /context default.");
-        const capacity = target.window || observedWindow(row, engines);
-        if (!capacity) throw new Error("AIR has no configured or observed context budget for " + model.id);
-        const current = definition(row);
+        if (!capacity) throw new Error("AIR has no configured or observed context budget for " + requestModel.id);
         // The new prompt and tool definitions can arrive after /context validated the prior turn.
         // Compaction and other auxiliary calls may have their own, shorter transcript.
         const estimatedInput = transcript.messages.reduce((total, message) => total + estimateTokens(message), 0);
-        const sessionTokens = options.sessionId && options.sessionId === ctx?.sessionManager.getSessionId()
-            ? ctx.getContextUsage()?.tokens : undefined;
-        const reserve = Math.min(current.maxTokens, options.maxTokens ?? current.maxTokens);
+        const sessionTokens = mainRequest ? ctx.getContextUsage()?.tokens : undefined;
+        // Pi's agent loop carries defaults in its model, while maxTokens is a request limit.
+        const reserve = Math.min(maxTokens, options.maxTokens ?? maxTokens);
         if (!requestFits(capacity, Math.max(estimatedInput, sessionTokens ?? 0), reserve)) {
-            budgetRefused = true;
+            if (mainRequest) budgetRefused = true;
             throw new Error("The estimated AIR prompt and output reserve exceed this window. Select a larger /context or use /compact.");
         }
-        budgetRefused = false;
-        const thread = ctx?.sessionManager.getSessionId() || options.sessionId;
-        if (!thread) throw new Error("AIR needs a Pi session identity");
-        const req = {thread, model: model.id, branch, clientId: "request-" + randomUUID(), watch: new AbortController(), abort: new AbortController()};
-        req.signal = options.signal ? AbortSignal.any([options.signal, req.abort.signal]) : req.abort.signal;
-        const onAbort = () => { if (req.branch === branch) updateTicketUI(); };
-        req.signal.addEventListener("abort", onAbort, {once: true});
-        active.add(req);
-        latest = req;
-        req.text = snapshotText(requestKey(req), {State: "submitting", Model: model.id});
-        updateTicketUI();
+        if (mainRequest) budgetRefused = false;
+        let req;
+        if (requestBranch) {
+            req = {thread, model: requestModel.id, branch, clientId: "request-" + randomUUID(), watch: new AbortController(), abort: new AbortController()};
+            req.signal = options.signal ? AbortSignal.any([options.signal, req.abort.signal]) : req.abort.signal;
+            active.add(req);
+            latest = req;
+            req.text = snapshotText(requestKey(req), {State: "submitting", Model: requestModel.id});
+            updateTicketUI();
+        }
         const underlying = options.fetch ?? fetch;
         let sent = false;
-        const original = adapter.streamSimple({...model, contextWindow: capacity, maxTokens: current.maxTokens}, transcript, {
-            ...options, signal: req.signal, maxTokens: reserve, maxRetries: 0,
+        const original = adapter.streamSimple({...requestModel, contextWindow: capacity, maxTokens}, transcript, {
+            ...options, signal: req?.signal ?? options.signal, maxTokens: reserve, maxRetries: 0,
             fetch: async (input, init) => {
                 if (sent) throw new Error("AIR already received this Pi request");
                 if (String(input) !== base + "/chat/completions" || init?.method?.toUpperCase() !== "POST")
                     throw new Error("Unexpected AIR inference destination");
-                const liveRow = catalog.models.get(model.id);
-                const liveTier = liveRow && tier(liveRow, selected(model.id));
-                if (req.branch !== branch || !liveTier || liveTier.name !== target.name ||
+                const liveRow = catalog.models.get(requestModel.id);
+                const liveTier = liveRow && tier(liveRow, target.name);
+                if ((requestBranch && requestBranch !== branch) || !liveTier || liveTier.name !== target.name ||
                     (liveTier.window || observedWindow(liveRow, engines)) !== capacity)
-                    throw new Error("AIR changed the selected model or profile before dispatch. Check /context.");
+                    throw new Error("AIR cannot serve the selected model or profile as captured. Check /context.");
                 const headers = new Headers(init.headers);
                 headers.set("X-Inference-Thread", thread);
                 if (target.name) headers.set("X-Inference-Profile", target.name);
@@ -203,6 +228,7 @@ export default async function air(pi) {
                 if (!auth) headers.delete("authorization");
                 sent = true;
                 const response = await underlying(input, {...init, headers, redirect: "error"});
+                if (!req) return response;
                 req.ticket = response.headers.get("X-Inference-Ticket");
                 if (req.ticket && req.branch === branch) {
                     req.text = snapshotText(req.ticket, {State: "admitted"});
@@ -212,6 +238,9 @@ export default async function air(pi) {
                 return response;
             }
         });
+        if (!req) return original;
+        const onAbort = () => { if (req.branch === branch) updateTicketUI(); };
+        req.signal.addEventListener("abort", onAbort, {once: true});
         void original.result().finally(() => req.signal.removeEventListener("abort", onAbort)).then(async message => {
             req.watch.abort();
             active.delete(req);
@@ -287,6 +316,7 @@ export default async function air(pi) {
         ctx = context;
         updateTicketUI();
         budgetRefused = false;
+        turnSelection = undefined;
         choices = new Map();
         for (const entry of ctx.sessionManager.getBranch()) {
             if (entry.type === "custom" && entry.customType === entryType)
@@ -308,17 +338,64 @@ export default async function air(pi) {
         ctx?.ui.setStatus("air-ticket", undefined);
         if (showingWaiting) ctx?.ui.setWorkingMessage(undefined);
         showingWaiting = false;
-        ctx = lifetime = branch = latest = undefined;
+        ctx = lifetime = branch = latest = turnSelection = undefined;
     });
-    pi.on("agent_settled", async () => { if (ctx) await publish(); });
+    pi.on("message_start", (event, context) => {
+        if (event.message.role !== "user") return;
+        const model = context.model;
+        turnSelection = model?.provider === "air" ? resolveSelection(model, selected(model.id)) : undefined;
+        if (turnSelection?.profile?.name === null && turnSelection.capacity)
+            notify("AIR could not resolve one serving profile for " + model.id +
+                ". This turn uses automatic routing with a " + turnSelection.capacity + "-token minimum.", "warning");
+    });
+    pi.on("agent_settled", async () => {
+        turnSelection = undefined;
+        if (ctx) await publish();
+    });
+    pi.on("context_with_system", event => { preparedMessages = new WeakSet(event.messages); });
+    pi.on("before_provider_headers", event => { agentRequestHeaders.add(event.headers); });
     pi.on("cache_warming_decision", (_event, context) => {
         if (context.model?.provider === "air") return {action: "stop"};
     });
-    pi.on("session_before_compact", (event, context) => {
-        if (context.model?.provider === "air" && (event.willRetry || (budgetRefused && event.reason !== "manual"))) {
+    pi.on("session_before_compact", async (event, context) => {
+        const originBranch = branch;
+        const pending = context.model;
+        if (pending?.provider === "air" && (event.willRetry || (budgetRefused && event.reason !== "manual"))) {
             notify("AIR request ended. Use /compact or select a larger profile before submitting again.", "warning");
             return {cancel: true};
         }
+        const selection = event.reason === "manual" ? undefined : turnSelection;
+        if (selection) {
+            if (pending?.provider !== "air" || !selection.capacity) return {cancel: true};
+            const {preparation} = event;
+            const settings = selection.model.id === pending.id ? preparation.settings :
+                SettingsManager.inMemory(pi.getSettings()).getCompactionSettings(selection.model);
+            // Pi checked the pending window before dispatching any queued user message.
+            if (event.reason === "threshold" &&
+                (selection.model.id !== pending.id || selection.capacity !== pending.contextWindow) &&
+                !shouldCompact(preparation.tokensBefore, selection.capacity, settings)) return {cancel: true};
+            if (preparation.settings.keepRecentTokens !== settings.keepRecentTokens) {
+                try {
+                    // Pi 1.3 ships the projected preparation helper outside its public barrel.
+                    const helperUrl = pathToFileURL(join(getPackageDir(), "dist", "core", "compaction", "compaction.js"));
+                    const {prepareCompaction} = await import(helperUrl.href);
+                    if (event.signal.aborted || originBranch !== branch) return {cancel: true};
+                    const replacement = prepareCompaction(event.branchEntries, settings);
+                    if (!replacement) return {cancel: true};
+                    // Pi uses this same preparation for its built-in summary and retry path.
+                    Object.assign(preparation, replacement);
+                } catch {
+                    if (!event.signal.aborted && originBranch === branch)
+                        notify("AIR could not apply the active model's compaction retention with this Pi installation.", "warning");
+                    return {cancel: true};
+                }
+            }
+            preparation.settings = settings;
+        }
+        if (pending?.provider === "air" && originBranch) summaries.set(event.signal, {branch: originBranch, selection});
+    });
+    pi.on("session_before_tree", (event, context) => {
+        if (context.model?.provider === "air" && branch) summaries.set(event.signal, {branch});
     });
     pi.registerCommand("context", {description: "Show or select this AIR model’s context profile",
         handler: async (args, context) => {
@@ -348,10 +425,9 @@ export default async function air(pi) {
             if (originBranch !== branch || ctx?.model?.provider !== "air" ||
                 ctx.model.id !== model.id || catalog.models.get(row.id) !== row)
                 return notify("AIR selection or catalog changed while the picker was open. Open /context again.", "warning");
-            if (!context.isIdle()) return notify("Wait for the current request before changing context.", "warning");
             const preference = name === "default" ? null : name;
             const next = tier(row, preference).window || observedWindow(row, engines);
-            if (!next || !contextFits(context, next, ctx.model.contextWindow, () => projectedTokens(context)))
+            if (!next || (context.isIdle() && !contextFits(context, next, ctx.model.contextWindow, () => projectedTokens(context))))
                 return notify("The transcript and output reserve do not fit this context. Use /compact on the current profile, then retry /context.", "warning");
             choices.set(row.id, preference);
             pi.appendEntry(entryType, {model: row.id, profile: preference});

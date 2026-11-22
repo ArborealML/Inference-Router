@@ -1,11 +1,13 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.146)
+Status: draft, continuously revised (v0.12.147)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
 
 ## 0. Revision log
+
+- v0.12.147 — capture the AIR model, serving selection and output limit at Pi user dispatch. Keep that selection through tool use and retries, apply the active window and retention settings to Pi-triggered compaction, and preserve separate request identities (§13.2).
 
 - v0.12.146 — recover terminal monitor observations after disconnect, replay overlap and gaps, preserving stale data and the followed ticket (§11).
 
@@ -3993,7 +3995,7 @@ unverified external analysis), and (13.3) what AIR must expose to make it work.
 | P7 | Catalog is live: `/v1/models` drives Pi's model list, with availability + loaded/switching state | `refreshModels` reflects an engine that just loaded a model |
 | P8 | Thread identity + priority ride every request (Pi session → AIR chat thread) | admin `/admin/threads` shows the Pi thread and its priority |
 | P9 | Failure modes are distinguishable and actionable (model unavailable, switch failed, engine died, ticket expired) | error `code`s are stable, terminal ones do not retry-storm |
-| P10 | No Pi core patch required: built on the shipped extension API only | extension loads against current pi + the vendored fork package |
+| P10 | No Pi core patch required. Session and provider integration uses shipped extension hooks | extension loads against the supported Pi release |
 
 ### 13.2 Design (research-pass disposition)
 
@@ -4018,8 +4020,41 @@ unverified external analysis), and (13.3) what AIR must expose to make it work.
   State machine: `IDLE → PREPARING → QUEUED|SWITCHING → READY → STREAMING → DONE`.
 - **Headers**: `X-Inference-Thread: pi:<sessionId>`, `X-Inference-Priority`,
   `X-Inference-Request`, and `X-Inference-Ticket` once ready.
-- **Switch semantics**: switching applies to the *next* provider call; neither the fork nor
-  current Pi replaces an in-flight completion (P2 constraint).
+- **AIR selection within a Pi turn**: Pi dispatches the initial prompt and each delivered
+  queued user message through `message_start` with role `user`. The extension captures the
+  selected AIR model, resolved profile, context budget and default output limit at that
+  event. Every assistant request for that turn, including tool continuations and Pi retries,
+  uses that capture. An explicit smaller request output cap applies to both the fit check
+  and the provider request.
+  Selecting another AIR model or context profile and queueing a message update local Pi state.
+  Busy profile changes defer the transcript fit check to the next turn's actual request.
+  The queued message takes the selection in effect when Pi delivers it. The extension clears
+  the capture on settlement or session or branch change. A catalog change that invalidates
+  the capture fails the request. When the catalog supplies no single default profile,
+  Pi reports the ambiguity and sends the captured context minimum using AIR's automatic
+  tier selection. The ticket snapshot identifies the assigned engine. It carries no
+  request-specific profile.
+- **Pi request ownership**: The turn capture requires a matching Pi session ID, the active
+  agent signal, the transcript prepared for that agent request, and the request headers prepared by Pi's SDK hook. AIR recognizes the
+  header object and a message from the prepared turn in memory, including when CLM replaces the system message. A direct registry call with the
+  same ID and signal sends the supplied model and session profile on that thread. The
+  direct caller owns cancellation, and the call stays outside the agent footer and
+  ticket commands. Children loading AIR capture their own selections. A child inheriting
+  the parent provider sends its own model and thread ID and uses the catalog default.
+  Summary lifecycle events associate compaction and branch summaries with the branch.
+  The AIR thread header uses the summary's
+  separate Pi routing ID, including on summary retries. An otherwise unverified call requires
+  an explicit session ID.
+- **Automatic compaction**: When Pi attempts threshold compaction before dispatching the
+  next user message, the extension checks the prepared transcript against the active
+  turn's captured capacity and that model's compaction reserve. If the active window
+  still fits, Pi proceeds without summarizing. If it crosses the threshold, the verified
+  compaction call uses the active AIR model and profile with its own routing ID. A different
+  retention budget replaces the prepared cut using the compaction helper shipped in the
+  Pi 1.3 npm package. If the helper is unavailable, AIR reports the problem and cancels
+  that compaction attempt. Pi decides whether to attempt compaction using its selected model.
+  When that check yields no hook, the active turn proceeds subject to AIR's ordinary
+  request budget check. Manual compaction uses the current selection.
 - **Anti-thrash (server-side, visible to Pi)**: schedule **model cohorts** — never preempt
   active generation, drain the loaded-model cohort, enforce minimum residency/hysteresis,
   then switch once to the highest effective-priority/oldest cohort. Thread stickiness
