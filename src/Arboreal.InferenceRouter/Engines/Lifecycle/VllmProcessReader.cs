@@ -13,9 +13,11 @@ internal static class VllmProcessReader
     private const int ProcCeiling = 4096;
     private const int ArgvCeiling = 64 * 1024;
     private const string SlotsFlag = "--max-num-seqs";
+    private const string ApiServersFlag = "--api-server-count";
     private readonly record struct ProcessInfo(string Name, int Parent, ulong Start);
 
-    internal static VllmProcessEvidence? Read(string procRoot, int initPid, string containerId, CancellationToken ct)
+    internal static VllmProcessEvidence? Read(string procRoot, int initPid, string containerId, CancellationToken ct,
+        Action? cmdlineOpenedForTests = null)
     {
         if (initPid <= 0) return null;
         try
@@ -28,7 +30,7 @@ internal static class VllmProcessReader
             if (ReadStat(child, pid, ct) is not { Name: "vllm" } childBefore ||
                 childBefore.Parent != initPid || !InContainer(child, containerId, ct))
                 return null;
-            var argv = ReadBounded(Path.Combine(child, "cmdline"), ArgvCeiling, ct);
+            var argv = ReadBounded(Path.Combine(child, "cmdline"), ArgvCeiling, ct, cmdlineOpenedForTests);
             var slots = ParseServingArgv(argv);
             if (slots is null || ReadOnlyChild(init, initPid, ct) != pid ||
                 ReadStat(child, pid, ct) != childBefore || ReadStat(init, initPid, ct) != initBefore ||
@@ -70,10 +72,11 @@ internal static class VllmProcessReader
         return cgroup == $"0::/system.slice/docker-{id}.scope" || cgroup == $"0::/docker/{id}";
     }
 
-    private static byte[] ReadBounded(string path, int ceiling, CancellationToken ct)
+    private static byte[] ReadBounded(string path, int ceiling, CancellationToken ct, Action? openedForTests = null)
     {
         ct.ThrowIfCancellationRequested();
         using var file = File.OpenRead(path);
+        openedForTests?.Invoke();
         var buffer = new byte[ceiling + 1];
         var length = file.ReadAtLeast(buffer, buffer.Length, throwOnEndOfStream: false);
         ct.ThrowIfCancellationRequested();
@@ -92,42 +95,56 @@ internal static class VllmProcessReader
             !serve.SequenceEqual("serve"u8) || !ReadToken(ref remaining, out var model) || model.IsEmpty ||
             model.StartsWith("-"u8)) return null;
 
-        var seen = false;
+        var singleServer = false;
+        var seenSlots = false;
+        var validSlots = true;
         var slots = 0;
         while (ReadToken(ref remaining, out var arg))
         {
-            if (arg.SequenceEqual("--"u8)) return 0;
+            if (arg.SequenceEqual("--"u8)) return null;
             if (!arg.StartsWith("--"u8)) continue;
             var equals = arg.IndexOf((byte)'=');
             var option = equals < 0 ? arg : arg[..equals];
-            if (!option.SequenceEqual("--max-num-seqs"u8))
+            if (option.SequenceEqual("--api-server-count"u8))
             {
-                if (IsUnsupportedOverride(Encoding.UTF8.GetString(option), includeCanonicalSlots: false)) return 0;
-                continue;
+                if (singleServer || !TryReadPositiveOption(arg, equals, ref remaining, out var count) || count != 1)
+                    return null;
+                singleServer = true;
             }
-            if (seen) return 0;
-            seen = true;
-            if (equals >= 0)
+            else if (option.SequenceEqual("--max-num-seqs"u8))
             {
-                if (!TryPositiveInt(arg[(equals + 1)..], out slots)) return 0;
+                var parsed = TryReadPositiveOption(arg, equals, ref remaining, out slots);
+                validSlots &= !seenSlots && parsed;
+                seenSlots = true;
             }
-            else if (!ReadToken(ref remaining, out var value) || !TryPositiveInt(value, out slots)) return 0;
+            else if (IsUnsupportedOverride(Encoding.UTF8.GetString(option))) return null;
         }
-        return slots;
+        return singleServer ? validSlots ? slots : 0 : null;
     }
 
-    internal static bool IsUnsupportedOverride(string argument) => IsUnsupportedOverride(argument, includeCanonicalSlots: true);
+    private static bool TryReadPositiveOption(scoped ReadOnlySpan<byte> arg, int equals, ref ReadOnlySpan<byte> remaining, out int value)
+    {
+        if (equals >= 0) return TryPositiveInt(arg[(equals + 1)..], out value);
+        var remainder = remaining;
+        if (ReadToken(ref remainder, out var token) && TryPositiveInt(token, out value))
+        {
+            remaining = remainder;
+            return true;
+        }
+        value = 0;
+        return false;
+    }
 
-    private static bool IsUnsupportedOverride(string argument, bool includeCanonicalSlots)
+    internal static bool IsUnsupportedOverride(string argument)
     {
         var equals = argument.IndexOf('=', StringComparison.Ordinal);
         var option = equals < 0 ? argument : argument[..equals];
         if (option == "--") return true;
         if (!option.StartsWith("--", StringComparison.Ordinal)) return false;
         var normalized = option.Replace('_', '-');
-        return (includeCanonicalSlots || option != SlotsFlag) && SlotsFlag.StartsWith(normalized, StringComparison.Ordinal) ||
+        return SlotsFlag.StartsWith(normalized, StringComparison.Ordinal) ||
             "--config".StartsWith(normalized, StringComparison.Ordinal) ||
-            includeCanonicalSlots && "--api-server-count".StartsWith(normalized, StringComparison.Ordinal);
+            ApiServersFlag.StartsWith(normalized, StringComparison.Ordinal);
     }
 
     private static bool IsLauncherInterpreter(ReadOnlySpan<byte> path)

@@ -92,34 +92,106 @@ public sealed class ManagedVllmProfileTests
     [InlineData("--max-num-seqs=0\0", 0)]
     [InlineData("--max-num-seqs=2147483648\0", 0)]
     [InlineData("--max-num-seqs=1\0--max-num-seqs=1\0", 0)]
-    [InlineData("--max-num-seqs=1\0--max_num_seqs=3\0", 0)]
-    [InlineData("--max-num-seqs=1\0--config\0settings\0", 0)]
+    [InlineData("--max-num-seqs=1\0--max_num_seqs=3\0", null)]
+    [InlineData("--max-num-seqs=1\0--config\0settings\0", null)]
     [InlineData("--max-num-seqs=1", null)]
     public void ReadsOnlyWholeNulDelimitedTokens(string flags, int? slots) =>
         Assert.Equal(slots, VllmProcessReader.ParseServingArgv(Argv(flags)));
 
     [Theory]
-    [InlineData("matching", true)]
-    [InlineData("descendant", true)]
-    [InlineData("other-cgroup", false)]
-    [InlineData("ambiguous", false)]
-    [InlineData("different-parent", false)]
-    [InlineData("oversized", false)]
-    public void BindsOnlyTheSupportedInitAndChild(string shape, bool found)
+    [InlineData("--api-server-count=1\0", 1)]
+    [InlineData("", null)]
+    [InlineData("--api-server-count=2\0", null)]
+    [InlineData("--api-server-count=1\0--api-server-count=1\0", null)]
+    [InlineData("--api-server-count=1\0--api_server_count=2\0", null)]
+    public void RequiresExactlyOneApiServerInTheObservedInvocation(string apiFlags, int? slots) =>
+        Assert.Equal(slots, VllmProcessReader.ParseServingArgv(Argv(apiFlags + "--max-num-seqs=1\0", includeDefaultApiFlag: false)));
+
+    [Theory]
+    [InlineData("matching", true, true)]
+    [InlineData("descendant", true, true)]
+    [InlineData("other-init-cgroup", false, false)]
+    [InlineData("other-cgroup", false, false)]
+    [InlineData("ambiguous", false, false)]
+    [InlineData("different-parent", false, false)]
+    [InlineData("oversized", false, true)]
+    public void BindsOnlyTheSupportedInitAndChild(string shape, bool found, bool opened)
     {
         using var proc = new ProcFixture();
         proc.Write(Argv("--max-num-seqs=1\0"), 200);
         switch (shape)
         {
             case "descendant": proc.WriteProcess(103, "vllm", ChildPid, 300, Id); break;
+            case "other-init-cgroup": proc.WriteProcess(InitPid, "docker-init", 1, 100, new string('c', 64)); break;
             case "other-cgroup": proc.WriteProcess(ChildPid, "vllm", InitPid, 200, new string('c', 64)); break;
             case "ambiguous": File.WriteAllText(proc.Children, "102 103 "); break;
             case "different-parent": proc.WriteProcess(ChildPid, "vllm", 103, 200, Id); break;
             case "oversized": File.WriteAllBytes(proc.Cmdline, new byte[65_537]); break;
         }
-        var result = VllmProcessReader.Read(proc.Root, InitPid, Id, CancellationToken.None);
+        var opens = 0;
+        var result = VllmProcessReader.Read(proc.Root, InitPid, Id, CancellationToken.None, () => opens++);
+        Assert.Equal(opened ? 1 : 0, opens);
         if (found) Assert.Equal(new VllmProcessEvidence(new(InitPid, 100, ChildPid, 200), 1), result);
         else Assert.Null(result);
+    }
+
+    [Theory]
+    [InlineData("reparented")]
+    [InlineData("reused-pid")]
+    [InlineData("moved-cgroup")]
+    [InlineData("vanished")]
+    [InlineData("additional-child")]
+    public void DiscardsArgvWhenTheProcessTreeChangesAfterOpen(string change)
+    {
+        using var proc = new ProcFixture();
+        proc.Write(Argv("--max-num-seqs=1\0"), 200);
+        var opens = 0;
+        var result = VllmProcessReader.Read(proc.Root, InitPid, Id, CancellationToken.None, () =>
+        {
+            opens++;
+            switch (change)
+            {
+                case "reparented": proc.WriteProcess(ChildPid, "vllm", 103, 200, Id); break;
+                case "reused-pid": proc.WriteProcess(ChildPid, "vllm", InitPid, 201, Id); break;
+                case "moved-cgroup": proc.WriteProcess(ChildPid, "vllm", InitPid, 200, new string('c', 64)); break;
+                case "vanished": File.Delete(Path.Combine(proc.Root, "102", "stat")); break;
+                case "additional-child": File.WriteAllText(proc.Children, "102 103 "); break;
+            }
+        });
+        Assert.Equal(1, opens);
+        Assert.Null(result);
+    }
+
+    [Theory(Timeout = 15_000)]
+    [InlineData("""{"Init":true,"PidMode":""}""", true)]
+    [InlineData("""{"Init":true,"PidMode":"private"}""", true)]
+    [InlineData("""{"Init":true,"PidMode":"host"}""", false)]
+    [InlineData("""{"Init":true,"PidMode":"container:fixture"}""", false)]
+    [InlineData("""{"Init":true,"PidMode":"host","PidMode":""}""", false)]
+    [InlineData("""{"Init":true,"PidMode":null}""", false)]
+    [InlineData("""{"Init":true}""", false)]
+    [InlineData("""{"PidMode":""}""", false)]
+    [InlineData("null", false)]
+    [InlineData(null, false)]
+    public async Task ExactDockerInspectMustProvePrivatePidModeBeforeAnyArgvOpen(string? hostConfig, bool allowed)
+    {
+        using var proc = new ProcFixture();
+        proc.Write(Argv("--max-num-seqs=1\0"), 200);
+        const string startedAt = "2026-01-01T00:00:00.123456781Z";
+        var identity = DockerLifecycleProviderTests.NativeContainerInspect(Id, Model, "one", startedAt: startedAt);
+        var inspect = identity.Replace("\"State\":{", FormattableString.Invariant($"\"State\":{{\"Pid\":{InitPid},"), StringComparison.Ordinal);
+        if (hostConfig is not null) inspect = inspect[..^1] + ",\"HostConfig\":" + hostConfig + "}";
+        using var daemon = new FakeDockerDaemonHandler { Responder = _ => (HttpStatusCode.OK, inspect) };
+        var config = RouterConfigLoader.Load(Settings).Engines["strata"].Docker!;
+        var opens = 0;
+        using var provider = new DockerLifecycleProvider(config, "strata", daemon, localManaged: true)
+            { VllmProcRoot = proc.Root, VllmCmdlineOpenedForTests = () => opens++ };
+        using var deadline = ReadinessDeadline.Start(TimeProvider.System, Limit, CancellationToken.None);
+        var observed = await provider.ObserveVllmAsync(new(Id, Model, "one", config.ImageIdentity!.Id), new(startedAt, 0), deadline);
+        Assert.Equal(ReadinessStepOutcome.Completed, observed.Outcome);
+        Assert.Equal(allowed ? 1 : 0, opens);
+        Assert.Equal(allowed ? 1 : null, observed.Observation.Evidence?.Slots);
+        Assert.Equal(Enumerable.Repeat($"GET /v1.44/containers/{Id}/json", allowed ? 2 : 1), daemon.Requests);
     }
 
     [Fact(Timeout = 15_000)]
@@ -141,6 +213,22 @@ public sealed class ManagedVllmProfileTests
         Assert.Equal(NativeLaunchHealth.Invalid, runtime.Capability.NativeWatch?.Health);
         Assert.Empty(fixture.Writes);
         Assert.Equal(1, fixture.App.CompletionCalls);
+    }
+
+    [Fact(Timeout = 15_000)]
+    public async Task MatchingAdoptionSettingsDoNotAuthorizeSharedPidMode()
+    {
+        var clock = new ReadinessDeadlineTests.ManualClock();
+        using var fixture = new Fixture(adopt: true) { InspectedPidMode = "host" };
+        await using var router = fixture.Start(clock);
+        var ticket = await EnqueueAsync(router, Model);
+        await WaitForTimerCount(clock, 3);
+        clock.AdvanceTo(10_000);
+        var failure = await Assert.ThrowsAsync<RouterRequestException>(() => ticket.CompletionTask.WaitAsync(Limit));
+        Assert.Equal("switch_failed", failure.Code);
+        Assert.Empty(fixture.Writes);
+        Assert.Equal(0, fixture.CmdlineOpens);
+        Assert.Equal(0, fixture.App.CompletionCalls);
     }
 
     [Fact(Timeout = 15_000)]
@@ -289,7 +377,9 @@ public sealed class ManagedVllmProfileTests
         new InferenceRequest { Model = model, Stream = true, Options = new(),
             Body = """{"messages":[{"role":"user","content":"hi"}],"stream":true}"""u8.ToArray() });
 
-    private static byte[] Argv(string flags) => Encoding.UTF8.GetBytes("/app/venv/bin/python3\0/app/venv/bin/vllm\0serve\0model path\0" + flags);
+    private static byte[] Argv(string flags, bool includeDefaultApiFlag = true) =>
+        Encoding.UTF8.GetBytes("/app/venv/bin/python3\0/app/venv/bin/vllm\0serve\0model path\0" +
+            (includeDefaultApiFlag ? "--api-server-count=1\0" : "") + flags);
 
     private sealed class ProcFixture : IDisposable
     {
@@ -356,6 +446,7 @@ public sealed class ManagedVllmProfileTests
         private readonly JsonNode _host;
         private string _state;
         private int _inspects;
+        private int _cmdlineOpens;
         public ConcurrentQueue<string> Writes { get; } = new();
         public ProcFixture Proc { get; } = new();
         public AppHandler App { get; } = new();
@@ -363,6 +454,8 @@ public sealed class ManagedVllmProfileTests
         public bool HoldStop { get; set; }
         public bool UnsupportedWrapper { get; set; }
         public int ChangeGenerationAtInspect { get; set; } = int.MaxValue;
+        public string InspectedPidMode { get; set; } = "";
+        public int CmdlineOpens => Volatile.Read(ref _cmdlineOpens);
         public TaskCompletionSource StopEntered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource ReleaseStop { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -373,7 +466,11 @@ public sealed class ManagedVllmProfileTests
             _config = RouterConfigLoader.Load(settings);
             var model = _config.Engines["strata"];
             var config = model.Docker!;
-            _provider = new DockerLifecycleProvider(config, model.Name, this, localManaged: true) { VllmProcRoot = Proc.Root };
+            _provider = new DockerLifecycleProvider(config, model.Name, this, localManaged: true)
+            {
+                VllmProcRoot = Proc.Root,
+                VllmCmdlineOpenedForTests = () => Interlocked.Increment(ref _cmdlineOpens),
+            };
             var plan = _provider.BuildCreateRequest(new(model.Name, Model, null, model.Catalog[Model]), config.ImageIdentity!);
             _containerConfig = JsonSerializer.SerializeToNode(plan, DockerJsonContext.Default.DockerCreateRequest)!.AsObject();
             _host = _containerConfig["HostConfig"]!.DeepClone();
@@ -434,6 +531,7 @@ public sealed class ManagedVllmProfileTests
                 var inspect = JsonNode.Parse(DockerLifecycleProviderTests.NativeContainerInspect(Id, Model, "one", state: _state,
                     running: _state == "running", restarts: restarted ? 1 : 0))!;
                 inspect["HostConfig"] = _host.DeepClone();
+                inspect["HostConfig"]!["PidMode"] = InspectedPidMode;
                 inspect["State"]!["Pid"] = InitPid;
                 inspect["Config"] = _containerConfig.DeepClone();
                 return Reply(HttpStatusCode.OK, inspect.ToJsonString());

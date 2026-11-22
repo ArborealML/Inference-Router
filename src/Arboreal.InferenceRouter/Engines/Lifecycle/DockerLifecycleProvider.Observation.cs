@@ -17,6 +17,7 @@ public sealed partial class DockerLifecycleProvider
     internal Action<Task>? ObservationCleanupForTests { get; init; }
     internal TimeSpan ObservationTimeout => TimeSpan.FromMilliseconds(_cfg.CallTimeoutMs);
     internal string VllmProcRoot { get; init; } = "/proc";
+    internal Action? VllmCmdlineOpenedForTests { get; init; }
 
     // All callers retain their own gate (if any). The retired read can only dispose its response.
     internal ValueTask<ReadinessStep<NativeContainerObservation>> ObserveContainerAsync(
@@ -35,7 +36,8 @@ public sealed partial class DockerLifecycleProvider
             if (before.Status == NativeContainerStatus.Invalid || before.Status == NativeContainerStatus.Running && before.Stamp != baseline)
                 return new NativeVllmObservation(NativeContainerStatus.Invalid);
             if (before is not { Status: NativeContainerStatus.Running, InitPid: > 0 }) return default;
-            var evidence = VllmProcessReader.Read(VllmProcRoot, before.InitPid, launch.ContainerId, ct);
+            var evidence = VllmProcessReader.Read(VllmProcRoot, before.InitPid, launch.ContainerId, ct,
+                VllmCmdlineOpenedForTests);
             var after = await ReadContainerObservationAsync(launch, ct, includeProcess: true).ConfigureAwait(false);
             if (after.Status == NativeContainerStatus.Invalid || after.Status == NativeContainerStatus.Running && after != before)
                 return new(NativeContainerStatus.Invalid);
@@ -56,8 +58,12 @@ public sealed partial class DockerLifecycleProvider
             if (response.StatusCode == HttpStatusCode.NotFound) return new(NativeContainerStatus.Invalid);
             if (response.StatusCode != HttpStatusCode.OK) return default;
             var body = await ReadDiagnosticsBodyAsync(response.Content, ContainerInspectCeiling, ct).ConfigureAwait(false);
-            var inspect = JsonSerializer.Deserialize(body.AsSpan(), DockerJsonContext.Default.DockerObservationResponse);
+            var inspect = JsonSerializer.Deserialize(body.AsSpan(), includeProcess
+                ? DockerProcessObservationJsonContext.Default.DockerObservationResponse
+                : DockerJsonContext.Default.DockerObservationResponse);
             var sample = ClassifyContainer(inspect, launch);
+            // A missing HostConfig or PidMode cannot establish the private/default namespace.
+            // InspectResidentAsync checks effective create settings separately from this proof.
             if (includeProcess && sample.Status == NativeContainerStatus.Running &&
                 inspect is { HostConfig: { Init: true, PidMode: "" or "private" }, State.Pid: > 0 })
                 sample = sample with { InitPid = inspect.State.Pid.Value };

@@ -1820,11 +1820,15 @@ remain separate. This supplies no host-wide vacancy, retirement or mutation auth
 **Local vLLM profile verification.** A router-owned local Docker group can opt in to the vLLM
 slot source in §7.6. The canonical model and its context come from one unambiguous loaded model
 row. Slots come from the running server's single positive `--max-num-seqs` argument. AIR reads
-bounded NUL-delimited argv from the immediate `vllm serve` child of `docker-init`. The Docker
-identity, image, labels, running generation and init PID bracket the read. Linux procfs must
-confirm the init and child's ancestry, start times and exact full-container-ID cgroup v2 membership.
-Only Docker's private PID mode is supported. AIR retains the process identity and measured count
-without logging argv or environment. Process proof uses Docker GET and local procfs reads.
+bounded NUL-delimited argv from the single immediate `vllm serve` child of `docker-init` and
+requires `--api-server-count` to establish one server. The Docker identity, image, labels, running
+generation and init PID bracket the read. Linux procfs checks exact full-container-ID cgroup v2
+membership for init before enumerating its immediate children. It verifies the candidate's parent,
+start time and membership before opening its argv and repeats these checks afterwards. The exact
+Docker inspect must report private or default PID mode. Missing or ambiguous mode evidence and
+host or container-shared modes prevent argv reads, including during adoption. AIR retains the
+process identity and measured count without logging argv or environment. Process proof uses Docker
+GET and local procfs reads.
 
 The first completed model probe that reports the requested model starts one monotonic
 verification window of at most ten seconds, further limited by the remaining startup and local

@@ -236,3 +236,9 @@ internal sealed class DockerExecInspectResponse
 internal sealed partial class DockerJsonContext : JsonSerializerContext
 {
 }
+
+[JsonSourceGenerationOptions(AllowDuplicateProperties = false)]
+[JsonSerializable(typeof(DockerObservationResponse))]
+internal sealed partial class DockerProcessObservationJsonContext : JsonSerializerContext
+{
+}
