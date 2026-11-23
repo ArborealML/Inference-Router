@@ -82,8 +82,8 @@ class RouterHandler(BaseHTTPRequestHandler):
             self.write_response(200, "application/json", json.dumps({
                 "Instance": "fixture", "Generation": 1, "DefaultModel": MODELS[0],
                 "Engines": [
-                    {"Name": "fake", "Models": models},
-                    {"Name": "second", "Models": [
+                    {"Name": "maya", "Models": models},
+                    {"Name": "hyper_classic", "Models": [
                         {"Id": "mixed.fixture", "DefaultProfile": "wide", "Aliases": [], "Profiles": profiles},
                     ]},
                 ],
@@ -109,6 +109,7 @@ class RouterHandler(BaseHTTPRequestHandler):
         last_user = users[-1] if users else None
         count = self.server.record({
             "template": body.get("chat_template_kwargs", {}),
+            "progress": body.get("return_progress"), "usage_stats": body.get("stream_options", {}).get("continuous_usage_stats"),
             "path": self.path, "model": body.get("model"), "user": last_user, "users": users,
             "thread": self.headers["X-Inference-Thread"], "profile": self.headers["X-Inference-Profile"],
             "context": self.headers["X-Inference-Required-Context"], "output_limit": body.get("max_tokens"),
@@ -245,6 +246,15 @@ def pi_session(router, compaction=None):
 
 
 class TurnSelectionTest(unittest.TestCase):
+    def test_mixed_route_omits_family_specific_request_flags(self):
+        with FakeRouter().running() as router, pi_session(router) as pi:
+            pi.model("mixed.fixture")
+            pi.prompt("Mixed route flags")
+            pi.settled()
+            post, = router.snapshot()
+            self.assertIsNone(post["progress"])
+            self.assertIsNone(post["usage_stats"])
+
     def test_overlapping_sessions_and_next_request_keep_rates_separate(self):
         def rates(pi, offset=0):
             return [event["statusText"] for event in pi.seen[offset:]
@@ -281,6 +291,7 @@ class TurnSelectionTest(unittest.TestCase):
             pi.settled()
             pi.prompt("/air-status")
             self.assertTrue(any(e.get("method") == "notify" and "Cancelled" in e.get("message", "") for e in pi.seen))
+            self.assertFalse(any(e.get("notifyType") == "error" for e in pi.seen))
             pi.prompt("fail status")
             pi.wait(lambda e: e.get("notifyType") == "error" and "switch_failed" in e.get("message", ""))
             self.assertFalse(any(e.get("notifyType") == "error" and "Cancelled" in e.get("message", "")

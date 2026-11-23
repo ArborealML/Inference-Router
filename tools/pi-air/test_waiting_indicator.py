@@ -29,6 +29,7 @@ class WaitingIndicatorTest(unittest.TestCase):
     def exercise(self, failure_status, engine="maya"):
         release = threading.Event()
         generating = threading.Event()
+        late = threading.Event()
         finish = threading.Event()
         payloads = []
         executing = threading.Event()
@@ -101,6 +102,10 @@ class WaitingIndicatorTest(unittest.TestCase):
                     time.sleep(0.65)
                     send_delta({"content": "streamed answer"}, 11)
                     self.wfile.flush()
+                    if engine == "maya":
+                        late.wait(35)
+                        self.wfile.write(b'data: {"choices":[],"prompt_progress":{"cache":0,"processed":5,"total":10,"time_ms":1000}}\n\n')
+                        self.wfile.flush()
                     finish.wait(35)
                     self.wfile.write(b'data: {"timings":{"prompt_per_second":314.25,"predicted_per_second":22.5},"choices":[{"index":0,"delta":{"content":"finished"},'
                                      b'"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n')
@@ -161,6 +166,9 @@ class WaitingIndicatorTest(unittest.TestCase):
                             response_row = expect(b"decode ~")
                             self.assertIn(b"Responding", response_row)
                             self.assertNotIn(b"%", response_row)
+                            late.set()
+                            late_row = expect(b"prefill 5.0")
+                            self.assertIn(b"Responding", late_row)
                         else:
                             # Ten new tokens in roughly 650 ms; assert a measured rate before releasing the final event.
                             expect(re.compile(rb"decode [0-9]+\.[0-9] tok/s"))
@@ -171,6 +179,7 @@ class WaitingIndicatorTest(unittest.TestCase):
                     finally:
                         generating.set()
                         finish.set()
+                        late.set()
                         pi.terminate()
                         release.set()
             finally:

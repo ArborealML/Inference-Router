@@ -29,7 +29,7 @@ function observeSpeed(req, chunk, now) {
     if (delta?.tool_calls?.length) req.phase = "Preparing Tool";
     else if (delta?.content) req.phase = "Responding";
     else if (delta?.reasoning_content || delta?.reasoning || delta?.reasoning_text) req.phase = "Reasoning";
-    else if (Number.isSafeInteger(progress?.processed) && Number.isSafeInteger(progress.total) &&
+    else if (!req.outputStarted && Number.isSafeInteger(progress?.processed) && Number.isSafeInteger(progress.total) &&
              progress.total > 0 && progress.processed >= 0 && progress.processed <= progress.total) {
         const percent = Math.floor(1000 * progress.processed / progress.total) / 10;
         req.phase = `Reading Context (${percent.toFixed(1)}%)`;
@@ -41,6 +41,8 @@ function observeSpeed(req, chunk, now) {
         req.firstCount = tokens;
         req.firstCountAt = now;
     }
+    if (delta?.tool_calls?.length || delta?.content || delta?.reasoning_content || delta?.reasoning || delta?.reasoning_text)
+        req.outputStarted = true;
     if (chars && req.firstOutputAt === undefined) {
         req.firstOutputAt = now;
         req.charsSinceFirst = 0;
@@ -321,7 +323,7 @@ export default async function air(pi) {
             if (req.branch !== branch) return;
             updateTicketUI();
             if (req.ticket) await inspect(req, req.branch.signal).catch(() => {});
-            if (message.stopReason === "error" && req.lastState !== "Cancelled" && req.branch === branch && !req.reported)
+            if (message.stopReason === "error" && !req.signal.aborted && req.lastState !== "Cancelled" && req.branch === branch && !req.reported)
                 notify(snapshotText(req.ticket, {State: "Failed", Error: message.errorMessage}), "error");
         }).catch(() => {
             req.watch.abort();
