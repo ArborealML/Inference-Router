@@ -23,8 +23,14 @@ class WaitingIndicatorTest(unittest.TestCase):
     def test_refused_admin_access_stops_polling_and_the_stream_completes(self):
         self.exercise(403)
 
-    def exercise(self, failure_status):
+    def test_streaming_usage_updates_decode_before_final_event(self):
+        self.exercise(403, engine="hyper_classic")
+
+    def exercise(self, failure_status, engine="maya"):
         release = threading.Event()
+        generating = threading.Event()
+        finish = threading.Event()
+        payloads = []
         executing = threading.Event()
         polls = []
         polled_again = threading.Event()
@@ -43,7 +49,7 @@ class WaitingIndicatorTest(unittest.TestCase):
                     return
                 if self.path == "/admin/catalog":
                     result = {"Instance": "fixture", "Generation": 1, "DefaultModel": model["Id"],
-                              "Engines": [{"Name": "test", "Models": [model]}]}
+                              "Engines": [{"Name": engine, "Models": [model]}]}
                 elif self.path == "/admin/status":
                     result = {"Engines": []}
                 elif self.path == "/admin/tickets/test-ticket":
@@ -70,7 +76,7 @@ class WaitingIndicatorTest(unittest.TestCase):
                 self.wfile.write(json.dumps(result).encode())
 
             def do_POST(self):
-                self.rfile.read(int(self.headers["Content-Length"]))
+                payloads.append(json.loads(self.rfile.read(int(self.headers["Content-Length"]))))
                 self.server.thread_id = self.headers["X-Inference-Thread"]
                 self.send_response(200)
                 self.send_header("Content-Type", "text/event-stream")
@@ -80,6 +86,22 @@ class WaitingIndicatorTest(unittest.TestCase):
                 self.wfile.flush()
                 release.wait(30)
                 try:
+                    if payloads[-1].get("return_progress"):
+                        self.wfile.write(b'data: {"choices":[],"prompt_progress":{"cache":200,"processed":800,"total":1000,"time_ms":3000}}\n\n')
+                        self.wfile.flush()
+                    generating.wait(35)
+                    def send_delta(delta, tokens):
+                        event = {"choices": [{"index": 0, "delta": delta}]}
+                        if engine == "hyper_classic":
+                            event["usage"] = {"completion_tokens": tokens}
+                        self.wfile.write(b"data: " + json.dumps(event).encode() + b"\n\n")
+
+                    send_delta({"reasoning_content": "thinking"}, 1)
+                    self.wfile.flush()
+                    time.sleep(0.65)
+                    send_delta({"content": "streamed answer"}, 11)
+                    self.wfile.flush()
+                    finish.wait(35)
                     self.wfile.write(b'data: {"timings":{"prompt_per_second":314.25,"predicted_per_second":22.5},"choices":[{"index":0,"delta":{"content":"finished"},'
                                      b'"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n')
                 except OSError:
@@ -93,7 +115,8 @@ class WaitingIndicatorTest(unittest.TestCase):
             def expect(text, forbidden=None):
                 deadline = time.monotonic() + 30
                 screen = b""
-                while text not in screen:
+                matches = (lambda line: text in line) if isinstance(text, bytes) else text.search
+                while not matches(screen):
                     remaining = deadline - time.monotonic()
                     if remaining <= 0 or not select.select([master], [], [], remaining)[0]:
                         rendered = re.sub(rb"\x1b\[[0-9;?]*[a-zA-Z]", b"", screen)
@@ -101,7 +124,7 @@ class WaitingIndicatorTest(unittest.TestCase):
                     screen = (screen + os.read(master, 32768))[-64000:]
                     if forbidden:
                         self.assertNotIn(forbidden, screen, "composer changed before AIR confirmed dispatch")
-                return next(row for row in reversed(screen.split(b"\x1b[2K")) if text in row)
+                return next(row for row in reversed(screen.split(b"\x1b[2K")) if matches(row))
 
             env = {**os.environ, "PI_CODING_AGENT_DIR": tmp, "PI_OFFLINE": "1",
                    "PI_AIR_BASE_URL": f"http://127.0.0.1:{server.server_port}/v1", "TERM": "xterm-256color"}
@@ -123,10 +146,25 @@ class WaitingIndicatorTest(unittest.TestCase):
                             expect(b"status unavailable (Ticket HTTP 403)", forbidden=b"Working")
                             self.assertFalse(polled_again.wait(1.7), "access refusal restarted ticket polling")
                         release.set()
+                        if engine == "maya":
+                            self.assertIn(b"decode", expect(b"prefill 200.0"))
+                            self.assertTrue(payloads[-1]["timings_per_token"])
+                        else:
+                            self.assertTrue(payloads[-1]["stream_options"]["continuous_usage_stats"])
+                            self.assertNotIn("return_progress", payloads[-1])
+                        generating.set()
+                        if engine == "maya":
+                            expect(b"decode ~")
+                        else:
+                            # Ten new tokens in roughly 650 ms; assert a measured rate before releasing the final event.
+                            expect(re.compile(rb"decode [0-9]+\.[0-9] tok/s"))
+                        finish.set()
                         rates = expect(b"decode 22.5 tok/s")
                         self.assertIn(b"prefill 314.3", rates)
                         self.assertNotIn(b"test-ticket", rates)
                     finally:
+                        generating.set()
+                        finish.set()
                         pi.terminate()
                         release.set()
             finally:

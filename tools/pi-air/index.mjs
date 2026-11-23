@@ -13,6 +13,38 @@ const entryType = "air-context";
 const ticketStates = new Set(["Queued", "WaitingForModel", "Executing", "Completed", "Cancelled", "Failed"]);
 const clean = value => String(value ?? "").replace(/[\x00-\x1f\x7f-\x9f]/g, " ").slice(0, 450);
 
+// Request-scoped counters only. A receiver-side text estimate is explicitly marked approximate.
+function observeSpeed(req, chunk, now) {
+    const progress = chunk?.prompt_progress;
+    const timings = chunk?.timings;
+    let prefill = timings?.prompt_per_second;
+    if (!(prefill > 0) && Number.isSafeInteger(progress?.processed) && Number.isSafeInteger(progress.cache) &&
+        progress.cache >= 0 && progress.processed <= progress.total && progress.time_ms > 0)
+        prefill = (progress.processed - progress.cache) * 1000 / progress.time_ms;
+    const previousPrefill = req.prefill, previousDecode = req.decode;
+    if (Number.isFinite(prefill) && prefill > 0) req.prefill = prefill.toFixed(1);
+
+    const delta = chunk?.choices?.[0]?.delta;
+    const chars = (delta?.reasoning_content?.length ?? 0) + (delta?.content?.length ?? 0) +
+        (delta?.tool_calls ?? []).reduce((sum, call) => sum + (call.function?.arguments?.length ?? 0), 0);
+    const tokens = chunk?.usage?.completion_tokens;
+    if (Number.isSafeInteger(tokens) && tokens > 0 && req.firstCount === undefined) {
+        req.firstCount = tokens;
+        req.firstCountAt = now;
+    }
+    if (chars && req.firstOutputAt === undefined) {
+        req.firstOutputAt = now;
+        req.charsSinceFirst = 0;
+    } else if (chars) req.charsSinceFirst += chars;
+    const decode = timings?.predicted_per_second;
+    if (Number.isFinite(decode) && decode > 0) req.decode = decode.toFixed(1);
+    else if (Number.isSafeInteger(tokens) && tokens > req.firstCount && now - req.firstCountAt >= 500)
+        req.decode = ((tokens - req.firstCount) * 1000 / (now - req.firstCountAt)).toFixed(1);
+    else if (chars && now - req.firstOutputAt >= 500 && req.firstCount === undefined)
+        req.decode = "~" + (req.charsSinceFirst * 250 / (now - req.firstOutputAt)).toFixed(1);
+    return previousPrefill !== req.prefill || previousDecode !== req.decode;
+}
+
 export default async function air(pi) {
     const base = process.env.PI_AIR_BASE_URL;
     if (!base) return;
@@ -215,13 +247,20 @@ export default async function air(pi) {
         let sent = false;
         const original = adapter.streamSimple({...requestModel, contextWindow: capacity, maxTokens}, transcript, {
             ...options, signal: req?.signal ?? options.signal, maxTokens: reserve, maxRetries: 0,
+            onPayload: async (payload, providerModel) => {
+                const body = await options.onPayload?.(payload, providerModel) ?? payload;
+                if (!mainRequest) return body;
+                const hosts = [...(catalog.models.get(requestModel.id)?.engines ?? [])];
+                if (hosts.length && hosts.every(name => ["hyper_classic", "hyper_swift"].includes(name)))
+                    return {...body, stream_options: {...body.stream_options, include_usage: true, continuous_usage_stats: true}};
+                if (hosts.length && hosts.every(name => ["strata", "strata_swift", "strata_coder", "maya", "maya_xs",
+                    "glm", "minimax", "hy4"].includes(name)))
+                    return {...body, return_progress: true, timings_per_token: true};
+                return body;
+            },
             onProviderStreamEvent: async (chunk, streamModel) => {
-                if (mainRequest && req === speedRequest && req.branch === branch && !req.signal.aborted && chunk?.timings) {
-                    const {prompt_per_second: prefill, predicted_per_second: decode} = chunk.timings;
-                    if (Number.isFinite(prefill) && prefill > 0) req.prefill = prefill.toFixed(1);
-                    if (Number.isFinite(decode) && decode > 0) req.decode = decode.toFixed(1);
-                    updateTicketUI();
-                }
+                if (mainRequest && req === speedRequest && req.branch === branch && !req.signal.aborted &&
+                    observeSpeed(req, chunk, performance.now())) updateTicketUI();
                 return options.onProviderStreamEvent?.(chunk, streamModel);
             },
             fetch: async (input, init) => {

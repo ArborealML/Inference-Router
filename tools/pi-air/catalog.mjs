@@ -5,8 +5,9 @@ export function parseCatalog(snapshot) {
     for (const engine of snapshot.Engines) {
         for (const row of engine.Models) {
             if (typeof row.Id !== "string" || !row.Id) throw new Error("Invalid AIR catalog model");
-            const model = models.get(row.Id) ?? {id: row.Id, profiles: new Map(), defaults: [], aliases: new Set()};
+            const model = models.get(row.Id) ?? {id: row.Id, engines: new Set(), profiles: new Map(), defaults: [], aliases: new Set()};
             models.set(row.Id, model);
+            model.engines.add(engine.Name);
             for (const alias of row.Aliases) model.aliases.add(alias);
             for (const profile of row.Profiles) {
                 if (!positive(profile.MaxContext) || !profile.Name) throw new Error("Invalid AIR profile");
