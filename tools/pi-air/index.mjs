@@ -134,7 +134,7 @@ export default async function air(pi) {
             req.dispatched = !req.queued;
             req.text = snapshotText(null, state);
             if (currentRequests().at(-1) === req) updateTicketUI();
-            if (state.ErrorCode && !req.reported) {
+            if (state.State === "Failed" && state.ErrorCode && !req.reported) {
                 req.reported = true;
                 notify(req.text, "error");
             }
@@ -260,7 +260,7 @@ export default async function air(pi) {
             if (req.branch !== branch) return;
             updateTicketUI();
             if (req.ticket) await inspect(req, req.branch.signal).catch(() => {});
-            if (message.stopReason === "error" && req.branch === branch && !req.reported)
+            if (message.stopReason === "error" && req.lastState !== "Cancelled" && req.branch === branch && !req.reported)
                 notify(snapshotText(req.ticket, {State: "Failed", Error: message.errorMessage}), "error");
         }).catch(() => {
             req.watch.abort();

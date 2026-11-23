@@ -88,6 +88,12 @@ class RouterHandler(BaseHTTPRequestHandler):
                     ]},
                 ],
             }).encode())
+        elif self.path in {"/admin/tickets/cancel-test", "/admin/tickets/fail-test"}:
+            cancelled = self.path.endswith("cancel-test")
+            state = {"Id": self.path.split("/")[-1], "ThreadId": self.server.snapshot()[-1]["thread"],
+                     "State": "Cancelled" if cancelled else "Failed",
+                     "ErrorCode": "cancelled" if cancelled else "switch_failed"}
+            self.write_response(200, "application/json", json.dumps(state).encode())
         elif self.path == "/admin/status":
             self.write_response(200, "application/json", b'{"Engines":[]}')
         else:
@@ -126,7 +132,7 @@ class RouterHandler(BaseHTTPRequestHandler):
         chunk = json.dumps({"choices": [{"index": 0, "delta": delta, "finish_reason": finish}]}).encode()
         tickets = {"inherited child": "inherited-ticket", "direct registry call": "registry-ticket"}
         self.write_response(200, "text/event-stream", b"data: " + chunk + b"\n\ndata: [DONE]\n\n",
-                            ticket=tickets.get(last_user))
+                            ticket={**tickets, "cancel status": "cancel-test", "fail status": "fail-test"}.get(last_user))
 
     def write_response(self, status, mime, body, ticket=None):
         self.send_response(status)
@@ -235,6 +241,18 @@ def pi_session(router, compaction=None):
 
 
 class TurnSelectionTest(unittest.TestCase):
+    def test_cancelled_ticket_visible_without_error_notification(self):
+        with FakeRouter().running() as router, pi_session(router) as pi:
+            router.release_held_response.set()
+            pi.prompt("cancel status")
+            pi.settled()
+            pi.prompt("/air-status")
+            self.assertTrue(any(e.get("method") == "notify" and "Cancelled" in e.get("message", "") for e in pi.seen))
+            pi.prompt("fail status")
+            pi.wait(lambda e: e.get("notifyType") == "error" and "switch_failed" in e.get("message", ""))
+            self.assertFalse(any(e.get("notifyType") == "error" and "Cancelled" in e.get("message", "")
+                                 for e in pi.seen))
+
     def test_installed_model_reasoning_lists(self):
         groups = [
             (["qwen-3.8-27b", "qwen3.8-flash-next-iq3_s", "qwen3.8-flash-next-coder-iq1_m",

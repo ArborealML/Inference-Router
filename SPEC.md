@@ -1,11 +1,13 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.151)
+Status: draft, continuously revised (v0.12.152)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
 
 ## 0. Revision log
+
+- v0.12.152 — show a cancelled Pi ticket in ticket status without raising an AIR error notification. Failed tickets still notify.
 
 - v0.12.151 — expose distinct named thinking modes for the installed Pi catalog and request-scoped backend throughput in the Pi footer (§13.2).
 
