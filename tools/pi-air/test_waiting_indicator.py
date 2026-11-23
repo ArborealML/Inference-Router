@@ -147,14 +147,17 @@ class WaitingIndicatorTest(unittest.TestCase):
                             self.assertFalse(polled_again.wait(1.7), "access refusal restarted ticket polling")
                         release.set()
                         if engine == "maya":
-                            self.assertIn(b"decode", expect(b"prefill 200.0"))
+                            progress_row = expect(b"prefill 200.0 (80%)")
+                            self.assertLess(progress_row.index(b"prefill"), progress_row.index(b"Reading Context"))
+                            self.assertLess(progress_row.index(b"decode"), progress_row.index(b"composer-fixture"))
                             self.assertTrue(payloads[-1]["timings_per_token"])
                         else:
                             self.assertTrue(payloads[-1]["stream_options"]["continuous_usage_stats"])
                             self.assertNotIn("return_progress", payloads[-1])
                         generating.set()
+                        expect(b"Reasoning")
                         if engine == "maya":
-                            expect(b"decode ~")
+                            self.assertIn(b"Responding", expect(b"decode ~"))
                         else:
                             # Ten new tokens in roughly 650 ms; assert a measured rate before releasing the final event.
                             expect(re.compile(rb"decode [0-9]+\.[0-9] tok/s"))

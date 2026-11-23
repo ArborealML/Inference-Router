@@ -241,6 +241,14 @@ def pi_session(router, compaction=None):
 
 
 class TurnSelectionTest(unittest.TestCase):
+    def test_tool_preparation_and_execution_have_distinct_status(self):
+        with FakeRouter().running() as router, pi_session(router) as pi:
+            pi.hold("start Hy4")
+            status = [e.get("statusText", "") for e in pi.seen if e.get("method") == "setStatus"]
+            labels = [s for s in status if s]
+            self.assertTrue(any("Preparing Tool" in s for s in labels), labels)
+            self.assertIn("Executing Tool", labels[-1])
+
     def test_cancelled_ticket_visible_without_error_notification(self):
         with FakeRouter().running() as router, pi_session(router) as pi:
             router.release_held_response.set()

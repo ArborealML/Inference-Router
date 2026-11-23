@@ -24,7 +24,17 @@ function observeSpeed(req, chunk, now) {
     const previousPrefill = req.prefill, previousDecode = req.decode;
     if (Number.isFinite(prefill) && prefill > 0) req.prefill = prefill.toFixed(1);
 
+    const previousPercent = req.percent, previousPhase = req.phase;
     const delta = chunk?.choices?.[0]?.delta;
+    if (delta?.tool_calls?.length) req.phase = "Preparing Tool";
+    else if (delta?.content) req.phase = "Responding";
+    else if (delta?.reasoning_content || delta?.reasoning || delta?.reasoning_text) req.phase = "Reasoning";
+    else if (Number.isSafeInteger(progress?.processed) && Number.isSafeInteger(progress.total) &&
+             progress.total > 0 && progress.processed >= 0 && progress.processed <= progress.total) {
+        req.phase = "Reading Context";
+        req.percent = Math.floor(100 * progress.processed / progress.total);
+    }
+    if (req.phase && req.phase !== "Reading Context" && req.percent !== undefined) req.percent = 100;
     const chars = (delta?.reasoning_content?.length ?? 0) + (delta?.content?.length ?? 0) +
         (delta?.tool_calls ?? []).reduce((sum, call) => sum + (call.function?.arguments?.length ?? 0), 0);
     const tokens = chunk?.usage?.completion_tokens;
@@ -42,7 +52,8 @@ function observeSpeed(req, chunk, now) {
         req.decode = ((tokens - req.firstCount) * 1000 / (now - req.firstCountAt)).toFixed(1);
     else if (chars && now - req.firstOutputAt >= 500 && req.firstCount === undefined)
         req.decode = "~" + (req.charsSinceFirst * 250 / (now - req.firstOutputAt)).toFixed(1);
-    return previousPrefill !== req.prefill || previousDecode !== req.decode;
+    return previousPrefill !== req.prefill || previousDecode !== req.decode ||
+        previousPercent !== req.percent || previousPhase !== req.phase;
 }
 
 export default async function air(pi) {
@@ -58,7 +69,8 @@ export default async function air(pi) {
     let engines = [];
     let choices = new Map();
     let budgetRefused = false;
-    let showingWaiting = false;
+    let workingLabel;
+    const runningTools = new Set();
     let speedRequest;
     const active = new Set();
     const agentRequestHeaders = new WeakSet();
@@ -70,13 +82,18 @@ export default async function air(pi) {
     const matchesRequest = (req, id) => req && (req.ticket === id || req.clientId === id);
     function updateTicketUI() {
         const current = currentRequests().at(-1);
-        const status = current?.observationWarning ?? current?.text;
-        const rates = speedRequest && `prefill ${speedRequest.prefill ?? "—"} · decode ${speedRequest.decode ?? "—"} tok/s`;
-        ctx?.ui.setStatus("air-ticket", [status, rates].filter(Boolean).join(" · ") || undefined);
         const waiting = current?.queued === true && !current.signal.aborted;
-        if (waiting !== showingWaiting) {
-            ctx?.ui.setWorkingMessage(waiting ? "Waiting" : undefined);
-            showingWaiting = waiting;
+        const phase = runningTools.size ? "Executing Tool" : current === speedRequest && current &&
+            !current.signal.aborted && !waiting && !["Completed", "Cancelled", "Failed"].includes(current.lastState)
+            ? current.phase : undefined;
+        const status = phase ? snapshotText(null, {State: phase, Model: current?.model}) :
+            current?.observationWarning ?? current?.text;
+        const rates = speedRequest && `prefill ${speedRequest.prefill ?? "—"}${speedRequest.percent === undefined ? "" : ` (${speedRequest.percent}%)`} · decode ${speedRequest.decode ?? "—"} tok/s`;
+        ctx?.ui.setStatus("air-ticket", [rates, status].filter(Boolean).join(" · ") || undefined);
+        const label = waiting ? "Waiting" : phase;
+        if (label !== workingLabel) {
+            ctx?.ui.setWorkingMessage(label);
+            workingLabel = label;
         }
     }
     const admin = (path, options = {}) => fetch(url.origin + "/admin/" + path, {
@@ -260,7 +277,13 @@ export default async function air(pi) {
             },
             onProviderStreamEvent: async (chunk, streamModel) => {
                 if (mainRequest && req === speedRequest && req.branch === branch && !req.signal.aborted &&
-                    observeSpeed(req, chunk, performance.now())) updateTicketUI();
+                    observeSpeed(req, chunk, performance.now())) {
+                    if (req.phase) {
+                        req.queued = false;
+                        req.dispatched = true;
+                    }
+                    updateTicketUI();
+                }
                 return options.onProviderStreamEvent?.(chunk, streamModel);
             },
             fetch: async (input, init) => {
@@ -364,6 +387,7 @@ export default async function air(pi) {
         branch?.abort();
         for (const req of currentRequests()) { req.abort.abort(); req.watch.abort(); }
         branch = new AbortController();
+        runningTools.clear();
         latest = speedRequest = undefined;
         ctx = context;
         updateTicketUI();
@@ -388,8 +412,9 @@ export default async function air(pi) {
         for (const req of active) { req.abort.abort(); req.watch.abort(); }
         branch?.abort();
         ctx?.ui.setStatus("air-ticket", undefined);
-        if (showingWaiting) ctx?.ui.setWorkingMessage(undefined);
-        showingWaiting = false;
+        if (workingLabel) ctx?.ui.setWorkingMessage(undefined);
+        runningTools.clear();
+        workingLabel = undefined;
         ctx = lifetime = branch = latest = speedRequest = turnSelection = undefined;
     });
     pi.on("message_start", (event, context) => {
@@ -400,7 +425,20 @@ export default async function air(pi) {
             notify("AIR could not resolve one serving profile for " + model.id +
                 ". This turn uses automatic routing with a " + turnSelection.capacity + "-token minimum.", "warning");
     });
+    pi.on("tool_execution_start", event => {
+        if (turnSelection && branch && !branch.signal.aborted) {
+            runningTools.add(event.toolCallId);
+            updateTicketUI();
+        }
+    });
+    pi.on("tool_execution_end", event => {
+        if (runningTools.delete(event.toolCallId)) updateTicketUI();
+    });
     pi.on("agent_settled", async () => {
+        if (runningTools.size) {
+            runningTools.clear();
+            updateTicketUI();
+        }
         turnSelection = undefined;
         if (ctx) await publish();
     });
