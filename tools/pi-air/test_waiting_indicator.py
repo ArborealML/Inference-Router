@@ -87,7 +87,7 @@ class WaitingIndicatorTest(unittest.TestCase):
                 release.wait(30)
                 try:
                     if payloads[-1].get("return_progress"):
-                        self.wfile.write(b'data: {"choices":[],"prompt_progress":{"cache":200,"processed":800,"total":1000,"time_ms":3000}}\n\n')
+                        self.wfile.write(b'data: {"choices":[],"prompt_progress":{"cache":175,"processed":475,"total":1000,"time_ms":1500}}\n\n')
                         self.wfile.flush()
                     generating.wait(35)
                     def send_delta(delta, tokens):
@@ -147,7 +147,8 @@ class WaitingIndicatorTest(unittest.TestCase):
                             self.assertFalse(polled_again.wait(1.7), "access refusal restarted ticket polling")
                         release.set()
                         if engine == "maya":
-                            progress_row = expect(b"prefill 200.0 (80%)")
+                            progress_row = expect(b"prefill 200.0")
+                            self.assertIn(b"Reading Context (47.5%)", progress_row)
                             self.assertLess(progress_row.index(b"prefill"), progress_row.index(b"Reading Context"))
                             self.assertLess(progress_row.index(b"decode"), progress_row.index(b"composer-fixture"))
                             self.assertTrue(payloads[-1]["timings_per_token"])
@@ -157,7 +158,9 @@ class WaitingIndicatorTest(unittest.TestCase):
                         generating.set()
                         expect(b"Reasoning")
                         if engine == "maya":
-                            self.assertIn(b"Responding", expect(b"decode ~"))
+                            response_row = expect(b"decode ~")
+                            self.assertIn(b"Responding", response_row)
+                            self.assertNotIn(b"%", response_row)
                         else:
                             # Ten new tokens in roughly 650 ms; assert a measured rate before releasing the final event.
                             expect(re.compile(rb"decode [0-9]+\.[0-9] tok/s"))

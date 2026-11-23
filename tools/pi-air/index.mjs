@@ -24,17 +24,16 @@ function observeSpeed(req, chunk, now) {
     const previousPrefill = req.prefill, previousDecode = req.decode;
     if (Number.isFinite(prefill) && prefill > 0) req.prefill = prefill.toFixed(1);
 
-    const previousPercent = req.percent, previousPhase = req.phase;
+    const previousPhase = req.phase;
     const delta = chunk?.choices?.[0]?.delta;
     if (delta?.tool_calls?.length) req.phase = "Preparing Tool";
     else if (delta?.content) req.phase = "Responding";
     else if (delta?.reasoning_content || delta?.reasoning || delta?.reasoning_text) req.phase = "Reasoning";
     else if (Number.isSafeInteger(progress?.processed) && Number.isSafeInteger(progress.total) &&
              progress.total > 0 && progress.processed >= 0 && progress.processed <= progress.total) {
-        req.phase = "Reading Context";
-        req.percent = Math.floor(100 * progress.processed / progress.total);
+        const percent = Math.floor(1000 * progress.processed / progress.total) / 10;
+        req.phase = `Reading Context (${percent.toFixed(1)}%)`;
     }
-    if (req.phase && req.phase !== "Reading Context" && req.percent !== undefined) req.percent = 100;
     const chars = (delta?.reasoning_content?.length ?? 0) + (delta?.content?.length ?? 0) +
         (delta?.tool_calls ?? []).reduce((sum, call) => sum + (call.function?.arguments?.length ?? 0), 0);
     const tokens = chunk?.usage?.completion_tokens;
@@ -53,7 +52,7 @@ function observeSpeed(req, chunk, now) {
     else if (chars && now - req.firstOutputAt >= 500 && req.firstCount === undefined)
         req.decode = "~" + (req.charsSinceFirst * 250 / (now - req.firstOutputAt)).toFixed(1);
     return previousPrefill !== req.prefill || previousDecode !== req.decode ||
-        previousPercent !== req.percent || previousPhase !== req.phase;
+        previousPhase !== req.phase;
 }
 
 export default async function air(pi) {
@@ -88,7 +87,7 @@ export default async function air(pi) {
             ? current.phase : undefined;
         const status = phase ? snapshotText(null, {State: phase, Model: current?.model}) :
             current?.observationWarning ?? current?.text;
-        const rates = speedRequest && `prefill ${speedRequest.prefill ?? "—"}${speedRequest.percent === undefined ? "" : ` (${speedRequest.percent}%)`} · decode ${speedRequest.decode ?? "—"} tok/s`;
+        const rates = speedRequest && `prefill ${speedRequest.prefill ?? "—"} · decode ${speedRequest.decode ?? "—"} tok/s`;
         ctx?.ui.setStatus("air-ticket", [rates, status].filter(Boolean).join(" · ") || undefined);
         const label = waiting ? "Waiting" : phase;
         if (label !== workingLabel) {
