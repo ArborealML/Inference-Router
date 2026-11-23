@@ -76,7 +76,7 @@ internal sealed class AirTuneTextGenerator
         return Encoding.ASCII.GetBytes(text.ToString());
     }
 
-    private static int PrefixByteLength(int records)
+    internal static int PrefixByteLength(int records)
     {
         var bytes = HeaderBytes;
         var width = 1;
@@ -89,7 +89,7 @@ internal sealed class AirTuneTextGenerator
         return bytes;
     }
 
-    private static int RecordByteLength(int line)
+    internal static int RecordByteLength(int line)
     {
         var width = 1;
         for (; line >= 10; line /= 10)
