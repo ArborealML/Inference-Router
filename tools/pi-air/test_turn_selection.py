@@ -235,6 +235,29 @@ def pi_session(router, compaction=None):
 
 
 class TurnSelectionTest(unittest.TestCase):
+    def test_installed_model_reasoning_lists(self):
+        groups = [
+            (["qwen-3.8-27b", "qwen3.8-flash-next-iq3_s", "qwen3.8-flash-next-coder-iq1_m",
+              "swift", "swift-1.5-iq3_s"], ["off", "low", "medium", "xhigh"]),
+            (["deepseek-v4.1-flash-1017-iq2-xxs", "deepseek-v4.1-flash-1017-maya-xs-v2",
+              "glm-5.3-flash"], ["off", "low", "high", "max"]),
+            (["hy4-flash"], ["off", "high"]),
+            (["minimax-m3.1-flash"], ["off", "low", "medium", "high", "xhigh", "max"]),
+        ]
+        from unittest.mock import patch
+        with patch(__name__ + ".MODELS", MODELS + [m for models, _ in groups for m in models if m not in MODELS]):
+            with FakeRouter().running() as router, pi_session(router) as pi:
+                for models, expected in groups:
+                    for model in models:
+                        with self.subTest(model=model):
+                            pi.model(model)
+                            self.assertEqual(expected, pi.send("get_available_thinking_levels")["levels"])
+                            pi.send("set_thinking_level", level=expected[-1])
+                            pi.prompt("Check effort")
+                            pi.settled()
+                            self.assertEqual(expected[-1], router.snapshot()[-1]["template"]["reasoning_effort"])
+
+
     def check_requests(self, requests, thread, expected):
         self.assertTrue(thread)
         self.assertEqual([

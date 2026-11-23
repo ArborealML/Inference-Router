@@ -27,6 +27,7 @@ export default async function air(pi) {
     let choices = new Map();
     let budgetRefused = false;
     let showingWaiting = false;
+    let speedRequest;
     const active = new Set();
     const agentRequestHeaders = new WeakSet();
     // CLM can replace the system message while preserving the rest of Pi's prepared turn.
@@ -37,7 +38,9 @@ export default async function air(pi) {
     const matchesRequest = (req, id) => req && (req.ticket === id || req.clientId === id);
     function updateTicketUI() {
         const current = currentRequests().at(-1);
-        ctx?.ui.setStatus("air-ticket", current?.observationWarning ?? current?.text);
+        const status = current?.observationWarning ?? current?.text;
+        const rates = speedRequest && `prefill ${speedRequest.prefill ?? "—"} · decode ${speedRequest.decode ?? "—"} tok/s`;
+        ctx?.ui.setStatus("air-ticket", [status, rates].filter(Boolean).join(" · ") || undefined);
         const waiting = current?.queued === true && !current.signal.aborted;
         if (waiting !== showingWaiting) {
             ctx?.ui.setWorkingMessage(waiting ? "Waiting" : undefined);
@@ -129,7 +132,7 @@ export default async function air(pi) {
             req.observationWarning = undefined;
             req.queued = state.State === "Queued";
             req.dispatched = !req.queued;
-            req.text = snapshotText(req.ticket, state);
+            req.text = snapshotText(null, state);
             if (currentRequests().at(-1) === req) updateTicketUI();
             if (state.ErrorCode && !req.reported) {
                 req.reported = true;
@@ -156,7 +159,7 @@ export default async function air(pi) {
                 }
                 req.missedPolls = (req.missedPolls ?? 0) + 1;
                 if (req.missedPolls === 4) {
-                    req.observationWarning = snapshotText(req.ticket, {
+                    req.observationWarning = snapshotText(null, {
                         State: "status unavailable (last known " + (req.lastState ?? "admitted") + ")", Model: req.model
                     });
                     updateTicketUI();
@@ -204,13 +207,23 @@ export default async function air(pi) {
             req.signal = options.signal ? AbortSignal.any([options.signal, req.abort.signal]) : req.abort.signal;
             active.add(req);
             latest = req;
-            req.text = snapshotText(requestKey(req), {State: "submitting", Model: requestModel.id});
+            if (mainRequest) speedRequest = req;
+            req.text = snapshotText(null, {State: "submitting", Model: requestModel.id});
             updateTicketUI();
         }
         const underlying = options.fetch ?? fetch;
         let sent = false;
         const original = adapter.streamSimple({...requestModel, contextWindow: capacity, maxTokens}, transcript, {
             ...options, signal: req?.signal ?? options.signal, maxTokens: reserve, maxRetries: 0,
+            onProviderStreamEvent: async (chunk, streamModel) => {
+                if (mainRequest && req === speedRequest && req.branch === branch && !req.signal.aborted && chunk?.timings) {
+                    const {prompt_per_second: prefill, predicted_per_second: decode} = chunk.timings;
+                    if (Number.isFinite(prefill) && prefill > 0) req.prefill = prefill.toFixed(1);
+                    if (Number.isFinite(decode) && decode > 0) req.decode = decode.toFixed(1);
+                    updateTicketUI();
+                }
+                return options.onProviderStreamEvent?.(chunk, streamModel);
+            },
             fetch: async (input, init) => {
                 if (sent) throw new Error("AIR already received this Pi request");
                 if (String(input) !== base + "/chat/completions" || init?.method?.toUpperCase() !== "POST")
@@ -231,7 +244,7 @@ export default async function air(pi) {
                 if (!req) return response;
                 req.ticket = response.headers.get("X-Inference-Ticket");
                 if (req.ticket && req.branch === branch) {
-                    req.text = snapshotText(req.ticket, {State: "admitted"});
+                    req.text = snapshotText(null, {State: "admitted"});
                     updateTicketUI();
                     void watchTicket(req);
                 }
@@ -312,7 +325,7 @@ export default async function air(pi) {
         branch?.abort();
         for (const req of currentRequests()) { req.abort.abort(); req.watch.abort(); }
         branch = new AbortController();
-        latest = undefined;
+        latest = speedRequest = undefined;
         ctx = context;
         updateTicketUI();
         budgetRefused = false;
@@ -338,7 +351,7 @@ export default async function air(pi) {
         ctx?.ui.setStatus("air-ticket", undefined);
         if (showingWaiting) ctx?.ui.setWorkingMessage(undefined);
         showingWaiting = false;
-        ctx = lifetime = branch = latest = turnSelection = undefined;
+        ctx = lifetime = branch = latest = speedRequest = turnSelection = undefined;
     });
     pi.on("message_start", (event, context) => {
         if (event.message.role !== "user") return;
@@ -440,10 +453,10 @@ export default async function air(pi) {
             const key = args.trim();
             const req = key ? [...requests, latest].find(r => matchesRequest(r, key)) : requests.at(-1) ?? latest;
             if (!req) return notify("No matching AIR request on this branch.");
-            if (!req.ticket) return notify(req.text);
+            if (!req.ticket) return notify(requestKey(req) + " · " + req.text);
             try {
                 await inspect(req, req.branch.signal);
-                if (req.branch === branch) notify(req.text);
+                if (req.branch === branch) notify(req.ticket + " · " + req.text);
             } catch (error) {
                 if (req.branch === branch) notify(error.message, "warning");
             }

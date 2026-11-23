@@ -80,7 +80,7 @@ class WaitingIndicatorTest(unittest.TestCase):
                 self.wfile.flush()
                 release.wait(30)
                 try:
-                    self.wfile.write(b'data: {"choices":[{"index":0,"delta":{"content":"finished"},'
+                    self.wfile.write(b'data: {"timings":{"prompt_per_second":314.25,"predicted_per_second":22.5},"choices":[{"index":0,"delta":{"content":"finished"},'
                                      b'"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n')
                 except OSError:
                     pass
@@ -123,7 +123,9 @@ class WaitingIndicatorTest(unittest.TestCase):
                             expect(b"status unavailable (Ticket HTTP 403)", forbidden=b"Working")
                             self.assertFalse(polled_again.wait(1.7), "access refusal restarted ticket polling")
                         release.set()
-                        expect(b"finished")
+                        rates = expect(b"decode 22.5 tok/s")
+                        self.assertIn(b"prefill 314.3", rates)
+                        self.assertNotIn(b"test-ticket", rates)
                     finally:
                         pi.terminate()
                         release.set()

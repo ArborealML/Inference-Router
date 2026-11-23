@@ -53,15 +53,33 @@ export function observedWindow(model, engines) {
     return windows.length && windows.every(positive) ? Math.min(...windows) : 0;
 }
 
+// Null hides a level in Pi's picker. Keep only distinct named efforts the serving template honors.
+const qwenLevels = ["low", "medium", "xhigh"];
+const deepseekLevels = ["low", "high", "max"];
+const modelEfforts = new Map([
+    ["qwen-3.8-27b", qwenLevels],
+    ["swift", qwenLevels],
+    ["swift-1.5-iq3_s", qwenLevels],
+    ["qwen3.8-flash-next-iq3_s", qwenLevels],
+    ["qwen3.8-flash-next-coder-iq1_m", qwenLevels],
+    ["deepseek-v4.1-flash-1017-iq2-xxs", deepseekLevels],
+    ["deepseek-v4.1-flash-1017-maya-xs-v2", deepseekLevels],
+    ["glm-5.3-flash", ["low", "high", "max"]],
+    ["minimax-m3.1-flash", ["low", "medium", "high", "xhigh", "max"]],
+    ["hy4-flash", ["high"]],
+]);
+
 export function piModel(model, selected, engines) {
     const requested = tier(model, selected);
     const window = requested?.window || observedWindow(model, engines);
     const loaded = engines.filter(e => e.Healthy && e.LoadedModels.includes(model.id)).map(e => e.Engine);
+    const efforts = modelEfforts.get(model.id);
     return {
         id: model.id, name: model.id + (loaded.length ? ' (loaded on ' + loaded.join(', ') + ')' : ' (configured)'),
         contextWindow: window || 4096, maxTokens: outputBudget(window || 4096),
-        ...(model.id === "qwen-3.8-27b" ? {
-            thinkingLevelMap: {minimal: null, low: "low", medium: "medium", high: null, xhigh: "xhigh"}
+        ...(efforts ? {
+            thinkingLevelMap: Object.fromEntries(["minimal", "low", "medium", "high", "xhigh", "max"]
+                .map(level => [level, efforts.includes(level) ? level : null]))
         } : {}),
         reasoning: true, input: ["text"], cost: {input: 0, output: 0, cacheRead: 0, cacheWrite: 0},
         compat: {supportsStore: false, supportsDeveloperRole: false, supportsStrictMode: false,
