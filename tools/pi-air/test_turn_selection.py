@@ -14,7 +14,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parent
 WINDOWS = {"compact": 8192, "narrow": 32768, "standard": 65536, "wide": 131072}
-MODELS = ["hy4.fixture", "qwen.fixture", "child.fixture", "mixed.fixture"]
+MODELS = ["hy4.fixture", "qwen.fixture", "child.fixture", "mixed.fixture", "qwen-3.8-27b"]
 LARGE_PROMPT = "Large input " + "x" * 35000
 CAP_PROMPT = "Start capped turn"
 CAP_FIT_PROMPT = "Near window with cap " + "x" * 26000
@@ -82,12 +82,18 @@ class RouterHandler(BaseHTTPRequestHandler):
             self.write_response(200, "application/json", json.dumps({
                 "Instance": "fixture", "Generation": 1, "DefaultModel": MODELS[0],
                 "Engines": [
-                    {"Name": "fake", "Models": models},
-                    {"Name": "second", "Models": [
+                    {"Name": "maya", "Models": models},
+                    {"Name": "hyper_classic", "Models": [
                         {"Id": "mixed.fixture", "DefaultProfile": "wide", "Aliases": [], "Profiles": profiles},
                     ]},
                 ],
             }).encode())
+        elif self.path in {"/admin/tickets/cancel-test", "/admin/tickets/fail-test"}:
+            cancelled = self.path.endswith("cancel-test")
+            state = {"Id": self.path.split("/")[-1], "ThreadId": self.server.snapshot()[-1]["thread"],
+                     "State": "Cancelled" if cancelled else "Failed",
+                     "ErrorCode": "cancelled" if cancelled else "switch_failed"}
+            self.write_response(200, "application/json", json.dumps(state).encode())
         elif self.path == "/admin/status":
             self.write_response(200, "application/json", b'{"Engines":[]}')
         else:
@@ -102,6 +108,8 @@ class RouterHandler(BaseHTTPRequestHandler):
         users = [message_text(message["content"]) for message in messages if message["role"] == "user"]
         last_user = users[-1] if users else None
         count = self.server.record({
+            "template": body.get("chat_template_kwargs", {}),
+            "progress": body.get("return_progress"), "usage_stats": body.get("stream_options", {}).get("continuous_usage_stats"),
             "path": self.path, "model": body.get("model"), "user": last_user, "users": users,
             "thread": self.headers["X-Inference-Thread"], "profile": self.headers["X-Inference-Profile"],
             "context": self.headers["X-Inference-Required-Context"], "output_limit": body.get("max_tokens"),
@@ -122,10 +130,14 @@ class RouterHandler(BaseHTTPRequestHandler):
         else:
             delta = {"role": "assistant", "content": "ok"}
             finish = "stop"
-        chunk = json.dumps({"choices": [{"index": 0, "delta": delta, "finish_reason": finish}]}).encode()
-        tickets = {"inherited child": "inherited-ticket", "direct registry call": "registry-ticket"}
+        event = {"choices": [{"index": 0, "delta": delta, "finish_reason": finish}]}
+        if last_user in {"held speed", "second speed"}:
+            rate = 111 if last_user == "held speed" else 222
+            event["timings"] = {"prompt_per_second": rate, "predicted_per_second": rate / 10}
+        chunk = json.dumps(event).encode()
+        tickets = {"held speed": "speed-ticket", "inherited child": "inherited-ticket", "direct registry call": "registry-ticket"}
         self.write_response(200, "text/event-stream", b"data: " + chunk + b"\n\ndata: [DONE]\n\n",
-                            ticket=tickets.get(last_user))
+                            ticket={**tickets, "cancel status": "cancel-test", "fail status": "fail-test"}.get(last_user))
 
     def write_response(self, status, mime, body, ticket=None):
         self.send_response(status)
@@ -234,6 +246,80 @@ def pi_session(router, compaction=None):
 
 
 class TurnSelectionTest(unittest.TestCase):
+    def test_mixed_route_omits_family_specific_request_flags(self):
+        with FakeRouter().running() as router, pi_session(router) as pi:
+            pi.model("mixed.fixture")
+            pi.prompt("Mixed route flags")
+            pi.settled()
+            post, = router.snapshot()
+            self.assertIsNone(post["progress"])
+            self.assertIsNone(post["usage_stats"])
+
+    def test_overlapping_sessions_and_next_request_keep_rates_separate(self):
+        def rates(pi, offset=0):
+            return [event["statusText"] for event in pi.seen[offset:]
+                    if event.get("method") == "setStatus" and "prefill" in (event.get("statusText") or "")]
+
+        with FakeRouter().running() as router, pi_session(router) as first, pi_session(router) as second:
+            first.prompt("held speed")
+            self.assertTrue(router.held_response_started.wait(5))
+            second.prompt("second speed")
+            second.settled()
+            self.assertIn("prefill 222.0 · decode 22.2", rates(second)[-1])
+            router.release_held_response.set()
+            first.settled()
+            self.assertIn("prefill 111.0 · decode 11.1", rates(first)[-1])
+            self.assertFalse(any("222.0" in row for row in rates(first)))
+            offset = len(first.seen)
+            first.prompt("no timing data")
+            first.settled()
+            self.assertTrue(rates(first, offset))
+            self.assertTrue(all("prefill — · decode —" in row for row in rates(first, offset)))
+
+    def test_tool_preparation_and_execution_have_distinct_status(self):
+        with FakeRouter().running() as router, pi_session(router) as pi:
+            pi.hold("start Hy4")
+            status = [e.get("statusText", "") for e in pi.seen if e.get("method") == "setStatus"]
+            labels = [s for s in status if s]
+            self.assertTrue(any("Preparing Tool" in s for s in labels), labels)
+            self.assertIn("Executing Tool", labels[-1])
+
+    def test_cancelled_ticket_visible_without_error_notification(self):
+        with FakeRouter().running() as router, pi_session(router) as pi:
+            router.release_held_response.set()
+            pi.prompt("cancel status")
+            pi.settled()
+            pi.prompt("/air-status")
+            self.assertTrue(any(e.get("method") == "notify" and "Cancelled" in e.get("message", "") for e in pi.seen))
+            self.assertFalse(any(e.get("notifyType") == "error" for e in pi.seen))
+            pi.prompt("fail status")
+            pi.wait(lambda e: e.get("notifyType") == "error" and "switch_failed" in e.get("message", ""))
+            self.assertFalse(any(e.get("notifyType") == "error" and "Cancelled" in e.get("message", "")
+                                 for e in pi.seen))
+
+    def test_installed_model_reasoning_lists(self):
+        groups = [
+            (["qwen-3.8-27b", "qwen3.8-flash-next-iq3_s", "qwen3.8-flash-next-coder-iq1_m",
+              "swift", "swift-1.5-iq3_s"], ["off", "low", "medium", "xhigh"]),
+            (["deepseek-v4.1-flash-1017-iq2-xxs", "deepseek-v4.1-flash-1017-maya-xs-v2",
+              "glm-5.3-flash"], ["off", "low", "high", "max"]),
+            (["hy4-flash"], ["off", "high"]),
+            (["minimax-m3.1-flash"], ["off", "low", "medium", "high", "xhigh", "max"]),
+        ]
+        from unittest.mock import patch
+        with patch(__name__ + ".MODELS", MODELS + [m for models, _ in groups for m in models if m not in MODELS]):
+            with FakeRouter().running() as router, pi_session(router) as pi:
+                for models, expected in groups:
+                    for model in models:
+                        with self.subTest(model=model):
+                            pi.model(model)
+                            self.assertEqual(expected, pi.send("get_available_thinking_levels")["levels"])
+                            pi.send("set_thinking_level", level=expected[-1])
+                            pi.prompt("Check effort")
+                            pi.settled()
+                            self.assertEqual(expected[-1], router.snapshot()[-1]["template"]["reasoning_effort"])
+
+
     def check_requests(self, requests, thread, expected):
         self.assertTrue(thread)
         self.assertEqual([
@@ -244,6 +330,21 @@ class TurnSelectionTest(unittest.TestCase):
              post["user"], post["has_tool_result"])
             for post in requests
         ])
+
+    def test_qwen_27b_high_uses_xhigh_template_effort(self):
+        with FakeRouter().running() as router, pi_session(router) as pi:
+            pi.model("hy4.fixture")
+            pi.send("set_thinking_level", level="high")
+            for model, expected, levels in [
+                ("qwen-3.8-27b", "xhigh", ["off", "low", "medium", "xhigh"]),
+                ("hy4.fixture", "high", ["off", "minimal", "low", "medium", "high"]),
+            ]:
+                pi.model(model)
+                self.assertEqual(levels, pi.send("get_available_thinking_levels")["levels"])
+                self.assertEqual(expected, pi.send("get_state")["thinkingLevel"])
+                pi.prompt("Check effort")
+                pi.settled()
+                self.assertEqual(expected, router.snapshot()[-1]["template"]["reasoning_effort"])
 
     def test_held_tool_retry_and_native_follow_up(self):
         with FakeRouter().running() as router, pi_session(router) as pi:

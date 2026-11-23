@@ -13,6 +13,50 @@ const entryType = "air-context";
 const ticketStates = new Set(["Queued", "WaitingForModel", "Executing", "Completed", "Cancelled", "Failed"]);
 const clean = value => String(value ?? "").replace(/[\x00-\x1f\x7f-\x9f]/g, " ").slice(0, 450);
 
+// Request-scoped counters only. A receiver-side text estimate is explicitly marked approximate.
+function observeSpeed(req, chunk, now) {
+    const progress = chunk?.prompt_progress;
+    const timings = chunk?.timings;
+    let prefill = timings?.prompt_per_second;
+    if (!(prefill > 0) && Number.isSafeInteger(progress?.processed) && Number.isSafeInteger(progress.cache) &&
+        progress.cache >= 0 && progress.processed <= progress.total && progress.time_ms > 0)
+        prefill = (progress.processed - progress.cache) * 1000 / progress.time_ms;
+    const previousPrefill = req.prefill, previousDecode = req.decode;
+    if (Number.isFinite(prefill) && prefill > 0) req.prefill = prefill.toFixed(1);
+
+    const previousPhase = req.phase;
+    const delta = chunk?.choices?.[0]?.delta;
+    if (delta?.tool_calls?.length) req.phase = "Preparing Tool";
+    else if (delta?.content) req.phase = "Responding";
+    else if (delta?.reasoning_content || delta?.reasoning || delta?.reasoning_text) req.phase = "Reasoning";
+    else if (!req.outputStarted && Number.isSafeInteger(progress?.processed) && Number.isSafeInteger(progress.total) &&
+             progress.total > 0 && progress.processed >= 0 && progress.processed <= progress.total) {
+        const percent = Math.floor(1000 * progress.processed / progress.total) / 10;
+        req.phase = `Reading Context (${percent.toFixed(1)}%)`;
+    }
+    const chars = (delta?.reasoning_content?.length ?? 0) + (delta?.content?.length ?? 0) +
+        (delta?.tool_calls ?? []).reduce((sum, call) => sum + (call.function?.arguments?.length ?? 0), 0);
+    const tokens = chunk?.usage?.completion_tokens;
+    if (Number.isSafeInteger(tokens) && tokens > 0 && req.firstCount === undefined) {
+        req.firstCount = tokens;
+        req.firstCountAt = now;
+    }
+    if (delta?.tool_calls?.length || delta?.content || delta?.reasoning_content || delta?.reasoning || delta?.reasoning_text)
+        req.outputStarted = true;
+    if (chars && req.firstOutputAt === undefined) {
+        req.firstOutputAt = now;
+        req.charsSinceFirst = 0;
+    } else if (chars) req.charsSinceFirst += chars;
+    const decode = timings?.predicted_per_second;
+    if (Number.isFinite(decode) && decode > 0) req.decode = decode.toFixed(1);
+    else if (Number.isSafeInteger(tokens) && tokens > req.firstCount && now - req.firstCountAt >= 500)
+        req.decode = ((tokens - req.firstCount) * 1000 / (now - req.firstCountAt)).toFixed(1);
+    else if (chars && now - req.firstOutputAt >= 500 && req.firstCount === undefined)
+        req.decode = "~" + (req.charsSinceFirst * 250 / (now - req.firstOutputAt)).toFixed(1);
+    return previousPrefill !== req.prefill || previousDecode !== req.decode ||
+        previousPhase !== req.phase;
+}
+
 export default async function air(pi) {
     const base = process.env.PI_AIR_BASE_URL;
     if (!base) return;
@@ -26,7 +70,9 @@ export default async function air(pi) {
     let engines = [];
     let choices = new Map();
     let budgetRefused = false;
-    let showingWaiting = false;
+    let workingLabel;
+    const runningTools = new Set();
+    let speedRequest;
     const active = new Set();
     const agentRequestHeaders = new WeakSet();
     // CLM can replace the system message while preserving the rest of Pi's prepared turn.
@@ -37,11 +83,18 @@ export default async function air(pi) {
     const matchesRequest = (req, id) => req && (req.ticket === id || req.clientId === id);
     function updateTicketUI() {
         const current = currentRequests().at(-1);
-        ctx?.ui.setStatus("air-ticket", current?.observationWarning ?? current?.text);
         const waiting = current?.queued === true && !current.signal.aborted;
-        if (waiting !== showingWaiting) {
-            ctx?.ui.setWorkingMessage(waiting ? "Waiting" : undefined);
-            showingWaiting = waiting;
+        const phase = runningTools.size ? "Executing Tool" : current === speedRequest && current &&
+            !current.signal.aborted && !waiting && !["Completed", "Cancelled", "Failed"].includes(current.lastState)
+            ? current.phase : undefined;
+        const status = phase ? snapshotText(null, {State: phase, Model: current?.model}) :
+            current?.observationWarning ?? current?.text;
+        const rates = speedRequest && `prefill ${speedRequest.prefill ?? "—"} · decode ${speedRequest.decode ?? "—"} tok/s`;
+        ctx?.ui.setStatus("air-ticket", [rates, status].filter(Boolean).join(" · ") || undefined);
+        const label = waiting ? "Waiting" : phase;
+        if (label !== workingLabel) {
+            ctx?.ui.setWorkingMessage(label);
+            workingLabel = label;
         }
     }
     const admin = (path, options = {}) => fetch(url.origin + "/admin/" + path, {
@@ -129,9 +182,9 @@ export default async function air(pi) {
             req.observationWarning = undefined;
             req.queued = state.State === "Queued";
             req.dispatched = !req.queued;
-            req.text = snapshotText(req.ticket, state);
+            req.text = snapshotText(null, state);
             if (currentRequests().at(-1) === req) updateTicketUI();
-            if (state.ErrorCode && !req.reported) {
+            if (state.State === "Failed" && state.ErrorCode && !req.reported) {
                 req.reported = true;
                 notify(req.text, "error");
             }
@@ -156,7 +209,7 @@ export default async function air(pi) {
                 }
                 req.missedPolls = (req.missedPolls ?? 0) + 1;
                 if (req.missedPolls === 4) {
-                    req.observationWarning = snapshotText(req.ticket, {
+                    req.observationWarning = snapshotText(null, {
                         State: "status unavailable (last known " + (req.lastState ?? "admitted") + ")", Model: req.model
                     });
                     updateTicketUI();
@@ -204,13 +257,36 @@ export default async function air(pi) {
             req.signal = options.signal ? AbortSignal.any([options.signal, req.abort.signal]) : req.abort.signal;
             active.add(req);
             latest = req;
-            req.text = snapshotText(requestKey(req), {State: "submitting", Model: requestModel.id});
+            if (mainRequest) speedRequest = req;
+            req.text = snapshotText(null, {State: "submitting", Model: requestModel.id});
             updateTicketUI();
         }
         const underlying = options.fetch ?? fetch;
         let sent = false;
         const original = adapter.streamSimple({...requestModel, contextWindow: capacity, maxTokens}, transcript, {
             ...options, signal: req?.signal ?? options.signal, maxTokens: reserve, maxRetries: 0,
+            onPayload: async (payload, providerModel) => {
+                const body = await options.onPayload?.(payload, providerModel) ?? payload;
+                if (!mainRequest) return body;
+                const hosts = [...(catalog.models.get(requestModel.id)?.engines ?? [])];
+                if (hosts.length && hosts.every(name => ["hyper_classic", "hyper_swift"].includes(name)))
+                    return {...body, stream_options: {...body.stream_options, include_usage: true, continuous_usage_stats: true}};
+                if (hosts.length && hosts.every(name => ["strata", "strata_swift", "strata_coder", "maya", "maya_xs",
+                    "glm", "minimax", "hy4"].includes(name)))
+                    return {...body, return_progress: true, timings_per_token: true};
+                return body;
+            },
+            onProviderStreamEvent: async (chunk, streamModel) => {
+                if (mainRequest && req === speedRequest && req.branch === branch && !req.signal.aborted &&
+                    observeSpeed(req, chunk, performance.now())) {
+                    if (req.phase) {
+                        req.queued = false;
+                        req.dispatched = true;
+                    }
+                    updateTicketUI();
+                }
+                return options.onProviderStreamEvent?.(chunk, streamModel);
+            },
             fetch: async (input, init) => {
                 if (sent) throw new Error("AIR already received this Pi request");
                 if (String(input) !== base + "/chat/completions" || init?.method?.toUpperCase() !== "POST")
@@ -231,7 +307,7 @@ export default async function air(pi) {
                 if (!req) return response;
                 req.ticket = response.headers.get("X-Inference-Ticket");
                 if (req.ticket && req.branch === branch) {
-                    req.text = snapshotText(req.ticket, {State: "admitted"});
+                    req.text = snapshotText(null, {State: "admitted"});
                     updateTicketUI();
                     void watchTicket(req);
                 }
@@ -247,7 +323,7 @@ export default async function air(pi) {
             if (req.branch !== branch) return;
             updateTicketUI();
             if (req.ticket) await inspect(req, req.branch.signal).catch(() => {});
-            if (message.stopReason === "error" && req.branch === branch && !req.reported)
+            if (message.stopReason === "error" && !req.signal.aborted && req.lastState !== "Cancelled" && req.branch === branch && !req.reported)
                 notify(snapshotText(req.ticket, {State: "Failed", Error: message.errorMessage}), "error");
         }).catch(() => {
             req.watch.abort();
@@ -312,7 +388,8 @@ export default async function air(pi) {
         branch?.abort();
         for (const req of currentRequests()) { req.abort.abort(); req.watch.abort(); }
         branch = new AbortController();
-        latest = undefined;
+        runningTools.clear();
+        latest = speedRequest = undefined;
         ctx = context;
         updateTicketUI();
         budgetRefused = false;
@@ -336,9 +413,10 @@ export default async function air(pi) {
         for (const req of active) { req.abort.abort(); req.watch.abort(); }
         branch?.abort();
         ctx?.ui.setStatus("air-ticket", undefined);
-        if (showingWaiting) ctx?.ui.setWorkingMessage(undefined);
-        showingWaiting = false;
-        ctx = lifetime = branch = latest = turnSelection = undefined;
+        if (workingLabel) ctx?.ui.setWorkingMessage(undefined);
+        runningTools.clear();
+        workingLabel = undefined;
+        ctx = lifetime = branch = latest = speedRequest = turnSelection = undefined;
     });
     pi.on("message_start", (event, context) => {
         if (event.message.role !== "user") return;
@@ -348,7 +426,20 @@ export default async function air(pi) {
             notify("AIR could not resolve one serving profile for " + model.id +
                 ". This turn uses automatic routing with a " + turnSelection.capacity + "-token minimum.", "warning");
     });
+    pi.on("tool_execution_start", event => {
+        if (turnSelection && branch && !branch.signal.aborted) {
+            runningTools.add(event.toolCallId);
+            updateTicketUI();
+        }
+    });
+    pi.on("tool_execution_end", event => {
+        if (runningTools.delete(event.toolCallId)) updateTicketUI();
+    });
     pi.on("agent_settled", async () => {
+        if (runningTools.size) {
+            runningTools.clear();
+            updateTicketUI();
+        }
         turnSelection = undefined;
         if (ctx) await publish();
     });
@@ -440,10 +531,10 @@ export default async function air(pi) {
             const key = args.trim();
             const req = key ? [...requests, latest].find(r => matchesRequest(r, key)) : requests.at(-1) ?? latest;
             if (!req) return notify("No matching AIR request on this branch.");
-            if (!req.ticket) return notify(req.text);
+            if (!req.ticket) return notify(requestKey(req) + " · " + req.text);
             try {
                 await inspect(req, req.branch.signal);
-                if (req.branch === branch) notify(req.text);
+                if (req.branch === branch) notify(req.ticket + " · " + req.text);
             } catch (error) {
                 if (req.branch === branch) notify(error.message, "warning");
             }

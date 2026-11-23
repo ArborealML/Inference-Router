@@ -1,11 +1,25 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.148)
+Status: draft, continuously revised (v0.12.155)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
 
 ## 0. Revision log
+
+- v0.12.155 — display prompt completion in the Reading Context phase (§13.2).
+
+- v0.12.154 — show observed foreground Pi execution phases and prompt completion percentage (§13.2).
+
+- v0.12.153 — request live prefill progress and update Pi throughput while the inference stream is open (§13.2).
+
+- v0.12.152 — show a cancelled Pi ticket in ticket status without raising an AIR error notification. Failed tickets still notify.
+
+- v0.12.151 — expose distinct named thinking modes for the installed Pi catalog and request-scoped backend throughput in the Pi footer (§13.2).
+
+- v0.12.150 — show distinct Qwen 27B reasoning levels in Pi and clamp the selection on model change (§13.2).
+
+- v0.12.149 — map Pi high effort to the configured Qwen 27B chat template’s xhigh setting (§13.2).
 
 - v0.12.148 — verify opted-in local vLLM profile capacity from the exact serving process and bound post-load verification (§5.3.1, §7.6).
 
@@ -4074,6 +4088,9 @@ unverified external analysis), and (13.3) what AIR must expose to make it work.
   Pi reports the ambiguity and sends the captured context minimum using AIR's automatic
   tier selection. The ticket snapshot identifies the assigned engine. It carries no
   request-specific profile.
+- The Pi extension associates the known canonical model IDs with distinct named efforts. Qwen and Swift offer off/low/medium/xhigh, DeepSeek and GLM off/low/high/max, MiniMax off/low/medium/high/xhigh/max, and Hy4 off/high. Other IDs use Pi defaults.
+- The AIR footer shows request state and the foreground inference stream’s backend-reported prompt and generation speeds in tokens per second. The AIR footer places speed statistics before phase and model. Pi labels observed prompt reading, reasoning output, answer output, tool-call preparation and local tool execution. For a model with mixed backend families Pi omits family-specific instrumentation flags. Late prefill counters cannot return the display to Reading Context after output begins. Local request abort suppresses a fallback failure notification. Only the Reading Context phase displays completion, to one decimal place. Prompt completion uses processed tokens including cache divided by total prompt tokens. Prefill speed excludes cached tokens and uses the engine prompt clock. Decode uses engine timings or streamed token-count deltas. When a stream supplies text alone, Pi estimates decode speed from output arriving after the first delta (four characters per token), marked with a tilde. A missing measurement displays a dash. Measurements reset on the next foreground request or branch change. The ticket ID remains available through `/air-status`.
+- The Qwen 27B model (`qwen-3.8-27b`) offers `off`, `low`, `medium` and `xhigh` in Pi. Pi maps an unavailable `minimal` to `low` and `high` to `xhigh`. Switching back to a model whose highest level is `high` maps `xhigh` to `high` under Pi’s normal model-selection rules.
 - **Pi request ownership**: The turn capture requires a matching Pi session ID, the active
   agent signal, the transcript prepared for that agent request, and the request headers prepared by Pi's SDK hook. AIR recognizes the
   header object and a message from the prepared turn in memory, including when CLM replaces the system message. A direct registry call with the
