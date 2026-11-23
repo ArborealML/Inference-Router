@@ -1,11 +1,11 @@
 ---
 id: TASK-177
 title: Keep cancelled AIR tickets out of Pi error notifications
-status: Ready for Review
+status: Done
 assignee:
   - '@gpt-6.2-astra'
 created_date: '2026-11-23T07:32:00Z'
-updated_date: '2026-11-23T07:33:00Z'
+updated_date: '2026-11-23T22:01:00Z'
 labels: []
 milestone: m-7
 dependencies: []
@@ -24,11 +24,11 @@ A cancelled ticket remains visible in /air-status. Reserve error notifications f
 <!-- AC:BEGIN -->
 - [x] #1 An isolated Pi session can inspect its cancelled ticket without receiving an error notification.
 - [x] #2 A failed switch still produces an error notification.
-- [ ] #3 The verified change lands on main and passes hosted CI.
+- [x] #3 The verified change lands on main and passes hosted CI.
 <!-- AC:END -->
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Installed locally at b8e5670. An isolated Pi RPC test exercised both outcomes. Integration and hosted CI remain pending.
+Merged in [PR 82](https://github.com/ArborealML/Inference-Router/pull/82) with green hosted checks. Isolated Pi RPC verified cancellation and switch failure. A separate local abort with an unavailable ticket lookup also suppressed the error notification.
 <!-- SECTION:NOTES:END -->
