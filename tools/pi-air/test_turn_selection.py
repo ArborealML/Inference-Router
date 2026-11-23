@@ -129,8 +129,12 @@ class RouterHandler(BaseHTTPRequestHandler):
         else:
             delta = {"role": "assistant", "content": "ok"}
             finish = "stop"
-        chunk = json.dumps({"choices": [{"index": 0, "delta": delta, "finish_reason": finish}]}).encode()
-        tickets = {"inherited child": "inherited-ticket", "direct registry call": "registry-ticket"}
+        event = {"choices": [{"index": 0, "delta": delta, "finish_reason": finish}]}
+        if last_user in {"held speed", "second speed"}:
+            rate = 111 if last_user == "held speed" else 222
+            event["timings"] = {"prompt_per_second": rate, "predicted_per_second": rate / 10}
+        chunk = json.dumps(event).encode()
+        tickets = {"held speed": "speed-ticket", "inherited child": "inherited-ticket", "direct registry call": "registry-ticket"}
         self.write_response(200, "text/event-stream", b"data: " + chunk + b"\n\ndata: [DONE]\n\n",
                             ticket={**tickets, "cancel status": "cancel-test", "fail status": "fail-test"}.get(last_user))
 
@@ -241,6 +245,27 @@ def pi_session(router, compaction=None):
 
 
 class TurnSelectionTest(unittest.TestCase):
+    def test_overlapping_sessions_and_next_request_keep_rates_separate(self):
+        def rates(pi, offset=0):
+            return [event["statusText"] for event in pi.seen[offset:]
+                    if event.get("method") == "setStatus" and "prefill" in (event.get("statusText") or "")]
+
+        with FakeRouter().running() as router, pi_session(router) as first, pi_session(router) as second:
+            first.prompt("held speed")
+            self.assertTrue(router.held_response_started.wait(5))
+            second.prompt("second speed")
+            second.settled()
+            self.assertIn("prefill 222.0 · decode 22.2", rates(second)[-1])
+            router.release_held_response.set()
+            first.settled()
+            self.assertIn("prefill 111.0 · decode 11.1", rates(first)[-1])
+            self.assertFalse(any("222.0" in row for row in rates(first)))
+            offset = len(first.seen)
+            first.prompt("no timing data")
+            first.settled()
+            self.assertTrue(rates(first, offset))
+            self.assertTrue(all("prefill — · decode —" in row for row in rates(first, offset)))
+
     def test_tool_preparation_and_execution_have_distinct_status(self):
         with FakeRouter().running() as router, pi_session(router) as pi:
             pi.hold("start Hy4")
