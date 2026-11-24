@@ -22,6 +22,7 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
     private readonly HttpClient _http;
     private readonly HttpMessageHandler? _ownedHandler;   // disposed with the client
     private readonly string? _apiKey;
+    internal bool SendsThreadCacheHint { get; }
     private readonly PrefixTrie _trie;
     private readonly SemaphoreSlim _switchLock = new(1, 1);
     private readonly LifecycleBinding? _lifecycleBinding;
@@ -208,9 +209,16 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
         _maxInflight = Math.Max(1, config.Scheduler.MaxInflightPerEngine);
         _trie = new PrefixTrie(config.Scheduler.PrefixTrieMaxNodes);
         _apiKey = ResolveApiKey(def);
+        SendsThreadCacheHint = localManaged && def.LifecycleGroup is not null && def.HasExplicitRouterLifecycle &&
+            def.Lifecycle == EngineLifecycleKind.Docker && def.Endpoint.IsLoopback;
         if (handler is null)
         {
-            _ownedHandler = new HttpClientHandler { AutomaticDecompression = System.Net.DecompressionMethods.None };
+            _ownedHandler = new HttpClientHandler
+            {
+                AutomaticDecompression = System.Net.DecompressionMethods.None,
+                AllowAutoRedirect = !SendsThreadCacheHint,
+                UseProxy = !SendsThreadCacheHint,
+            };
             _http = new HttpClient(_ownedHandler, disposeHandler: false);
         }
         else

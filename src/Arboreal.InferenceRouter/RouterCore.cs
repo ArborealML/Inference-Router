@@ -1,4 +1,7 @@
+using System.Buffers.Binary;
 using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using System.Threading.Channels;
 using Arboreal.InferenceRouter.Lifecycle;
@@ -913,7 +916,7 @@ public sealed partial class RouterCore : IInferenceRouter
 
                 if (invocation is not null)
                 {
-                    using var request = MakeUpstreamRequest(engine, body, suffix);
+                    using var request = MakeUpstreamRequest(engine, body, suffix, ticket.ThreadId);
                     await invocation.RunAsync(request, response =>
                     {
                         cts.Token.ThrowIfCancellationRequested();
@@ -1090,21 +1093,38 @@ public sealed partial class RouterCore : IInferenceRouter
     private static async Task<HttpResponseMessage> SendAsync(
         EngineRuntime engine, byte[] body, string suffix, QueuedRequest candidate, SwitchServingProof? proof, CancellationToken ct)
     {
-        using var req = MakeUpstreamRequest(engine, body, suffix);
+        using var req = MakeUpstreamRequest(engine, body, suffix, candidate.Ticket.ThreadId);
         engine.ObserveFirstForward(proof, candidate.Ticket.Model, ct);
         return await engine.Http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
     }
 
-    private static HttpRequestMessage MakeUpstreamRequest(EngineRuntime engine, byte[] body, string suffix)
+    private static HttpRequestMessage MakeUpstreamRequest(EngineRuntime engine, byte[] body, string suffix, string threadId)
     {
         // The suffix is composed against the endpoint path (EngineRuntime.Combine), so an endpoint
         // mounted under /v1 keeps it.
         var req = new HttpRequestMessage(HttpMethod.Post, engine.CompletionUri(suffix));
         if (engine.ApiKey is not null)
             req.Headers.TryAddWithoutValidation("Authorization", $"Bearer {engine.ApiKey}");
+        if (engine.SendsThreadCacheHint && !string.IsNullOrWhiteSpace(threadId) && threadId != "anon")
+            req.Headers.Add("X-Inference-Thread", ThreadCacheHint(engine.Name, threadId));
         req.Content = new ByteArrayContent(body);
         req.Content.Headers.TryAddWithoutValidation("Content-Type", "application/json");
         return req;
+    }
+
+    private static string ThreadCacheHint(string engine, string threadId)
+    {
+        ReadOnlySpan<byte> domain = "AIR local inference thread v1"u8;
+        int engineBytes = Encoding.UTF8.GetByteCount(engine);
+        var input = new byte[checked(domain.Length + sizeof(int) + engineBytes + Encoding.UTF8.GetByteCount(threadId))];
+        domain.CopyTo(input);
+        BinaryPrimitives.WriteInt32BigEndian(input.AsSpan(domain.Length), engineBytes);
+        var fields = input.AsSpan(domain.Length + sizeof(int));
+        Encoding.UTF8.GetBytes(engine, fields);
+        Encoding.UTF8.GetBytes(threadId, fields[engineBytes..]);
+        Span<byte> digest = stackalloc byte[SHA256.HashSizeInBytes];
+        SHA256.HashData(input, digest);
+        return Convert.ToHexStringLower(digest);
     }
 
     /// <summary>What happens once the engine has answered: an error status becomes the router's own
