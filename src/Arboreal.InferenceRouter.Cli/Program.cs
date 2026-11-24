@@ -67,7 +67,7 @@ public static class Program
               stop                                        stop the Linux user service
               chat  [-m model] [-t thread] [-p prio]    send a chat completion (prompt args or stdin)
                     [--system text] [--no-stream] [--json] [-s server-url]
-              models [-s server-url]                    list observed models and context windows
+              models [-s server-url]                    list configured and observed models
               top [-s server-url] [--ticket ID]         monitor engines, queues and ticket activity
               status [-s server-url]                    router stats (engines, queues, threads)
               events [-s server-url] [--since seq]      tail the live event stream (SSE)

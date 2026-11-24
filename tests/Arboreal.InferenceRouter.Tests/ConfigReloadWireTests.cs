@@ -381,7 +381,7 @@ public sealed partial class ConfigReloadWireTests : IDisposable
             var discovery = await http.GetStringAsync("/v1/models", ct);
             Assert.Contains("\"id\":\"b\"", discovery, StringComparison.Ordinal);
             Assert.DoesNotContain("\"id\":\"a\"", discovery, StringComparison.Ordinal);
-            Assert.DoesNotContain("\"id\":\"c\"", discovery, StringComparison.Ordinal);
+            Assert.Contains("\"id\":\"c\"", discovery, StringComparison.Ordinal);
 
             publish.TrySetResult();
             await WaitUntilAsync(() => router.Engines["three"].Healthy, ct);

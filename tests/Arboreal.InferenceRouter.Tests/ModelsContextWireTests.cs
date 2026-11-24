@@ -16,12 +16,12 @@ public sealed class ModelsContextWireTests
     private static readonly string[] EnvelopeMembers = ["object", "data"];
     private static readonly string[] StandardMembers = ["id", "object", "created", "owned_by"];
     private static readonly string[] EnrichedMembers = ["id", "object", "created", "owned_by", "context_window"];
-    private static readonly string[] ListedIds = ["shared", "distinct", "unknown", "shared"];
-    private static readonly string[] ListedEngines = ["first", "first", "first", "second"];
+    private static readonly string[] ListedIds = ["shared", "distinct", "unknown", "catalog-only", "shared", "unknown", "catalog-only"];
+    private static readonly string[] ListedEngines = ["first", "first", "first", "first", "second", "second", "second"];
     private static readonly string[] MixedEvidenceIds =
     [
         "duplicate", "DUPLICATE", "duplicate", "backend-alias", "route-alias", "unloaded",
-        "empty", "text", "object", "fraction", "exponent", "overflow", "zero", "negative", "missing", "valid",
+        "empty", "text", "object", "fraction", "exponent", "overflow", "zero", "negative", "missing", "valid", "shared", "unknown", "catalog-only",
     ];
 
     [Fact(Timeout = 60_000)]
@@ -62,7 +62,10 @@ public sealed class ModelsContextWireTests
                 row => AssertRow(row, 32_768),
                 row => AssertRow(row, long.MaxValue),
                 row => AssertRow(row, null),
-                row => AssertRow(row, 131_072));
+                row => AssertRow(row, null),
+                row => AssertRow(row, 131_072),
+                row => AssertRow(row, null),
+                row => AssertRow(row, null));
 
             var legacy = JsonSerializer.Deserialize(bytes, ModelListClientJsonContext.Default.OpenAiList);
             Assert.NotNull(legacy);
@@ -77,7 +80,7 @@ public sealed class ModelsContextWireTests
 
             var enriched = JsonSerializer.Deserialize(bytes, ModelListClientJsonContext.Default.ContextList);
             Assert.NotNull(enriched);
-            Assert.Equal(new long?[] { 32_768, long.MaxValue, null, 131_072 },
+            Assert.Equal(new long?[] { 32_768, long.MaxValue, null, null, 131_072, null, null },
                 enriched.Data.Select(m => m.ContextWindow));
         }
     }
@@ -100,7 +103,7 @@ public sealed class ModelsContextWireTests
         {
             Engines = new Dictionary<string, EngineDefinition>
             {
-                ["first"] = Engine("first", loadedRequiresStatusLoaded: true),
+                ["first"] = Engine("first", loadedRequiresStatusLoaded: true, emptyCatalog: true),
             },
             HttpHandlerFactory = _ => engine,
         });
@@ -130,8 +133,8 @@ public sealed class ModelsContextWireTests
     {
         using var canonical = new ModelsHandler("""{"data":[{"id":"collision","meta":{"n_ctx":32768}}]}""");
         using var alias = new ModelsHandler("""{"data":[{"id":"collision","meta":{"n_ctx":131072}}]}""");
-        var canonicalEngine = Engine("canonical", additionalModel: DeclaredModel("collision"));
-        var aliasEngine = Engine("alias", additionalModel: DeclaredModel("other", "collision"));
+        var canonicalEngine = Engine("canonical", additionalModel: DeclaredModel("collision"), emptyCatalog: true);
+        var aliasEngine = Engine("alias", additionalModel: DeclaredModel("other", "collision"), emptyCatalog: true);
         var first = aliasFirst ? aliasEngine : canonicalEngine;
         var second = aliasFirst ? canonicalEngine : aliasEngine;
         var (app, address) = await StartAsync(new RouterConfig
@@ -145,7 +148,7 @@ public sealed class ModelsContextWireTests
         using var response = await http.GetAsync("/v1/models");
         response.EnsureSuccessStatusCode();
         using var doc = JsonDocument.Parse(await response.Content.ReadAsByteArrayAsync());
-        Assert.Collection(doc.RootElement.GetProperty("data").EnumerateArray(),
+        Assert.Collection(doc.RootElement.GetProperty("data").EnumerateArray().Where(row => row.GetProperty("id").GetString() == "collision"),
             row => AssertCollisionRow(row, first.Name, aliasFirst ? null : 32_768),
             row => AssertCollisionRow(row, second.Name, null));
     }
@@ -224,7 +227,10 @@ public sealed class ModelsContextWireTests
         using var list = await http.GetAsync("/v1/models");
         list.EnsureSuccessStatusCode();
         using var models = JsonDocument.Parse(await list.Content.ReadAsByteArrayAsync());
-        var row = Assert.Single(models.RootElement.GetProperty("data").EnumerateArray());
+        var rows = models.RootElement.GetProperty("data").EnumerateArray().ToArray();
+        Assert.Equal(bound ? 1 : 2, rows.Length);
+        if (!bound) AssertRow(rows[1], null);
+        var row = rows[0];
         Assert.Equal(reportedModel, row.GetProperty("id").GetString());
         AssertRow(row, 196_608);
 
@@ -276,12 +282,10 @@ public sealed class ModelsContextWireTests
         using var doc = JsonDocument.Parse(await response.Content.ReadAsByteArrayAsync());
         var rows = doc.RootElement.GetProperty("data").EnumerateArray().ToArray();
         Assert.Equal(MixedEvidenceIds, rows.Select(row => row.GetProperty("id").GetString()));
-        Assert.All(rows[..^1], row => AssertRow(row, null));
-        AssertRow(rows[^1], 49_152);
+        foreach (var row in rows) AssertRow(row, row.GetProperty("id").GetString() == "valid" ? 49_152 : null);
         var client = await response.Content.ReadFromJsonAsync(ModelListClientJsonContext.Default.ContextList);
         Assert.NotNull(client);
-        Assert.All(client.Data[..^1], row => Assert.Null(row.ContextWindow));
-        Assert.Equal(49_152, client.Data[^1].ContextWindow);
+        Assert.All(client.Data, row => Assert.Equal(row.Id == "valid" ? 49_152L : (long?)null, row.ContextWindow));
     }
 
     [Theory(Timeout = 60_000)]
@@ -371,7 +375,7 @@ public sealed class ModelsContextWireTests
     }
 
     private static EngineDefinition Engine(string name, bool loadedRequiresStatusLoaded = false,
-        EngineModelDefinition? additionalModel = null)
+        EngineModelDefinition? additionalModel = null, bool emptyCatalog = false)
     {
         var catalog = new Dictionary<string, EngineModelDefinition>
         {
@@ -379,6 +383,7 @@ public sealed class ModelsContextWireTests
             ["unknown"] = DeclaredModel("unknown"),
             ["catalog-only"] = DeclaredModel("catalog-only", "route-alias"),
         };
+        if (emptyCatalog) catalog.Clear();
         if (additionalModel is not null) catalog.Add(additionalModel.Name, additionalModel);
         return new EngineDefinition
         {

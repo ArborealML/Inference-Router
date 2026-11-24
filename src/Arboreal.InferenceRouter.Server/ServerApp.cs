@@ -488,7 +488,9 @@ public static partial class ServerApp
             foreach (var e in generation.Engines.Values)
             {
                 var capability = e.Capability;
-                foreach (var model in capability.ModelRoster)
+                var roster = capability.ModelRoster;
+                var configured = generation.Settings.Engines[e.Name].Catalog.Keys;
+                foreach (var model in roster.Concat(configured.Except(roster, StringComparer.OrdinalIgnoreCase)))
                 {
                     w.WriteStartObject();
                     w.WriteString("id", model);

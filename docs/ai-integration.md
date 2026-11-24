@@ -32,9 +32,9 @@ out but not speak HTTP, drive it through those.
 
 ## Discover loaded models
 
-`GET /v1/models` lists each engine’s last accepted roster. With `loaded_requires_status_loaded = true`,
-AIR lists only rows whose `status.value` is `"loaded"` and whose `alias_of` is absent or `null`.
-With the default `false`, AIR lists every upstream row with a string `id`, including aliases and
+`GET /v1/models` lists each engine’s observed roster followed by configured canonical models missing from that roster. A cold model can be selected before its backend has started. With `loaded_requires_status_loaded = true`,
+the observed roster includes only rows whose `status.value` is `"loaded"` and whose `alias_of` is absent or `null`.
+With the default `false`, the observed roster includes every upstream row with a string `id`, including aliases and
 rows without load status. When the previous and new observations both lack verified windows,
 AIR can keep the previous spelling if only letter case changes.
 

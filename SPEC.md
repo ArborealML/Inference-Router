@@ -1,11 +1,13 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.159)
+Status: draft, continuously revised (v0.12.160)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
 
 ## 0. Revision log
+
+- v0.12.160 — include cold configured models in OpenAI discovery (§6).
 
 - v0.12.159 — prefer a profile on cold dispatch, reuse sufficient resident context, and report request origin and serving profile in ticket and engine inspection.
 
@@ -2760,7 +2762,7 @@ OpenAI-compatible (path-for-verbatim):
   at every split of a short fixture and all 64 alignments of a longer fixture.
 - `POST /v1/completions` — same for legacy completions.
 - `GET /v1/models` returns the OpenAI model list envelope with the last reported loaded row for
-  each model and engine, in roster order. Entries retain `id`, `object`, `created`, and `owned_by`.
+  each model and engine, in roster order. Each engine also lists its configured canonical IDs absent from that roster (case-insensitive), including before its first successful probe. Catalog-only rows omit the observed context window. Entries retain `id`, `object`, `created`, and `owned_by`.
   A healthy engine with no switch in flight may also report `context_window` as a positive
   signed 64-bit JSON integer in tokens. It comes from the same observed loaded row and immutable capability snapshot
   as the ID. Queries do not change this contract. Rows with the same ID on different engines each
