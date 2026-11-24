@@ -1,11 +1,13 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.158)
+Status: draft, continuously revised (v0.12.159)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
 
 ## 0. Revision log
+
+- v0.12.159 — prefer a profile on cold dispatch, reuse sufficient resident context, and report request origin and serving profile in ticket and engine inspection.
 
 - v0.12.158 — Pi defaults to 65,536 output tokens on DeepSeek and 32,768 elsewhere, subject to input room on smaller profiles. Explicit smaller request caps apply.
 
@@ -2931,6 +2933,17 @@ awaiting `CompletionTask`.
 `X-Inference-Thread: agent-42`, `X-Inference-Priority: high:200`
 (`class[:sub]`), `X-Inference-Affinity: <normalized-prefix-hash>` (optional,
 server-side prefix normalization is authoritative anyway (§7.6),
+`X-Inference-Preferred-Profile` supplies a cold-launch preference. Pi sends it alongside
+`X-Inference-Required-Context`. A healthy resident of the same model with enough context per lane
+takes precedence. Requests wait for compatible capacity when occupied. An unavailable preference
+falls back to normal context-based selection. Supplying both profile headers returns `invalid_profile`.
+Pi keeps its selected context and output limits through dispatch.
+
+Optional `X-Inference-Thread-Title` and `X-Inference-Tmux-Session` carry percent-encoded UTF-8
+labels. Oversize or unsafe labels are ignored. Tickets expose these labels with the requested
+exact or preferred profile, required context and observed profile at dispatch. Engine status with `?requests=1`
+includes current assigned requests and eligible unassigned queued tickets for monitor selection.
+
 `X-Inference-Profile: <name>` selects one case-sensitive named serving tier for this inference
 request. AIR resolves the model or alias in the applied generation. The tier on a candidate
 engine must fit both the estimated prompt tokens and any explicit minimum. Malformed, unknown

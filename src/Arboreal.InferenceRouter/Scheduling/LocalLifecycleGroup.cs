@@ -142,7 +142,8 @@ internal sealed class LocalLifecycleGroup(string name, Action wake)
             var observed = await engine.EnsureLoadedAsync(owner.Request.Ticket.Model, owner.Profile,
                 Timeout.InfiniteTimeSpan, queue: null, lifetime.Token,
                 explicitContextMinimum: owner.Request.ExplicitContextMinimum, localOwner: owner,
-                exactProfile: owner.Request.Request.Options?.Profile is not null).ConfigureAwait(false);
+                exactProfile: owner.Request.Request.Options?.Profile is not null ||
+                    (owner.Profile is not null && owner.Profile.Name == owner.Request.Request.Options?.PreferredProfile)).ConfigureAwait(false);
             lifetime.Token.ThrowIfCancellationRequested();
             succeeded = observed.Result.IsReady;
             if (succeeded) residentProfile = owner.Profile?.Name ?? engine.Capability.Serving.Profile;

@@ -58,7 +58,10 @@ internal sealed class VerifiedPreparedSender : IAsyncDisposable
         await _envelope.CheckOfferAsync(_envelope.Invocation, request, credentialEpoch, ct).ConfigureAwait(false);
         if (AfterOfferValidatedForTests is { } after) await after().ConfigureAwait(false);
         ct.ThrowIfCancellationRequested();
-        return runtime.RequestedProfileReady(_claim.Request) ? _transport.SendVerified(_envelope, ct) : null;
+        if (!runtime.RequestedProfileReady(_claim.Request)) return null;
+        var operation = _transport.SendVerified(_envelope, ct);
+        _claim.Ticket.DispatchedProfile = _claim.Resident?.Target.Tier;
+        return operation;
     }
 
     public ValueTask DisposeAsync() => _cleanup?.Invoke() ?? ValueTask.CompletedTask;

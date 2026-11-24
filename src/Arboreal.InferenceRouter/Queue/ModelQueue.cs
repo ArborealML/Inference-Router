@@ -3,6 +3,7 @@ namespace Arboreal.InferenceRouter;
 /// <summary>One queued request with scheduler metadata.</summary>
 public sealed class QueuedRequest
 {
+    internal bool HasProfileSelection => Request.Options?.Profile is not null || Request.Options?.PreferredProfile is not null;
     internal bool ReservedSwitch { get; set; }
     internal LocalLifecycleGroup.Lease? LocalLease { get; set; }
     public required RouterTicket Ticket { get; init; }

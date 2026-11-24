@@ -128,10 +128,18 @@ public sealed partial class RouterCore : IInferenceRouter
             SignalDispatch();
     }
 
-    public RouterStats GetStats()
+    public RouterStats GetStats() => GetStats(includeRequests: false);
+
+    public RouterStats GetStats(bool includeRequests)
     {
         lock (_gate)
         {
+            TicketSnapshot[] outstanding = [];
+            if (includeRequests)
+            {
+                lock (_ticketGate)
+                    outstanding = _tickets.Values.Where(t => !t.IsTerminal).Select(SnapshotTicket).ToArray();
+            }
             var engines = CurrentGeneration.Engines.Values.Select(e =>
             {
                 var cap = e.Capability;
@@ -145,6 +153,8 @@ public sealed partial class RouterCore : IInferenceRouter
                     ActiveProfile = cap.Serving.Profile,
                     ActiveContextWindow = cap.Serving.ContextWindow,
                     ActiveSlots = cap.Serving.TotalSlots,
+                    Requests = !includeRequests ? null : outstanding.Where(t => t.Engine == e.Name ||
+                        (t.Engine is null && e.CanServeModel(t.Model, cap) && CanFitTicket(e, t))).ToArray(),
                 };
             }).ToArray();
             var queues = _queues.Values.ToDictionary(q => q.Model, q => q.Depth, StringComparer.Ordinal);
@@ -163,6 +173,15 @@ public sealed partial class RouterCore : IInferenceRouter
         }
     }
 
+    private static bool CanFitTicket(EngineRuntime engine, TicketSnapshot ticket)
+    {
+        var profiles = engine.ProfilesForModel(ticket.Model);
+        return ticket.ExactProfile is { } name
+            ? engine.GetProfile(ticket.Model, name) is { } tier && tier.MaxContext >= ticket.RequiredContext
+            : profiles.Count == 0 || profiles.Any(p => p.MaxContext >= ticket.RequiredContext) ||
+              engine.Capability.Serving.WindowFor(ticket.Model) >= ticket.RequiredContext;
+    }
+
     /// <summary>One ticket's state for the admin surface (§6). The identifiers here are <b>whole</b>, not the
     /// reporting-length excerpt the feed carries: an operator who reads a thread id or a model id off this response
     /// follows it up — a query, a retry, a cancel — and a cut id is a value that looks valid and matches nothing.
@@ -173,21 +192,32 @@ public sealed partial class RouterCore : IInferenceRouter
         lock (_ticketGate)
         {
             if (!_tickets.TryGetValue(ticketId, out var t)) return null;
-            var state = t.State;
-            var steps = t.CompletedSwitchSteps;
-            return new TicketSnapshot
-            {
-                Id = t.Id,
-                ThreadId = t.ThreadId,
-                Model = t.Model,
-                QueuedAt = t.QueuedAt,
-                State = state.ToString(),
-                CompletedSwitchSteps = state == TicketState.WaitingForModel && steps >= 0 ? steps : null,
-                Engine = t.Engine,
-                ErrorCode = t.ErrorCode,
-                Error = t.Error,
-            };
+            return SnapshotTicket(t);
         }
+    }
+
+    private static TicketSnapshot SnapshotTicket(RouterTicket t)
+    {
+        var state = t.State;
+        var steps = t.CompletedSwitchSteps;
+        return new TicketSnapshot
+        {
+            Id = t.Id,
+            ThreadId = t.ThreadId,
+            ThreadTitle = t.OriginOptions?.ThreadTitle,
+            TmuxSession = t.OriginOptions?.TmuxSession,
+            PreferredProfile = t.OriginOptions?.PreferredProfile,
+            ExactProfile = t.OriginOptions?.Profile,
+            RequiredContext = t.RequiredContextTokens,
+            DispatchedProfile = t.DispatchedProfile,
+            Model = t.Model,
+            QueuedAt = t.QueuedAt,
+            State = state.ToString(),
+            CompletedSwitchSteps = state == TicketState.WaitingForModel && steps >= 0 ? steps : null,
+            Engine = t.Engine,
+            ErrorCode = t.ErrorCode,
+            Error = t.Error,
+        };
     }
 
     public IAsyncEnumerable<RouterEvent> SubscribeEvents(RouterEventFilter? filter = null, CancellationToken ct = default)
@@ -489,7 +519,7 @@ public sealed partial class RouterCore : IInferenceRouter
                 return new(TakeResult.Changed);
             if (!engine.HasCapacity) return new(TakeResult.Ineligible);
             var uses = _profileUsers.GetValueOrDefault(engine);
-            var named = candidate.Request.Options?.Profile is not null;
+            var named = candidate.HasProfileSelection;
             if ((uses.Switching != 0 && (named || uses.Named != 0)) ||
                 ((uses.Named != 0 || engine.HasNamedUse) && selection.Decision.SwitchRequired))
                 return new(TakeResult.Ineligible);
@@ -639,7 +669,7 @@ public sealed partial class RouterCore : IInferenceRouter
     private void EndEngineRequest(QueuedRequest candidate, EngineRuntime engine,
                                          ExactTicketAdmission.Invocation? invocation)
     {
-        var named = candidate.Request.Options?.Profile is not null;
+        var named = candidate.HasProfileSelection;
         if (named) engine.ReleaseNamedUse();
         if (named || candidate.ReservedSwitch)
         {
@@ -741,7 +771,7 @@ public sealed partial class RouterCore : IInferenceRouter
                 LoadedModels = _localGroups.TryGetValue(e.Name, out var local) &&
                     !local.IsResident(e.Name, head.Ticket.Model) ? [] : cap.ModelRoster,
                 CanLoad = local is not null,
-                CanSwitchProfile = head.Request.Options?.Profile is not null && e.CanSwitchTo(head.Ticket.Model),
+                CanSwitchProfile = head.HasProfileSelection && e.CanSwitchTo(head.Ticket.Model),
                 CatalogModels = e.CatalogModelNames.ToArray(),
                 SwitchingToward = cap.SwitchingToward is null ? [] : [cap.SwitchingToward],
                 CanServeModel = e.CanServeModel(head.Ticket.Model, cap),
@@ -819,7 +849,8 @@ public sealed partial class RouterCore : IInferenceRouter
                     observed = await engine.EnsureLoadedAsync(ticket.Model, targetProfile, switchWait,
                         new SwitchQueueTiming(candidate.EnqueuedAtTimestamp, selectedAt), execCts.Token,
                         explicitContextMinimum: candidate.ExplicitContextMinimum,
-                        exactProfile: candidate.Request.Options?.Profile is not null).ConfigureAwait(false);
+                        exactProfile: candidate.Request.Options?.Profile is not null ||
+                            (switchRequired && targetProfile is not null && targetProfile.Name == candidate.Request.Options?.PreferredProfile)).ConfigureAwait(false);
                 }
                 var switchResult = observed.Result;
                 AfterModelReadinessForTests?.Invoke(ticket.Id, switchResult.Outcome);
@@ -892,7 +923,7 @@ public sealed partial class RouterCore : IInferenceRouter
                     return;
                 }
 
-                if (!engine.TryBeginForward(cts.Token, candidate.Request.Options?.Profile is not null))
+                if (!engine.TryBeginForward(cts.Token, candidate.HasProfileSelection))
                 {
                     Fail(ticket, "cancelled", "cancelled");
                     return;
@@ -987,7 +1018,7 @@ public sealed partial class RouterCore : IInferenceRouter
             }
             finally
             {
-                if (ownsForward) engine.EndForward(candidate.Request.Options?.Profile is not null);
+                if (ownsForward) engine.EndForward(candidate.HasProfileSelection);
                 engine.RecordPrefix(candidate.Messages());
             }
         }
@@ -1051,7 +1082,7 @@ public sealed partial class RouterCore : IInferenceRouter
         }
         finally
         {
-            engine.EndForward(candidate.Request.Options?.Profile is not null);
+            engine.EndForward(candidate.HasProfileSelection);
             candidate.LocalLease?.Release();
         }
     }
@@ -1497,6 +1528,8 @@ public sealed class RouterRequestException(string code, string message) : Except
 
 public sealed record EngineStats
 {
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public TicketSnapshot[]? Requests { get; init; }
     public required string Engine { get; init; }
     public required bool Healthy { get; init; }
     public required string[] LoadedModels { get; init; }
@@ -1533,6 +1566,12 @@ public sealed record RouterStats(
 /// <summary>Immutable projection of one ticket for the admin API (AOT-safe DTO).</summary>
 public sealed record TicketSnapshot
 {
+    public string? ThreadTitle { get; init; }
+    public string? TmuxSession { get; init; }
+    public string? PreferredProfile { get; init; }
+    public string? ExactProfile { get; init; }
+    public long RequiredContext { get; init; }
+    public string? DispatchedProfile { get; init; }
     /// <summary>Completed local switch milestones out of four, present while the owner waits.</summary>
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public int? CompletedSwitchSteps { get; init; }

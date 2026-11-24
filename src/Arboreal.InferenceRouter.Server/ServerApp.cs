@@ -178,7 +178,10 @@ public static partial class ServerApp
                 {
                     Priority = priority,
                     CacheAffinityHash = affinity,
-                    Profile = ProfileFromHeader(ctx),
+                    Profile = ProfileFromHeader(ctx, "X-Inference-Profile"),
+                    ThreadTitle = OriginLabel(ctx, "X-Inference-Thread-Title"),
+                    TmuxSession = OriginLabel(ctx, "X-Inference-Tmux-Session"),
+                    PreferredProfile = ProfileFromHeader(ctx, "X-Inference-Preferred-Profile"),
                     RequiredContext = RequiredContextFromHeader(ctx),
                 },
             }, ct).ConfigureAwait(false);
@@ -231,9 +234,21 @@ public static partial class ServerApp
         return long.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var v) && v > 0 ? v : null;
     }
 
-    private static string? ProfileFromHeader(HttpContext ctx)
+    private static string? OriginLabel(HttpContext ctx, string header)
     {
-        if (!ctx.Request.Headers.TryGetValue("X-Inference-Profile", out var values)) return null;
+        if (!ctx.Request.Headers.TryGetValue(header, out var values) || values.Count != 1 ||
+            values[0] is not { Length: > 0 and <= 1536 } raw) return null;
+        var label = Uri.UnescapeDataString(raw).Trim();
+        if (label.Length is 0 or > 128) return null;
+        foreach (var rune in label.EnumerateRunes())
+            if (Rune.GetUnicodeCategory(rune) is UnicodeCategory.Control or UnicodeCategory.Format
+                or UnicodeCategory.LineSeparator or UnicodeCategory.ParagraphSeparator) return null;
+        return label;
+    }
+
+    private static string? ProfileFromHeader(HttpContext ctx, string header)
+    {
+        if (!ctx.Request.Headers.TryGetValue(header, out var values)) return null;
         if (values.Count != 1 || values[0] is not { } name || string.IsNullOrWhiteSpace(name) || name.Contains(',', StringComparison.Ordinal))
             throw new RouterRequestException("invalid_profile", "Send a single named serving profile.");
         return name;
@@ -516,7 +531,7 @@ public static partial class ServerApp
 
     private static async Task HandleStatus(HttpContext ctx, RouterCore router)
     {
-        await AirJson.WriteAsync(ctx.Response, router.GetStats(),
+        await AirJson.WriteAsync(ctx.Response, router.GetStats(includeRequests: ctx.Request.Query["requests"] == "1"),
             AirServerJson.AirServerContext.Default.RouterStats, ctx.RequestAborted).ConfigureAwait(false);
     }
 

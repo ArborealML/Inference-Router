@@ -22,6 +22,9 @@ public sealed class AirTopTests
         Assert.Contains("target cold", engine.Summary, StringComparison.Ordinal);
         Assert.Contains("Slots unreported", engine.Detail, StringComparison.Ordinal);
         Assert.DoesNotContain('\u001b', engine.Detail);
+        Assert.Contains("preferred small  required 256  dispatched big", engine.Detail, StringComparison.Ordinal);
+        Assert.Contains("Thread s1  Title Review  tmux editor", engine.Detail, StringComparison.Ordinal);
+        Assert.Contains("waiting  Queued (unassigned)", engine.Detail, StringComparison.Ordinal);
         var queue = Assert.Single(top.Read().Rows, r => r.Kind == "Queue");
         Assert.Contains("8 queued", queue.Summary, StringComparison.Ordinal);
         top.Open(queue);
@@ -61,7 +64,9 @@ public sealed class AirTopTests
             if (request.RequestUri!.AbsolutePath != "/admin/status")
                 return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
             const string payload = """
-                {"Engines":[{"Engine":"gpu\u001b","Healthy":true,"Inflight":1,"LoadedModels":["hot"],"SwitchingToward":"cold"}],"QueueDepths":{"cold":8}}
+                {"Engines":[{"Engine":"gpu\u001b","Healthy":true,"Inflight":1,"LoadedModels":["hot"],"SwitchingToward":"cold","Requests":[
+                 {"Id":"running","Engine":"gpu","ThreadId":"s1","Model":"hot","State":"Executing","QueuedAt":"2026-01-01T00:00:00Z","PreferredProfile":"small","RequiredContext":256,"DispatchedProfile":"big","ThreadTitle":"Review","TmuxSession":"editor"},
+                 {"Id":"waiting","ThreadId":"s2","Model":"cold","State":"Queued","QueuedAt":"2026-01-01T00:00:00Z"}]}],"QueueDepths":{"cold":8}}
                 """;
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
             {

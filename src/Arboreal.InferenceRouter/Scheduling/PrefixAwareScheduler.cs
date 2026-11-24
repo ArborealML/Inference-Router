@@ -70,6 +70,8 @@ public sealed class PrefixAwareScheduler : IRequestScheduler
         var scored = new List<(EngineRuntimeInfo E, double Score, bool Loaded)>();
         var loadable = new List<(EngineRuntimeInfo E, double Score, ServingProfile? Profile)>();
         var named = request.Request.Options?.Profile;
+        var preferred = request.Request.Options?.PreferredProfile;
+        var compatibleBusy = false;
         var explicitMinimum = request.ExplicitContextMinimum;
         foreach (var e in view.Engines)
         {
@@ -78,6 +80,16 @@ public sealed class PrefixAwareScheduler : IRequestScheduler
             var model = request.Ticket.Model;
             var loaded = e.Healthy && e.LoadedModels.Contains(model, StringComparer.OrdinalIgnoreCase);
             if (!e.CanServeModel) continue;
+
+            if (preferred is not null && loaded && e.ActiveContextWindow > 0 &&
+                e.ActiveContextWindow >= request.RequiredContextTokens)
+            {
+                if (e.DispatchObservation.HasCapacity)
+                    scored.Add((e, AffinityScore(e) - BusyScore(e, request, config), true));
+                else
+                    compatibleBusy = true;
+                continue;
+            }
 
             // Context-window escalation: the request needs more context than the engine serves.
             // A ladder change is a switch even when the model is already loaded; small windows buy
@@ -88,6 +100,9 @@ public sealed class PrefixAwareScheduler : IRequestScheduler
                 target = EngineRuntime.UniqueNamedProfile(e.ServingProfiles, named);
                 if (target is null || target.MaxContext < request.RequiredContextTokens) continue;
             }
+            else if (preferred is not null && EngineRuntime.UniqueNamedProfile(e.ServingProfiles, preferred) is { } cold &&
+                     cold.MaxContext >= request.RequiredContextTokens)
+                target = cold;
             else if (request.RequiredContextTokens > 0 && e.ServingProfiles.Count > 0)
             {
                 target = SmallestFittingProfile(e.ServingProfiles, request.RequiredContextTokens);
@@ -102,7 +117,7 @@ public sealed class PrefixAwareScheduler : IRequestScheduler
             var busy = BusyScore(e, request, config);
             var score = affinity - busy;
             if (loaded && !needsEscalation) scored.Add((e, score, true));
-            else if (config.AutoSwitch && (named is null || e.CanSwitchProfile && (e.CanLoad || e.Inflight == 0))) loadable.Add((e, score, target));
+            else if (config.AutoSwitch && ((named is null && preferred is null) || e.CanSwitchProfile && (e.CanLoad || e.Inflight == 0))) loadable.Add((e, score, target));
         }
 
         if (scored.Count > 0)
@@ -110,8 +125,11 @@ public sealed class PrefixAwareScheduler : IRequestScheduler
             var best = Best(scored.Select(s => (s.E, s.Score)));
             return new SchedulerDecision { Engine = best.Name, SwitchRequired = false, TargetProfile = named };
         }
+        if (compatibleBusy) return SchedulerDecision.Wait("compatible_resident_busy");
         if (loadable.Count > 0)
         {
+            if (preferred is not null && loadable.Exists(s => s.Profile?.Name == preferred))
+                loadable.RemoveAll(s => s.Profile?.Name != preferred);
             var best = BestLoadable(loadable);
             return new SchedulerDecision { Engine = best.E.Name, SwitchRequired = true, TargetProfile = best.Profile?.Name };
         }

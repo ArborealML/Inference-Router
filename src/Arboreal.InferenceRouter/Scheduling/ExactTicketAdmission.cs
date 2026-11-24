@@ -496,7 +496,7 @@ internal sealed class ExactTicketAdmission(
         if (state.OpeningOwner == claim) state.ClearOpeningOwner();
         state.PhysicalUses++;
         if (!detachedOwner) state.LogicalOverlap++;
-        if (claim.Request.Request.Options?.Profile is not null) engine.RetainNamedUse();
+        if (claim.Request.HasProfileSelection) engine.RetainNamedUse();
         return new Invocation(this, claim, engine, prepared.FinishAsync, detachedOwner, prepared.VerifiedSender);
     }
 
@@ -540,7 +540,7 @@ internal sealed class ExactTicketAdmission(
                 var state = admission._engines[claim.Target.Engine];
                 RemoveOverlap(state);
                 state.PhysicalUses--;
-                if (claim.Request.Request.Options?.Profile is not null) runtime.ReleaseNamedUse();
+                if (claim.Request.HasProfileSelection) runtime.ReleaseNamedUse();
                 admission._releases++;
             }
             admission._wake?.Invoke();

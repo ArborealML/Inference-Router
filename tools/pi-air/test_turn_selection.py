@@ -111,7 +111,8 @@ class RouterHandler(BaseHTTPRequestHandler):
             "template": body.get("chat_template_kwargs", {}),
             "progress": body.get("return_progress"), "usage_stats": body.get("stream_options", {}).get("continuous_usage_stats"),
             "path": self.path, "model": body.get("model"), "user": last_user, "users": users,
-            "thread": self.headers["X-Inference-Thread"], "profile": self.headers["X-Inference-Profile"],
+            "title": self.headers.get("X-Inference-Thread-Title"), "tmux": self.headers.get("X-Inference-Tmux-Session"),
+            "exact": self.headers.get("X-Inference-Profile"), "thread": self.headers["X-Inference-Thread"], "profile": self.headers["X-Inference-Preferred-Profile"],
             "context": self.headers["X-Inference-Required-Context"], "output_limit": body.get("max_tokens"),
             "has_tool_result": any(message["role"] == "tool" for message in messages), "summary": summary,
         })
@@ -222,7 +223,7 @@ class Pi:
 
 
 @contextmanager
-def pi_session(router, compaction=None):
+def pi_session(router, compaction=None, tmux_name=None):
     with tempfile.TemporaryDirectory() as directory:
         (Path(directory) / "settings.json").write_text(json.dumps({
             "retry": {"enabled": True, "maxRetries": 1, "baseDelayMs": 10, "provider": {"maxRetries": 0}},
@@ -233,6 +234,15 @@ def pi_session(router, compaction=None):
                "PI_AIR_BASE_URL": f"http://127.0.0.1:{router.server_port}/v1",
                "PI_AIR_FIXTURE_EXTENSION": entry}
         env.pop("AIR_API_KEY", None)
+        env.pop("TMUX", None)
+        env.pop("TMUX_PANE", None)
+        if tmux_name:
+            tmux = Path(directory) / "tmux"
+            tmux.write_text('#!/bin/sh\n[ "$*" = "display-message -p -t %17 #{session_name}" ] || exit 1\nprintf "%s\\n" "$FIXTURE_TMUX_NAME"\n')
+            tmux.chmod(0o700)
+            env.update(TMUX="fixture", TMUX_PANE="%17", FIXTURE_TMUX_NAME=tmux_name,
+                       PATH=directory + os.pathsep + env["PATH"])
+
         args = ["pi", "--no-extensions", "-e", entry, "-e", str(ROOT / "turn-fixture.mjs"),
                 "--mode", "rpc", "--tools", "fixture_hold", "--no-session", "--provider", "air",
                 "--model", MODELS[0]]
@@ -246,6 +256,15 @@ def pi_session(router, compaction=None):
 
 
 class TurnSelectionTest(unittest.TestCase):
+    def test_origin_and_preference_headers(self):
+        with FakeRouter().running() as router, pi_session(router, tmux_name="build room") as pi:
+            pi.send("set_session_name", name="Review Δ")
+            pi.prompt("origin check")
+            pi.settled()
+            post, = router.snapshot()
+            self.assertEqual(("Review%20%CE%94", "build%20room", None, "standard"),
+                             (post["title"], post["tmux"], post["exact"], post["profile"]))
+
     def test_mixed_route_omits_family_specific_request_flags(self):
         with FakeRouter().running() as router, pi_session(router) as pi:
             pi.model("mixed.fixture")
@@ -578,6 +597,7 @@ class TurnSelectionTest(unittest.TestCase):
     def test_sdk_children_inherit_callback_or_load_air_independently(self):
         with FakeRouter().running() as router, pi_session(router) as pi:
             thread = pi.send("get_state")["sessionId"]
+            pi.send("set_session_name", name="Parent session")
             pi.model("child.fixture")
             pi.prompt("/context wide")
             pi.model("hy4.fixture")
@@ -603,6 +623,9 @@ class TurnSelectionTest(unittest.TestCase):
             pi.prompt("/fixture-release")
             pi.settled()
             requests = router.snapshot()
+            self.assertTrue(all(post["title"] == "Parent%20session" for post in requests if post["thread"] == thread))
+            self.assertTrue(all(post["title"] != "Parent%20session" for post in requests if post["thread"] != thread))
+            self.assertTrue(all(post["tmux"] is None for post in requests))
             self.check_requests(requests[:1] + requests[-1:], thread, [
                 ("hy4.fixture", "compact", "interrupt Hy4", False),
                 ("hy4.fixture", "compact", "interrupt Hy4", True),

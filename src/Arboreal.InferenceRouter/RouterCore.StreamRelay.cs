@@ -82,7 +82,7 @@ public sealed partial class RouterCore
             }
 
             ct.ThrowIfCancellationRequested();
-            if (!engine.TryBeginForward(ct, candidate.Request.Options?.Profile is not null))
+            if (!engine.TryBeginForward(ct, candidate.HasProfileSelection))
             {
                 Fail(ticket, "cancelled", "cancelled");
                 return;
@@ -118,7 +118,7 @@ public sealed partial class RouterCore
             }
             finally
             {
-                engine.EndForward(candidate.Request.Options?.Profile is not null);
+                engine.EndForward(candidate.HasProfileSelection);
             }
         }
         catch (Exception error) when (!ticket.IsTerminal && ticket.HttpDelivery?.Sealed.IsCompletedSuccessfully != true)

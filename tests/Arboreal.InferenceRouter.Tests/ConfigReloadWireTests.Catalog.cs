@@ -170,6 +170,45 @@ public sealed partial class ConfigReloadWireTests
     }
 
     [Fact(Timeout = 30_000)]
+    public async Task PreferredTicketReportsItsOwnOriginAndObservedProfile()
+    {
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        var ct = deadline.Token;
+        var path = Path.Combine(_dir.FullName, "router.toml");
+        await File.WriteAllTextAsync(path, Initial + External("one", "a") +
+            "serving = [{name='small',max_context=256,max_slots=1},{name='big',max_context=1024,max_slots=2}]\n", ct);
+        using var backend = new FakeEngineHandler { LoadedModels = ["a"], NCtx = 1024, TotalSlots = 2 };
+        await using var app = await StartAsync(path, _ => backend, ct);
+        using var http = Client(app);
+        await ProbeAllAsync(app.Services.GetRequiredService<RouterCore>(), ct);
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/v1/completions");
+        request.Headers.Add("X-Inference-Thread", "session-a");
+        request.Headers.Add("X-Inference-Thread-Title", "Review%20%CE%94");
+        request.Headers.Add("X-Inference-Tmux-Session", "bad%1Blabel");
+        request.Headers.Add("X-Inference-Preferred-Profile", "small");
+        request.Headers.Add("X-Inference-Required-Context", "256");
+        request.Content = new StringContent("""{"model":"a","prompt":"hello"}""", Encoding.UTF8, "application/json");
+        using var response = await http.SendAsync(request, ct);
+        response.EnsureSuccessStatusCode();
+        var id = Assert.Single(response.Headers.GetValues("X-Inference-Ticket"));
+        using var ticket = JsonDocument.Parse(await http.GetByteArrayAsync("/admin/tickets/" + id, ct));
+        var row = ticket.RootElement;
+        Assert.Equal("Review Δ", row.GetProperty("ThreadTitle").GetString());
+        Assert.Null(row.GetProperty("TmuxSession").GetString());
+        Assert.Equal("small", row.GetProperty("PreferredProfile").GetString());
+        Assert.Equal("big", row.GetProperty("DispatchedProfile").GetString());
+        Assert.Equal(256, row.GetProperty("RequiredContext").GetInt64());
+
+        using var conflict = new HttpRequestMessage(HttpMethod.Post, "/v1/completions");
+        conflict.Headers.Add("X-Inference-Profile", "small");
+        conflict.Headers.Add("X-Inference-Preferred-Profile", "big");
+        conflict.Content = new StringContent("""{"model":"a","prompt":"hello"}""", Encoding.UTF8, "application/json");
+        using var refused = await http.SendAsync(conflict, ct);
+        await AssertErrorAsync(refused, HttpStatusCode.BadRequest, "invalid_profile", ct);
+    }
+
+    [Fact(Timeout = 30_000)]
     public async Task NamedProfileUsesCompatibleEngineAndRejectsUnknownOrUndersizedChoices()
     {
         using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(15));

@@ -1,5 +1,6 @@
 import { estimateTokens, getPackageDir, SettingsManager, shouldCompact } from "@earendil-works/pi-coding-agent";
 import { openAICompletionsApi } from "@earendil-works/pi-ai/compat";
+import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
@@ -66,6 +67,11 @@ export default async function air(pi) {
     }
     const auth = process.env.AIR_API_KEY;
     const adapter = openAICompletionsApi();
+    const pane = process.env.TMUX_PANE;
+    const tmuxSession = process.env.TMUX && /^%[0-9]+$/.test(pane ?? "") ? new Promise(resolve => {
+        execFile("tmux", ["display-message", "-p", "-t", pane, "#{session_name}"],
+            {timeout: 500, maxBuffer: 4096}, (error, stdout) => resolve(error ? undefined : stdout.trim()));
+    }) : undefined;
     let catalog, etag, ctx, lifetime, branch, latest, turnSelection;
     let engines = [];
     let choices = new Map();
@@ -242,6 +248,7 @@ export default async function air(pi) {
         if (!thread) throw new Error("AIR needs a Pi session identity");
         // A child can inherit this callback from its parent without loading the extension.
         const choice = sameSession || requestBranch ? selected(model.id) : null;
+        const threadTitle = sameSession ? ctx.sessionManager.getSessionName?.() : undefined;
         const captured = mainRequest ? turnSelection : undefined;
         const selection = captured ?? summary?.selection ?? resolveSelection(model, choice);
         const {model: requestModel, profile: target, capacity, maxTokens} = selection;
@@ -305,8 +312,14 @@ export default async function air(pi) {
                     throw new Error("AIR cannot serve the selected model or profile as captured. Check /context.");
                 const headers = new Headers(init.headers);
                 headers.set("X-Inference-Thread", thread);
-                if (target.name) headers.set("X-Inference-Profile", target.name);
-                else headers.delete("X-Inference-Profile");
+                for (const [key, value] of [["X-Inference-Thread-Title", threadTitle], ["X-Inference-Tmux-Session", await tmuxSession]]) {
+                    const label = String(value ?? "").toWellFormed().replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, " ").trim().slice(0, 128).toWellFormed();
+                    if (label) headers.set(key, encodeURIComponent(label));
+                    else headers.delete(key);
+                }
+                headers.delete("X-Inference-Profile");
+                if (target.name) headers.set("X-Inference-Preferred-Profile", target.name);
+                else headers.delete("X-Inference-Preferred-Profile");
                 headers.set("X-Inference-Required-Context", String(capacity));
                 if (!auth) headers.delete("authorization");
                 sent = true;

@@ -72,6 +72,10 @@ public sealed record RouterRequestOptions
     public long? RequiredContext { get; init; }
     /// <summary>The exact configured serving profile requested by this caller.</summary>
     public string? Profile { get; init; }
+    /// <summary>Preferred configuration when a model must be launched.</summary>
+    public string? PreferredProfile { get; init; }
+    public string? ThreadTitle { get; init; }
+    public string? TmuxSession { get; init; }
 }
 
 public enum TicketState : byte { Queued, WaitingForModel, Executing, Completed, Cancelled, Failed }
@@ -119,6 +123,9 @@ public sealed class RouterTicket
     internal readonly TaskCompletionSource<byte[]> CompletionTcs =
         new(TaskCreationOptions.RunContinuationsAsynchronously);
     internal CancellationTokenSource? ExecCts;
+    internal RouterRequestOptions? OriginOptions { get; init; }
+    internal long RequiredContextTokens { get; init; }
+    internal volatile string? DispatchedProfile;
     internal bool IsHttpStream { get; init; }
     internal HttpStreamDelivery? HttpDelivery { get; init; }
     internal bool SuppressIdleTerminal { get; set; }

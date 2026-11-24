@@ -45,7 +45,7 @@ class PromptBudgetTest(unittest.TestCase):
 
             def do_POST(self):
                 old_entry_markers.append(self.headers.get("X-Fixture-Old-Entry"))
-                posts.append((self.headers["X-Inference-Profile"], self.headers["X-Inference-Thread"]))
+                posts.append((self.headers["X-Inference-Preferred-Profile"], self.headers["X-Inference-Thread"]))
                 self.rfile.read(int(self.headers["Content-Length"]))
                 self.send_response(200)
                 self.send_header("Content-Type", "text/event-stream")

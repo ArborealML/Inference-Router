@@ -2255,11 +2255,12 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
         return true;
     }
 
-    internal bool RequestedProfileReady(QueuedRequest candidate)
+    internal bool RequestedProfileReady(QueuedRequest candidate) => RequestedProfileReady(candidate, Capability);
+
+    private bool RequestedProfileReady(QueuedRequest candidate, EngineCapability cap)
     {
         var named = candidate.Request.Options?.Profile;
-        if (named is null && !UsesVllmArgv) return true;
-        var cap = Capability;
+        if (named is null && candidate.Request.Options?.PreferredProfile is null && !UsesVllmArgv) return true;
         if (UsesVllmArgv && cap.NativeWatch is not { Health: NativeLaunchHealth.Eligible, ServingProcess: not null })
             return false;
         var exact = named is null ? null : GetProfile(candidate.Ticket.Model, named);
@@ -2271,9 +2272,13 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
 
     internal async ValueTask VerifyRequestedProfileAsync(QueuedRequest candidate, CancellationToken ct)
     {
-        if (!RequestedProfileReady(candidate)) throw ProfileNoLongerReady();
-        if (!UsesVllmArgv) return;
         var expected = Capability;
+        if (!RequestedProfileReady(candidate, expected)) throw ProfileNoLongerReady();
+        if (!UsesVllmArgv)
+        {
+            candidate.Ticket.DispatchedProfile = expected.Serving.Profile;
+            return;
+        }
         if (expected.NativeWatch is not { Baseline: { } baseline, ServingProcess: { } process } watch ||
             _lifecycle?.NativeProvider is not { } native) throw ProfileNoLongerReady();
         using var deadline = ReadinessDeadline.Start(_clock, native.ObservationTimeout, ct);
@@ -2290,6 +2295,7 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
         }
         if (Capability.NativeWatch?.Attempt != watch.Attempt || !RequestedProfileReady(candidate))
             throw ProfileNoLongerReady();
+        candidate.Ticket.DispatchedProfile = expected.Serving.Profile;
     }
 
     internal int HttpUsesForTests

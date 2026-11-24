@@ -285,11 +285,13 @@ public sealed class LocalLifecycleGroupTests
         Assert.DoesNotContain("launch", target.Calls);
     }
 
-    [Fact(Timeout = 20_000)]
-    public async Task RequestsShareAnAlreadyLoadedNamedProfile()
+    [Theory(Timeout = 20_000)]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task RequestsShareAnAlreadyLoadedNamedProfile(bool preferSmaller)
     {
         using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-        using var backend = new FakeEngineHandler { LoadedModels = ["model"], NCtx = 8192, TotalSlots = 4 };
+        using var backend = new FakeEngineHandler { LoadedModels = ["model"], NCtx = 1048576, TotalSlots = 4 };
         var provider = new Provider();
         var engine = new EngineDefinition
         {
@@ -298,7 +300,8 @@ public sealed class LocalLifecycleGroupTests
             Docker = new DockerLifecycleConfig { Image = "fixture", RouterId = "fixture" },
             Catalog = new Dictionary<string, EngineModelDefinition>
             {
-                ["model"] = new() { Name = "model", ServingProfiles = [new() { Name = "large", MaxContext = 8192, MaxSlots = 4 }] },
+                ["model"] = new() { Name = "model", ServingProfiles = [new() { Name = "256k", MaxContext = 262144, MaxSlots = 1 },
+                    new() { Name = "1m-4", MaxContext = 1048576, MaxSlots = 4 }] },
             },
         };
         var settings = new RouterConfig { AutoSwitch = true, Engines = new Dictionary<string, EngineDefinition>
@@ -307,7 +310,7 @@ public sealed class LocalLifecycleGroupTests
         await using var router = new RouterCore(settings, scheduler: null, events: null, clock: TimeProvider.System,
             lifecycleFactory: _ => provider);
         router.Start();
-        var first = await Enqueue("initial", 6000);
+        var first = await Enqueue("initial", 1048576);
         await first.CompletionTask.WaitAsync(deadline.Token);
         var bothEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var count = 0;
@@ -317,17 +320,92 @@ public sealed class LocalLifecycleGroupTests
             if (Interlocked.Increment(ref count) == 2) bothEntered.TrySetResult();
         };
         var second = await Enqueue("second", null);
-        var third = await Enqueue("third", null);
-        try { await bothEntered.Task.WaitAsync(deadline.Token); }
+        var third = await Enqueue("third", null, stream: true);
+        try
+        {
+            await bothEntered.Task.WaitAsync(deadline.Token);
+            var active = Assert.Single(router.GetStats(includeRequests: true).Engines).Requests!;
+            Assert.Equal(2, active.Length);
+            Assert.Contains(active, t => t.Id == third.Id && t.ThreadTitle == "third" && t.TmuxSession == "test-session" &&
+                t.DispatchedProfile == "1m-4" && t.RequiredContext == 262144);
+        }
         finally { backend.ReleaseGate(); }
         await Task.WhenAll(second.CompletionTask, third.CompletionTask).WaitAsync(deadline.Token);
+        var reply = new System.Text.StringBuilder();
+        await foreach (var chunk in third.StreamChannel!.Reader.ReadAllAsync(deadline.Token))
+            reply.Append(System.Text.Encoding.UTF8.GetString(chunk.Span));
+        Assert.Contains("[DONE]", reply.ToString(), StringComparison.Ordinal);
+        Assert.Equal("1m-4", router.TryGetTicket(third.Id)!.DispatchedProfile);
         Assert.Single(provider.Calls, call => call == "launch");
 
-        async Task<RouterTicket> Enqueue(string client, long? required) => await router.EnqueueAsync(client, new InferenceRequest
+        async Task<RouterTicket> Enqueue(string client, long? required, bool stream = false) => await router.EnqueueAsync(client, new InferenceRequest
         {
-            Model = "model", Body = """{"model":"model","messages":[{"role":"user","content":"hello"}]}"""u8.ToArray(),
-            Options = new() { RequiredContext = required },
+            Model = "model", Stream = stream,
+            Body = stream ? """{"model":"model","stream":true,"prompt":"hello"}"""u8.ToArray()
+                : """{"model":"model","prompt":"hello"}"""u8.ToArray(),
+            Options = new() { RequiredContext = required ?? 262144, PreferredProfile = preferSmaller ? (required.HasValue ? "1m-4" : "256k") : null, ThreadTitle = client, TmuxSession = "test-session" },
         }, deadline.Token);
+    }
+
+    [Fact(Timeout = 30_000)]
+    public async Task PreferredProfileWaitsForCompatibleLaneAndEscalatesWhenWindowIsInsufficient()
+    {
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        var ct = deadline.Token;
+        using var backend = new FakeEngineHandler { LoadedModels = ["model"], HoldCompletions = true };
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        backend.AfterHeldCompletionEnteredForTests = () => entered.TrySetResult();
+        var launches = new ConcurrentQueue<string>();
+        var provider = new Provider { OnLaunch = target =>
+        {
+            var profile = target.Profile!;
+            launches.Enqueue(profile.Name);
+            backend.NCtx = profile.MaxContext;
+            backend.TotalSlots = profile.MaxSlots;
+        } };
+        var engine = new EngineDefinition
+        {
+            Name = "engine", Endpoint = new Uri("http://localhost:12000/v1"),
+            Lifecycle = EngineLifecycleKind.Docker, LifecycleOwner = EngineLifecycleOwner.Router, LifecycleGroup = "gpu",
+            Docker = new DockerLifecycleConfig { Image = "fixture", RouterId = "fixture" },
+            Catalog = new Dictionary<string, EngineModelDefinition>
+            {
+                ["model"] = new() { Name = "model", ServingProfiles = [
+                    new() { Name = "tiny", MaxContext = 8192, MaxSlots = 2 },
+                    new() { Name = "256k", MaxContext = 262144, MaxSlots = 1 },
+                    new() { Name = "1m-4", MaxContext = 1048576, MaxSlots = 4 }] },
+            },
+        };
+        var config = new RouterConfig { AutoSwitch = true, Engines = new Dictionary<string, EngineDefinition>
+            { ["engine"] = engine }, HttpHandlerFactory = _ => backend };
+        await using var router = new RouterCore(config, scheduler: null, events: null, clock: TimeProvider.System,
+            lifecycleFactory: _ => provider);
+        router.Start();
+        var first = await Submit("one", "256k", 8192);
+        RouterTicket queued;
+        try
+        {
+            await entered.Task.WaitAsync(ct);
+            queued = await Submit("two", "tiny", 8192);
+            var snapshot = Assert.Single(router.GetStats(includeRequests: true).Engines).Requests!;
+            Assert.Contains(snapshot, t => t.Id == queued.Id && t.State == "Queued" && t.Engine is null);
+            Assert.Equal("256k", Assert.Single(launches));
+        }
+        finally { backend.ReleaseGate(); }
+        await Task.WhenAll(first.CompletionTask, queued.CompletionTask).WaitAsync(ct);
+        Assert.Equal("256k", router.TryGetTicket(queued.Id)!.DispatchedProfile);
+        var large = await Submit("three", "1m-4", 1048576);
+        await large.CompletionTask.WaitAsync(ct);
+        Assert.Collection(launches, firstLaunch => Assert.Equal("256k", firstLaunch),
+            nextLaunch => Assert.Equal("1m-4", nextLaunch));
+        Assert.Equal("1m-4", router.TryGetTicket(large.Id)!.DispatchedProfile);
+
+        async Task<RouterTicket> Submit(string thread, string profile, long floor) =>
+            await router.EnqueueAsync(thread, new InferenceRequest
+            {
+                Model = "model", Body = """{"model":"model","prompt":"hello"}"""u8.ToArray(),
+                Options = new() { RequiredContext = floor, PreferredProfile = profile },
+            }, ct);
     }
 
     [Theory(Timeout = 30_000)]

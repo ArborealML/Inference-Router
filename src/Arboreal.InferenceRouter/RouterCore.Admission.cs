@@ -172,6 +172,8 @@ public sealed partial class RouterCore
     {
         var opts = request.Options;
         var explicitContext = opts?.RequiredContext ?? 0;
+        if (opts is { Profile: not null, PreferredProfile: not null })
+            throw new RouterRequestException("invalid_profile", "Choose either an exact or a preferred profile.");
         var promptChars = PromptCharsProbe(request.Body);
         var createdAt = _clock.GetUtcNow();
         var timestamp = ReadQueueTimestamp();
@@ -222,6 +224,8 @@ public sealed partial class RouterCore
                 var bufferLimit = generation.Settings.StreamBufferLimitBytes;
                 var ticket = new RouterTicket(NewTicketId(), threadId, model, createdAt)
                 {
+                    OriginOptions = opts,
+                    RequiredContextTokens = required,
                     IsHttpStream = httpStream,
                     HttpDelivery = httpStream && bufferLimit > 0 ? new HttpStreamDelivery(bufferLimit, ct, _shutdownToken) : null,
                 };

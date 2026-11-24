@@ -15,6 +15,7 @@ public sealed record MonitorGauges
 
 public sealed record MonitorEngine
 {
+    public ImmutableArray<TicketSnapshot> Requests { get; init; } = [];
     public required string Engine { get; init; }
     public required bool Healthy { get; init; }
     public required ImmutableArray<string> LoadedModels { get; init; }
@@ -92,7 +93,7 @@ public sealed class RouterMonitor(HttpClient http) : IDisposable
     {
         try
         {
-            var gauges = await GetAsync("admin/status", MonitorJson.Default.MonitorGauges, 1_048_576, ct).ConfigureAwait(false);
+            var gauges = await GetAsync("admin/status?requests=1", MonitorJson.Default.MonitorGauges, 1_048_576, ct).ConfigureAwait(false);
             if (gauges.Engines.IsDefault || gauges.QueueDepths is null ||
                 gauges.Engines.Any(e => e is null || e.Engine is null || e.LoadedModels.IsDefault))
                 throw new JsonException("Invalid engine gauges.");

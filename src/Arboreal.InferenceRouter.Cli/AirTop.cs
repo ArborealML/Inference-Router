@@ -144,13 +144,23 @@ internal sealed class AirTop(RouterMonitor monitor)
                 if (engine.SwitchingToward is not null) summary += "  target " + Text(engine.SwitchingToward);
                 rows.Add(new("engine/" + engine.Engine, "Engine", summary,
                     summary + $"\nSwitch target {Text(engine.SwitchingToward)}\nReported profile {Text(engine.ActiveProfile)}" +
-                    $"   Context {Count(engine.ActiveContextWindow)}   Slots {Count(engine.ActiveSlots)}"));
+                    $"   Context {Count(engine.ActiveContextWindow)}   Slots {Count(engine.ActiveSlots)}" +
+                    string.Concat(engine.Requests.Select(TicketDetail))));
             }
             foreach (var (model, depth) in gauges.QueueDepths.OrderByDescending(pair => pair.Value).ThenBy(pair => pair.Key, StringComparer.Ordinal))
                 rows.Add(new("queue/" + model, "Queue", FormattableString.Invariant($"{Text(model)}  {depth} queued"),
                     "Global queue depth from status. Enter filters observed activity for " + Text(model), Queue: model));
         }
         return rows.ToArray();
+    }
+
+    private static string TicketDetail(TicketSnapshot ticket)
+    {
+        var state = ticket.Engine is null ? "Queued (unassigned)" : Text(ticket.State);
+        var requested = ticket.ExactProfile is { } exact ? "exact " + Text(exact)
+            : ticket.PreferredProfile is { } preferred ? "preferred " + Text(preferred) : "automatic";
+        return $"\n{Text(ticket.Id)}  {state}  {Text(ticket.Model)}  {requested}  required {Count(ticket.RequiredContext)}" +
+            $"  dispatched {Text(ticket.DispatchedProfile)}\n  Thread {Text(ticket.ThreadId)}  Title {Text(ticket.ThreadTitle)}  tmux {Text(ticket.TmuxSession)}";
     }
 
     private static string Count(long value) => value > 0 ? value.ToString(CultureInfo.InvariantCulture) : "unreported";
