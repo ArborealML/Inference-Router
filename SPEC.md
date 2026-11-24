@@ -1,11 +1,13 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.157)
+Status: draft, continuously revised (v0.12.158)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
 
 ## 0. Revision log
+
+- v0.12.158 — Pi defaults to 65,536 output tokens on DeepSeek and 32,768 elsewhere, subject to input room on smaller profiles. Explicit smaller request caps apply.
 
 - v0.12.157 — expose completed local switch milestones on the owning ticket (§13).
 

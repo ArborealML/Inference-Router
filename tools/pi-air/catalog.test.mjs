@@ -47,3 +47,12 @@ test("a later prompt must fit even when the selected profile has stayed the same
     assert.equal(requestFits(32768, 24577), false);
     assert.equal(requestFits(32768, 32770, 1), false);
 });
+
+test("default output limits follow the model family", () => {
+    for (const [id, limit] of [["qwen", 32768], ["deepseek-v4.1-flash-1017-iq2-xxs", 65536],
+                               ["deepseek-v4.1-flash-1017-maya-xs-v2", 65536]]) {
+        const row = model(engine("a", 262144));
+        row.id = id;
+        assert.equal(piModel(row, null, []).maxTokens, limit);
+    }
+});

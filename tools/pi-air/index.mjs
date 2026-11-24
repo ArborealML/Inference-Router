@@ -112,7 +112,7 @@ export default async function air(pi) {
         const row = catalog.models.get(model.id);
         const profile = row && tier(row, preference);
         const capacity = profile && (profile.window || observedWindow(row, engines));
-        return {model, profile, capacity, maxTokens: capacity && outputBudget(capacity)};
+        return {model, profile, capacity, maxTokens: capacity && outputBudget(capacity, model.id)};
     }
 
     async function refresh(signal) {
@@ -152,7 +152,7 @@ export default async function air(pi) {
         } else if (selected(current.id) && !tier(catalog.models.get(current.id), selected(current.id))) {
             notify("AIR removed the selected profile " + selected(current.id) + ". Choose /context default or another profile.", "warning");
         } else if (updated.contextWindow !== current.contextWindow || updated.maxTokens !== current.maxTokens) {
-            if (!contextFits(ctx, updated.contextWindow, current.contextWindow, () => projectedTokens(ctx))) {
+            if (!contextFits(ctx, updated.contextWindow, current.contextWindow, () => projectedTokens(ctx), updated.id)) {
                 notify("AIR reduced the window below this transcript’s budget. Select a larger profile or compact first.", "warning");
                 return;
             }
@@ -525,7 +525,7 @@ export default async function air(pi) {
                 return notify("AIR selection or catalog changed while the picker was open. Open /context again.", "warning");
             const preference = name === "default" ? null : name;
             const next = tier(row, preference).window || observedWindow(row, engines);
-            if (!next || (context.isIdle() && !contextFits(context, next, ctx.model.contextWindow, () => projectedTokens(context))))
+            if (!next || (context.isIdle() && !contextFits(context, next, ctx.model.contextWindow, () => projectedTokens(context), row.id)))
                 return notify("The transcript and output reserve do not fit this context. Use /compact on the current profile, then retry /context.", "warning");
             choices.set(row.id, preference);
             pi.appendEntry(entryType, {model: row.id, profile: preference});

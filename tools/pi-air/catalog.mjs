@@ -37,16 +37,19 @@ export function tier(model, name) {
     return {name: null, window: minimum};
 }
 
-export const outputBudget = window => Math.min(8192, Math.max(1, Math.floor(window / 4)));
+export function outputBudget(window, modelId = "") {
+    const ceiling = modelId.toLowerCase().startsWith("deepseek-") ? 65536 : 32768;
+    return Math.min(ceiling, Math.max(1, Math.floor(window / 4), window - 32768));
+}
 
 export function requestFits(window, estimatedInput, reserve = outputBudget(window)) {
     return Number.isFinite(estimatedInput) && estimatedInput + reserve <= window;
 }
 
-export function contextFits(ctx, target, current, estimate) {
+export function contextFits(ctx, target, current, estimate, modelId) {
     if (target >= current) return true;
     const usage = ctx.getContextUsage()?.tokens ?? estimate?.();
-    return requestFits(target, usage);
+    return requestFits(target, usage, outputBudget(target, modelId));
 }
 
 export function observedWindow(model, engines) {
@@ -77,7 +80,7 @@ export function piModel(model, selected, engines) {
     const efforts = modelEfforts.get(model.id);
     return {
         id: model.id, name: model.id + (loaded.length ? ' (loaded on ' + loaded.join(', ') + ')' : ' (configured)'),
-        contextWindow: window || 4096, maxTokens: outputBudget(window || 4096),
+        contextWindow: window || 4096, maxTokens: outputBudget(window || 4096, model.id),
         ...(efforts ? {
             thinkingLevelMap: Object.fromEntries(["minimal", "low", "medium", "high", "xhigh", "max"]
                 .map(level => [level, efforts.includes(level) ? level : null]))

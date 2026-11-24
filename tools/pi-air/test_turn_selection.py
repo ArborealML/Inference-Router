@@ -315,9 +315,12 @@ class TurnSelectionTest(unittest.TestCase):
                             pi.model(model)
                             self.assertEqual(expected, pi.send("get_available_thinking_levels")["levels"])
                             pi.send("set_thinking_level", level=expected[-1])
+                            pi.prompt("/context wide")
                             pi.prompt("Check effort")
                             pi.settled()
                             self.assertEqual(expected[-1], router.snapshot()[-1]["template"]["reasoning_effort"])
+                            self.assertEqual(65536 if model.startswith("deepseek-") else 32768,
+                                             router.snapshot()[-1]["output_limit"])
 
 
     def check_requests(self, requests, thread, expected):
@@ -365,7 +368,7 @@ class TurnSelectionTest(unittest.TestCase):
                 ("hy4.fixture", "compact", "start Hy4", True),
                 ("qwen.fixture", "wide", "next user", True),
             ])
-            self.assertEqual([2048, 2048, 2048, 8192], [post["output_limit"] for post in requests])
+            self.assertEqual([2048, 2048, 2048, 32768], [post["output_limit"] for post in requests])
             self.assertEqual(["start Hy4", "next user"], requests[-1]["users"])
             self.assertEqual(1, sum(event["type"] == "auto_retry_start" for event in pi.seen))
 
@@ -410,7 +413,7 @@ class TurnSelectionTest(unittest.TestCase):
                 ("hy4.fixture", "compact", prompt, True),
                 ("hy4.fixture", "wide", prompt, True),
             ])
-            self.assertEqual([2048, 2048, 8192], [post["output_limit"] for post in requests])
+            self.assertEqual([2048, 2048, 32768], [post["output_limit"] for post in requests])
             self.assertEqual([prompt, prompt], requests[-1]["users"])
 
     def test_pending_downgrade_revalidates_at_dispatch(self):
@@ -481,7 +484,7 @@ class TurnSelectionTest(unittest.TestCase):
                 ("hy4.fixture", "wide", THRESHOLD_PROMPT, True),
                 ("qwen.fixture", "compact", follow_up, True),
             ])
-            self.assertEqual([8192, 8192, 8192], [post["output_limit"] for post in requests[:3]])
+            self.assertEqual([32768, 32768, 32768], [post["output_limit"] for post in requests[:3]])
             self.assertLessEqual(requests[3]["output_limit"], 2048)
             summary_threads = {post["thread"] for post in requests[4:]}
             self.assertTrue(all(summary_threads))
@@ -641,7 +644,7 @@ class TurnSelectionTest(unittest.TestCase):
                 ("hy4.fixture", "compact", "interrupt Hy4", False),
                 ("child.fixture", "wide", "direct registry call", False),
             ])
-            self.assertEqual([2048, 8192], [post["output_limit"] for post in requests])
+            self.assertEqual([2048, 32768], [post["output_limit"] for post in requests])
             replies = [event["message"] for event in pi.seen
                        if event.get("method") == "notify" and event["message"].startswith("Registry call ")]
             self.assertEqual(["Registry call stop", "Registry call error: AIR needs a Pi session identity"], replies)
@@ -658,7 +661,7 @@ class TurnSelectionTest(unittest.TestCase):
                 ("child.fixture", "wide", "registry with loop options", False),
                 ("hy4.fixture", "compact", "interrupt Hy4", True),
             ])
-            self.assertEqual([2048, 8192, 2048], [post["output_limit"] for post in requests])
+            self.assertEqual([2048, 32768, 2048], [post["output_limit"] for post in requests])
 
     def test_explicit_output_cap_controls_fit_and_survives_retry(self):
         with FakeRouter().running() as router, pi_session(router) as pi:

@@ -38,4 +38,4 @@ def router_provider(path):
     defaults = [p["MaxContext"] for r in rows if r["Id"] == model["Id"]
                 for p in r["Profiles"] if p["Name"] == r["DefaultProfile"]]
     window = min(defaults, default=4096)
-    return "air", origin + "/v1", key, model["Id"], window, min(8192, window // 4), {"providers": {}}
+    return "air", origin + "/v1", key, model["Id"], window, min(65536 if model["Id"].lower().startswith("deepseek-") else 32768, max(1, window // 4, window - 32768)), {"providers": {}}
