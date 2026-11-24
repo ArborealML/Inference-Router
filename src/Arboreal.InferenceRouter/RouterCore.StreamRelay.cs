@@ -69,7 +69,7 @@ public sealed partial class RouterCore
             var suffix = LooksLikeCompletion(candidate.Request.Body) ? "completions" : "chat/completions";
             if (invocation is not null)
             {
-                using var request = MakeUpstreamRequest(engine, body, suffix);
+                using var request = MakeUpstreamRequest(engine, body, suffix, ticket.ThreadId);
                 await invocation.RunAsync(request, response =>
                 {
                     // A borrowed response is evidence of an actual send. Returning from abort
