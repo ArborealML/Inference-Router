@@ -5,7 +5,7 @@ status: Ready for Review
 assignee:
   - '@gpt-6.2-astra'
 created_date: '2026-11-24T01:31:00Z'
-updated_date: '2026-11-24T01:41:00Z'
+updated_date: '2026-11-24T01:50:00Z'
 labels: []
 dependencies: []
 ordinal: 172000
@@ -21,6 +21,7 @@ Run AIR independently of the invoking terminal with a corresponding stop command
 <!-- AC:BEGIN -->
 - [x] #1 air serve returns after the configured listener starts and reports startup failures.
 - [x] #2 air stop gracefully stops the managed instance. Foreground mode remains available.
+- [ ] #3 Land the CLI change on main after resolving the external lifecycle review and passing CI.
 <!-- AC:END -->
 
 ## Implementation Plan

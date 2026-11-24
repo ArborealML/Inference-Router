@@ -5,7 +5,7 @@ status: Ready for Review
 assignee:
   - '@gpt-6.2-astra'
 created_date: '2026-11-24T01:36:00Z'
-updated_date: '2026-11-24T01:41:00Z'
+updated_date: '2026-11-24T01:50:00Z'
 labels: []
 dependencies: []
 ordinal: 173000
@@ -20,6 +20,7 @@ Show completed switch milestones on the owning request while AIR prepares a loca
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [x] #1 Display observed progress and current phase during a switch, distinguish queueing from switching and clear the indicator at execution or failure.
+- [ ] #2 Land the switch percentage on main after review and passing CI.
 <!-- AC:END -->
 
 ## Implementation Plan
