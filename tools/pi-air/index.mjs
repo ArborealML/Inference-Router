@@ -87,11 +87,11 @@ export default async function air(pi) {
         const phase = runningTools.size ? "Executing Tool" : current === speedRequest && current &&
             !current.signal.aborted && !waiting && !["Completed", "Cancelled", "Failed"].includes(current.lastState)
             ? current.phase : undefined;
-        const status = phase ? snapshotText(null, {State: phase, Model: current?.model}) :
+        const status = phase && !current?.switchLabel ? snapshotText(null, {State: phase, Model: current?.model}) :
             current?.observationWarning ?? current?.text;
         const rates = speedRequest && `prefill ${speedRequest.prefill ?? "—"} · decode ${speedRequest.decode ?? "—"} tok/s`;
         ctx?.ui.setStatus("air-ticket", [rates, status].filter(Boolean).join(" · ") || undefined);
-        const label = waiting ? "Waiting" : phase;
+        const label = waiting ? "Waiting" : current?.switchLabel ?? phase;
         if (label !== workingLabel) {
             ctx?.ui.setWorkingMessage(label);
             workingLabel = label;
@@ -177,12 +177,19 @@ export default async function air(pi) {
         if (req.branch === branch) {
             // A manual status read and the poll may return out of order. A dispatched ticket never requeues.
             if (req.dispatched && state.State === "Queued") return false;
+            if (state.State === "WaitingForModel" && (req.outputStarted || req.lastState === "Executing")) return false;
+            const steps = state.CompletedSwitchSteps;
+            if (state.State === "WaitingForModel" && Number.isInteger(steps) && steps >= 0 && steps <= 3) {
+                req.switchSteps = Math.max(req.switchSteps ?? 0, steps);
+                const phases = ["Checking engines", "Releasing previous model", "Starting model", "Waiting for readiness"];
+                req.switchLabel = `Switching model (${req.switchSteps * 25}% of steps) · ${phases[req.switchSteps]}`;
+            } else req.switchLabel = state.State === "WaitingForModel" ? "Switching model" : undefined;
             req.lastState = state.State;
             req.missedPolls = 0;
             req.observationWarning = undefined;
             req.queued = state.State === "Queued";
             req.dispatched = !req.queued;
-            req.text = snapshotText(null, state);
+            req.text = snapshotText(null, req.switchLabel ? {...state, State: req.switchLabel} : state);
             if (currentRequests().at(-1) === req) updateTicketUI();
             if (state.State === "Failed" && state.ErrorCode && !req.reported) {
                 req.reported = true;

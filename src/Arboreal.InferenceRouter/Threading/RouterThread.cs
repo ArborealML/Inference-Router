@@ -79,6 +79,8 @@ public enum TicketState : byte { Queued, WaitingForModel, Executing, Completed, 
 /// <summary>Handle for one enqueued chat/completion request.</summary>
 public sealed class RouterTicket
 {
+    // Only the cold local owner writes this. Other requests have no switch progress.
+    internal volatile int CompletedSwitchSteps = -1;
     internal RouterTicket(string id, string threadId, string model, DateTimeOffset queuedAt)
     {
         Id = id;

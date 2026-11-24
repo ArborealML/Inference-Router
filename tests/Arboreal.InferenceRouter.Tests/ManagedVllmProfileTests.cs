@@ -368,9 +368,11 @@ public sealed class ManagedVllmProfileTests
         try
         {
             await fixture.App.FirstRead.Task.WaitAsync(Limit);
+            Assert.Equal(3, router.TryGetTicket(owner.Id)!.CompletedSwitchSteps);
             if (firstAnswer != 0) clock.AdvanceTo(firstAnswer);
             var next = await EnqueueAsync(router, "next");
             Assert.Equal(TicketState.Queued, next.State);
+            Assert.Null(router.TryGetTicket(next.Id)!.CompletedSwitchSteps);
             fixture.App.ReleaseRead.TrySetResult();
             if (missing)
             {
