@@ -8,7 +8,7 @@ internal static class ShellCompletion
 {
     private static readonly string[] Shells = ["bash", "powershell", "zsh", "fish"];
     private static readonly string[] Commands =
-        ["serve", "chat", "complete", "models", "status", "top", "events", "threads", "switch", "config", "tickets", "tune", "completion", "help"];
+        ["serve", "stop", "chat", "complete", "models", "status", "top", "events", "threads", "switch", "config", "tickets", "tune", "completion", "help"];
     private static readonly string[] ServerOptions = ["-s", "--server"];
     private static string[] Options(string command) => command switch
     {
@@ -19,7 +19,7 @@ internal static class ShellCompletion
         "threads" => [.. ServerOptions, "-i", "--id", "--thread", "-p", "--priority"],
         "switch" => [.. ServerOptions, "-e", "--engine", "-m", "--model"],
         "config" => ["-c", "--config"],
-        "serve" => ["-c", "--config", "-l", "--listen"],
+        "serve" => ["-c", "--config", "-l", "--listen", "--foreground"],
         "tune plan" => ["--config", "--engine", "--model", "--profile", "--seed", "--max-concurrency"],
         "tune compare" => ["--baseline", "--candidate"],
         _ => [],

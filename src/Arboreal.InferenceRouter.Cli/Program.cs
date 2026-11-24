@@ -32,7 +32,8 @@ public static class Program
         return args[0] switch
         {
             "completion" => await ShellCompletion.RunAsync(args[1..]).ConfigureAwait(false),
-            "serve" => await RunServeAsync(args[1..]).ConfigureAwait(false),
+            "serve" => await AirBackgroundService.ServeAsync(args[1..]).ConfigureAwait(false),
+            "stop" => await AirBackgroundService.StopAsync(args[1..]).ConfigureAwait(false),
             "chat" or "complete" => await RunChatAsync(args[1..], json).ConfigureAwait(false),
             "models" => await RunModelsAsync(args[1..], json).ConfigureAwait(false),
             "top" => await AirTop.RunAsync(args[1..], json).ConfigureAwait(false),
@@ -61,7 +62,9 @@ public static class Program
 
             commands:
               completion bash|powershell|zsh|fish       print the shell’s tab-completion registration
-              serve [--config path] [--listen url]      run the router host in this process
+              serve [--config path] [--listen url] [--foreground]
+                                                      start AIR (Linux user service by default)
+              stop                                        stop the Linux user service
               chat  [-m model] [-t thread] [-p prio]    send a chat completion (prompt args or stdin)
                     [--system text] [--no-stream] [--json] [-s server-url]
               models [-s server-url]                    list observed models and context windows
@@ -95,16 +98,6 @@ public static class Program
         int code = AirTuneCompare.Run(args, report, Console.Error);
         if (code == 0) WriteJsonString("Report", report.ToString());
         return code;
-    }
-
-    // ── serve ───────────────────────────────────────────────────────────────
-    private static async Task<int> RunServeAsync(string[] args)
-    {
-        if (!ServerApp.TryReadConfigOption(args, out var config))
-            return 2;
-        string? listen = GetOpt(args, ["--listen", "-l"]);
-        var runArgs = listen is { Length: > 0 } ? new[] { $"--urls={listen}" } : [];
-        return await ServerApp.RunAsync(runArgs, config).ConfigureAwait(false);
     }
 
     // ── config (dry run) ────────────────────────────────────────────────────
