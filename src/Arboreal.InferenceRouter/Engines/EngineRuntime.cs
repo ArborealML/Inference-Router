@@ -1715,6 +1715,7 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
                     return;
                 }
             }
+            if (state.LocalOwner is { } progressOwner) progressOwner.Request.Ticket.CompletedSwitchSteps = 3;
             timing.TryStartStage(SwitchStage.Readiness);
             var readiness = lifecycle.Readiness(target);
             if (UsesVllmArgv)

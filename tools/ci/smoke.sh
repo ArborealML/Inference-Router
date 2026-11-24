@@ -60,7 +60,7 @@ FIXTURE_PID=$!
 wait_for "fake upstream" "$FIXTURE_PID" /tmp/air-fixture.log curl -fsS "${UPSTREAM}/health"
 
 step "start router on :${ROUTER_PORT}"
-"$BIN" serve --config "$CONFIG" --listen "$ROUTER" >/tmp/air-router.log 2>&1 &
+"$BIN" serve --foreground --config "$CONFIG" --listen "$ROUTER" >/tmp/air-router.log 2>&1 &
 ROUTER_PID=$!
 wait_for "router" "$ROUTER_PID" /tmp/air-router.log curl -fsS "${ROUTER}/healthz"
 

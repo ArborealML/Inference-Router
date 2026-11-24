@@ -1,11 +1,15 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.155)
+Status: draft, continuously revised (v0.12.157)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
 
 ## 0. Revision log
+
+- v0.12.157 — expose completed local switch milestones on the owning ticket (§13).
+
+- v0.12.156 — run the Linux CLI host as a background user service and add graceful stop (§13).
 
 - v0.12.155 — display prompt completion in the Reading Context phase (§13.2).
 
@@ -3752,7 +3756,8 @@ The monitor resumes the unfiltered feed with the last JSON `Seq`. Every reconnec
 
 ```
 air completion bash|powershell|zsh|fish
-air serve [--config f.toml] [--listen url]
+air serve [--config f.toml] [--listen url] [--foreground]
+air stop
 air chat [--server url] [--thread id] [--priority high:200] [--model name] [--system text] [--no-stream] [--json] [prompt ...]
 air complete [--server url] [--thread id] [--priority high:200] [--model name] [--system text] [--no-stream] [--json] [prompt ...]
 air models [--server url]
@@ -3790,7 +3795,9 @@ stderr. Help, the serve host, the tune plan manifest and the completion protocol
 configuration path first, then `ARBOREAL_ROUTER_CONFIG`, then `AIR_CONFIG`. With all
 three omitted they open `~/arboreal/inference-router/router.toml` in the user's home directory.
 
-`air serve` starts the router host in the CLI process. Client verbs construct HTTP requests and
+During a local cold switch, the waiting owner ticket can report `CompletedSwitchSteps` (0–3). Four milestones cover inventory and preflight, releasing peers, starting or adopting the target, and verifying readiness. Execution follows readiness. Pi shows the completed fraction and current phase. Queued peers and terminal tickets omit the field.
+
+`air serve` starts one transient Linux systemd service per user and returns when its HTTP listener is bound. `air stop` waits for that service to stop. Use `air serve --foreground` for process supervision or a terminal. Other operating systems run the host in the foreground. Client verbs construct HTTP requests and
 read the router's responses directly.
 
 `air chat` and its alias `air complete` send `POST /v1/chat/completions`. Use `-s` or `--server`

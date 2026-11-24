@@ -65,6 +65,10 @@ On Windows, use Git Bash and pass the executable path ending in `air.exe`. A suc
 
 ## Connect an inference engine
 
+Pi shows local model switch progress as a percentage of four observed lifecycle steps, with the current step named while the request waits.
+
+On Linux with a systemd 254+ user manager, `air serve` starts AIR in the background and returns once the listener is ready. Use `air stop` to shut it down and `journalctl --user -u arboreal-inference-router.service` to read logs. Use `air serve --foreground` in a container or under another supervisor.
+
 Create the directory with `mkdir -p ~/arboreal/inference-router` and save this configuration as `~/arboreal/inference-router/router.toml`. This is the default for `air config`, `air serve`, `air tune plan` and the standalone server. To select another file, pass `--config FILE` or set `ARBOREAL_ROUTER_CONFIG`. AIR also accepts `AIR_CONFIG` when the first variable is unset. Replace the example endpoint and both occurrences of `example-model` with your backend’s base URL and model ID. Set `models_endpoint` to its model-list path. A leading slash resolves from the backend’s root, so an OpenAI-compatible engine mounted at `/v1` typically uses `/v1/models`.
 
 ```toml

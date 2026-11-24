@@ -78,6 +78,7 @@ internal sealed class LocalLifecycleGroup(string name, Action wake)
         string? residentProfile = null;
         try
         {
+            owner.Request.Ticket.CompletedSwitchSteps = 0;
             var engine = owner.Engine;
             var target = engine.LocalTarget(owner.Request.Ticket.Model, owner.Profile);
             var provider = engine.LocalLifecycle;
@@ -122,6 +123,7 @@ internal sealed class LocalLifecycleGroup(string name, Action wake)
                     incumbent.Peer.Model == target.Model && incumbent.Peer.EffectiveProfile == target.EffectiveProfile)
                     owner.Adopt = incumbent.Peer;
             }
+            owner.Request.Ticket.CompletedSwitchSteps = 1;
             foreach (var (peer, peers) in inventories)
             {
                 if (ReferenceEquals(peer, engine)) continue; // the existing target transaction handles its own peers
@@ -135,6 +137,7 @@ internal sealed class LocalLifecycleGroup(string name, Action wake)
                 peer.WithdrawLocalResident();
             }
             lifetime.Token.ThrowIfCancellationRequested();
+            owner.Request.Ticket.CompletedSwitchSteps = 2;
             engine.WithdrawLocalResident();
             var observed = await engine.EnsureLoadedAsync(owner.Request.Ticket.Model, owner.Profile,
                 Timeout.InfiniteTimeSpan, queue: null, lifetime.Token,

@@ -32,6 +32,7 @@ class WaitingIndicatorTest(unittest.TestCase):
         late = threading.Event()
         finish = threading.Event()
         payloads = []
+        switching = threading.Event()
         executing = threading.Event()
         polls = []
         polled_again = threading.Event()
@@ -67,6 +68,8 @@ class WaitingIndicatorTest(unittest.TestCase):
                         return
                     result = {"Id": "test-ticket", "ThreadId": self.server.thread_id,
                               "Model": model["Id"], "State": "Executing" if executing.is_set() else "Queued"}
+                    if switching.is_set() and not executing.is_set():
+                        result.update(State="WaitingForModel", CompletedSwitchSteps=3)
                     if len(polls) >= 3 and not executing.is_set():
                         result["Engine"] = "fixture-reobserved"
                 else:
@@ -145,6 +148,8 @@ class WaitingIndicatorTest(unittest.TestCase):
                             expect(b"status unavailable (last known Queued)", forbidden=b"Working")
                             recovered = expect(b"fixture-reobserved", forbidden=b"Working")
                             self.assertNotIn(b"status unavailable", recovered)
+                            switching.set()
+                            expect(b"Switching model (75% of steps)")
                             executing.set()
                             expect(b"Working")
                         else:

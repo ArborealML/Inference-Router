@@ -173,13 +173,16 @@ public sealed partial class RouterCore : IInferenceRouter
         lock (_ticketGate)
         {
             if (!_tickets.TryGetValue(ticketId, out var t)) return null;
+            var state = t.State;
+            var steps = t.CompletedSwitchSteps;
             return new TicketSnapshot
             {
                 Id = t.Id,
                 ThreadId = t.ThreadId,
                 Model = t.Model,
                 QueuedAt = t.QueuedAt,
-                State = t.State.ToString(),
+                State = state.ToString(),
+                CompletedSwitchSteps = state == TicketState.WaitingForModel && steps >= 0 ? steps : null,
                 Engine = t.Engine,
                 ErrorCode = t.ErrorCode,
                 Error = t.Error,
@@ -1530,6 +1533,9 @@ public sealed record RouterStats(
 /// <summary>Immutable projection of one ticket for the admin API (AOT-safe DTO).</summary>
 public sealed record TicketSnapshot
 {
+    /// <summary>Completed local switch milestones out of four, present while the owner waits.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public int? CompletedSwitchSteps { get; init; }
     public required string Id { get; init; }
     public required string ThreadId { get; init; }
     public required string Model { get; init; }
