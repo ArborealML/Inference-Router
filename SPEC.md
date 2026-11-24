@@ -1,11 +1,13 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.155)
+Status: draft, continuously revised (v0.12.160)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
 
 ## 0. Revision log
+
+- v0.12.160 — send an opaque per-engine thread cache hint on completion requests to explicitly router-owned local Docker lifecycle groups (§6).
 
 - v0.12.155 — display prompt completion in the Reading Context phase (§13.2).
 
@@ -2937,6 +2939,14 @@ including requests selected before their first send. Counted transports check th
 again at submission. Verified transports perform this check after validating the offered request
 and before starting issuer checkout. A changed observation fails the ticket with `switch_failed`.
 The issuer then enforces its existing route and first-write authorization. Without this header, automatic tier selection follows §7.6.
+
+For ordinary and streaming completions on a loopback Docker engine with explicit router ownership and a local
+lifecycle group, AIR sets the upstream `X-Inference-Thread` to a 64-character lowercase SHA-256 digest.
+The hash input is the UTF-8 bytes of `AIR local inference thread v1`, the four-byte big-endian byte length
+of the engine name, the UTF-8 engine name, and the UTF-8 ticket thread ID. Anonymous (`anon`) and blank
+threads omit the header. Other engines, verified dispatch, and probes receive no hint. The built-in HTTP
+transport for eligible engines connects directly and returns redirect responses to AIR. A backend can use
+the hint to replace a conversation's parked state after checking the prompt and its cached tensors.
 
 `X-Inference-Required-Context: <tokens>` declares a positive measured context minimum for the
 request. With the header absent, the prompt estimate informs serving-tier selection (§7.6). Every admitted request
