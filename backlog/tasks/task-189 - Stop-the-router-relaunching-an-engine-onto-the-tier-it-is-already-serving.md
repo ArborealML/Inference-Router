@@ -5,6 +5,7 @@ status: To Do
 assignee:
   - '@gpt-6.2-astra'
 created_date: '2026-11-25T18:00:00Z'
+updated_date: '2026-11-25T18:38:00Z'
 labels: []
 dependencies: []
 priority: high
@@ -28,5 +29,5 @@ The live event feed records a switch to the profile 256k-8 at 17:40 on an engine
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Observed live 2026-11-25: switch_started at 17:40:18 with reason profile=256k-8 while resident was 256k-8, container exit at 17:40:19, switch completed after 115.8 seconds. Earlier: startup switch to 256k-4, then to 256k-8 at 06:00 (118.0 seconds). Same-window slot-tier churn is the mechanism behind TASK-183 and it takes down every session on the host each time.
+Confirmed live 2026-11-25: switch to the resident tier at 17:40:18 (container exit 17:40:19, completed after 115.8s) and at 06:00 (118.0s); at startup the default tier was launched then immediately switched. Fix sequence agreed with the transition design: first make every lifecycle stop check for in-flight work and refuse a busy resize, then guard the no-op case so a demand the resident tier already satisfies never starts a transaction, then report the demand that forced a legitimate one.
 <!-- SECTION:NOTES:END -->

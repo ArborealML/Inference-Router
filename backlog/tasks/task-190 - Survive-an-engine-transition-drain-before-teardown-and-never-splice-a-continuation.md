@@ -5,8 +5,9 @@ title: >-
   continuation
 status: Preparing
 assignee:
-  - '@chatswarm'
+  - '@gpt-6.2-astra'
 created_date: '2026-11-25T18:19:00Z'
+updated_date: '2026-11-25T18:38:00Z'
 labels: []
 dependencies: []
 priority: high
@@ -31,5 +32,5 @@ When the router tears an engine down while requests are in flight, the client co
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Related open items: reserve the switch's own ticket before a drain, drain the waiting queue by age-weighted value, keep an admitted stream alive to its first byte, bound the relay against a stalled generation. Do not change the pinned streaming byte shape.
+Design pass landed 2026-11-25 (external, top reasoning tier). Accepted refinements, verified against this code's behaviour before accepting: the safe boundary for any invisible recovery is NOT before the first token but before any attempt to write producer payload to the client — role, identifier and tool-call deltas and partial bytes all count, and a write that throws may still have delivered bytes, so the router must report write-attempt and completed-byte counters rather than tokens. After any possible exposure, never regenerate, skip, or splice: fail that attempt and let the caller keep what it has. Automatic transparent retry is deferred and initially off: it charges a full cold re-prefill, needs the old attempt fenced as dead, one attempt only, and the caller's original deadline and priority preserved rather than a fresh queue position. Resize sequencing accepted: reserve the switch's own ticket first, serve a finite cohort of already-compatible waiters, close dispatch atomically, and stop only when no old-epoch work remains; if the drain expires, defer or refuse the resize while healthy work is running, with forced preemption a separate explicit policy. The layering answer is a named handoff, not a resume: AIR reports cause and disposition separately — what it attempted, how much payload it wrote, whether it saw a completion marker, and the transition state — so the caller decides; the new refusal and failure names must go through wire review before shipping. Explicitly rejected: token splicing, AIR owning transcript or tool-effect recovery, full buffering, and indefinite waits.
 <!-- SECTION:NOTES:END -->
