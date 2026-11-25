@@ -8,7 +8,11 @@ internal sealed class AirTop(RouterMonitor monitor)
 {
     private string? _queue;
     private MonitorGauges? _lastGauges;
-    private TopRow[] _gaugeRows = [];
+    private TopTable _engines = new(EngineHeaders, []);
+    private TopTable _queues = new(QueueHeaders, []);
+    private static readonly string[] EngineHeaders = ["Engine", "State", "In flight", "Profile", "Loaded model", "Switch target", "Context", "Slots"];
+    private static readonly string[] QueueHeaders = ["Model", "Queued"];
+    private static readonly string[] EventHeaders = ["UTC", "Event", "Engine", "Ticket", "Model"];
     private TopFrame? _frame;
     private long _revision = -1;
     private long _second = -1;
@@ -44,7 +48,7 @@ internal sealed class AirTop(RouterMonitor monitor)
         var work = client.RunAsync(lifetime.Token);
         try
         {
-            TopScreen.Run(top.Read, top.Open, top.Back);
+            TopScreen.Run(top.Read, top.Open, top.Back, ticket is not null);
         }
         finally
         {
@@ -89,69 +93,70 @@ internal sealed class AirTop(RouterMonitor monitor)
         var age = state.SnapshotTime is { } t
             ? FormattableString.Invariant($"{Math.Max(0, second - t.ToUnixTimeSeconds())}s") : "unavailable";
         var status = $"feed {state.Feed} | status {age}" + (state.StatusError is null ? "" : $" stale ({state.StatusError})");
-        TopRow? followed = null;
+        string? followed = null;
         if (state.TicketId is { } id)
         {
             var item = state.Ticket;
             var phase = item?.State ?? state.TicketError ?? "looking up";
             if (item is not null && state.TicketError is not null) phase += " (stale: " + state.TicketError + ")";
-            followed = new("followed", "Ticket", $"{Text(id)}  {Text(phase)}",
-                $"Following {Text(id)}\nState {Text(phase)}\nModel {Text(item?.Model)}   Engine {Text(item?.Engine)}" +
-                $"\nThread {Text(item?.ThreadId)}\nError {Text(item?.ErrorCode)} {Text(item?.Error, 1600)}");
+            followed = $"Following {Text(id)}\nState {Text(phase)}\nModel {Text(item?.Model)}   Engine {Text(item?.Engine)}" +
+                $"\nThread {Text(item?.ThreadId)}\nError {Text(item?.ErrorCode)} {Text(item?.Error, 1600)}";
         }
         if (!ReferenceEquals(_lastGauges, state.Gauges))
         {
             _lastGauges = state.Gauges;
-            _gaugeRows = GaugeRows(_lastGauges);
+            (_engines, _queues) = GaugeTables(_lastGauges);
         }
         var rows = new List<TopRow>();
         var scope = state.TicketId is { } ticket ? "ticket " + Text(ticket) :
             _queue is null ? "all models" : "reported model " + Text(_queue);
-        rows.Add(new("history", "History", "Observed history · " + scope,
-            FormattableString.Invariant($"Retained {state.History.Length} events and boundaries; evicted {state.Evicted}. Queue depths come from status.\nEnter follows a ticket or filters a queue. Esc returns. Tab focuses details. q quits.")));
         foreach (var entry in state.History.Reverse())
         {
             string key = entry.Number.ToString(CultureInfo.InvariantCulture);
             if (entry.Event is not { } e)
             {
-                rows.Add(new("event/" + key, "History", entry.Boundary ?? "", entry.Boundary ?? ""));
+                rows.Add(new("event/" + key, ["—", entry.Boundary ?? "Feed boundary", "", "", ""], entry.Boundary ?? ""));
                 continue;
             }
             if (state.TicketId is { } selected && !string.Equals(selected, e.TicketId, StringComparison.Ordinal)) continue;
             if (state.TicketId is null && _queue is not null && !string.Equals(_queue, e.Model, StringComparison.Ordinal)) continue;
             string when = e.Timestamp.UtcDateTime.ToString("HH:mm:ss", CultureInfo.InvariantCulture);
-            string summary = $"{when} {Text(e.Kind)}  {Text(e.TicketId)}  {Text(e.Model)}";
-            rows.Add(new("event/" + key, "Activity", summary,
+            rows.Add(new("event/" + key, [when, Text(e.Kind), Text(e.Engine), Text(e.TicketId), Text(e.Model)],
                 FormattableString.Invariant($"{e.Timestamp:O}  {Text(e.Kind)}\nTicket {Text(e.TicketId)}   Thread {Text(e.ThreadId)}\nEngine {Text(e.Engine)}   Model {Text(e.Model)}\nReason {Text(e.Reason, 1600)}"),
                 Ticket: e.TicketId));
         }
-        _frame = new("AIR | " + status + " | Enter open · Esc back · q quit", new TopRows(followed, _gaugeRows, rows.ToArray()));
+        _frame = new("AIR | " + status, _engines, _queues, new TopTable(EventHeaders, rows.ToArray()),
+            FormattableString.Invariant($"History · {scope} · {state.History.Length} retained · {state.Evicted} evicted"),
+            followed, state.TicketId is not null || _queue is not null);
         return _frame;
     }
 
-    private static TopRow[] GaugeRows(MonitorGauges? gauges)
+    private static (TopTable Engines, TopTable Queues) GaugeTables(MonitorGauges? gauges)
     {
         var rows = new List<TopRow>();
+        var queues = new List<TopRow>();
         if (gauges is not null)
         {
-            foreach (var engine in gauges.Engines.OrderByDescending(e => e.Inflight > 0 || !e.Healthy || e.SwitchingToward is not null)
-                         .ThenBy(e => e.Engine, StringComparer.Ordinal))
+            foreach (var engine in gauges.Engines.OrderBy(e => e.Engine, StringComparer.Ordinal))
             {
                 var loaded = engine.LoadedModels.Length == 0 ? "none" : string.Join(", ", engine.LoadedModels.Take(16).Select(m => Text(m)));
                 if (engine.LoadedModels.Length > 16) loaded += " …";
                 var label = engine.Healthy ? "healthy" : "unhealthy";
                 var summary = FormattableString.Invariant($"{Text(engine.Engine)}  {label}  inflight {engine.Inflight}  loaded {loaded}");
                 if (engine.SwitchingToward is not null) summary += "  target " + Text(engine.SwitchingToward);
-                rows.Add(new("engine/" + engine.Engine, "Engine", summary,
+                string state = engine.SwitchingToward is not null ? "Switching" : engine.Inflight > 0 ? "Busy" : engine.Healthy ? "Ready" : "Unavailable";
+                rows.Add(new("engine/" + engine.Engine,
+                    [Text(engine.Engine), state, engine.Inflight.ToString(CultureInfo.InvariantCulture), Text(engine.ActiveProfile),
+                        loaded, Text(engine.SwitchingToward), Count(engine.ActiveContextWindow), Count(engine.ActiveSlots)],
                     summary + $"\nSwitch target {Text(engine.SwitchingToward)}\nReported profile {Text(engine.ActiveProfile)}" +
                     $"   Context {Count(engine.ActiveContextWindow)}   Slots {Count(engine.ActiveSlots)}" +
                     string.Concat(engine.Requests.Select(TicketDetail))));
             }
             foreach (var (model, depth) in gauges.QueueDepths.OrderByDescending(pair => pair.Value).ThenBy(pair => pair.Key, StringComparer.Ordinal))
-                rows.Add(new("queue/" + model, "Queue", FormattableString.Invariant($"{Text(model)}  {depth} queued"),
+                queues.Add(new("queue/" + model, [Text(model), depth.ToString(CultureInfo.InvariantCulture)],
                     "Global queue depth from status. Enter filters observed activity for " + Text(model), Queue: model));
         }
-        return rows.ToArray();
+        return (new(EngineHeaders, rows.ToArray()), new(QueueHeaders, queues.ToArray()));
     }
 
     private static string TicketDetail(TicketSnapshot ticket)

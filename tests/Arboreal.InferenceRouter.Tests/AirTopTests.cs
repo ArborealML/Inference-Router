@@ -17,28 +17,28 @@ public sealed class AirTopTests
         monitor.Observe(new RouterEvent { Seq = 1, Kind = "queued", TicketId = "same", Model = "cold" }, false);
         monitor.Observe(new RouterEvent { Seq = 2, Kind = "queued", TicketId = "other", Model = "hot" }, false);
         var top = new AirTop(monitor);
-        var engine = Assert.Single(top.Read().Rows, r => r.Kind == "Engine");
-        Assert.Contains("loaded hot", engine.Summary, StringComparison.Ordinal);
-        Assert.Contains("target cold", engine.Summary, StringComparison.Ordinal);
+        var engine = Assert.IsType<TopRow>(top.Read().Engines.At(0));
+        Assert.Equal("hot", top.Read().Engines[0, 4]);
+        Assert.Equal("cold", top.Read().Engines[0, 5]);
         Assert.Contains("Slots unreported", engine.Detail, StringComparison.Ordinal);
         Assert.DoesNotContain('\u001b', engine.Detail);
         Assert.Contains("preferred small  required 256  dispatched big", engine.Detail, StringComparison.Ordinal);
         Assert.Contains("Thread s1  Title Review  tmux editor", engine.Detail, StringComparison.Ordinal);
         Assert.Contains("waiting  Queued (unassigned)", engine.Detail, StringComparison.Ordinal);
-        var queue = Assert.Single(top.Read().Rows, r => r.Kind == "Queue");
-        Assert.Contains("8 queued", queue.Summary, StringComparison.Ordinal);
+        var queue = Assert.IsType<TopRow>(top.Read().Queues.At(0));
+        Assert.Equal("8", top.Read().Queues[0, 1]);
         top.Open(queue);
-        var activity = Assert.Single(top.Read().Rows, r => r.Kind == "Activity");
+        var activity = Assert.IsType<TopRow>(top.Read().Events.At(0));
         top.Open(activity);
         await monitor.RefreshAsync(CancellationToken.None);
-        Assert.Contains("same  unknown or expired", top.Read().Rows[0].Summary, StringComparison.Ordinal);
-        Assert.Contains("ticket same", Assert.Single(top.Read().Rows, r => r.Kind == "History").Summary, StringComparison.Ordinal);
+        Assert.Contains("State unknown or expired", top.Read().TicketDetail, StringComparison.Ordinal);
+        Assert.Contains("ticket same", top.Read().Scope, StringComparison.Ordinal);
         top.Open(queue);
         Assert.Null(monitor.Snapshot().TicketId);
-        Assert.Contains("reported model cold", Assert.Single(top.Read().Rows, r => r.Kind == "History").Summary, StringComparison.Ordinal);
-        Assert.Single(top.Read().Rows, r => r.Kind == "Activity");
+        Assert.Contains("reported model cold", top.Read().Scope, StringComparison.Ordinal);
+        Assert.Equal(1, top.Read().Events.Rows);
         top.Back();
-        Assert.Equal(2, top.Read().Rows.Count(r => r.Kind == "Activity"));
+        Assert.Equal(2, top.Read().Events.Rows);
     }
 
     [Fact]
@@ -53,8 +53,8 @@ public sealed class AirTopTests
         Assert.NotEqual(longName, e.Model);
         monitor.Observe(e, false);
         var top = new AirTop(monitor);
-        top.Open(new("queue", "Queue", "model", "detail", Queue: longName));
-        Assert.Equal("ticket", Assert.Single(top.Read().Rows, r => r.Kind == "Activity").Ticket);
+        top.Open(new("queue", ["model", "1"], "detail", Queue: longName));
+        Assert.Equal("ticket", top.Read().Events.At(0)?.Ticket);
     }
 
     private sealed class Fixture : HttpMessageHandler
