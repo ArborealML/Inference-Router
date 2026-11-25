@@ -1,11 +1,11 @@
 ---
 id: TASK-189
 title: Stop the router relaunching an engine onto the tier it is already serving
-status: To Do
+status: Preparing
 assignee:
-  - '@gpt-6.2-astra'
+  - '@chatswarm'
 created_date: '2026-11-25T18:00:00Z'
-updated_date: '2026-11-25T18:38:00Z'
+updated_date: '2026-11-25T23:44:00Z'
 labels: []
 dependencies: []
 priority: high
@@ -25,6 +25,12 @@ The live event feed records a switch to the profile 256k-8 at 17:40 on an engine
 - [ ] #3 Startup does not launch the default tier and then immediately switch away from it when a wider tier of the same window satisfies demand.
 - [ ] #4 Any switch that does start records the demand that required it in the feed with the target and the resident state.
 <!-- AC:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Slice one, one feature branch. (1) Switch pre-flight: resolve the target model plus tier, compare against the resident verified serving snapshot (model, measured window, measured slots); when the resident already satisfies the demand, complete without a lifecycle transaction and emit no switch event. (2) Lifecycle stop guard: before any container stop or delete on the switch path, count in-flight leases on that engine; if non-zero and no explicit operator force, defer the resize, leave requests queued, and record the target, the resident state and the reason. (3) Startup launch tier: pick the tier from demand rather than the declared default so the router does not launch the narrow tier and immediately switch away. Pins to redden: a resident 262144-window eight-slot engine answers a 262144-token demand with zero container stops; a 256000-token demand is served by the same resident with no switch; a resize attempted with one in-flight stream is deferred and that stream completes; after startup no switch follows the initial launch when a wider tier of the same window fits. Inference-path refusal names stay out of this slice pending wire review.
+<!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
 
