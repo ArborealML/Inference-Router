@@ -1,11 +1,13 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.160)
+Status: draft, continuously revised (v0.12.161)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
 
 ## 0. Revision log
+
+- v0.12.161 — size Pi output to the room left by the prepared transcript, including compaction.
 
 - v0.12.160 — include cold configured models in OpenAI discovery (§6).
 
@@ -4103,7 +4105,7 @@ unverified external analysis), and (13.3) what AIR must expose to make it work.
   selected AIR model, resolved profile, context budget and default output limit at that
   event. Every assistant request for that turn, including tool continuations and Pi retries,
   uses that capture. An explicit smaller request output cap applies to both the fit check
-  and the provider request.
+  and the provider request. On dispatch the output ceiling shrinks to the estimated room remaining in the prepared transcript, including manual summaries and CLM turns.
   Selecting another AIR model or context profile and queueing a message update local Pi state.
   Busy profile changes defer the transcript fit check to the next turn's actual request.
   The queued message takes the selection in effect when Pi delivers it. The extension clears

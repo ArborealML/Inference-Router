@@ -15,6 +15,7 @@ class PromptBudgetTest(unittest.TestCase):
     def test_running_upgrade_then_oversized_prompt_after_downgrade(self):
         posts = []
         old_entry_markers = []
+        caps = []
         shutdown = threading.Event()
         profiles = [{"Name": name, "MaxContext": window, "MaxSlots": 1}
                     for name, window in [("short", 32768), ("long", 262144)]]
@@ -46,7 +47,8 @@ class PromptBudgetTest(unittest.TestCase):
             def do_POST(self):
                 old_entry_markers.append(self.headers.get("X-Fixture-Old-Entry"))
                 posts.append((self.headers["X-Inference-Preferred-Profile"], self.headers["X-Inference-Thread"]))
-                self.rfile.read(int(self.headers["Content-Length"]))
+                body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+                caps.append(body.get("max_completion_tokens", body.get("max_tokens")))
                 self.send_response(200)
                 self.send_header("Content-Type", "text/event-stream")
                 self.end_headers()
@@ -56,7 +58,7 @@ class PromptBudgetTest(unittest.TestCase):
         with ThreadingHTTPServer(("127.0.0.1", 0), Router) as server, tempfile.TemporaryDirectory() as tmp:
             threading.Thread(target=server.serve_forever, daemon=True).start()
             directory = Path(tmp)
-            (directory / "settings.json").write_text(json.dumps({"retry": {"enabled": False}}))
+            (directory / "settings.json").write_text(json.dumps({"retry": {"enabled": False}, "compaction": {"enabled": False}}))
             source = Path(__file__).resolve().parent
             installation = directory / "pi-air"
             installation.mkdir()
@@ -108,13 +110,16 @@ class PromptBudgetTest(unittest.TestCase):
                     prompt("fits")
                     wait(lambda e: e["type"] == "agent_settled")
                     prompt("/context short")
+                    prompt("x" * 104000)
+                    wait(lambda e: e["type"] == "agent_settled")
+                    self.assertTrue(0 < caps[-1] < 8192, caps)
                     prompt("z" * 150000)
                     failure = wait(lambda e: e["type"] == "message_end" and e["message"]["role"] == "assistant")
                     self.assertEqual("error", failure["message"]["stopReason"])
                     self.assertIn("reserve", failure["message"]["errorMessage"])
                     wait(lambda e: e["type"] == "agent_settled")
-                    self.assertEqual(["short", "long"], [profile for profile, _ in posts])
-                    self.assertEqual(["yes", None], old_entry_markers)
+                    self.assertEqual(["short", "long", "short"], [profile for profile, _ in posts])
+                    self.assertEqual(["yes", None, None], old_entry_markers)
                     self.assertTrue(posts[0][1])
                     self.assertEqual(posts[0][1], posts[1][1])
                 finally:

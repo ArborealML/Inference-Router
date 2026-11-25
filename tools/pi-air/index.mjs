@@ -257,10 +257,10 @@ export default async function air(pi) {
         // The new prompt and tool definitions can arrive after /context validated the prior turn.
         // Compaction and other auxiliary calls may have their own, shorter transcript.
         const estimatedInput = transcript.messages.reduce((total, message) => total + estimateTokens(message), 0);
-        const sessionTokens = mainRequest ? ctx.getContextUsage()?.tokens : undefined;
+        // CLM may project a much smaller transcript than the prior session usage.
         // Pi's agent loop carries defaults in its model, while maxTokens is a request limit.
-        const reserve = Math.min(maxTokens, options.maxTokens ?? maxTokens);
-        if (!requestFits(capacity, Math.max(estimatedInput, sessionTokens ?? 0), reserve)) {
+        const reserve = Math.min(maxTokens, options.maxTokens ?? maxTokens, capacity - estimatedInput);
+        if (reserve < 1 || !requestFits(capacity, estimatedInput, reserve)) {
             if (mainRequest) budgetRefused = true;
             throw new Error("The estimated AIR prompt and output reserve exceed this window. Select a larger /context or use /compact.");
         }
@@ -471,7 +471,7 @@ export default async function air(pi) {
     pi.on("session_before_compact", async (event, context) => {
         const originBranch = branch;
         const pending = context.model;
-        if (pending?.provider === "air" && (event.willRetry || (budgetRefused && event.reason !== "manual"))) {
+        if (pending?.provider === "air" && event.reason !== "manual" && (event.willRetry || budgetRefused)) {
             notify("AIR request ended. Use /compact or select a larger profile before submitting again.", "warning");
             return {cancel: true};
         }
