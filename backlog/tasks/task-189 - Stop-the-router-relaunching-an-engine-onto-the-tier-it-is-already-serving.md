@@ -5,7 +5,7 @@ status: Preparing
 assignee:
   - '@chatswarm'
 created_date: '2026-11-25T18:00:00Z'
-updated_date: '2026-11-25T23:44:00Z'
+updated_date: '2026-11-25T23:53:00Z'
 labels: []
 dependencies: []
 priority: high
@@ -35,5 +35,5 @@ Slice one, one feature branch. (1) Switch pre-flight: resolve the target model p
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Confirmed live 2026-11-25: switch to the resident tier at 17:40:18 (container exit 17:40:19, completed after 115.8s) and at 06:00 (118.0s); at startup the default tier was launched then immediately switched. Fix sequence agreed with the transition design: first make every lifecycle stop check for in-flight work and refuse a busy resize, then guard the no-op case so a demand the resident tier already satisfies never starts a transaction, then report the demand that forced a legitimate one.
+A plan review covering both slices is dispatched to the external reasoning service (2026-11-25, top reasoning tier); the text under review is the Implementation Plan section of this task and of the stream-cause task it gates. Implementation starts in its own worktree when that review lands. Live measurements from this host: switch to the resident tier took 115.8s and 118.0s on two occurrences, each ending every in-flight stream; startup launched the narrow tier and switched 90 seconds later.
 <!-- SECTION:NOTES:END -->
