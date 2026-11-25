@@ -5,7 +5,7 @@ status: To Do
 assignee:
   - '@gpt-6.2-sol'
 created_date: '2026-11-18T20:32:00Z'
-updated_date: '2026-11-25T02:28:00Z'
+updated_date: '2026-11-25T02:34:00Z'
 labels: []
 milestone: m-6
 dependencies:
@@ -26,5 +26,5 @@ Implement the placement part of TASK-78. Choose an eligible host and model batch
 <!-- AC:BEGIN -->
 - [ ] #1 On the same arrivals, changing only measured transition times changes a host or batch choice. A host refusal excludes that candidate even when it has the cheapest estimate.
 - [ ] #2 With bounded work and continuing arrivals, an eligible aged request completes within the stated bound. A lost heartbeat never counts as a vacant host.
-- [ ] #3 Placement checks each host, engine, model and profile context ceiling before requesting a switch. At the HyperQwen ceiling a request is eligible; one token over causes zero launches there and can use another eligible placement.
+- [ ] #3 Placement checks each host, engine, model and profile context ceiling before requesting a switch. A request at the ceiling is eligible. One token over causes zero launches there and can use another eligible placement.
 <!-- AC:END -->
