@@ -10,6 +10,10 @@ import { contextFits, observedWindow, outputBudget, parseCatalog, piModel, reque
 
 class PermanentTicketError extends Error {}
 
+const contextWarning = "AIR reduced the output limit for this response because the context window is nearly full. Use the context-management tools available in this session to compact if appropriate. If already compacting, finish that work.";
+// Pi estimates text at four characters per token. Include the extra message framing.
+const contextWarningTokens = Math.ceil(contextWarning.length / 4) + 4;
+
 const entryType = "air-context";
 const ticketStates = new Set(["Queued", "WaitingForModel", "Executing", "Completed", "Cancelled", "Failed"]);
 const clean = value => String(value ?? "").replace(/[\x00-\x1f\x7f-\x9f]/g, " ").slice(0, 450);
@@ -259,7 +263,10 @@ export default async function air(pi) {
         const estimatedInput = transcript.messages.reduce((total, message) => total + estimateTokens(message), 0);
         // CLM may project a much smaller transcript than the prior session usage.
         // Pi's agent loop carries defaults in its model, while maxTokens is a request limit.
-        const reserve = Math.min(maxTokens, options.maxTokens ?? maxTokens, capacity - estimatedInput);
+        const requested = Math.min(maxTokens, options.maxTokens ?? maxTokens);
+        const room = capacity - estimatedInput;
+        const warnModel = room < requested && room > contextWarningTokens;
+        const reserve = Math.min(requested, warnModel ? room - contextWarningTokens : room);
         if (reserve < 1 || !requestFits(capacity, estimatedInput, reserve)) {
             if (mainRequest) budgetRefused = true;
             throw new Error("The estimated AIR prompt and output reserve exceed this window. Select a larger /context or use /compact.");
@@ -280,10 +287,18 @@ export default async function air(pi) {
         const original = adapter.streamSimple({...requestModel, contextWindow: capacity, maxTokens}, transcript, {
             ...options, signal: req?.signal ?? options.signal, maxTokens: reserve, maxRetries: 0,
             onPayload: async (payload, providerModel) => {
-                const body = await options.onPayload?.(payload, providerModel) ?? payload;
-                if (!mainRequest) return body;
+                let body = await options.onPayload?.(payload, providerModel) ?? payload;
                 const hosts = [...(catalog.models.get(requestModel.id)?.engines ?? [])];
-                if (hosts.length && hosts.every(name => ["hyper_classic", "hyper_swift"].includes(name)))
+                const hyperQwen = hosts.length > 0 && hosts.every(name => ["hyper_classic", "hyper_swift"].includes(name));
+                if (warnModel) {
+                    // The managed Qwen template rejects late system inputs. Its generation
+                    // suffix can render the same standalone system turn after the tool results.
+                    body = hyperQwen
+                        ? {...body, chat_template_kwargs: {...body.chat_template_kwargs, air_context_warning: contextWarning}}
+                        : {...body, messages: [...body.messages, {role: "system", content: contextWarning}]};
+                }
+                if (!mainRequest) return body;
+                if (hyperQwen)
                     return {...body, stream_options: {...body.stream_options, include_usage: true, continuous_usage_stats: true}};
                 if (hosts.length && hosts.every(name => ["strata", "strata_swift", "strata_coder", "maya", "maya_xs",
                     "glm", "minimax", "hy4"].includes(name)))

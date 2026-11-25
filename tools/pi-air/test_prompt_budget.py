@@ -13,9 +13,17 @@ import unittest
 
 class PromptBudgetTest(unittest.TestCase):
     def test_running_upgrade_then_oversized_prompt_after_downgrade(self):
+        self.check_budget("remote")
+
+    def test_hyperqwen_receives_the_notice_through_its_system_turn_template(self):
+        self.check_budget("hyper_classic")
+
+    def check_budget(self, engine):
         posts = []
         old_entry_markers = []
         caps = []
+        messages = []
+        template_warnings = []
         shutdown = threading.Event()
         profiles = [{"Name": name, "MaxContext": window, "MaxSlots": 1}
                     for name, window in [("short", 32768), ("long", 262144)]]
@@ -34,7 +42,7 @@ class PromptBudgetTest(unittest.TestCase):
                     return
                 if self.path == "/admin/catalog":
                     data = {"Instance": "fixture", "Generation": 1, "DefaultModel": "demo",
-                            "Engines": [{"Name": "remote", "Models": [model]}]}
+                            "Engines": [{"Name": engine, "Models": [model]}]}
                 else:
                     if self.path != "/admin/status":
                         self.send_error(404)
@@ -48,6 +56,8 @@ class PromptBudgetTest(unittest.TestCase):
                 old_entry_markers.append(self.headers.get("X-Fixture-Old-Entry"))
                 posts.append((self.headers["X-Inference-Preferred-Profile"], self.headers["X-Inference-Thread"]))
                 body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+                messages.append(body["messages"])
+                template_warnings.append(body.get("chat_template_kwargs", {}).get("air_context_warning"))
                 caps.append(body.get("max_completion_tokens", body.get("max_tokens")))
                 self.send_response(200)
                 self.send_header("Content-Type", "text/event-stream")
@@ -113,6 +123,18 @@ class PromptBudgetTest(unittest.TestCase):
                     prompt("x" * 104000)
                     wait(lambda e: e["type"] == "agent_settled")
                     self.assertTrue(0 < caps[-1] < 8192, caps)
+                    if engine == "hyper_classic":
+                        self.assertEqual("user", messages[-1][-1]["role"])
+                        self.assertEqual([None, None], template_warnings[:-1])
+                        warning = template_warnings[-1]
+                    else:
+                        notice = messages[-1][-1]
+                        self.assertEqual("system", notice["role"])
+                        self.assertEqual("user", messages[-1][-2]["role"])
+                        self.assertFalse(any(notice in batch for batch in messages[:-1]))
+                        warning = notice["content"]
+                    self.assertIn("reduced the output limit", warning)
+                    self.assertIn("compact", warning)
                     prompt("z" * 150000)
                     failure = wait(lambda e: e["type"] == "message_end" and e["message"]["role"] == "assistant")
                     self.assertEqual("error", failure["message"]["stopReason"])
