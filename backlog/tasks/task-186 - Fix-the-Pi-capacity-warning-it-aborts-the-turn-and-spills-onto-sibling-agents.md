@@ -3,8 +3,9 @@ id: TASK-186
 title: 'Fix the Pi capacity warning: it aborts the turn and spills onto sibling agents'
 status: To Do
 assignee:
-  - '@gpt-6.2-astra'
+  - '@chatswarm'
 created_date: '2026-11-25T09:22:00Z'
+updated_date: '2026-11-25T10:33:00Z'
 labels: []
 dependencies: []
 priority: high
@@ -28,5 +29,5 @@ One agent's nearly-full turn produced a capacity warning that ended the inferenc
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Reported live 2026-11-25. Still needed to fix the right cause: the error text the other agents showed and which session hit it first. Separate finding from the same host: the resident engine container's own image healthcheck fails every 30 seconds with exit 1, so the container manager reports it unhealthy while the router's probe reports it healthy and keeps serving; the two disagree and nobody has recorded that.
+Evidence from the owner 2026-11-25: several sessions failed about the same time, most with connection closed, and at least one reported context exceeded with more than 100k tokens of window apparently still free. AIR logged no refusal, no stream error and no engine event in that window, so the abort is invisible on the router side. The resident container's own image healthcheck has been failing every 30 seconds with exit 1, so the container manager calls it unhealthy while the router's probe calls it healthy and keeps serving; the two disagree and neither records it. Engine logs from the window show 140k-token prompts with 137k reused from the conversation cache and parked cache around 16-18 GiB of a 24 GiB budget. A diagnosis pass is dispatched to the external reasoning service (2026-11-25, extra-high tier) covering the warning delivery, the client capacity arithmetic, the connection-closed cluster and the observability gap.
 <!-- SECTION:NOTES:END -->
