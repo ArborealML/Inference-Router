@@ -75,7 +75,7 @@ public sealed partial class EngineRuntime
     private async Task<bool> ProbeTrackedNativeAsync(EngineCapability expected, NativeLaunchWatch watch,
         DockerLifecycleProvider native, CancellationToken loopToken)
     {
-        if (watch.Health == NativeLaunchHealth.Pending || watch.Baseline is null)
+        if (watch.Health is NativeLaunchHealth.Pending or NativeLaunchHealth.Invalid || watch.Baseline is null)
             return !Volatile.Read(ref _stopped);
 
         ModelsObservation? observation = null;
@@ -137,7 +137,7 @@ public sealed partial class EngineRuntime
         if (published is { } change) NotifyServingChange(change.Previous, change.Current);
         if (Volatile.Read(ref _stopped)) return false;
         if (Capability.NativeWatch?.Attempt != watch.Attempt) return true;
-        Emit("engine.health", reason: error is null ? null : WireText.Bound(error.Message, ProviderReasonChars),
+        EmitHealth(reason: error is null ? null : WireText.Bound(error.Message, ProviderReasonChars),
             value: observation?.LoadedModels.Count ?? 0);
         return true;
     }

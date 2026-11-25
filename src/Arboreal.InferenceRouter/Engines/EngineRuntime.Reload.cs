@@ -85,7 +85,7 @@ public sealed partial class EngineRuntime
         try
         {
             if (next is not null) NotifyServingChange(expected.Serving, next.Serving);
-            Emit("engine.health", reason: error is null ? null : WireText.Bound(error.Message, ProviderReasonChars),
+            EmitHealth(reason: error is null ? null : WireText.Bound(error.Message, ProviderReasonChars),
                 value: observation?.LoadedModels.Count ?? 0);
             return true;
         }

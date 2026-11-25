@@ -11,6 +11,23 @@ public sealed class ConfigReloadRaceTests
     private static readonly string[] CancelledFeed = ["thread.registered", "request.enqueued", "request.cancelled"];
     private static readonly string[] PriorityFeed = ["thread.registered", "thread.priority_changed"];
 
+    [Fact]
+    public async Task ExternalHealthReportsFailureAndRecoveryOnceWhilePollingContinues()
+    {
+        using var backend = new FakeEngineHandler { ModelsStatus = 503, LoadedModels = ["a"] };
+        await using var router = CreateRouter(A + One, _ => backend);
+        var engine = router.Engines["one"];
+        foreach (var status in new[] { 503, 503, 200, 200, 503 })
+        {
+            backend.ModelsStatus = status;
+            Assert.True(await engine.ProbeHealthOnceAsync(CancellationToken.None));
+        }
+        Assert.Equal(5, backend.SeenRoutes.Count(path => path.EndsWith("/models", StringComparison.Ordinal)));
+        var health = router.Events.Replay(0).Where(item => item.Kind == "engine.health").ToArray();
+        Assert.Collection(health, item => Assert.NotNull(item.Reason), item => Assert.Null(item.Reason),
+            item => Assert.NotNull(item.Reason));
+    }
+
     [Theory(Timeout = 20_000)]
     [InlineData(false, false)]
     [InlineData(true, false)]
@@ -378,6 +395,7 @@ public sealed class ConfigReloadRaceTests
             if (evt.Engine == "drop-z" && evt.Kind == "engine.health") pause.Hold();
         });
         if (exception) publishing.ModelsStatus = 503;
+        else publishing.LoadedModels = ["z", "extra"];
         var probe = Task.Run(() => back.ProbeHealthOnceAsync(bound.Token));
         try
         {

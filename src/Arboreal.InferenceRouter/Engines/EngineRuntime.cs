@@ -284,7 +284,7 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
         throw new InvalidOperationException("The engine has no local lifecycle provider.");
     internal LifecycleTarget LocalTarget(string model, ServingProfile? profile) =>
         new(Name, model, profile, _catalog[model]);
-    internal void WithdrawLocalResident() => PublishUnknown();
+    internal void WithdrawLocalResident(bool stoppedPeer = false) => PublishUnknown(clearWatch: stoppedPeer);
 
     public string Name => _def.Name;
     public EngineDefinition Definition => _reloadSource?.Observe().Engines[Name] ?? _def;
@@ -503,7 +503,7 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
     /// engine, so its account cannot be stale relative to a poll that happened to start earlier. Fencing it
     /// would let a quiet poll drop the one publication that says the engine is no longer what it reported.
     /// Do not "finish the fencing" here — fence a *probe*, never a switch exit.</para></summary>
-    private EngineCapability PublishUnknown()
+    private EngineCapability PublishUnknown(bool clearWatch = false)
     {
         while (true)
         {
@@ -513,7 +513,7 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
             // claim as the author — a *provenance-only* change, which still has to advance `Version` or a reader
             // could not tell the two states apart (AC #8).
             if (!cur.Healthy && !cur.HealthFromClaim && cur.ModelContextWindows.IsEmpty && cur.Serving == default &&
-                cur.SwitchProof is null && cur.NativeWatch?.Health != NativeLaunchHealth.Eligible)
+                cur.SwitchProof is null && cur.NativeWatch?.Health != NativeLaunchHealth.Eligible && (!clearWatch || cur.NativeWatch is null))
                 return cur;
             var next = cur with
             {
@@ -523,7 +523,7 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
                 ModelContextWindows = EngineCapability.NoModelContextWindows,
                 Serving = default,
                 SwitchProof = null,
-                NativeWatch = UnknownNativeWatch(cur.NativeWatch),
+                NativeWatch = clearWatch ? null : UnknownNativeWatch(cur.NativeWatch),
             };
             if (Interlocked.CompareExchange(ref _cap, next, cur) == cur) return next;
         }
@@ -635,6 +635,8 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
         }
     }
 
+    internal Action? AfterHealthRoundForTests { get; set; }
+
     internal async Task<bool> ProbeHealthOnceAsync(CancellationToken ct)
     {
         // Capture the version before either read. The poll may publish only against that evidence.
@@ -648,9 +650,10 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
         {
             if (ReloadableExternal) return PublishExternalProbe(capBefore, null, default, ex, withdraw: false);
             if (Volatile.Read(ref _stopped)) return false;
-            Emit("engine.health", reason: WireText.Bound(ex.Message, ProviderReasonChars), value: 0);
+            EmitHealth(reason: WireText.Bound(ex.Message, ProviderReasonChars), value: 0);
             return true;
         }
+        finally { AfterHealthRoundForTests?.Invoke(); }
     }
 
     private async Task<bool> ProbeHealthAsync(EngineCapability capBefore, CancellationToken loopToken)
@@ -659,7 +662,9 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
             return UsesVllmArgv
                 ? await ProbeManagedProfileAsync(capBefore, watch, native, loopToken).ConfigureAwait(false)
                 : await ProbeTrackedNativeAsync(capBefore, watch, native, loopToken).ConfigureAwait(false);
-        if (UsesVllmArgv) return !Volatile.Read(ref _stopped);
+        // The local group inventories and adopts an existing resident on admission.
+        if (UsesVllmArgv || (_def.LifecycleGroup is not null && _lifecycle?.NativeProvider is not null))
+            return !Volatile.Read(ref _stopped);
 
         // The loop token stops new rounds. An admitted round retains its own timeout and
         // publication fences, including when the loop is cancelled while /models is in flight.
@@ -697,7 +702,7 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
         if (ReloadableExternal) return PublishExternalProbe(capBefore, observation, serving, error: null, withdraw: false);
         PublishProbeResult(capBefore, observation, serving);
         if (Volatile.Read(ref _stopped)) return false;
-        Emit("engine.health", value: observation.LoadedModels.Count);
+        EmitHealth(value: observation.LoadedModels.Count);
         return true;
     }
 
@@ -2396,6 +2401,20 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
 
     public HttpClient Http => _http;
     public string? ApiKey => _apiKey;
+
+    private readonly object _healthEventGate = new();
+    private (long Version, string? Reason, double Value)? _lastHealthEvent;
+
+    private void EmitHealth(double value, string? reason = null)
+    {
+        lock (_healthEventGate)
+        {
+            var observation = (Capability.Version, reason, value);
+            if (_lastHealthEvent == observation) return;
+            _lastHealthEvent = observation;
+        }
+        Emit("engine.health", reason: reason, value: value);
+    }
 
     internal void Emit(string kind, string? model = null, string? reason = null, double? value = null)
         // The pieces of a reason are capped piece by piece at the sentence sites, so the part that distinguishes it

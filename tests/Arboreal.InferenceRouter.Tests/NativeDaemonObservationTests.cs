@@ -228,7 +228,7 @@ public sealed class NativeDaemonObservationTests
             fixture.Inspect = null;
             await fixture.TickAsync();
             Assert.Same(invalid, fixture.Engine.Capability);
-            Assert.Equal(6, fixture.InspectCount(A));
+            Assert.Equal(5, fixture.InspectCount(A));
             Assert.Equal(2, fixture.Writes.Count);
         }
         finally
@@ -528,10 +528,7 @@ public sealed class NativeDaemonObservationTests
             Engine = new EngineRuntime(_definition, new RouterConfig(), Feed, _app, Provider,
                 dispatchHint: () => Interlocked.Increment(ref _dispatchNudges), hostEnrollment: null, clock: Clock)
                 { ReadinessClockForTests = Clock };
-            Feed.Subscribe(entry =>
-            {
-                if (entry.Kind == "engine.health") _healthRounds.Release();
-            });
+            Engine.AfterHealthRoundForTests = () => _healthRounds.Release();
         }
 
         public async Task TickAsync()

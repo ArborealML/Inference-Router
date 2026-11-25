@@ -125,7 +125,7 @@ The [native Docker sample](samples/router.native-docker.toml) uses illustrative 
 
 ## Inspect a running router
 
-Use `air status` for engine health, loaded models, context windows, queue depths and threads. Use `air models` for model discovery, `air tickets ID` for one request and `air events` to follow changes. Add `--json` before or after the command for machine-readable output, for example `air --json status`. Each event occupies one line in either mode.
+Use `air status` for engine health, loaded models, context windows, queue depths and threads. Use `air models` for model discovery, `air tickets ID` for one request and `air events` to follow changes. Add `--json` before or after the command for machine-readable output, for example `air --json status`. Health events report changes. Inactive local Docker group members start polling after launch or adoption. Each event occupies one line in either mode.
 
 | Question | Request |
 | --- | --- |

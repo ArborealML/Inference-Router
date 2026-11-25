@@ -405,18 +405,9 @@ public sealed class CapabilityPublicationTests
     private static async Task<EngineCapability> PollOnceAsync(
         EngineRuntime engine, ChannelReader<RouterEvent> polls, CancellationToken ct)
     {
-        using var loop = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        engine.StartHealthLoop(loop.Token);
-        try
-        {
-            var completed = await polls.ReadAsync(ct);
-            Assert.Null(completed.Reason);
-            return engine.Capability;
-        }
-        finally
-        {
-            await loop.CancelAsync();
-        }
+        Assert.True(await engine.ProbeHealthOnceAsync(ct));
+        while (polls.TryRead(out var completed)) Assert.Null(completed.Reason);
+        return engine.Capability;
     }
 
     [Theory(Timeout = 40_000)]
@@ -635,11 +626,15 @@ public sealed class CapabilityPublicationTests
         var profile = Profile("incumbent", 131_072);
         var modelContradiction = secondEvidence is "roster" or "503";
 
+        Task stateRound = Task.CompletedTask;
+        Task modelsRound = Task.CompletedTask;
+
         async Task FinishPollAsync(bool statePoll)
         {
             if (statePoll) releaseState.TrySetResult();
             else handler.ReleaseProbe();
-            var observed = await polls.ReadAsync(ct);
+            await (statePoll ? stateRound : modelsRound).WaitAsync(ct);
+            var observed = feed.Replay(0).Last(item => item.Kind == "engine.health");
             var failed = !statePoll && secondEvidence == "503";
             Assert.Equal(failed ? "models endpoint 503" : null, observed.Reason);
             Assert.Equal(failed ? 0d : 1d, observed.Value);
@@ -660,7 +655,7 @@ public sealed class CapabilityPublicationTests
             // the other inside /models so neither can publish before refusal restores the incumbent.
             handler.SetProps("""{"n_ctx":65536,"total_slots":4}""");
             Volatile.Write(ref holdState, 1);
-            engine.StartHealthLoop(stateLoop.Token);
+            stateRound = Task.Run(() => engine.RunHealthLoopAsync(stateLoop.Token), ct);
             await enteredState.Task.WaitAsync(ct);
             await stateLoop.CancelAsync();
 
@@ -668,7 +663,7 @@ public sealed class CapabilityPublicationTests
             handler.SetProps(secondEvidence == "matching-state"
                 ? incumbentState : """{"n_ctx":32768,"total_slots":4}""");
             handler.HoldNextProbe();
-            engine.StartHealthLoop(modelsLoop.Token);
+            modelsRound = Task.Run(() => engine.RunHealthLoopAsync(modelsLoop.Token), ct);
             await handler.EnteredAsync.WaitAsync(ct);
             await modelsLoop.CancelAsync();
             Assert.Same(claim, engine.Capability);
@@ -785,12 +780,12 @@ public sealed class CapabilityPublicationTests
             handler.ContextWindows = new Dictionary<string, long> { ["m"] = observedWindow, ["other"] = 65_536 };
 
             // Read the stale round trip and the next poll, which started with the live claim.
-            var checkpoint = feed.CurrentSeq;
+            using var rounds = new SemaphoreSlim(0);
+            engine.AfterHealthRoundForTests = () => rounds.Release();
             handler.ReleaseProbe();
-            for (var processed = 0; processed < 2;)
-            {
-                if ((await polls.ReadAsync(ct)).Seq > checkpoint) processed++;
-            }
+            await rounds.WaitAsync(ct);
+            await rounds.WaitAsync(ct);
+            engine.AfterHealthRoundForTests = null;
             await loop.CancelAsync();
             Assert.Equal("extra", engine.SwitchingToward);
             Assert.Empty(engine.Capability.ModelContextWindows);
@@ -993,20 +988,17 @@ public sealed class CapabilityPublicationTests
         await using var engine = NewEngine(def, new ScriptedProvider(), handler, feed: feed);
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
         var ct = timeout.Token;
-        using var loopCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        engine.StartHealthLoop(loopCts.Token);
-        await polls.ReadAsync(ct);
-        var proven = engine.Capability;
-        await polls.ReadAsync(ct);
-        Assert.Same(proven, engine.Capability);
+        var proven = await PollOnceAsync(engine, polls, ct);
+        var first = feed.CurrentSeq;
+        Assert.Same(proven, await PollOnceAsync(engine, polls, ct));
+        Assert.Equal(first, feed.CurrentSeq);
 
         var reportedCopy = engine.LoadedModels;
         reportedCopy[0] = "forged";
         Assert.Equal(["m", "extra"], engine.Capability.LoadedModels);
         handler.ContextWindows = new Dictionary<string, long> { ["extra"] = 32_768 };
-        while (engine.Capability.ModelContextWindows.ContainsKey("m"))
-            await polls.ReadAsync(ct);
-        var unknown = engine.Capability;
+        var unknown = await PollOnceAsync(engine, polls, ct);
+        Assert.True(feed.CurrentSeq > first);
         Assert.Equal(proven.Version + 1, unknown.Version);
         Assert.Equal(["m", "extra"], unknown.LoadedModels);
         var remaining = Assert.Single(unknown.ModelContextWindows);
@@ -1014,8 +1006,7 @@ public sealed class CapabilityPublicationTests
         Assert.Equal(32_768, remaining.Value);
         Assert.True(unknown.Healthy);
         Assert.Equal(131_072, proven.ModelContextWindows["m"]);
-        await polls.ReadAsync(ct);
-        Assert.Same(unknown, engine.Capability);
+        Assert.Same(unknown, await PollOnceAsync(engine, polls, ct));
     }
 
     [Fact(Timeout = 60_000)]

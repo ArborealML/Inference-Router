@@ -134,7 +134,7 @@ internal sealed class LocalLifecycleGroup(string name, Action wake)
                     ? await native.StopLocalPeersAsync(peers, owner, lifetime.Token).ConfigureAwait(false)
                     : await peer.LocalLifecycle.StopAsync(target, peers, lifetime.Token).ConfigureAwait(false);
                 if (!stopped.Succeeded) throw new InvalidOperationException(stopped.ToString());
-                peer.WithdrawLocalResident();
+                peer.WithdrawLocalResident(stoppedPeer: true);
             }
             lifetime.Token.ThrowIfCancellationRequested();
             owner.Request.Ticket.CompletedSwitchSteps = 2;

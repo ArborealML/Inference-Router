@@ -1,11 +1,13 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.164)
+Status: draft, continuously revised (v0.12.165)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
 
 ## 0. Revision log
+
+- v0.12.165 — suppress repeated health events and skip application polling for inactive local group members (§7).
 
 - v0.12.164 — keep the selected monitor tab stable at row boundaries and during refresh (§11).
 
@@ -2487,8 +2489,9 @@ Temporary capacity loss parks the ticket. A definitive refusal settles once with
   After `/models` succeeds, the ordinary round reads the configured serving-state endpoint. It publishes the
   roster, discovery, health and serving capacity together. Missing or malformed state yields unknown capacity
   for the unavailable values while the roster remains healthy. A failed `health.expect` can coexist with valid
-  gauges. The rule determines whether a **switch** counts as ready. `engine.health` reports the completed poll
-  after the publication decision, including a stale round. Runtime shutdown suppresses late poll telemetry.
+  gauges. The rule determines whether a **switch** counts as ready. `engine.health` reports the first completed poll and subsequent changes in capability version, error or observed model count.
+  A local Docker group polls application health only after launch or adoption establishes a tracked resident.
+  A conclusively invalidated launch stops polling. External engines continue polling for recovery. Runtime shutdown suppresses late poll telemetry.
   A successful switch reports its profile and nudges dispatch after clearing the marker. The fence
   orders *publications*, not the engine: an engine restarted outside the router's sight, with no visible
   discontinuity, evades it. Ordinary polls publish neither a positive nor a negative while the switch marker is set.

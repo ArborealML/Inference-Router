@@ -209,7 +209,7 @@ public sealed partial class EngineRuntime
         if (published is { } change) NotifyServingChange(change.Previous, change.Current);
         if (Volatile.Read(ref _stopped)) return false;
         if (Capability.NativeWatch?.Attempt == watch.Attempt)
-            Emit("engine.health", reason: round.Capacity is null ? round.Failure.Error : null, value: models?.LoadedModels.Count ?? 0);
+            EmitHealth(reason: round.Capacity is null ? round.Failure.Error : null, value: models?.LoadedModels.Count ?? 0);
         return true;
     }
 

@@ -160,6 +160,10 @@ public sealed class DockerResidentAdoptionTests
         }
         await using var router = new RouterCore(settings, scheduler: null, events: null, clock: TimeProvider.System,
             lifecycleFactory: _ => provider);
+        var engine = router.Engines["strata"];
+        Assert.True(await engine.ProbeHealthOnceAsync(request.Token));
+        Assert.True(await engine.ProbeHealthOnceAsync(request.Token));
+        Assert.Empty(backend.SeenRoutes);
         router.Start();
         var first = await Enqueue();
         if (completes)
