@@ -1,11 +1,13 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.163)
+Status: draft, continuously revised (v0.12.164)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
 
 ## 0. Revision log
+
+- v0.12.164 — keep the selected monitor tab stable at row boundaries and during refresh (§11).
 
 - v0.12.163 — separate engine, queue and event tables in the terminal monitor (§11).
 
@@ -3773,7 +3775,7 @@ The terminal monitor uses a selectable table and detail pane. The table keeps th
 
 The read-only monitor client polls status every two seconds, excluding the response time. Global queue depths and engine gauges come from status. It retains up to 256 global events and continuity markers combined. A followed ticket is fetched by its exact ID, which remains selected when the ticket is unknown or expired. Status and ticket reads are capped at 1 MiB and 64 KiB respectively. SSE lines are capped at 16 KiB.
 
-`air top` requires an interactive terminal. Engines, Queues and Events occupy separate tabs with field-specific columns. Engines stay in ordinal name order. Left and Right change tabs and Up and Down select rows. Enter on a queue opens Events filtered to the observed model history. Enter on an event follows its full ticket ID. Escape leaves the ticket or queue view, Tab moves to the scrollable details, and q exits. Engine rows show reported loaded models separately from the switch target. Zero context and slots mean unreported. Control characters and Unicode formatting controls in displayed server text are replaced with spaces.
+`air top` requires an interactive terminal. Engines, Queues and Events occupy separate tabs with field-specific columns. Engines stay in ordinal name order. Left and Right change tabs and Up and Down select rows. Vertical movement stops at the first or last row. Refreshes update only the visible table and preserve the selected tab independently of keyboard focus. Enter on a queue opens Events filtered to the observed model history. Enter on an event follows its full ticket ID. Escape leaves the ticket or queue view, Tab moves to the scrollable details, and q exits. Engine rows show reported loaded models separately from the switch target. Zero context and slots mean unreported. Control characters and Unicode formatting controls in displayed server text are replaced with spaces.
 
 The monitor resumes the unfiltered feed with the last JSON `Seq`. Every reconnect adds a continuity warning because the feed has no instance identifier. A sequence gap or detected reset adds a timeline marker and schedules a fresh status and exact-ticket read. The exclusive cursor makes a non-advancing first event after reconnect evidence of a possible restart even when its payload repeats. The monitor starts a new segment and deduplicates sequences within it. Engine, residency and queue snapshots are immutable. Entering a queue exits ticket follow and compares the same reporting identifier used on the feed. Long model names can share a reporting identifier. Each successful snapshot sorts gauge rows once, and the terminal reads visible cells by index as events arrive. A failed gauge poll retains the last successful snapshot and its age. Ticket lookup failures mark the last known state stale; an explicit 404 replaces it with unknown or expired. Retry delay ranges from 250 ms to five seconds. An idle connected feed has no heartbeat requirement.
 

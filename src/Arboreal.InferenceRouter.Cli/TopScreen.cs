@@ -34,28 +34,29 @@ internal static class TopScreen
         using var app = Application.Create();
         app.Init();
         using var window = new Window { Title = "AIR monitor" };
-        using var tabs = new Tabs { Width = Dim.Fill(), Height = Dim.Percent(62) };
-        using var detail = new ListView { Y = Pos.Bottom(tabs), Width = Dim.Fill(), Height = Dim.Fill(1) };
+        using var table = new TableView { Y = 1, Width = Dim.Fill(), Height = Dim.Percent(60), FullRowSelect = true, MultiSelect = false };
+        table.Style.AlwaysShowHeaders = true;
+        using var detail = new ListView { Y = Pos.Bottom(table), Width = Dim.Fill(), Height = Dim.Fill(1) };
         using var help = new Label { Y = Pos.AnchorEnd(1), Width = Dim.Fill(),
             Text = "←/→ tabs  ↑/↓ rows  Enter inspect  Tab details  Esc back  q quit" };
-        window.Add(tabs, detail, help);
+        window.Add(table, detail, help);
         string[] titles = ["Engines", "Queues", "Events"];
-        var pages = new View[titles.Length];
-        var tables = new TableView[titles.Length];
+        var labels = new Label[titles.Length];
+        var positions = new (string? Id, int Row, int Top, int Column)[titles.Length];
+        int page = follow ? 2 : 0;
         TopFrame frame = read();
         TopFrame? drawn = null;
         bool updating = false;
         string? lastDetail = null;
         int lastWidth = 0;
-        int Page() => Math.Max(0, Array.IndexOf(pages, tabs.Value));
-        int Row(int i) => tables[i].Value?.SelectedCell.Y ?? 0;
-        TopRow? Selected(int i) => (tables[i].Table as TopTable)?.At(Row(i));
+        int Row() => table.Value?.SelectedCell.Y ?? 0;
+        TopRow? Selected() => (table.Table as TopTable)?.At(Row());
 
         void ShowDetail()
         {
             if (updating) return;
-            int i = Page();
-            string text = Selected(i)?.Detail ?? (i == 1 ? "No queued requests." : i == 2 ? "No observed events." : "Waiting for engine status.");
+            int i = page;
+            string text = Selected()?.Detail ?? (i == 1 ? "No queued requests." : i == 2 ? "No observed events." : "Waiting for engine status.");
             if (i == 2) text = (frame.TicketDetail is { } ticket ? ticket + "\n" : "") + frame.Scope + "\n" + text;
             int width = Math.Max(1, detail.Viewport.Width - 1);
             if (width == lastWidth && string.Equals(text, lastDetail, StringComparison.Ordinal)) return;
@@ -63,21 +64,47 @@ internal static class TopScreen
             lastDetail = text;
             detail.SetSource<string>(new(text.Split('\n').SelectMany(line => TextFormatter.WordWrapText(line, width))));
         }
+        void RememberPosition() =>
+            positions[page] = (Selected()?.Id, Row(), table.RowOffset, table.ColumnOffset);
+
+        void RenderTable()
+        {
+            var source = page == 0 ? frame.Engines : page == 1 ? frame.Queues : frame.Events;
+            var position = positions[page];
+            updating = true;
+            table.Table = source;
+            if (source.Rows > 0)
+            {
+                int next = page == 2 && position.Row == 0 ? 0 : source.Locate(position.Id, position.Row);
+                table.SetSelection(0, next, false);
+                table.RowOffset = Math.Clamp(position.Top + next - position.Row, 0, source.Rows - 1);
+                table.ColumnOffset = position.Column;
+            }
+            table.Update();
+            updating = false;
+            ShowDetail();
+        }
+        void SelectPage(int next)
+        {
+            RememberPosition();
+            page = next;
+            for (int i = 0; i < labels.Length; i++)
+                labels[i].Text = i == page ? "[" + titles[i] + "]" : titles[i];
+            RenderTable();
+            table.SetFocus();
+        }
         for (int i = 0; i < titles.Length; i++)
         {
-            var table = new TableView { Width = Dim.Fill(), Height = Dim.Fill(), FullRowSelect = true, MultiSelect = false };
-            table.Style.AlwaysShowHeaders = true;
-            tables[i] = table;
-            pages[i] = new View { Title = titles[i], Width = Dim.Fill(), Height = Dim.Fill(), CanFocus = true };
-            pages[i].Add(table);
-            tabs.Add(pages[i]);
-            table.ValueChanged += (_, _) => ShowDetail();
-        }
-        void SelectPage(int i)
-        {
-            tabs.Value = pages[i];
-            tables[i].SetFocus();
-            ShowDetail();
+            int target = i;
+            var label = new Label { X = i * 11, Width = 11, Height = 1 };
+            label.MouseEvent += (_, mouse) =>
+            {
+                if (!mouse.IsSingleClicked) return;
+                SelectPage(target);
+                mouse.Handled = true;
+            };
+            labels[i] = label;
+            window.Add(label);
         }
         bool Draw()
         {
@@ -85,44 +112,44 @@ internal static class TopScreen
             if (ReferenceEquals(frame, drawn)) return true;
             drawn = frame;
             window.Title = frame.Caption;
-            updating = true;
-            for (int i = 0; i < tables.Length; i++)
+            var source = page == 0 ? frame.Engines : page == 1 ? frame.Queues : frame.Events;
+            if (!ReferenceEquals(table.Table, source))
             {
-                var source = i == 0 ? frame.Engines : i == 1 ? frame.Queues : frame.Events;
-                var table = tables[i];
-                if (ReferenceEquals(table.Table, source)) continue;
-                int old = Row(i);
-                int offset = table.RowOffset;
-                int col = table.ColumnOffset;
-                int next = i == 2 && old == 0 ? 0 : source.Locate(Selected(i)?.Id, old);
-                table.Table = source;
-                if (source.Rows > 0)
-                {
-                    table.SetSelection(0, next, false);
-                    table.RowOffset = Math.Clamp(offset + next - old, 0, source.Rows - 1);
-                    table.ColumnOffset = col;
-                }
-                table.Update();
+                RememberPosition();
+                RenderTable();
             }
-            updating = false;
-            ShowDetail();
+            else ShowDetail();
             return true;
         }
         detail.ViewportChanged += (_, _) => ShowDetail();
-        tabs.ValueChanged += (_, _) => ShowDetail();
+        table.ValueChanged += (_, _) => ShowDetail();
         int returnPage = 0;
         app.Keyboard.KeyDown += (_, key) =>
         {
-            int i = Page();
+            int i = page;
             if (key == Key.Q || key == Key.C.WithCtrl) app.RequestStop();
             else if (key == Key.CursorLeft || key == Key.CursorRight)
-                SelectPage((i + (key == Key.CursorRight ? 1 : 2)) % pages.Length);
+                SelectPage((i + (key == Key.CursorRight ? 1 : 2)) % titles.Length);
+            else if (key == Key.CursorUp || key == Key.CursorDown)
+            {
+                bool down = key == Key.CursorDown;
+                if (detail.HasFocus)
+                {
+                    if (down) detail.MoveDown(false);
+                    else detail.MoveUp(false);
+                }
+                else if (table.Table is { Rows: > 0 } source)
+                {
+                    table.SetSelection(0, Math.Clamp(Row() + (down ? 1 : -1), 0, source.Rows - 1), false);
+                    table.EnsureCursorIsVisible();
+                }
+            }
             else if (key == Key.Tab || key == Key.Tab.WithShift)
             {
-                if (detail.HasFocus) tables[i].SetFocus();
+                if (detail.HasFocus) table.SetFocus();
                 else detail.SetFocus();
             }
-            else if (key == Key.Enter && !detail.HasFocus && Selected(i) is { } row)
+            else if (key == Key.Enter && !detail.HasFocus && Selected() is { } row)
             {
                 if (row.Queue is not null || row.Ticket is not null)
                 {
@@ -135,7 +162,7 @@ internal static class TopScreen
             }
             else if (key == Key.Esc)
             {
-                if (detail.HasFocus) tables[i].SetFocus();
+                if (detail.HasFocus) table.SetFocus();
                 else if (i == 2 && frame.Filtered)
                 {
                     back();
