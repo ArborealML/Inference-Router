@@ -74,16 +74,25 @@ internal static class AirBackgroundService
 
     internal static Task<int> StopAsync(string[] args)
     {
-        if (args.Length != 0 || !OperatingSystem.IsLinux())
+        var force = args is ["--force"];
+        if (!OperatingSystem.IsLinux() || (args.Length != 0 && !force))
         {
-            Console.Error.WriteLine("air stop controls the Linux background user service and takes no arguments.");
+            Console.Error.WriteLine("usage: air stop [--force] (Linux background user service)");
             return Task.FromResult(2);
         }
         var stop = new ProcessStartInfo("/usr/bin/systemctl") { UseShellExecute = false };
         stop.ArgumentList.Add("--user");
-        stop.ArgumentList.Add("stop");
+        if (force)
+        {
+            stop.ArgumentList.Add("kill");
+            stop.ArgumentList.Add("--signal=SIGKILL");
+        }
+        else
+        {
+            stop.ArgumentList.Add("stop");
+        }
         stop.ArgumentList.Add(Unit);
-        return RunAsync(stop, "AIR stopped.");
+        return RunAsync(stop, force ? "Sent SIGKILL to the AIR service." : "AIR stopped.");
     }
 
     private static async Task<int> RunAsync(ProcessStartInfo command, string success)

@@ -64,7 +64,7 @@ public static class Program
               completion bash|powershell|zsh|fish       print the shell’s tab-completion registration
               serve [--config path] [--listen url] [--foreground]
                                                       start AIR (Linux user service by default)
-              stop                                        stop the Linux user service
+              stop [--force]                            stop AIR gracefully, or kill it immediately
               chat  [-m model] [-t thread] [-p prio]    send a chat completion (prompt args or stdin)
                     [--system text] [--no-stream] [--json] [-s server-url]
               models [-s server-url]                    list configured and observed models

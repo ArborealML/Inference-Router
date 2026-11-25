@@ -1,11 +1,13 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.165)
+Status: draft, continuously revised (v0.12.167)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
 
 ## 0. Revision log
+
+- v0.12.167 — add immediate force-stop for the Linux background router (§13).
 
 - v0.12.165 — suppress repeated health events and skip application polling for inactive local group members (§7).
 
@@ -3785,7 +3787,7 @@ The monitor resumes the unfiltered feed with the last JSON `Seq`. Every reconnec
 ```
 air completion bash|powershell|zsh|fish
 air serve [--config f.toml] [--listen url] [--foreground]
-air stop
+air stop [--force]
 air chat [--server url] [--thread id] [--priority high:200] [--model name] [--system text] [--no-stream] [--json] [prompt ...]
 air complete [--server url] [--thread id] [--priority high:200] [--model name] [--system text] [--no-stream] [--json] [prompt ...]
 air models [--server url]
@@ -3825,7 +3827,7 @@ three omitted they open `~/arboreal/inference-router/router.toml` in the user's 
 
 During a local cold switch, the waiting owner ticket can report `CompletedSwitchSteps` (0–3). Four milestones cover inventory and preflight, releasing peers, starting or adopting the target, and verifying readiness. Execution follows readiness. Pi shows the completed fraction and current phase. Queued peers and terminal tickets omit the field.
 
-`air serve` starts one transient Linux systemd service per user and returns when its HTTP listener is bound. `air stop` waits for that service to stop. Use `air serve --foreground` for process supervision or a terminal. Other operating systems run the host in the foreground. Client verbs construct HTTP requests and
+`air serve` starts one transient Linux systemd service per user and returns when its HTTP listener is bound. `air stop` waits for that service to stop. `air stop --force` asks the user service manager to send SIGKILL to the AIR unit and returns the manager’s result. Active requests may be interrupted. Independently managed inference backends are outside that unit. Use `air serve --foreground` for process supervision or a terminal. Other operating systems run the host in the foreground. Client verbs construct HTTP requests and
 read the router's responses directly.
 
 `air chat` and its alias `air complete` send `POST /v1/chat/completions`. Use `-s` or `--server`

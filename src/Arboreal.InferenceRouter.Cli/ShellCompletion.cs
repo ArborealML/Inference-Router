@@ -18,6 +18,7 @@ internal static class ShellCompletion
         "events" => [.. ServerOptions, "--since"],
         "threads" => [.. ServerOptions, "-i", "--id", "--thread", "-p", "--priority"],
         "switch" => [.. ServerOptions, "-e", "--engine", "-m", "--model"],
+        "stop" => ["--force"],
         "config" => ["-c", "--config"],
         "serve" => ["-c", "--config", "-l", "--listen", "--foreground"],
         "tune plan" => ["--config", "--engine", "--model", "--profile", "--seed", "--max-concurrency"],
