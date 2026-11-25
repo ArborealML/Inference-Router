@@ -36,6 +36,8 @@ decision-25 parked a fleet-wide queue and cross-host model residence as later wo
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
+On 2026-11-25 a planning review was requested for the first single-ingress, two-host deployment. It compares forwarding an ordinary request to a peer AIR against introducing a peer ticket protocol. The coordinator will check the result against current admission, cancellation and streaming behavior before selecting the first implementation task.
+
 TASK-122 owns shared admission and ticket claims. TASK-123 owns measured placement and service for aged requests. TASK-124 qualifies managed activation and recovery through both ingress endpoints. SPEC sections 12 and 14 must identify this milestone and its implementation rows. TASK-77 controls lifecycle authority and TASK-110 controls physical host occupancy.
 
 At 31179e3 one live ingress served turns on resident Qwen and a remote resident Bonsai model in the same pi session. The tests for shared admission, either-ingress placement, peer activation and recovery remain open.
