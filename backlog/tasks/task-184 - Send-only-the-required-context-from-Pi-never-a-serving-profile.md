@@ -5,7 +5,7 @@ status: Waiting
 assignee:
   - '@gpt-6.2-astra'
 created_date: '2026-11-25T07:52:00Z'
-updated_date: '2026-11-25T07:56:00Z'
+updated_date: '2026-11-25T08:51:00Z'
 labels: []
 dependencies:
   - TASK-183
@@ -30,5 +30,5 @@ The Pi-side AIR extension still resolves a named tier from the router catalog fo
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Wakes when TASK-183 lands the server-side contract that says a caller cannot name a tier. The extension today sends a required-context header plus a preferred-profile header and reads tier names from the admin catalog.
+Wakes when the server-side contract in TASK-183 lands the first ingress slice. Design direction accepted: the caller supplies model, required context and optional priority only; a retired profile header is refused rather than silently dropped once the Pi side is migrated; the client-facing catalog view must carry numeric context budgets and no tier names or slot counts. The installed Pi build still sends the profile header today, so the server must not refuse it before this task ships.
 <!-- SECTION:NOTES:END -->

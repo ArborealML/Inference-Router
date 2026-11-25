@@ -5,6 +5,7 @@ status: Preparing
 assignee:
   - '@chatswarm'
 created_date: '2026-11-25T07:49:00Z'
+updated_date: '2026-11-25T08:51:00Z'
 labels: []
 dependencies: []
 priority: high
@@ -30,5 +31,5 @@ A request that needs a 262144-token window must be served by an engine already r
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Wake condition: the external design result lands on this task. Verified today: the scheduler compares a named tier by name equality against the resident serving snapshot, and the managed readiness check requires observed window and slots to equal the declared tier.
+Wake: design pass landed 2026-11-25 (external pro tier); full document held outside the repository, summary ingested. Verified against this code before accepting: the named-tier path compares tier names, and the equal-window tie-break keeps declaration order — both confirmed here, both confirmed by the review. Accepted direction: check resident engines before ladder fit so an eight-slot resident answers a four-slot demand with no switch; make launch-tier choice slot-aware (never declaration order or label text); keep the launch proof exact (declared 4 / observed 8 stays a mismatch); let the caller supply only model, required context and optional priority. Accepted with limits: a resize controller that fences admission, drains, requires sustained over-capacity pressure and a dwell time tied to measured relaunch cost, caps elective resizes per model and per host, and aborts before any effect without killing inference. Deferred, named as separate designs: automatic shrinking, predicting performance before a launch, and fleet-wide claims (this task depends on the one-queue and host-placement work). Next action: write the implementation plan in six slices, ingress refusal first, then resident-dominant scheduling, then the resize controller.
 <!-- SECTION:NOTES:END -->
