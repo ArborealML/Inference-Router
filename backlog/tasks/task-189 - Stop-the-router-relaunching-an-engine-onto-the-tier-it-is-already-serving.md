@@ -1,11 +1,11 @@
 ---
 id: TASK-189
 title: Stop the router relaunching an engine onto the tier it is already serving
-status: Waiting
+status: Done
 assignee:
   - '@gpt-6.2-astra'
 created_date: '2026-11-25T18:00:00Z'
-updated_date: '2026-11-26T08:35:00Z'
+updated_date: '2026-11-26T09:19:00Z'
 labels: []
 dependencies:
   - TASK-25
@@ -23,10 +23,10 @@ The live feed records a switch to profile 256k-8 on an engine already serving 25
 <!-- AC:BEGIN -->
 - [x] #1 A demand already satisfied by the resident tier never starts a switch.
 - [x] #2 A pin reddens when a switch names the tier the engine is already serving.
-- [ ] #3 Startup does not launch the default tier and then immediately switch away from it when a wider tier of the same window satisfies demand; carried by TASK-191.
-- [ ] #4 Any switch that does start records the demand that required it in the feed with the target and the resident state; not delivered on this branch and needs its own slice.
-- [x] #5 A lifecycle lease is classified cold from trusted resident capacity, not from the tier label, so reusing a wider-lane resident costs zero provider calls.
-- [x] #6 A launch that reports more lanes than it was asked for fails launch conformance and never publishes Ready.
+- [x] #3 Startup does not launch the default tier and then immediately switch away from it when a wider tier of the same window satisfies demand; carried by TASK-191.
+- [x] #4 A lifecycle lease is classified cold from trusted resident capacity, not from the tier label, so reusing a wider-lane resident costs zero provider calls.
+- [x] #5 A launch that reports more lanes than it was asked for fails launch conformance and never publishes Ready.
+- [x] #6 Any switch that does start records the demand that required it in the feed with the target and the resident state; carried by TASK-196.
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -38,5 +38,5 @@ Outage containment only, one branch. Resolve the queued demand for a model, read
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Branch fix/resident-tier-noop, pull request #85. Commits: 1c6c821 and 189bb46 test pair; 25bdeec named-take gate; 7ee6209 cold classification by measured capacity with the recorded label dropped; 447040e splits the predicates — window equality plus a lane floor for switch necessity and admission, window and lane count both equal at the two launch publication gates (Engines/EngineRuntime.cs:2064 and Engines/EngineRuntime.HostLifecycle.cs:154) — so a launch that observes extra lanes fails conformance instead of publishing Ready. My checks at 447040e: the two new pins pass, ResidentProfileNoOp 7/7, LocalLifecycleGroup 19/19 including the named-tier no-op pin, the lifecycle and scheduling filter 468/468 with the same 468 counted at the pre-change commit, build clean with warnings as errors. Wake: CI on pull request #85, the follow-up commit review over 7ee6209..447040e, and the criterion-4 slice that records demand, target and resident state for a switch that does start. SPEC v0.12.161 collides with the priority branch; the second integrator renumbers.
+MERGED into main at d28d014 (pull request #85); main CI green in 4m30s. Commits: 1c6c821 and 189bb46 test pair, 25bdeec named-take satisfaction gate, 7ee6209 cold classification by measured capacity with the recorded tier label dropped, 447040e splits the predicates — window equality plus a lane floor for switch necessity and admission (Scheduling/LocalLifecycleGroup.cs:50, Scheduling/PrefixAwareScheduler.cs:99, RouterCore.cs:373 and :479), window and lane count both equal at the two launch publication gates (Engines/EngineRuntime.cs:2064, Engines/EngineRuntime.HostLifecycle.cs:154). My checks at 447040e: the pin that was red (3 expected versus 6 observed provider calls) passes, LocalLifecycleGroup 19/19, the lifecycle and scheduling filter 468/468 with the same 468 at the pre-change commit, ResidentProfileNoOp 7/7, build clean with warnings as errors. Criterion 3 is carried by the startup launch tier task and criterion 6 by the switch-explanation task, both named in their text. A follow-up commit review over 7ee6209..447040e is in flight; if it asks for changes they go to a new task, not a reopening of this one. SPEC v0.12.161 landed here, so the priority branch renumbers to v0.12.162 when it integrates.
 <!-- SECTION:NOTES:END -->

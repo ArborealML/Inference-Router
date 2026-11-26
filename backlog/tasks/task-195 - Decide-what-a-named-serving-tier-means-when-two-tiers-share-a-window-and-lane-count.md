@@ -3,11 +3,11 @@ id: TASK-195
 title: >-
   Decide what a named serving tier means when two tiers share a window and lane
   count
-status: Waiting
+status: Blocked
 assignee:
-  - '@gpt-6.2-astra'
+  - '@claire'
 created_date: '2026-11-26T07:34:00Z'
-updated_date: '2026-11-26T07:35:00Z'
+updated_date: '2026-11-26T09:22:00Z'
 labels:
   - config
   - scheduling
@@ -20,7 +20,7 @@ ordinal: 187000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Wake: integration of pull request #85, which makes measured capacity the scheduling authority. Two declared tiers of one model can request the same context window and the same lane count while launching different things — a different quantization, a different key-value cache type, or a different memory budget. Measured capacity cannot tell them apart, and the inferred profile label is deliberately null whenever more than one declared tier matches the measured pair, so a request naming one tier can be served by an instance launched for the other. Decide whether such a configuration is refused at startup, reported as a warning with last-declared-wins, or treated as interchangeable and documented, then state the answer in SPEC and pin it.
+Decision needed, and the containment work that made capacity the scheduling authority has now merged, so the question is live rather than theoretical. Two declared tiers of one model can request the same context window and the same lane count while launching different things — a different quantization, a different key-value cache type, or a different memory budget. Measured capacity cannot tell them apart, and the inferred profile label is deliberately null whenever more than one declared tier matches the measured pair, so a request naming one tier can be served by an instance launched for the other. Choose one: refuse the configuration at startup, start with a warning and last-declared-wins, or declare such tiers interchangeable and document it. This unblocks the ambiguous-label pin and settles what a tier name means to an operator.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
