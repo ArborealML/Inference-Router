@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@gpt-6.2-sol-shutdown'
 created_date: '2026-11-25T10:49:00Z'
-updated_date: '2026-11-26T12:20:00Z'
+updated_date: '2026-11-26T12:22:00Z'
 labels: []
 dependencies:
   - TASK-189
@@ -39,5 +39,5 @@ Design pass verdict was REVISE and the diagnosis changed the plan. Verified in c
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Design-pass verdict REVISE; corrections are in the plan. Three scope questions from the implementer are settled: an upstream that ended in band gets no second terminal frame appended, so bytes stay identical while the ticket settles Failed under the existing code; a boundary end with no terminator records its end name and changes nothing else; the runtime-versus-probe disagreement criterion moved to the launch-conformance family. Accepted gap, not fixed here: a clean end at a boundary with no terminator still settles Completed on the state axis while its end name reads otherwise — a wire decision, pinned by the frame-identity test asserting empty terminal bytes with a null finish reason. Naming frozen: complete, upstream_closed_without_terminator, stream_incomplete, failed, unknown; cancellation on its own axis. Two implementer runs timed out with nothing committed; the deliverable is now cut to the observer, precedence and the two priority pins, with the write-accounting fields deferred to a follow-on commit on this branch.
+Design-pass verdict REVISE; corrections are in the plan. Three scope questions from the implementer are settled: an in-band upstream end gets no second terminal frame, so bytes stay identical while the ticket settles Failed; a boundary end with no terminator records its end name and changes nothing else; the runtime-versus-probe disagreement criterion moved to the launch-conformance family. Accepted gap, not fixed here: a clean end at a boundary with no terminator still settles Completed on the state axis while its end name reads otherwise — a wire decision, pinned by the frame-identity test asserting empty terminal bytes with a null finish reason. Naming frozen: complete, upstream_closed_without_terminator, stream_incomplete, failed, unknown; cancellation on its own axis. Two runs timed out with nothing committed; the deliverable is cut to the observer, precedence and the two priority pins, with write accounting deferred.
 <!-- SECTION:NOTES:END -->
