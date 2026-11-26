@@ -3,11 +3,11 @@ id: TASK-187
 title: >-
   Report why a ticket ended: upstream end, missing terminator, or a writer that
   gave up
-status: To Do
+status: In Progress
 assignee:
   - '@gpt-6.2-sol-shutdown'
 created_date: '2026-11-25T10:49:00Z'
-updated_date: '2026-11-26T10:55:00Z'
+updated_date: '2026-11-26T11:10:00Z'
 labels: []
 dependencies:
   - TASK-189
