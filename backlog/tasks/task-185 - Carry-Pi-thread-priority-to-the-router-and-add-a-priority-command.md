@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@gpt-6.2-sol-config'
 created_date: '2026-11-25T07:54:00Z'
-updated_date: '2026-11-26T10:23:00Z'
+updated_date: '2026-11-26T10:33:00Z'
 labels: []
 dependencies: []
 priority: high
@@ -15,7 +15,7 @@ ordinal: 177000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Today every request from the Pi extension looks identical in the queue, so a long speculative run and the interactive turn you are watching compete equally: the one that should win can lose. Two additions: the extension sends a priority on every request, and a /priority command sets normal, high or low for the session, default normal, persisted across restarts. The router parses the header on the inference path and refuses a malformed value instead of silently defaulting. The priority affects only the order work is dispatched in — no lease or capacity rule changes and no new authority: a thread's priority is set on registration or by a request that carries one and cannot be raised by unregistered traffic. Follow-on priority scheduling (task 103) builds on this.
+Today every request from the Pi extension looks identical in the queue, so a long speculative run and the interactive turn you are watching compete equally: the one that should win can lose. Two additions: the extension sends a priority on every request, and a /priority command sets normal, high or low for the session, default normal, persisted across restarts. The router parses the header on the inference path and refuses a malformed value instead of silently defaulting. Priority changes only the order work is dispatched in: no lease or capacity rule changes, no new authority, and a thread's priority cannot be raised by unregistered traffic. Follow-on priority scheduling (task 103) builds on this.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -27,16 +27,19 @@ Today every request from the Pi extension looks identical in the queue, so a lon
 - [x] #5 A malformed priority is refused before any scheduler mutation, dispatch or stream start, in the existing error envelope.
 - [x] #6 The session value is the one present on the final outbound request on both request paths and after a session restore.
 - [x] #7 air threads refuses a malformed -p value with a non-zero exit and registers nothing.
+- [ ] #8 -p given an empty, dash-leading or missing value is refused, a repeated -p is refused, and omitting -p keeps the default.
+- [ ] #9 The admin thread route refuses a supplied priority it cannot read exactly — non-object, unknown class, or a sub that is not an integer within 0-255 — in the existing 400 envelope.
+- [ ] #10 A CLI test counts raw request arrivals so a malformed body cannot slip past the no-request assertion.
 <!-- AC:END -->
 
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Two halves, one deliverable. Router: parse the priority header with the grammar /admin/threads already accepts; an empty value is unset; a repeated header is refused; anything malformed is 400 invalid_priority in the existing envelope, before any queue, lease, ticket or stream state exists. Extension: a session-scoped value defaulting to normal, sent on both request paths, with /priority to report, set or reject. No scoring or lease behaviour in this commit. A restored session must re-assert its priority before completing a turn, or its first request silently takes the default. Priority says how urgent, the profile says what capacity: keep them separate. Any new refusal reason goes through wire review first.
+Two halves, one deliverable. Router: parse the priority header with the grammar the admin thread route accepts; an absent header is the configured default; a repeated header is refused; anything malformed is 400 invalid_priority in the existing envelope, before any queue, lease, ticket or stream state exists. Extension: a session-scoped value defaulting to normal, sent on both request paths, with /priority to report, set or reject, replayed on resume. Priority says how urgent, the profile says what capacity: keep them separate. Any new refusal reason goes through wire review first.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Router half on pull request #86: 0406520, ingress fix f3c08eb, main merged at 4c75ffa, CLI and SPEC fix e900a48, all under revision entry v0.12.162. My checks at e900a48 in its worktree: build clean with no warnings, and 169/169 over the priority, thread and CLI filters. I read the diff: the lenient helper is gone, the parse runs before any request is built, exit 2 names the grammar, and air chat still forwards the raw header for the router's own 400. One comment in that diff overstates the case: the admin route does validate the class with 400 invalid_request; fix the wording next commit on this branch. Two accepted gaps: an aborted or chunked upload can now lose to an early 400 that previously won during the body read, and that precedence is unpinned; and the admin route clamps a numeric sub to 0-255 while the header refuses the same spelling, sent for review as a possible wire defect rather than patched blind. A review of 4c75ffa..e900a48 is in flight from the external service. Criterion 3 stays open: the session value shows through the command only, not the status view. The client half lives in the live extension file on the router host, which is not under version control, so the divergence risk sits with task 186.
+Router half on pull request #86, revision entry v0.12.162: 0406520, ingress fix f3c08eb, main merge 4c75ffa, CLI and SPEC fix e900a48. PR CI is green there; my filtered pass was 169/169 on a clean build. A second external review of 4c75ffa..e900a48 landed and I verified both findings in code: GetOpt returns null when the value begins with a dash or is absent, and the CLI parses only when the option string is non-empty, so -p '' and -p -5 still register the default priority and exit 0, and a repeated -p silently takes the first; and the admin route coerces a supplied sub with a cast plus a clamp, so 255.7, -5 and 1e10 register a value the header grammar refuses, while a present-but-not-object priority is ignored wholesale. That coercion is wire-visible: such bodies answer 204 today and must answer 400 in the existing invalid_request envelope, so SPEC section 6 has to say what the admin surface admits. Accepted gaps unchanged: aborted or chunked upload precedence is unpinned; criterion 3 waits on the extension status view.
 <!-- SECTION:NOTES:END -->
