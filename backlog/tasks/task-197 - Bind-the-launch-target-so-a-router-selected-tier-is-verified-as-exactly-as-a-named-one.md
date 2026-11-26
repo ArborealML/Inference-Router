@@ -3,11 +3,11 @@ id: TASK-197
 title: >-
   Bind the launch target so a router-selected tier is verified as exactly as a
   named one
-status: Waiting
+status: To Do
 assignee:
-  - '@chatswarm'
+  - '@gpt-6.2-sol-lifecycle'
 created_date: '2026-11-26T09:21:00Z'
-updated_date: '2026-11-26T10:42:00Z'
+updated_date: '2026-11-26T10:58:00Z'
 labels:
   - scheduling
   - lifecycle
@@ -35,11 +35,11 @@ Conformance at launch is switched on only when the caller named a tier, so a tie
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Both call sites pass the targeted tier but set exactProfile only when the caller named one (RouterCore.cs:822, LocalLifecycleGroup.cs:150), so an auto-selected launch certifies on a window-only proof. Freeze the expected window and lane pair at the switch claim, bind it to the launch that actually starts rather than a previous selection or a later probe, and persist that pair with the durable host launch record and instance identity so a takeover verifies against what ran. Add the exact comparison at the two certification doors that lack it: legacy final publication under prove-health and trust mode, and the staged host settle before the route is committed and opened. Leave managed vLLM's existing exact check in EngineRuntime.ManagedProfile.cs alone, and leave the resident lane floor at LocalLifecycleGroup.cs:39-50, PrefixAwareScheduler.cs:96-105, RouterCore.cs:369-375 and 477-483 and EngineRuntime.cs:984-995, pinned by ResidentProfileNoOpTests and LocalLifecycleGroupTests: extra resident lanes still satisfy a narrower tier. Report a lane mismatch as one token added to SwitchReason in WireText.cs, with SPEC 5.5 and 6.1 updated and RefusalCategoryTests walked both ways; both counts stay on the feed, never in the caller sentence, because the reason reaches the request-path 503 body at RouterCore.cs:831-845. Golden-pin the existing window_too_small wording. On a failed exact check the route stays closed, the host record keeps its pending instance identity, the group is not resident, and nothing settles as vacant while the instance runs; automatic fenced disposal is the follow-on task.
+Both design passes returned REVISE, with corrections folded in here and checked against main. Put the immutable expected window and lane pair on the durable host operation (HostMutation, Engines/Lifecycle/HostReservation.cs:13-16) as a nullable nested member, not JsonRequired: only Epoch, Owner and Pending are required today, so a required new field would make every pre-existing checksummed journal unreadable. Require both values positive for a new Launch, bound every comparison to Pending.Id and Epoch plus LaunchedContainerId, and do not touch the checkpoint plan, whose serialized bytes are hashed into its digest: that needs a versioned format, not a schema edit. The state disallows unmapped members, so a new field breaks rollback to the previous binary: state that rule in SPEC. Freeze the pair at the switch claim, carry it on its own operation, and verify exactly at the two certification doors: legacy final publication and the staged settle before the route commits and opens. Leave the resident lane floor and managed vLLM's exact check alone. Cross-target trap: after an old applied launch A and a new target B, verify against A's persisted pair, never B's tier, and a restarted process under the same container id is not the same incarnation — require a process or start generation, or fail closed. Land as two commits: the durable record with migration and restart tests, then freeze-and-verify with one new token added to the closed switch-reason set, the counts feed-only, and a golden pin on window_too_small. The durable refused identity, the retry bound and disposal stay on the follow-on task.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-The plan review verdict was REVISE; every finding carried into the plan above was checked against main first, including the closed switch-reason set at WireText.cs:92-139 and the reason reaching a caller-visible body at RouterCore.cs:831-845. Persisting the numeric pair so a takeover verifies what ran, and the failed-check state policy, both came from the review. Accepted gaps carried to the follow-on task: automatic fenced disposal of a rejected physical instance, and an idempotent same-instance stop with verified vacancy after cancellation or takeover. Wake: the delta design pass, in flight with the external service.
+The first pass found the window-only certification and the closed-set leak into a caller-visible body; the second found the record migration hazard, the cross-target comparison trap and the unbounded retry. Tests required before merge: an old checksummed reservation without capacity that opens but cannot authorize a Ready publication, in legacy and enrolled shapes, across restart, takeover and a same-id restarted process; and a lane mismatch, named and selected, asserting the caller token, feed-only counts, and no Ready or forward.
 <!-- SECTION:NOTES:END -->
