@@ -1,11 +1,11 @@
 ---
 id: TASK-189
 title: Stop the router relaunching an engine onto the tier it is already serving
-status: Ready for Review
+status: In Progress
 assignee:
-  - '@gpt-6.2-astra'
+  - '@gpt-6.2-sol-scheduling'
 created_date: '2026-11-25T18:00:00Z'
-updated_date: '2026-11-26T02:27:00Z'
+updated_date: '2026-11-26T02:37:00Z'
 labels: []
 dependencies:
   - TASK-25
@@ -25,6 +25,8 @@ The live event feed records a switch to the profile 256k-8 at 17:40 on an engine
 - [x] #2 A pin reddens when a switch names the tier the engine is already serving.
 - [ ] #3 Startup does not launch the default tier and then immediately switch away from it when a wider tier of the same window satisfies demand; carried by TASK-191.
 - [ ] #4 Any switch that does start records the demand that required it in the feed with the target and the resident state; not delivered on this branch and needs its own slice.
+- [ ] #5 A lifecycle lease is classified cold from trusted resident capacity, not from the tier label, so reusing a wider-lane resident costs zero provider calls.
+- [ ] #6 A launch that reports more lanes than it was asked for fails launch conformance and never publishes Ready.
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -36,5 +38,5 @@ Outage containment only, one branch. Resolve the queued demand for a model, read
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Delivered on branch fix/resident-tier-noop: test pair at 1c6c821, fix at 25bdeec. Satisfaction is now window equality plus a lane floor, TotalSlots >= profile.MaxSlots, and the inferred label leaves the comparison; SPEC §7.6 gained a Resident reuse bullet and launch verification keeps its exact expected-and-observed proof. Coordinator verification in the implementer worktree: build clean, and dotnet test over ResidentProfileNoOpTests, ConfigReloadWireTests, VerifiedInstanceTransport, AdminSwitchOperationTests and CapabilityScanTests gave 128 passed, 0 failed; the implementer reports 422 and 157 passed on two wider filters. The lane floor is load-bearing: two existing pins refuse a named tier when reported lanes fall below declared. Unpinned and put to the external commit review: stale-gauge reloads, no-ladder engines, and the offline exact-instance path at RouterCore.cs:479-481, which stays name-exact. Wake: the external commit review of this range. Criterion 3 is TASK-191's; criterion 4 still needs a slice.
+Delivered on branch fix/resident-tier-noop: test pair 1c6c821, fix 25bdeec. Satisfaction became window equality plus a lane floor with the inferred label dropped. External commit review covered 1c6c821..25bdeec (extra-high, 2026-11-26) and returned changes requested; I verified both blockers. (1) Containment does not hold for the local Docker group: LocalLifecycleGroup.cs:39-41 sets cold from profile.Name against the resident label, RouterCore.cs:500-507 reserves a lease even on a no-switch decision and :789-809 runs the cold path, so a named 4-lane tier against an 8-lane resident still stops and relaunches. Same-name-only reuse is the sole existing pin, which is why main looked green. (2) Launch conformance weakened: the same predicate judges non-enrolled launch readiness at EngineRuntime.cs:1950 and :2063, so expected-4 observed-8 now publishes Ready. Fix under way: split a satisfaction predicate from an exact-conformance one, plus the review's regression matrix — ambiguous or null label, stale gauge against a hand-replaced process between selection and forwarding, reload changing the roster mid-dispatch, no-ladder engines, and the offline verified exact-instance refusal at RouterCore.cs:479-481 kept name-exact and documented. Coordinator check on the delivered pair: 128 passed over five filters, build clean.
 <!-- SECTION:NOTES:END -->
