@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@gpt-6.2-sol-scheduling'
 created_date: '2026-11-25T18:00:00Z'
-updated_date: '2026-11-26T03:13:00Z'
+updated_date: '2026-11-26T03:42:00Z'
 labels: []
 dependencies:
   - TASK-25
@@ -25,8 +25,8 @@ The live event feed records a switch to the profile 256k-8 at 17:40 on an engine
 - [x] #2 A pin reddens when a switch names the tier the engine is already serving.
 - [ ] #3 Startup does not launch the default tier and then immediately switch away from it when a wider tier of the same window satisfies demand; carried by TASK-191.
 - [ ] #4 Any switch that does start records the demand that required it in the feed with the target and the resident state; not delivered on this branch and needs its own slice.
-- [ ] #5 A lifecycle lease is classified cold from trusted resident capacity, not from the tier label, so reusing a wider-lane resident costs zero provider calls.
-- [ ] #6 A launch that reports more lanes than it was asked for fails launch conformance and never publishes Ready.
+- [x] #5 A lifecycle lease is classified cold from trusted resident capacity, not from the tier label, so reusing a wider-lane resident costs zero provider calls.
+- [x] #6 A launch that reports more lanes than it was asked for fails launch conformance and never publishes Ready.
 <!-- AC:END -->
 
 ## Implementation Plan
