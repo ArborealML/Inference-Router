@@ -3,11 +3,12 @@ id: TASK-183
 title: Let AIR choose the serving profile and scale concurrency from queue demand
 status: Preparing
 assignee:
-  - '@chatswarm'
+  - '@gpt-6.2-astra'
 created_date: '2026-11-25T07:49:00Z'
-updated_date: '2026-11-25T08:51:00Z'
+updated_date: '2026-11-26T00:41:00Z'
 labels: []
-dependencies: []
+dependencies:
+  - TASK-190
 priority: high
 ordinal: 175000
 ---
@@ -28,8 +29,14 @@ A request that needs a 262144-token window must be served by an engine already r
 - [ ] #6 The de-escalation non-goal in SPEC §7.6 is either replaced by a policy or restated with its scope.
 <!-- AC:END -->
 
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Six slices on one branch, ordered by risk. (1) Ingress: a client-named serving tier on the inference path is refused with an additive named reason; SPEC 6 states the client names model, required context and optional priority only. Existing error byte shape unchanged. (2) Resident-dominant scheduling: measure resident engines first, admit a request on any resident whose measured window fits whatever its slot count, consult the ladder only when no resident fits. Pin with a fake reporting an eight-slot resident against a four-slot demand and asserting zero lifecycle calls. (3) Equal-window tie-break prefers the greater reported slot count in SmallestFittingProfile, and launch-tier choice becomes slot-aware rather than declaration order; shared with the startup-tier task. (4) Resize controller, needing drain-before-teardown: fence admission, require sustained over-capacity pressure over a stated window plus a dwell time tied to measured relaunch cost, cap elective resizes per model and per host, and abort before any effect rather than killing inference. Upward only; shrinking stays a named non-goal. (5) Telemetry: each elective resize records trigger, measured queue depth and dwell; both gauge directions pinned. (6) SPEC 7.6 de-escalation restated with its scope, plus the revision log. Gates: build with warnings as errors, focused scheduler, lifecycle and wire tests, and the shipped-sample config test.
+<!-- SECTION:PLAN:END -->
+
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Wake: design pass landed 2026-11-25 (external pro tier); full document held outside the repository, summary ingested. Verified against this code before accepting: the named-tier path compares tier names, and the equal-window tie-break keeps declaration order — both confirmed here, both confirmed by the review. Accepted direction: check resident engines before ladder fit so an eight-slot resident answers a four-slot demand with no switch; make launch-tier choice slot-aware (never declaration order or label text); keep the launch proof exact (declared 4 / observed 8 stays a mismatch); let the caller supply only model, required context and optional priority. Accepted with limits: a resize controller that fences admission, drains, requires sustained over-capacity pressure and a dwell time tied to measured relaunch cost, caps elective resizes per model and per host, and aborts before any effect without killing inference. Deferred, named as separate designs: automatic shrinking, predicting performance before a launch, and fleet-wide claims (this task depends on the one-queue and host-placement work). Next action: write the implementation plan in six slices, ingress refusal first, then resident-dominant scheduling, then the resize controller.
+Design pass landed 2026-11-25 (external pro tier); document held outside the repository. Both defects it cited are confirmed in this code: the named-tier path compares tier names, and the equal-window tie-break keeps declaration order. Resize needs the drain machinery, so this task now depends on it. Next action: plan review of the six-slice plan, dispatched 2026-11-26; implementation starts after the containment and stream-cause slices land.
 <!-- SECTION:NOTES:END -->
