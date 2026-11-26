@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@gpt-6.2-sol-scheduling'
 created_date: '2026-11-25T18:00:00Z'
-updated_date: '2026-11-26T01:22:00Z'
+updated_date: '2026-11-26T01:53:00Z'
 labels: []
 dependencies:
   - TASK-25
@@ -36,7 +36,5 @@ Outage containment only, one branch. Resolve the queued demand for a model, read
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Implementation underway in an isolated worktree on branch fix/resident-tier-noop; one writer. A first implementer run died on an infrastructure failure with no commits and was relaunched 2026-11-26. Plan review of both slices dispatched to the external reasoning service 2026-11-25 (extra-high); its findings are already in the plan: the busy-resize guard alone can starve queues, and tests must assert lifecycle call counts and both gauge directions, not feed text. Wake for the coordinator: the implementer's handoff with commit shas and check results.
-
-First implementer run timed out at the harness limit with no commits after a code survey; resumed with a longer limit and an instruction to commit the test pair before the fix. The board-contract CI failure on the capacity trim run was the word-budget defect on this task family and is superseded: the follow-up push's board-contract job is green.
+Implementation in progress on branch fix/resident-tier-noop. Three implementer runs were lost to infrastructure (engine crash, provider outage, two 30-minute harness limits) before the first commit landed; the test pair is committed at 1c6c821 with the two pinned directions asserted on counted lifecycle calls. Coordinator review of the uncommitted fix found two defects routed back to the implementer: (a) the new SPEC §7.6 paragraph requires measured slots to EQUAL the declared tier while the changed ServingCapacity.Matches drops slot equality, so code and SPEC disagree; (b) the added TotalSlots >= 0 guard proves nothing and should go. Also routed: Matches is shared by PrefixAwareScheduler.cs:99, EngineRuntime.cs:986 and :2064, and RouterCore.cs:373 and :479, so widening it for request satisfaction also widens operator-facing exact-tier paths — either a separate exact predicate there, or a named check that the new semantics are intended. Commit 1c6c821 carries a Sol identity although the authoring seat ran on the q38fn implementer model; recorded rather than rewritten.
 <!-- SECTION:NOTES:END -->
