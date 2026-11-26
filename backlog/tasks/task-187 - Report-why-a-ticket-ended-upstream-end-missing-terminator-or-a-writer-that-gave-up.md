@@ -3,11 +3,11 @@ id: TASK-187
 title: >-
   Report why a ticket ended: upstream end, missing terminator, or a writer that
   gave up
-status: In Progress
+status: To Do
 assignee:
   - '@gpt-6.2-sol-shutdown'
 created_date: '2026-11-25T10:49:00Z'
-updated_date: '2026-11-26T12:22:00Z'
+updated_date: '2026-11-26T22:35:00Z'
 labels: []
 dependencies:
   - TASK-189
@@ -39,5 +39,5 @@ Design pass verdict was REVISE and the diagnosis changed the plan. Verified in c
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Design-pass verdict REVISE; corrections are in the plan. Three scope questions from the implementer are settled: an in-band upstream end gets no second terminal frame, so bytes stay identical while the ticket settles Failed; a boundary end with no terminator records its end name and changes nothing else; the runtime-versus-probe disagreement criterion moved to the launch-conformance family. Accepted gap, not fixed here: a clean end at a boundary with no terminator still settles Completed on the state axis while its end name reads otherwise — a wire decision, pinned by the frame-identity test asserting empty terminal bytes with a null finish reason. Naming frozen: complete, upstream_closed_without_terminator, stream_incomplete, failed, unknown; cancellation on its own axis. Two runs timed out with nothing committed; the deliverable is cut to the observer, precedence and the two priority pins, with write accounting deferred.
+Design-pass verdict REVISE; corrections are in the plan. Three implementer scope questions are settled: an in-band upstream end gets no second terminal frame, so bytes stay identical while the ticket settles Failed; a boundary end with no terminator records its end name and changes nothing else; the runtime-versus-probe disagreement criterion moved to the launch-conformance family. Accepted gap: a clean boundary end with no terminator still settles Completed on the state axis while its end name reads otherwise — a wire decision, pinned by the frame-identity test asserting empty terminal bytes with a null finish reason. Naming frozen: complete, upstream_closed_without_terminator, stream_incomplete, failed, unknown; cancellation orthogonal. Two implementer runs timed out and one was stopped with nothing committed; the deliverable is cut to the observer, precedence and the two priority pins, with write accounting deferred. Implementation resumes when the fleet returns to the Flash Next model.
 <!-- SECTION:NOTES:END -->

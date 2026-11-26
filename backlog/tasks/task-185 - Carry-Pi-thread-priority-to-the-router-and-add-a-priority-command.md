@@ -5,7 +5,7 @@ status: Waiting
 assignee:
   - '@chatswarm'
 created_date: '2026-11-25T07:54:00Z'
-updated_date: '2026-11-26T20:44:00Z'
+updated_date: '2026-11-26T22:33:00Z'
 labels: []
 dependencies: []
 priority: high
@@ -41,5 +41,5 @@ Two halves, one deliverable. Router: parse the priority header with the grammar 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Router half on pull request #86, revision entry v0.12.162: 0406520, ingress fix f3c08eb, main merge 4c75ffa, CLI and SPEC fix e900a48, then a12012b for the second review's two findings — the CLI treating an unusable option value as absent, and the admin route coercing a supplied sub with a cast and a clamp. My filtered pass at the working tree was 199/199 and PR CI is green at a12012b. Wake: the commit review of 4c75ffa..a12012b landing from the external service, then a merge commit onto main with CI green there. Accepted gaps: aborted or chunked upload precedence is unpinned; criterion 3 waits on the extension status view; and the admin surface now answers 400 where it used to answer 204 for an unreadable priority body, which is recorded as the wire change it is. The client half lives in the live extension file on the router host, which is not under version control, so the divergence risk sits with task 186.
+Router half on PR #86, revision v0.12.162: 0406520, f3c08eb, 4c75ffa, e900a48, a12012b. Filtered pass 199/199; CI green at a12012b. The commit review of 4c75ffa..a12012b landed; its findings verified against the branch: docs/ai-integration.md still claims a default-priority clamp and that both surfaces accept any class; SPEC section 6 says a non-string class returns the same 400 it always did while section 0 records it was a 500; the CLI prints the malformed value to stderr unescaped; CliThreadPriorityTests has a case named for seeing the router refuse high:+12 but its stub answers 200 and expects exit 0, so it only proves forwarding; and admin JSON roots that are not objects still reach a 500, which is task 202 and pre-existing. Docs, SPEC wording, stderr escaping and the test name are fixed on this branch before merge. The range counted 10 commits because it includes merges, not a defect. Wake: the next branch commit's review, then a merge with CI green.
 <!-- SECTION:NOTES:END -->
