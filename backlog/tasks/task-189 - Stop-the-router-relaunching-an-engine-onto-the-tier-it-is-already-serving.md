@@ -1,11 +1,11 @@
 ---
 id: TASK-189
 title: Stop the router relaunching an engine onto the tier it is already serving
-status: In Progress
+status: Waiting
 assignee:
-  - '@gpt-6.2-sol-scheduling'
+  - '@gpt-6.2-astra'
 created_date: '2026-11-25T18:00:00Z'
-updated_date: '2026-11-26T04:21:00Z'
+updated_date: '2026-11-26T06:19:00Z'
 labels: []
 dependencies:
   - TASK-25
@@ -32,11 +32,11 @@ The live event feed records a switch to the profile 256k-8 at 17:40 on an engine
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Outage containment only, one branch. Resolve the queued demand for a model, read a fresh same-generation engine identity with its model, measured window, measured slots and health under one synchronisation, and treat the resident as a zero-cost candidate target. When the resident is compatible, do zero Docker lifecycle work, emit no switch events, and bump no epoch. Rebinding an unadmitted ticket to the actual resident requires proving profile compatibility first: a measured capacity never silently rewrites a named profile. Pin the pair that proves direction: a verified 262144-window 8-slot resident with a stale narrow label must produce zero stops, deletes or recreates and must route correctly; a hand-replaced 256000-window 4-slot engine holding a stale 262144/8 gauge must NOT take the no-op path and must not admit an oversized ticket. Assert lifecycle calls, not feed text. The drain, lease lifecycle and startup launch-tier questions are separate plans and are not in this branch.
+Outage containment only, one branch. Resolve the queued demand for a model, read a fresh same-generation engine identity with its model, measured window, measured slots and health under one synchronisation, and treat the resident as a zero-cost candidate target. When the resident is compatible, do zero Docker lifecycle work, emit no switch events, and bump no epoch. Rebinding an unadmitted ticket to the actual resident requires proving profile compatibility first: a measured capacity never silently rewrites a named profile. Pin the pair that proves direction: a 262144-window 8-slot resident with a stale narrow label must produce zero stops, deletes or recreates and must route correctly; a hand-replaced 256000-window 4-slot engine holding a stale 262144/8 gauge must NOT take the no-op path and must not admit an oversized ticket. Assert lifecycle calls, not feed text.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Branch fix/resident-tier-noop: 1c6c821 test pair, 25bdeec fix (window equality plus a lane floor, inferred label dropped), 189bb46 pins for the first blocker, red as intended — ANamedTierOfTheResidentWindowTakesNoLifecycleCall reports 6 provider calls where 3 is expected. Extra-high commit review covered 1c6c821..25bdeec and returned changes requested; I verified both blockers: LocalLifecycleGroup.cs:39-41 sets cold from the tier label while RouterCore.cs:500-507 reserves a lease even on a no-switch decision and :789-809 runs the cold path, so a named 4-lane tier against an 8-lane resident still relaunches; and EngineRuntime.cs:1950/:2063 judge launch readiness with the same predicate, so expected-4 observed-8 publishes Ready. Next commit: classify cold by measured capacity; then split satisfaction from exact conformance, plus pins for an ambiguous label, a stale gauge against a hand-replaced process, mid-dispatch reload, no-ladder engines, and the offline exact-instance refusal at RouterCore.cs:479-481 kept name-exact. My verification: build clean, 128 passed over five filters. SPEC version collides with the priority branch at v0.12.161; the branch integrating second renumbers.
+Branch fix/resident-tier-noop, pull request #85: 1c6c821 and 189bb46 test pair, 25bdeec named-take gate (window equality plus a lane floor, inferred label dropped), 7ee6209 cold classification by measured capacity — the local group no longer records a tier label, so a named 4-lane tier against an 8-lane resident costs zero provider calls. Wake: the extra-high commit review over 52aef12..7ee6209 and CI on that branch. My verification at 7ee6209: the pin that was red (3 expected versus 6 observed provider calls) passes, local lifecycle group 19/19, a lifecycle, drain, runtime, switch, capacity, managed-profile and scheduling sweep 468/468, build clean with warnings as errors. Both earlier blockers are closed: cold no longer reads the label, and launch readiness keeps its exact expected-and-observed proof, so satisfaction stays looser than publication. Still open: criterion 3 is the startup launch tier; criterion 4 needs its own slice so a switch that does start names demand, target and resident state; and whether two tiers sharing a window and lane count but differing in memory cost, such as an fp8 and an nvfp4 calibration, are distinguishable at all — that ambiguous-label pin is still owed. SPEC v0.12.161 collides with the priority branch; the second integrator renumbers.
 <!-- SECTION:NOTES:END -->
