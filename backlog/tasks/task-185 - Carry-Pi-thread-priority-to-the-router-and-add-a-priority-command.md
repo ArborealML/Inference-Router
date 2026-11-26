@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@gpt-6.2-sol-config'
 created_date: '2026-11-25T07:54:00Z'
-updated_date: '2026-11-26T08:57:00Z'
+updated_date: '2026-11-26T09:59:00Z'
 labels: []
 dependencies: []
 priority: high
@@ -24,18 +24,19 @@ Today every request from the Pi extension looks identical in the queue, so a lon
 - [x] #2 /priority sets the value for the session and reports it back.
 - [ ] #3 The value survives a session restart and shows in the extension's status view.
 - [ ] #4 A rejected priority value produces the router's stated refusal, not a silent default.
-- [ ] #5 A malformed priority is refused before any scheduler mutation, dispatch or stream start, in the existing error envelope.
+- [x] #5 A malformed priority is refused before any scheduler mutation, dispatch or stream start, in the existing error envelope.
 - [x] #6 The session value is the one present on the final outbound request on both request paths and after a session restore.
+- [ ] #7 air threads refuses a malformed -p value with a non-zero exit and registers nothing.
 <!-- AC:END -->
 
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Two halves, one deliverable. Router: parse X-Inference-Priority with the grammar /admin/threads accepts; empty is unset; a valid value wins a duplicate-header vote; anything else is 400 invalid_priority in the existing envelope before any queue, lease, ticket or stream state exists. Extension: session-scoped priority defaulting to normal, sent on both request paths, /priority to report, set or reject. No scoring or lease behaviour in this commit. Persistence is a real choice — session-branch entries survive resume but not a new session, a host-side settings file survives both, or none — so criterion 3 and 5 decide it. A restored session must re-assert the priority before completing a turn, or the first request silently takes the default. Priority says how urgent, the profile says what capacity: keep them separate. Any new refusal reason goes through wire review first.
+Two halves, one deliverable. Router: parse the priority header with the grammar /admin/threads already accepts; an empty value is unset; a repeated header is refused; anything malformed is 400 invalid_priority in the existing envelope, before any queue, lease, ticket or stream state exists. Extension: a session-scoped value defaulting to normal, sent on both request paths, with /priority to report, set or reject. No scoring or lease behaviour in this commit. A restored session must re-assert its priority before completing a turn, or its first request silently takes the default. Priority says how urgent, the profile says what capacity: keep them separate. Any new refusal reason goes through wire review first.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Router half 0406520, pull request #86. Review found two defects, both verified in the code: HandleInference reads and JSON-probes the body before PriorityFromHeader runs, so a malformed priority with an oversized or malformed body answers 413 or invalid_request instead of invalid_priority, against §6; and ThreadPriority.TryParse trims and uses byte.TryParse, admitting whitespace, a plus sign and leading zeros §6 does not describe. A fix commit moves the header check ahead of the body, pins both precedence pairs, restricts the grammar to invariant digits, and pins the 400 body bytes on both paths. Client half landed in the live extension /home/claire/inference-setup/pi-air/index.mjs: session-scoped value defaulting to normal, header on the single completion path at :436, /priority beside /context, resume replay through the file's own appendEntry mechanism, last entry winning. Verified by node --check, a 22-line diff read line by line, and a loopback listener printing the header per request: normal, high after the command, unchanged after a rejected argument, low after a case-folded one. Criterion 3 stays open: the value shows through the command only, not the status view. That file is not a git checkout, so the change sits in an unversioned host file a Pi update can overwrite.
+Router half on pull request #86: 0406520 plus fix f3c08eb, main merged at 4c75ffa, revision log renumbered to v0.12.162. The fix moves the priority header check ahead of the body read, pins precedence against oversized and malformed bodies over real HTTP, and restricts the grammar to an exact lowercase class with an optional colon and one to three ASCII digits, no sign, space or leading zero, sub at most 255. My checks at f3c08eb: build clean, 58/58 over the priority, wire and thread filters. The follow-up review over 0406520..f3c08eb found one new defect, verified in the code: the CLI's ParsePriority discards the parse result, so a malformed -p value posts the normal class with sub 0, gets 204, prints registered and exits zero, where the old lenient parser registered what the caller asked for. Two accepted gaps for this branch: section 6 omits the lexical restrictions the parser now enforces, and aborted or chunked upload precedence is unpinned now that a refusal can win an abort that used to land during the body read. Persistence is settled: admin threads are in memory and config threads carry class and sub separately. The client half landed in the live extension file on the router host, which is not under version control, so the divergence risk sits with task 186.
 <!-- SECTION:NOTES:END -->
