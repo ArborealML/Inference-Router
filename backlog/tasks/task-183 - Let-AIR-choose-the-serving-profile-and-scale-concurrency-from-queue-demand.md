@@ -3,9 +3,9 @@ id: TASK-183
 title: Let AIR choose the serving profile and scale concurrency from queue demand
 status: Preparing
 assignee:
-  - '@chatswarm'
+  - '@gpt-6.2-astra'
 created_date: '2026-11-25T07:49:00Z'
-updated_date: '2026-11-26T00:48:00Z'
+updated_date: '2026-11-26T01:11:00Z'
 labels: []
 dependencies:
   - TASK-190
@@ -16,29 +16,29 @@ ordinal: 175000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-A request that needs a 262144-token window must be served by an engine already resident at the wider-slot tier of the same window: a four-lane demand is satisfied by an eight-lane configuration, exactly as a 256k session is satisfied by a 1M-window engine. Today a named tier is matched by name, so a request that asks for the narrower-slot tier of the resident window forces a container relaunch. The owner's ruling: the client names model, required context and priority, and never concurrency; AIR picks the tier and resizes it when sustained demand exceeds concurrency. Design pass is dispatched to the external reasoning service; this task is Waiting on that result.
+A request that needs a 262144-token window must be served by a resident engine at the wider-slot tier of that window: a four-lane demand is satisfied by an eight-lane configuration, as a 256k session is satisfied by a 1M-window engine. Today a named tier is matched by name, so a request for the narrower-slot tier of the resident window forces a relaunch of about 110 s. Owner ruling: the client names model, required context and priority and never concurrency; AIR picks the tier. The decision to raise a tier, and the lifecycle act of raising it, are carried by the two tasks below.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [ ] #1 A request naming no tier is served on a resident tier whose measured window fits, whatever its slot count, with no switch.
-- [ ] #2 Tier tie-breaks between equal windows prefer the greater reported slot count.
-- [ ] #3 A client cannot name a serving tier on the inference path; the wire says so in SPEC §6.
-- [ ] #4 AIR raises the slot tier when queued demand exceeds concurrency for a stated sustained period, and the rule is measured, not assumed.
-- [ ] #5 Resize keeps in-flight work and queued work correct, and does not ping-pong between tiers.
-- [ ] #6 The de-escalation non-goal in SPEC §7.6 is either replaced by a policy or restated with its scope.
+- [ ] #2 Tie-breaks between equal windows prefer the greater reported slot count.
+- [ ] #3 A client cannot choose a serving tier on the inference path; a legacy name is honoured only as a context minimum, per SPEC 6.
+- [ ] #4 The context requirement is the greater of the client minimum and the measured prompt plus output reservation; an omitted header uses the computed value.
+- [ ] #5 A fully occupied resident queues a compatible request instead of escalating the ladder.
+- [ ] #6 Satisfaction is judged apart from launch conformance: declared-4 observed-8 stays a fault, and a verified 8-slot resident serves a 4-slot demand with zero lifecycle calls.
+- [ ] #7 The status surface separates desired, observed and admissible capacity and names which one binds.
+- [ ] #8 The de-escalation non-goal in SPEC 7.6 is replaced by a policy or restated with its scope.
 <!-- AC:END -->
 
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Six slices on one branch, ordered by risk. (1) Ingress: a client-named serving tier on the inference path is refused with an additive named reason; SPEC 6 states the client names model, required context and optional priority only. Existing error byte shape unchanged. (2) Resident-dominant scheduling: measure resident engines first, admit a request on any resident whose measured window fits whatever its slot count, consult the ladder only when no resident fits. Pin with a fake reporting an eight-slot resident against a four-slot demand and asserting zero lifecycle calls. (3) Equal-window tie-break prefers the greater reported slot count in SmallestFittingProfile, and launch-tier choice becomes slot-aware rather than declaration order; shared with the startup-tier task. (4) Resize controller, needing drain-before-teardown: fence admission, require sustained over-capacity pressure over a stated window plus a dwell time tied to measured relaunch cost, cap elective resizes per model and per host, and abort before any effect rather than killing inference. Upward only; shrinking stays a named non-goal. (5) Telemetry: each elective resize records trigger, measured queue depth and dwell; both gauge directions pinned. (6) SPEC 7.6 de-escalation restated with its scope, plus the revision log. Gates: build with warnings as errors, focused scheduler, lifecycle and wire tests, and the shipped-sample config test.
+Reordered after the design review; one branch, and resizing stays disabled until the transition work lands. (1) Ingress compatibility first: while clients migrate, a recognised legacy tier name becomes a context minimum and is never carried into desired runtime identity; an unrecognised or undersized choice keeps today's refusal. (2) Normalise the requirement: the demand is the greater of a validated client minimum and the rendered prompt, template and tool tokens plus an enforced output reservation; an omitted minimum uses the computed value, unknown is not zero, and a cache hit does not shrink it. (3) Resident-dominant scheduling: check residents before ladder fit, admit on measured window fit whatever the slot count, and use one capability predicate through reservation and admission so no later check defeats it. (4) Busy is not incompatible: a full eight-slot resident queues a ninth compatible request instead of escalating the ladder, and incompatible queue heads are bypassed. (5) Satisfaction apart from launch conformance: the declared-versus-observed proof stays exact, an observed superset is accepted only with its guarantees qualified, and drift diagnostics remain.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Design pass landed 2026-11-25 (external pro tier); document held outside the repository. Both defects it cited are confirmed in this code: the named-tier path compares tier names, and the equal-window tie-break keeps declaration order. Resize needs the drain machinery, so this task now depends on it. Next action: plan review of the six-slice plan, dispatched 2026-11-26; implementation starts after the containment and stream-cause slices land.
-
-Six-slice plan review dispatched to the external pro reasoning service 2026-11-26; wakes when it lands.
+Design pass landed 2026-11-25 and its plan review 2026-11-26, both external pro tier; documents held outside the repository. Both code claims the review cited are confirmed here: named tiers match by name, and the equal-window tie-break keeps declaration order. Accepted: legacy names translate rather than refuse, because the deployed client always sends one; the capability predicate must reach through reservation and admission, since a later check can defeat resident selection; satisfaction is separated from launch conformance rather than loosening the declared-equality proof; a busy resident means queue, not escalation; and which capacity limit binds is a criterion, not an assumption. The review split the resize rule and the fencing into two other tasks. Deferred: automatic shrinking, pre-launch performance prediction, fleet-wide claims.
 <!-- SECTION:NOTES:END -->

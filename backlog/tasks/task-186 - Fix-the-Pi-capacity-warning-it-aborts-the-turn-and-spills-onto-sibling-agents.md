@@ -5,7 +5,7 @@ status: Preparing
 assignee:
   - '@gpt-6.2-astra'
 created_date: '2026-11-25T09:22:00Z'
-updated_date: '2026-11-26T00:59:00Z'
+updated_date: '2026-11-26T01:00:00Z'
 labels: []
 dependencies:
   - TASK-188
@@ -36,5 +36,5 @@ The installed extension is not the tracked source, and the injected system turn 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-External diagnosis (2026-11-25, extra-high) ingested; neither Pi interference nor a common engine fault is proven. Verified here: the tracked extension under tools/pi-air is not the installed copy — the tracked one sends the profile header and injects no warning; the installed one injects the warning, drops the header and caps output at 32768 (65536 for one family). Task 188 makes the tracked copy authoritative, so this plan is written against the tracked source. Cause ranking held: shared client state across child agents first, a shared engine fault second, a missing stream terminator third. Plan review not yet dispatched; it waits on the containment branch landing so the pi-air tests are not edited by two seats.
+External diagnosis (2026-11-25, extra-high) ingested; neither Pi interference nor a common engine fault is proven. Verified here: the tracked extension under tools/pi-air is not the installed copy — the tracked one sends the profile header and injects no warning; the installed one injects the warning, drops the header and caps output at 32768 (65536 for one family). Task 188 makes the tracked copy authoritative, so this plan is written against the tracked source. Cause ranking held: shared client state first, a shared engine fault second, a missing stream terminator third. Plan review not dispatched; it waits on the containment branch landing so pi-air tests are not edited by two seats.
 <!-- SECTION:NOTES:END -->
