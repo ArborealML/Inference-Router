@@ -7,7 +7,7 @@ status: Preparing
 assignee:
   - '@gpt-6.2-astra'
 created_date: '2026-11-25T18:19:00Z'
-updated_date: '2026-11-26T07:34:00Z'
+updated_date: '2026-11-26T08:26:00Z'
 labels: []
 dependencies: []
 priority: high
@@ -35,5 +35,5 @@ When the router tears an engine down with requests in flight, the client connect
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Design pass landed 2026-11-25 and its follow-up review 2026-11-26, both external pro tier; documents held outside the repository. Accepted findings: fence admission atomically with reservation rather than as a separate guard, so no dispatch races a teardown; a drain that cannot finish inside its bound reopens the still-valid engine with a persisted backoff instead of killing inference; after a stop, recovery and container-generation reconciliation are bounded; a queued request with a short deadline cannot survive a 110 s sole-resident restart, so it is rerouted or the resize is declined; queues are bounded and keep age, deadline and priority aging, and partial streams are never replayed. Next action: the implementation plan, after the containment branch lands.
+Design pass landed 2026-11-25 with a follow-up review 2026-11-26, both external pro tier; documents held outside the repository. Accepted: fence admission atomically with reservation so no dispatch races a teardown; a drain that cannot finish inside its bound reopens the still-valid engine with a persisted backoff rather than killing inference; bounded recovery and container-generation reconciliation after a stop; a queued request with a short deadline cannot survive a 110 s sole-resident restart, so it is rerouted or the resize declined; bounded queues keeping age, deadline and priority aging; partial streams never replayed. Next action: the implementation plan, after the containment branch lands.
 <!-- SECTION:NOTES:END -->

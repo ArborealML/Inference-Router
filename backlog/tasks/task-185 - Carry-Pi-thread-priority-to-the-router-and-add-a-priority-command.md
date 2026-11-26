@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@gpt-6.2-sol-config'
 created_date: '2026-11-25T07:54:00Z'
-updated_date: '2026-11-26T04:30:00Z'
+updated_date: '2026-11-26T08:27:00Z'
 labels: []
 dependencies: []
 priority: high
@@ -41,5 +41,5 @@ Two deliverables, one branch, and criterion 4 needs both. (1) Router, landed: va
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Plan review (pro tier, 2026-11-26) accepted into the plan and criteria. Router-side half landed at 0406520 on branch feat/pi-priority-header: 400 invalid_priority in the existing lowercase envelope, thrown while headers are read, additive code in the §6.1 list and the status map, plus a new PriorityIngressTests pinning absent, empty, malformed, duplicated and differently cased values, sub 0/255/256, ordinary and streaming, and zero-effect counters. My verification in its worktree: build clean, PriorityIngressTests 22 passed, wire/priority/ingress filter set 97 passed. The seat timed out twice without committing, so I verified its tree and committed it under the implementer identity; the pi-air half is not started. INTEGRATION NOTE: this branch and the containment branch both label themselves v0.12.161; whichever integrates second renumbers and the two SPEC edits are reconciled by hand.
+Router half landed at 0406520 on branch feat/pi-priority-header: 400 invalid_priority in the existing lowercase envelope, thrown while headers are read, additive §6.1 code and status map, plus PriorityIngressTests over absent, empty, malformed, duplicated, cased and out-of-range values, ordinary and streaming. My checks in its worktree: build clean, PriorityIngressTests 22 passed, the wire/priority/ingress set 97 passed. That seat timed out twice without committing, so I verified its tree and committed under the implementer identity. Client half targets the live extension /home/claire/inference-setup/pi-air/index.mjs: the header block at :420-432 sets thread id, title, tmux session, preferred profile and required context, and /priority registers alongside /context at :620; nothing there mentions priority. Two seats spent their budget reading without editing, so this dispatch is a bounded edit with a backup and a listener header dump as the wire check.
 <!-- SECTION:NOTES:END -->
