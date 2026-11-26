@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@gpt-6.2-sol-config'
 created_date: '2026-11-25T07:54:00Z'
-updated_date: '2026-11-26T08:27:00Z'
+updated_date: '2026-11-26T08:37:00Z'
 labels: []
 dependencies: []
 priority: high
@@ -20,16 +20,12 @@ The router already admits a caller priority on the inference path and uses it in
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Every inference request from the extension carries a priority the router parses.
+- [ ] #1 Every inference request from the extension carries a priority the router parses, including a fresh session.
 - [ ] #2 /priority sets the value for the session and reports it back.
 - [ ] #3 The value survives a session restart and shows in the extension's status view.
 - [ ] #4 A rejected priority value produces the router's stated refusal, not a silent default.
-- [ ] #5 Every inference request from the extension carries a priority the router parses, including a fresh session.
-- [ ] #6 /priority sets the value for the session and reports it back.
-- [ ] #7 The value survives a session restart and shows in the extension's status view.
-- [ ] #8 A rejected priority value produces the router's stated refusal, not a silent default.
-- [ ] #9 A malformed priority is refused before any scheduler mutation, dispatch or stream start, in the existing error envelope.
-- [ ] #10 The session value is the one present on the final outbound request on both request paths and after a session restore.
+- [ ] #5 A malformed priority is refused before any scheduler mutation, dispatch or stream start, in the existing error envelope.
+- [ ] #6 The session value is the one present on the final outbound request on both request paths and after a session restore.
 <!-- AC:END -->
 
 ## Implementation Plan
