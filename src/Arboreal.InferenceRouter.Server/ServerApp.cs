@@ -631,18 +631,38 @@ public static partial class ServerApp
                 return;
             }
             var priority = router.DefaultPriority;
-            if (root.TryGetProperty("priority", out var prio) && prio.ValueKind == JsonValueKind.Object)
+            if (root.TryGetProperty("priority", out var prio))
             {
-                var classStr = prio.TryGetProperty("class", out var c) ? c.GetString() : null;
-                var sub = prio.TryGetProperty("sub", out var sub2) && sub2.ValueKind == JsonValueKind.Number
-                    ? (int)sub2.GetDouble() : 0;
+                // A supplied priority is read exactly or refused: this surface admits what the
+                // `X-Inference-Priority` header admits, and nothing else (§6). An absent `sub` is the whole
+                // class at 0; a present one that this cannot read is the caller's defect, not something to
+                // cast and clamp into a value the caller could not have written on the request path.
+                if (prio.ValueKind != JsonValueKind.Object)
+                {
+                    await WriteErrorAsync(ctx, 400, "invalid_request",
+                        "priority must be an object or absent").ConfigureAwait(false);
+                    return;
+                }
+                // A `class` that is not a JSON string is unreadable rather than something to call GetString on:
+                // JsonElement.GetString throws for any other kind, and an exception here answers 500 to a caller
+                // whose body the route can read well enough to refuse (§6.1).
+                var classStr = prio.TryGetProperty("class", out var c) && c.ValueKind == JsonValueKind.String
+                    ? c.GetString() : null;
                 if (classStr is null || !ThreadPriorityClass.TryParseClass(classStr, out var cls))
                 {
                     await WriteErrorAsync(ctx, 400, "invalid_request", $"priority.class '{WireText.Ident(classStr ?? string.Empty)}' unknown")
                         .ConfigureAwait(false);
                     return;
                 }
-                priority = new ThreadPriority(cls, (byte)Math.Clamp(sub, 0, ThreadPriority.MaxSubPriority));
+                byte sub = 0;
+                if (prio.TryGetProperty("sub", out var subElement) && !TryReadSubPriority(subElement, out sub))
+                {
+                    await WriteErrorAsync(ctx, 400, "invalid_request",
+                        $"priority.sub '{WireText.Ident(subElement.GetRawText())}' is not an integer from 0 to {ThreadPriority.MaxSubPriority}")
+                        .ConfigureAwait(false);
+                    return;
+                }
+                priority = new ThreadPriority(cls, sub);
             }
             var options = new RouterThreadOptions();
             if (root.TryGetProperty("weight", out var wt) && wt.ValueKind == JsonValueKind.Number)
@@ -657,6 +677,18 @@ public static partial class ServerApp
         {
             await WriteErrorAsync(ctx, 400, "invalid_request", "body is not valid JSON").ConfigureAwait(false);
         }
+    }
+
+    /// <summary>The sub-priority as the admin JSON has to write it: a JSON number whose own text is plain
+    /// decimal digits within <see cref="ThreadPriority.MaxSubPriority"/>. The text is the check rather than the
+    /// parsed double, so a fractional (<c>255.7</c>), signed (<c>-5</c>) or exponent (<c>1e10</c>) form is
+    /// refused instead of arriving at a byte through a cast and a clamp — spellings the header grammar does
+    /// not admit and <c>ThreadPriority.ToString</c> can never echo back (§6).</summary>
+    private static bool TryReadSubPriority(JsonElement element, out byte sub)
+    {
+        sub = 0;
+        return element.ValueKind == JsonValueKind.Number
+            && byte.TryParse(element.GetRawText(), NumberStyles.None, CultureInfo.InvariantCulture, out sub);
     }
 
     private static async Task HandleSwitch(HttpContext ctx, RouterCore router, AdminSwitchOperations operations)

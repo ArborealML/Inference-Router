@@ -37,7 +37,10 @@ public class ThreadPriorityTests
     [InlineData("high:001", false, (byte)0, 0)]
     [InlineData("high:0", true, ThreadPriorityClass.High, 0)]
     [InlineData("high:007", false, (byte)0, 0)]
+    [InlineData("high:00", false, (byte)0, 0)]                  // a leading zero however short
+    [InlineData("high:000", false, (byte)0, 0)]
     [InlineData("high:255", true, ThreadPriorityClass.High, 255)]
+    [InlineData("high:1234", false, (byte)0, 0)]              // four digits, and over 255: neither is a sub
     [InlineData("high:256", false, (byte)0, 0)]
     [InlineData("high:999", false, (byte)0, 0)]
     [InlineData("high:0255", false, (byte)0, 0)]            // four digits, and a leading zero: neither is a sub

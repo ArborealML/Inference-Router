@@ -1,20 +1,25 @@
 using System.Text;
 using System.Text.Json;
+using System.Threading;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Logging;
 
 namespace Arboreal.InferenceRouter.Tests;
 
-/// <summary><c>air threads -p</c> checks its own value against the §6 grammar before it opens a
-/// connection. The admin thread route takes a class name and a number, so a value the CLI cannot parse
-/// used to travel to the router as normal/0 and come back as 204: a priority nobody asked for, accepted
-/// silently, for a spelling the request path refuses with 400 <c>invalid_priority</c>. A malformed value
-/// now stops locally with exit 2 and the grammar on stderr. <c>air chat -p</c> is the deliberate
-/// opposite case — it forwards the raw header, so the router's own refusal is what that caller reads.</summary>
+/// <summary>The priority option as the CLI's own argument, checked before a connection opens (§6). Two
+/// separate defects. A value outside the §6 grammar: <c>air threads</c> refuses it locally, because the admin
+/// thread route takes class and sub as separate JSON fields and used to answer 204 for the default priority
+/// nobody asked for; <c>air chat</c> is the deliberate opposite case — it forwards the raw header, so the
+/// router's own 400 is what that caller reads. And the option itself: <c>-p</c> given an empty string, given
+/// another option, given nothing, or given twice used to read exactly like an absent <c>-p</c>, so the command
+/// sent no priority, registered the default and exited 0 on a value the operator had typed. An absent
+/// <c>-p</c> stays the only way to ask for the default. The stub counts arrivals ahead of reading any body, so
+/// "no request was made" means no request, not "no request the stub could parse".</summary>
 public sealed class CliThreadPriorityTests
 {
     private static readonly TimeSpan RunLimit = TimeSpan.FromSeconds(20);
+    private const string CompletionBody = """{"choices":[{"message":{"content":"pong"}}]}""" + "\n";
 
     [Theory(Timeout = 30_000)]
     [InlineData("high:+12", false)]
@@ -30,7 +35,7 @@ public sealed class CliThreadPriorityTests
     public async Task ThreadsRefusesAMalformedPriorityBeforeAnyRequest(string priority, bool json)
     {
         using var deadline = new CancellationTokenSource(RunLimit);
-        var (app, observed) = await StartThreadStubAsync(deadline.Token);
+        var (app, arrivals, observed) = await StartRouterStubAsync(deadline.Token);
         try
         {
             var options = new List<string> { "-i", "fixture-thread", "-p", priority, "--server", app.Urls.Single() };
@@ -45,6 +50,60 @@ public sealed class CliThreadPriorityTests
             // than guess it.
             foreach (var name in new[] { "background", "low", "normal", "high", "interactive" })
                 Assert.Contains(name, stderr, StringComparison.Ordinal);
+            Assert.Equal(0, arrivals.Count);
+            Assert.False(observed.Task.IsCompleted);
+        }
+        finally
+        {
+            await app.StopAsync(deadline.Token);
+        }
+    }
+
+    /// <summary>The option present and unusable: each of these used to be indistinguishable from an absent
+    /// <c>-p</c>, and each is visible in the raw arguments. The last row is a repeated option, where the first
+    /// value silently won. The second column is the fragment the refusal prints after <c>--priority </c>,
+    /// offending token included: it pins the option name, the defect and the value the operator typed, so a
+    /// paraphrased message or a dropped value fails rather than passing on a different refusal.</summary>
+    public static TheoryData<string[], string> UnusablePriorityOption => new()
+    {
+        { ["-i", "fixture-thread", "-p"], "given with no value" },
+        { ["-i", "fixture-thread", "-p", ""], "given an empty value" },
+        { ["-i", "fixture-thread", "-p", "-5"], "given \"-5\", which reads as another option" },
+        { ["-i", "fixture-thread", "-p", "high", "-p", "high:+12"], "given 2 times, expected one value" },
+    };
+
+    [Theory(Timeout = 30_000)]
+    [MemberData(nameof(UnusablePriorityOption))]
+    public async Task ThreadsRefusesAnUnusablePriorityOptionBeforeAnyRequest(string[] optionArgs, string namedDefect)
+        => await AssertRefusedLocallyAsync("threads", optionArgs, namedDefect);
+
+    [Theory(Timeout = 30_000)]
+    [MemberData(nameof(UnusablePriorityOption))]
+    public async Task ChatRefusesAnUnusablePriorityOptionBeforeAnyRequest(string[] optionArgs, string namedDefect)
+        => await AssertRefusedLocallyAsync("chat", [ "ping", "--no-stream", .. optionArgs ], namedDefect);
+
+    /// <summary>The same option defect on either verb: exit 2, the grammar on stderr, and no request at all.
+    /// <c>air chat</c> forwards a value it cannot read (below) but never forwards an option it cannot read.
+    /// <c>--server</c> leads the argument list so a row that ends in <c>-p</c> really is the option given no
+    /// value at all, rather than one followed by the server URL.</summary>
+    private static async Task AssertRefusedLocallyAsync(string verb, string[] args, string namedDefect)
+    {
+        using var deadline = new CancellationTokenSource(RunLimit);
+        var (app, arrivals, observed) = await StartRouterStubAsync(deadline.Token);
+        try
+        {
+            var options = new List<string> { "--server", app.Urls.Single() };
+            options.AddRange(args);
+            var result = await CliCompletionProcessTests.RunCliAsync(verb, [.. options], null, deadline.Token);
+
+            Assert.Equal(2, result.ExitCode);
+            Assert.Empty(result.Stdout);
+            var stderr = Encoding.UTF8.GetString(result.Stderr);
+            Assert.Contains("invalid priority", stderr, StringComparison.Ordinal);
+            Assert.Contains($"--priority {namedDefect}", stderr, StringComparison.Ordinal);
+            foreach (var name in new[] { "background", "low", "normal", "high", "interactive" })
+                Assert.Contains(name, stderr, StringComparison.Ordinal);
+            Assert.Equal(0, arrivals.Count);
             Assert.False(observed.Task.IsCompleted);
         }
         finally
@@ -62,20 +121,22 @@ public sealed class CliThreadPriorityTests
     public async Task ThreadsSendsTheParsedPriorityToTheAdminRoute(string priority, string expectedClass, int expectedSub)
     {
         using var deadline = new CancellationTokenSource(RunLimit);
-        var (app, observed) = await StartThreadStubAsync(deadline.Token);
+        var (app, arrivals, observed) = await StartRouterStubAsync(deadline.Token);
         try
         {
             var result = await CliCompletionProcessTests.RunCliAsync("threads",
                 ["--id", "fixture-thread", "--priority", priority, "--server", app.Urls.Single()], null, deadline.Token);
 
             Assert.Equal(0, result.ExitCode);
+            Assert.Equal(1, arrivals.Count);
             Assert.Equal("thread fixture-thread registered" + Environment.NewLine,
                 Encoding.UTF8.GetString(result.Stdout));
             var request = await observed.Task.WaitAsync(deadline.Token);
             Assert.Equal("POST", request.Method);
             Assert.Equal("/admin/threads", request.Path);
-            Assert.Equal("fixture-thread", request.Body.GetProperty("threadId").GetString());
-            var sent = request.Body.GetProperty("priority");
+            using var doc = JsonDocument.Parse(request.Body);
+            Assert.Equal("fixture-thread", doc.RootElement.GetProperty("threadId").GetString());
+            var sent = doc.RootElement.GetProperty("priority");
             Assert.Equal(expectedClass, sent.GetProperty("class").GetString());
             Assert.Equal(expectedSub, sent.GetProperty("sub").GetInt32());
         }
@@ -85,26 +146,124 @@ public sealed class CliThreadPriorityTests
         }
     }
 
-    /// <summary>The stub records the first request it sees and answers the admin route's 204, so a test can
-    /// tell "refused locally" from "accepted by somebody".</summary>
-    private static async Task<(WebApplication App, TaskCompletionSource<ObservedPost> Observed)> StartThreadStubAsync(
-        CancellationToken ct)
+    [Fact(Timeout = 30_000)]
+    public async Task ThreadsWithoutThePriorityOptionAsksForTheRoutersDefault()
+    {
+        // An absent option is the only way to ask for nothing: the body names no priority at all, so the
+        // route keeps its configured default instead of a value the CLI invented.
+        using var deadline = new CancellationTokenSource(RunLimit);
+        var (app, arrivals, observed) = await StartRouterStubAsync(deadline.Token);
+        try
+        {
+            var result = await CliCompletionProcessTests.RunCliAsync("threads",
+                ["-i", "fixture-thread", "--server", app.Urls.Single()], null, deadline.Token);
+
+            Assert.Equal(0, result.ExitCode);
+            Assert.Equal(1, arrivals.Count);
+            var request = await observed.Task.WaitAsync(deadline.Token);
+            using var doc = JsonDocument.Parse(request.Body);
+            Assert.False(doc.RootElement.TryGetProperty("priority", out _));
+        }
+        finally
+        {
+            await app.StopAsync(deadline.Token);
+        }
+    }
+
+    [Fact(Timeout = 30_000)]
+    public async Task ChatWithoutThePriorityOptionSendsNoPriorityHeader()
+    {
+        using var deadline = new CancellationTokenSource(RunLimit);
+        var (app, arrivals, observed) = await StartRouterStubAsync(deadline.Token);
+        try
+        {
+            var result = await CliCompletionProcessTests.RunCliAsync("chat",
+                ["ping", "--no-stream", "-t", "fixture-thread", "--server", app.Urls.Single()], null, deadline.Token);
+
+            Assert.Equal(0, result.ExitCode);
+            Assert.Equal(1, arrivals.Count);
+            var request = await observed.Task.WaitAsync(deadline.Token);
+            Assert.Equal("/v1/chat/completions", request.Path);
+            Assert.Null(request.PriorityHeader);
+        }
+        finally
+        {
+            await app.StopAsync(deadline.Token);
+        }
+    }
+
+    [Fact(Timeout = 30_000)]
+    public async Task ChatForwardsAPriorityTheCliWouldRefuseSoTheRouterRefusesIt()
+    {
+        // The asymmetry is deliberate: the inference surface owns the priority grammar, so an operator who
+        // asks the router with `air chat -p` reads the router's answer, not the CLI's paraphrase (§6).
+        using var deadline = new CancellationTokenSource(RunLimit);
+        var (app, arrivals, observed) = await StartRouterStubAsync(deadline.Token);
+        try
+        {
+            var result = await CliCompletionProcessTests.RunCliAsync("chat",
+                ["ping", "--no-stream", "-t", "fixture-thread", "-p", "high:+12", "--server", app.Urls.Single()],
+                null, deadline.Token);
+
+            Assert.Equal(0, result.ExitCode);
+            Assert.Equal(1, arrivals.Count);
+            var request = await observed.Task.WaitAsync(deadline.Token);
+            Assert.Equal("high:+12", request.PriorityHeader);
+        }
+        finally
+        {
+            await app.StopAsync(deadline.Token);
+        }
+    }
+
+    /// <summary>A stub router: it counts every arrival in a pipeline stage ahead of the handler, never parses
+    /// the body it forwards to the test, and answers the two routes the priority verbs use. So a malformed or
+    /// unexpected request still counts as a request, and a refusal test that asserts zero arrivals cannot pass
+    /// on a request the stub failed to read.</summary>
+    private static async Task<(WebApplication App, ArrivalCounter Arrivals, TaskCompletionSource<ObservedPost> Observed)>
+        StartRouterStubAsync(CancellationToken ct)
     {
         var observed = new TaskCompletionSource<ObservedPost>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var arrivals = new ArrivalCounter();
         var builder = WebApplication.CreateSlimBuilder();
         builder.WebHost.UseUrls("http://127.0.0.1:0");
         builder.Logging.ClearProviders();
         var app = builder.Build();
+        app.Use(async (context, next) =>
+        {
+            arrivals.Arrive();
+            await next();
+        });
         app.Run(async context =>
         {
-            using var doc = await JsonDocument.ParseAsync(context.Request.Body, cancellationToken: ct);
+            var completion = context.Request.Path.Equals("/v1/chat/completions", StringComparison.Ordinal);
+            var body = await new StreamReader(context.Request.Body).ReadToEndAsync(ct);
             observed.TrySetResult(new ObservedPost(context.Request.Method, context.Request.Path.Value ?? string.Empty,
-                doc.RootElement.Clone()));
-            context.Response.StatusCode = 204;
+                context.Request.Headers.TryGetValue("X-Inference-Priority", out var priority) ? priority.ToString() : null,
+                body));
+            if (!completion)
+            {
+                context.Response.StatusCode = 204;
+                return;
+            }
+            var bytes = Encoding.UTF8.GetBytes(CompletionBody);
+            context.Response.StatusCode = 200;
+            context.Response.ContentType = "application/json";
+            context.Response.ContentLength = bytes.Length;
+            await context.Response.Body.WriteAsync(bytes, ct);
         });
         await app.StartAsync(ct);
-        return (app, observed);
+        return (app, arrivals, observed);
     }
 
-    private sealed record ObservedPost(string Method, string Path, JsonElement Body);
+    private sealed record ObservedPost(string Method, string Path, string? PriorityHeader, string Body);
+
+    /// <summary>Arrivals, counted ahead of any body read: the "no request was made" assertion needs the fact
+    /// of a request, which a parse-and-complete signal does not give.</summary>
+    private sealed class ArrivalCounter
+    {
+        private int _arrivals;
+        public void Arrive() => Interlocked.Increment(ref _arrivals);
+        public int Count => Volatile.Read(ref _arrivals);
+    }
 }
