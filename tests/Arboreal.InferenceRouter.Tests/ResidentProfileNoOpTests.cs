@@ -10,6 +10,7 @@ public sealed class ResidentProfileNoOpTests
 {
     private const string Model = "fixture-model";
     private const string WideTier = "wide-8";
+    private const string NarrowTier = "narrow-4";
     private const long WideWindow = 262_144;
     private const int WideSlots = 8;
 
@@ -17,7 +18,7 @@ public sealed class ResidentProfileNoOpTests
 
     private static ServingProfile Wide => new() { Name = WideTier, MaxContext = WideWindow, MaxSlots = WideSlots };
 
-    private static ServingProfile Narrow => new() { Name = "narrow-4", MaxContext = WideWindow, MaxSlots = 4 };
+    private static ServingProfile Narrow => new() { Name = NarrowTier, MaxContext = WideWindow, MaxSlots = 4 };
 
     [Fact]
     public void AMeasuredWindowSatisfiesTheNamedTierWhateverLabelIsRecorded()
@@ -51,6 +52,24 @@ public sealed class ResidentProfileNoOpTests
         Assert.False(new ServingCapacity(Model, 0, WideSlots, WideTier).Matches(Model, Wide));
         Assert.False(new ServingCapacity(Model, WideWindow, WideSlots, WideTier).Matches(Model,
             new ServingProfile { Name = "undeclared", MaxContext = 0, MaxSlots = WideSlots }));
+    }
+
+    [Fact]
+    public void ALaunchedTierIsPublishedOnlyAtTheObservedLaneCount()
+    {
+        // The other half of the pair (§5.3.1): publication asks whether the launched instance is the tier that
+        // was asked for, so extra lanes are a mismatch exactly as missing lanes are. The same observation
+        // satisfies the resident floor, which is the whole difference between the two predicates.
+        Assert.False(new ServingCapacity(Model, WideWindow, WideSlots, WideTier).MatchesExactly(Model, Narrow));
+        Assert.True(new ServingCapacity(Model, WideWindow, Narrow.MaxSlots, NarrowTier).MatchesExactly(Model, Narrow));
+        Assert.True(new ServingCapacity(Model, WideWindow, WideSlots, WideTier).MatchesExactly(Model, Wide));
+        Assert.False(new ServingCapacity(Model, WideWindow, 1, WideTier).MatchesExactly(Model, Wide));
+        Assert.False(new ServingCapacity("other-model", WideWindow, Narrow.MaxSlots, NarrowTier)
+            .MatchesExactly(Model, Narrow));
+        Assert.False(new ServingCapacity(Model, 0, Narrow.MaxSlots, NarrowTier).MatchesExactly(Model, Narrow));
+        Assert.False(new ServingCapacity(Model, WideWindow, Narrow.MaxSlots, NarrowTier).MatchesExactly(Model,
+            new ServingProfile { Name = "undeclared", MaxContext = 0, MaxSlots = Narrow.MaxSlots }));
+        Assert.True(new ServingCapacity(Model, WideWindow, WideSlots, "narrow-4").Matches(Model, Narrow));
     }
 
     // ── the pair that proves direction, at the lifecycle seam ────────────────────
@@ -127,6 +146,41 @@ public sealed class ResidentProfileNoOpTests
         }
     }
 
+    [Fact(Timeout = 30_000)]
+    public async Task ALaunchThatObservedExtraLanesForTheNamedTierPublishesNothing()
+    {
+        // A cold engine: nothing is loaded, so the named-tier request owes a lifecycle transaction. The
+        // instance the launch starts answers healthy at the wide window with EIGHT reported lanes, while the
+        // request names narrow-4 — same window, four declared lanes. The satisfaction floor says the demand is
+        // met; the launch proof must not, or the router would certify as the four-lane tier an instance that
+        // was not started as one (§5.3.1).
+        using var engine = new FakeEngineHandler { LoadedModels = [], NCtx = WideWindow, TotalSlots = WideSlots };
+        var provider = new LifecycleRecorder { OnLaunch = () => engine.LoadedModels = [Model] };
+        await using var router = Router(engine, provider, autoSwitch: true);
+        router.Start();
+        await WaitHealthyAsync(router);
+
+        var ticket = await router.EnqueueAsync("t-named", Request("hello-named", NarrowTier));
+        RouterRequestException? refusal = null;
+        byte[]? body = null;
+        try { body = await ticket.CompletionTask.WaitAsync(TimeSpan.FromSeconds(15)); }
+        catch (RouterRequestException error) { refusal = error; }
+
+        // The launch really ran: this is the publication gate, not the resident no-op path above.
+        Assert.Equal(1, provider.Calls.Count(call => call == "launch"));
+
+        // Nothing was published from an instance that is not the named tier: no Ready verdict, no completion
+        // event, and not one byte forwarded.
+        Assert.Null(body);
+        Assert.NotNull(refusal);
+        Assert.Equal("switch_failed", refusal!.Code);
+        Assert.Equal(TicketState.Failed, ticket.State);
+        Assert.Equal(0, engine.CompletionCalls);
+        var events = router.Events.Replay(0);
+        Assert.DoesNotContain(events, e => e.Kind == "engine.switch_completed");
+        Assert.Contains(events, e => e.Kind == "engine.switch_failed");
+    }
+
     // ── fixture ─────────────────────────────────────────────────────────────────
 
     private static RouterCore Router(FakeEngineHandler engine, LifecycleRecorder provider, bool autoSwitch)
@@ -176,6 +230,15 @@ public sealed class ResidentProfileNoOpTests
         Options = new RouterRequestOptions { Profile = profile, RequiredContext = requiredContext },
     };
 
+    private static async Task WaitHealthyAsync(RouterCore router)
+    {
+        var deadline = DateTimeOffset.UtcNow + TimeSpan.FromSeconds(10);
+        var engine = router.Engines["strata"];
+        while (DateTimeOffset.UtcNow < deadline && !engine.Healthy) await Task.Delay(25);
+        Assert.True(engine.Healthy);
+        Assert.Empty(engine.Capability.LoadedModels);
+    }
+
     private static async Task WaitServingAsync(RouterCore router, long window, int slots)
     {
         var deadline = DateTimeOffset.UtcNow + TimeSpan.FromSeconds(10);
@@ -193,6 +256,9 @@ public sealed class ResidentProfileNoOpTests
     private sealed class LifecycleRecorder : IEngineLifecycleProvider
     {
         internal ConcurrentQueue<string> Calls { get; } = [];
+        /// <summary>What the started container does to the fake engine, so a test can model an instance whose
+        /// measured capacity is not the tier the launch asked for.</summary>
+        internal Action? OnLaunch { get; init; }
         public string Kind => "docker";
 
         public ValueTask<LifecycleResult> PreflightAsync(LifecycleTarget target, CancellationToken ct) =>
@@ -204,7 +270,11 @@ public sealed class ResidentProfileNoOpTests
         public ValueTask<LifecycleResult> StopAsync(LifecycleTarget target, IReadOnlyList<EnginePeer> peers,
             CancellationToken ct) => Result("stop");
 
-        public ValueTask<LifecycleResult> LaunchAsync(LifecycleTarget target, CancellationToken ct) => Result("launch");
+        public ValueTask<LifecycleResult> LaunchAsync(LifecycleTarget target, CancellationToken ct)
+        {
+            OnLaunch?.Invoke();
+            return Result("launch");
+        }
 
         public ReadinessPolicy Readiness(LifecycleTarget target) => new(false, TimeSpan.FromSeconds(5));
 
