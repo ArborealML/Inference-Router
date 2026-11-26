@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@gpt-6.2-sol-config'
 created_date: '2026-11-25T07:54:00Z'
-updated_date: '2026-11-26T09:59:00Z'
+updated_date: '2026-11-26T10:23:00Z'
 labels: []
 dependencies: []
 priority: high
@@ -23,10 +23,10 @@ Today every request from the Pi extension looks identical in the queue, so a lon
 - [x] #1 Every inference request from the extension carries a priority the router parses, including a fresh session.
 - [x] #2 /priority sets the value for the session and reports it back.
 - [ ] #3 The value survives a session restart and shows in the extension's status view.
-- [ ] #4 A rejected priority value produces the router's stated refusal, not a silent default.
+- [x] #4 A rejected priority value produces the router's stated refusal, not a silent default.
 - [x] #5 A malformed priority is refused before any scheduler mutation, dispatch or stream start, in the existing error envelope.
 - [x] #6 The session value is the one present on the final outbound request on both request paths and after a session restore.
-- [ ] #7 air threads refuses a malformed -p value with a non-zero exit and registers nothing.
+- [x] #7 air threads refuses a malformed -p value with a non-zero exit and registers nothing.
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -38,5 +38,5 @@ Two halves, one deliverable. Router: parse the priority header with the grammar 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Router half on pull request #86: 0406520 plus fix f3c08eb, main merged at 4c75ffa, revision log renumbered to v0.12.162. The fix moves the priority header check ahead of the body read, pins precedence against oversized and malformed bodies over real HTTP, and restricts the grammar to an exact lowercase class with an optional colon and one to three ASCII digits, no sign, space or leading zero, sub at most 255. My checks at f3c08eb: build clean, 58/58 over the priority, wire and thread filters. The follow-up review over 0406520..f3c08eb found one new defect, verified in the code: the CLI's ParsePriority discards the parse result, so a malformed -p value posts the normal class with sub 0, gets 204, prints registered and exits zero, where the old lenient parser registered what the caller asked for. Two accepted gaps for this branch: section 6 omits the lexical restrictions the parser now enforces, and aborted or chunked upload precedence is unpinned now that a refusal can win an abort that used to land during the body read. Persistence is settled: admin threads are in memory and config threads carry class and sub separately. The client half landed in the live extension file on the router host, which is not under version control, so the divergence risk sits with task 186.
+Router half on pull request #86: 0406520, ingress fix f3c08eb, main merged at 4c75ffa, CLI and SPEC fix e900a48, all under revision entry v0.12.162. My checks at e900a48 in its worktree: build clean with no warnings, and 169/169 over the priority, thread and CLI filters. I read the diff: the lenient helper is gone, the parse runs before any request is built, exit 2 names the grammar, and air chat still forwards the raw header for the router's own 400. One comment in that diff overstates the case: the admin route does validate the class with 400 invalid_request; fix the wording next commit on this branch. Two accepted gaps: an aborted or chunked upload can now lose to an early 400 that previously won during the body read, and that precedence is unpinned; and the admin route clamps a numeric sub to 0-255 while the header refuses the same spelling, sent for review as a possible wire defect rather than patched blind. A review of 4c75ffa..e900a48 is in flight from the external service. Criterion 3 stays open: the session value shows through the command only, not the status view. The client half lives in the live extension file on the router host, which is not under version control, so the divergence risk sits with task 186.
 <!-- SECTION:NOTES:END -->
