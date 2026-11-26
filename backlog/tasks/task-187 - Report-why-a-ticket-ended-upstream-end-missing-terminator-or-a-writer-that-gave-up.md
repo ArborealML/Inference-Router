@@ -3,11 +3,11 @@ id: TASK-187
 title: >-
   Report why a ticket ended: upstream end, missing terminator, or a writer that
   gave up
-status: Waiting
+status: To Do
 assignee:
   - '@gpt-6.2-astra'
 created_date: '2026-11-25T10:49:00Z'
-updated_date: '2026-11-25T23:44:00Z'
+updated_date: '2026-11-26T09:22:00Z'
 labels: []
 dependencies:
   - TASK-189
@@ -18,7 +18,7 @@ ordinal: 179000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-A multi-session failure produced connection-closed errors on clients while the router recorded successful completions and no events. The router's contract currently allows a clean upstream end of stream at a block boundary to add no bytes, so a stream that stops without its terminator can be a success on the server and a failure at the client, and nothing records the difference. There is also no record of why a downstream stream was abandoned. Separately, the container runtime and the router's own probe can give opposite liveness answers for the same engine and neither side reports the disagreement.
+A stream that ends with no finish_reason and no [DONE] sentinel currently ends as a success and the extension splices the next turn's tokens onto the truncated text. Slice 1 is landed and merged: the truncation is reported with the end reason, the bytes are not replayed into the prompt, and the exact truncated prefix is captured and counted once. Slice 2 is now unblocked: the containment work merged at d28d014, so branch from main and add the missing end-reason arm — a normal upstream close with no terminator is named upstream_closed_without_terminator and a stream with no terminator and no terminal event, or a stall past the idle bound, is named stream_incomplete; a terminal finish_reason with no [DONE] stays a normal success. Also cover the capacity-warning case the owner saw, where one warning killed other agents' streams.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

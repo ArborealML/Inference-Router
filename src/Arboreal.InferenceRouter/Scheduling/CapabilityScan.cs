@@ -10,8 +10,36 @@ internal sealed record NativeLaunchWatch(SwitchAttemptId Attempt, NativeLaunch L
 
 internal readonly record struct ServingCapacity(string? Model, long ContextWindow, int TotalSlots, string? Profile)
 {
+    /// <summary>Does this engine's measured serving state already satisfy the declared tier? The proof is the
+    /// window measured for this exact model: it must equal the window the tier declares. The recorded label is
+    /// not evidence — §7.6 makes it a display inference, it is absent whenever more than one declared tier
+    /// matches the observed pair, and it goes stale across a reload or a hand change. Comparing it could stop
+    /// and recreate a container that already serves the requested window, which is the outage this contains.
+    /// The direction stays one-way: a window measured narrower or wider than the tier declares is not that tier,
+    /// and a measured capacity never rewrites a named profile. Slot count is a floor, not an identity: an
+    /// eight-lane resident satisfies a four-lane tier of the same window, while fewer reported lanes than the
+    /// tier declares is a mismatch, so a named tier is never silently run short of the concurrency it promises
+    /// (and the same gauge caps admission — §7.6 Admission). This is the question *"does an engine that is
+    /// already up owe a switch?"*, asked by the scheduler's escalation rule, the local group's cold/warm
+    /// classification and the named-take gates on the dispatch path; the answer for what a launch may publish
+    /// is <see cref="MatchesExactly"/>. <c>MaxContext &gt; 0</c> is what rules out a
+    /// splice: an unread gauge or a window bound to another model row reads as zero through
+    /// <see cref="WindowFor"/>, and zero must never satisfy a tier that declares no window.</summary>
     internal bool Matches(string model, ServingProfile profile) =>
-        WindowFor(model) == profile.MaxContext && TotalSlots == profile.MaxSlots && Profile == profile.Name;
+        profile.MaxContext > 0 && WindowFor(model) == profile.MaxContext && TotalSlots >= profile.MaxSlots;
+
+    /// <summary>Is the observed pair exactly the tier that was asked for? This is the launch publication proof
+    /// (§5.3.1): an instance may only be certified as serving a named tier when it measures that tier's declared
+    /// window AND its declared lane count. Extra lanes are as much a mismatch as missing ones, because the
+    /// instance that came up is not the one the launch specified — certifying it as such would publish a Ready
+    /// verdict, a completion event and a dispatch proof for a capacity nobody asked the provider to start.
+    /// Satisfaction (<see cref="Matches"/>) deliberately reads the same observation the other way: extra lanes
+    /// are enough of a tier that is already running, which is what keeps a resident from being stopped and
+    /// recreated. So the two predicates differ only in the lane comparison, and only in who asks: the launch
+    /// publication gates use this one; the switch-necessity, admission and readiness-observation gates use the
+    /// other.</summary>
+    internal bool MatchesExactly(string model, ServingProfile profile) =>
+        profile.MaxContext > 0 && WindowFor(model) == profile.MaxContext && TotalSlots == profile.MaxSlots;
 
     public long WindowFor(string model) =>
         string.Equals(Model, model, StringComparison.OrdinalIgnoreCase) ? ContextWindow : 0;

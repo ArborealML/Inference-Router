@@ -330,6 +330,125 @@ public sealed class LocalLifecycleGroupTests
         }, deadline.Token);
     }
 
+    // ── TASK-189: the resident's measured pair, not its label, decides whether the group reopens ──
+
+    [Fact(Timeout = 20_000)]
+    public async Task ANamedTierOfTheResidentWindowTakesNoLifecycleCall()
+    {
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        var ct = deadline.Token;
+        using var backend = new FakeEngineHandler { LoadedModels = ["model"], NCtx = 131_072, TotalSlots = 4 };
+        var provider = new Provider { OnLaunch = target =>
+        {
+            var tier = target.Profile!;
+            backend.NCtx = tier.MaxContext;
+            backend.TotalSlots = tier.MaxSlots;
+        } };
+        await using var router = LocalGroupRouter(backend, provider);
+        router.Start();
+
+        // Warm the group: one launch at the wide tier, and the resident carries the label "wide-8" because the
+        // measured 262144/8 pair matches exactly one declared tier.
+        var warm = await Enqueue("warm", "wide-8");
+        await warm.CompletionTask.WaitAsync(ct);
+        await WaitCapacityAsync(router, 262_144, 8, ct);
+        Assert.Equal("wide-8", router.Engines["engine"].ActiveProfile);
+        var opened = provider.Calls.ToArray();
+        var inventories = provider.InventoryReads;
+        Assert.Single(opened, call => call == "launch");
+        Assert.DoesNotContain("stop", opened);
+
+        // The defect: a named tier of the SAME measured window with fewer declared lanes is a different label,
+        // so the group opened again and relaunched a container that already served the request. The counted
+        // provider calls, not the feed text, are the evidence.
+        var named = await Enqueue("named", "wide-4");
+        await named.CompletionTask.WaitAsync(ct);
+        Assert.Equal(TicketState.Completed, named.State);
+        Assert.Equal(2, backend.CompletionCalls);
+        Assert.Equal(opened.Length, provider.Calls.Count);
+        Assert.Equal(inventories, provider.InventoryReads);
+        Assert.Single(provider.Calls, call => call == "launch");
+        Assert.DoesNotContain("stop", provider.Calls);
+        await WaitCapacityAsync(router, 262_144, 8, ct);
+
+        async Task<RouterTicket> Enqueue(string client, string tier) => await router.EnqueueAsync(client,
+            new InferenceRequest { Model = "model",
+                Body = """{"model":"model","messages":[{"role":"user","content":"hello"}]}"""u8.ToArray(),
+                Options = new() { Profile = tier } }, ct);
+    }
+
+    [Fact(Timeout = 20_000)]
+    public async Task ANamedTierOwedMoreLanesThanTheResidentReportsNeverReusesIt()
+    {
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        var ct = deadline.Token;
+        using var backend = new FakeEngineHandler { LoadedModels = ["model"], NCtx = 131_072, TotalSlots = 4 };
+        var provider = new Provider { OnLaunch = target =>
+        {
+            var tier = target.Profile!;
+            backend.NCtx = tier.MaxContext;
+            backend.TotalSlots = tier.MaxSlots;
+        } };
+        await using var router = LocalGroupRouter(backend, provider);
+        router.Start();
+
+        // Warm the group at the narrow tier of the wide window: 262144 measured, four reported lanes.
+        var warm = await Enqueue("warm", "wide-4");
+        await warm.CompletionTask.WaitAsync(ct);
+        await WaitCapacityAsync(router, 262_144, 4, ct);
+        Assert.Equal("wide-4", router.Engines["engine"].ActiveProfile);
+
+        // Slots are a floor, not a gift: four reported lanes are not the eight-lane tier, so the request must
+        // switch (or refuse) instead of riding the resident. The second launch is the evidence.
+        var named = await Enqueue("named", "wide-8");
+        await named.CompletionTask.WaitAsync(ct);
+        Assert.Equal(TicketState.Completed, named.State);
+        Assert.Equal(2, backend.CompletionCalls);
+        Assert.Equal(2, provider.Calls.Count(call => call == "launch"));
+        await WaitCapacityAsync(router, 262_144, 8, ct);
+
+        async Task<RouterTicket> Enqueue(string client, string tier) => await router.EnqueueAsync(client,
+            new InferenceRequest { Model = "model",
+                Body = """{"model":"model","messages":[{"role":"user","content":"hello"}]}"""u8.ToArray(),
+                Options = new() { Profile = tier } }, ct);
+    }
+
+    private static RouterCore LocalGroupRouter(FakeEngineHandler backend, Provider provider)
+    {
+        var engine = new EngineDefinition
+        {
+            Name = "engine", Endpoint = new Uri("http://localhost:12000/v1"),
+            Lifecycle = EngineLifecycleKind.Docker, LifecycleOwner = EngineLifecycleOwner.Router,
+            LifecycleGroup = "gpu",
+            Docker = new DockerLifecycleConfig { Image = "fixture", RouterId = "fixture" },
+            Health = new HealthProbeDefinition { Path = "/props", IntervalMs = 20 },
+            Catalog = new Dictionary<string, EngineModelDefinition>
+            {
+                ["model"] = new()
+                {
+                    Name = "model", Profile = "wide-8", ServingProfiles =
+                    [
+                        new() { Name = "wide-8", MaxContext = 262_144, MaxSlots = 8 },
+                        new() { Name = "wide-4", MaxContext = 262_144, MaxSlots = 4 },
+                    ],
+                },
+            },
+        };
+        var settings = new RouterConfig { AutoSwitch = true,
+            Engines = new Dictionary<string, EngineDefinition> { ["engine"] = engine },
+            HttpHandlerFactory = _ => backend };
+        settings.Scheduler.MaxInflightPerEngine = 8;
+        return new RouterCore(settings, scheduler: null, events: null, clock: TimeProvider.System,
+            lifecycleFactory: _ => provider);
+    }
+
+    private static async Task WaitCapacityAsync(RouterCore router, long window, int slots, CancellationToken ct)
+    {
+        var engine = router.Engines["engine"];
+        while (engine.ActiveContextWindow != window || engine.ActiveSlots != slots)
+            await Task.Delay(20, ct);
+    }
+
     [Theory(Timeout = 30_000)]
     [InlineData(2048)]
     [InlineData(8192)]
@@ -414,6 +533,10 @@ public sealed class LocalLifecycleGroupTests
     private sealed class Provider : IEngineLifecycleProvider
     {
         internal ConcurrentQueue<string> Calls { get; } = new();
+        private int _inventoryReads;
+        /// <summary>Every group inventory read, counted separately from the mutating calls so "the container was
+        /// not reopened" and "the group was not even consulted" are two separate facts.</summary>
+        internal int InventoryReads => Volatile.Read(ref _inventoryReads);
         internal Action? OnPreflight { get; init; }
         internal Func<IReadOnlyList<EnginePeer>>? Inventory { get; init; }
         internal Func<ValueTask<LifecycleResult>>? OnStop { get; init; }
@@ -425,7 +548,12 @@ public sealed class LocalLifecycleGroupTests
             return Result("preflight");
         }
         public ValueTask<IReadOnlyList<EnginePeer>> OwnedPeersAsync(LifecycleTarget target, CancellationToken ct) =>
-            ValueTask.FromResult<IReadOnlyList<EnginePeer>>(Inventory?.Invoke() ?? []);
+            ValueTask.FromResult<IReadOnlyList<EnginePeer>>(RecordInventory());
+        private IReadOnlyList<EnginePeer> RecordInventory()
+        {
+            Interlocked.Increment(ref _inventoryReads);
+            return Inventory?.Invoke() ?? [];
+        }
         public ValueTask<LifecycleResult> StopAsync(LifecycleTarget target, IReadOnlyList<EnginePeer> peers, CancellationToken ct) => OnStop?.Invoke() ?? Result("stop");
         public ValueTask<LifecycleResult> LaunchAsync(LifecycleTarget target, CancellationToken ct)
         {

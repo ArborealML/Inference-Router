@@ -5,7 +5,7 @@ status: Preparing
 assignee:
   - '@gpt-6.2-astra'
 created_date: '2026-11-25T09:22:00Z'
-updated_date: '2026-11-26T01:00:00Z'
+updated_date: '2026-11-26T08:24:00Z'
 labels: []
 dependencies:
   - TASK-188
@@ -36,5 +36,5 @@ The installed extension is not the tracked source, and the injected system turn 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-External diagnosis (2026-11-25, extra-high) ingested; neither Pi interference nor a common engine fault is proven. Verified here: the tracked extension under tools/pi-air is not the installed copy — the tracked one sends the profile header and injects no warning; the installed one injects the warning, drops the header and caps output at 32768 (65536 for one family). Task 188 makes the tracked copy authoritative, so this plan is written against the tracked source. Cause ranking held: shared client state first, a shared engine fault second, a missing stream terminator third. Plan review not dispatched; it waits on the containment branch landing so pi-air tests are not edited by two seats.
+The live Pi extension is /home/claire/inference-setup/pi-air/index.mjs (683 lines) plus catalog.mjs, loaded at session start by /home/claire/inference-setup/pi-clm.py with -e. That directory is NOT a git checkout, and the tracked copy this task reconciles is not in any repository on this host — the only tracked pi-clm repo here, /home/claire/src/arboreal/pi-clm, holds a 6-file launcher plus a 58-line air-pi.mjs shim that is a different, older file. So criterion 1 cannot run until the source of the 683-line extension is named by the owner; until then any change to priority or profile plumbing lands in an unversioned file that a Pi update can overwrite.
 <!-- SECTION:NOTES:END -->

@@ -12,7 +12,7 @@ internal sealed class LocalLifecycleGroup(string name, Action wake)
     private readonly HashSet<Lease> _uses = [];
     private QueuedRequest? _waiting;
     private Task<EngineRuntime.ObservedSwitchResult>? _switch;
-    private (string Engine, string Model, string? Profile)? _resident;
+    private (string Engine, string Model)? _resident;
     internal string Name => name;
 
     internal bool IsIdle
@@ -36,9 +36,18 @@ internal sealed class LocalLifecycleGroup(string name, Action wake)
             if (_waiting is { } waiting && (waiting.Ticket.IsTerminal || waiting.CallerToken.IsCancellationRequested))
                 _waiting = null;
             if (_waiting is not null && !ReferenceEquals(_waiting, request)) return null;
+            // Cold means this request owes the group a lifecycle transaction. The resident's recorded tier label
+            // decides nothing here: §7.6 makes it a display inference that is absent whenever more than one
+            // declared tier matches the measured pair and goes stale across a reload, so a name comparison
+            // reopens the group — inventory, preflight, stop, relaunch — on a container that already serves the
+            // requested window. The proof is the measurement, the same satisfaction predicate the scheduler and
+            // the named-take gate use: the window measured for this exact model equals the tier's declared
+            // window, with at least the tier's declared lanes (eight lanes satisfy a four-lane tier of that
+            // window; four never satisfy an eight-lane one). Launch readiness keeps its exact
+            // expected-and-observed proof (§5.3.1), so classification stays looser than publication.
             var cold = switchRequired || _resident is not { } resident ||
                 resident.Engine != engine.Name || resident.Model != request.Ticket.Model ||
-                (profile is not null && profile.Name != resident.Profile);
+                (profile is not null && !engine.Capability.Serving.Matches(request.Ticket.Model, profile));
             if (cold)
             {
                 _waiting ??= request;
@@ -75,7 +84,6 @@ internal sealed class LocalLifecycleGroup(string name, Action wake)
         owner.MutationToken = lifetime.Token;
         await Task.Yield();
         var succeeded = false;
-        string? residentProfile = null;
         try
         {
             var engine = owner.Engine;
@@ -142,7 +150,6 @@ internal sealed class LocalLifecycleGroup(string name, Action wake)
                 exactProfile: owner.Request.Request.Options?.Profile is not null).ConfigureAwait(false);
             lifetime.Token.ThrowIfCancellationRequested();
             succeeded = observed.Result.IsReady;
-            if (succeeded) residentProfile = owner.Profile?.Name ?? engine.Capability.Serving.Profile;
             return observed;
         }
         catch (OperationCanceledException) when (lifetime.IsCancellationRequested && !stop.IsCancellationRequested)
@@ -160,7 +167,7 @@ internal sealed class LocalLifecycleGroup(string name, Action wake)
         {
             lock (_gate)
             {
-                _resident = succeeded ? (owner.Engine.Name, owner.Request.Ticket.Model, residentProfile) : null;
+                _resident = succeeded ? (owner.Engine.Name, owner.Request.Ticket.Model) : null;
                 _waiting = null;
             }
             _wake();
