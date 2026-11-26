@@ -3,11 +3,11 @@ id: TASK-187
 title: >-
   Report why a ticket ended: upstream end, missing terminator, or a writer that
   gave up
-status: To Do
+status: Waiting
 assignee:
-  - '@gpt-6.2-astra'
+  - '@chatswarm'
 created_date: '2026-11-25T10:49:00Z'
-updated_date: '2026-11-26T09:22:00Z'
+updated_date: '2026-11-26T10:26:00Z'
 labels: []
 dependencies:
   - TASK-189
@@ -32,11 +32,11 @@ A stream that ends with no finish_reason and no [DONE] sentinel currently ends a
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Slice two on the same branch after slice one is reviewed. Record on each finished ticket how its upstream ended (complete with the completion marker, clean end without the marker, upstream fault) and what the router wrote towards the client (payload write attempts and completed bytes, not token counts), plus the transition or engine epoch in effect. Add the named reasons as additive fields and feed events, reviewed before shipping; keep the existing error-then-completion byte shape untouched. Expose event ring gaps rather than pretending completeness. Pins: an upstream that ends without its marker produces a diagnostic that reads as incomplete while the bytes on the wire stay unchanged; an upstream fault still ends in band with the error frame and completion marker; a cancelled request stays isolated from its siblings.
+Slice 2 on main after d28d014. One classification, recorded where the ticket is settled: the completed path (RouterCore.cs:1269-1285) and the failed or cancelled path (:1319-1325) each learn one additive field naming how the upstream ended — complete (terminator frame seen), upstream_closed_without_terminator (clean upstream end with a terminal finish_reason but no terminator), stream_incomplete (no terminator and no terminal event, or the idle bound at RouterCore.StreamRelay.cs:139 and :158 fired), failed (an in-band error frame ended it). The relay already holds the evidence: the sentinel scan in ObservePublished, StreamIdleException, and the finish_reason probe; do not add a second parser. Bytes toward the client count as write attempts and completed bytes, never token counts. Wire bytes stay identical: an in-band error frame plus terminator still ends a stream, and the new fact rides the event feed and the admin ticket view, never the completion body. Additive names go through wire review before shipping; the section 6.1 code list is unchanged. Capacity-warning case: prove an engine-side warning that ends one stream leaves sibling tickets alone and is never recorded as a completed request, and that a warning arriving as text is relayed in band rather than becoming a socket close. AC4: when the container runtime reports one engine and the probe measures another, emit one named disagreement event and change nothing — no restart, no quarantine. Tests: a fake upstream ending without its marker; one ending with finish_reason and no marker; a stall past the idle bound; sibling isolation under a cancelled or failed stream; and byte-identity pins on the existing error-then-completion shape.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Wakes when the slice-one branch lands. Plan review for both slices dispatched to the external reasoning service 2026-11-25 (extra-high tier); the plan is in the Implementation Plan section of this task and of the one it depends on.
+Slice 1 is merged, so slice 2 branches from main. A design pass on the slice-2 plan was dispatched to the external reasoning service on 2026-11-26 at the top tier, with the plan itself and the settled-ticket and relay code named as its evidence; it supersedes the 2026-11-25 pass over both slices, which is not re-run. Wake: that design pass landing. Nothing is implemented until it does; the two names this task adds are wire-visible and need a wire review before shipping.
 <!-- SECTION:NOTES:END -->
