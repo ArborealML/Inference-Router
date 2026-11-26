@@ -3,9 +3,9 @@ id: TASK-183
 title: Let AIR choose the serving profile and scale concurrency from queue demand
 status: Preparing
 assignee:
-  - '@gpt-6.2-astra'
+  - '@chatswarm'
 created_date: '2026-11-25T07:49:00Z'
-updated_date: '2026-11-26T00:41:00Z'
+updated_date: '2026-11-26T00:48:00Z'
 labels: []
 dependencies:
   - TASK-190
@@ -39,4 +39,6 @@ Six slices on one branch, ordered by risk. (1) Ingress: a client-named serving t
 
 <!-- SECTION:NOTES:BEGIN -->
 Design pass landed 2026-11-25 (external pro tier); document held outside the repository. Both defects it cited are confirmed in this code: the named-tier path compares tier names, and the equal-window tie-break keeps declaration order. Resize needs the drain machinery, so this task now depends on it. Next action: plan review of the six-slice plan, dispatched 2026-11-26; implementation starts after the containment and stream-cause slices land.
+
+Six-slice plan review dispatched to the external pro reasoning service 2026-11-26; wakes when it lands.
 <!-- SECTION:NOTES:END -->

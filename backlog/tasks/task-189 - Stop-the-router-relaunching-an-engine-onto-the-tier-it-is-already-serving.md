@@ -1,11 +1,11 @@
 ---
 id: TASK-189
 title: Stop the router relaunching an engine onto the tier it is already serving
-status: Preparing
+status: In Progress
 assignee:
-  - '@gpt-6.2-astra'
+  - '@gpt-6.2-sol-scheduling'
 created_date: '2026-11-25T18:00:00Z'
-updated_date: '2026-11-25T23:58:00Z'
+updated_date: '2026-11-26T00:48:00Z'
 labels: []
 dependencies:
   - TASK-25
@@ -36,5 +36,5 @@ Outage containment only, one branch. Resolve the queued demand for a model, read
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Plan review (external, top reasoning tier, 2026-11-25) rejected the original slice as three plans in one and is incorporated here. It also holds that the busy-resize guard must NOT ship in this branch: deferring a resize without a reserved switch ticket, a monotonic drain fence and lease lifecycle can starve a queue forever, because compatible arrivals keep renewing leases and a stuck reader never releases. That work belongs to the drain task this one now depends on. Kept: no-op containment can land alone as outage containment. Caller visibility: this branch must emit a feed event when a resize is deferred, and any inference-path refusal name goes through wire review rather than being invented here; an already-open stream cannot gain headers.
+Implementation underway in an isolated worktree on branch fix/resident-tier-noop; one writer. A first implementer run died on an infrastructure failure with no commits and was relaunched 2026-11-26. Plan review of both slices dispatched to the external reasoning service 2026-11-25 (extra-high); its findings are already in the plan: the busy-resize guard alone can starve queues, and tests must assert lifecycle call counts and both gauge directions, not feed text. Wake for the coordinator: the implementer's handoff with commit shas and check results.
 <!-- SECTION:NOTES:END -->
