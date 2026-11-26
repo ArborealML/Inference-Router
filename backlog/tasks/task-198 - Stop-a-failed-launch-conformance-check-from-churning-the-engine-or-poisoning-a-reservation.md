@@ -7,7 +7,7 @@ status: To Do
 assignee:
   - '@gpt-6.2-sol-lifecycle'
 created_date: '2026-11-26T09:21:00Z'
-updated_date: '2026-11-26T10:55:00Z'
+updated_date: '2026-11-26T12:15:00Z'
 labels:
   - lifecycle
   - scheduling
@@ -31,6 +31,7 @@ When an exact conformance check now fails, the container the launch started keep
 - [ ] #4 SPEC states whether a stored readiness proof survives a change in observed lane count, and one test pins the chosen behaviour.
 - [ ] #5 A refused launch persists a disposition tied to its operation and instance that adoption, recovery and inventory cannot clear, adopt, or read as vacant.
 - [ ] #6 Any automatic disposal persists its intent before I/O, stops only that instance id, proves it absent, and replays idempotently after a crash or takeover.
+- [ ] #7 When the container runtime and the probe disagree about what an engine is, the disagreement is reported on the feed without restarting anything.
 <!-- AC:END -->
 
 ## Implementation Notes

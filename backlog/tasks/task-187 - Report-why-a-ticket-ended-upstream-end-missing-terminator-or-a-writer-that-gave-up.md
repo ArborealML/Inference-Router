@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@gpt-6.2-sol-shutdown'
 created_date: '2026-11-25T10:49:00Z'
-updated_date: '2026-11-26T11:10:00Z'
+updated_date: '2026-11-26T12:20:00Z'
 labels: []
 dependencies:
   - TASK-189
@@ -26,9 +26,8 @@ A stream that ends with no finish_reason and no [DONE] sentinel currently ends a
 - [ ] #1 A finished ticket states how its upstream ended: complete, ended without a terminator, or failed, and the event feed carries it.
 - [ ] #2 A downstream stream that stopped early records the reason and does not read as completed.
 - [ ] #3 The existing wire bytes do not change: an in-band error frame and terminator still end a failed stream.
-- [ ] #4 When the container runtime and the router probe disagree about an engine, the disagreement is reported without restarting anything.
-- [ ] #5 One ticket produces exactly one terminal event and one terminal state, including the in-band error plus terminator path that today can settle as completed.
-- [ ] #6 Cancellation stays its own axis: a client hang-up or an induced abort is never reclassified as an upstream end reason.
+- [ ] #4 One ticket produces exactly one terminal event and one terminal state, including the in-band error plus terminator path that today can settle as completed.
+- [ ] #5 Cancellation stays its own axis: a client hang-up or an induced abort is never reclassified as an upstream end reason.
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -40,5 +39,5 @@ Design pass verdict was REVISE and the diagnosis changed the plan. Verified in c
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Both design passes landed and are dispositioned in the plan above. The sibling-death lead they offered — a generic switch path stopping owned peers, pointed at around EngineRuntime.cs:1170-1175 and EngineLifecycleCoordinator.cs:154-161 — I did not verify, so it is a lead for the drain task, not a finding. What I verified myself: no occurrence of finish_reason anywhere in src, the pump ending on a zero read, and Complete emitting request.completed and incrementing the thread counter with no marker evidence. Accepted gaps, recorded rather than fixed: local acknowledgment is not remote consumption; a locally interrupted upstream ending may stay unknown; feed retention carries no restart epoch. Implementation may start on the plan; the feed-visible names are wire-visible and need the usual wire review.
+Design-pass verdict REVISE; corrections are in the plan. Three scope questions from the implementer are settled: an upstream that ended in band gets no second terminal frame appended, so bytes stay identical while the ticket settles Failed under the existing code; a boundary end with no terminator records its end name and changes nothing else; the runtime-versus-probe disagreement criterion moved to the launch-conformance family. Accepted gap, not fixed here: a clean end at a boundary with no terminator still settles Completed on the state axis while its end name reads otherwise — a wire decision, pinned by the frame-identity test asserting empty terminal bytes with a null finish reason. Naming frozen: complete, upstream_closed_without_terminator, stream_incomplete, failed, unknown; cancellation on its own axis. Two implementer runs timed out with nothing committed; the deliverable is now cut to the observer, precedence and the two priority pins, with the write-accounting fields deferred to a follow-on commit on this branch.
 <!-- SECTION:NOTES:END -->
