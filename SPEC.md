@@ -1,12 +1,13 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.160)
+Status: draft, continuously revised (v0.12.161)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
 
 ## 0. Revision log
 
+- v0.12.161 — a selected serving tier whose window the resident already measures and whose reported lanes are at least the tier's is a zero-cost target: no lifecycle call, no switch event and no epoch bump, proved by the measured window rather than by the inferred profile label; extra lanes satisfy a narrower tier, missing lanes do not (§7.6).
 - v0.12.160 — send an opaque per-engine thread cache hint on completion requests to explicitly router-owned local Docker lifecycle groups (§6).
 
 - v0.12.155 — display prompt completion in the Reading Context phase (§13.2).
@@ -3435,6 +3436,19 @@ Semantics:
   that matches a canonical catalog key case-insensitively. An additional upstream row with a
   string ID makes the window unbound. Total slots can still be reported. The inferred profile
   requires a unique matching tier in the bound model and serves as a display label.
+- **Resident reuse**: a selected named tier is already satisfied when the window measured for that exact model
+  equals the tier's declared `max_context` and the reported slot count is at least its declared `max_slots`,
+  read from one current capability snapshot. That measurement is the whole proof: the resident is a zero-cost
+  target, so no lifecycle operation, no switch event and no launch epoch follows. The inferred label never
+  enters the comparison — it is a display label, it is absent when more than one declared tier matches the
+  observed pair, and a stale label must not stop and recreate a container that already serves the requested
+  window. Slots are a floor, not an identity: a four-lane demand is satisfied by an eight-lane resident of the
+  same window, while fewer reported lanes than the tier declares is a mismatch, so a named tier is never run
+  short of the concurrency it promises and the same gauge caps admission (§7.6 Admission). A measured window
+  narrower or wider than the tier declares is a mismatch, so a measured capacity never rewrites a named
+  profile, and launch verification keeps its exact expected-and-observed window and slot proof (§5.3.1).
+  Offline exact-instance dispatch keeps its separate resident-tier identity check and its live observation
+  veto (§5.5).
 - **Observability**: `engine.profile` events report committed positive window or inferred-profile
   changes. `EngineStats` reads `active_profile` / `active_context_window` / `active_slots` from one snapshot.
 - **Non-goal for now**: automatic *de*-escalation (shrinking a window when big-context

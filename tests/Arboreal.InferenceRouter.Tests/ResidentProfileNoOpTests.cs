@@ -17,24 +17,40 @@ public sealed class ResidentProfileNoOpTests
 
     private static ServingProfile Wide => new() { Name = WideTier, MaxContext = WideWindow, MaxSlots = WideSlots };
 
+    private static ServingProfile Narrow => new() { Name = "narrow-4", MaxContext = WideWindow, MaxSlots = 4 };
+
     [Fact]
-    public void AVerifiedCapacitySatisfiesTheNamedTierWhateverLabelIsRecorded()
+    public void AMeasuredWindowSatisfiesTheNamedTierWhateverLabelIsRecorded()
     {
-        // The engine was measured at the named tier's capacity; the label it carries is a stale narrow name.
-        // A measured capacity is the proof, so this is the same tier for routing purposes.
+        // The measured window bound to the model is the proof. The label the engine carries can be a stale
+        // narrow name, or absent altogether when more than one declared tier matches the observed pair.
         Assert.True(new ServingCapacity(Model, WideWindow, WideSlots, "narrow-4").Matches(Model, Wide));
-        // A resident whose measured pair matches more than one declared tier carries no inferred label at all.
         Assert.True(new ServingCapacity(Model, WideWindow, WideSlots, null).Matches(Model, Wide));
+        // Reported slots are a floor, not an identity: an eight-lane resident satisfies the four-lane tier of
+        // the same window.
+        Assert.True(new ServingCapacity(Model, WideWindow, WideSlots, "narrow-4").Matches(Model, Narrow));
+    }
+
+    [Fact]
+    public void ALaneShortfallIsNotTheNamedTier()
+    {
+        // The same window with fewer reported lanes than the tier declares is a different capacity: the request
+        // refuses instead of running the named tier short of the concurrency it promises.
+        Assert.False(new ServingCapacity(Model, WideWindow, 1, WideTier).Matches(Model, Wide));
+        Assert.False(new ServingCapacity(Model, WideWindow, 0, WideTier).Matches(Model, Wide));
     }
 
     [Fact]
     public void AMeasuredCapacityNeverRewritesANamedTier()
     {
-        // Fewer measured slots, a narrower measured window, or a window bound to another model row are each a
-        // different capacity than the named tier declares — never a no-op, whatever the label claims.
-        Assert.False(new ServingCapacity(Model, WideWindow, 4, WideTier).Matches(Model, Wide));
+        // A window measured narrower or wider than the tier declares, a window bound to another model row, an
+        // unread gauge, and a tier that declares no window are each a mismatch.
         Assert.False(new ServingCapacity(Model, 256_000, WideSlots, WideTier).Matches(Model, Wide));
+        Assert.False(new ServingCapacity(Model, 524_288, WideSlots, WideTier).Matches(Model, Wide));
         Assert.False(new ServingCapacity("other-model", WideWindow, WideSlots, WideTier).Matches(Model, Wide));
+        Assert.False(new ServingCapacity(Model, 0, WideSlots, WideTier).Matches(Model, Wide));
+        Assert.False(new ServingCapacity(Model, WideWindow, WideSlots, WideTier).Matches(Model,
+            new ServingProfile { Name = "undeclared", MaxContext = 0, MaxSlots = WideSlots }));
     }
 
     // ── the pair that proves direction, at the lifecycle seam ────────────────────
@@ -85,7 +101,9 @@ public sealed class ResidentProfileNoOpTests
             await WaitServingAsync(router, WideWindow, WideSlots);
 
             // The container under the router's feet is replaced by a narrower one; the wide gauge the router
-            // already read is now stale history about a process that no longer exists.
+            // already read is now stale history about a process that no longer exists. The fresh measurement
+            // is what the no-op decision reads, and a 256000 window is not the 262144 tier whatever the label
+            // or the slot count claims.
             File.WriteAllText(windowFile, "256000");
             engine.TotalSlots = 4;
             await WaitServingAsync(router, 256_000, 4);

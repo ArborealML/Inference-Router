@@ -10,8 +10,21 @@ internal sealed record NativeLaunchWatch(SwitchAttemptId Attempt, NativeLaunch L
 
 internal readonly record struct ServingCapacity(string? Model, long ContextWindow, int TotalSlots, string? Profile)
 {
+    /// <summary>Does this engine's measured serving state already satisfy the declared tier? The proof is the
+    /// window measured for this exact model: it must equal the window the tier declares. The recorded label is
+    /// not evidence — §7.6 makes it a display inference, it is absent whenever more than one declared tier
+    /// matches the observed pair, and it goes stale across a reload or a hand change. Comparing it could stop
+    /// and recreate a container that already serves the requested window, which is the outage this contains.
+    /// The direction stays one-way: a window measured narrower or wider than the tier declares is not that tier,
+    /// and a measured capacity never rewrites a named profile. Slot count is a floor, not an identity: an
+    /// eight-lane resident satisfies a four-lane tier of the same window, while fewer reported lanes than the
+    /// tier declares is a mismatch, so a named tier is never silently run short of the concurrency it promises
+    /// (and the same gauge caps admission — §7.6 Admission). Launch verification keeps its exact
+    /// expected-and-observed window and slot proof (§5.3.1). <c>MaxContext &gt; 0</c> is what rules out a
+    /// splice: an unread gauge or a window bound to another model row reads as zero through
+    /// <see cref="WindowFor"/>, and zero must never satisfy a tier that declares no window.</summary>
     internal bool Matches(string model, ServingProfile profile) =>
-        WindowFor(model) == profile.MaxContext && TotalSlots == profile.MaxSlots && Profile == profile.Name;
+        profile.MaxContext > 0 && WindowFor(model) == profile.MaxContext && TotalSlots >= profile.MaxSlots;
 
     public long WindowFor(string model) =>
         string.Equals(Model, model, StringComparison.OrdinalIgnoreCase) ? ContextWindow : 0;
