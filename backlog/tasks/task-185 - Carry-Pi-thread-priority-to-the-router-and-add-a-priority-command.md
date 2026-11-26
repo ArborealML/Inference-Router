@@ -5,7 +5,7 @@ status: Waiting
 assignee:
   - '@chatswarm'
 created_date: '2026-11-25T07:54:00Z'
-updated_date: '2026-11-26T20:43:00Z'
+updated_date: '2026-11-26T20:44:00Z'
 labels: []
 dependencies: []
 priority: high
@@ -41,5 +41,5 @@ Two halves, one deliverable. Router: parse the priority header with the grammar 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Router half on pull request #86, revision entry v0.12.162: 0406520, ingress fix f3c08eb, main merge 4c75ffa, CLI and SPEC fix e900a48. PR CI is green; my filtered pass was 169/169 on a clean build. A second external review of 4c75ffa..e900a48 landed and I verified both findings in code: GetOpt returns null when the value begins with a dash or is absent, and the CLI parses only when the option string is non-empty, so -p '' and -p -5 still register the default priority and exit 0, and a repeated -p silently takes the first; and the admin route coerces a supplied sub with a cast plus a clamp, so 255.7, -5 and 1e10 register a value the header grammar refuses, while a present-but-not-object priority is ignored wholesale. That coercion is wire-visible: such bodies answer 204 today and must answer 400 in the existing invalid_request envelope, so SPEC section 6 has to say what the admin surface admits. Accepted gaps unchanged: aborted or chunked upload precedence is unpinned; criterion 3 waits on the extension status view.
+Router half on pull request #86, revision entry v0.12.162: 0406520, ingress fix f3c08eb, main merge 4c75ffa, CLI and SPEC fix e900a48, then a12012b for the second review's two findings — the CLI treating an unusable option value as absent, and the admin route coercing a supplied sub with a cast and a clamp. My filtered pass at the working tree was 199/199 and PR CI is green at a12012b. Wake: the commit review of 4c75ffa..a12012b landing from the external service, then a merge commit onto main with CI green there. Accepted gaps: aborted or chunked upload precedence is unpinned; criterion 3 waits on the extension status view; and the admin surface now answers 400 where it used to answer 204 for an unreadable priority body, which is recorded as the wire change it is. The client half lives in the live extension file on the router host, which is not under version control, so the divergence risk sits with task 186.
 <!-- SECTION:NOTES:END -->
