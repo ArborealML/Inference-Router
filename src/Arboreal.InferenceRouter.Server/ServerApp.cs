@@ -136,6 +136,23 @@ public static partial class ServerApp
     private static async Task HandleInference(HttpContext ctx, RouterCore router, TimeProvider streamClock)
     {
         var ct = ctx.RequestAborted;
+
+        // §6: the priority refusal is a header defect, so it is written while the headers are still being
+        // read — before ReadBodyAsync consumes a byte. Reading the body first let the body's own refusal
+        // answer instead (413 for an oversized body, 400 invalid_request for malformed JSON), so a caller
+        // that sent a malformed priority was told about the wrong defect. Only this header moves; the body
+        // probe and every other header keep their place and their precedence.
+        ThreadPriority? declaredPriority;
+        try
+        {
+            declaredPriority = PriorityFromHeader(ctx);
+        }
+        catch (RouterRequestException ex)
+        {
+            await WriteErrorAsync(ctx, MapStatus(ex.Code), ex.Code, ex.Message).ConfigureAwait(false);
+            return;
+        }
+
         var read = await ReadBodyAsync(ctx, router, ct).ConfigureAwait(false);
         if (read is null) return;              // the refusal is already on the wire
         var payload = read;
@@ -173,7 +190,7 @@ public static partial class ServerApp
                 Body = payload,
                 Options = new RouterRequestOptions
                 {
-                    Priority = PriorityFromHeader(ctx),
+                    Priority = declaredPriority,
                     CacheAffinityHash = affinity,
                     Profile = ProfileFromHeader(ctx),
                     RequiredContext = RequiredContextFromHeader(ctx),
@@ -234,7 +251,8 @@ public static partial class ServerApp
     /// for `interactive` and was served at the default has no way to notice, and the queue would already
     /// have been mutated for a priority nobody asked for. A repeated header arrives as one joined string and
     /// fails the same way, because two values for one request is not a choice the router gets to make.
-    /// The refusal happens while the headers are still being read, before the ticket exists (§6.1).</summary>
+    /// The refusal happens while the headers are still being read, before the body is read and before the
+    /// ticket exists (§6.1).</summary>
     private static ThreadPriority? PriorityFromHeader(HttpContext ctx)
     {
         if (!ctx.Request.Headers.TryGetValue("X-Inference-Priority", out var values)) return null;
