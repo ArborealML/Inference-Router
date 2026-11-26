@@ -1,11 +1,11 @@
 ---
 id: TASK-185
 title: Carry Pi thread priority to the router and add a /priority command
-status: In Progress
+status: Waiting
 assignee:
-  - '@gpt-6.2-sol-config'
+  - '@chatswarm'
 created_date: '2026-11-25T07:54:00Z'
-updated_date: '2026-11-26T10:33:00Z'
+updated_date: '2026-11-26T20:43:00Z'
 labels: []
 dependencies: []
 priority: high
