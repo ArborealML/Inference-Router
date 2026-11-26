@@ -39,6 +39,14 @@ public class ThreadPriorityTests
     [InlineData("high:007", false, (byte)0, 0)]
     [InlineData("high:255", true, ThreadPriorityClass.High, 255)]
     [InlineData("high:256", false, (byte)0, 0)]
+    [InlineData("high:999", false, (byte)0, 0)]
+    [InlineData("high:0255", false, (byte)0, 0)]            // four digits, and a leading zero: neither is a sub
+    [InlineData("high:１２", false, (byte)0, 0)]             // full-width digits are not ASCII digits
+    [InlineData("high:1:2", false, (byte)0, 0)]            // one separator only: the tail is what has to be the sub
+    [InlineData(":1", false, (byte)0, 0)]                 // a sub with no class
+    [InlineData("0", false, (byte)0, 0)]                  // a bare number is not a class
+    [InlineData("hi:gh:1", false, (byte)0, 0)]
+    [InlineData("high", true, ThreadPriorityClass.High, 0)]   // class alone is the whole class
     [InlineData("high:", false, (byte)0, 0)]
     [InlineData("", false, (byte)0, 0)]
     [InlineData("   ", false, (byte)0, 0)]

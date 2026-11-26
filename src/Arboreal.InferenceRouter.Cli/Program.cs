@@ -380,6 +380,20 @@ public static class Program
             Console.Error.WriteLine("threads -i threadId [-p class:sub]");
             return 2;
         }
+        // A malformed -p is refused here, before the request goes out. TryParse leaves Normal in its out
+        // parameter when it fails, and POST /admin/threads accepts any class name it can read, so the old
+        // lenient path turned "high:+12" into a normal:0 registration the router answered with 204 — a
+        // downgrade of a value the request path refuses with 400 invalid_priority (§6). `air chat -p` is
+        // deliberately different: it forwards the raw header, so that caller sees the router's own 400.
+        ThreadPriority requested = default;
+        if (priority is { Length: > 0 })
+        {
+            if (!ThreadPriority.TryParse(priority, out requested))
+            {
+                Console.Error.WriteLine($"invalid priority \"{priority}\": expected {PriorityGrammar}");
+                return 2;
+            }
+        }
         using var body = new MemoryStream();
         using (var w = new Utf8JsonWriter(body))
         {
@@ -387,10 +401,9 @@ public static class Program
             w.WriteString("threadId", id);
             if (priority is { Length: > 0 })
             {
-                var p = ParsePriority(priority);
                 w.WriteStartObject("priority");
-                w.WriteString("class", ThreadPriorityClass.ClassName(p.Class));
-                w.WriteNumber("sub", p.Sub);
+                w.WriteString("class", ThreadPriorityClass.ClassName(requested.Class));
+                w.WriteNumber("sub", requested.Sub);
                 w.WriteEndObject();
             }
             w.WriteEndObject();
@@ -564,9 +577,9 @@ public static class Program
 
     private static bool HasFlag(string[] args, string flag) => args.Contains(flag);
 
-    private static ThreadPriority ParsePriority(string value)
-    {
-        _ = ThreadPriority.TryParse(value, out var p);
-        return p;
-    }
+    /// <summary>The priority grammar, in the one form the router's parser admits (§6). Quoted on stderr by
+    /// <c>air threads -p</c> so the operator can see the spelling to retry rather than a silent default.</summary>
+    private const string PriorityGrammar =
+        "class[:sub] with class one of background|low|normal|high|interactive written in lowercase and " +
+        "sub 0-255 as one to three digits with no sign, spaces or leading zero";
 }

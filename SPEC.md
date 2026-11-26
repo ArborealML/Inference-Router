@@ -7,7 +7,7 @@ Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 
 ## 0. Revision log
 
-- v0.12.162 — a malformed `X-Inference-Priority` is refused at ingress instead of dropped: 400 `invalid_priority` in the existing lowercase envelope, added to the §6.1 code list with no new field and no shape change, and written before the ticket exists, so the refusal leaves no thread, no queue member, no forward to an engine and no `request.enqueued`. An absent header keeps the configured default; a repeated header is refused rather than resolved (§6, §6.1). `PriorityIngressTests` pins absent, empty, malformed, duplicated and differently cased values, sub 0/255/256, the ordinary and streaming paths, and the zero-effect counters.
+- v0.12.162 — a malformed `X-Inference-Priority` is refused at ingress instead of dropped: 400 `invalid_priority` in the existing lowercase envelope, added to the §6.1 code list with no new field and no shape change, and written before the ticket exists, so the refusal leaves no thread, no queue member, no forward to an engine and no `request.enqueued`. An absent header keeps the configured default; a repeated header is refused rather than resolved (§6, §6.1). `PriorityIngressTests` pins absent, empty, malformed, duplicated and differently cased values, sub 0/255/256, the ordinary and streaming paths, and the zero-effect counters. §6 now states the grammar that parser enforces instead of summarising it: the five lowercase class names spelled exactly, an optional `:` and one to three ASCII digits with no sign, no whitespace and no leading zero, at most 255, matched against the whole value with nothing trimmed. `air threads --priority` refuses a value outside that grammar locally — exit 2, the grammar on stderr, no request sent — where it used to post the default priority and accept the 204 for a spelling the request path rejects; `air chat --priority` still forwards the header so the router's 400 reaches that caller. `CliThreadPriorityTests` pins the refusal with no request and the parsed admin body for accepted values, and `ThreadPriorityTests` pins the accepted and rejected spellings row by row.
 
 - v0.12.161 — a selected serving tier whose window the resident already measures and whose reported lanes are at least the tier's is a zero-cost target: no lifecycle call, no switch event and no epoch bump, proved by the measured window rather than by the inferred profile label; extra lanes satisfy a narrower tier, missing lanes do not (§7.6).
 - v0.12.160 — send an opaque per-engine thread cache hint on completion requests to explicitly router-owned local Docker lifecycle groups (§6).
@@ -2957,9 +2957,18 @@ carries its ticket id back on the response as `X-Inference-Ticket`, which is how
 `GET|DELETE /admin/tickets/{id}` (watch / cancel) without scraping the event stream. Body-only
 callers (default thread `anon`, priority Normal) work unchanged.
 
-`X-Inference-Priority` carries one value: a lowercase class name — `background`, `low`, `normal`, `high`,
-`interactive` — with an optional `:sub` of 0-255, the same vocabulary `POST /admin/threads` accepts. An
-absent header is the configured default, and is the only way to ask for nothing. A value that is present
+`X-Inference-Priority` carries one value, and the whole value has to match the grammar: one of the five
+class names `background`, `low`, `normal`, `high`, `interactive` written in lowercase exactly as spelled
+here, optionally followed by `:` and a sub-priority written as one to three ASCII decimal digits — unsigned,
+no whitespace, no leading zero unless the sub is exactly `0`, and at most 255. Nothing is trimmed, so a
+leading or trailing space makes the value malformed. `high`, `high:0` and `high:255` are in; ` high `,
+`HIGH`, `high:`, `high: 12`, `high:+12`, `high:001`, `high:0255`, `high:256`, `high:999`, `high:1:2` and
+any non-ASCII digit are out. `POST /admin/threads` names that class in JSON (`class` plus numeric `sub`),
+and `air threads --priority` parses this grammar locally: a value outside it is refused before any request
+is sent, with the grammar on stderr and exit 2, because the admin route would otherwise answer 204 for the
+default priority the caller did not ask for. `air chat --priority` forwards the raw header instead, so that
+caller reads the router's own refusal. An absent header is the configured default, and is the only way to
+ask for nothing. A value that is present
 and outside that grammar returns **400 `invalid_priority`** from the same lowercase envelope, written while
 the headers are still being read: no thread registration, no queue member, no forward to an engine, no
 `X-Inference-Ticket`, and no `request.enqueued` on the feed. A streaming request is refused the same way an
