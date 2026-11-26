@@ -983,6 +983,9 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
     /// model in between buys a second launch (§5.5).</summary>
     private static bool ReadyIn(EngineCapability cap, string canonical, long requiredWindow, ServingProfile? exact = null)
     {
+        // The lane floor here is deliberate: this asks whether an engine that is already up satisfies the named
+        // tier, which is resident satisfaction, not a publication proof. A launch's Ready claim is proved exactly
+        // at the publication sites (§5.3.1).
         if (!cap.Healthy || cap.SwitchingToward is not null || (exact is not null && !cap.Serving.Matches(canonical, exact))) return false;
         foreach (var name in cap.ModelRoster)
         {
@@ -1947,6 +1950,9 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
                             result = new(Failure: NativeObservationFailure);
                             break;
                         }
+                        // The floor in this observation is deliberate: it keeps the resident-satisfaction reading,
+                        // and the observation only decides whether the prove-health loop keeps polling. What the
+                        // launch may certify is proved exactly at the publication sites (§5.3.1).
                         else if (!WindowFits(window, state.RequiredWindow) ||
                             (state.ExactProfile is { } exact && !serving.Matches(target.Model, exact)))
                             lastMiss = new(ReadinessMiss.WindowTooSmall, Window: window);
@@ -2061,7 +2067,7 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
             while (true)
             {
                 if (watchAllowsReady && result.Models is { } models && WindowFits(window, state.RequiredWindow) &&
-                    (state.ExactProfile is not { } exact || result.Serving.Matches(state.Model!, exact)))
+                    (state.ExactProfile is not { } exact || result.Serving.MatchesExactly(state.Model!, exact)))
                 {
                     // The shared writer rechecks the deadline after preparing the snapshot, before its CAS.
                     ready = TryPublishClaimProof(state, models, result.Serving, deadline, out settlement,
