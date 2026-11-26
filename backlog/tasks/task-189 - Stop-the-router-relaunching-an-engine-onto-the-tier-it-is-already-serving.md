@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@gpt-6.2-sol-scheduling'
 created_date: '2026-11-25T18:00:00Z'
-updated_date: '2026-11-26T02:37:00Z'
+updated_date: '2026-11-26T03:13:00Z'
 labels: []
 dependencies:
   - TASK-25
@@ -38,5 +38,5 @@ Outage containment only, one branch. Resolve the queued demand for a model, read
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Delivered on branch fix/resident-tier-noop: test pair 1c6c821, fix 25bdeec. Satisfaction became window equality plus a lane floor with the inferred label dropped. External commit review covered 1c6c821..25bdeec (extra-high, 2026-11-26) and returned changes requested; I verified both blockers. (1) Containment does not hold for the local Docker group: LocalLifecycleGroup.cs:39-41 sets cold from profile.Name against the resident label, RouterCore.cs:500-507 reserves a lease even on a no-switch decision and :789-809 runs the cold path, so a named 4-lane tier against an 8-lane resident still stops and relaunches. Same-name-only reuse is the sole existing pin, which is why main looked green. (2) Launch conformance weakened: the same predicate judges non-enrolled launch readiness at EngineRuntime.cs:1950 and :2063, so expected-4 observed-8 now publishes Ready. Fix under way: split a satisfaction predicate from an exact-conformance one, plus the review's regression matrix — ambiguous or null label, stale gauge against a hand-replaced process between selection and forwarding, reload changing the roster mid-dispatch, no-ladder engines, and the offline verified exact-instance refusal at RouterCore.cs:479-481 kept name-exact and documented. Coordinator check on the delivered pair: 128 passed over five filters, build clean.
+Branch fix/resident-tier-noop: test pair 1c6c821, fix 25bdeec (window equality plus a lane floor, inferred label dropped). External commit review covered 1c6c821..25bdeec (extra-high) and returned changes requested; I verified both blockers. (1) Containment does not hold for the local Docker group: LocalLifecycleGroup.cs:39-41 sets cold from the tier label, RouterCore.cs:500-507 reserves a lease even on a no-switch decision and :789-809 runs the cold path, so a named 4-lane tier against an 8-lane resident still stops and relaunches. Same-name reuse is the only existing pin, which is why main looked green. (2) Launch conformance weakened: the same predicate judges non-enrolled launch readiness at EngineRuntime.cs:1950 and :2063, so expected-4 observed-8 publishes Ready. Fix underway: split a satisfaction predicate from an exact-conformance predicate, plus pins for an ambiguous label, a stale gauge against a hand-replaced process, a reload changing the roster mid-dispatch, no-ladder engines, and the offline verified exact-instance refusal at RouterCore.cs:479-481 kept name-exact. Implementer runs keep dying at the harness limit; four lost, one resumed with a commit-first order and a longer limit. Coordinator check on the delivered pair: 128 passed over five filters, build clean.
 <!-- SECTION:NOTES:END -->
