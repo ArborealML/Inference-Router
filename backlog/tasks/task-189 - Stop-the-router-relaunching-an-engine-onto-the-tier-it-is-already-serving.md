@@ -1,11 +1,11 @@
 ---
 id: TASK-189
 title: Stop the router relaunching an engine onto the tier it is already serving
-status: In Progress
+status: Ready for Review
 assignee:
-  - '@gpt-6.2-sol-scheduling'
+  - '@gpt-6.2-astra'
 created_date: '2026-11-25T18:00:00Z'
-updated_date: '2026-11-26T01:53:00Z'
+updated_date: '2026-11-26T02:27:00Z'
 labels: []
 dependencies:
   - TASK-25
@@ -21,10 +21,10 @@ The live event feed records a switch to the profile 256k-8 at 17:40 on an engine
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 A demand already satisfied by the resident tier never starts a switch.
-- [ ] #2 A pin reddens when a switch names the tier the engine is already serving.
-- [ ] #3 Startup does not launch the default tier and then immediately switch away from it when a wider tier of the same window satisfies demand.
-- [ ] #4 Any switch that does start records the demand that required it in the feed with the target and the resident state.
+- [x] #1 A demand already satisfied by the resident tier never starts a switch.
+- [x] #2 A pin reddens when a switch names the tier the engine is already serving.
+- [ ] #3 Startup does not launch the default tier and then immediately switch away from it when a wider tier of the same window satisfies demand; carried by TASK-191.
+- [ ] #4 Any switch that does start records the demand that required it in the feed with the target and the resident state; not delivered on this branch and needs its own slice.
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -36,5 +36,5 @@ Outage containment only, one branch. Resolve the queued demand for a model, read
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Implementation in progress on branch fix/resident-tier-noop. Three implementer runs were lost to infrastructure (engine crash, provider outage, two 30-minute harness limits) before the first commit landed; the test pair is committed at 1c6c821 with the two pinned directions asserted on counted lifecycle calls. Coordinator review of the uncommitted fix found two defects routed back to the implementer: (a) the new SPEC §7.6 paragraph requires measured slots to EQUAL the declared tier while the changed ServingCapacity.Matches drops slot equality, so code and SPEC disagree; (b) the added TotalSlots >= 0 guard proves nothing and should go. Also routed: Matches is shared by PrefixAwareScheduler.cs:99, EngineRuntime.cs:986 and :2064, and RouterCore.cs:373 and :479, so widening it for request satisfaction also widens operator-facing exact-tier paths — either a separate exact predicate there, or a named check that the new semantics are intended. Commit 1c6c821 carries a Sol identity although the authoring seat ran on the q38fn implementer model; recorded rather than rewritten.
+Delivered on branch fix/resident-tier-noop: test pair at 1c6c821, fix at 25bdeec. Satisfaction is now window equality plus a lane floor, TotalSlots >= profile.MaxSlots, and the inferred label leaves the comparison; SPEC §7.6 gained a Resident reuse bullet and launch verification keeps its exact expected-and-observed proof. Coordinator verification in the implementer worktree: build clean, and dotnet test over ResidentProfileNoOpTests, ConfigReloadWireTests, VerifiedInstanceTransport, AdminSwitchOperationTests and CapabilityScanTests gave 128 passed, 0 failed; the implementer reports 422 and 157 passed on two wider filters. The lane floor is load-bearing: two existing pins refuse a named tier when reported lanes fall below declared. Unpinned and put to the external commit review: stale-gauge reloads, no-ladder engines, and the offline exact-instance path at RouterCore.cs:479-481, which stays name-exact. Wake: the external commit review of this range. Criterion 3 is TASK-191's; criterion 4 still needs a slice.
 <!-- SECTION:NOTES:END -->
