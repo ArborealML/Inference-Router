@@ -3,9 +3,9 @@ id: TASK-185
 title: Carry Pi thread priority to the router and add a /priority command
 status: Preparing
 assignee:
-  - '@gpt-6.2-astra'
+  - '@chatswarm'
 created_date: '2026-11-25T07:54:00Z'
-updated_date: '2026-11-26T00:54:00Z'
+updated_date: '2026-11-26T00:56:00Z'
 labels: []
 dependencies: []
 priority: high
@@ -38,4 +38,6 @@ Both sides in one branch, because criterion 4 needs the router to refuse. (1) Ro
 Extension-side only; the router surface already exists (SPEC §6 header list). Pairs with TASK-183: priority and required context are the two demand axes a caller owns.
 
 Verified on main: the router reads the header in ServerApp and a malformed value is silently ignored, so criterion 4 cannot be met extension-side alone. Router-side refusal is a wire change and needs the plan review before code.
+
+Plan review dispatched to the external pro reasoning service 2026-11-26; wakes when it lands.
 <!-- SECTION:NOTES:END -->
