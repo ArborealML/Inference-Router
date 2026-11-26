@@ -246,7 +246,9 @@ For a milestone released under decision 72, one Sol delivery manager owns the ap
 
 Under decision 73, Delivery prepares the next ranked, dependency-free assignment while the current item is being qualified. A focused local pass and a pinned candidate with its evidence free the implementer to take that assignment immediately in a separate worktree. Delivery owns hosted CI, independent review and integration. A draft under those checks consumes no implementation slot. Route actionable findings back to the author with the exact failing check and commit; preserve the candidate while other work proceeds.
 
-Run each implementer as a long-lived GPT-6.2 Sol agent with high reasoning in its own named tmux session.
+Run each implementer as a long-lived agent with high reasoning in its own named tmux session.
+The reasoning level follows the implementer's model and is stated at dispatch, never inherited from the dispatching seat:
+high for a Sol implementer, extra-high for a Qwen 3.8 Flash Next implementer ([decision-82](backlog/decisions/)).
 The coordinator gives it one task and an isolated Git worktree with a single writer. The implementer owns
 preparation, implementation, test design, fixes and the evidence handoff described above. It reports each
 transition so the coordinator can update the shared board. After a handoff, send revisions or the next
