@@ -1,11 +1,13 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.160)
+Status: draft, continuously revised (v0.12.161)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
 
 ## 0. Revision log
+
+- v0.12.161 — a malformed `X-Inference-Priority` is refused at ingress instead of dropped: 400 `invalid_priority` in the existing lowercase envelope, added to the §6.1 code list with no new field and no shape change, and written before the ticket exists, so the refusal leaves no thread, no queue member, no forward to an engine and no `request.enqueued`. An absent header keeps the configured default; a repeated header is refused rather than resolved (§6, §6.1). `PriorityIngressTests` pins absent, empty, malformed, duplicated and differently cased values, sub 0/255/256, the ordinary and streaming paths, and the zero-effect counters.
 
 - v0.12.160 — send an opaque per-engine thread cache hint on completion requests to explicitly router-owned local Docker lifecycle groups (§6).
 
@@ -2954,6 +2956,17 @@ carries its ticket id back on the response as `X-Inference-Ticket`, which is how
 `GET|DELETE /admin/tickets/{id}` (watch / cancel) without scraping the event stream. Body-only
 callers (default thread `anon`, priority Normal) work unchanged.
 
+`X-Inference-Priority` carries one value: a lowercase class name — `background`, `low`, `normal`, `high`,
+`interactive` — with an optional `:sub` of 0-255, the same vocabulary `POST /admin/threads` accepts. An
+absent header is the configured default, and is the only way to ask for nothing. A value that is present
+and outside that grammar returns **400 `invalid_priority`** from the same lowercase envelope, written while
+the headers are still being read: no thread registration, no queue member, no forward to an engine, no
+`X-Inference-Ticket`, and no `request.enqueued` on the feed. A streaming request is refused the same way an
+ordinary one is — a JSON body at 400, never a committed SSE stream. Two `X-Inference-Priority` headers are
+two values for one request and are refused rather than resolved. The accepted value is the priority of the
+request that carries it and the priority a first-seen thread is registered with; it never reprioritises
+work already queued or running.
+
 Priority is **not** clamped to the configured default and there is no general caller authentication, so a
 caller can currently promote itself. Pinning that at the edge is v0.1 ingress work (§15.1); until
 then the deployment posture is loopback-or-behind-your-proxy. `docs/ai-integration.md` states this
@@ -2980,7 +2993,8 @@ event and sequence without adding a fault record.
 
 The shipped error contract is one lowercase body on every surface —
 `{"error":{"type":"air_error","code":…,"message":…}}` — and the code picks the status:
-`invalid_request` 400, `not_found` 404, `deadline_exceeded` 408, `cancelled` 499, `queue_overflow`
+`invalid_request` 400, `invalid_priority` 400 (a malformed `X-Inference-Priority`, refused at ingress
+before the ticket exists — §6), `not_found` 404, `deadline_exceeded` 408, `cancelled` 499, `queue_overflow`
 429, `request_body_too_large` 413 (over `max_request_body_bytes`), `engine_error` / `engine_unreachable` 502,
 `switch_failed` / `model_unavailable` 503. A switch that outlives `switch_wait_timeout_ms` can
 return `switch_failed`. The absence proof and the configured explicit-context proof in §5.5

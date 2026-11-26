@@ -161,9 +161,6 @@ public static partial class ServerApp
         }
 
         var threadId = ctx.Request.Headers["X-Inference-Thread"].ToString() is { Length: > 0 } t ? t : "anon";
-        ThreadPriority? priority = null;
-        if (ThreadPriority.TryParse(ctx.Request.Headers["X-Inference-Priority"].ToString(), out var p))
-            priority = p;
         var affinity = ctx.Request.Headers["X-Inference-Affinity"].ToString() is { Length: > 0 } a ? a : null;
 
         RouterTicket ticket;
@@ -176,7 +173,7 @@ public static partial class ServerApp
                 Body = payload,
                 Options = new RouterRequestOptions
                 {
-                    Priority = priority,
+                    Priority = PriorityFromHeader(ctx),
                     CacheAffinityHash = affinity,
                     Profile = ProfileFromHeader(ctx),
                     RequiredContext = RequiredContextFromHeader(ctx),
@@ -229,6 +226,22 @@ public static partial class ServerApp
         var raw = ctx.Request.Headers["X-Inference-Required-Context"].ToString();
         if (raw.Length == 0) return null;
         return long.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var v) && v > 0 ? v : null;
+    }
+
+    /// <summary>X-Inference-Priority: the request's own priority as `class[:sub]` (§6). Absent → the
+    /// configured default, which is the only way a caller asks for nothing. A value that is present but
+    /// outside the grammar is refused with 400 `invalid_priority` rather than dropped: a caller that asked
+    /// for `interactive` and was served at the default has no way to notice, and the queue would already
+    /// have been mutated for a priority nobody asked for. A repeated header arrives as one joined string and
+    /// fails the same way, because two values for one request is not a choice the router gets to make.
+    /// The refusal happens while the headers are still being read, before the ticket exists (§6.1).</summary>
+    private static ThreadPriority? PriorityFromHeader(HttpContext ctx)
+    {
+        if (!ctx.Request.Headers.TryGetValue("X-Inference-Priority", out var values)) return null;
+        var declared = values.ToString();
+        if (ThreadPriority.TryParse(declared, out var priority)) return priority;
+        throw new RouterRequestException("invalid_priority", FormattableString.Invariant(
+            $"X-Inference-Priority '{WireText.Ident(declared)}' is not one of background, low, normal, high, interactive with an optional :sub of 0-{ThreadPriority.MaxSubPriority}."));
     }
 
     private static string? ProfileFromHeader(HttpContext ctx)
@@ -449,7 +462,7 @@ public static partial class ServerApp
 
     private static int MapStatus(string code) => code switch
     {
-        "invalid_profile" => 400,
+        "invalid_profile" or "invalid_priority" => 400,
         "queue_overflow" => 429,
         "deadline_exceeded" => 408,
         "cancelled" => 499,
