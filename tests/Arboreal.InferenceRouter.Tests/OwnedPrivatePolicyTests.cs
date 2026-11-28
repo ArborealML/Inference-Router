@@ -16,7 +16,7 @@ namespace Arboreal.InferenceRouter.Tests;
 public sealed class OwnedPrivateHttpCollection;
 
 [Collection("Owned private HTTP")]
-public sealed class OwnedPrivatePolicyTests : IDisposable
+public sealed partial class OwnedPrivatePolicyTests : IDisposable
 {
     private const string Key = "fixture-private-upstream-key";
     private const string Model = "fixture-model";
@@ -427,26 +427,33 @@ public sealed class OwnedPrivatePolicyTests : IDisposable
 
     private string StatePath => Path.Combine(_directory.FullName, "state.json");
 
-    private static WebApplication BuildRouter(OwnedPolicyStore store, Verifier verifier, Uri endpoint) =>
+    private static WebApplication BuildRouter(OwnedPolicyStore store, Verifier verifier, Uri endpoint, RouterConfig? config = null) =>
         ServerApp.BuildOwnedPrivate(["--urls=http://127.0.0.1:0"],
             new OwnedPrivateServerComposition(store, [new("private", endpoint, "/models", "/props",
                 PrivateDestinationCapability.Chat | PrivateDestinationCapability.Text | PrivateDestinationCapability.ThreadCache)], verifier.Verify),
-            configOverride: Config(endpoint));
+            configOverride: config ?? Config(endpoint));
 
-    private static RouterConfig Config(Uri endpoint, bool owned = true) => new()
+    private static RouterConfig Config(Uri endpoint, bool owned = true, int streamBufferLimit = 0, bool extraModel = false,
+        int upstreamIdleMs = 0)
     {
-        OwnedPrivatePolicy = owned,
-        DefaultModel = Model,
-        AutoSwitch = false,
-        Engines = new Dictionary<string, EngineDefinition>(StringComparer.Ordinal)
+        var catalog = new Dictionary<string, EngineModelDefinition>(StringComparer.Ordinal)
         {
-            ["private"] = new EngineDefinition { Name = "private", Endpoint = endpoint, ApiKey = Key,
-                Catalog = new Dictionary<string, EngineModelDefinition>(StringComparer.Ordinal)
-                {
-                    [Model] = new() { Name = Model, Aliases = ["alias"] },
-                } },
-        },
-    };
+            [Model] = new() { Name = Model, Aliases = ["alias"] },
+        };
+        if (extraModel) catalog.Add("configured-only", new() { Name = "configured-only" });
+        return new RouterConfig
+        {
+            OwnedPrivatePolicy = owned,
+            StreamBufferLimitBytes = streamBufferLimit,
+            DefaultModel = Model,
+            AutoSwitch = false,
+            Engines = new Dictionary<string, EngineDefinition>(StringComparer.Ordinal)
+            {
+                ["private"] = new() { Name = "private", Endpoint = endpoint, ApiKey = Key, Catalog = catalog,
+                    StreamIdleTimeoutMs = upstreamIdleMs },
+            },
+        };
+    }
 
     private static Uri EngineUri(WebApplication app) => new(app.Urls.Single() + "/v1");
 
@@ -515,6 +522,8 @@ public sealed class OwnedPrivatePolicyTests : IDisposable
         private int _holdNext;
         internal int Requests => Volatile.Read(ref _requests);
         internal (int Status, string Address)? Redirect { get; init; }
+        internal Func<HttpContext, Task>? StreamResponse { get; init; }
+        internal bool ReportExtraModel { get; init; }
         internal ConcurrentQueue<(string Path, string Hint, string Authority)> Inferences { get; } = new();
         internal TaskCompletionSource InferenceEntered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         internal TaskCompletionSource AllowInference { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -537,7 +546,9 @@ public sealed class OwnedPrivatePolicyTests : IDisposable
             var response = context.Response;
             if (request.Path == "/models")
             {
-                await response.WriteAsync("""{"data":[{"id":"fixture-model"}]}""", request.HttpContext.RequestAborted);
+                await response.WriteAsync(ReportExtraModel
+                    ? """{"data":[{"id":"fixture-model"},{"id":"unconfigured-resident"}]}"""
+                    : """{"data":[{"id":"fixture-model"}]}""", request.HttpContext.RequestAborted);
                 return;
             }
             if (request.Path == "/props")
@@ -562,6 +573,11 @@ public sealed class OwnedPrivatePolicyTests : IDisposable
             if (json.RootElement.TryGetProperty("stream", out var stream) && stream.ValueKind == JsonValueKind.True)
             {
                 response.ContentType = "text/event-stream";
+                if (StreamResponse is { } scripted)
+                {
+                    await scripted(context);
+                    return;
+                }
                 await response.WriteAsync("data: {\"model\":\"fixture-model\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"ok\"}}]}\n\ndata: [DONE]\n\n",
                     request.HttpContext.RequestAborted);
             }

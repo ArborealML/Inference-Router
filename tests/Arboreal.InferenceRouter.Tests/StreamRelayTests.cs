@@ -743,7 +743,7 @@ public partial class StreamRelayTests
         }
     }
 
-    private sealed class PassiveLifetime : IHttpRequestLifetimeFeature
+    internal sealed class PassiveLifetime : IHttpRequestLifetimeFeature
     {
         public CancellationToken RequestAborted { get; set; }
         public bool Aborted { get; private set; }

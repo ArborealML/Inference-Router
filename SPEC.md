@@ -8,7 +8,7 @@ Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 ## 0. Revision log
 
 - v0.12.175 — qualify managed local routing with a full remote provider and publish request-scoped, bounded, revision-checked queue observations (§§5.4–5.5, 10, 14).
-- v0.12.174 — bind owned private inference to verified external scope and durable policy, qualify direct private transport, and scope catalog, status, events and ticket controls (§5.6).
+- v0.12.174 — bind owned private inference to verified external scope and durable policy, qualify direct private transport and bounded streaming, and scope catalog, status, events and ticket controls (§§5.6, 6).
 - v0.12.173 — compose enrolled exact dispatch in the standard web application and require generation-specific physical retirement before mutation, and bound commissioned SSE output at route selection, including a pending first heartbeat (§§4, 7.6, 12.1).
 - v0.12.172 — exercise the singleton tuning runner through CLI dispatch with a controlled private resident, retain semantic, physical settlement and failed lease release evidence, and publish run evidence and its comparison summary together (§§11.1, 11.3).
 - v0.12.171 — fit deterministic short-grid prompts using exact backend counts and search the full next-record tail within the count budget (§11.2).
@@ -2897,12 +2897,20 @@ completion, including streaming forms, are qualified. Tools and media prompts re
 `policy_capability_unavailable`. The destination predicate intersects capability,
 independent trust, durable allow/deny and verified request-scope restrictions. Deny
 wins and an explicit empty allow permits no destination. Engine errors are reported
-through bounded router codes and text. Commercial inference, count/tokenize HTTP
-endpoints and sensitivity mutation remain outside this increment.
+through bounded router codes and text. Owned SSE uses the HTTP relay's byte credits
+and pending-write deadline (§6). A zero `stream_buffer_limit_bytes` selects 262,144
+bytes in owned mode. A positive value sets the cap explicitly. A failed writer requests
+cancellation through its admitted ticket even when the HTTP abort token stays live.
+The transport retains ownership until cleanup settles. Commercial inference,
+count/tokenize HTTP endpoints and sensitivity mutation remain outside this increment.
 
 The HTTP handlers authenticate scope before consuming bodies or committing SSE
 headers. Group-authorized reads scope `/v1/models`, catalog, status, events and ticket
-lookup. Group-qualified thread controls and cancellation require their own operation.
+lookup. Scoped model and catalog lists reflect permitted configuration. `/v1/models`
+returns up to 128 configured models per permitted engine. Scoped status reports the
+group's in-flight count per permitted engine, its queue depths, threads and policy.
+Shared health, loaded models, active profiles, context gauges and physical slots are withheld.
+Group-qualified thread controls and cancellation require their own operation.
 Ticket events retain their ownership at publication for replay after eviction. Scoped
 catalog replies use `no-store` and ignore incoming ETags. Ticket status reports the
 admitted policy revision, current revision when available, sensitivity and private
@@ -3121,9 +3129,10 @@ server write progress. The ticket and feed record cancellation once. This behavi
 both HTTP SSE limits disabled and starts after the initial raw read and stream acquisition.
 Queued requests, model waits, opt-in SSE and library streams follow their existing rules.
 
-**Opt-in HTTP SSE limits.** A positive `stream_buffer_limit_bytes` caps outstanding output payload
+**Bounded HTTP SSE.** A positive `stream_buffer_limit_bytes` caps outstanding output payload
 per stream, including queued bytes and the bytes still owned by a pending flush. The pump transfers
 one validated batch in order using credit-sized slices and pauses upstream reads at exhausted credit.
+Owned private mode applies the default cap described in §5.6 when the value is zero.
 The staging buffer, read scratch, validated batch and transport buffers have separate ownership.
 A continuously pending downstream write times out at 30 s without progress, even with one byte
 pending. The router aborts that HTTP exchange and records ticket code `slow_consumer` and a

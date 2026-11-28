@@ -386,8 +386,10 @@ public static partial class ServerApp
         {
             // A failed writer can leave RequestAborted unset. Always end the sink's side of the
             // exchange, keeping any cause or acknowledgment that already won.
+            // Capture and cancel the admitted execution before a fallback outcome can publish
+            // logical completion and make an indexed cancellation ineligible.
+            router?.CancelTicket(ticket);
             delivery.Decide(HttpStreamOutcome.Cancelled);
-            router?.TryCancel(ticket.Id);
             ctx.Abort();
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -570,23 +572,31 @@ public static partial class ServerApp
             var generation = router.CurrentGeneration;
             foreach (var e in generation.Engines.Values)
             {
-                if (owned?.Group is { } group && !router.CanSeeOwnedEngine(group, owned.Scope, e.Name)) continue;
-                var capability = e.Capability;
-                var roster = owned is null ? capability.ModelRoster : capability.ModelRoster.Take(128);
-                foreach (var model in roster)
+                if (owned?.Group is { } group)
                 {
-                    w.WriteStartObject();
-                    w.WriteString("id", owned is null ? model : WireText.Ident(model));
-                    w.WriteString("object", "model");
-                    w.WriteNumber("created", DateTimeOffset.UtcNow.ToUnixTimeSeconds());
-                    w.WriteString("owned_by", e.Name);
-                    if (RouterCore.ObservedModelContextWindow(generation, e, capability, model) is { } window)
-                        w.WriteNumber("context_window", window);
-                    w.WriteEndObject();
+                    if (!router.CanSeeOwnedEngine(group, owned.Scope, e.Name)) continue;
+                    foreach (var model in e.Definition.Catalog.Values.OrderBy(static model => model.Name, StringComparer.Ordinal).Take(128))
+                        WriteModel(WireText.Ident(model.Name), e.Name, created: 0, window: null);
+                    continue;
                 }
+                var capability = e.Capability;
+                foreach (var model in capability.ModelRoster)
+                    WriteModel(model, e.Name, DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+                        RouterCore.ObservedModelContextWindow(generation, e, capability, model));
             }
             w.WriteEndArray();
             w.WriteEndObject();
+
+            void WriteModel(string name, string engine, long created, long? window)
+            {
+                w.WriteStartObject();
+                w.WriteString("id", name);
+                w.WriteString("object", "model");
+                w.WriteNumber("created", created);
+                w.WriteString("owned_by", engine);
+                if (window is { } context) w.WriteNumber("context_window", context);
+                w.WriteEndObject();
+            }
         }
         ctx.Response.Headers.ContentType = "application/json";
         ctx.Response.Headers.CacheControl = "no-store";
@@ -631,9 +641,12 @@ public static partial class ServerApp
             await OwnedScopeError(ctx).ConfigureAwait(false);
             return;
         }
-        var stats = owned?.Group is { } group ? router.GetOwnedStats(group, owned.Scope) : router.GetStats();
-        await AirJson.WriteAsync(ctx.Response, stats,
-            AirServerJson.AirServerContext.Default.RouterStats, ctx.RequestAborted).ConfigureAwait(false);
+        if (owned?.Group is { } group)
+            await AirJson.WriteAsync(ctx.Response, router.GetOwnedStats(group, owned.Scope),
+                AirServerJson.AirServerContext.Default.ScopedRouterStats, ctx.RequestAborted).ConfigureAwait(false);
+        else
+            await AirJson.WriteAsync(ctx.Response, router.GetStats(),
+                AirServerJson.AirServerContext.Default.RouterStats, ctx.RequestAborted).ConfigureAwait(false);
     }
 
     private static Task HandleEvents(HttpContext ctx, RouterCore router, string? ticketOverride = null)
