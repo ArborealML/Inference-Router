@@ -149,7 +149,7 @@ public sealed partial class RouterCore
                 await before(ticket.Id).ConfigureAwait(false);
             if (ticket.IsTerminal || invocation?.IsCommissioned == true && ticket.HttpOutputEnded) return;
             var body = ModelRewriter.Rewrite(candidate.Request.Body, upstreamModel, stream: true, out expectedChoices);
-            var suffix = LooksLikeCompletion(candidate.Request.Body) ? "completions" : "chat/completions";
+            var suffix = CompletionSuffix(candidate);
             if (invocation is not null)
             {
                 using var request = MakeUpstreamRequest(engine, body, suffix, ticket);
@@ -223,7 +223,7 @@ public sealed partial class RouterCore
         {
             await AbortUnstartedInvocationAsync(ticket, invocation).ConfigureAwait(false);
             candidate.LocalLease?.Release();
-            if (attempted) engine.RecordPrefix(candidate.Messages());
+            if (attempted && !OwnedPolicyEnabled) engine.RecordPrefix(candidate.Messages());
         }
 
         async Task ConsumeAsync(HttpResponseMessage response, ResponseGate? gate)
@@ -294,7 +294,7 @@ public sealed partial class RouterCore
             else if (error is RouterRequestException refusal)
                 Fail(ticket, refusal.Code, refusal.Message);
             else
-                Fail(ticket, "engine_unreachable", error.Message);
+                Fail(ticket, "engine_unreachable", OwnedPolicyEnabled ? "the private upstream exchange failed" : error.Message);
         }
     }
 
@@ -306,7 +306,7 @@ public sealed partial class RouterCore
             _events.Append(new RouterEvent
             {
                 Kind = "request.cleanup_failed",
-                ThreadId = ticket.ThreadId,
+                ThreadId = ticket.ThreadId, OwnerGroup = ticket.OwnedPolicy?.Key,
                 TicketId = ticket.Id,
                 Engine = ticket.Engine,
                 Model = ticket.Model,

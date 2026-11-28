@@ -8,6 +8,7 @@ Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 ## 0. Revision log
 
 - v0.12.175 — qualify managed local routing with a full remote provider and publish request-scoped, bounded, revision-checked queue observations (§§5.4–5.5, 10, 14).
+- v0.12.174 — bind owned private inference to verified external scope and durable policy, qualify direct private transport and bounded streaming, and scope catalog, status, events and ticket controls (§§5.6, 6).
 - v0.12.173 — compose enrolled exact dispatch in the standard web application and require generation-specific physical retirement before mutation, and bound commissioned SSE output at route selection, including a pending first heartbeat (§§4, 7.6, 12.1).
 - v0.12.172 — exercise the singleton tuning runner through CLI dispatch with a controlled private resident, retain semantic, physical settlement and failed lease release evidence, and publish run evidence and its comparison summary together (§§11.1, 11.3).
 - v0.12.171 — fit deterministic short-grid prompts using exact backend counts and search the full next-record tail within the count budget (§11.2).
@@ -2847,6 +2848,78 @@ Temporary capacity loss parks the ticket. A definitive refusal settles once with
 - **Ticket retention**: finished tickets stay answerable on the admin surface for the most recent 4096
   (the event ring's capacity); older ones are evicted so the ticket table cannot grow with traffic.
 
+### 5.6 Owned private inference policy
+
+The opt-in `owned_private_policy = true` configuration requires a host to supply
+`ServerApp.BuildOwnedPrivate` with an external verifier, a durable policy store and
+independent private destination enrolment. The stock composition refuses to start
+with that flag. Omitting it retains the existing HTTP and library behavior. The
+deployment owns the verifier, the singleton writer across any restored copies, the
+store lifetime, the protected state directory and a rollback-resistant compare-and-commit
+authority outside the directory's restore domain. A successful `ReadAsync` with no
+head confirms an unused authority. Temporary
+authority failure must report an error. This composition provides testable integration
+with an external authority. On-host identity, protected ingress and backend egress
+confinement require deployment evidence.
+
+The external verifier supplies a principal, operations and either a stable authorized
+new-root intent or an existing policy group. Each root intent resolves once for its
+owner. A new group begins insensitive and freezes the verified destination
+restrictions before its first request can be enqueued. Repeating or renaming a thread
+under the same intent keeps the policy group and its current sensitivity. Existing
+scopes require the same canonical `X-Inference-Policy-Group` value on each request.
+Successful resolution writes the authorized group in that response header. The group
+ID, any thread name, and the reload bearer alone confer no authority. Owned mode
+accepts no preconfigured legacy thread registrations. An omitted thread header keeps
+the existing stateless scheduling behavior inside the resolved group. A named thread
+is scoped by owner and group for priority, accounting, control and any explicitly
+enrolled upstream cache hint.
+
+The Linux policy store admits one writer per file. Before acknowledging a new root
+it synchronizes a versioned snapshot with its owner, intent, group, sensitivity,
+revision and restrictions, and advances the external head. The store retains policy
+only. A subsequent process requires the current head and exact matching file bytes.
+Missing, stale or corrupt policy is refused. A write with uncertain publication or
+confirmation disables the writer's grants. The owning deployment must reconcile an
+unconfirmed change before reopening. The router resolves policy outside scheduler
+and queue locks. It checks the current policy at enqueue, route ranking, predecessor
+competition, exact take and before the final private send.
+
+Only independently enrolled literal-loopback HTTP(S) endpoints qualify for this
+increment. Enrolment pins the complete configured endpoint, enabled capabilities,
+models probe path and effective serving probe path, including the default `/props`.
+The actual router handler disables
+redirects, ambient proxies and cookies. Unknown destinations, custom HTTP handlers,
+managed or delegated lifecycle providers and unenrolled auxiliary paths are refused
+before they can send. Startup and reload validate the enabled topology before probes.
+Reload also refuses a change to owned mode. Rollback to an earlier binary requires
+deployment controls that preserve the authority boundary. Private text chat and text
+completion, including streaming forms, are qualified. Tools and media prompts receive
+`policy_capability_unavailable`. The destination predicate intersects capability,
+independent trust, durable allow/deny and verified request-scope restrictions. Deny
+wins and an explicit empty allow permits no destination. Engine errors are reported
+through bounded router codes and text. Owned SSE uses the HTTP relay's byte credits
+and pending-write deadline (§6). A zero `stream_buffer_limit_bytes` selects 262,144
+bytes in owned mode. A positive value sets the cap explicitly. A failed writer requests
+cancellation through its admitted ticket even when the HTTP abort token stays live.
+The transport retains ownership until cleanup settles. Commercial inference,
+count/tokenize HTTP endpoints and sensitivity mutation remain outside this increment.
+
+The HTTP handlers authenticate scope before consuming bodies or committing SSE
+headers. Group-authorized reads scope `/v1/models`, catalog, status, events and ticket
+lookup. Scoped model and catalog lists reflect permitted configuration. `/v1/models`
+returns up to 128 configured models per permitted engine. Scoped status reports the
+group's in-flight count per permitted engine, its queue depths, threads and policy.
+Shared health, loaded models, active profiles, context gauges and physical slots are withheld.
+Group-qualified thread controls and cancellation require their own operation.
+Ticket events retain their ownership at publication for replay after eviction. Scoped
+catalog replies use `no-store` and ignore incoming ETags. Ticket status reports the
+admitted policy revision, current revision when available, sensitivity and private
+destination trust without raw provider errors. Global switch and reload operations
+require separate administrator authority. The forward-only composition offers no
+native switch or reset. Health remains content-free. Global read and mutation methods
+which lack an owned scope expose no group data in this mode.
+
 ## 6. HTTP surface (server project)
 
 The in-process host-manager fixture uses the existing ticket status and event feed for queue
@@ -3057,9 +3130,10 @@ server write progress. The ticket and feed record cancellation once. This behavi
 both HTTP SSE limits disabled and starts after the initial raw read and stream acquisition.
 Queued requests, model waits, opt-in SSE and library streams follow their existing rules.
 
-**Opt-in HTTP SSE limits.** A positive `stream_buffer_limit_bytes` caps outstanding output payload
+**Bounded HTTP SSE.** A positive `stream_buffer_limit_bytes` caps outstanding output payload
 per stream, including queued bytes and the bytes still owned by a pending flush. The pump transfers
 one validated batch in order using credit-sized slices and pauses upstream reads at exhausted credit.
+Owned private mode applies the default cap described in §5.6 when the value is zero.
 The staging buffer, read scratch, validated batch and transport buffers have separate ownership.
 A continuously pending downstream write times out at 30 s without progress, even with one byte
 pending. The router aborts that HTTP exchange and records ticket code `slow_consumer` and a
@@ -3303,10 +3377,14 @@ a cardinality limit. The detailed host transcript is held outside the repository
 
 The server loads its startup file before serving. A file-backed server can optionally apply changes
 from that same path as described in §7.7.
-For HTTP SSE, `stream_buffer_limit_bytes` is a top-level nonnegative byte count and
-`stream_idle_timeout_ms` is a nonnegative integer under `[engine.<name>]`. Each defaults to zero
-and independently disables its limit. Changes to the root limit or a retained engine's idle timeout
-require restart. A newly added eligible external engine may declare its own idle limit.
+For HTTP SSE, `stream_buffer_limit_bytes` is a top-level nonnegative byte count.
+A positive value sets the payload credit. With zero, ordinary legacy streams have no byte
+credit limit, selected commissioned routes use 64 KiB (§5.3.1), and owned private
+streams use 256 KiB (§5.6). The separate `stream_idle_timeout_ms` is a nonnegative
+integer under `[engine.<name>]`. Both settings default to zero. A zero idle timeout
+leaves the upstream idle limit disabled. Changes to the root byte count or a retained
+engine's idle timeout require restart. A newly added eligible external engine may declare
+its own idle limit.
 `lifecycle_owner` accepts `external`, `delegated` and `router` in TOML and JSON. Remove `remote`
 when setting it, including `remote = false`. Explicit `external` requires no controller or selector.
 Explicit `delegated` requires a usable selector and no Docker controller. Explicit `router` requires
@@ -3960,8 +4038,10 @@ streaming ticket cancelled before the upstream end is known reports `unknown` fo
   without a narrower scope. The event and queued ticket expose the same optional PascalCase
   `QueueDispatch` object with an `ObservationId`, classified `Reason`, optional `Scope` and
   `AcceptedDrainScope`, and up to eight `Alternatives`. Each alternative names a configured
-  engine that declares or currently reports the requested model and is allowed by the route policy,
-  with one state (`observed_ready`, `activation_required`, `blocked` or `not_evaluated`).
+  engine that declares or currently reports the requested model within the request's authorized
+  destinations. The state is `observed_ready`, `activation_required`, `blocked` or `not_evaluated`.
+  When the shared thread cap is full, listed routes have state `not_evaluated`. That list conveys
+  authorized model membership while engine health and profile readiness are unevaluated.
   An evaluated blocker may include its classified reason and scope. `AlternativesTruncated`
   marks additional omitted alternatives. Ready observations are advisory and exact take still
   checks earlier competitors and shared caps. An `observed_ready` alternative with

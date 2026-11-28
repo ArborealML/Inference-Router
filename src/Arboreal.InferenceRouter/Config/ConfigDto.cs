@@ -10,6 +10,7 @@ namespace Arboreal.InferenceRouter;
 /// dictionary keys (thread ids, engine names, model ids) stay as-is under both.</summary>
 public sealed class ConfigDto
 {
+    [JsonPropertyName("owned_private_policy")][TomlPropertyName("owned_private_policy")] public bool? OwnedPrivatePolicy { get; set; }
     [JsonPropertyName("listen")][TomlPropertyName("listen")] public string? Listen { get; set; }
     [JsonPropertyName("default_model")][TomlPropertyName("default_model")] public string? DefaultModel { get; set; }
     [JsonPropertyName("auto_switch")][TomlPropertyName("auto_switch")] public bool? AutoSwitch { get; set; }

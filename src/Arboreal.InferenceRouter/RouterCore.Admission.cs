@@ -24,17 +24,23 @@ public sealed partial class RouterCore
 
     private long _pendingPriorityRevision;
 
-    public RouterThread RegisterThread(string threadId, ThreadPriority priority, RouterThreadOptions? options = null) =>
-        ApplyThreadPriority(threadId, priority, options, expected: null)!;
+    public RouterThread RegisterThread(string threadId, ThreadPriority priority, RouterThreadOptions? options = null)
+    {
+        if (OwnedPolicyEnabled) throw ScopeRequired();
+        return ApplyThreadPriority(threadId, priority, options, expected: null)!;
+    }
 
-    public void SetThreadPriority(string threadId, ThreadPriority priority) =>
+    public void SetThreadPriority(string threadId, ThreadPriority priority)
+    {
+        if (OwnedPolicyEnabled) throw ScopeRequired();
         ApplyThreadPriority(threadId, priority, options: null, expected: null);
+    }
 
     internal bool ChangeOwnedThreadPriority(RouterThread expected, ThreadPriority priority) =>
         ApplyThreadPriority(expected.ThreadId, priority, options: null, expected) is not null;
 
     private RouterThread? ApplyThreadPriority(string threadId, ThreadPriority priority, RouterThreadOptions? options,
-                                               RouterThread? expected)
+                                               RouterThread? expected, PolicyGroupKey? owner = null, string? displayId = null)
     {
         RouterThread thread;
         bool created;
@@ -43,7 +49,7 @@ public sealed partial class RouterCore
             var current = _threads.GetValueOrDefault(threadId);
             if (expected is not null && !ReferenceEquals(expected, current)) return null;
             created = current is null;
-            thread = current ?? AddThread(threadId, priority, options?.Weight ?? 1.0, options?.ModelAffinity);
+            thread = current ?? AddThread(threadId, priority, options?.Weight ?? 1.0, options?.ModelAffinity, owner, displayId);
             if (!created)
             {
                 thread.SetPriorityValue(priority);
@@ -75,14 +81,18 @@ public sealed partial class RouterCore
         try { thread.NotifyPriorityChanged(priority); }
         finally
         {
-            _events.Append(new RouterEvent { Kind = "thread.priority_changed", ThreadId = thread.ThreadId, Value = priority.Class });
+            _events.Append(new RouterEvent { Kind = "thread.priority_changed", ThreadId = thread.DisplayId ?? thread.ThreadId,
+                OwnerGroup = thread.OwnerGroup, Value = priority.Class });
             SignalDispatch();
         }
     }
 
-    private RouterThread AddThread(string id, ThreadPriority priority, double weight, string? affinity)
+    private RouterThread AddThread(string id, ThreadPriority priority, double weight, string? affinity,
+        PolicyGroupKey? owner = null, string? displayId = null)
     {
-        var thread = new RouterThread(id, priority, weight, affinity, ChangeOwnedThreadPriority);
+        if (owner is not null && _threads.Count >= 4096)
+            throw new RouterRequestException("owned_thread_limit", "the router's owned named thread limit is reached");
+        var thread = new RouterThread(id, priority, weight, affinity, ChangeOwnedThreadPriority) { OwnerGroup = owner, DisplayId = displayId };
         _threads.Add(id, thread);
         _threadPublications.Add(id, new ThreadPublication { Enqueues = [] });
         return thread;
@@ -91,7 +101,8 @@ public sealed partial class RouterCore
     private void PublishThreadRegistration(RouterThread thread, ThreadPriority priority)
     {
         BeforeThreadRegistrationFeedForTests?.Invoke(thread.ThreadId);
-        _events.Append(new RouterEvent { Kind = "thread.registered", ThreadId = thread.ThreadId, Value = priority.Class });
+        _events.Append(new RouterEvent { Kind = "thread.registered", ThreadId = thread.DisplayId ?? thread.ThreadId,
+            OwnerGroup = thread.OwnerGroup, Value = priority.Class });
         List<QueuedRequest> enqueues;
         lock (_gate)
         {
@@ -177,8 +188,12 @@ public sealed partial class RouterCore
     internal ValueTask<RouterTicket> EnqueueHttpAsync(string? threadId, InferenceRequest request, CancellationToken ct) =>
         EnqueueAsync(threadId, request, request.Stream, ct);
 
-    private ValueTask<RouterTicket> EnqueueAsync(string? threadId, InferenceRequest request, bool httpStream, CancellationToken ct)
+    private ValueTask<RouterTicket> EnqueueAsync(string? threadId, InferenceRequest request, bool httpStream, CancellationToken ct,
+        OwnedTicketPolicy? policy = null)
     {
+        if (OwnedPolicyEnabled != (policy is not null)) throw ScopeRequired();
+        var displayId = threadId;
+        if (policy is not null && threadId is not null) threadId = ScopedThreadKey(policy.Key, threadId);
         var opts = request.Options;
         var explicitContext = opts?.RequiredContext ?? 0;
         var promptChars = PromptCharsProbe(request.Body);
@@ -198,14 +213,15 @@ public sealed partial class RouterCore
             }
 
             var requested = request.Model ?? affinity ?? generation.Settings.DefaultModel;
-            var model = ResolveCanonical(requested, generation);
+            var model = policy is null ? ResolveCanonical(requested, generation) : ResolveOwnedModel(requested, generation, policy);
             var estimated = EstimateContextTokens(promptChars, generation.Settings.Scheduler.CharsPerTokenEstimate);
             var required = opts?.Profile is not null ? Math.Max(estimated, explicitContext)
                 : explicitContext > 0 ? explicitContext : estimated;
             var profileFits = opts?.Profile is not { } profile || generation.Engines.Values.Any(engine =>
+                (policy is null || AllowsOwnedRoute(policy, engine.Name)) &&
                 engine.GetProfile(model, profile) is { } tier && tier.MaxContext >= required && engine.SupportsNamedProfile(model, tier));
             var hopeless = CapabilityScan.DefinitelyHopeless(generation.Capabilities, model);
-            var noFit = !hopeless && explicitContext > 0 && _scheduler is PrefixAwareScheduler
+            var noFit = policy is null && !hopeless && explicitContext > 0 && _scheduler is PrefixAwareScheduler
                 ? LargestInsufficientConfiguredTier(generation, model, explicitContext)
                 : null;
             BeforeEnqueueCommitForTests?.Invoke();
@@ -216,6 +232,8 @@ public sealed partial class RouterCore
             lock (_gate)
             {
                 if (_closing) throw new RouterRequestException("cancelled", "router shutting down");
+                if (policy is not null && _ownedPolicy?.IsCurrent(policy) != true)
+                    throw new RouterRequestException("policy_group_unavailable", "the policy changed before the request was admitted");
                 var thread = threadId is null ? null : _threads.GetValueOrDefault(threadId);
                 if (!ReferenceEquals(generation, CurrentGeneration) ||
                     !ReferenceEquals(thread, observedThread) ||
@@ -226,16 +244,19 @@ public sealed partial class RouterCore
                         $"Model '{WireText.Ident(model)}' has no serving profile '{WireText.Ident(opts!.Profile!)}' that fits {required} tokens."));
 
                 var ticketId = NewTicketId();
-                var diagnosticThreadId = threadId ?? $"request:{ticketId}";
+                var diagnosticThreadId = displayId ?? $"request:{ticketId}";
                 publishRegistration = threadId is not null && thread is null;
                 thread ??= threadId is null
                     ? new RouterThread(diagnosticThreadId, generation.Settings.DefaultPriority, 1.0, null)
-                    : AddThread(threadId, opts?.Priority ?? generation.Settings.DefaultPriority, 1.0, null);
+                    : AddThread(threadId, opts?.Priority ?? generation.Settings.DefaultPriority, 1.0, null, policy?.Key, displayId);
                 priority = opts?.Priority ?? thread.Priority;
                 var bufferLimit = generation.Settings.StreamBufferLimitBytes;
+                if (policy is not null && bufferLimit <= 0) bufferLimit = OwnedDefaultStreamBufferLimitBytes;
                 var ticket = new RouterTicket(ticketId, diagnosticThreadId, model, createdAt)
                 {
                     IsStateless = threadId is null,
+                    OwnedPolicy = policy,
+                    ScopedThreadKey = policy is null ? null : threadId,
                     IsStreamingRequest = request.Stream,
                     IsHttpStream = httpStream,
                     HttpDelivery = httpStream && bufferLimit > 0 ? new HttpStreamDelivery(bufferLimit, ct, _shutdownToken) : null,
@@ -333,7 +354,7 @@ public sealed partial class RouterCore
         {
             _events.Append(new RouterEvent
             {
-                Kind = "queue.rejected", ThreadId = ticket.ThreadId, TicketId = ticket.Id,
+                Kind = "queue.rejected", ThreadId = ticket.ThreadId, OwnerGroup = ticket.OwnedPolicy?.Key, TicketId = ticket.Id,
                 Model = ticket.Model, Reason = ticket.ErrorCode,
             });
             ticket.SignalTerminalStream();
@@ -345,7 +366,7 @@ public sealed partial class RouterCore
         BeforeEnqueueFeedForTests?.Invoke(ticket);
         _events.Append(new RouterEvent
         {
-            Kind = "request.enqueued", ThreadId = ticket.ThreadId, TicketId = ticket.Id,
+            Kind = "request.enqueued", ThreadId = ticket.ThreadId, OwnerGroup = ticket.OwnedPolicy?.Key, TicketId = ticket.Id,
             Model = ticket.Model, Value = queued.PromptChars,
         });
         BeforeEnqueueEligibilityForTests?.Invoke(ticket);
@@ -381,7 +402,7 @@ public sealed partial class RouterCore
         if (SuppressQueueHooksForTests) return;
         var ticket = queued.Ticket;
         if (queued.CallerToken.CanBeCanceled)
-            ticket.InstallCallerLink(queued.CallerToken.UnsafeRegister(_ => TryCancel(ticket.Id), null));
+            ticket.InstallCallerLink(queued.CallerToken.UnsafeRegister(_ => CancelTicket(ticket), null));
 
         if (queued.Request.Options?.MaxQueueTime is { } window && window > TimeSpan.Zero)
         {
@@ -415,11 +436,15 @@ public sealed partial class RouterCore
         queued.Ticket.ChangeQueueTimer(remaining <= TimeSpan.Zero ? TimeSpan.Zero : remaining > maxDue ? maxDue : remaining);
     }
 
-    public bool TryCancel(string ticketId)
+    public bool TryCancel(string ticketId) => !OwnedPolicyEnabled && TryCancel(ticketId, null);
+
+    internal bool CancelTicket(RouterTicket ticket) => TryCancel(ticket.Id, ticket.OwnedPolicy?.Key);
+
+    internal bool TryCancel(string ticketId, PolicyGroupKey? group)
     {
         RouterTicket? ticket;
         lock (_ticketGate) ticket = _tickets.GetValueOrDefault(ticketId);
-        if (ticket is null || ticket.IsTerminal) return false;
+        if (ticket is null || ticket.OwnedPolicy?.Key != group || ticket.IsTerminal) return false;
         switch (ClaimQueuedEnd(ticket, "cancelled"))
         {
             case QueueEndClaim.Deferred:
@@ -501,6 +526,7 @@ public sealed partial class RouterCore
             "cancelled" => "cancelled while queued",
             "slow_consumer" => HttpStreamOutcome.SlowConsumer.Message,
             "switch_failed" => "The enrolled host could not activate the selected recipe.",
+            "policy_group_unavailable" => "the policy changed before the request was dispatched",
             _ => $"queue wait exceeded {window}",
         };
         Fail(ticket, code, reason);

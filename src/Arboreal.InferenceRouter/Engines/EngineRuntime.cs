@@ -20,6 +20,7 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
     private readonly SwitchAttemptHistory _switchHistory;
     private long _switchSequence;
     private readonly HttpClient _http;
+    private readonly bool _ownedPrivateTransport;
     private readonly HttpMessageHandler? _ownedHandler;   // disposed with the client
     private readonly string? _apiKey;
     internal bool SendsThreadCacheHint { get; }
@@ -171,8 +172,12 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
 
     internal EngineRuntime(EngineDefinition def, RouterConfig config, EventRing events, HttpMessageHandler? handler,
                            IEngineLifecycleProvider? lifecycle, Action? dispatchHint, HostEngineEnrollment? hostEnrollment,
-                           TimeProvider? clock = null, ReloadConfiguration? reloadSource = null, bool localManaged = false)
+                           TimeProvider? clock = null, ReloadConfiguration? reloadSource = null, bool localManaged = false,
+                           bool ownedPrivateTransport = false)
     {
+        if (config.OwnedPrivatePolicy != ownedPrivateTransport || ownedPrivateTransport && handler is not null)
+            throw new RouterConfigException("Owned private destinations require the qualified router transport.");
+        _ownedPrivateTransport = ownedPrivateTransport;
         if (def.LifecycleGroup is not null && !localManaged)
             throw new RouterConfigException("Local lifecycle engines must be bound through their router group.");
         config.ValidateLifecycleTopology(def);
@@ -217,8 +222,9 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
             _ownedHandler = new HttpClientHandler
             {
                 AutomaticDecompression = System.Net.DecompressionMethods.None,
-                AllowAutoRedirect = !SendsThreadCacheHint,
-                UseProxy = !SendsThreadCacheHint,
+                AllowAutoRedirect = !SendsThreadCacheHint && !ownedPrivateTransport,
+                UseProxy = !SendsThreadCacheHint && !ownedPrivateTransport,
+                UseCookies = !ownedPrivateTransport,
             };
             _http = new HttpClient(_ownedHandler, disposeHandler: false);
         }
@@ -716,6 +722,8 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
     /// the base path is not silently dropped (see <see cref="Combine"/>).</summary>
     internal Uri CompletionUri(string suffix) => Combine(_def.Endpoint, suffix);
 
+    internal static string ServingProbePath(EngineDefinition definition) => definition.Health?.Path ?? "/props";
+
     /// <summary>Compose a configured path against the engine endpoint.
     /// A leading '/' is absolute from the server root ("/health", "/models"); a bare name appends
     /// to the endpoint's path ("chat/completions" under …/v1 → /v1/chat/completions). A '?' in the
@@ -799,7 +807,7 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
     {
         try
         {
-            using var req = AuthedGet(_def.Health?.Path ?? "/props");
+            using var req = AuthedGet(ServingProbePath(_def));
             using var res = await _http.SendAsync(req, completion, ct).ConfigureAwait(false);
             if (!res.IsSuccessStatusCode) return default;
             var bytes = await res.Content.ReadAsByteArrayAsync(ct).ConfigureAwait(false);
@@ -2437,7 +2445,10 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
     private int EffectiveSlotLimit(EngineCapability cap) => cap.Serving.TotalSlots > 0
         ? Math.Max(1, Math.Min(_maxInflight, cap.Serving.TotalSlots)) : _maxInflight;
 
-    public HttpClient Http => _hostEnrollment?.Manager is null ? _http :
+    public HttpClient Http => !_ownedPrivateTransport ? InferenceHttp :
+        throw new InvalidOperationException("Owned private transport requires scoped router admission.");
+
+    internal HttpClient InferenceHttp => _hostEnrollment?.Manager is null ? _http :
         throw new InvalidOperationException("This runtime uses the enrolled issuer for upstream requests.");
     public string? ApiKey => _apiKey;
 

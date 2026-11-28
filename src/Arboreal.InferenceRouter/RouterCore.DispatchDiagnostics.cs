@@ -73,6 +73,7 @@ public sealed partial class RouterCore
 
         internal bool IsCurrent(RouterCore router)
         {
+            if (request.Ticket.OwnedPolicy is { } policy && router._ownedPolicy?.IsCurrent(policy) != true) return false;
             if (!ReferenceEquals(generation, router.CurrentGeneration) || wakeRevision != router._dispatchWake.Revision ||
                 _threadInflight != request.Thread.Inflight || _threadLimit != request.Thread.MaxInflight ||
                 !ReferenceEquals(_priority, request.PriorityNode) || request.CallerToken.IsCancellationRequested)
@@ -135,6 +136,7 @@ public sealed partial class RouterCore
         {
             Kind = "request.waiting",
             ThreadId = ticket.ThreadId,
+            OwnerGroup = ticket.OwnedPolicy?.Key,
             TicketId = ticket.Id,
             Model = ticket.Model,
             Reason = FormatBlocker(new(report.Reason, report.Scope)),

@@ -21,6 +21,8 @@ public sealed class RouterThread
     }
 
     public string ThreadId { get; }
+    internal string? DisplayId { get; init; }
+    internal PolicyGroupKey? OwnerGroup { get; init; }
     public DateTimeOffset CreatedAt { get; }
 
     private static int Encode(ThreadPriority p) => (p.Class << 8) | p.Sub;
@@ -93,6 +95,8 @@ public sealed class RouterTicket
 
     public string Id { get; }
     public string ThreadId { get; }
+    internal string? ScopedThreadKey { get; init; }
+    internal OwnedTicketPolicy? OwnedPolicy { get; init; }
     public string Model { get; }
     public DateTimeOffset QueuedAt { get; }
     public TicketState State

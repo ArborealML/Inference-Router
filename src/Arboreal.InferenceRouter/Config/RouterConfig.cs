@@ -275,6 +275,7 @@ public sealed class SchedulerConfig
 
 public sealed class RouterConfig
 {
+    public bool OwnedPrivatePolicy { get; init; }
     public string Listen { get; set; } = "http://127.0.0.1:8321";
     public string DefaultModel { get; set; } = "default";
     public ThreadPriority DefaultPriority { get; set; } = ThreadPriority.Normal();
@@ -287,7 +288,9 @@ public sealed class RouterConfig
     /// (the router forwards them as bytes), so this is also the bound on what one request can make the
     /// process hold. A caller that lies about Content-Length is still cut off, because the copy counts.</summary>
     public int MaxRequestBodyBytes { get; set; } = 16 * 1024 * 1024;
-    /// <summary>Queued and pending-flush payload bytes per HTTP SSE stream. Zero disables the bounded relay.</summary>
+    /// <summary>Queued and pending-flush payload bytes per HTTP SSE stream. Zero uses the route default.
+    /// Ordinary legacy streams have no byte credit limit. Selected commissioned routes use 64 KiB
+    /// and owned private streams use 256 KiB.</summary>
     public int StreamBufferLimitBytes { get; init; }
 
     /// <summary>How many live event-feed subscriptions the router will hold. Each one is a stream a

@@ -99,6 +99,10 @@ public sealed partial class RouterCore
         }
         var file = previous.File;
         if (file is null || _admission is not null) return (ConfigReloadStatus.RestartRequired, previous.Number);
+        if (candidate.Config.OwnedPrivatePolicy != (_ownedPolicy is not null))
+            return (ConfigReloadStatus.RestartRequired, previous.Number);
+        try { _ownedPolicy?.ValidateTopology(candidate.Config, unqualifiedComposition: false); }
+        catch (RouterConfigException) { return (ConfigReloadStatus.Invalid, previous.Number); }
 
         var change = file.Compare(candidate, out var addedNames, out var removedNames, out var aliasesChanged);
         if (change is ConfigReloadStatus.RestartRequired) return (change, previous.Number);
