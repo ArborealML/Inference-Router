@@ -34,7 +34,12 @@ public sealed partial class OwnedPolicyStore
     private IOwnedPolicyGroupHeadAuthority? _groupAuthority;
 
     internal bool UsesGroupJournals => _groupAuthority is not null;
-    internal bool Available => Volatile.Read(ref _unavailable) == 0;
+    private bool AuthorityAvailable => Volatile.Read(ref _unavailable) == 0;
+    internal bool Available => AuthorityAvailable && !Volatile.Read(ref _disposing);
+
+    // A prepared queued request owns this lease until its final retirement, even if the
+    // router or its external store owner stops before the retirement worker runs.
+    internal IDisposable? RetainWriterForRetirement() => EnterOperation();
 
     /// <summary>Opens an owned store with independently confirmed, mutable policy groups.</summary>
     public static Task<OwnedPolicyStore> OpenWithGroupAuthorityAsync(string path, IOwnedPolicyHeadAuthority rootAuthority,
@@ -146,7 +151,7 @@ public sealed partial class OwnedPolicyStore
                 var record = new MutationRecord(operation, expectedRevision, effective.Revision, exposures);
                 var proposed = current with { Sequence = checked(current.Sequence + 1), Policy = effective,
                     Operations = [.. current.Operations, record] };
-                await CommitGroupAsync(journal, prior, proposed, cancellationToken).ConfigureAwait(false);
+                await CommitGroupAsync(journal, prior, proposed, retiring: false, cancellationToken).ConfigureAwait(false);
                 return ReadOutcome(record, effective, expectedRevision);
             }
             finally { journal.Writer.Release(); }
@@ -176,7 +181,7 @@ public sealed partial class OwnedPolicyStore
                 journal.Active[attempt.Record.Attempt] = attempt;
             }
             var proposed = current with { Sequence = checked(current.Sequence + 1), Intents = [.. current.Intents, attempt.Record] };
-            await CommitGroupAsync(journal, prior, proposed, cancellationToken).ConfigureAwait(false);
+            await CommitGroupAsync(journal, prior, proposed, retiring: false, cancellationToken).ConfigureAwait(false);
         }
         finally { journal.Writer.Release(); }
     }
@@ -197,8 +202,7 @@ public sealed partial class OwnedPolicyStore
 
     internal async Task FinishIntentAsync(OwnedPrivateAttempt attempt)
     {
-        using var operation = EnterOperation();
-        if (operation is null || !_journals.TryGetValue(attempt.Key, out var journal)) return;
+        if (!_journals.TryGetValue(attempt.Key, out var journal)) return;
         await journal.Writer.WaitAsync().ConfigureAwait(false);
         try
         {
@@ -206,7 +210,7 @@ public sealed partial class OwnedPolicyStore
             OwnedPolicyHead? prior;
             lock (journal.Gate)
             {
-                if (!journal.Active.Remove(attempt.Record.Attempt) || !Available || journal.Uncertain ||
+                if (!journal.Active.Remove(attempt.Record.Attempt) || !AuthorityAvailable || journal.Uncertain ||
                     journal.View is not { } view || attempt.Consumed && !attempt.TerminalObserved) return;
                 current = view;
                 prior = journal.Head;
@@ -214,14 +218,14 @@ public sealed partial class OwnedPolicyStore
             if (!current.Intents.Any(intent => intent.Attempt == attempt.Record.Attempt)) return;
             var proposed = current with { Sequence = checked(current.Sequence + 1),
                 Intents = Array.FindAll(current.Intents, intent => intent.Attempt != attempt.Record.Attempt) };
-            try { await CommitGroupAsync(journal, prior, proposed, CancellationToken.None).ConfigureAwait(false); }
+            try { await CommitGroupAsync(journal, prior, proposed, retiring: true, CancellationToken.None).ConfigureAwait(false); }
             catch (RouterRequestException) { /* Journal is fenced. Preserve the unresolved intent on disk. */ }
         }
         finally { journal.Writer.Release(); }
     }
 
     private async Task CommitGroupAsync(GroupJournal journal, OwnedPolicyHead? previous, GroupSnapshot proposed,
-        CancellationToken cancellationToken)
+        bool retiring, CancellationToken cancellationToken)
     {
         try
         {
@@ -234,11 +238,11 @@ public sealed partial class OwnedPolicyStore
             await WriteSnapshotAsync(pending, bytes, overwrite: true, cancellationToken).ConfigureAwait(false);
             if (!await _groupAuthority!.CompareAndCommitAsync(proposed.Store, key.Owner, key.Group, previous, head, cancellationToken).ConfigureAwait(false))
                 throw new IOException("The policy group authority rejected its predecessor.");
-            if (!Available) throw GroupUnavailable();
+            if (!AuthorityAvailable || !retiring && !Available) throw GroupUnavailable();
             Promote(pending, confirmed);
             lock (journal.Gate)
             {
-                if (!Available) throw GroupUnavailable();
+                if (!AuthorityAvailable || !retiring && !Available) throw GroupUnavailable();
                 journal.Head = head;
                 Volatile.Write(ref journal.View, proposed);
             }

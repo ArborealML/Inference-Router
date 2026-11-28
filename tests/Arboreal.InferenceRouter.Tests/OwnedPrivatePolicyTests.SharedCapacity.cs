@@ -91,7 +91,7 @@ public sealed partial class OwnedPrivatePolicyTests
             await Assert.ThrowsAsync<IOException>(() => OwnedPolicyStore.OpenWithGroupAuthorityAsync(StatePath, roots, groups,
                 cancellationToken: ct));
             releaseCommit.TrySetResult();
-            using var reopened = await ReopenAfterRetirement();
+            using var reopened = await ReopenWriterAsync(StatePath, roots, groups, ct);
             Assert.NotNull(await reopened.ResolveAsync(verifier.Scopes["alpha"], null, false, ct));
             Assert.Equal(preSend ? 1 : 0, reopened.ReadEffectivePolicy(alphaKey)?.UnresolvedAttempts);
         }
@@ -101,15 +101,8 @@ public sealed partial class OwnedPrivatePolicyTests
             releaseCommit?.TrySetResult();
         }
 
-        async Task<OwnedPolicyStore> ReopenAfterRetirement()
-        {
-            while (true)
-            {
-                try { return await OwnedPolicyStore.OpenWithGroupAuthorityAsync(StatePath, roots, groups, cancellationToken: ct); }
-                catch (IOException) { await Task.Delay(TimeSpan.FromMilliseconds(10), ct); }
-            }
-        }
     }
+
     [Fact(Timeout = 25_000)]
     public async Task FullPreparedRouteTakesAFreshIntentForTheAvailableEngine()
     {
@@ -172,6 +165,115 @@ public sealed partial class OwnedPrivatePolicyTests
             await WaitUntilAsync(() => store.ReadEffectivePolicy(key)?.UnresolvedAttempts == 0, ct);
         }
         finally { blocked?.Engine.EndRequest(0); }
+    }
+
+    [Fact(Timeout = 22_000)]
+    public async Task ReadyWaiterRetiresItsUnusedIntentWhenStoreDisposesBeforeWorkerRuns()
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        var ct = deadline.Token;
+        var alpha = new VerifiedInferenceScope("alpha", FullScope, newRootIntent: "root");
+        var verifier = new Verifier();
+        verifier.Scopes["alpha"] = alpha;
+        var capture = new Capture();
+        await using var upstream = capture.Build();
+        await upstream.StartAsync(ct);
+        var roots = new Authority();
+        var groups = new GroupAuthority();
+        using var store = await OwnedPolicyStore.OpenWithGroupAuthorityAsync(StatePath, roots, groups, initialize: true, ct);
+        await using var app = BuildRouter(store, verifier, EngineUri(upstream));
+        await app.StartAsync(ct);
+        var router = app.Services.GetRequiredService<RouterCore>();
+        var ready = new TaskCompletionSource<RouterTicket>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseDispatch = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var retirement = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseRetirement = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        router.BeforeAdmissionCommitForTests = ticket =>
+        {
+            if (ready.TrySetResult(ticket)) releaseDispatch.Task.WaitAsync(ct).GetAwaiter().GetResult();
+        };
+        router.BeforeOwnedRetirementForTests = async _ =>
+        {
+            retirement.TrySetResult();
+            await releaseRetirement.Task.WaitAsync(ct);
+        };
+        using var handler = DirectHandler();
+        using var client = ClientAt(app, handler);
+        var sending = Send(client, HttpMethod.Post, ChatPath, "alpha", null, "ready-waiter", Chat, ct);
+        try
+        {
+            var ticket = await ready.Task.WaitAsync(ct);
+            var key = ticket.OwnedPolicy!.Key;
+            Assert.Equal(1, store.ReadEffectivePolicy(key)?.UnresolvedAttempts);
+            Assert.True(ticket.PrivatePreparation!.Ready);
+            Assert.False(ticket.PrivatePreparation.Attempt!.Consumed);
+            await router.DisposeAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(4), ct);
+            await retirement.Task.WaitAsync(ct);
+            store.Dispose();
+            await Assert.ThrowsAsync<IOException>(() => OwnedPolicyStore.OpenWithGroupAuthorityAsync(StatePath, roots, groups,
+                cancellationToken: ct));
+            releaseDispatch.TrySetResult();
+            releaseRetirement.TrySetResult();
+            using var refused = await sending;
+            Assert.Equal((HttpStatusCode)499, refused.StatusCode);
+            using var reopened = await ReopenWriterAsync(StatePath, roots, groups, ct);
+            Assert.NotNull(await reopened.ResolveAsync(alpha, null, false, ct));
+            Assert.Equal(0, reopened.ReadEffectivePolicy(key)?.UnresolvedAttempts);
+            Assert.Empty(capture.Inferences);
+        }
+        finally
+        {
+            releaseDispatch.TrySetResult();
+            releaseRetirement.TrySetResult();
+        }
+    }
+
+    [Fact(Timeout = 22_000)]
+    public async Task FailureAfterExactTakeBeforeExecutionRetiresTheUnusedIntent()
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        var ct = deadline.Token;
+        var capture = new Capture();
+        await using var upstream = capture.Build();
+        await upstream.StartAsync(ct);
+        using var store = await OwnedPolicyStore.OpenWithGroupAuthorityAsync(StatePath, new Authority(), new GroupAuthority(),
+            initialize: true, ct);
+        var verifier = new Verifier();
+        verifier.Scopes["alpha"] = new("alpha", FullScope, newRootIntent: "root");
+        verifier.Scopes["beta"] = new("beta", FullScope, newRootIntent: "root");
+        await using var app = BuildRouter(store, verifier, EngineUri(upstream));
+        await app.StartAsync(ct);
+        var router = app.Services.GetRequiredService<RouterCore>();
+        var selected = new TaskCompletionSource<OwnedPrivateAttempt>(TaskCreationOptions.RunContinuationsAsynchronously);
+        router.BeforeSelectedExecutionForTests = ticket =>
+        {
+            if (ticket.OwnedPolicy?.Key.Owner != "alpha") return;
+            selected.TrySetResult(ticket.PrivatePreparation!.Attempt!);
+            throw new InvalidOperationException("fixture failure before execution was scheduled");
+        };
+        using var handler = DirectHandler();
+        using var client = ClientAt(app, handler);
+        using var refused = await Send(client, HttpMethod.Post, ChatPath, "alpha", null, "aborted-selection", Chat, ct);
+        Assert.Equal((HttpStatusCode)499, refused.StatusCode);
+        var attempt = await selected.Task.WaitAsync(ct);
+        Assert.False(attempt.Consumed);
+        await WaitUntilAsync(() => store.ReadEffectivePolicy(attempt.Key)?.UnresolvedAttempts == 0,
+            ct).WaitAsync(TimeSpan.FromSeconds(4), ct);
+        Assert.Empty(capture.Inferences);
+        var (other, _) = await OpenRoot(client, "beta", ct);
+        Assert.NotEqual(attempt.Key.Group, other);
+        Assert.Single(capture.Inferences);
+    }
+
+    private static async Task<OwnedPolicyStore> ReopenWriterAsync(string path, Authority roots, GroupAuthority groups, CancellationToken ct)
+    {
+        while (true)
+        {
+            try { return await OwnedPolicyStore.OpenWithGroupAuthorityAsync(path, roots, groups, cancellationToken: ct); }
+            catch (IOException) { await Task.Delay(TimeSpan.FromMilliseconds(10), ct); }
+        }
     }
 
 }

@@ -11,6 +11,9 @@ internal sealed class OwnedPrivateAttempt : IDisposable
     private readonly Uri _uri;
     private Dictionary<string, string[]>? _headers;
     private Dictionary<string, string[]>? _contentHeaders;
+    private byte[]? _projectedBody;
+    private readonly byte[] _fingerprintKey;
+    private readonly byte[] _bodyAuthenticator;
     private readonly Version _version;
     private readonly HttpVersionPolicy _versionPolicy;
     private readonly CancellationTokenSource? _execution;
@@ -18,10 +21,13 @@ internal sealed class OwnedPrivateAttempt : IDisposable
     private int _terminalObserved;
     private int _consumed;
 
-    internal OwnedPrivateAttempt(RouterTicket ticket, EngineRuntime engine, Func<HttpRequestMessage> project, ReadOnlySpan<byte> body,
-        ReadOnlySpan<byte> fingerprintKey)
+    internal OwnedPrivateAttempt(RouterTicket ticket, EngineRuntime engine, Func<HttpRequestMessage> project, byte[] body,
+        byte[] fingerprintKey)
     {
         _ticket = ticket;
+        _projectedBody = body;
+        _fingerprintKey = fingerprintKey;
+        _bodyAuthenticator = HMACSHA256.HashData(fingerprintKey, body);
         var request = project();
         _request = request;
         _projectedContent = request.Content!;
@@ -35,7 +41,7 @@ internal sealed class OwnedPrivateAttempt : IDisposable
         Policy = ticket.OwnedPolicy!;
         Engine = engine;
         Record = new(Guid.NewGuid().ToString("N"), ticket.Id, engine.Name, Policy.Group.Revision,
-            Convert.ToHexStringLower(HMACSHA256.HashData(fingerprintKey, body)));
+            Convert.ToHexStringLower(_bodyAuthenticator));
     }
 
     internal HttpRequestMessage Request => _request!;
@@ -57,6 +63,7 @@ internal sealed class OwnedPrivateAttempt : IDisposable
         _request?.Dispose();
         _request = null;
         _projectedContent = null;
+        _projectedBody = null;
         _headers = null;
         _contentHeaders = null;
     }
@@ -66,7 +73,16 @@ internal sealed class OwnedPrivateAttempt : IDisposable
         ReferenceEquals(Engine, engine) && request.Method == HttpMethod.Post && request.RequestUri == _uri &&
         request.Version == _version && request.VersionPolicy == _versionPolicy &&
         ReferenceEquals(request.Content, _projectedContent) && request.Content is { } content &&
-        MatchHeaders(_headers!, request.Headers) && MatchHeaders(_contentHeaders!, content.Headers);
+        MatchHeaders(_headers!, request.Headers) && MatchHeaders(_contentHeaders!, content.Headers) && BodyMatches();
+
+    private bool BodyMatches()
+    {
+        Span<byte> check = stackalloc byte[SHA256.HashSizeInBytes];
+        HMACSHA256.HashData(_fingerprintKey, _projectedBody!, check);
+        return CryptographicOperations.FixedTimeEquals(_bodyAuthenticator, check);
+    }
+
+    internal void AlterProjectedBodyForTests() => _projectedBody![0] ^= 1;
 
     internal void RequestCancellation()
     {
