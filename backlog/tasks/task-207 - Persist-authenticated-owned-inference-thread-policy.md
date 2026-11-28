@@ -1,11 +1,11 @@
 ---
 id: TASK-207
 title: Persist authenticated owned inference thread policy
-status: Ready for Review
+status: To Do
 assignee:
   - '@gpt-6.2-astra'
 created_date: '2026-11-27'
-updated_date: '2026-11-28T12:37:29Z'
+updated_date: '2026-11-28T13:06:36Z'
 labels: []
 milestone: m-19
 dependencies:
@@ -25,13 +25,13 @@ AIR owns inference-session policy, not identity issuance or agent hierarchy. Con
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Authorized new roots default insensitive; unknown, missing or corrupt existing policy fails closed; unverified restores cannot silently weaken policy.
-- [ ] #2 Enforce owner/scope on inference, catalog/status/ticket/cancel/events and privileged admin operations; equal raw IDs never collide across owners.
+- [x] #1 Authorized new roots default insensitive; unknown, missing or corrupt existing policy fails closed; unverified restores cannot silently weaken policy.
+- [x] #2 Enforce owner/scope on inference, catalog/status/ticket/cancel/events and privileged admin operations; equal raw IDs never collide across owners.
 - [ ] #3 External client/orchestrator associates derived/restored sessions with an authorized policy group; AIR checks scope and refuses forged or omitted IDs from group-bound callers.
-- [ ] #4 Allow/deny intersects explicit trust and required capability; deny wins; malformed, empty or unknown restrictions cannot broaden eligibility.
+- [x] #4 Allow/deny intersects explicit trust and required capability; deny wins; malformed, empty or unknown restrictions cannot broaden eligibility.
 - [ ] #5 Policy evaluator checks queued dispatch, count/tokenize, retries and reload; capture fixtures refuse sensitive commercial candidates. Real legacy transport integration belongs to the send-boundary work.
 - [ ] #6 Persistent restart and restore fixtures prove conservative policy handling without prompt storage. SPEC §§5–7, 10, 13–14 specify scope and migration.
-- [ ] #7 Owned-policy enablement and rollback refuse reachable unguarded commercial senders or any unclassified destination; before the integrated guard, qualify positively trusted private-only topology with negative egress captures.
+- [x] #7 Owned-policy enablement and rollback refuse reachable unguarded commercial senders or any unclassified destination; before the integrated guard, qualify positively trusted private-only topology with negative egress captures.
 - [ ] #8 Existing scoped status exposes effective policy revision, sensitivity, destination trust classification and refusal reason without prompt or credential material.
 <!-- AC:END -->
 
@@ -52,5 +52,5 @@ Authorize both inference endpoints, catalog/status, tickets, cancel, events, thr
 <!-- SECTION:NOTES:BEGIN -->
 Review at 3c7ae3e added redirect, proxy, catalog caching, thread scope and post-eviction event checks. External authority, sensitivity transitions and commercial liability remain with TASK-217, TASK-208 and TASK-212 respectively.
 
-[Private policy integration](https://github.com/ArborealML/Inference-Router/pull/100) at 461b3c7 passed 154 focused checks. Real HTTP exercised private delivery, cancellation, redirect and proxy confinement, and a store write whose external confirmation was lost. An external Native AOT host served a fixture request at the confirmed revision. Five regressions reproduced writer-fault and shared-engine visibility gaps at 461b3c7. The correction 8bedd29 passed 159 tests and the external Native AOT fixture confirmed scoped status and catalog after delivery. Owned streams use bounded credit and cancel the admitted execution on writer failure. Shared live occupancy stays private.
+[Private policy integration](https://github.com/ArborealML/Inference-Router/pull/100) at 461b3c7 passed 154 focused checks. HTTP fixtures covered delivery, redirect/proxy confinement and lost store confirmation. [Final CI](https://github.com/ArborealML/Inference-Router/actions/runs/46147352336) passed 2,464 tests and Native AOT. At 8bedd29, 159 tests passed. An external Native AOT host confirmed scoped status and catalog after delivery. Owned streams use bounded credit and cancel the admitted execution on writer failure. [Combined source](https://github.com/ArborealML/Inference-Router/commit/8b74ffbfecd950a8da444544ac009e1d68ad55cb) passed 130/130. A separate HTTP test confirmed group-scoped live wait visibility and suppressed stale publication. Positive replay of a stored wait after reconnect remains unqualified.
 <!-- SECTION:NOTES:END -->

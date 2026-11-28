@@ -14,6 +14,7 @@ public enum OwnedInferencePermission
     ControlThread = 4,
     Cancel = 8,
     Administer = 16,
+    EscalateSensitivity = 32,
 }
 
 [Flags]
@@ -43,7 +44,8 @@ public sealed class VerifiedInferenceScope
         if (existingGroup is not null && (newRootIntent is not null || !Guid.TryParseExact(existingGroup, "N", out _)))
             throw new ArgumentException("Invalid verified group association.", nameof(existingGroup));
         if ((permissions & ~(OwnedInferencePermission.Inference | OwnedInferencePermission.Read |
-            OwnedInferencePermission.ControlThread | OwnedInferencePermission.Cancel | OwnedInferencePermission.Administer)) != OwnedInferencePermission.None)
+            OwnedInferencePermission.ControlThread | OwnedInferencePermission.Cancel | OwnedInferencePermission.Administer |
+            OwnedInferencePermission.EscalateSensitivity)) != OwnedInferencePermission.None)
             throw new ArgumentException("Invalid verified permissions.", nameof(permissions));
         Owner = owner;
         Permissions = permissions;
@@ -83,6 +85,12 @@ internal sealed class OwnedPrivatePolicy(OwnedPolicyStore store, IEnumerable<Pri
         destinations.ToFrozenDictionary(static destination => destination.Engine, StringComparer.Ordinal);
 
     internal OwnedPolicyStore Store => store;
+    private readonly byte[] _fingerprintKey = System.Security.Cryptography.RandomNumberGenerator.GetBytes(32);
+    internal Func<OwnedPrivateAttempt, Task>? BeforeHandoffForTests;
+    internal Func<OwnedPrivateAttempt, Task>? AfterHandoffClaimForTests;
+
+    internal OwnedPrivateAttempt FreezeAttempt(RouterTicket ticket, EngineRuntime engine, Func<HttpRequestMessage> project,
+        byte[] body) => new(ticket, engine, project, body, _fingerprintKey);
 
     internal void ValidateTopology(RouterConfig config, bool unqualifiedComposition)
     {

@@ -97,6 +97,9 @@ public sealed class RouterTicket
     public string ThreadId { get; }
     internal string? ScopedThreadKey { get; init; }
     internal OwnedTicketPolicy? OwnedPolicy { get; init; }
+    internal OwnedPrivateAttempt? PrivateAttempt;
+    internal OwnedPrivatePreparation? PrivatePreparation;
+    internal int PrivateAttemptDisposition;
     public string Model { get; }
     public DateTimeOffset QueuedAt { get; }
     public TicketState State

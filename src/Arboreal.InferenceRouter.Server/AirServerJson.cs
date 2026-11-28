@@ -14,6 +14,7 @@ internal static partial class AirServerJson
     [JsonSerializable(typeof(RouterEvent))]
     [JsonSerializable(typeof(RouterStats))]
     [JsonSerializable(typeof(ScopedRouterStats))]
+    [JsonSerializable(typeof(OwnedSensitivityOutcome))]
     [JsonSerializable(typeof(TicketSnapshot))]
     [JsonSerializable(typeof(SwitchAck))]
     [JsonSerializable(typeof(SwitchOperationSnapshot))]

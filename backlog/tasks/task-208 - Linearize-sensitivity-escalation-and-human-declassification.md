@@ -1,11 +1,11 @@
 ---
 id: TASK-208
 title: Linearize sensitivity escalation and human declassification
-status: In Progress
+status: Ready for Review
 assignee:
-  - '@gpt-6.2-sol-config'
+  - '@gpt-6.2-astra'
 created_date: '2026-11-27'
-updated_date: '2026-11-28T12:31:00Z'
+updated_date: '2026-11-28T14:04:00Z'
 labels: []
 milestone: m-19
 dependencies:
@@ -43,5 +43,7 @@ Keep lowering disabled without independent human privilege bound to owner, group
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Review of 461b3c7 found a check-before-send gap and one global store writer. Qualify group-local recovery, the final transmission handoff and separately authorized probe traffic. Actual paid egress and human lowering retain their existing owners.
+The [private sensitivity candidate](https://github.com/ArborealML/Inference-Router/pull/102) covers escalation, confirmed revision readback, scoped cancellation and explicit quarantine for potentially used intents. A second group uses the same single-slot engine while journal writes are stalled. [Hosted qualification](https://github.com/ArborealML/Inference-Router/actions/runs/46151958391) covered the combined stock host and privacy implementation.
+
+Review of 87bb388 accepted retention of the writer lease until intent retirement, abort-before-execution cleanup, and the content fingerprint check. The final correction at ca70eb4 prevents a queued root creator from beginning a new write after disposal. Four focused tests passed. Human lowering and deployment qualification remain open.
 <!-- SECTION:NOTES:END -->
