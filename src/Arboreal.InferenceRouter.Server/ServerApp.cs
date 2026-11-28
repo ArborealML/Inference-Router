@@ -147,7 +147,7 @@ public static partial class ServerApp
         }
         catch (RouterRequestException ex)
         {
-            await WriteErrorAsync(ctx, MapStatus(ex.Code), ex.Code, ex.Message).ConfigureAwait(false);
+            await WriteErrorAsync(ctx, 400, ex.Code, ex.Message).ConfigureAwait(false);
             return;
         }
 
