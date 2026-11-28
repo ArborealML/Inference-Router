@@ -54,21 +54,44 @@ public readonly struct ThreadPriority : IEquatable<ThreadPriority>, IComparable<
     public static ThreadPriority Low(byte sub = 0) => new(ThreadPriorityClass.Low, sub);
     public static ThreadPriority Background(byte sub = 0) => new(ThreadPriorityClass.Background, sub);
 
-    /// <summary>Parse "class[:sub]" — e.g. "high:200". Returns false on malformed input.</summary>
+    /// <summary>Parse "class[:sub]" — e.g. "high:200". The grammar is exact (§6): a class name from the table,
+    /// case-sensitive with no surrounding whitespace, optionally followed by ':' and a sub-priority written as
+    /// one to three plain ASCII decimal digits, unsigned, with no leading zero unless it is exactly "0".
+    /// Anything else returns false, including " high ", "high: 12", "high:+12" and "high:001".</summary>
     public static bool TryParse(string text, out ThreadPriority priority)
     {
         priority = Normal();
-        if (string.IsNullOrWhiteSpace(text)) return false;
-        var span = text.AsSpan().Trim();
-        var sep = span.IndexOf(':');
+        if (string.IsNullOrEmpty(text)) return false;
+        var span = text.AsSpan();
         byte sub = 0;
+        var sep = span.IndexOf(':');
         if (sep >= 0)
         {
-            if (!byte.TryParse(span[(sep + 1)..], out sub)) return false;
+            if (!TryParseSub(span[(sep + 1)..], out sub)) return false;
             span = span[..sep];
         }
         if (!ThreadPriorityClass.TryParseClass(span.ToString(), out var cls)) return false;
         priority = new ThreadPriority(cls, sub);
+        return true;
+    }
+
+    /// <summary>The sub-priority as it must be written. <c>byte.TryParse</c> alone also takes " 12", "+12" and
+    /// "007", and <see cref="char.IsDigit"/> takes non-ASCII decimal digits: spellings nothing on the wire
+    /// writes, which would make two callers that sent different bytes share a queue position by accident.
+    /// So the digits are checked one at a time, and the value has to fit <see cref="MaxSubPriority"/>.</summary>
+    private static bool TryParseSub(ReadOnlySpan<char> text, out byte sub)
+    {
+        sub = 0;
+        if (text.Length is < 1 or > 3) return false;
+        if (text.Length > 1 && text[0] == '0') return false;         // "007" is not how "7" is sent
+        var value = 0;
+        foreach (var c in text)
+        {
+            if (c is not (>= '0' and <= '9')) return false;          // ASCII digits only: no sign, no space
+            value = (value * 10) + (c - '0');
+        }
+        if (value > MaxSubPriority) return false;
+        sub = (byte)value;
         return true;
     }
 

@@ -1,15 +1,18 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.165)
+Status: draft, continuously revised (v0.12.166)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
 
 ## 0. Revision log
 
+- v0.12.166 — validate admin thread and switch JSON object roots and string fields before registration or switch admission. Malformed shapes return 400 in the route's existing error envelope. Target reset keeps its `invalid_target_reset` contract (§§6, 6.1, 14).
 - v0.12.165 — refresh inherited priorities in pending queues when callers update a thread and validate the new order at exact take (§§5.1, 5.5, 14).
 - v0.12.164 — report the upstream outcome and end reason on terminal streaming tickets and events. One bounded SSE observer supplies raw-byte and semantic-output timing, reported model identity, and usage availability. An upstream error followed by `[DONE]` fails the ticket and preserves the original bytes (§§6, 10, 14).
 - v0.12.163 — dispatch complete finite rounds across the existing model queues, try available route alternatives, and report scoped queue waits (§§5.4–5.5, 10, 14).
+- v0.12.162 — a malformed `X-Inference-Priority` is refused at ingress instead of dropped: 400 `invalid_priority` in the existing lowercase envelope, added to the §6.1 code list with no new field and no shape change, and written before the ticket exists, so the refusal leaves no thread, no queue member, no forward to an engine and no `request.enqueued`. An absent header keeps the configured default; a repeated header is refused rather than resolved (§6, §6.1). `PriorityIngressTests` pins absent, empty, malformed, duplicated and differently cased values, sub 0/255/256, the ordinary and streaming paths, and the zero-effect counters. §6 now states the grammar that parser enforces instead of summarising it: the five lowercase class names spelled exactly, an optional `:` and one to three ASCII digits with no sign, no whitespace and no leading zero, at most 255, matched against the whole value with nothing trimmed. `air threads --priority` refuses a value outside that grammar locally — exit 2, the grammar on stderr, no request sent — where it used to post the default priority and accept the 204 for a spelling the request path rejects; `air chat --priority` still forwards the header so the router's 400 reaches that caller. `CliThreadPriorityTests` pins the refusal with no request and the parsed admin body for accepted values, and `ThreadPriorityTests` pins the accepted and rejected spellings row by row. The same revision closes what a second review of that commit found on the caller side and in the admin route: `POST /admin/threads` now reads a supplied priority exactly instead of on trust, so a present `priority` that is not an object and a present `sub` that is not a JSON number written in plain decimal digits within 0-255 both return 400 `invalid_request` in the existing envelope — where `255.7`, `-5` and `1e10` were cast and clamped into a byte and answered 204, a non-string `class` reached a 500, and a `priority` of any other shape was ignored wholesale — while an absent `sub` still means the whole class at 0; `AdminThreadPriorityTests` pins each refusal body byte for byte, proves nothing was registered, and pins that each accepted body registers exactly what it says. Both verbs also refuse an unusable `--priority` option *shape* — given no value, an empty value, a token that reads as another option, or given more than once — locally with exit 2 and no request, where each used to read exactly like an absent option and ask for the default; that stub counts arrivals ahead of reading any body, so "no request" is the fact of a request rather than a parse failure.
+
 - v0.12.161 — a selected serving tier whose window the resident already measures and whose reported lanes are at least the tier's is a zero-cost target: no lifecycle call, no switch event and no epoch bump, proved by the measured window rather than by the inferred profile label; extra lanes satisfy a narrower tier, missing lanes do not (§7.6).
 - v0.12.160 — send an opaque per-engine thread cache hint on completion requests to explicitly router-owned local Docker lifecycle groups (§6).
 
@@ -2794,12 +2797,17 @@ Admin/control (not OpenAI-compatible, our own contract):
 
 - `POST /admin/threads` register/update thread (priority API over HTTP):
   body `{ threadId, priority: {class, sub}, weight?, modelAffinity? }`.
+  The body must have an object root and a nonempty string `threadId`. A supplied `modelAffinity`
+  is a string or JSON `null`. Shape errors return 400 `invalid_request` before thread registration.
 - `POST /admin/switch` — request model switch: `{engine, model, profile?}`;
   refuses if a switch is in flight unless `force`. `profile` names a declared
   serving tier; the ack echoes it and the wait-for-ready loop requires the
   reported window to fit. An accepted request returns 202 with `Engine`, `Model`, `Profile`,
   `Switching: true` and `OperationId`, a server-generated ID of 32 lowercase hex characters.
   Save the ID for lookup. Acceptance starts a detached waiter that continues if the POST disconnects.
+  The body must have an object root and string `engine` and `model` members. A supplied `profile`
+  is a string or JSON `null`. Shape errors return 400 `invalid_request` before any admin use or
+  operation reservation begins. On both routes, JSON `null` for an optional string means it was omitted.
 - `GET /admin/switch/{operationId}` returns 200, `Cache-Control: no-store` and the PascalCase
   object `{"OperationId":"…","Status":"…","Reason":…}` for a known operation. Status is
   `pending`, `succeeded`, `failed` or `cancelled`. A success means the target was ready for that
@@ -3025,6 +3033,34 @@ carries its ticket id back on the response as `X-Inference-Ticket`, which is how
 `GET|DELETE /admin/tickets/{id}` (watch / cancel) without scraping the event stream. Body-only
 callers (default thread `anon`, priority Normal) work unchanged.
 
+`X-Inference-Priority` carries one value, and the whole value has to match the grammar: one of the five
+class names `background`, `low`, `normal`, `high`, `interactive` written in lowercase exactly as spelled
+here, optionally followed by `:` and a sub-priority written as one to three ASCII decimal digits — unsigned,
+no whitespace, no leading zero unless the sub is exactly `0`, and at most 255. Nothing is trimmed, so a
+leading or trailing space makes the value malformed. `high`, `high:0` and `high:255` are in; ` high `,
+`HIGH`, `high:`, `high: 12`, `high:+12`, `high:001`, `high:0255`, `high:256`, `high:999`, `high:1:2` and
+any non-ASCII digit are out. `POST /admin/threads` names that class in JSON: `priority` is an object with
+`class`, and an absent `sub` means the whole class at 0. That surface admits what the header admits and nothing
+else: a `priority` that is present and not an object returns 400 `invalid_request`, and so does a present `sub`
+that is not a JSON number written as plain decimal digits within 0-255 (`255.7`, `-5`, `1e10`, `"10"`, `true`,
+`[10]`) rather than arriving at a byte through a cast and a clamp. A `class` outside the five, or one that is
+not a string, returns the same 400 it always did instead of a 500. Each of those refusals registers nothing —
+neither the priority the caller asked for nor the default it did not. `air threads --priority` parses this
+grammar locally: a value outside it is refused before any request is sent, with the grammar on stderr and exit
+2, because the route would otherwise have answered 204 for the default priority the caller did not ask for.
+`air chat --priority` forwards the value unread instead, so that caller reads the router's own refusal. Both
+verbs refuse an unusable option shape locally with exit 2 and no request: `-p` given no value, given an empty
+value, given a token that reads as another option, or given more than once — each of which used to read exactly
+like an absent `-p` and ask for the default. An absent option or header is the configured default, and is
+the only way to ask for nothing. A value that is present and outside that grammar returns
+**400 `invalid_priority`** from the same lowercase envelope, written while
+the headers are still being read: no thread registration, no queue member, no forward to an engine, no
+`X-Inference-Ticket`, and no `request.enqueued` on the feed. A streaming request is refused the same way an
+ordinary one is — a JSON body at 400, never a committed SSE stream. Two `X-Inference-Priority` headers are
+two values for one request and are refused rather than resolved. The accepted value is the priority of the
+request that carries it and the priority a first-seen thread is registered with; it never reprioritises
+work already queued or running.
+
 Priority is **not** clamped to the configured default and there is no general caller authentication, so a
 caller can currently promote itself. Pinning that at the edge is v0.1 ingress work (§15.1); until
 then the deployment posture is loopback-or-behind-your-proxy. `docs/ai-integration.md` states this
@@ -3051,7 +3087,8 @@ event and sequence without adding a fault record.
 
 The shipped error contract is one lowercase body on every surface —
 `{"error":{"type":"air_error","code":…,"message":…}}` — and the code picks the status:
-`invalid_request` 400, `not_found` 404, `deadline_exceeded` 408, `cancelled` 499, `queue_overflow`
+`invalid_request` 400, `invalid_priority` 400 (a malformed `X-Inference-Priority`, refused at ingress
+before the ticket exists — §6), `not_found` 404, `deadline_exceeded` 408, `cancelled` 499, `queue_overflow`
 429, `request_body_too_large` 413 (over `max_request_body_bytes`), `engine_error` / `engine_unreachable` 502,
 `switch_failed` / `model_unavailable` 503. A switch that outlives `switch_wait_timeout_ms` can
 return `switch_failed`. The absence proof and the configured explicit-context proof in §5.5
@@ -3110,6 +3147,11 @@ prefixes, delimiters and the sentinel. The pair's limit excludes preceding keepa
 data. These limits count encoded body bytes. `ErrorContractTests` and `StreamFrameIdentityTests`
 pin the error shape, reported reason and encoded sizes. `docs/ai-integration.md` carries the error
 code table for integrators.
+
+`POST /admin/threads` and `POST /admin/switch` use the lowercase 400 `invalid_request` envelope
+for malformed JSON, any nonobject root, or an invalid string-member kind (§6). The authenticated
+target reset route retains 400 `invalid_target_reset` for malformed bodies after authentication
+and `If-Match` syntax validation.
 
 ## 7. Configuration (TOML)
 
@@ -4279,6 +4321,10 @@ and cohort/residency hysteresis in the scheduler (§12.3 hook).
   `StreamingFailureTests`): split SSE lines and unchanged relay bytes, timing, identity and usage
   availability, outcome precedence, one terminal event for upstream error plus `[DONE]`, sibling stream
   isolation, and cancellation or writer failure independently of observed upstream evidence.
+- **Admin JSON input** (`AdminJsonBodyTests`, `AdminThreadPriorityTests`, `AdminSwitchOperationTests`,
+  `ConfigReloadWireTests`): literal 400 envelopes for nonobject roots and invalid string kinds, no
+  thread registration or switch operation on refusal, available topology changes after malformed
+  switch input, and the existing target-reset authentication and tag checks.
 - **Configuration reload** (`ConfigReloadWireTests`, `ConfigReloadRaceTests`): authenticated
   file apply, generation readback and rejection, exact stream bytes and a held native switch,
   queue and shutdown ordering, idle external retirement, detached response disposal, and
