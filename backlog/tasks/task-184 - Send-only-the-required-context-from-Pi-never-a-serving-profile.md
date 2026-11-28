@@ -35,7 +35,7 @@ Pi separates conversation/compaction ceiling, intentional hard floor and actual 
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Reuse catalog/session controls and existing tracked extension; use current/private-fixture capability catalog. TASK-209 owns policy-filtered catalog and private compaction; TASK-186/188 gate actual installed release and isolation. Preserve explicit third-party minima and old named semantics; retire only by explicit later migration decision.
+Reuse catalog/session controls and existing tracked extension; use current/private-fixture capability catalog. Coordinate advertised capability projection with TASK-209; Pi must not grow provider-specific route logic. TASK-209 owns policy-filtered catalog and private compaction; TASK-186/188 gate actual installed release and isolation. Preserve explicit third-party minima and old named semantics; retire only by explicit later migration decision.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes

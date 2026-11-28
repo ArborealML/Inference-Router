@@ -28,15 +28,18 @@ Own integrated commercial send safety: one attempt and durable maximum exposure 
 - [ ] #3 Hard budget needs conservative billable input, enforceable aggregate output/reasoning/choices and maximum cache/price/fee bounds; unknown bounds refuse.
 - [ ] #4 Crash, cancel, reset, removal or unverified restore retain unresolved occupancy/liability until proven settlement or audited correction; never expire unknown exposure.
 - [ ] #5 Ambiguous submission never automatically replays; separately authorized replacement reserves independently and never splices output.
-- [ ] #6 Every hybrid commercial path, including legacy forwarding and prompt-bearing count/tokenize, is fail-closed until guard, scoped admission and accounting are ready.
+- [ ] #6 Every owned-policy/hybrid commercial path, including legacy and count/tokenize, is fail-closed until the integrated guard is qualified; unclassified destinations always refuse and rollback cannot bypass classification or guard.
 - [ ] #7 Barrier tests cover persistence/escalation/send/reload order, shared-account races, definite non-send and unknown outcomes; held accounting cannot stall unrelated domains.
 - [ ] #8 SPEC §§5–7, 10, 14 pin guarantees and migration; no live provider call required.
+- [ ] #9 Race preferred-route liability/cap refusal after ranking; another permitted ready route progresses within the round, or scoped denial results; no duplicate reservation, spin or unauthorized spend.
+- [ ] #10 Require externally established singleton writer and exclusive journal opening where shared; duplicate start refuses and unresolved old-writer authority prevents automatic takeover.
+- [ ] #11 Expose scoped predicted/settled/unresolved liability and attempt disposition through existing status/events and CLI/monitor, without prompts or secret metadata.
 <!-- AC:END -->
 
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Single-writer minimal durable attempt store, reusable atomic flush/replace helpers, per-account reservations and independent asynchronous persistence. No global queue/admission lock spans I/O. Coordinate policy gate (TASK-208), transport (210) and caps/ranking (211). Reserve worst case even if predicted included when paid fallthrough is possible. Safe rollback cannot reenable legacy bypass; disable unclassified routes in hybrid mode. Manual reconciliation is sufficient initially.
+Single-writer minimal durable attempt store, reusable atomic flush/replace helpers, per-account reservations and independent asynchronous persistence. External deployment establishes singleton ownership; no leader election. No global queue/admission lock spans I/O. Coordinate policy gate (TASK-208), transport (210) and caps/ranking (211). Reserve worst case even if predicted included when paid fallthrough is possible. Safe rollback cannot reenable legacy bypass; disable unclassified routes in hybrid mode. Manual reconciliation is sufficient initially.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes

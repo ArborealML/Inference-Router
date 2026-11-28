@@ -27,5 +27,5 @@ Owner chooses whether to permit controlled metered/subscription qualification se
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Review controlled plans in TASK-214/215 when available. Reply with each provider/account scope and limit or fixture-only; about five minutes. No paid requests needed to prepare. Mark genuinely human-blocked live work accordingly.
+Review controlled plans in TASK-214/215 when available. Reply with each provider/account scope and limit or fixture-only; about five minutes. No paid requests needed to prepare. Mark genuinely human-blocked live work accordingly; affirmative scope is distinct from observed account facts and cannot prove root authority or provider enforcement.
 <!-- SECTION:PLAN:END -->

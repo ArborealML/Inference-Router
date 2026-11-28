@@ -29,6 +29,7 @@ Add strict numeric context-floor and independent fit/admission reporting without
 - [ ] #5 Busy compatible resident does not force context escalation; compare eligible alternatives or wait under independent policy.
 - [ ] #6 Numeric-mode fixtures preserve existing recipe-bound conformance and never grant unqualified lanes; actual new launch enablement waits for the applicable host/conformance contracts.
 - [ ] #7 SPEC §§5–7, 10, 14 pin fit and compatibility; capture fixtures exercise local-only count/tokenize without external disclosure.
+- [ ] #8 Existing catalog/status/CLI/monitor distinguish required and allocated context, physical lanes, admission target and actual occupancy using shared bounded read models.
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -40,5 +41,5 @@ Land strict ingress normalization and shared candidate fit independently of elec
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Previous review confirmed name matching and declaration-order tie-break. Revision 4 supersedes wider-lane preference and contraction non-goal. Refresh plan review; TASK-190/197/198 retain transition authority.
+Previous review confirmed name matching and declaration-order tie-break. Revision 5 reconciliation, with the accepted corrective review amendments, supersedes wider-lane preference and contraction non-goal. Refresh plan review; TASK-190/197/198 retain transition authority.
 <!-- SECTION:NOTES:END -->

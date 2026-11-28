@@ -39,13 +39,14 @@ AIR independently selects context, physical lanes and admission target for actua
 - [ ] #7 Select cohort by existing pending order/eligibility before optimization; no priority-dependent throughput, context, spending or lanes.
 - [ ] #8 SPEC §§5, 7.6, 10, 14 replace contraction non-goal, record thresholds/uncertainty and report actual/desired/available capacity. Untested recipes never qualify.
 - [ ] #9 Per-model and per-host elective changes obey explicit drain/outage budgets, hysteresis and cooldown; failed-attempt backoff survives restart.
-- [ ] #10 Synthetic estimator and controller fixtures can land disabled; production physical changes use the sole manager authority and only real explicitly adopted comparable evidence.
+- [ ] #10 Synthetic estimator/controller fixtures land disabled; each production mode requires adopted real comparable evidence, including representative mixed/staggered replays when enabled; physical mutation uses the sole manager authority.
+- [ ] #11 Existing status/events and CLI/monitor show desired/actual W/P/C, occupancy, qualified evidence, decision rationale and transition/cooldown scope with bounded redacted detail.
 <!-- AC:END -->
 
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Use adopted finite table and simple full/partial-wave estimator; active, reserved and queued demand count once across eligible alternatives. Start with admission-only changes; physical transitions reuse manager authority and TASK-190/197/198. Require service floors, conservative benefit, persistent failure backoff and bounded drain/outage. TASK-191 supplies safe startup. Test synthetic data first; enable each mode only after real TASK-154 evidence is adopted through TASK-216.
+Use adopted finite table and simple full/partial-wave estimator; active, reserved and queued demand count once across eligible alternatives. Start with admission-only changes; physical transitions reuse manager authority and TASK-190/197/198. Require service floors, conservative benefit, persistent failure backoff and bounded drain/outage. TASK-191 supplies safe startup. Test synthetic data first; enable each mode only after its applicable real TASK-154 evidence is adopted through TASK-216; unqualified modes stay disabled. Distinguish admission-only and physical changes.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes

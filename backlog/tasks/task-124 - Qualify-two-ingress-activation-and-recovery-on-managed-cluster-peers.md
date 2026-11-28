@@ -29,11 +29,11 @@ Qualify the first useful fixed-placement pair of managed hosts, with one authori
 - [ ] #4 Partition, stale readiness and restart retain unresolved physical claims. No replay, cross-domain stall or unsafe actuation.
 - [ ] #5 Pin installed binaries/configuration and actual host evidence; fixtures alone do not qualify a two-host deployment.
 - [ ] #6 Keep primary DeepSeek resident and streaming while the peer serves both qualified Qwen models in turn through either ingress; verify simultaneous progress, configured fallback and no silent primary eviction.
-- [ ] #7 Record actual host/model fit, manager access boundary, protected ingress and authorized cutover/rollback; failed prerequisites leave deployment unqualified.
+- [ ] #7 Record actual host/model fit, manager access boundary, protected ingress, external singleton writer and authorized cutover/rollback; failed prerequisites leave deployment unqualified.
 <!-- AC:END -->
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-TASK-219 incident diagnosis is independent; verify actual release pins here without requiring reproduction of an unrelated old deployment. Live commissioning is an operator prerequisite, not provisioning implementation.
+TASK-219 incident diagnosis is independent; verify actual release pins here without requiring reproduction of an unrelated old deployment. Live commissioning is an operator prerequisite, not provisioning implementation. Private-only cluster release does not require full agent policy or commercial integration; positively trusted egress and external protected ingress are required.
 <!-- SECTION:NOTES:END -->

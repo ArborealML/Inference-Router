@@ -21,7 +21,7 @@ ordinal: 108000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Named local groups and same-host switch evidence shipped in PR #75; see [published verification](../../docs/local-model-switching.md#verification). After TASK-25/118 and TASK-206's seam, finish host authority, fencing and restart reconciliation within the dedicated inference resource boundary. External infrastructure establishes exclusive access to managed resources and isolates foreign launchers; AIR enforces ownership within that boundary and refuses unknown occupancy.
+Named local groups and same-host switch evidence shipped in PR #75; see [published verification](../../docs/local-model-switching.md#verification). After the pinned paired production admission/sender witness and TASK-206's seam, finish host authority, fencing and restart reconciliation within the dedicated inference resource boundary. External infrastructure establishes exclusive access to managed resources and isolates foreign launchers; AIR enforces ownership within that boundary and refuses unknown occupancy.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -38,7 +38,7 @@ Named local groups and same-host switch evidence shipped in PR #75; see [publish
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Initial launch and reconciliation return an explicit durable Applied receipt with ingress closed. Bind the exact checkpoint operation, plan and immutable instance to independent observation of effective settings and running state. Incomplete evidence keeps the effect fenced. Finish before route publication, Open or permit issuance; serving success is a separate outcome. Reuse PR #35 evidence. Future launch requires independently verified vacancy and exclusive mutation across both GPUs and the private route. Serving stop requires exact ownership, admission closure and confirmed physical retirement. Inference requires exact-generation Open and instance-bound first-write authorization. Keep the current resident untouched.
+Initial launch and reconciliation return an explicit durable Applied receipt with ingress closed. Bind the exact checkpoint operation, plan and immutable instance to independent observation of effective settings and running state. Incomplete evidence keeps the effect fenced. Finish before route publication, Open or permit issuance; serving success is a separate outcome. Reuse PR #35 evidence. Future launch requires independently verified vacancy and exclusive mutation within the actual assigned resource domain, not a fixed GPU count or topology. Serving stop requires exact ownership, admission closure and confirmed physical retirement. Inference requires exact-generation Open and instance-bound first-write authorization. Keep the current resident untouched.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes

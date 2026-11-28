@@ -35,8 +35,8 @@ Wake after TASK-206's seam and TASK-110/190/197/198 physical ownership, recovery
 - [x] #4 SPEC documents which requests the inference endpoint can serve and which lifecycle actions each owner can authorize.
 - [x] #5 An omitted remote never grants load authority: ownership comes from a target-bound lifecycle provider, never from a hostname or from a missing key
 - [x] #6 A shipped sample engine with no lifecycle block still refuses to switch after the migration, pinned by the sample test
-- [ ] #7 A legacy remote endpoint is routable without actuation or adoption. A foreign endpoint sharing a managed host blocks activation until the host authority proves vacancy.
-- [ ] #8 Remote and in-process managers use equivalent snapshot, accept/refuse, cancel and disposition semantics; stale readiness or uncertain acceptance never grants ownership.
+- [ ] #7 A legacy remote endpoint is routable without actuation or adoption subject to the active mode's egress policy. A foreign endpoint sharing a managed host blocks activation until the host authority proves vacancy.
+- [ ] #8 Remote and in-process managers use equivalent snapshot, accept/refuse, cancel and disposition semantics; stale readiness, stale writer incarnation or uncertain acceptance never grants ownership.
 - [ ] #9 Router-only, manager-only and combined roles ship in the same Native AOT binary; manager is a leaf, with scoped authenticated transport and no competing pending queue.
 <!-- AC:END -->
 

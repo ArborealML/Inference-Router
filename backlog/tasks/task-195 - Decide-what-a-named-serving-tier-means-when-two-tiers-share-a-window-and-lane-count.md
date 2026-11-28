@@ -39,5 +39,5 @@ Reuse TASK-118's completed exact-target identity evidence. Bind immutable effect
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Former owner question addressed by revision 4 recommendation, subject to PR ratification; not marked Done.
+Former owner question addressed by the revision 5 reconciliation, subject to decision-83 ratification; not marked Done.
 <!-- SECTION:NOTES:END -->

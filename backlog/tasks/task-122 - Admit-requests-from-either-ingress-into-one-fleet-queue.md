@@ -18,7 +18,7 @@ ordinal: 120000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-One router writer owns the fleet queue and assignment. Additional ingress forwards to the same authority; no second pending queue or distributed consensus. Use fixed configured host/model placement first.
+One router writer owns the fleet queue and assignment. Additional ingress forwards to the same authority; no second pending queue, automatic writer takeover or distributed consensus. External deployment establishes singleton operation. Use fixed configured host/model placement first.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -29,6 +29,7 @@ One router writer owns the fleet queue and assignment. Additional ingress forwar
 - [ ] #4 Both ingress paths preserve policy, ticket, sequence and limits; the forwarder never owns independent pending work.
 - [ ] #5 A slow/refused or unreachable peer cannot block another admissible provider; exact one-time reservation and unknown-acceptance fixtures prove isolation.
 - [ ] #6 Forwarder authenticates to the writer and preserves verified caller scope, ticket cancellation and deadlines; no caller-supplied header grants owner or manager authority.
+- [ ] #7 Duplicate start or stale router incarnation cannot submit under current authority; after lost ingress acknowledgment the forwarder never replays an ambiguously accepted POST as fresh work.
 <!-- AC:END -->
 
 ## Implementation Notes

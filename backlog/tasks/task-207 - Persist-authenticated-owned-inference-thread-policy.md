@@ -27,10 +27,12 @@ AIR owns inference-session policy, not identity issuance or agent hierarchy. Con
 - [ ] #4 Allow/deny intersects explicit trust and required capability; deny wins; malformed, empty or unknown restrictions cannot broaden eligibility.
 - [ ] #5 Policy evaluator checks queued dispatch, count/tokenize, retries and reload; capture fixtures refuse sensitive commercial candidates. Real legacy transport integration belongs to the send-boundary work.
 - [ ] #6 Persistent restart and restore fixtures prove conservative policy handling without prompt storage. SPEC §§5–7, 10, 13–14 specify scope and migration.
+- [ ] #7 Owned-policy enablement and rollback refuse reachable unguarded commercial senders or any unclassified destination; before the integrated guard, qualify positively trusted private-only topology with negative egress captures.
+- [ ] #8 Existing scoped status exposes effective policy revision, sensitivity, destination trust classification and refusal reason without prompt or credential material.
 <!-- AC:END -->
 
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Reuse simple scoped credentials or verified principal supplied by the deployment. No identity issuer, agent sandbox, agent graph, backup service or general policy engine. Privileged root creation and de-escalation require an external authority contract; AIR only checks scope and revision. Explicitly classify trusted private providers; locality is not trust. Strip internal auth headers, scope events and sanitize errors. In hybrid mode unknown legacy trust fails closed. Coordinate final-send contract with TASK-208/210/212.
+Reuse simple scoped credentials or verified principal supplied by the deployment. No identity issuer, agent sandbox, agent graph, backup service or general policy engine. Root authorization and optional de-escalation privilege are separate external contracts; AIR checks applicable scope and revision. Private-only production requires proven egress confinement; offline policy fixtures do not. Explicitly classify trusted private providers; locality is not trust. Strip internal auth headers, scope events and sanitize errors. In owned-policy/hybrid mode unknown trust always fails closed; private-only positive trust and policy checks do not require commercial spend reservations. Coordinate final-send contract with TASK-208/210/212.
 <!-- SECTION:PLAN:END -->

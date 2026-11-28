@@ -36,7 +36,7 @@ Implement air tune run for one configured engine/model/exact recipe using the ex
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Continue deterministic fitter/token-count adapter. Reuse existing exclusive local admission and TASK-187's semantic outcome contract; no remote manager or commercial prerequisite. Preserve near-window-text-v1 and normal-use-long-decode-v1 (65536 rendered input + 32768 output); reserve can make 96K insufficient. Record cold load separately. Implement against capture fixtures before an authorized real run. Amend SPEC §11 and tuning design with code/tests.
+Continue deterministic fitter/token-count adapter. Reuse existing exclusive local admission and coordinate TASK-187's small shared semantic-observation contract; fixture producers/local instrumentation avoid waiting for commercial integration. Only authoritative complete work counts toward throughput; missing usage stays unavailable. Preserve near-window-text-v1 and normal-use-long-decode-v1 (65536 rendered input + 32768 output); reserve can make 96K insufficient. Record cold load separately. Implement against capture fixtures before an authorized real run. Amend SPEC §11 and tuning design with code/tests.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes

@@ -15,17 +15,17 @@ ordinal: 217000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Owner chooses the external control-layer privilege contract that AIR will consume for owner-authorized root creation/de-escalation, or keeps those privileged operations disabled. Agent isolation, authentication and credential issuance belong outside AIR.
+Owner selects independently authorized principal/root scope and, separately, the external human-only lowering privilege or disabled lowering. Agent isolation, authentication and credential issuance belong outside AIR.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Record chosen external privilege/scope contract and who may authorize independent roots or de-escalation; AIR verifies the supplied scope and policy revision.
-- [ ] #2 Record affirmative approved deployment boundary or keep privileged operations disabled; do not claim human-only behavior without externally established credential isolation.
+- [ ] #1 Record independently authorized principal/root scope and permitted independent-root creation, or deny it; AIR verifies the supplied scope.
+- [ ] #2 Record separately enabled human-only lowering privilege with externally established credential isolation, or disabled lowering; AIR verifies scope and policy revision.
 <!-- AC:END -->
 
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Review TASK-208's proposed privilege contract and external deployment prerequisite. Reply with selected existing control/credential mechanism or disabled; about five minutes. No credentials or sandbox implementation in AIR. A refusal does not authorize commercial operation requiring this boundary.
+Review TASK-208's proposed privilege contract and external deployment prerequisite. Reply with selected existing control/credential mechanism or disabled; about five minutes. No credentials or sandbox implementation in AIR. Denied root scope cannot authorize commercial operation. Disabled lowering alone does not block an otherwise authorized fixed insensitive root; no lowering claim without actual external evidence.
 <!-- SECTION:PLAN:END -->

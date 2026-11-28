@@ -27,11 +27,13 @@ Pi remains an AIR client. Associate ordinary and auxiliary calls with the extern
 - [ ] #2 Escalation waits for durable AIR acknowledgment before dependent inference; failed escalation blocks dependent inference.
 - [ ] #3 Pi displays effective sensitivity and affected transcript/group scope; de-escalation uses externally authorized privileged operation, never an inference tool credential.
 - [ ] #4 Eligibility-filtered catalog controls conversation ceiling; warn/refuse or compact privately when eligibility shrinks.
-- [ ] #5 Pinned Pi API and outbound hook fixtures cover both paths, retries and restore; TASK-186/188 safety and installed parity gate production Pi release.
+- [ ] #5 Pinned Pi API and outbound hook fixtures cover both paths, retries and restore; Installed safety and parity gate production Pi release.
+- [ ] #6 Production policy-client enablement requires qualified integrated egress or positively trusted private-only configuration; negative captures cover ordinary, auxiliary, reload and rollback paths. No unguarded legacy send.
+- [ ] #7 Both outbound paths consume advertised capability semantics without engine-name-specific provider payload exceptions; preserve supported local behavior and explicitly refuse required unsupported semantics.
 <!-- AC:END -->
 
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Consume 183/184's migrated numeric API and 207/208's policy contract. Test fake external identity/privilege, no sandbox implementation. The client/orchestrator supplies session associations; AIR validates them. Keep de-escalation disabled until externally authorized. Coordinate existing TASK-186/188; do not require live Pi rollout to qualify direct non-Pi inference.
+Consume 183/184's migrated numeric API and 207/208's policy contract. Test fake external identity/privilege, no sandbox implementation. The client/orchestrator supplies session associations; AIR validates them. Keep de-escalation disabled until externally authorized. Coordinate existing TASK-186/188; do not require live Pi rollout to qualify direct non-Pi inference. Keep offline work independent of integrated commercial delivery.
 <!-- SECTION:PLAN:END -->

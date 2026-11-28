@@ -29,12 +29,13 @@ A stream that ends with no finish_reason and no [DONE] sentinel currently ends a
 - [ ] #4 One ticket produces exactly one terminal event and one terminal state, including the in-band error plus terminator path that today can settle as completed.
 - [ ] #5 Cancellation stays its own axis: a client hang-up or an induced abort is never reclassified as an upstream end reason.
 - [ ] #6 An additive authoritative protocol outcome distinguishes complete, incomplete, failed and unknown; clean EOF or legacy Completed alone cannot establish successful generation or complete usage.
+- [ ] #7 One bounded semantic observation contract supplies first raw byte, first semantic output, model identity, usage availability and authoritative outcome; local Tune uses fixture/local observations, commercial extends it.
 <!-- AC:END -->
 
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-One bounded observer in the existing framing path records blank-delimited terminator, finish evidence per choice, structured error, clean EOF, partial tail, idle and cancellation. Precedence: structured error, then transport fault/idle, then terminator, then clean EOF with finish evidence; otherwise incomplete. Cancellation is orthogonal. Preserve PascalCase additive fields, existing event order and §6.1 codes. Pin one terminal event, identical error-then-terminator bytes, and sibling isolation. Legacy state stays compatible; commercial and Tune consumers use authoritative outcome separately. Defer writer accounting and provider usage normalization; TASK-210 handles the latter. Drain/retry TASK-190/201, switch explanation TASK-196, limits TASK-30, client budgets/provenance TASK-186/188.
+One bounded observer in the existing framing path records blank-delimited terminator, finish evidence per choice, structured error, clean EOF, partial tail, idle and cancellation. Precedence: structured error, then transport fault/idle, then terminator, then clean EOF with finish evidence; otherwise incomplete. Cancellation is orthogonal. Preserve PascalCase additive fields, existing event order and §6.1 codes. Pin one terminal event, identical error-then-terminator bytes, and sibling isolation. Legacy state stays compatible; commercial and Tune consumers use authoritative outcome separately. Define shared observation DTO/fixture contract early with the Tune runner; defer writer accounting and provider usage normalization to TASK-210. Missing data stays unavailable; no second framing parser. Drain/retry TASK-190/201, switch explanation TASK-196, limits TASK-30, client budgets/provenance TASK-186/188.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes

@@ -28,10 +28,11 @@ Implement explicit operator-reviewed adoption mechanics from exact recipe/eviden
 - [ ] #4 Operator adoption is explicit, does not overwrite active settings automatically, and preserves raw records and prior defaults.
 - [ ] #5 SPEC §§5, 7.6, 11, 14 and focused tests cover malformed/changed evidence, restart, reload and conservative fallback.
 - [ ] #6 Synthetic records qualify validation/adoption mechanics but cannot enable production capacity; runtime activation needs real authorized host evidence and explicit operator adoption.
+- [ ] #7 Adoption records exact compatible evidence hashes and enabled workload modes separately for admission-only and physical changes; synthetic or homogeneous evidence cannot authorize unqualified mixed/staggered operation.
 <!-- AC:END -->
 
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Reuse versioned evidence and exact recipe identity; test with fixture records without waiting for TASK-154 real trials. Operator-owned manifest records approved hashes and qualified points. No general artifact registry, database or implicit adoption. Production selection is disabled for unverified recipes.
+Reuse versioned evidence and exact recipe identity; test with fixture records without waiting for TASK-154 real trials. Operator-owned manifest records approved hashes and qualified points. No general artifact registry, database or implicit adoption. Production selection is disabled for unverified recipes or workload modes; actual mixed/staggered evidence comes from TASK-154.
 <!-- SECTION:PLAN:END -->

@@ -35,7 +35,7 @@ Establish the smallest in-process manager seam around EngineRuntime, LocalLifecy
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Reuse TASK-64/68/130 fixtures and the existing issuer/retirement primitives. Establish an ordinary composition and minimal enrollment/issuer interface with capture fixtures, before TASK-25/118/110 production integration. Define stable IDs, immutable generations and bounded receipt retention; reject stale execution after receipt retirement. TASK-77 owns remote role/transport. Keep direct manager admission and router pending ownership distinct.
+Reuse TASK-64/68/130 fixtures and the existing issuer/retirement primitives. Establish an ordinary composition and minimal enrollment/issuer interface with capture fixtures, before TASK-25/118/110 production integration. Define stable IDs, immutable generations and bounded receipt retention; reject stale execution after receipt retirement. TASK-77 owns remote role/transport. Supply the shared typed manager snapshot and preparation/drain reason fields to existing status/events and CLI/monitor; no extra UI architecture. Keep direct manager admission and router pending ownership distinct.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
