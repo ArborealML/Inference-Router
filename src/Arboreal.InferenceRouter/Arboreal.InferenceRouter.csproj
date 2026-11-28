@@ -22,6 +22,8 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="Arboreal.InferenceRouter.Tests" />
+    <InternalsVisibleTo Include="air-operation-head" />
+    <InternalsVisibleTo Include="air-successor-observer" />
     <InternalsVisibleTo Include="Arboreal.InferenceRouter.HostReservationProbe" />
     <!-- The HTTP writer owns one of the two ceilings §10 states for a sentence a caller reads, and the cap is
          the library's mechanism (`WireText`), not a second one in the server assembly. One place to change the

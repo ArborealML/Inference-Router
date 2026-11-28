@@ -482,7 +482,7 @@ public sealed partial class HostClosedRouteStagingTests
             Issuer = issuer;
             ReservationPath = reservationPath;
             Enrollment = new(domain, controller, staging, issuer,
-                new Dictionary<string, HostStagedRuntimeFixture>(StringComparer.Ordinal) { [engine.Name] = fixture },
+                new Dictionary<string, HostStagedRuntimeFixture?>(StringComparer.Ordinal) { [engine.Name] = fixture },
                 stage => Resident = new(new(engine.Name, stage.Launch.Plan.Model, stage.Launch.Plan.Tier!, stage.Route.EffectiveTarget, engine.Endpoint),
                     stage.Route, 8_192, 8_192, 1, engine.Endpoint, VerifiedDispatchCredential.Capture(engine, resolvedKey: null, epoch: 1), issuer),
                 (definition, target) => target.EffectiveProfile == "unsupported" ? null :

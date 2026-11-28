@@ -111,8 +111,10 @@ public sealed partial class HostClosedRouteStagingTests
         static string ReadBody(byte[] bytes) => Encoding.UTF8.GetString(bytes).Split("\r\n\r\n", 2)[1];
     }
 
-    [Fact(Timeout = 20_000)]
-    public async Task CommissionedServerRebindBetweenCheckoutAndFirstWriteTransfersZeroBytes()
+    [Theory(Timeout = 20_000)]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task CommissionedServerRebindBetweenCheckoutAndFirstWriteTransfersZeroBytes(bool afterCheckout)
     {
         using var watchdog = new CancellationTokenSource(TimeSpan.FromSeconds(12));
         using var discovery = new FakeEngineHandler { LoadedModels = ["shared"], NCtx = 8_192, TotalSlots = 1 };
@@ -126,14 +128,20 @@ public sealed partial class HostClosedRouteStagingTests
         };
         await using var app = ServerApp.BuildCommissioned([], [domain.Enrollment], configOverride: config);
         var router = app.Services.GetRequiredService<RouterCore>();
-        domain.Authority.HoldCheckout = true;
+        domain.Authority.HoldCheckout = !afterCheckout;
+        domain.Authority.HoldFreshEvidence = afterCheckout;
         var ticket = await router.EnqueueAsync("rebound", RecipeRequest("small", stream: true), ct);
         try
         {
-            await domain.Authority.CheckoutStarted.Task.WaitAsync(ct);
+            var intercepted = afterCheckout ? domain.Authority.FreshEvidenceStarted : domain.Authority.CheckoutStarted;
+            await intercepted.Task.WaitAsync(ct);
             domain.Authority.RebindWorker();
         }
-        finally { domain.Authority.ReleaseCheckout.TrySetResult(); }
+        finally
+        {
+            domain.Authority.ReleaseCheckout.TrySetResult();
+            domain.Authority.ReleaseFreshEvidence.TrySetResult();
+        }
         await Assert.ThrowsAsync<RouterRequestException>(() => ticket.CompletionTask.WaitAsync(ct));
         await domain.Authority.CloseStarted.Task.WaitAsync(ct);
         var old = Assert.Single(domain.Authority.Offers);
@@ -424,15 +432,94 @@ public sealed partial class HostClosedRouteStagingTests
             .SelectMany(static chunk => chunk).ToArray();
     }
 
+    [Theory(Timeout = 15_000)]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ShippingServeRefusesMissingProtectedAuthorityWithoutOrdinaryFallback(bool standalone)
+    {
+        using var watchdog = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        var directory = Path.Combine(_directory.FullName, "missing-authority");
+        var result = await CliCompletionProcessTests.RunCliAsync("serve", ["--commissioned", directory], null,
+            watchdog.Token, start =>
+            {
+                if (standalone) start.ArgumentList[0] =
+                    Path.Combine(AppContext.BaseDirectory, "Arboreal.InferenceRouter.Server.dll");
+                start.Environment["ARBOREAL_ROUTER_CONFIG"] = Path.Combine(_directory.FullName, "ordinary.toml");
+            });
+        Assert.Equal(1, result.ExitCode);
+        Assert.Contains("could not bind or retain the protected serving authority", Encoding.UTF8.GetString(result.Stderr),
+            StringComparison.Ordinal);
+        Assert.Empty(result.Stdout);
+    }
+
     [Theory]
     [InlineData("--commissioned")]
     [InlineData("--commissioned=/absent")]
-    public async Task ShippingServeOptionRefusesMissingProtectedAdapterBeforeLoadingOrdinaryConfig(string selection)
+    public async Task ShippingServeRefusesCompetingOrdinaryConfig(string selection)
     {
         var args = new[] { selection, "--config", "/absent/router.toml" };
         Assert.False(ServerApp.TryReadConfigOption(args, out var config, []));
         Assert.Null(config);
         Assert.Equal(2, await Cli.Program.Main(["serve", .. args]));
+    }
+
+    [Fact(Timeout = 15_000)]
+    public async Task CheckedInitialAttachOpensOrdinaryHttpForTheOriginalRequestWithoutLaunching()
+    {
+        using var watchdog = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        using var discovery = new FakeEngineHandler { LoadedModels = ["shared"], NCtx = 8_192, TotalSlots = 1 };
+        var ct = watchdog.Token;
+        var domain = MakeCommissionedDomain("a", "shared", 19001);
+        var config = new RouterConfig
+        {
+            AutoSwitch = true,
+            Engines = new Dictionary<string, EngineDefinition> { [domain.Engine.Name] = domain.Engine },
+            HttpHandlerFactory = _ => discovery,
+        };
+        var manager = new InProcessHostManager([domain.Enrollment]);
+        await using var app = ServerApp.Build(["--urls", "http://127.0.0.1:0"], null, config, TimeProvider.System,
+            hostManager: manager, startDispatcher: false);
+        var router = app.Services.GetRequiredService<RouterCore>();
+        var engine = domain.Engine;
+        var entry = engine.Catalog["shared"];
+        var profile = Assert.Single(entry.ServingProfiles, tier => tier.Name == "small");
+        var lifecycle = new LifecycleTarget(engine.Name, "shared", profile, entry);
+        var target = Assert.IsType<VerifiedDispatchTarget>(manager.Recipe(engine.Name, "shared", profile.Name));
+        var operation = new HostMutation(1, Guid.NewGuid(), HostMutationKind.Launch, engine.Name, "shared", profile.Name, target.PlanDigest);
+        var route = new VerifiedInstanceRoute(domain.Enrollment.Domain.Name, domain.Enrollment.Domain.Generation, engine.Name,
+            target.PlanDigest, "fixture-initial-instance", "fixture-serving-generation", operation.Epoch, 1);
+        domain.Host.SetAppliedLaunch(operation, lifecycle, route.ContainerId);
+        domain.Authority.Publish(route, target);
+        var resident = new VerifiedDispatchResident(target, route, 8_192, 8_192, 1, engine.Endpoint,
+            VerifiedDispatchCredential.Capture(engine, resolvedKey: null, epoch: 1), domain.Authority);
+        var initial = new EnrolledInitialReadiness(route, "shared", new("shared", 8_192, 1, "small"));
+        Assert.False(manager.TryAttachInitial(resident, initial with { Serving = initial.Serving with { Profile = "alternate" } },
+            static () => true, ct));
+        Assert.False(manager.TryAttachInitial(resident, initial, static () => false, ct));
+        Assert.False(domain.Enrollment.Staging.CanMint(route));
+        Assert.False(manager.IsResident(engine.Name));
+        Assert.True(manager.TryAttachInitial(resident, initial, static () => true, ct));
+        Assert.False(manager.TryAttachInitial(resident, initial, static () => true, ct));
+
+        router.Start();
+        await app.StartAsync(ct);
+        using var client = new HttpClient { BaseAddress = new Uri(Assert.Single(app.Urls)) };
+        var original = Encoding.UTF8.GetString(ManagedRequest("shared", "checked initial original", named: false).Body.Span);
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/v1/chat/completions")
+        {
+            Content = new StringContent(original, Encoding.UTF8, "application/json"),
+        };
+        request.Headers.Add("X-Inference-Profile", "small");
+        using var response = await client.SendAsync(request, ct);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var ticket = Assert.Single(response.Headers.GetValues("X-Inference-Ticket"));
+        var granted = Assert.Single(domain.Authority.Offers);
+        Assert.Equal(route, granted.Route);
+        Assert.Equal(original, Encoding.UTF8.GetString(domain.Authority.Bytes(granted)).Split("\r\n\r\n", 2)[1]);
+        Assert.Equal(0, discovery.CompletionCalls);
+        Assert.Equal(0, domain.Host.Creates);
+        Assert.Equal(0, domain.Host.Stops);
+        Assert.Single(router.Events.Replay(0), row => row.TicketId == ticket && row.Kind == "request.completed");
     }
 
     private (EngineDefinition Engine, HostManagerEnrollment Enrollment, FakeHost Host, OfflineCommissionedAuthority Authority)
@@ -448,7 +535,7 @@ public sealed partial class HostClosedRouteStagingTests
             new HostEnrollmentScope(name, identity.Generation));
         var authority = new OfflineCommissionedAuthority(scope, host, staging);
         var enrollment = new HostManagerEnrollment(identity, new HostLifecycleCoordinator(scope.Slot, host, staging), staging, authority,
-            new Dictionary<string, HostStagedRuntimeFixture>
+            new Dictionary<string, HostStagedRuntimeFixture?>
             {
                 [engine.Name] = new((stage, _) => Task.FromResult<HostStagedReadiness?>(new(stage, stage.Launch.Plan.Model,
                     new(stage.Launch.Plan.Model, 8_192, slots, stage.Launch.Plan.Tier)))),
@@ -474,6 +561,7 @@ public sealed partial class HostClosedRouteStagingTests
 
         internal bool HoldClose { get; set; }
         internal bool HoldCheckout { get; set; }
+        internal bool HoldFreshEvidence { get; set; }
         internal bool ForgetTerminal { get; set; }
         internal bool HoldReads { get; set; }
         internal bool IncompleteStream { get; set; }
@@ -484,6 +572,8 @@ public sealed partial class HostClosedRouteStagingTests
         internal int Writes { get; private set; }
         internal TaskCompletionSource CheckoutStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         internal TaskCompletionSource ReleaseCheckout { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        internal TaskCompletionSource FreshEvidenceStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        internal TaskCompletionSource ReleaseFreshEvidence { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         internal VerifiedDispatchTarget? CurrentTarget { get; private set; }
         internal TaskCompletionSource CloseStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         internal TaskCompletionSource ReleaseClose { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -578,6 +668,15 @@ public sealed partial class HostClosedRouteStagingTests
                 await ReleaseCheckout.Task;
             }
             return new(VerifiedCheckoutDisposition.Transferred, grant);
+        }
+
+        public async ValueTask<bool> CheckBeforeFirstWriteAsync(VerifiedInstanceGrant grant, CancellationToken ct)
+        {
+            if (!HoldFreshEvidence) return true;
+            var before = ReadServing(grant.Invocation.Route);
+            FreshEvidenceStarted.TrySetResult();
+            await ReleaseFreshEvidence.Task.WaitAsync(ct);
+            return before is not null && before == ReadServing(grant.Invocation.Route);
         }
 
         public IAsyncDisposable? TryAuthorizeFirstWrite(VerifiedInstanceGrant grant)

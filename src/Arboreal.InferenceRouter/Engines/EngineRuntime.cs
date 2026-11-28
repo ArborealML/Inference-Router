@@ -175,7 +175,8 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
     {
         if (def.LifecycleGroup is not null && !localManaged)
             throw new RouterConfigException("Local lifecycle engines must be bound through their router group.");
-        config.ValidateLifecycleTopology(def);
+        var manager = hostEnrollment?.Manager;
+        config.ValidateLifecycleTopology(def, manager is null ? null : manager.OwnsCommissioned);
         if (!localManaged && def.Docker?.HasUnqualifiedTargetDocker == true)
             throw new RouterConfigException($"engine.{WireText.Ident(def.Name)}: serving-tier Docker targets require host qualification before activation");
         if (!localManaged && def.Docker?.HasUnqualifiedLaunchOptions == true)
@@ -189,7 +190,7 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
             (!def.HasExplicitRouterLifecycle || enrollment.Engine != def.Name || enrollment.RouterId != def.Docker?.RouterId ||
              lifecycle is not null))
             throw new RouterConfigException($"engine.{def.Name}: host enrollment does not match the bound lifecycle owner");
-        if (hostEnrollment is not null && def.Docker?.Resources is not null)
+        if (hostEnrollment is not null && def.Docker?.Resources is not null && manager?.OwnsCommissioned(def.Name) != true)
             throw new RouterConfigException($"engine.{def.Name}: Docker resources require host qualification before enrollment");
         _hostEnrollment = hostEnrollment;
         if (hostEnrollment is null && _lifecycleBinding?.ProviderKind == DockerLifecycleProvider.ProviderKind &&
@@ -1211,7 +1212,7 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
                         else
                         {
                             entryMiss = ResolveClaimTarget(canonical, profileOverride, out var target);
-                            if (entryMiss == EntryGuard.Ok && _hostEnrollment is { StagedForTests: null } &&
+                            if (entryMiss == EntryGuard.Ok && _hostEnrollment is { UsesStagedSwitch: false } &&
                                 (requiredWindow > 0 || GetProfile(canonical, target!.EffectiveProfile) is not null))
                                 entryMiss = EntryGuard.MissingHostCapacity;
                             if (entryMiss != EntryGuard.Ok)
@@ -1697,11 +1698,12 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
             // launch the exact target. What "launch" means is the provider's business; the ordering is
             // the router's, and it is what keeps a refusal from costing the engine anything it had.
             EngineLifecycleCoordinator.SwitchReport report;
-            if (_hostEnrollment is { StagedForTests: { } fixture } stagedEnrollment)
+            if (_hostEnrollment is { UsesStagedSwitch: true } stagedEnrollment)
             {
+                var fixture = stagedEnrollment.StagedForTests;
                 var staged = await SwitchStagedHostAsync(stagedEnrollment.Controller, fixture, state, target, operation)
                     .ConfigureAwait(false);
-                fixture.AfterHostResult?.Invoke(staged);
+                fixture?.AfterHostResult?.Invoke(staged);
                 // The guarded verdict owns the outcome even when delivery, cleanup or Open refuses.
                 if (staged.Decision.Verdict != HostStagedVerdict.Refused || Volatile.Read(ref _stopped)) return;
                 report = new(staged.Result, RefusedBeforeMutation: false);

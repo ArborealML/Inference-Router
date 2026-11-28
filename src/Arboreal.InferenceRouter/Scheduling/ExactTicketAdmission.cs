@@ -285,6 +285,35 @@ internal sealed class ExactTicketAdmission(
         _wake?.Invoke();
     }
 
+    // Startup installs an already-attested resident before the ordinary dispatcher starts.
+    internal bool TryAttachInitial(DomainIdentity identity, VerifiedDispatchResident resident,
+        CommissionedRouteIssuer issuer, HostClosedRouteStaging staging, Func<bool> publishCapability)
+    {
+        lock (Gate)
+        {
+            if (_stopped || !UsesVerifiedDispatch || !resident.Target.Matches(resident.Route) ||
+                !_engines.TryGetValue(resident.Route.Engine, out var engine) || engine.Domain.Identity != identity ||
+                engine.Domain.Transitioning || engine.Domain.RouteGeneration != 0 ||
+                _verifiedRoutes.ContainsKey(resident.Route.Engine)) return false;
+
+            var domain = engine.Domain;
+            return staging.AttachInitial(resident.Route, () =>
+            {
+                if (issuer.Attach(resident.Route) is not { } stamp || !publishCapability()) return false;
+                var route = new RouteState(engine)
+                {
+                    Generation = resident.Route.RouteIncarnation, Resident = resident with { Issuer = issuer },
+                    Open = true, Uses = new(stamp),
+                };
+                _verifiedRoutes.Add(resident.Route.Engine, route);
+                domain.RouteGeneration = route.Generation;
+                domain.CommissionedIncumbent = route;
+                Volatile.Write(ref domain.ActiveResident, route.Resident);
+                return true;
+            });
+        }
+    }
+
     // Only the offline issuer adapter publishes these proofs. A replacement/availability event
     // advances the generation and fences the old preparation without rearming a spent generation.
     internal bool PublishVerified(VerifiedDispatchResident resident, CommissionedServingStamp? stamp = null)

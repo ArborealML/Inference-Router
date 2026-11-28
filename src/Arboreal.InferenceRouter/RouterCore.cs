@@ -65,7 +65,7 @@ public sealed partial class RouterCore : IInferenceRouter
                         ExactTicketAdmission? admission = null, ReloadConfiguration? reload = null, string? nativeResetStartupInstance = null,
                         InProcessHostManager? hostManager = null)
     {
-        config.ValidateLifecycleTopology();
+        config.ValidateLifecycleTopology(commissioned: hostManager is null ? null : hostManager.OwnsCommissioned);
         _shutdownToken = _shutdown.Token;
         _config = config;
         _lifecycleFactory = lifecycleFactory;
@@ -110,7 +110,7 @@ public sealed partial class RouterCore : IInferenceRouter
         var enrollment = _hostManager?.Bind(definition);
         return new(definition, settings, _events, _config.HttpHandlerFactory?.Invoke(definition),
             enrollment is null ? _lifecycleFactory?.Invoke(definition) : null, SignalDispatch, enrollment, _clock, source,
-            localManaged: definition.LifecycleGroup is not null);
+            localManaged: definition.LifecycleGroup is not null || enrollment?.Manager?.OwnsCommissioned(definition.Name) == true);
     }
 
     private bool UsesExactAdmission(EngineRuntime engine) => _admission is not null && (_hostManager?.Owns(engine.Name) ?? true);
@@ -126,7 +126,7 @@ public sealed partial class RouterCore : IInferenceRouter
         var shutdownToken = _shutdown.Token;
         foreach (var e in CurrentGeneration.Engines.Values)
         {
-            e.StartHealthLoop(shutdownToken);
+            if (_hostManager?.OwnsCommissioned(e.Name) != true) e.StartHealthLoop(shutdownToken);
             _events.Append(new RouterEvent { Kind = "engine.registered", Engine = e.Name });
         }
         _events.Subscribe(_wakeOnEngineState);

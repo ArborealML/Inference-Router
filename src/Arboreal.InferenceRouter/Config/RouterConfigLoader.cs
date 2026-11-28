@@ -51,6 +51,17 @@ public static class RouterConfigLoader
         EnrolledPairTopology.Validate(ParseAndMap(toml, source: null, isJson: false),
             commissionedSlot, claim, authority);
 
+    internal static CheckedEnrolledCatalog PrepareEnrolledCatalog(string toml, string commissionedSlot,
+        EnrolledCatalogClaim claim, EnrolledCatalogAuthority current) =>
+        PrepareEnrolledConfiguration(toml, commissionedSlot, claim, current).Catalog;
+
+    internal static CheckedEnrolledConfiguration PrepareEnrolledConfiguration(string toml, string commissionedSlot,
+        EnrolledCatalogClaim claim, EnrolledCatalogAuthority current)
+    {
+        var configuration = ParseAndMap(toml, source: null, isJson: false);
+        return new(configuration, EnrolledCatalog.Check(configuration, commissionedSlot, claim, current));
+    }
+
     internal static ReloadConfiguration LoadForReload(string text, string path)
     {
         var isJson = Path.GetExtension(path).Equals(".json", StringComparison.OrdinalIgnoreCase);

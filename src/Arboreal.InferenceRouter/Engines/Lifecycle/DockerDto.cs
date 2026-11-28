@@ -225,6 +225,7 @@ internal sealed class DockerExecInspectResponse
 [JsonSerializable(typeof(DockerImageInspectResponse))]
 [JsonSerializable(typeof(List<DockerContainerSummary>))]
 [JsonSerializable(typeof(DockerContainerInspectResponse))]
+[JsonSerializable(typeof(SuccessorDockerInspect))]
 [JsonSerializable(typeof(DockerObservationResponse))]
 [JsonSerializable(typeof(DockerCreateRequest))]
 [JsonSerializable(typeof(DockerCreateResponse))]
