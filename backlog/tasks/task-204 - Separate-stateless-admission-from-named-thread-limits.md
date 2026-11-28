@@ -1,7 +1,7 @@
 ---
 id: TASK-204
 title: "Separate stateless admission from named thread limits"
-status: Waiting
+status: In Progress
 assignee:
   - '@gpt-6.2-sol-scheduling'
 created_date: '2026-11-27'
@@ -40,7 +40,7 @@ Capture-backend tests exercise concurrent omitted HTTP and actual CLI chat/compl
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Wake: the combined TASK-203 and TASK-205 integration test run passes, then the coordinator transfers overlapping core/server/CLI ownership. TASK-187 and TASK-202 are included in that candidate. Independent pre-code review passed with singleton grammar, public-null contract, full collision isolation and bounded-lifetime fixtures required. No source implementation yet.
+Implementing on combined reviewed base 02087978b8a45970f82d08f216b3da32ded8b603 with PR #86 preserved. Its 608-test affected union passed after correcting the priority fixture's completion-versus-capacity-release assumption; no runtime change was needed. Preserved work resumes with explicit core/server/CLI ownership. Independent pre-code review passed with singleton grammar, public-null contract, full collision isolation and bounded-lifetime fixtures required.
 
 No change to priority, thread weight or provider scoring. TASK-207 owns credential-bound identity and root authorization; transient scheduling identity confers no trust or policy privilege. Architecture §15.3's legacy deployment cutover remains a separate owner choice; preserving explicit anon avoids imposing it here.
 <!-- SECTION:NOTES:END -->
