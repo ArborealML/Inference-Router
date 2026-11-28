@@ -5,7 +5,7 @@ status: Waiting
 assignee:
   - '@gpt-6.2-sol-release'
 created_date: '2026-11-18T02:37:00Z'
-updated_date: '2026-11-28T11:08:00Z'
+updated_date: '2026-11-28T12:29:00Z'
 labels:
   - lifecycle
   - scheduling
@@ -43,7 +43,11 @@ Wake after TASK-206's seam and TASK-110/190/197/198 physical ownership, recovery
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Retain qualified lifecycle authority and incumbent restoration. Use the manager seam from TASK-206; prove managed peer acceptance/refusal and foreign occupancy exclusion. Test configured transport, bounded status, authenticated operation, disconnection, replay safety and AOT. No second pending queue or direct remote lifecycle commands.
+Ship router, manager and combined roles from the same Native AOT build. Keep client ingress forwarding to the singleton router separate from the authenticated router-to-manager connection. The manager publishes a bounded advisory inventory and accepts or refuses one operation for an exact enrolled domain. It owns local lifecycle, first write and physical retirement. Keep the existing legacy resident forwarding path.
+
+Bind each offer to the authenticated writer incarnation, operation and ticket identity, destination recipe, body and domain generation. Verify current authority at acceptance and immediately before the first upstream write. Duplicate offers return the recorded disposition. A lost acknowledgment, disconnect or timeout requires reconciliation with the same manager. Track physical settlement after logical cancellation. An unavailable manager must leave other domains usable.
+
+Run the published binary as separate router and manager processes against controlled backends. Compare the same workload under combined mode. Exercise a warm request, an original queued cold request, foreign occupancy, stale writer, duplicate operation, disconnect before and after acceptance, manager restart and bounded disposition retention. Assert backend write counts, resident identity and unaffected-domain progress. The subsequent two-ingress and two-host deployment measurements remain independently owned.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
@@ -52,4 +56,6 @@ Retain qualified lifecycle authority and incumbent restoration. Use the manager 
 Integrated lifecycle authority and incumbent recovery: commit 2f04f2b; prior 365/365 Release tests and Native AOT publish. The shipped-sample and authority tests remain evidence for legacy no-owner refusal (6263b83, 9/9; main CI 44704425802). TASK-128 owns concrete provider scope. These do not establish managed-peer activation or foreign occupancy exclusion. Retain conservative readiness withdrawal after uncertain mutation; preserve a valid incumbent after definitive pre-mutation refusal. No existing passed criterion was reset.
 
 Historical [authority/recovery](https://github.com/ArborealML/Inference-Router/commit/2f04f2b), [shipped sample test](https://github.com/ArborealML/Inference-Router/blob/7350f71f9c8690e813339f0240ef2e752865f5fe/tests/Arboreal.InferenceRouter.Tests/ConfigLoaderTests.cs#L458-L469), [authority tests](https://github.com/ArborealML/Inference-Router/blob/2f04f2b/tests/Arboreal.InferenceRouter.Tests/LifecycleAuthorityTests.cs#L179) and [Docker provider tests](https://github.com/ArborealML/Inference-Router/blob/09a0d9b/tests/Arboreal.InferenceRouter.Tests/DockerLifecycleProviderTests.cs#L578) retain their original scope.
+
+The standalone role and transport plan is under independent review. Production activation depends on the executable sender and verified host authority.
 <!-- SECTION:NOTES:END -->

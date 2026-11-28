@@ -1,11 +1,11 @@
 ---
 id: TASK-203
 title: Dispatch independently admissible work across providers
-status: To Do
+status: In Progress
 assignee:
-  - '@gpt-6.2-astra'
+  - '@gpt-6.2-sol-lifecycle'
 created_date: '2026-11-27'
-updated_date: '2026-11-28T12:06:00Z'
+updated_date: '2026-11-28T12:15:00Z'
 labels: []
 milestone: m-17
 dependencies: []
