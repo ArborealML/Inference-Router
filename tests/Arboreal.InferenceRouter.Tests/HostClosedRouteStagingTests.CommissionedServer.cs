@@ -368,10 +368,9 @@ public sealed partial class HostClosedRouteStagingTests
         var relayTwo = RelayAsync(two, b);
         try
         {
-            await Task.WhenAll(one.StreamReady, two.StreamReady).WaitAsync(ct);
+            var blocked = await Task.WhenAll(a.Blocked.Task, b.Blocked.Task).WaitAsync(ct);
             Assert.Equal("a", one.Engine);
             Assert.Equal("a", two.Engine);
-            var blocked = await Task.WhenAll(a.Blocked.Task, b.Blocked.Task).WaitAsync(ct);
             Assert.All(blocked, count => Assert.InRange(count, 1, limit));
             var first = Assert.IsType<HttpStreamDelivery>(one.HttpDelivery);
             var second = Assert.IsType<HttpStreamDelivery>(two.HttpDelivery);
