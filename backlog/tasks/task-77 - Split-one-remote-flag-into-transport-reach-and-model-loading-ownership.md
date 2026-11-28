@@ -5,11 +5,11 @@ status: Waiting
 assignee:
   - '@gpt-6.2-sol-release'
 created_date: '2026-11-18T02:37:00Z'
-updated_date: '2026-11-20T20:11:00Z'
+updated_date: '2026-11-28T11:08:00Z'
 labels:
   - lifecycle
   - scheduling
-milestone: m-6
+milestone: m-18
 dependencies:
   - TASK-69
   - TASK-110

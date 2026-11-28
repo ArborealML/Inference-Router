@@ -5,11 +5,11 @@ status: To Do
 assignee:
   - '@gpt-6.2-astra'
 created_date: '2026-11-26T07:34:00Z'
-updated_date: '2026-11-27'
+updated_date: '2026-11-28T11:08:00Z'
 labels:
   - config
   - scheduling
-milestone: m-16
+milestone: m-18
 dependencies:
   - TASK-189
 priority: medium

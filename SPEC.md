@@ -1,12 +1,13 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.170)
+Status: draft, continuously revised (v0.12.171)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
 
 ## 0. Revision log
 
+- v0.12.171 — fit deterministic short-grid prompts using exact backend counts and search the full next-record tail within the count budget (§11.2).
 - v0.12.170 — bind named managed recipes through selection and exact admission, resolve engine-local aliases before queue validation, and preserve numeric reuse of a fitting resident (§§5.3.1, 7.6, 14).
 - v0.12.169 — continue past unavailable preparation and activation offers, withdraw closed managed residents from route ranking, consume an active transition's runtime claim once, and deliver queued cancellation through controller cleanup (§§5.3.1, 5.5, 14).
 - v0.12.168 — scope exact preparation capacity and staged-owner preference to the physical domain, and exercise queue-driven activation and verified delivery through an internally enrolled in-process host manager (§§4–7, 12, 14).
@@ -4154,6 +4155,14 @@ no configuration, profile or default. Validate the entire output including LF
 against a 524,288-byte limit before writing stdout. Success exits 0. Input,
 platform and planning errors exit 1 with fixed redacted stderr and empty stdout.
 Usage errors exit 2.
+
+The internal short-grid fitter searches complete-record prefixes and then the byte
+offsets across the next record. It accepts only the exact request body whose measured
+token count is within the inclusive band. A bounded search can be inconclusive,
+including when the tokenizer's count does not increase with length. The Maya count
+adapter requires an exact text-only result at the selected window, pins the configured
+origin, and allows five seconds per count request. The per-call and aggregate byte
+limits above also constrain which windows the fitter can reach.
 
 ## 12. Future architecture commitments
 

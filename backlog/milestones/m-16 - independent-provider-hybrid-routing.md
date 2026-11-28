@@ -9,6 +9,10 @@ One authoritative AIR queue and policy, independent progress on each eligible pr
 
 AIR consumes externally established identity, scoped privileges, credential isolation and assigned resource boundaries. Agent orchestration, sandboxing, human authentication, infrastructure provisioning, backups and generic accounting are outside AIR; fixture contracts do not depend on those systems being implemented.
 
+## Program roadmap
+
+The [delivery index](README.md#hybrid-inference-delivery) links the eight owning milestones and their acceptance evidence. This umbrella has no directly assigned implementation tasks.
+
 ## Delivery order
 
 - First: TASK-203 independent dispatch, TASK-204 stateless identity, TASK-205 inherited priority, TASK-219 deployed provenance. TASK-51 and TASK-72 retain finite-wait and measured fairness requirements. Fix TASK-187, TASK-200 and TASK-202 in parallel where independent.

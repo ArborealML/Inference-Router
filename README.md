@@ -47,10 +47,10 @@ AIR gives OpenAI-compatible clients one HTTP endpoint for local inference engine
 - **Lifecycle on managed peers.** Starting and stopping models on a peer still needs host-wide fencing that accounts for foreign occupancy and stays in force through readiness. Scheduling preference among loaded and switchable engines is also in progress. [Lifecycle ownership plan](backlog/tasks/task-77%20-%20Split-one-remote-flag-into-transport-reach-and-model-loading-ownership.md)
 - **Instance-bound upstream transport.** Offline tests send one request over an authenticated stream issued for the verified serving instance. Production integration still needs request and authorization binding, durable issuance and verified retirement. [Transport specification](SPEC.md#531-container-native-lifecycle-partly-implemented)
 - **In-process host manager.** Offline fixtures activate a cold queued request and send it through the enrolled issuer while an independent engine continues serving. Each physical domain has its own preparation budget. Production commissioning and peer transport remain in progress. [Host manager specification](SPEC.md#4-architecture)
+- **Hardware tuning runs.** A bounded prompt fitter reuses exact backend counts to select deterministic request bodies. Runs still need verified exclusive admission, request and host evidence, and hardware qualification before they can inform profile selection. [Tuning design](docs/hardware-tuning-design.md)
 
 ### Planned features
 
-- **Hardware tuning runs.** Measure context and concurrency on a verified resident, collect request and host evidence, and use qualified results to inform profile selection. [Tuning design](docs/hardware-tuning-design.md)
 - **Cluster routing and model placement.** Accept requests from either ingress into one shared queue and let an eligible host activate the selected model. [Cluster milestone](backlog/milestones/m-6%20-%20cluster-routing-and-model-placement.md)
 - **Batching and switch-rate limits.** Use measured costs and queue age to serve cohorts and bound repeated switches. [Scheduling milestone](backlog/milestones/m-5%20-%20measured-model-scheduling.md)
 - **Operator live view.** Follow engine status and per-ticket progress in a web interface backed by the replayable event feed. [Live view milestone](backlog/milestones/m-11%20-%20operator-live-view.md)

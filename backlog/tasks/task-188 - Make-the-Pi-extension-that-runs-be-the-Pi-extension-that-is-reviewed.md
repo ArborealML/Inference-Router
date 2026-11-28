@@ -5,7 +5,9 @@ status: To Do
 assignee:
   - '@claire'
 created_date: '2026-11-25T10:50:00Z'
+updated_date: '2026-11-28T11:08:00Z'
 labels: []
+milestone: m-19
 dependencies: []
 priority: high
 ordinal: 180000

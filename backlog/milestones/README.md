@@ -1,14 +1,31 @@
 # Router delivery milestones
 
-The first milestone requires a completed pi turn on the deployed router. An isolated pi session has already completed turns on two resident models. The native swap milestone requires observing a host change its resident model between turns. The cluster milestone adds shared admission and activation from either ingress.
+The program aims to serve private and direct commercial inference through one endpoint. Each milestone describes the evidence required to ship that capability.
 
-## Delivery evidence as of November 22
+## Hybrid inference delivery
+
+[Program roadmap](m-16%20-%20independent-provider-hybrid-routing.md) groups the eight delivery outcomes below. Each task has one owning milestone. Shared prerequisites retain that owner.
+
+| Delivery milestone | Evidence of completion |
+| --- | --- |
+| [Independent provider progress](m-17%20-%20independent-provider-progress.md) | An eligible request starts on an available provider while another provider is blocked, in either direction. Both providers respect shared limits and deadlines. |
+| [Standalone router and host manager](m-18%20-%20standalone-router-and-host-manager.md) | One queue and one physical authority per domain. Original requests bind to the verified instance; loss or cancellation cannot duplicate execution or release capacity early. |
+| [Fixed-placement private cluster](m-6%20-%20cluster-routing-and-model-placement.md) | Either ingress reaches the sole writer. The primary retains active DeepSeek while the peer serves the configured Qwen models in turn. |
+| [Private inference policy and Pi](m-19%20-%20private-inference-policy-and-pi.md) | The installed client and router keep sensitive inference private through every supported egress path, including compaction. |
+| [Bounded metered inference](m-20%20-%20bounded-metered-inference.md) | Direct metered inference enforces rate, capacity and spend limits through disconnect and recovery. |
+| [Subscription-aware inference](m-21%20-%20subscription-aware-inference.md) | Included capacity is shared and measured; possible paid overflow always has explicit, bounded authority. |
+| [Hardware qualification and Tune](m-14%20-%20hardware-specific-inference-tuning.md) | Single-model and resumable catalog runs measure exact serving configurations on the target hardware. Operators can adopt the measured configurations. |
+| [Demand-driven local allocation](m-22%20-%20demand-driven-local-allocation.md) | Measured demand changes context and concurrency independently while active work finishes safely. |
+
+Priority and thread identity changes are integrated. Independent progress still needs the reverse blocker and probe checks. The in-process manager has controlled evidence for cold activation, independent progress and exact delivery. Production enrollment and two-host recovery remain open. [Scheduling integration](https://github.com/ArborealML/Inference-Router/pull/92) · [Manager integration](https://github.com/ArborealML/Inference-Router/pull/94) · [Qualification and historical handoffs](wave1-implementation-evidence.md)
+
+## Earlier Pi and local-switch evidence
 
 **Pi on a running router is complete (6/6).** The deployed router served streamed Qwen and Swift turns in the same Pi session across an operator-managed selector change. Model discovery and the pinned client agreed on Qwen’s 256,000-token window. [PR #8](https://github.com/ArborealML/Inference-Router/pull/8) qualified the remaining admission check when a serving window shrinks during selection. [PR #33](https://github.com/ArborealML/Inference-Router/pull/33) completed CLI prompt parsing for both verbs, including stdin when only options are supplied.
 
 **Local queue-driven switching passed live and shipped.** Qwen completed before the original queued DeepSeek request drove the resident change and streamed. Docker, the backend and native GPU-process observations confirmed residency. Named resource groups support N clients and N configured engines. Authenticated idle catalog reload also shipped. Exclusive control across independent processes on a shared host remains open. [Live evidence](../../docs/local-model-switching.md#verification) · [Merged implementation](https://github.com/ArborealML/Inference-Router/pull/75)
 
-## Delivery path
+## Earlier delivery milestones
 
 Stream integrity, switch safety and bounded admission can advance in parallel. Each later milestone depends on the specific tasks listed below.
 
@@ -21,30 +38,6 @@ Stream integrity, switch safety and bounded admission can advance in parallel. E
 | [Native model swap through pi-clm](m-4%20-%20native-model-swap-through-pi-clm.md) | Match the local selector configurations, drain the incumbent and prove exact target readiness. Observe the resident change between real pi turns on A and B. |
 | [Measured model scheduling](m-5%20-%20measured-model-scheduling.md) | Measured costs change placement decisions. Serve the eight B requests, then A, while bounding wait under continuing arrivals. Measure lock changes after the pi swap proof. |
 | [Cluster routing and model placement](m-6%20-%20cluster-routing-and-model-placement.md) | Either ingress admits against one fleet queue. A managed peer activates the selected model and completes inference. The host can refuse unsafe placement. |
-
-## Hybrid routing: revision 6 delivery sequence
-
-[Independent-provider hybrid routing](m-16%20-%20independent-provider-hybrid-routing.md) is the next-phase plan. Independent scheduling and default request identity are early corrections (TASK-203–205). Reconcile deployed evidence (219). Fixed-placement clustering, policy/Pi, generic commercial transport/accounting and Tune fixture implementation proceed in parallel against narrow contracts. AIR consumes externally supplied principal/privilege and resource boundaries; sandboxing, identity issuance and provisioning are separate. No owned-policy rollout with reachable unguarded commercial/unclassified paths; positively trusted private-only release can qualify separately. Production commercial use requires one fail-closed guard for every path, including legacy, verified principal/root and singleton scope, and affirmative account-scoped test authorization. Human-only lowering may remain disabled. Direct metered and subscription qualification do not wait for Pi UX or each other's live proof. Demand-driven resizing consumes adopted real evidence by qualified mode; mixed/staggered modes require representative real replays; fixed placement and bounded metered routing do not wait for autonomous optimization.
-
-## Coordinated implementation ownership
-
-The 28 November [main integration](https://github.com/ArborealML/Inference-Router/commit/1bf85d3495ab2517a921d78013ffe69bbefb4325) includes #86 and #88–92. PR #83 remains open for service lifecycle corrections.
-
-The following 27 November publication snapshot was pinned to planning main `62f1c79`. The coordinator is the sole Backlog writer. At most one primary and one independent companion implementation run; preparation and independent review may proceed alongside them. Native subagent messages and isolated worktrees replace the unavailable local tmux service in this session. Its authorization covered publication.
-
-| Workstream | Current assignment and next handoff |
-| --- | --- |
-| A — Scheduling/admission | TASK-203/205/204 published as PRs #88/#91/#92. Independent source review and exact-head hosted CI passed (2,160/2,166/2,341 tests respectively). Coordinator owns remaining acceptance. Own queue traversal/take/wake contract. |
-| B — Physical authority | Prepare TASK-206 seam and TASK-195 identity from existing primitives; TASK-25 owns paired production witness with 118. No production composition claim yet. |
-| C — Protocol observation | TASK-187/202 published as PRs #89/#90. Independent source review and exact-head hosted CI passed (2,193/2,269 tests respectively); PR #86 remains preserved. Own semantic observation contract consumed by D/E. |
-| D — Commercial | Consume PR #89 observation and #88 traversal through explicit dependencies; extend one transport/reservation path. Fixtures only. |
-| E — Tune | TASK-170 preserves existing owner and reported fitter evidence; waiting for recoverable worker handoff. No duplicate runner dispatched. |
-| F — Policy/Pi | Prepare 207/208 external-authority fixtures; preserve existing priority parser work and numeric/legacy compatibility boundaries. |
-| G — Integration/review | Reconciled 83/86 overlap and CI; completed bounded physical-contract inventory, A/C plan/source reviews, integration review and publication-history audit. Exact published-tree/parent/provenance audit and PR-base review completed; final Backlog review follows. |
-
-TASK-203/187/205/202/204 plans received independent passes with bounded corrections before code. PR #83's source auto-merges at the pinned base but SPEC needs reconciliation; PR #86's source merge is clean at that base, and its outstanding TASK-185 review corrections remain open. Preserve both branches and their historical checks. The pinned .NET SDK is installed and focused Release builds/tests run locally. Backlog CLI remains unavailable; controlled Markdown updates use the strict board checker. All five published heads passed hosted build/full-test/Linux-AOT, board and release-harness checks. TASK-220 records the owner's explicit implementation-session connector exception with Sol/Astra provenance; publication may proceed without another permission request. These checks preceded integration.
-
-The final prepared aggregate 89783fbaf83bb31de3580030917a8ccf67f779ff passed 680 affected Release tests across 32 named fixture classes, with no failures or skips. Local Linux x64 AOT passed without compiler/trim warnings; the native configuration-only smoke passed. Independent source/integration and publication-history reviews passed. Earlier integration 02087978 passed 608 tests after a deterministic priority-fixture cleanup/selection correction; runtime assertions and deadlines were preserved. The aggregate preserves PR #86 and leaves #83 separate. [Exact source mappings and qualification evidence](wave1-implementation-evidence.md) distinguish historical reviewed hashes from equivalent prepared commits. No task is closed by fixture receipts; the published equivalents passed hosted CI; remaining operational qualification is tracked separately.
 
 ## Parallel work
 
@@ -72,7 +65,7 @@ Five archived records retain their outcome assignments for reference. The board 
 
 ## Dependencies that determine the order
 
-- **The first native swap** needs coherent model and context evidence (76 → 68), provider primitives (26), host exclusivity (110), and exact-target verification (118) before the local configuration can qualify (111). Admission and drain (25, 64), cold activation (114), and client keepalives (108) also feed the real swap proof (112). Provider fakes and offline configuration work can proceed while the live test waits for an authorized host.
+- **Local switching** already has a live queue-driven proof on one host. Standalone host-management acceptance adds exact production admission, exclusive resource ownership and physical recovery; those obligations carry forward into private clustering.
 - **Batch scheduling** consumes bounded queue waits (51) and measured activation and shutdown times (71). The lock cleanup (113) starts after the pi swap (112), with the same workload available for comparison.
 - **The cluster** needs separate transport and lifecycle authority (77), a host capable of refusing unsafe work (110), and fleet-wide admission, cost and fairness (78, 71, 72). One ingress has already reached a resident model on another host. The first remaining proof uses one authoritative writer, either ingress forwarding to it, static placement, independent dispatch and managed peer activation (203, 204, 206, 77, 122, 124). Later measured placement (123) may develop against fixtures; live adaptive enablement follows fixed-placement and fairness qualification. Use protected ingress for that test. Production exposure also needs the security controls in SPEC §14.1.
 - **Reload** can be designed alongside clustering. Its immutable configuration generations must agree with exact-target verification. A fixed configuration suffices for the initial native swap and two-host proof.

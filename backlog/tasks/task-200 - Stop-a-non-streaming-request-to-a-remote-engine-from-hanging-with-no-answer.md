@@ -5,9 +5,11 @@ status: To Do
 assignee:
   - '@gpt-6.2-sol-release'
 created_date: '2026-11-26T11:53:00Z'
+updated_date: '2026-11-28T11:08:00Z'
 labels:
   - wire
   - lifecycle
+milestone: m-12
 dependencies: []
 priority: high
 ordinal: 192000

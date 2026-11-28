@@ -5,9 +5,9 @@ status: Preparing
 assignee:
   - '@gpt-6.2-astra'
 created_date: '2026-11-25T07:49:00Z'
-updated_date: '2026-11-27'
+updated_date: '2026-11-28T11:08:00Z'
 labels: []
-milestone: m-16
+milestone: m-22
 dependencies:
   - TASK-203
 priority: high
