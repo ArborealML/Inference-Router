@@ -185,6 +185,8 @@ public partial class StreamRelayTests
             var ended = Assert.IsType<TicketSnapshot>(router.TryGetTicket(id));
             Assert.Equal(nameof(TicketState.Failed), ended.State);
             Assert.Equal("engine_timeout", ended.ErrorCode);
+            Assert.Equal("failed", ended.UpstreamOutcome);
+            Assert.Equal("failed", ended.UpstreamEndReason);
             var engine = router.Engines["fake"];
             await UntilAsync(() => router.GetStats().Engines.Single().Inflight == 0, bound.Token);
             Assert.Equal(1, engine.HttpUsesForTests);
@@ -243,6 +245,9 @@ public partial class StreamRelayTests
                 var failed = Assert.Single(router.Events.Replay(0), row =>
                     row.TicketId == ticket.Id && row.Kind == "request.failed");
                 Assert.StartsWith("slow_consumer", failed.Reason, StringComparison.Ordinal);
+                Assert.Equal(TicketState.Failed, ticket.State);
+                Assert.Equal("incomplete", failed.UpstreamOutcome);
+                Assert.Equal("upstream_closed_without_terminator", failed.UpstreamEndReason);
             }
             else if (downstreamEnded)
             {
@@ -394,6 +399,8 @@ public partial class StreamRelayTests
             var outcome = Assert.Single(router.Events.Replay(0), row => row.TicketId == ticket.Id &&
                 row.Kind is "request.cancelled" or "request.failed" or "request.completed");
             Assert.Equal("request.cancelled", outcome.Kind);
+            Assert.Equal("incomplete", outcome.UpstreamOutcome);
+            Assert.Equal("upstream_closed_without_terminator", outcome.UpstreamEndReason);
             if (stopped is not null) await stopped.WaitAsync(bound.Token);
         }
         finally
@@ -466,6 +473,8 @@ public partial class StreamRelayTests
             var outcome = Assert.Single(router.Events.Replay(0), row => row.TicketId == ticket.Id &&
                 row.Kind is "request.cancelled" or "request.failed" or "request.completed");
             Assert.Equal(acknowledgeFirst ? "request.completed" : "request.cancelled", outcome.Kind);
+            Assert.Equal("complete", outcome.UpstreamOutcome);
+            Assert.Equal("complete", outcome.UpstreamEndReason);
         }
         finally
         {

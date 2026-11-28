@@ -278,14 +278,14 @@ public static partial class ServerApp
             ct.ThrowIfCancellationRequested();
             if (delivery is not null && delivery.Sealed.IsCompletedSuccessfully)
             {
-                delivery.Decide(HttpStreamOutcome.Acknowledged, ticket.ExecCts, ct);
+                delivery.AcknowledgeFlush(ticket.ExecCts, ct);
                 // Publish the outcome before the endpoint returns HTTP EOF.
                 try { await ticket.CompletionTask.WaitAsync(ct).ConfigureAwait(false); }
                 catch (RouterRequestException) { }
             }
             var defaultShutdown = ticket.State is TicketState.Cancelled && ticket.DefaultStreamReadShutdown &&
                 ctx.Response.HasStarted && ctx.Response.StatusCode == 200 && output?.CanAppendTerminal == true;
-            if ((ticket.State is TicketState.Failed && !ticket.SuppressIdleTerminal) || defaultShutdown)
+            if ((ticket.State is TicketState.Failed && !ticket.SuppressTerminalFrame) || defaultShutdown)
             {
                 var json = JsonSerializer.Serialize(
                     new ErrorBody { Error = new ErrorDetail { Message = ticket.Error ?? "engine error", Code = ticket.ErrorCode ?? "engine_error" } },

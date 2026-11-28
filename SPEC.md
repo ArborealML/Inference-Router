@@ -1,12 +1,13 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.161)
+Status: draft, continuously revised (v0.12.163)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
 
 ## 0. Revision log
 
+- v0.12.163 — report the upstream outcome and end reason on terminal streaming tickets and events. One bounded SSE observer supplies raw-byte and semantic-output timing, reported model identity, and usage availability. An upstream error followed by `[DONE]` fails the ticket and preserves the original bytes (§§6, 10, 14).
 - v0.12.161 — a selected serving tier whose window the resident already measures and whose reported lanes are at least the tier's is a zero-cost target: no lifecycle call, no switch event and no epoch bump, proved by the measured window rather than by the inferred profile label; extra lanes satisfy a narrower tier, missing lanes do not (§7.6).
 - v0.12.160 — send an opaque per-engine thread cache hint on completion requests to explicitly router-owned local Docker lifecycle groups (§6).
 
@@ -2881,6 +2882,53 @@ empty upstream or after complete blocks without a sentinel. A caller disconnect 
 without an extra terminal frame. The benchmark harness measured the time-to-first-token delay from
 the previous poll-based handoff (§14, `docs/benchmarks.md`).
 
+**Upstream SSE observation.** The relay observes OpenAI-style data in the same committed blocks it
+forwards. It combines a block's data lines with line feeds for observation and forwards the original
+bytes. A single contiguous data line needs no additional payload copy. A split or multiline payload
+uses at most 1 MiB of scratch retained by the framer for that stream. JSON observation has a maximum
+depth of 32. The observer retains timing, fixed scalar evidence, finish bits for up to 64 indexed
+choices, and one reported model whose encoded JSON string content fits 512 bytes. It retains no delta
+text or upstream error message for observation.
+
+The authoritative upstream outcome and end reason are selected in this order.
+
+| Evidence | `UpstreamOutcome` | `UpstreamEndReason` |
+|---|---|---|
+| An observed structured upstream `error` object, HTTP refusal, transport fault, idle timeout or oversized SSE block | `failed` | `failed` |
+| EOF or upstream-only read cancellation with an unfinished block | `incomplete` | `stream_incomplete` |
+| Malformed or over-depth nonempty data with no stronger failure evidence, or a stop before the upstream end is known | `unknown` | `unknown` |
+| A blank-delimited `[DONE]` data event, or clean boundary EOF with finish evidence for every observed and requested choice | `complete` | `complete` |
+| Clean boundary EOF with insufficient finish evidence | `incomplete` | `upstream_closed_without_terminator` |
+
+The finish-only path requires unique in-range choice indices and a nonempty `finish_reason` for
+each tracked choice. The request's `n` defaults to one. An invalid or unsupported `n` leaves the
+finish-only path unproven. A read cancelled by upstream at a block boundary can preserve an observed
+sentinel's evidence. It cannot supply the clean EOF required by the finish-only path. Malformed data
+is relayed verbatim and prevents a subsequent sentinel from establishing success. An observed
+structured `error` object takes precedence over `[DONE]`, including when both arrive in one read.
+An in-band error on a clean boundary end settles the ticket as `Failed` with `engine_error`. The relay
+preserves the upstream error and any terminator and adds no second error frame. I/O faults, idle and
+torn framing retain their existing terminal wire behavior. A boundary EOF lacking a terminator or
+sufficient finish evidence retains the legacy `Completed` ticket state and original response bytes.
+
+Library callers can read the frozen `RouterTicket.StreamObservation` after settlement. Both timings
+are monotonic durations from pump start. A positive upstream read sets `FirstRawByte` and the legacy
+`request.streaming_first_token` event. `FirstSemanticOutput` records the first committed nonempty
+completion text, chat content, reasoning, refusal or tool/function output. Comments, role-only and
+empty deltas, and usage alone supply no semantic output. The model evidence reports the first bounded
+upstream model and whether it exactly matches the selected upstream ID. Invalid identity evidence
+leaves the match unknown. Distinct repeated identities report a conflict. Missing or null usage is
+unavailable. A usage report requires unique nonnegative integer `prompt_tokens` and
+`completion_tokens`, including zero. An optional `total_tokens` must equal their sum. Partial,
+malformed, duplicate or conflicting usage makes the counts invalid. An identical repeated report
+keeps the counts available. Upstream protocol completion, model match and reported usage remain
+independent facts. They provide no physical or financial settlement.
+
+The ticket freezes one consistent observation at its terminal transition. Client cancellation and
+downstream writer failure keep their own state and error code. A late physical exit cannot replace
+the ticket's observation or terminal event. An independently established upstream end can still be
+reported when the writer fails or the caller disconnects after that observation.
+
 **Core shutdown during a default active read.** After publishing a complete upstream block, the
 producer arms a subsequent raw read only when it returns an incomplete operation and the linked,
 shutdown, execution and caller tokens are still live. The linked-token callback can record the
@@ -2908,8 +2956,9 @@ as `cancelled` unless another outcome already won. A pending write keeps its own
 until the operation settles, even after the exchange ends and unrelated queued output is discarded.
 A successful flush restores credit. On clean
 upstream EOF, the router disarms the response timer and starts transport cleanup. The HTTP ticket
-succeeds after the last required successful flush, including the initial comment on an empty body
-and any upstream `[DONE]`. The first selected terminal outcome stands. Caller or shutdown
+settles after the last required successful flush, including the initial comment on an empty body
+and any upstream `[DONE]`. A relayed structured upstream error selects `Failed` at that acknowledgment.
+The first selected terminal outcome stands. Caller or shutdown
 cancellation observed before a watchdog or final acknowledgment claims the outcome is recorded
 as cancellation. A later cancellation leaves an already accepted final acknowledgment intact.
 Kestrel's flush acknowledgment describes relay progress.
@@ -3740,6 +3789,11 @@ serialized snapshot includes the full identities and JSON escaping, so `max_requ
 bodies and supplies no snapshot byte ceiling. The feed still uses reporting excerpts and the snapshot's `Error`
 keeps the terminal reason cap.
 
+Terminal streaming ticket snapshots and `request.completed`, `request.failed` and `request.cancelled`
+events carry the PascalCase fields `UpstreamOutcome` and `UpstreamEndReason` (§6). Each takes values
+from a fixed vocabulary independent of the legacy ticket `State` and the terminal error code. A
+streaming ticket cancelled before the upstream end is known reports `unknown` for both fields.
+
 - `thread.registered`, `thread.priority_changed`
 - `request.enqueued {thread, ticket, model, priority, promptChars}`
 - `request.selected {ticket, engine, model, affinityScore, busyScore}`
@@ -4188,6 +4242,10 @@ and cohort/residency hysteresis in the scheduler (§12.3 hook).
   (small request served, oversized request queues behind a profile switch that
   widens the engine's reported window, then completes); health probe failure;
   real HTTP through Kestrel against the stub engine.
+- **SSE observation** (`SemanticStreamObservationTests`, `StreamFrameIdentityTests`, `StreamRelayTests`,
+  `StreamingFailureTests`): split SSE lines and unchanged relay bytes, timing, identity and usage
+  availability, outcome precedence, one terminal event for upstream error plus `[DONE]`, sibling stream
+  isolation, and cancellation or writer failure independently of observed upstream evidence.
 - **Configuration reload** (`ConfigReloadWireTests`, `ConfigReloadRaceTests`): authenticated
   file apply, generation readback and rejection, exact stream bytes and a held native switch,
   queue and shutdown ordering, idle external retirement, detached response disposal, and
