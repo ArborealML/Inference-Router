@@ -37,6 +37,38 @@ public sealed class AirTunePromptFitTests
     }
 
     [Fact]
+    public async Task SearchesTheRecordTailWhenTheFullRecordExceedsTheWindow()
+    {
+        var generator = Generator();
+        int calls = 0;
+        long bytes = 0;
+        int Count(byte[] body)
+        {
+            using var doc = JsonDocument.Parse(body);
+            return doc.RootElement.GetProperty("messages")[0].GetProperty("content").GetString()!.Length / 2 + 8;
+        }
+        Assert.Equal(32_095, Count(AirTunePromptFit.ChatBody("model", generator.Candidate(930, 0), 512)));
+        Assert.Equal(32_130, Count(AirTunePromptFit.ChatBody("model", generator.Candidate(931, 0), 512)));
+
+        var prompt = await AirTunePromptFit.FitAsync(generator, "model", 512, 32_097, 32_128,
+            (body, _) =>
+            {
+                calls++;
+                bytes += body.Length;
+                Assert.InRange(body.Length, 1, 349_525);
+                return Task.FromResult(Count(body));
+            }, CancellationToken.None);
+
+        Assert.NotNull(prompt);
+        Assert.Equal(32_128, prompt.Tokens);
+        Assert.Equal(930, prompt.Records);
+        Assert.InRange(prompt.TailBytes, 66, 67);
+        Assert.Equal(prompt.Tokens, Count(prompt.Body));
+        Assert.InRange(calls, 1, 24);
+        Assert.InRange(bytes, 1, 8_388_608);
+    }
+
+    [Fact]
     public async Task NoInBandPromptOrFailedCountCannotProduceAWorkload()
     {
         Assert.Null(await AirTunePromptFit.FitAsync(Generator(), "model", 512, 100, 131,

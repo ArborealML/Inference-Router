@@ -95,12 +95,11 @@ cannot fit, record `invalid_workload` with no generation for that prompt.
 
 Bisect that range with floor midpoints, at most 16 prefix counts. Retain the
 highest counted value at or below the upper endpoint H, preferring the longest
-raw candidate on ties. Counts at or below H search longer and counts above H
-search shorter. For a retained count below H, try up to eight next-record tail
-offsets using `4*(H-count)` plus `[0,-1,1,-2,2,-4,4,-8]` in that order.
-Use widened checked arithmetic, clip to the remaining bytes and the next
-record's length, and skip byte-identical candidates. Use the same ranking for
-in-band counts and keep the first exact match on ties. On call or byte
+candidate on ties. Counts below H search longer and counts above H search
+shorter. For a retained count below H, bisect the full remaining next-record
+tail range with up to eight counts. An already counted next full record needs
+no repeat call. Even when nonmonotone counts make the search inconclusive, an
+accepted body always has a measured in-band count. On call or byte
 exhaustion, use a previously accepted in-band candidate only while its evidence
 and the tier time outside the drain reserve still hold. Otherwise the prompt is
 `invalid_workload` and sends no generation. A failed count consumes one call

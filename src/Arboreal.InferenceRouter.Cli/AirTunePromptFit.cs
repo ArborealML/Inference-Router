@@ -120,14 +120,17 @@ internal static class AirTunePromptFit
         if (best is null) return null;
         var prefix = best.Records;
         var length = AirTuneTextGenerator.RecordByteLength(prefix + 1);
-        var estimate = 4L * (maxTokens - best.Tokens);
-        var tails = new HashSet<int> { 0 };
-        if (countedPrefixes.Contains(prefix + 1)) tails.Add(length);
-        foreach (var offset in new[] { 0, -1, 1, -2, 2, -4, 4, -8 })
+        low = 1;
+        high = countedPrefixes.Contains(prefix + 1) ? length - 1 : length;
+        // Rendered counts may vary nonmonotonically. A bounded search can miss a fit,
+        // but every returned body has a measured count inside the requested band.
+        for (var call = 0; low <= high && call < policy.MaxTailCountCalls; call++)
         {
-            var tail = (int)Math.Clamp(estimate + offset, 0, length);
-            if (tails.Add(tail) && await ProbeAsync(prefix, tail).ConfigureAwait(false) == maxTokens)
-                break;
+            var tail = low + (high - low) / 2;
+            var tokens = await ProbeAsync(prefix, tail).ConfigureAwait(false);
+            if (tokens == maxTokens) return best;
+            if (tokens < maxTokens) low = tail + 1;
+            else high = tail - 1;
         }
         return best.Tokens >= minTokens ? best : null;
     }
