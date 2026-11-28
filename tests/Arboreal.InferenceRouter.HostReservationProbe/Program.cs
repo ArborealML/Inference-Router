@@ -1,6 +1,31 @@
 using Arboreal.InferenceRouter;
 using Arboreal.InferenceRouter.Lifecycle;
 
+if (args is ["--commissioned-head-read", var socketPath, var leaf, var slotPath, var access])
+{
+    var enrollment = HostReservationScope.Read(slotPath);
+    var client = new OperationHeadClient(new System.Net.Sockets.UnixDomainSocketEndPoint(socketPath),
+        leaf, enrollment, OperationHeadProtocol.SuccessorVersion);
+    SupervisedLaunchJournalHead? committed;
+    try { committed = client.Read(enrollment); }
+    catch (IOException) when (access == "denied")
+    {
+        Console.WriteLine("read refused");
+        return 0;
+    }
+    if (access != "read-only" || committed is null) return 3;
+    try
+    {
+        _ = client.TryAdvance(committed, committed with { Revision = committed.Revision + 1, Digest = new string('B', 64) });
+        return 4;
+    }
+    catch (IOException)
+    {
+        Console.WriteLine("read accepted; advance refused");
+        return 0;
+    }
+}
+
 if (args is ["--causal-drain", var causalPath, var causalMode, var causalTarget])
 {
     Console.WriteLine(new HostEffectLedgerProbe(causalPath, requirePartitionProof: true, requireCausalDrain: true)

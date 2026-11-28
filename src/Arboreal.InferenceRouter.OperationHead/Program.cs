@@ -13,7 +13,8 @@ namespace Arboreal.InferenceRouter.OperationHead;
 internal sealed record OperationHeadBootstrap(int Version, HostReservationScope Scope, uint ProducerUid,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] uint? BrokerWriterUid = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] uint? BrokerReaderUid = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] uint? SuccessorReaderUid = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] uint? SuccessorReaderUid = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] uint? RegistrarReaderUid = null);
 
 [JsonSourceGenerationOptions(UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow,
     AllowDuplicateProperties = false, RespectNullableAnnotations = true, RespectRequiredConstructorParameters = true)]
@@ -98,8 +99,11 @@ internal static class Program
             (bootstrap.SuccessorReaderUid is { } successorReader &&
              (bootstrap.Version != OperationHeadProtocol.SuccessorVersion || successorReader == bootstrap.ProducerUid ||
               successorReader == bootstrap.BrokerWriterUid)) ||
+            (bootstrap.RegistrarReaderUid is { } registrar &&
+             (bootstrap.Version != OperationHeadProtocol.SuccessorVersion || bootstrap.SuccessorReaderUid is null ||
+              registrar == bootstrap.SuccessorReaderUid || registrar == bootstrap.ProducerUid || registrar == bootstrap.BrokerWriterUid)) ||
             ((bootstrap.ProducerUid == uid || bootstrap.BrokerWriterUid == uid || bootstrap.BrokerReaderUid == uid ||
-              bootstrap.SuccessorReaderUid == uid) &&
+              bootstrap.SuccessorReaderUid == uid || bootstrap.RegistrarReaderUid == uid) &&
              listeningForTests is null) ||
             !EnvelopeFits(bootstrap.Scope, bootstrap.Version) ||
             (brokerEnabled && !BrokerEnvelopeFits(bootstrap.Scope)))
@@ -128,8 +132,8 @@ internal static class Program
             while (!ct.IsCancellationRequested)
             {
                 using var accepted = await listener.AcceptAsync(ct).ConfigureAwait(false);
-                await OperationHeadTransport.ServeAsync(accepted, bootstrap.ProducerUid, bootstrap.SuccessorReaderUid,
-                    bootstrap.BrokerWriterUid, bootstrap.BrokerReaderUid, certificate, bootstrap.Scope, bootstrap.Version,
+                await OperationHeadTransport.ServeAsync(accepted, bootstrap.ProducerUid,
+                    bootstrap.SuccessorReaderUid, bootstrap.RegistrarReaderUid, bootstrap.BrokerWriterUid, bootstrap.BrokerReaderUid, certificate, bootstrap.Scope, bootstrap.Version,
                     timeoutForTests ?? OperationHeadProtocol.Timeout,
                     (request, budget) =>
                     {

@@ -599,7 +599,7 @@ public sealed partial class HostClosedRouteStagingTests
                 create.Image, create.Effective, create.Route, create.Endpoint, create.Devices);
 
         internal void RecordStart(HostMutation operation) =>
-            Running = new(new(scope, head, SupervisedSocket, operation, runningApiVersion), runningId, Running: true);
+            Running = new(new(scope, head, create.Socket, operation, runningApiVersion), runningId, Running: true);
 
         internal void ForgetRunning() => Running = null;
     }
