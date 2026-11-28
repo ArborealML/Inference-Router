@@ -160,14 +160,16 @@ internal sealed class ServingBrokerLedger(HostReservationScope scope, Guid issue
             checkpoint.State.AppliedLaunch is not { } incumbent || query.ProposedStop is not { } stop ||
             !HostEffectCheckpoint.BindsProposedStop(checkpoint.State, stop) || query.ExpectedIncumbentRoute is not { } route ||
             !EnrolledSuccessorScope.BindsResidentRoute(scope, route, incumbent) ||
-            ReadCurrent() is not { } current || current.Record.Binding.Route != route ||
-            current.Record.Binding.CatalogHead != query.Scope.Commission.Head)
+            ReadCurrent() is not { } current || current.Record.IssuerEpoch != issuerEpoch ||
+            current.Record.Binding.Route != route ||
+            current.Record.Binding.CatalogHead != query.Scope.Commission.Head || current.Record.Binding.Applied != checkpoint)
             return null;
 
         if (current.Record.Close is { } prior)
-            return prior.Matches(query, checkpoint) ? prior : null;
+            return prior.Retirement.OwnerGeneration == ownerGeneration && prior.Retirement.IngressGeneration == ingressGeneration &&
+                prior.Matches(query, checkpoint) ? prior : null;
 
-        if (!current.Record.Open || current.Record.IssuerEpoch != issuerEpoch) return null;
+        if (!current.Record.Open) return null;
         var retirement = new EnrolledSuccessorRetirement(query.Id, Guid.NewGuid(), incumbent, stop, ownerGeneration,
             ingressGeneration, route, query.Successor.Key, query.Successor.PlanDigest, query.Successor.Intent.CreateDigest);
         var close = new ServingBrokerClose(scope, query.Scope.Commission.Head, checkpoint.State.Revision,
@@ -180,7 +182,7 @@ internal sealed class ServingBrokerLedger(HostReservationScope scope, Guid issue
     internal EnrolledSuccessorRetirement? CompleteClose(ServingBrokerClose expected, VerifiedInstanceRoute localZeroRoute)
     {
         if (expected.Retirement.SealedRoute != localZeroRoute || ReadCurrent() is not { } current ||
-            current.Record.Open || current.Record.Close is not { } close ||
+            current.Record.IssuerEpoch != issuerEpoch || current.Record.Open || current.Record.Close is not { } close ||
             close != (expected with { Conclusive = close.Conclusive }) || HasOutstandingUses(current.Record))
             return null;
 

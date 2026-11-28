@@ -7,7 +7,7 @@ Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 
 ## 0. Revision log
 
-- v0.12.176 — connect the executable to the protected catalog, operation head, serving broker, and exact native terminal sources. Attach a checked resident before dispatch and bind the successor before closing its incumbent (§§4, 7.6, 12.1).
+- v0.12.176 — connect the executable to the protected catalog, operation head, serving broker, and exact native terminal sources. Attach a checked resident before dispatch and bind the successor before closing its incumbent. The original issuer epoch confirms the cutoff and the anchored journal checks the frozen recipe on replay (§§4, 7.6, 12.1).
 - v0.12.175 — qualify managed local routing with a full remote provider and publish request-scoped, bounded, revision-checked queue observations (§§5.4–5.5, 10, 14).
 - v0.12.174 — bind owned private inference to verified external scope and durable policy, qualify direct private transport and bounded streaming, and scope catalog, status, events and ticket controls (§§5.6, 6).
 - v0.12.173 — compose enrolled exact dispatch in the standard web application and require generation-specific physical retirement before mutation, and bound commissioned SSE output at route selection, including a pending first heartbeat (§§4, 7.6, 12.1).
@@ -4369,7 +4369,9 @@ verified application transport. Direct engine health polls do not supply enrolle
 
 The accepted successor uses one protected checkpoint and worker history. The broker records
 its closed cutoff against the installed incumbent, the proposed stop ID, and the approved
-successor recipe and create digests before stop intent is persisted. The worker subsequently
+successor recipe and create digests before stop intent is persisted. The same issuer epoch
+must confirm the cutoff. The operation journal also verifies the frozen recipe when it replays
+the anchored history. The worker subsequently
 checks that cutoff and exact incumbent, observes vacancy separately, and binds the installed
 launch to the next broker generation. A committed close survives lost physical readback.
 An advanced or ambiguous startup has no automatic authority to reopen an old resident.

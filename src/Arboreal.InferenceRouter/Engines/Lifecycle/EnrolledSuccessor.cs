@@ -87,8 +87,11 @@ internal sealed record EnrolledSuccessorRetirement(Guid QueryId, Guid CloseId, H
     HostMutation Stop, long OwnerGeneration, long IngressGeneration, VerifiedInstanceRoute SealedRoute,
     EnrolledPlanKey Successor, string PlanDigest, string CreateDigest)
 {
-    internal bool Approves(CheckedEnrolledTarget target) => Successor == target.Key && PlanDigest == target.PlanDigest &&
-        CreateDigest == target.Intent.CreateDigest;
+    internal bool Approves(CheckedEnrolledTarget target) => Approves(target.Intent);
+
+    internal bool Approves(HostInitialLaunchIntent intent) =>
+        Successor == new EnrolledPlanKey(intent.Plan.Engine, intent.Plan.Model, intent.Plan.Tier ?? "") &&
+        PlanDigest == intent.Plan.Digest() && CreateDigest == intent.CreateDigest;
 }
 
 internal sealed record EnrolledSuccessorIssue(EnrolledSuccessorQuery Query, EnrolledSuccessorObservation Observation,

@@ -215,6 +215,10 @@ public sealed partial class ServingBrokerDirectSocketTests
             Assert.Equal(stop, close.Retirement.Stop);
             Assert.True(close.Retirement.Approves(target));
             Assert.Null(ledger.Seal(query with { ProposedStop = stop with { Id = Guid.NewGuid() } }, commitment, 1, 2));
+            Assert.Null(ledger.Seal(query, commitment, 1, 3));
+            var foreignEpoch = new ServingBrokerLedger(binding.Scope, Guid.NewGuid(), OpenStore());
+            Assert.Null(foreignEpoch.Seal(query, commitment, 1, 2));
+            Assert.Null(foreignEpoch.CompleteClose(close, binding.Route));
             var observerRead = ServingBrokerFileStore.OpenRetirementReader(binding.Scope, anchor);
             Assert.Null(observerRead(close.Retirement.CloseId));
             if (!issueUse)
