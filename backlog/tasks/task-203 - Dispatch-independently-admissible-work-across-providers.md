@@ -1,11 +1,11 @@
 ---
 id: TASK-203
 title: Dispatch independently admissible work across providers
-status: In Progress
+status: Ready for Review
 assignee:
-  - '@gpt-6.2-sol-lifecycle'
+  - '@gpt-6.2-astra'
 created_date: '2026-11-27'
-updated_date: '2026-11-28T12:15:00Z'
+updated_date: '2026-11-28T12:37:29Z'
 labels: []
 milestone: m-17
 dependencies: []
@@ -51,5 +51,5 @@ The last-thread-slot race correction revalidates competing routes under the rout
 
 The dispatcher and its qualified fixtures landed in the [main integration](https://github.com/ArborealML/Inference-Router/commit/1bf85d3495ab2517a921d78013ffe69bbefb4325). [PR 94](https://github.com/ArborealML/Inference-Router/pull/94) exercised held preparations in either private domain for shared and distinct models. Its shared-thread control identified the limiting credit and allowed a separate thread through. Commercial backoff, explicit ownership across reassignment and full operator diagnostics retain their acceptance here.
 
-Plan review at f66ae74 verified that both endpoints in the existing full-remote fixture are delegated. It also found the wait publication lacks the originating route and group revisions. The revised plan exercises actual managed ingress and stale-observation rejection.
+[Provider progress](https://github.com/ArborealML/Inference-Router/pull/101) at f7529cd passed 139 focused checks. Four normal HTTP cases served warm and cold managed requests for the same or a different model before the remote slot released. Controls qualified stale diagnostic rejection, ownership and operator output. Independent source review and hosted CI are pending.
 <!-- SECTION:NOTES:END -->

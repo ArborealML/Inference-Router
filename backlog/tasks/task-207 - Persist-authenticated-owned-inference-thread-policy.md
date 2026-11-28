@@ -1,11 +1,11 @@
 ---
 id: TASK-207
 title: Persist authenticated owned inference thread policy
-status: Ready for Review
+status: In Progress
 assignee:
-  - '@gpt-6.2-astra'
+  - '@gpt-6.2-sol-config'
 created_date: '2026-11-27'
-updated_date: '2026-11-28T12:29:00Z'
+updated_date: '2026-11-28T12:37:29Z'
 labels: []
 milestone: m-19
 dependencies:
@@ -50,9 +50,7 @@ Authorize both inference endpoints, catalog/status, tickets, cancel, events, thr
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Independent plan review at 3c7ae3e identified default handler redirect and proxy behavior, catalog caching, the use of raw thread IDs, and event ownership after ticket eviction. The revised plan covers each at its enforcement point. TASK-217 owns the external authority choices, TASK-208 owns sensitivity transitions and TASK-212 owns final commercial liability. This plan qualifies fixtures before any production enablement.
+Review at 3c7ae3e added redirect, proxy, catalog caching, thread scope and post-eviction event checks. External authority, sensitivity transitions and commercial liability remain with TASK-217, TASK-208 and TASK-212 respectively.
 
-Implementation began with the existing HTTP handler and owner-scoped private fixtures. Production requires an external authority adapter and verified destination confinement.
-
-[Private policy integration](https://github.com/ArborealML/Inference-Router/pull/100) at 461b3c7 passed 154 focused checks. Real HTTP exercised private delivery, cancellation, redirect and proxy confinement, and a store write whose external confirmation was lost. Review and hosted CI are underway.
+[Private policy integration](https://github.com/ArborealML/Inference-Router/pull/100) at 461b3c7 passed 154 focused checks. Real HTTP exercised private delivery, cancellation, redirect and proxy confinement, and a store write whose external confirmation was lost. An external Native AOT host served a fixture request at the confirmed revision. Review found the writer-fault path called unscoped cancel, default streams lacked credit and scoped observations exposed shared residency. Qualify physical cancellation, slow sinks and two owners sharing one engine.
 <!-- SECTION:NOTES:END -->
