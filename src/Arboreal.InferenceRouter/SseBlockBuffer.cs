@@ -1,9 +1,12 @@
 namespace Arboreal.InferenceRouter;
 
+internal enum SseBlockDecision { Allow, Qualified, HoldTerminal, Refuse }
+internal delegate SseBlockDecision SseBlockFilter(ReadOnlySpan<byte> payload);
+
 /// <summary>Releases only wire bytes through a blank line. Optionally exposes the data payload
 /// of each committed block, using the same line and block boundaries as the byte relay.</summary>
 internal sealed class SseBlockBuffer(int maxBlockBytes = SseBlockBuffer.MaxBlockBytes,
-    SemanticStreamObserver? observer = null)
+    SemanticStreamObserver? observer = null, SseBlockFilter? filter = null)
 {
     internal const int MaxBlockBytes = 1024 * 1024;
 
@@ -17,11 +20,17 @@ internal sealed class SseBlockBuffer(int maxBlockBytes = SseBlockBuffer.MaxBlock
     private int _joinedLength;
 
     public bool HasIncompleteBlock => _pendingCount != 0;
+    internal bool RefusedBlock { get; private set; }
+    internal int? TerminalOffset { get; private set; }
+    internal int? QualifiedThrough { get; private set; }
+    internal int PendingBytes => _pendingCount;
 
     public (ReadOnlyMemory<byte> Complete, bool LimitExceeded) Append(ReadOnlySpan<byte> bytes)
     {
         var blockBytes = _pendingCount;
         var publishThrough = 0;
+        TerminalOffset = null;
+        QualifiedThrough = null;
 
         for (var index = 0; index < bytes.Length; index++)
         {
@@ -45,7 +54,17 @@ internal sealed class SseBlockBuffer(int maxBlockBytes = SseBlockBuffer.MaxBlock
                 var blockStart = end - blockBytes;
                 if (_lineLength == 0)
                 {
-                    if (observer is not null) ObserveBlock(observer, bytes, blockStart);
+                    if (observer is not null)
+                    {
+                        var decision = ObserveBlock(observer, bytes, blockStart);
+                        if (decision == SseBlockDecision.Refuse)
+                        {
+                            RefusedBlock = true;
+                            return (TakePrefix(bytes[..publishThrough]), false);
+                        }
+                        if (decision == SseBlockDecision.HoldTerminal) TerminalOffset ??= blockStart;
+                        if (decision == SseBlockDecision.Qualified) QualifiedThrough ??= _pendingCount + index + 1;
+                    }
                     publishThrough = index + 1;
                     blockBytes = 0;
                     continue;
@@ -96,23 +115,20 @@ internal sealed class SseBlockBuffer(int maxBlockBytes = SseBlockBuffer.MaxBlock
         Join(bytes, start, end - start);
     }
 
-    private void ObserveBlock(SemanticStreamObserver target, ReadOnlySpan<byte> bytes, int blockStart)
+    private SseBlockDecision ObserveBlock(SemanticStreamObserver target, ReadOnlySpan<byte> bytes, int blockStart)
     {
-        if (_dataLength < 0) return;
+        if (_dataLength < 0) return filter?.Invoke(default) ?? SseBlockDecision.Allow;
         var start = blockStart + _dataOffset;
-        if (_joinedLength > 0)
-            target.ObserveData(_joined.AsSpan(0, _joinedLength));
-        else if (start >= _pendingCount)
-            target.ObserveData(bytes.Slice(start - _pendingCount, _dataLength));
-        else if (start + _dataLength <= _pendingCount)
-            target.ObserveData(_pending.AsSpan(start, _dataLength));
-        else
-        {
+        if (_joinedLength == 0 && start < _pendingCount && start + _dataLength > _pendingCount)
             Join(bytes, start, _dataLength);
-            target.ObserveData(_joined.AsSpan(0, _joinedLength));
-        }
+        var payload = _joinedLength > 0 ? _joined.AsSpan(0, _joinedLength)
+            : start >= _pendingCount ? bytes.Slice(start - _pendingCount, _dataLength)
+            : _pending.AsSpan(start, _dataLength);
+        target.ObserveData(payload);
+        var decision = filter?.Invoke(payload) ?? SseBlockDecision.Allow;
         _dataLength = -1;
         _joinedLength = 0;
+        return decision;
     }
 
     private byte ByteAt(ReadOnlySpan<byte> bytes, int index) =>

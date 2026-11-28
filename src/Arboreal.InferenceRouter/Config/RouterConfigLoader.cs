@@ -90,6 +90,8 @@ public static class RouterConfigLoader
                 });
                 DockerLaunchResources.CheckJson(doc.RootElement);
                 DockerTargetPlans.CheckJson(doc.RootElement);
+                if (doc.RootElement.ValueKind == JsonValueKind.Object && doc.RootElement.TryGetProperty("commercial_provider", out _))
+                    DirectChatProvider.CheckDeclaration(ConfigDeclaration.Read(doc.RootElement).Fields!["commercial_provider"]);
                 onJson?.Invoke(doc.RootElement);
                 dto = JsonSerializer.Deserialize<ConfigDto>(doc, ConfigJsonContext.Default.ConfigDto)
                       ?? throw new RouterConfigException("config: empty document");
@@ -99,6 +101,8 @@ public static class RouterConfigLoader
                 if (TomlSerializer.Deserialize(text, ConfigTomlDocumentContext.Default.TomlTable) is { } document)
                 {
                     DockerTargetPlans.CheckTargetDeclarationsToml(document);
+                    if (document.TryGetValue("commercial_provider", out var commercial))
+                        DirectChatProvider.CheckDeclaration(ConfigDeclaration.Read(commercial));
                     onToml?.Invoke(document);
                 }
                 dto = TomlSerializer.Deserialize(text, ConfigTomlContext.Default.ConfigDto)
@@ -195,8 +199,11 @@ public static class RouterConfigLoader
             cfg.Engines = dict;
         }
 
-        if (cfg.Engines.Count == 0)
-            throw new RouterConfigException($"{source}: at least one [engine.<name>] is required");
+        cfg.CommercialProviders = DirectChatProvider.Parse(dto.CommercialProviders);
+        if (cfg.Engines.Keys.Any(name => cfg.CommercialProviders.Keys.Contains(name, StringComparer.OrdinalIgnoreCase)))
+            throw new RouterConfigException("engine and commercial provider names must be distinct ignoring case");
+        if (cfg.Engines.Count == 0 && cfg.CommercialProviders.Count == 0)
+            throw new RouterConfigException($"{source}: at least one engine or commercial provider is required");
         return cfg;
     }
 

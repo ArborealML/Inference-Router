@@ -142,6 +142,8 @@ public static class Program
                 $"max_queue_per_model={s.MaxQueuePerModel}  " +
                 $"chars_per_token_estimate={s.CharsPerTokenEstimate.ToString(CultureInfo.InvariantCulture)}  " +
                 $"prefix_affinity_threshold_chars={s.PrefixAffinityThresholdChars}");
+            foreach (var provider in cfg.CommercialProviders.Values.OrderBy(static provider => provider.Name, StringComparer.Ordinal))
+                Console.WriteLine($"commercial provider {provider.Name}: configured_enabled={provider.Enabled} models={provider.Models.Count}");
             foreach (var (name, e) in cfg.Engines)
             {
                 var key = e.ApiKey is { Length: > 0 } ? "inline" : e.ApiKeyFile is { Length: > 0 } ? $"file:{e.ApiKeyFile}" : "none";
@@ -517,6 +519,19 @@ public static class Program
         json.WriteNumber("CharsPerTokenEstimate", cfg.Scheduler.CharsPerTokenEstimate);
         json.WriteNumber("PrefixAffinityThresholdChars", cfg.Scheduler.PrefixAffinityThresholdChars);
         json.WriteEndObject();
+        if (cfg.CommercialProviders.Count != 0)
+        {
+            json.WriteStartArray("CommercialProviders");
+            foreach (var provider in cfg.CommercialProviders.Values.OrderBy(static provider => provider.Name, StringComparer.Ordinal))
+            {
+                json.WriteStartObject();
+                json.WriteString("Name", provider.Name);
+                json.WriteBoolean("ConfiguredEnabled", provider.Enabled);
+                json.WriteNumber("ConfiguredModels", provider.Models.Count);
+                json.WriteEndObject();
+            }
+            json.WriteEndArray();
+        }
         json.WriteStartArray("Engines");
         foreach (var (name, engine) in cfg.Engines)
         {
