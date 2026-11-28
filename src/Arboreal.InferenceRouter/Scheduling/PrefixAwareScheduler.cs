@@ -30,6 +30,10 @@ public sealed class EngineRuntimeInfo
     /// <summary>Serving-profile ladder declared for the candidate request's model (empty = no ladder).</summary>
     public IReadOnlyList<ServingProfile> ServingProfiles { get; init; } = Array.Empty<ServingProfile>();
     internal EngineRuntime.DispatchObservation DispatchObservation { get; init; }
+    internal PrefixAwareScheduler.NamedRoute? NamedProfile { get; init; }
+    internal VerifiedDispatchResident? ManagedResident { get; init; }
+    internal IReadOnlyList<ServingProfile>? ManagedColdProfiles { get; init; }
+    internal string? DefaultProfile { get; init; }
 }
 
 /// <summary>Decision: engine name (null = wait) or rejection.</summary>
@@ -63,9 +67,12 @@ public sealed record SchedulerView(IReadOnlyList<EngineRuntimeInfo> Engines, Dat
 public sealed class PrefixAwareScheduler : IRequestScheduler
 {
     internal readonly record struct Target(bool SwitchRequired, string? Profile);
+    internal readonly record struct NamedRoute(ServingProfile? Profile, bool FitsResident);
     internal readonly record struct RouteFit(bool Healthy, bool Switching, bool CanServeModel, bool CanLoad,
         bool CanSwitchProfile, IReadOnlyList<string> LoadedModels, long ActiveContextWindow,
-        IReadOnlyList<ServingProfile> ServingProfiles, EngineRuntime.DispatchObservation Observation);
+        IReadOnlyList<ServingProfile> ServingProfiles, EngineRuntime.DispatchObservation Observation, NamedRoute? NamedProfile = null,
+        VerifiedDispatchResident? ManagedResident = null, IReadOnlyList<ServingProfile>? ManagedColdProfiles = null,
+        string? DefaultProfile = null);
     internal readonly record struct RankedRoute(EngineRuntimeInfo Engine, Target Target, double Score)
     {
         internal SchedulerDecision Decision => new()
@@ -91,7 +98,8 @@ public sealed class PrefixAwareScheduler : IRequestScheduler
         foreach (var engine in engines)
             if (DescribeTarget(request, new(engine.Healthy, engine.Switching, engine.CanServeModel, engine.CanLoad,
                 engine.CanSwitchProfile, engine.LoadedModels, engine.ActiveContextWindow, engine.ServingProfiles,
-                engine.DispatchObservation), config) is { } target)
+                engine.DispatchObservation, engine.NamedProfile, engine.ManagedResident, engine.ManagedColdProfiles,
+                engine.DefaultProfile), config) is { } target)
                 routes.Add(new(engine, target, AffinityScore(engine) - BusyScore(engine, request, config)));
         routes.Sort(static (a, b) =>
         {
@@ -114,7 +122,7 @@ public sealed class PrefixAwareScheduler : IRequestScheduler
         if (named is not null)
         {
             if (engine.Observation.SlotLimit == 0) return null;
-            target = EngineRuntime.UniqueNamedProfile(engine.ServingProfiles, named);
+            target = engine.NamedProfile is { } resolved ? resolved.Profile : EngineRuntime.UniqueNamedProfile(engine.ServingProfiles, named);
             if (target is null || target.MaxContext < request.RequiredContextTokens) return null;
         }
         else if (request.RequiredContextTokens > 0 && engine.ServingProfiles.Count > 0)
@@ -126,11 +134,17 @@ public sealed class PrefixAwareScheduler : IRequestScheduler
         if (loaded && target is null && request.ExplicitContextMinimum > 0 && engine.ActiveContextWindow < request.ExplicitContextMinimum) return null;
 
         var needsEscalation = target is not null && (named is null ? engine.ActiveContextWindow < target.MaxContext
-            : !engine.Observation.Capability.Serving.Matches(model, target));
-        if (loaded && !needsEscalation) return new(false, named);
-        if (config.AutoSwitch && (named is null || engine.CanSwitchProfile && (engine.CanLoad || engine.Observation.Inflight == 0)))
-            return new(true, target?.Name);
-        return null;
+            : !(engine.NamedProfile?.FitsResident ?? engine.Observation.Capability.Serving.Matches(model, target)));
+        if (loaded && !needsEscalation) return new(false, named is null ? null : target?.Name);
+        if (!config.AutoSwitch || named is not null && !(engine.CanSwitchProfile && (engine.CanLoad || engine.Observation.Inflight == 0)))
+            return null;
+        if (named is null && engine.ManagedColdProfiles is { } supported)
+        {
+            target = request.RequiredContextTokens > 0 ? SmallestFittingProfile(supported, request.RequiredContextTokens) :
+                engine.DefaultProfile is { } defaultTier ? EngineRuntime.UniqueNamedProfile(supported, defaultTier) : null;
+            if (target is null) return null;
+        }
+        return new(true, target?.Name);
     }
 
     internal static ServingProfile? SmallestFittingProfile(IReadOnlyList<ServingProfile> profiles, long requiredTokens)

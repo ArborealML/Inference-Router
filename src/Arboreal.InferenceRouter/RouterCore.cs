@@ -357,7 +357,7 @@ public sealed partial class RouterCore : IInferenceRouter
     private readonly record struct AdmissionTake(TakeResult Result, ExactTicketAdmission.Invocation? Invocation = null,
         string? TerminalCode = null);
     private readonly record struct PreparationOffer(Selection Selection, EngineRuntime Engine, ExactTicketAdmission.Claim Claim);
-    private readonly record struct ManagedOffer(Selection Selection, EngineRuntime Engine, ServingProfile Profile);
+    private readonly record struct ManagedOffer(Selection Selection, EngineRuntime Engine, VerifiedDispatchTarget Recipe);
 
     // Existing fixtures step one admission transition without starting the background dispatcher.
     internal bool TryDispatchOnce() => DispatchRound(stopAfterTransition: true) != DispatchResult.Parked;
@@ -471,7 +471,10 @@ public sealed partial class RouterCore : IInferenceRouter
 
             if (selection.Decision.SwitchRequired && _hostManager?.Owns(engine.Name) == true)
             {
-                if (probe.Profile is { } profile) (activations ??= []).Add(new(selection, engine, profile));
+                var model = candidate.Ticket.Model;
+                var tier = probe.Profile?.Name ?? engine.DefaultServingTier(model);
+                if (tier is not null && _hostManager.Recipe(engine.Name, model, tier) is { } recipe)
+                    (activations ??= []).Add(new(selection, engine, recipe));
                 blocker ??= new("lifecycle_group_waiting", _hostManager.Scope(engine.Name));
                 continue;
             }
@@ -482,6 +485,7 @@ public sealed partial class RouterCore : IInferenceRouter
                 (candidate.RequiredContextTokens > 0 && engine.ProfilesForModel(candidate.Ticket.Model).Count > 0);
             EngineRuntime.DispatchObservation? expected = needsCurrentObservation ? observed : null;
             var take = TryAdmit(round, index, selection, engine, expected, requiredWindow, compared, generation,
+                routes is null ? ReadRankedResident(infos, engine.Name) : routes[routeIndex].Engine.ManagedResident,
                 ref preparations, ref blockedPreparation);
             if (take.Result == TakeResult.Taken)
             {
@@ -520,7 +524,8 @@ public sealed partial class RouterCore : IInferenceRouter
 
     private AdmissionTake TryAdmit(QueueRound[] round, int index, Selection selection, EngineRuntime engine,
                                    EngineRuntime.DispatchObservation? expected, long requiredWindow, bool compared,
-                                   ConfigurationGeneration generation, ref List<PreparationOffer>? preparations,
+                                   ConfigurationGeneration generation, VerifiedDispatchResident? rankedResident,
+                                   ref List<PreparationOffer>? preparations,
                                    ref PreparationOffer? blockedPreparation)
     {
         var candidate = selection.Request;
@@ -541,9 +546,11 @@ public sealed partial class RouterCore : IInferenceRouter
 
         var admission = _admission!;
 
-        var route = new ExactTicketAdmission.Route(engine.Name, candidate.Ticket.Model, selection.Decision.TargetProfile);
+        var route = CaptureAdmissionRoute(candidate, engine, selection.Decision.TargetProfile);
         if (admission.Capture(candidate, route, selection.Decision.SwitchRequired, candidate.ExplicitContextMinimum) is not { } claim)
             return new(TakeResult.Ineligible);
+        if (_hostManager?.Owns(engine.Name) == true && !ReferenceEquals(rankedResident, claim.Resident))
+            return new(TakeResult.RouteChanged);
         if (compared) BeforeCostCommitForTests?.Invoke();
         if (ReadQueueEnd(candidate) is not null)
         {
@@ -617,11 +624,15 @@ public sealed partial class RouterCore : IInferenceRouter
         {
             if (!IsCurrentQueue(queue, candidate, generation) || !IsCurrentPriorityComparison(offer.Selection) ||
                 !IsPendingAndThreadAdmissible(candidate) || candidate.Ticket.ExecCts is not { } execution) return false;
+            if (_scheduler is PrefixAwareScheduler && PrefixAwareScheduler.DescribeTarget(candidate,
+                ReadRouteFit(candidate, offer.Engine, offer.Engine.ReadDispatchObservation()), generation.Settings) !=
+                new PrefixAwareScheduler.Target(SwitchRequired: true, offer.Recipe.Tier)) return false;
             lock (queue.Gate)
             {
                 if (queue.FindExactTakeIndexUnderGate(candidate,
                         earlier => ExactPredecessorCompetes(earlier, candidate, offer.Engine, generation)) < 0) return false;
-                accepted = manager.TryAccept(offer.Engine.Name, candidate.Ticket.Model, offer.Profile.Name, candidate.Ticket, execution.Token);
+                accepted = manager.TryAccept(offer.Engine.Name, candidate.Ticket.Model, offer.Recipe.Tier, candidate.Ticket,
+                    execution.Token, offer.Recipe);
             }
         }
         if (accepted is null) return false;
@@ -742,8 +753,8 @@ public sealed partial class RouterCore : IInferenceRouter
 
         if (candidate.Request.Options?.Profile is { } requested &&
             (engine.GetProfile(candidate.Ticket.Model, requested) is not { } tier ||
-             !observation.Capability.Serving.Matches(candidate.Ticket.Model, tier) ||
-             claim.Resident is { } resident && (resident.Target.Tier != requested ||
+             !engine.MatchesNamedResident(candidate.Ticket.Model, tier, observation.Capability) ||
+             claim.Resident is { } resident && (resident.Target.Tier != tier.Name ||
                  resident.MeasuredWindow != tier.MaxContext || resident.TotalSlots != tier.MaxSlots))) return false;
         return AdmissionWindowFits(admission, claim, observation.Capability, requiredWindow) && admission.CanTake(claim, observation);
     }
@@ -838,11 +849,19 @@ public sealed partial class RouterCore : IInferenceRouter
         EngineRuntime.DispatchObservation observation)
     {
         var admission = _admission!;
-        var route = new ExactTicketAdmission.Route(engine.Name, earlier.Ticket.Model, target.Profile);
+        var route = CaptureAdmissionRoute(earlier, engine, target.Profile);
         var window = EngineRuntime.RequiredWindow(engine.GetProfile(earlier.Ticket.Model, target.Profile), earlier.ExplicitContextMinimum);
         return admission.Capture(earlier, route, target.SwitchRequired, earlier.ExplicitContextMinimum) is { } claim &&
             admission.IsOpen(claim) && AdmissionWindowFits(admission, claim, observation.Capability, window) &&
             admission.CanTake(claim, observation);
+    }
+
+    private ExactTicketAdmission.Route CaptureAdmissionRoute(QueuedRequest request, EngineRuntime engine, string? selectedTier)
+    {
+        var model = request.Ticket.Model;
+        var tier = engine.GetProfile(model, selectedTier)?.Name ?? selectedTier;
+        var recipe = tier is not null ? _hostManager?.Recipe(engine.Name, model, tier) : null;
+        return new(engine.Name, model, tier, recipe);
     }
 
     private static bool PredecessorRoutesAreCurrent(Dictionary<EngineRuntime, PredecessorRoute>? routes)
@@ -1110,8 +1129,9 @@ public sealed partial class RouterCore : IInferenceRouter
         var group = _localGroups.GetValueOrDefault(engine.Name);
         var named = candidate.Request.Options?.Profile;
         var serving = observation.Capability.Serving;
-        if (named is not null && (profile?.Name != named || profile.MaxContext < candidate.RequiredContextTokens ||
-            (!target.SwitchRequired && !serving.Matches(candidate.Ticket.Model, profile))))
+        if (named is not null && (profile is null || engine.GetProfile(candidate.Ticket.Model, named) != profile ||
+            !engine.SupportsNamedProfile(candidate.Ticket.Model, profile) || profile.MaxContext < candidate.RequiredContextTokens ||
+            (!target.SwitchRequired && !engine.MatchesNamedResident(candidate.Ticket.Model, profile, observation.Capability))))
             return new(profile, group, new("engine_profile_unavailable", engine.Name));
         var uses = _profileUsers.GetValueOrDefault(engine);
         if ((uses.Switching != 0 && (named is not null || uses.Named != 0)) ||
@@ -1194,6 +1214,13 @@ public sealed partial class RouterCore : IInferenceRouter
         throw new InvalidOperationException("The selected engine is missing from the scheduler view.");
     }
 
+    private static VerifiedDispatchResident? ReadRankedResident(EngineRuntimeInfo[] infos, string engine)
+    {
+        foreach (var info in infos)
+            if (info.Name == engine) return info.ManagedResident;
+        return null;
+    }
+
     private PrefixAwareScheduler.RouteFit ReadRouteFit(QueuedRequest request, EngineRuntime engine,
                                                         EngineRuntime.DispatchObservation observation)
     {
@@ -1201,12 +1228,25 @@ public sealed partial class RouterCore : IInferenceRouter
         var model = request.Ticket.Model;
         var group = _localGroups.GetValueOrDefault(engine.Name);
         var managed = _hostManager?.Owns(engine.Name) == true;
+        var resident = managed ? _hostManager!.Admission.ReadManagedResident(engine.Name) : null;
+        PrefixAwareScheduler.NamedRoute? named = null;
+        if (request.Request.Options?.Profile is { } spelling)
+        {
+            var profile = engine.GetProfile(model, spelling);
+            if (profile is not null && engine.SupportsNamedProfile(model, profile))
+                named = new(profile, managed
+                    ? resident is not null && resident.Target == _hostManager!.Recipe(engine.Name, model, profile.Name) &&
+                        capability.Serving.Matches(model, profile)
+                    : engine.MatchesNamedResident(model, profile, capability));
+            else named = new(null, false);
+        }
         return new(capability.Healthy, capability.SwitchingToward is not null, engine.CanServeModel(model, capability),
             group is not null || managed && engine.CanSwitchTo(model),
             request.Request.Options?.Profile is not null && engine.CanSwitchTo(model),
-            (group is null || group.IsResident(engine.Name, model)) && (!managed || _hostManager!.IsResident(engine.Name))
+            (group is null || group.IsResident(engine.Name, model)) && (!managed || resident is not null)
                 ? capability.ModelRoster : [],
-            capability.Serving.WindowFor(model), engine.ProfilesForModel(model), observation);
+            capability.Serving.WindowFor(model), engine.ProfilesForModel(model), observation, named, resident,
+            managed ? _hostManager!.SupportedProfiles(engine.Name, model) : null, engine.DefaultServingTier(model));
     }
 
     private EngineRuntimeInfo[] BuildEngineInfos(QueuedRequest request, ConfigurationGeneration generation,
@@ -1238,6 +1278,10 @@ public sealed partial class RouterCore : IInferenceRouter
                 ActiveContextWindow = fit.ActiveContextWindow,
                 ServingProfiles = fit.ServingProfiles,
                 DispatchObservation = observation,
+                NamedProfile = fit.NamedProfile,
+                ManagedResident = fit.ManagedResident,
+                ManagedColdProfiles = fit.ManagedColdProfiles,
+                DefaultProfile = fit.DefaultProfile,
             };
         }
         return infos;
