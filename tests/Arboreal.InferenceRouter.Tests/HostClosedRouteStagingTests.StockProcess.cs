@@ -52,10 +52,10 @@ public sealed partial class HostClosedRouteStagingTests
         var releaseSuccessor = StockPath("release-b");
         var receiptsA = await PrepareReceiptAsync("writes-a", ct);
         var receiptsB = await PrepareReceiptAsync("writes-b", ct);
-        await using var initial = await StockBackend.StartAsync(a, 1, terminalSocket, release, receiptsA, ct);
+        await using var initial = await StockBackend.StartAsync(a, seed.ProfileFor(a), terminalSocket, release, receiptsA, ct);
         initial.RequireKernelWitness(BackendUid);
 
-        var opened = initial.Binding(seed.Scope, seed.Checkpoint, a, 1, 1, journal: null);
+        var opened = initial.Binding(seed.Scope, seed.Checkpoint, a, 1, initial.Profile.Slots, journal: null);
         await initial.RequireConnectorAsync(opened, ct);
         var genesis = new ServingBrokerRecord(ServingBrokerRecord.CurrentFormat, seed.Scope.Reservation, 0, null, issuer,
             opened, Open: false, Close: null, []);

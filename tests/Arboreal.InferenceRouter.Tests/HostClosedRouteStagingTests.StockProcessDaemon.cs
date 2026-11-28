@@ -169,7 +169,7 @@ public sealed partial class HostClosedRouteStagingTests
                     Assert.Equal(pending.Effect.InstanceId, created);
                     Assert.Null(pending.Backend);
                 }
-                var started = await StockBackend.StartAsync(next, 4, terminal, release, receipts, ctx.RequestAborted);
+                var started = await StockBackend.StartAsync(next, seed.ProfileFor(next), terminal, release, receipts, ctx.RequestAborted);
                 started.RequireKernelWitness(BackendUid);
 #pragma warning disable IDISP003 // Only one anchored successor can start in this two-resident fixture.
                 Successor = started;

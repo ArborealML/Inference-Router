@@ -15,6 +15,8 @@ public sealed partial class HostClosedRouteStagingTests
         var seed = await SeedStockProcessAsync(Path.Combine(_directory.FullName, "ingress"), guard.Token);
         Assert.Equal(seed.Initial.Operation, seed.Checkpoint.State.AppliedLaunch?.Operation);
         Assert.Equal(SupervisedLaunchJournal.LastRevision, seed.OperationHead.Revision);
+        var successor = Assert.Single(seed.Configuration.Catalog.Targets, target => target.Key.Engine == QwenEngineName);
+        Assert.Equal(new ServingBackendProfile(successor.Key.Model, "256k-4", 256000, 4), seed.ProfileFor(successor));
     }
 
     private async Task<StockSeed> SeedStockProcessAsync(string ingress, CancellationToken ct)
@@ -82,7 +84,15 @@ public sealed partial class HostClosedRouteStagingTests
 
     private sealed record StockSeed(string Toml, EnrolledSuccessorScope Scope, CatalogAuthoritySnapshot Catalog,
         EnrolledCatalogClaim Claim, CheckedEnrolledConfiguration Configuration, string CheckpointPath,
-        HostEffectCheckpointCommitment Checkpoint, HostCheckpointLaunchEffect Initial, SupervisedLaunchJournalHead OperationHead);
+        HostEffectCheckpointCommitment Checkpoint, HostCheckpointLaunchEffect Initial, SupervisedLaunchJournalHead OperationHead)
+    {
+        internal ServingBackendProfile ProfileFor(CheckedEnrolledTarget target)
+        {
+            var engine = Configuration.Configuration.Engines[target.Key.Engine];
+            var picked = Assert.Single(engine.Catalog[target.Key.Model].ServingProfiles, tier => tier.Name == target.Key.Profile);
+            return new(target.Key.Model, picked.Name, picked.MaxContext, picked.MaxSlots);
+        }
+    }
 
     private static void WriteFrame<T>(string path, T record, System.Text.Json.Serialization.Metadata.JsonTypeInfo<T> metadata)
     {

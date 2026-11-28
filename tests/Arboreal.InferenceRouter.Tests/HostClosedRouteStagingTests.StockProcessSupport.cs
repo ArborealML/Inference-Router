@@ -94,16 +94,47 @@ public sealed partial class HostClosedRouteStagingTests
         Assert.Equal("incumbent-only", root.GetProperty("choices")[0].GetProperty("message").GetProperty("content").GetString());
     }
 
+    [Fact]
+    public async Task StockProcessStreamWitnessRequiresDelimitedDataEvents()
+    {
+        const string payload = "data: {\"id\":\"fixture-successor\",\"model\":\"model\",\n" +
+            "data:\"choices\":[{\"delta\":{\"content\":\"successor-only\"}}]}\n";
+        const string terminal = "data: [DONE]\n\n";
+        using var guard = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        var ct = guard.Token;
+        var delivered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var complete = new HttpResponseMessage { Content = new StringContent(": keepalive\n\n" + payload + "\n" + terminal) };
+        await ValidateStockStreamAsync(complete, "model", delivered, ct);
+        Assert.True(delivered.Task.IsCompletedSuccessfully);
+
+        using var missingTerminalDelimiter = new HttpResponseMessage { Content = new StringContent(payload + "\n" + terminal[..^1]) };
+        await Assert.ThrowsAnyAsync<Xunit.Sdk.XunitException>(() => ValidateStockStreamAsync(missingTerminalDelimiter, "model", delivered, ct));
+        using var merged = new HttpResponseMessage { Content = new StringContent(payload + terminal) };
+        await Assert.ThrowsAnyAsync<JsonException>(() => ValidateStockStreamAsync(merged, "model", delivered, ct));
+        using var repeated = new HttpResponseMessage { Content = new StringContent(payload + "\n" + terminal + terminal) };
+        await Assert.ThrowsAnyAsync<Xunit.Sdk.XunitException>(() => ValidateStockStreamAsync(repeated, "model", delivered, ct));
+    }
+
     private static async Task ValidateStockStreamAsync(HttpResponseMessage response, string expectedModel,
         TaskCompletionSource firstPayload, CancellationToken ct)
     {
         using var reader = new StreamReader(await response.Content.ReadAsStreamAsync(ct));
+        var data = new List<string>();
         var chunks = 0;
         var terminals = 0;
         while (await reader.ReadLineAsync(ct) is { } line)
         {
-            if (!line.StartsWith("data: ", StringComparison.Ordinal)) continue;
-            if (line == "data: [DONE]")
+            if (line.Length != 0)
+            {
+                if (line == "data") data.Add(string.Empty);
+                else if (line.StartsWith("data:", StringComparison.Ordinal))
+                    data.Add(line.StartsWith("data: ", StringComparison.Ordinal) ? line[6..] : line[5..]);
+                continue;
+            }
+            if (data.Count == 0) continue;
+            var frame = string.Join('\n', data);
+            data.Clear();
+            if (frame == "[DONE]")
             {
                 Assert.Equal(1, chunks);
                 Assert.Equal(1, ++terminals);
@@ -111,7 +142,7 @@ public sealed partial class HostClosedRouteStagingTests
             }
 
             Assert.Equal(0, terminals);
-            using var json = JsonDocument.Parse(line[6..]);
+            using var json = JsonDocument.Parse(frame);
             var root = json.RootElement;
             if (root.TryGetProperty("error", out var error))
                 throw new Xunit.Sdk.XunitException("Successor stream error code " + StockStatusField(error, "code"));
@@ -121,6 +152,7 @@ public sealed partial class HostClosedRouteStagingTests
             Assert.Equal(1, ++chunks);
             firstPayload.TrySetResult();
         }
+        Assert.Empty(data);
         Assert.Equal(1, chunks);
         Assert.Equal(1, terminals);
     }
@@ -445,19 +477,18 @@ public sealed partial class HostClosedRouteStagingTests
         internal StockBackendIdentity Identity { get; } = identity;
         internal ServingBackendProfile Profile { get; } = profile;
 
-        internal static async Task<StockBackend> StartAsync(CheckedEnrolledTarget target, int slots, string terminal,
+        internal static async Task<StockBackend> StartAsync(CheckedEnrolledTarget target, ServingBackendProfile profile, string terminal,
             string release, string receipts, CancellationToken ct)
         {
-            var window = target.Key.Engine == DeepSeekEngineName ? 32768 : 262144;
             var stop = receipts + ".stop";
             var process = StockChild.StartRole(BackendUid, "python3", "-I", StockChild.SocketScript, "backend",
-                target.Endpoint.Port.ToString(CultureInfo.InvariantCulture), target.Key.Model, window.ToString(CultureInfo.InvariantCulture),
-                slots.ToString(CultureInfo.InvariantCulture), terminal, release, receipts, stop);
+                target.Endpoint.Port.ToString(CultureInfo.InvariantCulture), profile.CanonicalModel, profile.Context.ToString(CultureInfo.InvariantCulture),
+                profile.Slots.ToString(CultureInfo.InvariantCulture), terminal, release, receipts, stop);
             try
             {
                 var witness = Assert.IsType<StockBackendIdentity>(
                     JsonSerializer.Deserialize(await process.ReadReadyAsync(ct), StockBackendJson.Default.StockBackendIdentity));
-                return new StockBackend(process, witness, new(target.Key.Model, target.Key.Profile, window, slots), stop);
+                return new StockBackend(process, witness, profile, stop);
             }
             catch
             {
