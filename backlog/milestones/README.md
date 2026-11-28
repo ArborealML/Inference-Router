@@ -26,6 +26,22 @@ Stream integrity, switch safety and bounded admission can advance in parallel. E
 
 [Independent-provider hybrid routing](m-16%20-%20independent-provider-hybrid-routing.md) is the next-phase plan. Independent scheduling and default request identity are early corrections (TASK-203–205). Reconcile deployed evidence (219). Fixed-placement clustering, policy/Pi, generic commercial transport/accounting and Tune fixture implementation proceed in parallel against narrow contracts. AIR consumes externally supplied principal/privilege and resource boundaries; sandboxing, identity issuance and provisioning are separate. No owned-policy rollout with reachable unguarded commercial/unclassified paths; positively trusted private-only release can qualify separately. Production commercial use requires one fail-closed guard for every path, including legacy, verified principal/root and singleton scope, and affirmative account-scoped test authorization. Human-only lowering may remain disabled. Direct metered and subscription qualification do not wait for Pi UX or each other's live proof. Demand-driven resizing consumes adopted real evidence by qualified mode; mixed/staggered modes require representative real replays; fixed placement and bounded metered routing do not wait for autonomous optimization.
 
+## Coordinated implementation ownership
+
+The 27 November implementation session is pinned to planning main `62f1c79`. The coordinator is the sole Backlog writer. At most one primary and one independent companion implementation run; preparation and independent review may proceed alongside them. Native subagent messages and isolated worktrees replace the unavailable local tmux service in this session. No implementation merges or live operations are authorized.
+
+| Workstream | Current assignment and next handoff |
+| --- | --- |
+| A — Scheduling/admission | TASK-203 finite rounds and exact route reconsideration, then separate TASK-204/205 increments. Own queue traversal/take/wake contract. |
+| B — Physical authority | Prepare TASK-206 seam and TASK-195 identity from existing primitives; TASK-25 owns paired production witness with 118. No production composition claim yet. |
+| C — Protocol observation | TASK-187 bounded shared observer, independent of A's dispatch edits. Own semantic observation contract consumed by D/E. |
+| D — Commercial | Await 187 observation contract and 203 traversal; extend one integrated transport and reservation path. Fixtures only. |
+| E — Tune | TASK-170 preserves existing owner and reported fitter evidence; waiting for recoverable worker handoff. No duplicate runner dispatched. |
+| F — Policy/Pi | Prepare 207/208 external-authority fixtures; preserve existing priority parser work and numeric/legacy compatibility boundaries. |
+| G — Integration/review | Reconciled 83/86 source overlap and CI, independently reviewed A/C plans, and prepares bounded physical-contract inventory. |
+
+TASK-203/187 plans received independent passes with bounded corrections before code. PR #83's source auto-merges at the pinned base but SPEC needs reconciliation; PR #86's source merge is clean at that base, and its outstanding TASK-185 review corrections remain open. Preserve both branches and their historical checks. Backlog CLI and local .NET SDK are unavailable: controlled Markdown updates use the strict board checker; exact-head hosted build/test/AOT are required. Git publication awaits an attribution-compliant push capability; the planning-only connector exception is not reused.
+
 ## Parallel work
 
 | Outcome | What must work |
