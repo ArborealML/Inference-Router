@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@gpt-6.2-sol-lifecycle'
 created_date: '2026-11-18T18:56:00Z'
-updated_date: '2026-11-28T14:01:00Z'
+updated_date: '2026-11-28T14:30:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -19,6 +19,7 @@ dependencies:
 references:
   - src/Arboreal.InferenceRouter/Engines/EngineRuntime.cs
   - src/Arboreal.InferenceRouter/RouterCore.cs
+priority: high
 ordinal: 116000
 ---
 
