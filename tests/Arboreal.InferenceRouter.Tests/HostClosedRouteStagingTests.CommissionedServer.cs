@@ -315,6 +315,7 @@ public sealed partial class HostClosedRouteStagingTests
     public async Task CommissionedStreamCreditBoundsTwoSlowClientsAndFlushSettlesTheirPhysicalUses(int configuredLimit, bool exceedsCredit)
     {
         using var watchdog = new CancellationTokenSource(TimeSpan.FromSeconds(12));
+        var relayClock = new ReadinessDeadlineTests.ManualClock();
         using var discovery = new FakeEngineHandler { LoadedModels = ["shared"], NCtx = 8_192, TotalSlots = 2 };
         using var legacyHandler = new FakeEngineHandler { LoadedModels = ["shared"] };
         var ct = watchdog.Token;
@@ -415,7 +416,7 @@ public sealed partial class HostClosedRouteStagingTests
         {
             var context = new DefaultHttpContext { RequestAborted = ct };
             context.Features.Set<IHttpResponseBodyFeature>(new StreamRelayTests.BodyFeature(writer));
-            return ServerApp.StreamTicketAsync(context, ticket, TimeProvider.System, router);
+            return ServerApp.StreamTicketAsync(context, ticket, relayClock, router);
         }
 
         static byte[] WithoutFirstKeepalive(List<byte[]> chunks) => chunks
