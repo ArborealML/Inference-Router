@@ -101,7 +101,7 @@ internal static class OperationHeadTransport
         return reply;
     }
 
-    internal static async Task ServeAsync(Socket accepted, uint requesterUid, uint? successorReaderUid,
+    internal static async Task ServeAsync(Socket accepted, uint requesterUid, uint? successorReaderUid, uint? registrarReaderUid,
         uint? brokerWriterUid, uint? brokerReaderUid,
         X509Certificate2 certificate,
         HostReservationScope scope, int serviceVersion, TimeSpan duration,
@@ -115,7 +115,8 @@ internal static class OperationHeadTransport
         try
         {
             var operationPeer = HeadReadV1Endpoint.IsAuthorizedRequester(accepted, requesterUid);
-            var successorReader = successorReaderUid is { } audit && HeadReadV1Endpoint.IsAuthorizedRequester(accepted, audit);
+            var successorReader = (successorReaderUid is { } ingress && HeadReadV1Endpoint.IsAuthorizedRequester(accepted, ingress)) ||
+                (registrarReaderUid is { } registrar && HeadReadV1Endpoint.IsAuthorizedRequester(accepted, registrar));
             var brokerWriter = brokerWriterUid is { } writer && HeadReadV1Endpoint.IsAuthorizedRequester(accepted, writer);
             var brokerReader = brokerReaderUid is { } reader && HeadReadV1Endpoint.IsAuthorizedRequester(accepted, reader);
             if (!operationPeer && !successorReader && !brokerWriter && !brokerReader) return;

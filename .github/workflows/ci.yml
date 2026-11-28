@@ -70,6 +70,11 @@ jobs:
           ./src/Arboreal.InferenceRouter.Cli/bin/Release/net11.0/linux-x64/publish/air \
             config --config samples/router.ci-smoke.toml
 
+      - name: Qualify stock commissioned executables (isolated Linux)
+        run: |
+          set -o pipefail
+          bash tools/ci/stock-process-proof.sh 2>&1 | tee stock-process-proof.log
+
       - name: Upload build log on failure
         if: failure()
         uses: actions/upload-artifact@v4
@@ -77,6 +82,7 @@ jobs:
           name: ci-logs-${{ matrix.os }}
           path: |
             aot-publish.log
+            stock-process-proof.log
           retention-days: 5
           if-no-files-found: ignore
 

@@ -1,12 +1,13 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.177)
+Status: draft, continuously revised (v0.12.178)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
 
 ## 0. Revision log
 
+- v0.12.178 — permit separate authenticated operation-head readers for mutation ingress and serving registration. Both successor readers are read-only (§12.1).
 - v0.12.177 — authorize durable owned-group sensitivity escalation and order it with private HTTP handoff (§§5.6, 6, 13, 14).
 - v0.12.176 — connect the executable to the protected catalog, operation head, serving broker, and exact native terminal sources. Attach a checked resident before dispatch and bind the successor before closing its incumbent. The original issuer epoch confirms the cutoff and the anchored journal checks the frozen recipe on replay. Bounded broker snapshots and an authenticated writer generation preserve replay fences through initial-resident restart (§§4, 7.6, 12.1).
 - v0.12.175 — qualify managed local routing with a full remote provider and publish request-scoped, bounded, revision-checked queue observations (§§5.4–5.5, 10, 14).
@@ -4473,8 +4474,16 @@ Commissioned operation requires the separately installed authority peers, distin
 identity, supported Linux kernel evidence and instrumented serving process. Build the
 `air-operation-head` and `air-successor-observer` peers from the same source revision.
 The held partition and retirement readers must understand the pre-stop cutoff and its frozen
-successor binding. The server and peers attach to existing commissioning. Installation,
+successor binding. The operation-head v2 bootstrap accepts distinct reader UIDs for ingress
+(`SuccessorReaderUid`) and automatic serving registration (`RegistrarReaderUid`). Each can read
+the anchored successor history. Only the producer can advance that history. The server and peers attach to existing commissioning. Installation,
 end-to-end qualification of the installed roles, and automatic post-crash recovery remain open.
+The dedicated Linux CI fixture runs the stock router entrypoints and the stock observer,
+ingress, retirement and operation-head executables under separate disposable process
+identities. Controlled catalog, held-partition and Docker peers provide the approved
+fixture scope and report the actual fixture processes and socket identities. The fixture
+checks a buffered incumbent response, a queued successor SSE response and a stale
+same-address refusal across those executable boundaries.
 
 ### 12.2 Cross-host prefix prioritization
 Scheduler gains a peer-level trie: prefer the peer whose trie already holds

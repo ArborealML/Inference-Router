@@ -8,6 +8,7 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="Arboreal.InferenceRouter.Tests" />
     <ProjectReference Include="../Arboreal.InferenceRouter/Arboreal.InferenceRouter.csproj" />
     <Compile Include="../Arboreal.InferenceRouter.OperationHead/OperationHeadLinux.cs" Link="OperationHeadLinux.cs" />
     <PackageReference Include="Microsoft.CodeAnalysis.BannedApiAnalyzers" PrivateAssets="all" />
