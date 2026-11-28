@@ -82,8 +82,46 @@ public sealed partial class HostClosedRouteStagingTests
         }
     }
 
-    private static byte[] StockBody(CheckedEnrolledTarget target, string marker) => Encoding.UTF8.GetBytes(
-        $$"""{"model":"{{target.Key.Model}}","messages":[{"role":"user","content":"{{marker}}"}]}""");
+    private static byte[] StockBody(CheckedEnrolledTarget target, string marker, bool stream = false) => Encoding.UTF8.GetBytes(
+        $$"""{"model":"{{target.Key.Model}}","stream":{{(stream ? "true" : "false")}},"messages":[{"role":"user","content":"{{marker}}"}]}""");
+
+    private static async Task ValidateStockBufferedAsync(HttpResponseMessage response, string expectedModel, CancellationToken ct)
+    {
+        using var json = JsonDocument.Parse(await response.Content.ReadAsByteArrayAsync(ct));
+        var root = json.RootElement;
+        Assert.Equal("fixture-incumbent", root.GetProperty("id").GetString());
+        Assert.Equal(expectedModel, root.GetProperty("model").GetString());
+        Assert.Equal("incumbent-only", root.GetProperty("choices")[0].GetProperty("message").GetProperty("content").GetString());
+    }
+
+    private static async Task ValidateStockStreamAsync(HttpResponseMessage response, string expectedModel,
+        TaskCompletionSource firstPayload, CancellationToken ct)
+    {
+        using var reader = new StreamReader(await response.Content.ReadAsStreamAsync(ct));
+        var chunks = 0;
+        var terminals = 0;
+        while (await reader.ReadLineAsync(ct) is { } line)
+        {
+            if (!line.StartsWith("data: ", StringComparison.Ordinal)) continue;
+            if (line == "data: [DONE]")
+            {
+                Assert.Equal(1, chunks);
+                Assert.Equal(1, ++terminals);
+                continue;
+            }
+
+            Assert.Equal(0, terminals);
+            using var json = JsonDocument.Parse(line[6..]);
+            var root = json.RootElement;
+            Assert.Equal("fixture-successor", root.GetProperty("id").GetString());
+            Assert.Equal(expectedModel, root.GetProperty("model").GetString());
+            Assert.Equal("successor-only", root.GetProperty("choices")[0].GetProperty("delta").GetProperty("content").GetString());
+            Assert.Equal(1, ++chunks);
+            firstPayload.TrySetResult();
+        }
+        Assert.Equal(1, chunks);
+        Assert.Equal(1, terminals);
+    }
 
     private static async Task<HttpResponseMessage> PostStockAsync(HttpClient client, CheckedEnrolledTarget target,
         byte[] body, CancellationToken ct)
@@ -110,27 +148,66 @@ public sealed partial class HostClosedRouteStagingTests
         throw new InvalidOperationException("The original successor did not reach the queue.");
     }
 
-    private static async Task AssertOneCompletionAsync(HttpClient http, string ticket, CancellationToken ct)
+    private static async Task<long> AssertRequestDispositionsAsync(HttpClient http, string incumbent, string successor,
+        CancellationToken ct)
     {
-        using var replay = await http.GetAsync("/admin/events?ticket=" + ticket, HttpCompletionOption.ResponseHeadersRead, ct);
+        const string marker = "stock-proof-cutoff";
+        using var replay = await http.GetAsync("/admin/events?since=0", HttpCompletionOption.ResponseHeadersRead, ct);
         replay.EnsureSuccessStatusCode();
         using var events = new StreamReader(await replay.Content.ReadAsStreamAsync(ct));
-        var queued = 0;
-        var selected = 0;
+        var a = new StockTicketEvidence();
+        var b = new StockTicketEvidence();
+        var markerSent = false;
         while (await events.ReadLineAsync(ct) is { } line)
         {
             if (!line.StartsWith("data: ", StringComparison.Ordinal)) continue;
             using var json = JsonDocument.Parse(line[6..]);
-            if (json.RootElement.GetProperty("Kind").GetString() is "request.enqueued") queued++;
-            if (json.RootElement.GetProperty("Kind").GetString() is "request.selected") selected++;
-            if (json.RootElement.GetProperty("Kind").GetString() is "request.completed")
+            var row = json.RootElement;
+            var kind = row.GetProperty("Kind").GetString();
+            if (kind == "thread.registered" && row.GetProperty("ThreadId").ValueEquals(marker))
             {
-                Assert.Equal(1, queued);
-                Assert.Equal(1, selected);
-                return;
+                Assert.True(markerSent);
+                a.Verify();
+                b.Verify();
+                return row.GetProperty("Seq").GetInt64();
+            }
+
+            if (row.TryGetProperty("TicketId", out var ticket))
+            {
+                if (ticket.ValueEquals(incumbent)) a.Observe(kind);
+                if (ticket.ValueEquals(successor)) b.Observe(kind);
+            }
+            if (markerSent || a.Terminals.Count == 0 || b.Terminals.Count == 0) continue;
+            markerSent = true;
+            using var body = new StringContent("""{"threadId":"stock-proof-cutoff"}""", Encoding.UTF8, "application/json");
+            using var sentinel = await http.PostAsync("/admin/threads", body, ct);
+            sentinel.EnsureSuccessStatusCode();
+        }
+        throw new InvalidOperationException("The request event stream ended before the proof cutoff.");
+    }
+
+    private sealed class StockTicketEvidence
+    {
+        private int _queued;
+        private int _selected;
+        internal List<string> Terminals { get; } = [];
+
+        internal void Observe(string? kind)
+        {
+            switch (kind)
+            {
+                case "request.enqueued": _queued++; break;
+                case "request.selected": _selected++; break;
+                case "request.completed" or "request.cancelled" or "request.failed": Terminals.Add(kind); break;
             }
         }
-        throw new InvalidOperationException("The original ticket did not deliver a terminal event.");
+
+        internal void Verify()
+        {
+            Assert.Equal(1, _queued);
+            Assert.Equal(1, _selected);
+            Assert.Equal("request.completed", Assert.Single(Terminals));
+        }
     }
 
     private static void ValidateReceipt(string receiptPath, byte[] body, StockBackend backend, ServingBrokerUse? expected = null)
