@@ -514,6 +514,96 @@ public sealed partial class HostClosedRouteStagingTests
     }
 
     [Theory(Timeout = 20_000)]
+    [InlineData(false, "success", false)]
+    [InlineData(true, "success", false)]
+    [InlineData(false, "completed", false)]
+    [InlineData(true, "cancelled", false)]
+    [InlineData(false, "throw", false)]
+    [InlineData(true, "throw", false)]
+    [InlineData(false, "cancelled", true)]
+    [InlineData(true, "completed", true)]
+    public async Task CommissionedHandoffHonorsSynchronousHeartbeatOutput(bool flushing, string result, bool raceSelection)
+    {
+        using var watchdog = new CancellationTokenSource(TimeSpan.FromSeconds(12));
+        using var readiness = new AdmissionFixtureBarrier();
+        using var heartbeat = new AdmissionFixtureBarrier();
+        using var discovery = new FakeEngineHandler { LoadedModels = ["shared"], NCtx = 8_192, TotalSlots = 1 };
+        var ct = watchdog.Token;
+        var domain = MakeCommissionedDomain("a", "shared", 19001,
+            beforeReady: (_, token) => readiness.HoldAsync(token));
+        var config = new RouterConfig
+        {
+            AutoSwitch = true,
+            Engines = new Dictionary<string, EngineDefinition> { [domain.Engine.Name] = domain.Engine },
+            HttpHandlerFactory = _ => discovery,
+        };
+        var authority = domain.Authority;
+        authority.ResponseBytes =
+            "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: 16\r\nConnection: close\r\n\r\ndata: [DONE]\r\n\r\n"u8.ToArray();
+        await using var app = ServerApp.BuildCommissioned([], [domain.Enrollment], configOverride: config);
+        var router = app.Services.GetRequiredService<RouterCore>();
+        var ticket = await router.EnqueueHttpAsync("sync-heartbeat", RecipeRequest("small", stream: true), ct);
+        await readiness.Reached.WaitAsync(ct);
+        var writer = new StreamRelayTests.GatedWriter(int.MaxValue, firstWrite: flushing ? null : FirstResult,
+            firstFlush: flushing ? FirstResult : null);
+        var context = new DefaultHttpContext { RequestAborted = ct };
+        context.Features.Set<IHttpResponseBodyFeature>(new StreamRelayTests.BodyFeature(writer));
+        var relay = raceSelection
+            ? Task.Run(() => ServerApp.StreamTicketAsync(context, ticket, TimeProvider.System, router), ct)
+            : ServerApp.StreamTicketAsync(context, ticket, TimeProvider.System, router);
+        try
+        {
+            if (raceSelection) await heartbeat.Reached.WaitAsync(ct);
+            Assert.Null(ticket.HttpDelivery);
+            if (!raceSelection) Assert.Equal(result != "success", ticket.HttpOutputEnded);
+            if (result == "throw") await Assert.ThrowsAsync<IOException>(() => relay.WaitAsync(ct));
+
+            readiness.Release();
+            await ticket.StreamReady.WaitAsync(ct);
+            heartbeat.Release();
+            if (result == "success")
+            {
+                await ticket.CompletionTask.WaitAsync(ct);
+                Assert.Equal(TicketState.Completed, ticket.State);
+                Assert.Equal(1, authority.Writes);
+                while (authority.ConfirmedCloses == 0) await Task.Delay(10, ct);
+                Assert.Equal(1, authority.ConfirmedCloses);
+                Assert.Contains("data: [DONE]", Encoding.UTF8.GetString(writer.Received.SelectMany(static bytes => bytes).ToArray()),
+                    StringComparison.Ordinal);
+            }
+            else
+            {
+                var error = await Assert.ThrowsAsync<RouterRequestException>(() => ticket.CompletionTask.WaitAsync(ct));
+                Assert.Equal("cancelled", error.Code);
+                Assert.True(ticket.HttpOutputEnded);
+                if (!raceSelection) Assert.Empty(authority.Offers);
+                Assert.Single(writer.Received);
+            }
+            if (result != "throw") await relay.WaitAsync(ct);
+            var terminal = Assert.Single(router.Events.Replay(0), row => row.TicketId == ticket.Id &&
+                row.Kind is "request.completed" or "request.failed" or "request.cancelled");
+            Assert.Equal(result == "success" ? "request.completed" : "request.cancelled", terminal.Kind);
+        }
+        finally
+        {
+            readiness.Release();
+            heartbeat.Release();
+        }
+
+        FlushResult FirstResult()
+        {
+            if (raceSelection) heartbeat.HoldAsync(ct).GetAwaiter().GetResult();
+            return result switch
+            {
+                "success" => new(false, false),
+                "completed" => new(false, true),
+                "cancelled" => new(true, false),
+                _ => throw new IOException("the heartbeat writer failed synchronously"),
+            };
+        }
+    }
+
+    [Theory(Timeout = 20_000)]
     [InlineData(false)]
     [InlineData(true)]
     public async Task InitialHeartbeatKeepsLegacyPolicyWhenAForwardOnlyRouteIsSelected(bool flushing)

@@ -708,7 +708,8 @@ public partial class StreamRelayTests
             base.ReadAsync(buffer[..1], cancellationToken);
     }
 
-    internal sealed class GatedWriter(int blockWrite, bool ignoreCancel = false, bool blockFirstFlush = false) : PipeWriter
+    internal sealed class GatedWriter(int blockWrite, bool ignoreCancel = false, bool blockFirstFlush = false,
+        Func<FlushResult>? firstWrite = null, Func<FlushResult>? firstFlush = null) : PipeWriter
     {
         private int _writes;
         private int _flushes;
@@ -721,7 +722,9 @@ public partial class StreamRelayTests
         public override ValueTask<FlushResult> WriteAsync(ReadOnlyMemory<byte> source, CancellationToken cancellationToken = default)
         {
             Received.Add(source.ToArray());
-            if (++_writes != blockWrite) return ValueTask.FromResult(new FlushResult(false, false));
+            var number = ++_writes;
+            if (number == 1 && firstWrite is not null) return ValueTask.FromResult(firstWrite());
+            if (number != blockWrite) return ValueTask.FromResult(new FlushResult(false, false));
             Blocked.TrySetResult(source.Length);
             return new ValueTask<FlushResult>(Release.Task);
         }
@@ -737,7 +740,9 @@ public partial class StreamRelayTests
         public override Span<byte> GetSpan(int sizeHint = 0) => throw new NotSupportedException();
         public override ValueTask<FlushResult> FlushAsync(CancellationToken cancellationToken = default)
         {
-            if (!blockFirstFlush || ++_flushes != 1) return ValueTask.FromResult(new FlushResult(false, false));
+            var number = ++_flushes;
+            if (number == 1 && firstFlush is not null) return ValueTask.FromResult(firstFlush());
+            if (!blockFirstFlush || number != 1) return ValueTask.FromResult(new FlushResult(false, false));
             Blocked.TrySetResult(0);
             return new ValueTask<FlushResult>(Release.Task);
         }
