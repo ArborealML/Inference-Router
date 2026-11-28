@@ -7,11 +7,14 @@ public sealed class RouterThread
 {
     private int _priorityCode;   // (class<<8)|sub — accessed via Volatile.Read/Write
     private double _weight;
+    private readonly Func<RouterThread, ThreadPriority, bool>? _setOwnedPriority;
 
-    internal RouterThread(string threadId, ThreadPriority priority, double weight, string? modelAffinity)
+    internal RouterThread(string threadId, ThreadPriority priority, double weight, string? modelAffinity,
+                          Func<RouterThread, ThreadPriority, bool>? setOwnedPriority = null)
     {
         ThreadId = threadId;
         _priorityCode = Encode(priority);
+        _setOwnedPriority = setOwnedPriority;
         _weight = Math.Clamp(weight, 0.25, 8.0);
         ModelAffinity = modelAffinity;
         CreatedAt = DateTimeOffset.UtcNow;
@@ -32,6 +35,7 @@ public sealed class RouterThread
 
     public void SetPriority(ThreadPriority priority)
     {
+        if (_setOwnedPriority?.Invoke(this, priority) == true) return;
         SetPriorityValue(priority);
         NotifyPriorityChanged(priority);
     }
@@ -39,7 +43,7 @@ public sealed class RouterThread
     internal void SetPriorityValue(ThreadPriority priority) => Volatile.Write(ref _priorityCode, Encode(priority));
     internal void NotifyPriorityChanged(ThreadPriority priority) => PriorityChanged?.Invoke(this, priority);
 
-    /// <summary>Raised when the priority changes; the queue reorders in response.</summary>
+    /// <summary>Raised when the priority changes. An owning router updates its queues before notification.</summary>
     public event EventHandler<ThreadPriority>? PriorityChanged;
 
     internal int Inflight => Volatile.Read(ref _inflight);
