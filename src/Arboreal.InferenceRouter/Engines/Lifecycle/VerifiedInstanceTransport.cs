@@ -1,5 +1,6 @@
 using System.Net;
 using System.Runtime.ExceptionServices;
+using System.Text.Json.Serialization;
 
 namespace Arboreal.InferenceRouter.Lifecycle;
 
@@ -8,7 +9,25 @@ internal readonly record struct VerifiedInstanceRoute(
     string HostGroup, long EnrollmentGeneration, string Engine, string EffectiveTarget,
     string ContainerId, string ServingIncarnation, long LaunchEpoch, long RouteIncarnation);
 
-internal readonly record struct VerifiedInstanceInvocation(VerifiedInstanceRoute Route, Guid Id, Uri LogicalUri);
+internal readonly record struct VerifiedInstanceInvocation(VerifiedInstanceRoute Route, Guid Id, Uri LogicalUri,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] long Sequence = 0,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] Guid CommissionedWriter = default)
+{
+    private static long _issuedSequence;
+
+    internal static long IssueSequence() => Interlocked.Increment(ref _issuedSequence);
+
+    internal static void ContinueAfter(long committedSequence)
+    {
+        long previous;
+        do
+        {
+            previous = Interlocked.Read(ref _issuedSequence);
+            if (previous >= committedSequence) return;
+        }
+        while (Interlocked.CompareExchange(ref _issuedSequence, committedSequence, previous) != previous);
+    }
+}
 
 /// <summary>
 /// The issuer owns authentication, route liveness and the physical admission order.

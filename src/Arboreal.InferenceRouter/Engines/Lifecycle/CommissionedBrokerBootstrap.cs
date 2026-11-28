@@ -58,7 +58,7 @@ internal sealed class CommissionedBrokerBootstrap : IDisposable
                 binding.AppliedJournalDigest is not null ||
                 binding.Applied.State is not { Phase: HostCheckpointPhase.Resident, Epoch: 1, AppliedLaunch: { } launch } ||
                 launch.Plan != target.Plan || !binding.IsValid() || !target.Target.Matches(binding.Route) ||
-                !ledger.OwnsClosedGenesis(binding, policy.IssuerEpoch) ||
+                !ledger.OwnsClosedInitial(binding, policy.IssuerEpoch) ||
                 HostEffectCheckpoint.ReadInstalledCommitment(checkpointLock) != binding.Applied ||
                 readPublishedExclusion() is not { } exclusion || exclusion.Binding != ServingBrokerIssuer.ServingIdentity(binding) ||
                 budget.OutcomeForSettlement != ReadinessStepOutcome.Completed)

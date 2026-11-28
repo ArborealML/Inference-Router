@@ -729,6 +729,9 @@ public sealed partial class HostClosedRouteStagingTests
             target.PlanDigest, "fixture-initial-instance", "fixture-serving-generation", operation.Epoch, 1);
         domain.Host.SetAppliedLaunch(operation, lifecycle, route.ContainerId);
         domain.Authority.Publish(route, target);
+        const long previousSequence = 600_000;
+        VerifiedInstanceInvocation.ContinueAfter(previousSequence);
+        domain.Authority.ApplicationWriter = Guid.NewGuid();
         var resident = new VerifiedDispatchResident(target, route, 8_192, 8_192, 1, engine.Endpoint,
             VerifiedDispatchCredential.Capture(engine, resolvedKey: null, epoch: 1), domain.Authority);
         var initial = new EnrolledInitialReadiness(route, "shared", new("shared", 8_192, 1, "small"));
@@ -754,6 +757,8 @@ public sealed partial class HostClosedRouteStagingTests
         var ticket = Assert.Single(response.Headers.GetValues("X-Inference-Ticket"));
         var granted = Assert.Single(domain.Authority.Offers);
         Assert.Equal(route, granted.Route);
+        Assert.True(granted.Sequence > previousSequence);
+        Assert.Equal(domain.Authority.ApplicationWriter, granted.CommissionedWriter);
         Assert.Equal(original, Encoding.UTF8.GetString(domain.Authority.Bytes(granted)).Split("\r\n\r\n", 2)[1]);
         Assert.Equal(0, discovery.CompletionCalls);
         Assert.Equal(0, domain.Host.Creates);
@@ -828,6 +833,7 @@ public sealed partial class HostClosedRouteStagingTests
         public string Daemon => scope.Identity.ToString();
         public string Partition => Daemon;
         public long ResourceEpoch => 1;
+        public Guid ApplicationWriter { get; set; }
         public bool IsKnownVacant(long epoch) => epoch == ResourceEpoch && host.Resident is null;
         public bool Approves(VerifiedDispatchTarget target) => target.Engine == scope.Enrollment?.Group;
         public bool IsDisjointFromLocalController(EngineDefinition engine) => false;

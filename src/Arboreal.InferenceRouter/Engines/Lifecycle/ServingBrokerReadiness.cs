@@ -54,7 +54,13 @@ internal sealed class ServingBrokerReadiness(ServingBrokerLedger ledger, Lock is
                 return null;
             }
 
-            if (ledger.Issue(reserved) is not { } issued) return null;
+            if (ledger.Issue(reserved) is not { } issued)
+            {
+                // This attempt never entered the connector. Only an exact still-Reserved
+                // record may be removed. An unacknowledged Issued record keeps its charge.
+                _ = ledger.CancelBeforeConnect(reserved);
+                return null;
+            }
             if (deadline.OutcomeForSettlement != ReadinessStepOutcome.Completed)
             {
                 _ = ledger.CancelBeforeConnect(issued);
