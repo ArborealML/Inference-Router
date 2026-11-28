@@ -2906,6 +2906,8 @@ finish-only path unproven. A read cancelled by upstream at a block boundary can 
 sentinel's evidence. It cannot supply the clean EOF required by the finish-only path. Malformed data
 is relayed verbatim and prevents a subsequent sentinel from establishing success. An observed
 structured `error` object takes precedence over `[DONE]`, including when both arrive in one read.
+A fully read error object retains that precedence if later data in the same event exceeds the JSON
+depth limit or fails parsing. Positive evidence from a partially observed event is discarded.
 An in-band error on a clean boundary end settles the ticket as `Failed` with `engine_error`. The relay
 preserves the upstream error and any terminator and adds no second error frame. I/O faults, idle and
 torn framing retain their existing terminal wire behavior. A boundary EOF lacking a terminator or
@@ -2914,8 +2916,9 @@ sufficient finish evidence retains the legacy `Completed` ticket state and origi
 Library callers can read the frozen `RouterTicket.StreamObservation` after settlement. Both timings
 are monotonic durations from pump start. A positive upstream read sets `FirstRawByte` and the legacy
 `request.streaming_first_token` event. `FirstSemanticOutput` records the first committed nonempty
-completion text, chat content, reasoning, refusal or tool/function output. Comments, role-only and
-empty deltas, and usage alone supply no semantic output. The model evidence reports the first bounded
+completion text, chat content, reasoning, refusal or tool/function name or arguments. Comments,
+role-only and empty deltas, a tool-call ID alone, and usage alone supply no semantic output.
+The model evidence reports the first bounded
 upstream model and whether it exactly matches the selected upstream ID. Invalid identity evidence
 leaves the match unknown. Distinct repeated identities report a conflict. Missing or null usage is
 unavailable. A usage report requires unique nonnegative integer `prompt_tokens` and

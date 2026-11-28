@@ -102,19 +102,20 @@ internal sealed class SemanticStreamObserver(TimeProvider clock, string expected
             return;
         }
 
-        Chunk chunk;
+        var chunk = new Chunk();
         try
         {
-            chunk = Utf8.IsValid(payload) ? Parse(payload) : new Chunk { InvalidPayload = true };
+            if (Utf8.IsValid(payload)) Parse(payload, ref chunk);
+            else chunk.InvalidPayload = true;
         }
         catch (JsonException)
         {
-            chunk = new Chunk { InvalidPayload = true };
+            chunk.InvalidPayload = true;
         }
         catch (InvalidOperationException)
         {
             // Utf8JsonReader.GetString also rejects invalid UTF-16 escapes in a model identifier.
-            chunk = new Chunk { InvalidPayload = true };
+            chunk.InvalidPayload = true;
         }
 
         lock (_gate)
@@ -200,12 +201,14 @@ internal sealed class SemanticStreamObserver(TimeProvider clock, string expected
         _completionTokens = chunk.CompletionTokens;
     }
 
-    private Chunk Parse(ReadOnlySpan<byte> payload)
+    private void Parse(ReadOnlySpan<byte> payload, ref Chunk chunk)
     {
         var reader = new Utf8JsonReader(payload, s_json);
-        var chunk = new Chunk();
         if (!reader.Read() || reader.TokenType != JsonTokenType.StartObject)
-            return new Chunk { InvalidPayload = true };
+        {
+            chunk.InvalidPayload = true;
+            return;
+        }
 
         var sawChoices = false;
         var sawModel = false;
@@ -215,8 +218,10 @@ internal sealed class SemanticStreamObserver(TimeProvider clock, string expected
             if (reader.ValueTextEquals("error"u8))
             {
                 reader.Read();
-                chunk.Error |= reader.TokenType == JsonTokenType.StartObject;
+                var isError = reader.TokenType == JsonTokenType.StartObject;
                 reader.Skip();
+                // Only a fully consumed error object outlives a later parse failure in this event.
+                chunk.Error |= isError;
             }
             else if (reader.ValueTextEquals("choices"u8))
             {
@@ -251,8 +256,7 @@ internal sealed class SemanticStreamObserver(TimeProvider clock, string expected
                 reader.Skip();
             }
         }
-        if (reader.TokenType != JsonTokenType.EndObject || reader.Read()) return new Chunk { InvalidPayload = true };
-        return chunk;
+        chunk.InvalidPayload |= reader.TokenType != JsonTokenType.EndObject || reader.Read();
     }
 
     private static void ReadChoices(ref Utf8JsonReader reader, ref Chunk chunk)
@@ -381,8 +385,7 @@ internal sealed class SemanticStreamObserver(TimeProvider clock, string expected
             }
             else
             {
-                var content = function ? reader.ValueTextEquals("name"u8) || reader.ValueTextEquals("arguments"u8)
-                    : reader.ValueTextEquals("id"u8);
+                var content = function && (reader.ValueTextEquals("name"u8) || reader.ValueTextEquals("arguments"u8));
                 reader.Read();
                 output |= content && IsNonemptyString(reader);
                 reader.Skip();

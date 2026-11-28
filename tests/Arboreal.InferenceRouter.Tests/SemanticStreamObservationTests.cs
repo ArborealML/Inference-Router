@@ -67,6 +67,7 @@ public class SemanticStreamObservationTests
     [InlineData("{\"role\":\"assistant\"}", false)]
     [InlineData("{\"content\":\"\",\"reasoning_content\":null}", false)]
     [InlineData("{\"tool_calls\":[{\"index\":0,\"type\":\"function\",\"function\":{}}]}", false)]
+    [InlineData("{\"tool_calls\":[{\"index\":0,\"id\":\"call_1\"}]}", false)]
     [InlineData("{\"content\":\"answer\"}", true)]
     [InlineData("{\"refusal\":\"no\"}", true)]
     [InlineData("{\"function_call\":{\"name\":\"lookup\"}}", true)]
@@ -157,6 +158,24 @@ public class SemanticStreamObservationTests
         observer.ObserveData("[DONE]"u8);
         observer.End(StreamInputEnd.Eof);
         Assert.Equal(SemanticStreamOutcome.Unknown, observer.Snapshot().Outcome);
+    }
+
+    [Theory]
+    [InlineData("}", "failed")]
+    [InlineData("", "unknown")]
+    public void Only_A_Fully_Read_Error_Object_Survives_A_Partial_Json_Observation(string closeError, string outcome)
+    {
+        var observer = new SemanticStreamObserver(TimeProvider.System, "expected", expectedChoices: 1);
+        var payload = "{\"model\":\"expected\",\"choices\":[{\"index\":0,\"text\":\"hi\"}]," +
+            "\"usage\":{\"prompt_tokens\":1,\"completion_tokens\":1},\"error\":{\"message\":\"fixture error\"" + closeError;
+        observer.ObserveData(Encoding.UTF8.GetBytes(payload));
+        observer.ObserveData("[DONE]"u8);
+        observer.End(StreamInputEnd.Eof);
+        var result = observer.Snapshot();
+        Assert.Equal(outcome, result.OutcomeName);
+        Assert.Null(result.FirstSemanticOutput);
+        Assert.Null(result.ObservedModel);
+        Assert.Equal(StreamUsageAvailability.Unavailable, result.UsageAvailability);
     }
 
     [Fact]

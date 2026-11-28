@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -9,13 +10,19 @@ public partial class StreamRelayTests
         "data: {\"error\":{\"message\":\"fixture capacity warning\",\"type\":\"fixture_error\"}}\r\n\r\n"u8;
 
     [Theory]
-    [InlineData(0, 0, true)]
-    [InlineData(Credit, 0, true)]
-    [InlineData(0, 300_000, true)]
-    [InlineData(Credit, 300_000, false)]
-    public async Task Upstream_Error_Fails_Once_Without_Changing_Http_Bytes(int credit, int idle, bool terminator)
+    [InlineData(0, 0, true, false)]
+    [InlineData(Credit, 0, true, false)]
+    [InlineData(0, 300_000, true, false)]
+    [InlineData(Credit, 300_000, false, false)]
+    [InlineData(0, 0, true, true)]
+    [InlineData(Credit, 0, true, true)]
+    public async Task Upstream_Error_Fails_Once_Without_Changing_Http_Bytes(int credit, int idle, bool terminator,
+        bool overDepthExtension)
     {
-        var expected = terminator ? CapacityError.ToArray().Concat(Done).ToArray() : CapacityError.ToArray();
+        var error = overDepthExtension ? Encoding.UTF8.GetBytes(
+            "data: {\"error\":{\"message\":\"fixture capacity warning\"},\"extension\":" +
+            new string('[', 40) + "0" + new string(']', 40) + "}\n\n") : CapacityError.ToArray();
+        var expected = terminator ? error.Concat(Done).ToArray() : error;
         using var fake = new StreamEngine(new MemoryStream(expected));
         var (app, _, port) = await WireHarness.StartAsync(fake: fake, streamBufferLimit: credit, streamIdleTimeoutMs: idle);
         await using var server = app;
