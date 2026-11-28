@@ -1,11 +1,11 @@
 ---
 id: TASK-195
 title: Bind exact recipe identity when context and lane counts coincide
-status: In Progress
+status: Ready for Review
 assignee:
-  - '@gpt-6.2-sol-lifecycle'
+  - '@gpt-6.2-astra'
 created_date: '2026-11-26T07:34:00Z'
-updated_date: '2026-11-28T11:21:00Z'
+updated_date: '2026-11-28T11:31:00Z'
 labels:
   - config
   - scheduling
@@ -24,6 +24,7 @@ modified_files:
   - src/Arboreal.InferenceRouter/Engines/Lifecycle/HostLifecycleCoordinator.cs
   - src/Arboreal.InferenceRouter/RouterCore.Admission.cs
   - src/Arboreal.InferenceRouter/RouterCore.cs
+  - src/Arboreal.InferenceRouter/Scheduling/CapabilityScan.cs
   - src/Arboreal.InferenceRouter/Scheduling/ExactTicketAdmission.cs
   - src/Arboreal.InferenceRouter/Scheduling/InProcessHostManager.cs
   - src/Arboreal.InferenceRouter/Scheduling/LocalLifecycleGroup.cs
@@ -65,5 +66,5 @@ Test the real equal-capacity Strata pair with differing cache settings in projec
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Review against 3c7ae3e confirmed the named-tier pre-enqueue lookup, conflicting numeric rank versus exact admission, resident-derived sender binding, and the need to reject ambiguity before mutation. The plan now names each gate, the separate compatibility modes, and end-to-end controls. Existing instance and launch-capacity work retains ownership of production qualification.
+Review against 3c7ae3e confirmed the named-tier pre-enqueue lookup, conflicting numeric rank versus exact admission, resident-derived sender binding, and the need to reject ambiguity before mutation. The plan now names each gate, the separate compatibility modes, and end-to-end controls. [The candidate](https://github.com/ArborealML/Inference-Router/pull/97) passed 223 focused tests at a1c2498. The base failed all four streaming and non-streaming controls: two alias requests were refused and two canonical requests used the wrong equally sized recipe. The cold numeric path skips unsupported equal-window choices. Source review and hosted CI are active. Existing instance and launch-capacity work retains production qualification.
 <!-- SECTION:NOTES:END -->
