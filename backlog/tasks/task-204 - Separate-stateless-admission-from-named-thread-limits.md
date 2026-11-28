@@ -40,7 +40,7 @@ Capture-backend tests exercise concurrent omitted HTTP and actual CLI chat/compl
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Implementing on the combined reviewed TASK-203/205/187/202 dependency, with PR #86 preserved. The integrated source tree passed 607 tests at 8a430c8; metadata-only merge-subject corrections preserve that exact tree, with a new-head rerun underway. Coordinator transferred core/server/CLI ownership after C's clean handoff. Independent pre-code review passed with singleton grammar, public-null contract, full collision isolation and bounded-lifetime fixtures required.
+Implementing on combined reviewed base 02087978b8a45970f82d08f216b3da32ded8b603 with PR #86 preserved. Its 608-test affected union passed after correcting the priority fixture's completion-versus-capacity-release assumption; no runtime change was needed. Preserved work resumes with explicit core/server/CLI ownership. Independent pre-code review passed with singleton grammar, public-null contract, full collision isolation and bounded-lifetime fixtures required.
 
 No change to priority, thread weight or provider scoring. TASK-207 owns credential-bound identity and root authorization; transient scheduling identity confers no trust or policy privilege. Architecture §15.3's legacy deployment cutover remains a separate owner choice; preserving explicit anon avoids imposing it here.
 <!-- SECTION:NOTES:END -->
