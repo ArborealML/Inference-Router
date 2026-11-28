@@ -7,7 +7,7 @@ Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 
 ## 0. Revision log
 
-- v0.12.173 — compose enrolled exact dispatch in the standard web application and require generation-specific physical retirement before mutation, and bound commissioned SSE output at route selection (§§4, 7.6, 12.1).
+- v0.12.173 — compose enrolled exact dispatch in the standard web application and require generation-specific physical retirement before mutation, and bound commissioned SSE output at route selection, including a pending first heartbeat (§§4, 7.6, 12.1).
 - v0.12.172 — exercise the singleton tuning runner through CLI dispatch with a controlled private resident, retain semantic, physical settlement and failed lease release evidence, and publish run evidence and its comparison summary together (§§11.1, 11.3).
 - v0.12.171 — fit deterministic short-grid prompts using exact backend counts and search the full next-record tail within the count budget (§11.2).
 - v0.12.170 — bind named managed recipes through selection and exact admission, resolve engine-local aliases before queue validation, and preserve numeric reuse of a fitting resident (§§5.3.1, 7.6, 14).
@@ -2175,7 +2175,12 @@ and an independent issuer and ingress retirement cutoff. The response remains bo
 stream delivery acknowledges flush or decides departure. The selected commissioned HTTP SSE
 route uses the configured positive output credit, or 64 KiB per ticket when the configured
 credit is zero. Selection installs this credit before publishing the stream reader. Ordinary
-routes sharing the model keep the configured legacy default. A logical timeout or caller terminal
+routes sharing the model keep the configured legacy default. An initial keepalive write or flush
+that was already pending acquires the watchdog when the commissioned route is selected. Its
+30-second budget starts at the original writer call. Queued output across admitted streams is
+bounded by the sum of their byte credits. Each admitted stream also owns its separately bounded
+SSE frame stage. After a relay aborts and discards its queue, a detached downstream write
+retains at most its one slice until that writer settles. A logical timeout or caller terminal
 can release the engine slot while the physical use remains charged.
 
 The coordinator rechecks fresh physical occupancy and reserves a one-use stop permit for the

@@ -424,6 +424,155 @@ public sealed partial class HostClosedRouteStagingTests
             .SelectMany(static chunk => chunk).ToArray();
     }
 
+    [Theory(Timeout = 20_000)]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    public async Task CommissionedSelectionWatchesAnAlreadyPendingInitialHeartbeat(bool flushing, bool cancel)
+    {
+        using var watchdog = new CancellationTokenSource(TimeSpan.FromSeconds(12));
+        using var caller = CancellationTokenSource.CreateLinkedTokenSource(watchdog.Token);
+        using var readiness = new AdmissionFixtureBarrier();
+        using var discovery = new FakeEngineHandler { LoadedModels = ["shared"], NCtx = 8_192, TotalSlots = 1 };
+        var ct = watchdog.Token;
+        var domain = MakeCommissionedDomain("a", "shared", 19001,
+            beforeReady: (_, token) => readiness.HoldAsync(token));
+        var clock = new ReadinessDeadlineTests.ManualClock();
+        var config = new RouterConfig
+        {
+            AutoSwitch = true,
+            Engines = new Dictionary<string, EngineDefinition> { [domain.Engine.Name] = domain.Engine },
+            HttpHandlerFactory = _ => discovery,
+        };
+        var authority = domain.Authority;
+        authority.HoldClose = true;
+        authority.ResponseBytes =
+            "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: 16\r\nConnection: close\r\n\r\ndata: [DONE]\r\n\r\n"u8.ToArray();
+        await using var app = ServerApp.BuildCommissioned([], [domain.Enrollment], configOverride: config);
+        var router = app.Services.GetRequiredService<RouterCore>();
+        var ticket = await router.EnqueueHttpAsync("first-heartbeat", RecipeRequest("small", stream: true), caller.Token);
+        await readiness.Reached.WaitAsync(ct);
+
+        var writer = new StreamRelayTests.GatedWriter(flushing ? int.MaxValue : 1,
+            ignoreCancel: true, blockFirstFlush: flushing);
+        var context = new DefaultHttpContext { RequestAborted = caller.Token };
+        context.Features.Set<IHttpResponseBodyFeature>(new StreamRelayTests.BodyFeature(writer));
+        var relay = ServerApp.StreamTicketAsync(context, ticket, clock, router);
+        try
+        {
+            var blocked = await writer.Blocked.Task.WaitAsync(ct);
+            Assert.Equal(flushing, blocked == 0);
+            Assert.Null(ticket.HttpDelivery);
+            Assert.Equal(0, clock.ActiveTimers);
+            clock.AdvanceTo(5_000);
+            readiness.Release();
+
+            await ticket.StreamReady.WaitAsync(ct);
+            var delivery = Assert.IsType<HttpStreamDelivery>(ticket.HttpDelivery);
+            await delivery.Sealed.WaitAsync(ct);
+            while (clock.ActiveTimers == 0) await Task.Delay(10, ct);
+            Assert.False(writer.Release.Task.IsCompleted);
+            Assert.False(ticket.CompletionTask.IsCompleted);
+            Assert.False(authority.CloseStarted.Task.IsCompleted);
+            clock.AdvanceTo(29_999);
+            Assert.False(ticket.CompletionTask.IsCompleted);
+
+            if (cancel) await caller.CancelAsync();
+            else clock.AdvanceTo(30_001);
+            var failure = await Assert.ThrowsAsync<RouterRequestException>(() => ticket.CompletionTask.WaitAsync(ct));
+            Assert.Equal(cancel ? "cancelled" : "slow_consumer", failure.Code);
+            await relay.WaitAsync(ct);
+            await authority.CloseStarted.Task.WaitAsync(ct);
+            Assert.Equal(1, writer.CancelPendingCalls);
+            Assert.False(writer.Release.Task.IsCompleted);
+            Assert.Equal(0, authority.ConfirmedCloses);
+            Assert.Equal(0, delivery.ReservedBytes);
+            Assert.Single(router.Events.Replay(0), row => row.TicketId == ticket.Id &&
+                row.Kind is "request.completed" or "request.failed" or "request.cancelled");
+
+            var owner = await router.EnqueueAsync("switch", RecipeRequest("alternate"), ct);
+            await authority.Sealed.Task.WaitAsync(ct);
+            Assert.False(owner.CompletionTask.IsCompleted);
+            Assert.Equal(0, domain.Host.Stops);
+            writer.Release.TrySetException(new IOException("the old writer settled late"));
+            Assert.False(owner.CompletionTask.IsCompleted);
+            authority.ResponseBytes = null;
+            authority.ReleaseClose.TrySetResult();
+            await owner.CompletionTask.WaitAsync(ct);
+            Assert.Equal(1, domain.Host.Stops);
+            Assert.Equal(2, domain.Host.Creates);
+            Assert.Single(router.Events.Replay(0), row => row.TicketId == ticket.Id &&
+                row.Kind is "request.completed" or "request.failed" or "request.cancelled");
+        }
+        finally
+        {
+            readiness.Release();
+            writer.Release.TrySetResult(new FlushResult(true, false));
+            authority.ReleaseClose.TrySetResult();
+        }
+    }
+
+    [Theory(Timeout = 20_000)]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task InitialHeartbeatKeepsLegacyPolicyWhenAForwardOnlyRouteIsSelected(bool flushing)
+    {
+        using var watchdog = new CancellationTokenSource(TimeSpan.FromSeconds(12));
+        using var selection = new AdmissionFixtureBarrier();
+        using var discovery = new FakeEngineHandler { LoadedModels = ["shared"], NCtx = 8_192, TotalSlots = 1 };
+        using var legacyHandler = new FakeEngineHandler { LoadedModels = ["shared"] };
+        var ct = watchdog.Token;
+        var domain = MakeCommissionedDomain("a", "shared", 19001);
+        var legacy = new EngineDefinition { Name = "remote", Endpoint = new("http://external.invalid/v1"), Remote = true };
+        var config = new RouterConfig
+        {
+            AutoSwitch = true,
+            Engines = new Dictionary<string, EngineDefinition> { [domain.Engine.Name] = domain.Engine, [legacy.Name] = legacy },
+            HttpHandlerFactory = engine => engine == legacy ? legacyHandler : discovery,
+        };
+        await using var app = ServerApp.BuildCommissioned([], [domain.Enrollment], configOverride: config);
+        var router = app.Services.GetRequiredService<RouterCore>();
+        Assert.True(await router.Engines[legacy.Name].ProbeHealthOnceAsync(ct));
+        router.BeforeAdmissionCommitForTests = _ => selection.HoldAsync(ct).GetAwaiter().GetResult();
+        var ticket = await router.EnqueueHttpAsync("legacy-heartbeat", new InferenceRequest
+        {
+            Model = "shared",
+            Stream = true,
+            Body = """{"model":"shared","stream":true,"messages":[{"role":"user","content":"legacy route"}]}"""u8.ToArray(),
+            Options = new RouterRequestOptions(),
+        }, ct);
+        await selection.Reached.WaitAsync(ct);
+
+        var writer = new StreamRelayTests.GatedWriter(flushing ? int.MaxValue : 1,
+            ignoreCancel: true, blockFirstFlush: flushing);
+        var context = new DefaultHttpContext { RequestAborted = ct };
+        context.Features.Set<IHttpResponseBodyFeature>(new StreamRelayTests.BodyFeature(writer));
+        var clock = new ReadinessDeadlineTests.ManualClock();
+        var relay = ServerApp.StreamTicketAsync(context, ticket, clock, router);
+        try
+        {
+            var blocked = await writer.Blocked.Task.WaitAsync(ct);
+            Assert.Equal(flushing, blocked == 0);
+            selection.Release();
+            await ticket.CompletionTask.WaitAsync(ct);
+            Assert.Equal(legacy.Name, ticket.Engine);
+            Assert.Null(ticket.HttpDelivery);
+            Assert.Empty(domain.Authority.Offers);
+            clock.AdvanceTo(30_001);
+            Assert.Equal(0, writer.CancelPendingCalls);
+            Assert.False(relay.IsCompleted);
+            writer.Release.TrySetResult(new FlushResult(false, false));
+            await relay.WaitAsync(ct);
+            Assert.Equal(1, legacyHandler.CompletionCalls);
+        }
+        finally
+        {
+            selection.Release();
+            writer.Release.TrySetResult(new FlushResult(true, false));
+        }
+    }
+
     [Theory]
     [InlineData("--commissioned")]
     [InlineData("--commissioned=/absent")]
@@ -436,7 +585,8 @@ public sealed partial class HostClosedRouteStagingTests
     }
 
     private (EngineDefinition Engine, HostManagerEnrollment Enrollment, FakeHost Host, OfflineCommissionedAuthority Authority)
-        MakeCommissionedDomain(string name, string model, int port, int responseTimeoutMs = 600_000, int slots = 1)
+        MakeCommissionedDomain(string name, string model, int port, int responseTimeoutMs = 600_000, int slots = 1,
+            Func<HostClosedRouteStage, CancellationToken, Task>? beforeReady = null)
     {
         var engine = ManagedEngine(name, model, name, port, equalRecipes: true, responseTimeoutMs, maxSlots: slots);
         var identity = new ExactTicketAdmission.DomainIdentity(name, 1);
@@ -450,8 +600,12 @@ public sealed partial class HostClosedRouteStagingTests
         var enrollment = new HostManagerEnrollment(identity, new HostLifecycleCoordinator(scope.Slot, host, staging), staging, authority,
             new Dictionary<string, HostStagedRuntimeFixture>
             {
-                [engine.Name] = new((stage, _) => Task.FromResult<HostStagedReadiness?>(new(stage, stage.Launch.Plan.Model,
-                    new(stage.Launch.Plan.Model, 8_192, slots, stage.Launch.Plan.Tier)))),
+                [engine.Name] = new(async (stage, ct) =>
+                {
+                    if (beforeReady is not null) await beforeReady(stage, ct);
+                    return new(stage, stage.Launch.Plan.Model,
+                        new(stage.Launch.Plan.Model, 8_192, slots, stage.Launch.Plan.Tier));
+                }),
             },
             stage =>
             {
