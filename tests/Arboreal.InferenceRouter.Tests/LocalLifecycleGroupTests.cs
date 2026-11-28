@@ -208,7 +208,7 @@ public sealed class LocalLifecycleGroupTests
             PriorityNode = new PrioritizedRequest(ticket, priority, 1), CallerToken = caller.Token, EnqueuedSeq = 1, PromptChars = 2 };
         var clock = TimeProvider.System;
         var lease = group.TryReserve(queued, engine, null, true, new OwnerSwitchBudget(clock, clock.GetTimestamp(),
-            ending == "budget" ? 1000 : 0))!;
+            ending == "budget" ? 1000 : 0), group.Revision)!;
         if (ending != "issued")
         {
             engine.RetainNamedUse();
