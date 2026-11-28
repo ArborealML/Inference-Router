@@ -1,9 +1,9 @@
 ---
 id: TASK-205
 title: "Recompute inherited priority for queued requests"
-status: In Progress
+status: Ready for Review
 assignee:
-  - '@gpt-6.2-sol-scheduling'
+  - '@gpt-6.2-astra'
 created_date: '2026-11-27'
 updated_date: '2026-11-27'
 labels: []
@@ -42,5 +42,7 @@ Test inherited promotion/demotion, explicit overrides and FIFO, registration/att
 <!-- SECTION:NOTES:BEGIN -->
 Pi's explicit per-request priority is fixed for that ticket; changing a thread reorders inherited pending keys only. TASK-185 owns client command/wire behavior; do not duplicate parsing from PR #86.
 
-Independent pre-code review passed with attached-handle and throwing-observer coverage required. Stacked source prerequisite: TASK-203 9f023f30e9b5660bafed64c8fccd1b9f3accf3a7, independently reviewed and 263 focused tests passing. Review this increment against the pinned TASK-203 receipt branch; no prerequisite merge into main is authorized. Coordinator remains sole Backlog writer and executes focused tests.
+Candidate 786c524e29c2938d92adfc7d0ed3868c6043a968 implements AC1–4. Independent pre-code review required attached-handle/throwing-observer coverage; implemented and independently reviewed source range 6b72a75..786c524 passed with no blocking findings. Release verification at exact 786c524: 104 passed, zero failed/skipped across the eight planned groups; build/analyzers passed. One test-only CA1861 failure was corrected by reusing the same expected array, without suppression or weaker assertions.
+
+Stacked prerequisite TASK-203 9f023f30e9b5660bafed64c8fccd1b9f3accf3a7 is independently reviewed with 263 tests passing; review this increment against receipt base 45ba972. Coordinator next verifies the combined scheduling/observer/admin branch, publishes the focused stack and checks actual-head hosted build/test/AOT. No main merge, production/client qualification or Done claim. Backlog CLI unavailable; controlled Markdown and strict checker substitute.
 <!-- SECTION:NOTES:END -->
