@@ -17,6 +17,8 @@ public sealed partial class RouterCore
                     aliases.TryAdd(name, name);
                     foreach (var alias in model.Aliases) aliases.TryAdd(alias, name);
                 }
+            foreach (var provider in config.CommercialProviders.Values.Where(static provider => provider.Enabled))
+                foreach (var model in provider.Models.Keys) aliases.TryAdd(model, model);
             return aliases;
         }
         internal long Number { get; } = number;
@@ -117,6 +119,8 @@ public sealed partial class RouterCore
         }
 
         var settings = candidate.Config;
+        if (settings.Engines.Count != 0 && settings.CommercialProviders.Values.Any(static provider => provider.Enabled))
+            return (ConfigReloadStatus.Invalid, previous.Number);
         var removed = removedNames.Select(name => previous.Engines[name]).ToArray();
         var routes = previous.Engines.Where(pair => !removedNames.Contains(pair.Key, StringComparer.Ordinal))
             .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.OrdinalIgnoreCase);

@@ -79,8 +79,8 @@ internal sealed class ReloadConfiguration(RouterConfig config, ConfigDeclaration
             .Matches(new ConfigDeclaration(Fields: WithoutLiveSettings(newRoot))))
             return ConfigReloadStatus.RestartRequired;
 
-        var oldEngines = oldRoot["engine"].Fields!;
-        var newEngines = newRoot["engine"].Fields!;
+        var oldEngines = oldRoot.GetValueOrDefault("engine")?.Fields ?? new(StringComparer.Ordinal);
+        var newEngines = newRoot.GetValueOrDefault("engine")?.Fields ?? new(StringComparer.Ordinal);
         if (!before.Keys.Where(after.ContainsKey).SequenceEqual(after.Keys.Where(before.ContainsKey), StringComparer.Ordinal) ||
             removed.Any(key => before[key].ResolveLifecycleOwner() != EngineLifecycleOwner.External) ||
             added.Any(key => (after[key].ResolveLifecycleOwner() != EngineLifecycleOwner.External &&

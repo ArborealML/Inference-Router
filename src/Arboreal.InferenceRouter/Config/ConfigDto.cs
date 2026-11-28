@@ -22,6 +22,8 @@ public sealed class ConfigDto
     [JsonPropertyName("scheduler")][TomlPropertyName("scheduler")] public SchedulerDto? Scheduler { get; set; }
     [JsonPropertyName("threads")][TomlPropertyName("threads")] public Dictionary<string, ThreadDto>? Threads { get; set; }
     [JsonPropertyName("engine")][TomlPropertyName("engine")] public Dictionary<string, EngineDto>? Engines { get; set; }
+    [JsonPropertyName("commercial_provider")][TomlPropertyName("commercial_provider")]
+    public Dictionary<string, DirectChatProviderDto>? CommercialProviders { get; set; }
 }
 
 public sealed class PriorityDto
@@ -274,5 +276,9 @@ internal sealed partial class ConfigTomlDocumentContext : TomlSerializerContext;
 /// <summary>JSON twin parser (same DTOs, STJ source generation).</summary>
 [JsonSourceGenerationOptions(GenerationMode = JsonSourceGenerationMode.Metadata)]
 [JsonSerializable(typeof(ConfigDto))]
+[JsonSerializable(typeof(DirectChatProviderDto))]
+[JsonSerializable(typeof(DirectChatModelDto))]
+[JsonSerializable(typeof(DirectChatResponseDto))]
+[JsonSerializable(typeof(DirectChatScalarDto))]
 [JsonSerializable(typeof(DockerDto))]
 internal sealed partial class ConfigJsonContext : JsonSerializerContext;

@@ -39,5 +39,7 @@ Cancellation wins logically and promptly: the ticket is cancelled, its queue mem
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Design pass verdict REVISE, and it corrected three premises. The transition-timeout-abandonment finding was not corroborated: the named drain runs before the claim and the issued transaction is awaited, so a caller-side timeout does not finish that task — premise dropped until someone produces an exact reproducer. Cancellation must not wait for physical drain, and a drain that ends in failure must not settle the transition as failed: stopped and cancelled outcomes are already published before the provider returns and stay monotonic. Disposal and the rejected-instance latch coordinate with task-198, where the persistent quarantine is skipped for lifecycle groups. Predicted reds before any run: a stopped-answer test waiting on logical cancellation, a request-gives-up test that must not abort shared switch work, and a delayed-mutation fencing test that fails if a timeout clears the pending operation. Static review only.
+Logical cancellation can complete while the issued physical transaction drains. Drain failure cannot overwrite a published stopped or cancelled outcome. Preserve the generation fence across timeout, late mutation and the group-specific quarantine behavior covered by TASK-198.
+
+[Stock serving recovery](https://github.com/ArborealML/Inference-Router/pull/103) qualified the serving broker. The separate successor-operation journal can retain an appended entry whose external head update was never confirmed. Exercise restart after both possible head outcomes. Keep the domain fenced until it can recover the disposition of that exact operation without issuing a second mutation.
 <!-- SECTION:NOTES:END -->

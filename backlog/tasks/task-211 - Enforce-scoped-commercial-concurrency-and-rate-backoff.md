@@ -1,11 +1,11 @@
 ---
 id: TASK-211
 title: "Enforce scoped commercial concurrency and rate backoff"
-status: To Do
+status: In Progress
 assignee:
-  - '@gpt-6.2-astra'
+  - '@gpt-6.2-sol-config'
 created_date: '2026-11-27'
-updated_date: '2026-11-28T11:08:00Z'
+updated_date: '2026-11-28T14:34:28Z'
 labels: []
 milestone: m-20
 dependencies:
@@ -36,7 +36,17 @@ Keep provider/account outstanding attempts and scoped rate observations separate
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Extend existing route comparison: hard model/fit/trust/filter and scoped capacity, then explicit standing spend permission, wait/service constraints and deterministic expected marginal cost/private preference. No global lock over telemetry or preparation; only deliberately shared caps serialize. Use common backoff/deadline wake and synthetic policy/cost/admission snapshots; definitive reservation refusal refreshes/excludes that attempt and resumes the same finite selection round.
+Extend existing route ranking, predecessor checks and admission. Apply model, fit, trust, spend permission and service constraints first. Among eligible choices use configured preference, permitted expected cost, service, affinity/load and stable route ID. Preserve priority, age and ticket deadline. Unknown cost cannot win as zero. A final refusal tries the remaining eligible routes once.
 
-TASK-213 adds included preference to this same evaluator; no generic optimizer. TASK-212 integrates real durable reservations and authorization; no live enablement from this task.
+Before dequeue, reserve every applicable provider, stable account, model and key scope atomically for one attempt. Share scope identities across aliases and credential rotation. Offers reserve nothing. Use ordered gates and perform durable I/O outside the queue lock. Bind the first write to the attempt, exact request fingerprint, policy, credentials, config and reservation. Release on proved non-send or provider retirement. Retain unknown occupancy after cancellation, disconnect or reset.
+
+Apply 429 and Retry-After at header receipt. Preserve longer cooldowns and keep billing, authorization, request and service errors distinct. Pin units, window, phase and coverage before increasing available capacity. Subtract outstanding commitments outside that coverage. Use the existing dispatcher wake mechanism and a monotonic clock for the earliest due scope. A reset schedules reevaluation.
+
+TASK-212 owns the shared durable attempt journal. Exercise closed startup, recovered dispositions, blocked and unrelated accounts, and private progress with controlled authority through ordinary routing. Keep production metered and mixed routing disabled. Publish operator aggregates and group-scoped blockers without identifying another group.
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Review of the dispatcher and direct transport at d045d69 separated socket cleanup from upstream retirement and identified header-time backoff, exact shared-scope admission and recovery as required checks.
+<!-- SECTION:NOTES:END -->

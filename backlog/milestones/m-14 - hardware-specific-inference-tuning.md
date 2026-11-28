@@ -9,7 +9,7 @@ Design and deliver a repeatable per-engine, per-model tuning workflow. Compare m
 
 ## Delivery order
 
-The offline planner and comparison commands are shipped. Fixture-qualified execution and progressive candidate search follow. Real matched-work comparison and explicit adoption are production evidence gates, not prerequisites to implementing the search/adoption mechanisms. The resumable sweep follows search but is not a prerequisite to using a qualified operating point.
+The offline planner, comparison commands and [single-model workload runner](https://github.com/ArborealML/Inference-Router/pull/98) have merged. The runner uses controlled measurement and admission providers in qualification. Running it on stock hardware requires a production provider that can reserve the device and verify measurement and release. Progressive candidate search remains open. Real matched-work comparison and explicit adoption are production evidence gates, not prerequisites to implementing the search/adoption mechanisms. The resumable sweep follows search but is not a prerequisite to using a qualified operating point.
 
 1. [Run a repeatable live tuning workload for one engine and model](../tasks/task-170%20-%20Run-a-repeatable-live-tuning-workload-for-one-engine-and-model.md)
 2. [Search bounded configurations and recommend a measured winner for one model](../tasks/task-171%20-%20Search-bounded-configurations-and-recommend-a-measured-winner-for-one-model.md)

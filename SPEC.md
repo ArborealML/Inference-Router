@@ -1,12 +1,13 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.178)
+Status: draft, continuously revised (v0.12.179)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
 
 ## 0. Revision log
 
+- v0.12.179 — describe inert direct chat providers and qualify loopback-only exact first-write authorization and served-identity relay with sanitized provider refusals, separate first-output and stream deadlines, verified stream choice indexes, and atomic bounded terminal publication (§§5.7, 6–7, 9–10, 14).
 - v0.12.178 — permit separate authenticated operation-head readers for mutation ingress and serving registration. Both successor readers are read-only (§12.1).
 - v0.12.177 — authorize durable owned-group sensitivity escalation and order it with private HTTP handoff (§§5.6, 6, 13, 14).
 - v0.12.176 — connect the executable to the protected catalog, operation head, serving broker, and exact native terminal sources. Attach a checked resident before dispatch and bind the successor before closing its incumbent. The original issuer epoch confirms the cutoff and the anchored journal checks the frozen recipe on replay. Bounded broker snapshots and an authenticated writer generation preserve replay fences through initial-resident restart (§§4, 7.6, 12.1).
@@ -2986,6 +2987,62 @@ paths require their own qualified authorization and remain unavailable. Lowering
 sensitivity requires separately qualified human authority and remains unavailable.
 A private policy verifier or a local `Administer` permission cannot grant that authority.
 
+### 5.7 Configured direct chat transport
+
+`commercial_provider` declarations describe OpenAI Chat Completions destinations and
+are disabled unless explicitly marked enabled. A disabled provider has no runtime
+engine, discovery or background probes, credential resolution, count/tokenize or request
+egress. The stock router refuses any enabled provider. An internal fixture composition
+permits direct chat against literal HTTP loopback only. It refuses to join ordinary
+engine routes, owned private policy, commissioned host authority or an exact managed
+admission port. Disabled declarations can coexist with those routes.
+Owned private engines continue to require positive enrollment and current policy (§5.6).
+Commercial and mixed paid routing require the durable spending and policy authority.
+
+A declared public model binds an exact outgoing ID, an expected served ID and an
+explicit equivalence label. Providers sharing a public model must agree on its spelling
+and equivalence. These assertions describe the configured provider contract. Actual
+served response identity gives no independent evidence about model weights. Configured
+capabilities and per-model reasoning values govern accepted request parameters.
+The strict projection rejects duplicate fields, unsupported controls, legacy completions
+and malformed input. If `backup_parameter` is declared, projection sends the boolean
+`false` and refuses requests seeking an enabled backup. No caller headers, credentials,
+thread names or affinity identifiers go into the outbound request.
+
+The controlled connector obtains a credential and one-use permit for the exact account,
+URI, projected body fingerprint, credential epoch, model binding and configuration before
+opening a socket. The verified HTTP/1.1 serializer consumes the permit before its first
+nonempty application write, including HTTP headers. The connector accepts a single
+socket for the invocation and disables proxies, cookies, redirects and decompression.
+A mismatched, spent or revoked permit prevents application writes. Consumed permission
+means possible exposure even if a canceled connection delivers no output. AIR does not
+replay a failed or partially delivered request. Socket closure gives no settlement or
+exactly-once execution guarantee.
+
+Buffered responses must fit their configured byte bound, carry verified served identity
+and contain semantic content, tool output or reasoning. Streaming uses the existing
+complete SSE block framer and output credit. Before releasing any semantic output, AIR
+requires served identity and meaningful output within one absolute deadline measured
+from connection preparation. SSE comments, byte drips, role events and usage alone do
+not extend it. The configured byte bound applies while identity and output are held.
+By default identity comes from a bounded `model` value. A configured response header
+must supply the expected identity, and a conflicting body model still fails the exchange.
+Each streaming choice in a block must have an integer index in the request's choice
+set. Repeated indexes in that block fail before its bytes can qualify or be forwarded.
+Metadata-only blocks may omit choices or carry an empty list. Once verified, accepted
+bytes go through unchanged. Later validated semantic output renews the independent
+`semantic_idle_ms` timer. Comments, keepalives, usage and the sentinel do
+not renew it. `maximum_stream_ms` caps the stream from connection preparation regardless of
+progress. An expiry closes the upstream socket and preserves already delivered output and
+possible exposure. Physical cleanup returns the selected engine capacity. A later identity
+conflict also stops additional output and records partial failure. The upstream sentinel
+stays buffered until clean EOF, so a later error takes precedence. The terminal buffer limit
+counts the sentinel, complete trailing blocks and all pending bytes, including an incomplete
+line. The held tail must fit in the configured HTTP stream credit. The relay waits for
+credit for the entire tail and publishes it in one operation ordered with expiry.
+An over-credit tail or an expiry before publication discards the held sentinel and
+returns capacity.
+
 ## 6. HTTP surface (server project)
 
 With mutable owned policy, `POST /admin/policy/sensitivity` requires verified
@@ -3002,6 +3059,15 @@ sensitivity, admission state and unresolved intent count. The scoped ticket dist
 `AttemptPolicyRevision` and `Sensitive` from `CurrentPolicyRevision`, `CurrentSensitivity`,
 `PolicyAdmissionState` and `PrivateAttemptMayHaveSent`. Status describes observed policy
 and authorization independently of physical send or cancellation settlement.
+
+For controlled direct chat, `commercial_request_unsupported` and
+`commercial_provider_bad_request` return 400. `commercial_rate_limited` returns 429.
+`commercial_transport_unavailable` and `commercial_provider_unavailable` return 503.
+`commercial_identity_timeout`, `commercial_stream_idle_timeout` and
+`commercial_stream_deadline` return 504. `commercial_identity_invalid` and
+`commercial_exchange_failed` return 502. These statuses apply before response headers
+start. An already committed SSE response ends with the corresponding code in the
+router's bounded error frame. The legacy completion path cannot use the configured direct chat connector.
 
 The in-process host-manager fixture uses the existing ticket status and event feed for queue
 waits. Managed preparation and activation carry the canonical domain in the existing wait scope.
@@ -3403,6 +3469,35 @@ TOML supplies the ordinary local lifecycle groups. The internal managed composit
 physical membership and generation from trusted enrollment before using any managed runtime.
 The same group must belong to one enrolled domain. Enrollment may map multiple group names to
 one domain. This increment adds no commissioning setting to TOML.
+
+**Direct chat providers.** Use `[commercial_provider.<name>]` in TOML or the
+`commercial_provider` object in JSON. The only protocol is `openai-chat-completions`.
+Provide an origin, absolute `chat_path`, account, external `credential_ref`, prices in
+microdollars per million tokens, and a maximum attempt in microdollars. Prices and caps
+are metadata and grant no permission. Each `model` entry declares `request_id`,
+`served_id`, `equivalence` and any allowed `reasoning_efforts`. Capabilities default
+false. `first_output_ms`, `semantic_idle_ms` and `maximum_stream_ms` default to
+30,000, 60,000 and 900,000 ms. The maximum stream duration must cover the first-output
+interval. `identity_buffer_bytes` defaults to 65,536 bytes, and `response_body_bytes`
+defaults to 1,048,576 bytes. See the [disabled examples](samples/router.commercial-disabled.toml)
+for the complete base declarations. Example addresses, credential references, models
+and pricing are placeholders. The separate table gives older loaders no inference engine
+for these definitions.
+
+A `response` table may require a `served_model_header` or declare scalar selectors
+for `usage_prompt`, `usage_completion` and `retry_after`. A selector names a `header`
+or bounded JSON path (`source = "json"`) and its `unit`. Usage pairs use `tokens`.
+Retry values use `seconds`, `milliseconds`, `unix_seconds` or `unix_milliseconds`.
+Standard OpenAI `usage` and HTTP `Retry-After` work without override declarations.
+The optional `codes` table maps a bounded set of provider codes to `rate_limited`,
+`unavailable` or `bad_request`. They produce the corresponding sanitized router category
+in JSON and SSE. HTTP 429, 503 and 400 supply those categories when no override matches.
+Other unmapped failures use `commercial_exchange_failed` without provider text.
+Unknown fields and duplicate provider declarations fail
+validation. The authenticated reload endpoint validates both formats. Changing provider
+declarations requires restart. Admitted requests keep their captured definition and a
+controlled permit can be revoked before application writes.
+
 
 **Local lifecycle groups.** An engine may opt into a named
 `lifecycle_group` with native Docker lifecycle owned by this router. Every member of a group
@@ -3938,6 +4033,10 @@ latches for unchanged effective target definitions.
 
 ## 9. AOT strategy
 
+Both configuration formats use generated provider and scalar DTOs. The direct chat
+fixture and stock configuration reader share these mappings and the same HTTP server
+and serializer. No compiled provider-specific adapter is required.
+
 - **All publish targets** compile with `PublishAot=true`, `TrimMode=full`.
 - **JSON** (research-dispositioned): every DTO registered in one
   `[JsonSourceGenerationObject]`-style `AirJson` context (per-assembly
@@ -4029,6 +4128,13 @@ Status: **0 warnings / 0 errors with warnings-as-errors, and an AOT publish with
 `[SuppressMessage]` sites are the only suppressions.
 
 ## 10. Observability
+
+Controlled direct chat tickets report `CommercialMayHaveSent` after permit consumption
+and a separate `CommercialEvidence` with token count availability, retry delay, verified
+model identity and first raw/semantic output elapsed times. Missing, explicit zero and
+invalid scalar evidence are distinct. These fields confer no durable liability receipt.
+Provider error text, credentials, prompt bytes and private metadata stay outside the
+observation.
 
 `RouterEvent` ring buffer (per running router, ordered, monotonic `Seq`, replayable; capacity 4096).
 Replay is **exclusive** on its cursor: `since=n` means "after n". A cursor inside the retained window
@@ -4683,6 +4789,14 @@ enriched with `air:{engine,profile,availability,loaded}`; the stable `air_error`
 and cohort/residency hysteresis in the scheduler (§12.3 hook).
 
 ## 14. Testing & acceptance
+
+- **Configured direct chat** (`DirectChatTransportTests`): parse both formats and disabled
+  examples. Use one router with two loopback provider definitions, inspect first-write
+  permit decisions and projected bytes, and compare accepted streaming bytes. Include
+  missing and late conflicting identity, mapped error categories, independent first-output,
+  semantic idle and maximum-duration deadlines, and a queued successor after a stalled stream.
+  Cover exact terminal-buffer limits across fragmented reads, bounded scalar evidence, reload
+  refusal and zero upstream inference on invalid requests.
 
 The reverse-provider HTTP fixture holds one delegated remote slot while the original request
 reaches a router-managed local backend. It covers resident reuse and cold activation, each for

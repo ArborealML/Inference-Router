@@ -430,6 +430,10 @@ public partial class ConfigLoaderTests
     {
         var path = RepoFile("samples/router.toml");
         var smoke = RepoFile("samples/router.safe-smoke.toml");
+        var commercial = RouterConfigLoader.LoadFile(RepoFile("samples/router.commercial-disabled.toml")!);
+        Assert.Equal(["deeprelay", "isoquant"], commercial.CommercialProviders.Keys.Order(StringComparer.Ordinal));
+        Assert.Empty(commercial.Engines);
+        Assert.All(commercial.CommercialProviders.Values, provider => Assert.False(provider.Enabled));
         Assert.NotNull(path);
         Assert.NotNull(smoke);
 

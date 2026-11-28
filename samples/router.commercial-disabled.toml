@@ -1,0 +1,43 @@
+# Inert examples. Endpoints, model IDs, prices and limits are placeholders.
+default_model = "isoquant-example"
+
+[commercial_provider.isoquant]
+enabled = false
+protocol = "openai-chat-completions"
+origin = "https://isoquant.example.invalid"
+chat_path = "/v1/chat/completions"
+account = "isoquant-example-account"
+credential_ref = "external-isoquant-reference"
+allows_streaming = true
+allows_reasoning = true
+backup_parameter = "allow_fallback"
+input_price_microusd_per_million = 1000000
+output_price_microusd_per_million = 2000000
+maximum_attempt_microusd = 50000
+first_output_ms = 30000
+identity_buffer_bytes = 65536
+response_body_bytes = 1048576
+
+[commercial_provider.isoquant.model."isoquant-example"]
+request_id = "requested-example-model"
+served_id = "served-example-model"
+equivalence = "example-revision-a"
+reasoning_efforts = ["low", "medium"]
+
+[commercial_provider.deeprelay]
+enabled = false
+protocol = "openai-chat-completions"
+origin = "https://deeprelay.example.invalid"
+chat_path = "/v1/chat/completions"
+account = "deeprelay-example-account"
+credential_ref = "external-deeprelay-reference"
+allows_streaming = true
+allows_tools = true
+input_price_microusd_per_million = 1000000
+output_price_microusd_per_million = 2000000
+maximum_attempt_microusd = 50000
+
+[commercial_provider.deeprelay.model."deeprelay-example"]
+request_id = "another-requested-model"
+served_id = "another-served-model"
+equivalence = "example-revision-b"

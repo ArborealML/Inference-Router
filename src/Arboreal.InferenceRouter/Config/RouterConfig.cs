@@ -298,6 +298,9 @@ public sealed class RouterConfig
     /// process out of handles. Feeds beyond it are refused with 503.</summary>
     public int MaxEventSubscribers { get; set; } = 256;
 
+    public IReadOnlyDictionary<string, DirectChatProvider> CommercialProviders { get; internal set; } =
+        System.Collections.Frozen.FrozenDictionary<string, DirectChatProvider>.Empty;
+
     public IReadOnlyDictionary<string, EngineDefinition> Engines { get; set; } =
         new Dictionary<string, EngineDefinition>(StringComparer.Ordinal);
     /// <summary>Optional per-engine HTTP handler factory (test harnesses, custom transports).

@@ -45,17 +45,21 @@ internal sealed class HttpStreamDelivery(int limit, CancellationToken caller = d
         get { lock (_gate) return _reserved; }
     }
 
-    internal async ValueTask WaitForSpaceAsync(CancellationToken cancellationToken)
+    internal ValueTask WaitForSpaceAsync(CancellationToken cancellationToken) => WaitForCreditAsync(1, cancellationToken);
+
+    private async ValueTask WaitForCreditAsync(int minimum, CancellationToken cancellationToken)
     {
-        Task wait;
-        lock (_gate)
+        while (true)
         {
-            ThrowIfStopped();
-            if (_reserved < limit) return;
-            wait = (_space ??= new(TaskCreationOptions.RunContinuationsAsynchronously)).Task;
+            Task wait;
+            lock (_gate)
+            {
+                ThrowIfStopped();
+                if (limit - _reserved >= minimum) return;
+                wait = (_space ??= new(TaskCreationOptions.RunContinuationsAsynchronously)).Task;
+            }
+            await wait.WaitAsync(cancellationToken).ConfigureAwait(false);
         }
-        await wait.WaitAsync(cancellationToken).ConfigureAwait(false);
-        lock (_gate) ThrowIfStopped();
     }
 
     internal async ValueTask PublishAsync(ChannelWriter<ReadOnlyMemory<byte>> writer,
@@ -78,6 +82,26 @@ internal sealed class HttpStreamDelivery(int limit, CancellationToken caller = d
                 }
                 batch = batch[count..];
             }
+        }
+    }
+
+    internal async ValueTask PublishTerminalAsync(ChannelWriter<ReadOnlyMemory<byte>> writer, ReadOnlyMemory<byte> terminal,
+        Action<Action> commit, CancellationToken cancellationToken)
+    {
+        if (terminal.Length > limit) throw DirectChatProtocol.BadResponse();
+        await WaitForCreditAsync(terminal.Length, cancellationToken).ConfigureAwait(false);
+        lock (_gate)
+        {
+            ThrowIfStopped();
+            // One producer owns this delivery, so available credit only increases while it waits.
+            commit(() =>
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                _reserved += terminal.Length;
+                if (writer.TryWrite(terminal)) return;
+                _reserved -= terminal.Length;
+                throw new OperationCanceledException();
+            });
         }
     }
 

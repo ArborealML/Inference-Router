@@ -213,6 +213,8 @@ public sealed partial class RouterCore
             }
 
             var requested = request.Model ?? affinity ?? generation.Settings.DefaultModel;
+            if (generation.Engines.Count == 0 && generation.Settings.CommercialProviders.Count != 0)
+                throw ControlledDirectChat.Unavailable();
             var model = policy is null ? ResolveCanonical(requested, generation) : ResolveOwnedModel(requested, generation, policy);
             var estimated = EstimateContextTokens(promptChars, generation.Settings.Scheduler.CharsPerTokenEstimate);
             var required = opts?.Profile is not null ? Math.Max(estimated, explicitContext)

@@ -20,6 +20,7 @@ public sealed partial class RouterCore : IInferenceRouter
     private readonly ExactTicketAdmission? _admission;
     private readonly InProcessHostManager? _hostManager;
     private readonly OwnedPrivatePolicy? _ownedPolicy;
+    private readonly ControlledDirectChat? _directChat;
     // An exact caller may share a proven resident. Keep a conflicting ordinary switch
     // from entering between that caller's queue removal and its first transport use.
     private readonly Dictionary<EngineRuntime, (int Named, int Switching)> _profileUsers = [];
@@ -52,6 +53,7 @@ public sealed partial class RouterCore : IInferenceRouter
     internal Action<Task>? AfterDispatchParkForTests;
     internal Action? BeforeShutdownCancellationForTests;
     internal Action? BeforeShutdownUnsubscribeForTests;
+    internal Action? OnDirectTerminalPublishForTests;
     internal TimeProvider ResponseTimeoutClockForTests = TimeProvider.System;
 
     private readonly Func<EngineDefinition, IEngineLifecycleProvider>? _lifecycleFactory;
@@ -65,13 +67,20 @@ public sealed partial class RouterCore : IInferenceRouter
     internal RouterCore(RouterConfig config, IRequestScheduler? scheduler, EventRing? events, TimeProvider clock,
                         Func<EngineDefinition, IEngineLifecycleProvider>? lifecycleFactory = null,
                         ExactTicketAdmission? admission = null, ReloadConfiguration? reload = null, string? nativeResetStartupInstance = null,
-                        InProcessHostManager? hostManager = null, OwnedPrivatePolicy? ownedPolicy = null)
+                        InProcessHostManager? hostManager = null, OwnedPrivatePolicy? ownedPolicy = null,
+                        ControlledDirectChat? directChat = null)
     {
         if (config.OwnedPrivatePolicy != (ownedPolicy is not null))
             throw new RouterConfigException("Owned private policy requires a verified external composition.");
         ownedPolicy?.ValidateTopology(config, scheduler is not null || lifecycleFactory is not null ||
             admission is not null || hostManager is not null || nativeResetStartupInstance is not null);
         _ownedPolicy = ownedPolicy;
+        _directChat = directChat;
+        var enabledProviders = config.CommercialProviders.Values.Where(static provider => provider.Enabled).ToArray();
+        if (enabledProviders.Length != 0 && (directChat is null || ownedPolicy is not null || hostManager is not null ||
+            admission is not null || config.Engines.Count != 0 ||
+            enabledProviders.Any(static provider => !DirectChatProvider.IsControlledLoopback(provider.ChatUri))))
+            throw new RouterConfigException("enabled commercial providers require a qualified isolated authorization composition");
         config.ValidateLifecycleTopology(commissioned: hostManager is null ? null : hostManager.OwnsCommissioned);
         _shutdownToken = _shutdown.Token;
         _config = config;
@@ -93,6 +102,19 @@ public sealed partial class RouterCore : IInferenceRouter
             // emitted before the capability transition commits, so a dispatcher woken by them still sees the
             // engine marked as switching. Committing the transition nudges the loop again (§5.5).
             engines[name] = CreateOrdinaryEngine(def, config, reload);
+        foreach (var provider in enabledProviders)
+        {
+            var definition = new EngineDefinition
+            {
+                Name = provider.Name,
+                Endpoint = provider.ChatUri,
+                LifecycleOwner = EngineLifecycleOwner.External,
+                Catalog = provider.Models.Keys.ToDictionary(static key => key, static key => new EngineModelDefinition { Name = key },
+                    StringComparer.Ordinal),
+            };
+            engines.Add(provider.Name, new EngineRuntime(definition, config, _events, null, null, SignalDispatch, null, _clock,
+                directChat: provider));
+        }
         var groups = new Dictionary<string, LocalLifecycleGroup>(StringComparer.Ordinal);
         foreach (var engine in engines.Values)
         {
@@ -235,6 +257,8 @@ public sealed partial class RouterCore : IInferenceRouter
                     _ => null,
                 },
                 DestinationTrust = t.OwnedPolicy is not null && t.Engine is not null ? "private" : null,
+                CommercialMayHaveSent = t.CommercialMayHaveSent ? true : null,
+                CommercialEvidence = t.CommercialEvidence,
             };
         }
     }
@@ -1086,8 +1110,9 @@ public sealed partial class RouterCore : IInferenceRouter
             ticket.EndQueueWait();
             var selectedAt = _clock.GetTimestamp();
             var switchRequired = invocation is null && requiresSwitch;
-            if (invocation?.IsCommissioned == true && ticket.IsHttpStream && ticket.HttpDelivery is null)
-                ticket.HttpDelivery = new HttpStreamDelivery(HttpStreamDelivery.CommissionedDefaultLimit, candidate.CallerToken, _shutdownToken);
+            if (ticket.IsHttpStream && ticket.HttpDelivery is null && (invocation?.IsCommissioned == true || engine.DirectChat is not null))
+                ticket.HttpDelivery = new HttpStreamDelivery(engine.DirectChat is null ? HttpStreamDelivery.CommissionedDefaultLimit :
+                    DirectChatDefaultStreamLimitBytes, candidate.CallerToken, _shutdownToken);
             if (candidate.Request.Stream && ticket.StreamChannel is null)
             {
                 // Publish the channel with the state change: a listener that sees Executing must be
@@ -1510,6 +1535,11 @@ public sealed partial class RouterCore : IInferenceRouter
             {
                 var executionToken = execCts.Token;
                 using var cts = CancellationTokenSource.CreateLinkedTokenSource(_shutdownToken, executionToken, candidate.CallerToken);
+                if (engine.DirectChat is not null)
+                {
+                    await RunControlledDirectChatAsync(candidate, engine, cts.Token).ConfigureAwait(false);
+                    return;
+                }
                 var upstreamModel = engine.CanonicalModel(ticket.Model) ?? ticket.Model;
                 var choices = ticket.PrivatePreparation?.ExpectedChoices ?? 0;
                 var body = journalOwned ? [] : ModelRewriter.Rewrite(candidate.Request.Body, upstreamModel, candidate.Request.Stream, out choices);
@@ -1624,7 +1654,7 @@ public sealed partial class RouterCore : IInferenceRouter
             finally
             {
                 if (ownsForward) engine.EndForward(candidate.Request.Options?.Profile is not null);
-                if (!OwnedPolicyEnabled) engine.RecordPrefix(candidate.Messages());
+                if (!OwnedPolicyEnabled && engine.DirectChat is null) engine.RecordPrefix(candidate.Messages());
             }
         }
         catch (Exception ex)
@@ -1649,12 +1679,14 @@ public sealed partial class RouterCore : IInferenceRouter
         {
             if (error is OperationCanceledException) Fail(ticket, "cancelled", "cancelled");
             else if (error is RouterRequestException refusal) Fail(ticket, refusal.Code, refusal.Message);
-            else Fail(ticket, "engine_unreachable", OwnedPolicyEnabled ? "the private upstream exchange failed" : error.Message);
+            else Fail(ticket, "engine_unreachable", engine.DirectChat is not null ? "the configured chat exchange failed" :
+                OwnedPolicyEnabled ? "the private upstream exchange failed" : error.Message);
         }
 
         void ReleaseLogical()
         {
-            if (!journalOwned || (!lateForwardOwnsLocalLease && !optInOwnsInvocation)) EndEngineOnce();
+            var transportOwnsEngine = (journalOwned || engine.DirectChat is not null) && optInOwnsInvocation;
+            if (!transportOwnsEngine && !(journalOwned && lateForwardOwnsLocalLease)) EndEngineOnce();
             if (!optInOwnsInvocation && (!journalOwned || !lateForwardOwnsLocalLease))
                 ReleaseExecutionCancellation(ticket);
             DecrementOnce();
@@ -1861,7 +1893,7 @@ public sealed partial class RouterCore : IInferenceRouter
 
     private async Task<string?> PumpStreamAsync(EngineRuntime engine, RouterTicket ticket, HttpContent content,
         Channel<ReadOnlyMemory<byte>> channel, SemanticStreamObserver observer, ResponseGate? gate, CancellationToken ct,
-        StreamReadLifetime? lifetime = null, DefaultStreamShutdown? shutdown = null)
+        StreamReadLifetime? lifetime = null, DefaultStreamShutdown? shutdown = null, DirectChatResponse? directChat = null)
     {
         var firstToken = false;
         // The response ceiling applies to the first raw byte. The first complete SSE block can
@@ -1869,9 +1901,10 @@ public sealed partial class RouterCore : IInferenceRouter
         using var firstReadLink = gate is null
             ? null
             : CancellationTokenSource.CreateLinkedTokenSource(ct, gate.Token);
-        var firstReadCt = firstReadLink?.Token ?? ct;
+        var firstReadCt = directChat?.Token ?? firstReadLink?.Token ?? ct;
+        var relayToken = directChat?.Token ?? ct;
         var buffer = new byte[16384];
-        var blocks = new SseBlockBuffer(observer: observer);
+        var blocks = new SseBlockBuffer(observer: observer, filter: directChat is null ? null : directChat.Filter);
         // Stream acquisition is inside the ceiling too: with ResponseHeadersRead the content object exists
         // before any byte does, and a handler that builds the stream lazily must not be able to stall the
         // request before the first gated read happens.
@@ -1894,12 +1927,12 @@ public sealed partial class RouterCore : IInferenceRouter
         while (true)
         {
             if (delivery is not null)
-                await delivery.WaitForSpaceAsync(ct).ConfigureAwait(false);
+                await delivery.WaitForSpaceAsync(relayToken).ConfigureAwait(false);
             int read;
             long arm = 0;
             try
             {
-                var readToken = firstToken ? ct : firstReadCt;
+                var readToken = directChat?.Token ?? (firstToken ? ct : firstReadCt);
                 if (lifetime is null)
                 {
                     var pending = stream.ReadAsync(buffer, readToken);
@@ -1914,6 +1947,7 @@ public sealed partial class RouterCore : IInferenceRouter
             }
             catch (OperationCanceledException error)
             {
+                if (directChat?.TimedOut == true && !ct.IsCancellationRequested) throw directChat.Timeout();
                 if (arm != 0 && shutdown!.ObserveResult(arm, 0, error)) return null;
                 // Preserve the first-byte deadline path. Otherwise a stopped read still has to
                 // account for any bytes already staged, after checking caller cancellation below.
@@ -1937,6 +1971,7 @@ public sealed partial class RouterCore : IInferenceRouter
             {
                 firstToken = true;
                 var firstRawByte = observer.ObserveRawByte();
+                directChat?.ObserveRaw();
                 gate?.Pass();
                 _events.Append(new RouterEvent
                 {
@@ -1947,7 +1982,14 @@ public sealed partial class RouterCore : IInferenceRouter
                     Value = (long)firstRawByte.TotalMilliseconds,
                 });
             }
+            var heldTerminal = directChat?.HasTerminal == true;
             var (complete, limitExceeded) = blocks.Append(buffer.AsSpan(0, read));
+            if (directChat is not null)
+            {
+                await directChat.RelayAsync(blocks, complete, heldTerminal, PublishAsync).ConfigureAwait(false);
+                if (limitExceeded) throw DirectChatProtocol.BadResponse();
+                continue;
+            }
             if (OwnedPolicyEnabled && observer.SawError)
             {
                 observer.End(StreamInputEnd.Fault);
@@ -1955,10 +1997,7 @@ public sealed partial class RouterCore : IInferenceRouter
             }
             if (!complete.IsEmpty)
             {
-                if (delivery is null)
-                    await channel.Writer.WriteAsync(complete, ct).ConfigureAwait(false);
-                else
-                    await delivery.PublishAsync(channel.Writer, complete, ct).ConfigureAwait(false);
+                await PublishAsync(complete).ConfigureAwait(false);
                 if (shutdown is not null) shutdown.PublishedBlock = true;
             }
             if (limitExceeded)
@@ -1976,8 +2015,22 @@ public sealed partial class RouterCore : IInferenceRouter
             observer.End(StreamInputEnd.Torn);
             return "upstream SSE stream ended before a blank delimiter";
         }
+        if (directChat is not null)
+        {
+            if (readCancelled) throw DirectChatProtocol.BadResponse();
+            var terminal = directChat.PublishTerminalAsync(channel.Writer, delivery);
+            OnDirectTerminalPublishForTests?.Invoke();
+            await terminal.ConfigureAwait(false);
+        }
         observer.End(readCancelled ? StreamInputEnd.UpstreamCancelledRead : StreamInputEnd.Eof);
         return null;
+
+        async ValueTask PublishAsync(ReadOnlyMemory<byte> bytes)
+        {
+            if (delivery is null) await channel.Writer.WriteAsync(bytes, relayToken).ConfigureAwait(false);
+            else await delivery.PublishAsync(channel.Writer, bytes, relayToken).ConfigureAwait(false);
+        }
+
     }
 
     private void Complete(RouterTicket ticket, byte[]? body = null)
@@ -2305,6 +2358,10 @@ public sealed record TicketSnapshot
     public string? PolicyAdmissionState { get; init; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public bool? PrivateAttemptMayHaveSent { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? CommercialMayHaveSent { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public DirectChatEvidence? CommercialEvidence { get; init; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public long? AttemptPolicyRevision { get; init; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
