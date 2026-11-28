@@ -3,9 +3,9 @@ id: TASK-187
 title: >-
   Report why a ticket ended: upstream end, missing terminator, or a writer that
   gave up
-status: In Progress
+status: Ready for Review
 assignee:
-  - '@gpt-6.2-sol-shutdown'
+  - '@gpt-6.2-astra'
 created_date: '2026-11-25T10:49:00Z'
 updated_date: '2026-11-27'
 labels: []
@@ -43,7 +43,9 @@ Precedence: structured error, transport/idle failure, committed terminator, then
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Implementing against main 62f1c79 after independent plan PASS with bounded conditions. Malformed/over-limit data disables positive completion even after DONE; stronger failures remain authoritative. Usage requires unambiguous nonnegative prompt/completion counts and checked optional total; invalid reports remain sticky-invalid. Terminal CAS freezes a synchronized snapshot; late work cannot rewrite it. Protocol work owns forwarding/completion, observation DTOs and terminal projection; TASK-203 owns dispatch/queue ranges. Preserve PR #83 progress fields and PR #86 parsing ownership.
+Candidate 56b24d3cbb21e2554454cc8931f20d03dc175488 against main 62f1c79 implements AC1–6 and AC7's shared observation foundation; downstream Tune/commercial consumption remains separately owned. Independent plan review passed before code. Terminal CAS freezes the bounded synchronized record; malformed/over-limit data disables positive completion, and invalid usage remains sticky-invalid. Preserve PR #83 progress fields and PR #86 parsing ownership.
 
-Historical failed attempts and accepted wire disposition remain at [planning baseline](https://github.com/ArborealML/Inference-Router/commit/62f1c79de7b25486cf8669de654a2fd57d8993a2). Boundary EOF without a terminator may retain legacy Completed while authoritative outcome is incomplete. Frozen end names: complete, upstream_closed_without_terminator, stream_incomplete, failed, unknown; cancellation stays orthogonal. No second terminal frame after upstream error. TASK-170/210 consume the shared contract, without implying tuning/commercial qualification. Local SDK/Backlog CLI unavailable; strict board validation and hosted exact-head build/test/AOT remain required.
+Independent source review of 934e790..56b24d3 passed after fixing lost structured-error evidence when a later field in the same event is malformed/overdeep. Added complete-versus-partial error, byte-preservation and partial-positive-evidence regressions. Release verification at exact 56b24d3: 150 passed, zero failed/skipped across SemanticStreamObservationTests, StreamFrameIdentityTests, StreamRelayTests, StreamingFailureTests and EventSurfaceTests; build/analyzers passed. SPEC v0.12.164 records behavior and limitations.
+
+Historical attempts and accepted wire disposition remain at the [planning baseline](https://github.com/ArborealML/Inference-Router/commit/62f1c79de7b25486cf8669de654a2fd57d8993a2). Boundary EOF may retain legacy Completed with authoritative incomplete; cancellation is orthogonal and upstream error adds no second terminal frame. No nonstreaming, commercial, hardware or installed-client qualification is claimed. Coordinator next publishes the reviewed candidate through an attribution-compliant capability, then checks exact-head hosted build/test/AOT. Backlog CLI unavailable; controlled Markdown and strict board validation substitute. Not Done before integration and remaining qualification.
 <!-- SECTION:NOTES:END -->
