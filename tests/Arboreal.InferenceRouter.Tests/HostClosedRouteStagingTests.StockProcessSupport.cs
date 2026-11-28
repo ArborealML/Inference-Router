@@ -185,7 +185,7 @@ public sealed partial class HostClosedRouteStagingTests
         internal StockSocketPeer(string path, Func<Socket, X509Certificate2, CancellationToken, Task> serve)
         {
             _listener.Bind(new UnixDomainSocketEndPoint(path));
-            StockSetMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.OtherWrite);
+            StockSetMode(path, StockSocketMode);
             _listener.Listen(16);
             SuccessorPeer = new(path, _key.Pin);
             CatalogPeer = new(path, _key.Pin);
