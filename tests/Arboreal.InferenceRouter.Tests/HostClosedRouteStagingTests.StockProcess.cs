@@ -190,8 +190,16 @@ public sealed partial class HostClosedRouteStagingTests
         Assert.Empty(File.ReadAllLines(receiptsB));
         await File.WriteAllBytesAsync(release, [], ct);
 
-        var firstResult = await Task.WhenAny(firstPayload.Task, streamed).WaitAsync(ct);
-        if (firstResult == streamed) await streamed;
+        try
+        {
+            var firstResult = await Task.WhenAny(firstPayload.Task, streamed).WaitAsync(ct);
+            if (firstResult == streamed) await streamed;
+        }
+        catch (Exception error)
+        {
+            var state = await DescribeStockTransitionAsync(http, ticketB, seed, operation, journal, readBroker, daemon);
+            throw new Xunit.Sdk.XunitException($"The original queued successor did not deliver a payload ({error.GetType().Name}). {state}");
+        }
         Assert.Equal(StockExpectedEffects, daemon.Effects);
         Assert.Equal(seed.Scope.Commission.Approvals.Single(approval => approval.Plan.Key == b.Key).Launch.Intent.CreateDigest,
             daemon.CreatedBytesDigest);

@@ -113,6 +113,8 @@ public sealed partial class HostClosedRouteStagingTests
             Assert.Equal(0, terminals);
             using var json = JsonDocument.Parse(line[6..]);
             var root = json.RootElement;
+            if (root.TryGetProperty("error", out var error))
+                throw new Xunit.Sdk.XunitException("Successor stream error code " + StockStatusField(error, "code"));
             Assert.Equal("fixture-successor", root.GetProperty("id").GetString());
             Assert.Equal(expectedModel, root.GetProperty("model").GetString());
             Assert.Equal("successor-only", root.GetProperty("choices")[0].GetProperty("delta").GetProperty("content").GetString());
@@ -122,6 +124,53 @@ public sealed partial class HostClosedRouteStagingTests
         Assert.Equal(1, chunks);
         Assert.Equal(1, terminals);
     }
+
+    private static async Task<string> DescribeStockTransitionAsync(HttpClient http, string ticket, StockSeed seed,
+        OperationHeadClient operation, EnrolledSuccessorFileJournal journal, Func<ServingBrokerSnapshot?> readBroker,
+        StockDaemon daemon)
+    {
+        using var budget = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+        var status = "unavailable";
+        try
+        {
+            using var reply = await http.GetAsync("/admin/tickets/" + ticket, budget.Token);
+            status = FormattableString.Invariant($"http={(int)reply.StatusCode}");
+            if (reply.IsSuccessStatusCode)
+            {
+                using var body = JsonDocument.Parse(await reply.Content.ReadAsByteArrayAsync(budget.Token));
+                status += $" state={StockStatusField(body.RootElement, "State")} error={StockStatusField(body.RootElement, "ErrorCode")}";
+            }
+        }
+        catch (Exception error) when (error is HttpRequestException or OperationCanceledException or JsonException) { }
+
+        var checkpoint = ReadStockDiagnostic(() =>
+        {
+            var state = HostEffectCheckpoint.ReadInstalledState(seed.CheckpointPath);
+            return FormattableString.Invariant($"{state.Phase}/{state.Revision}/{state.Epoch}");
+        });
+        var head = ReadStockDiagnostic(() => operation.Read(seed.Scope.Reservation)?.Revision.ToString(CultureInfo.InvariantCulture));
+        var issue = ReadStockDiagnostic(() =>
+        {
+            using var fence = journal.TryEnter(seed.Scope.Reservation);
+            var record = fence?.ReadHead();
+            return record is null ? null : FormattableString.Invariant($"{record.Revision}/{record.Current?.Phase}");
+        });
+        var broker = ReadStockDiagnostic(() => readBroker()?.Record is { } record
+            ? FormattableString.Invariant($"{record.Revision}/open={record.Open}/conclusive={record.Close?.Conclusive}/uses={record.Uses.Length}")
+            : null);
+        return $"{status} checkpoint={checkpoint} operation_head={head} journal={issue} broker={broker} {daemon.Describe()}";
+    }
+
+    private static string ReadStockDiagnostic(Func<string?> read)
+    {
+        try { return read() ?? "unavailable"; }
+        catch (Exception error) when (OperationHeadTransport.IsUnavailable(error)) { return error.GetType().Name; }
+    }
+
+    private static string StockStatusField(JsonElement body, string name) =>
+        body.ValueKind == JsonValueKind.Object && body.TryGetProperty(name, out var field) &&
+        field.ValueKind == JsonValueKind.String && field.GetString() is { Length: > 0 and <= 64 } value &&
+        value.All(character => char.IsAsciiLetterOrDigit(character) || character == '_') ? value : "none";
 
     private static async Task<HttpResponseMessage> PostStockAsync(HttpClient client, CheckedEnrolledTarget target,
         byte[] body, CancellationToken ct)
