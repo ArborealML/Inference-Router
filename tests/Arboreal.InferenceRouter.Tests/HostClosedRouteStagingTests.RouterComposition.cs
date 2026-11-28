@@ -114,9 +114,10 @@ public sealed partial class HostClosedRouteStagingTests
         Assert.Single(router.Events.Replay(0), row => row.TicketId == ticket.Id && row.Kind == "request.selected");
     }
 
-    private static EngineDefinition ManagedEngine(string engine, string model, string group, int port, bool equalRecipes = false) => new()
+    private static EngineDefinition ManagedEngine(string engine, string model, string group, int port, bool equalRecipes = false, int responseTimeoutMs = 600_000) => new()
     {
         Name = engine,
+        ResponseTimeoutMs = responseTimeoutMs,
         Endpoint = new UriBuilder(Uri.UriSchemeHttp, "127.0.0.1", port, "/v1").Uri,
         LifecycleGroup = group,
         LifecycleOwner = EngineLifecycleOwner.Router,

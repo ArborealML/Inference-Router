@@ -66,6 +66,8 @@ internal sealed partial class HostLifecycleCoordinator(string reservationPath, I
 
     internal bool OwnsStaging(HostClosedRouteStaging staging) => ReferenceEquals(stagingForTests, staging);
 
+    internal bool MatchesScope(HostReservationScope scope) => Path.GetFullPath(_reservationPath) == scope.Slot;
+
     internal bool MatchesRecipe(LifecycleTarget target, string digest) => provider.GetLaunchPlanDigest(target) == digest;
 
     public async ValueTask<LifecycleResult> SwitchAsync(
@@ -127,11 +129,15 @@ internal sealed partial class HostLifecycleCoordinator(string reservationPath, I
     {
         // Both switch wrappers enter here. Only a positively commissioned legacy slot can
         // settle, reconcile or grant on the switch path, regardless of its local phase.
-        using var reservation = HostReservation.Open(_reservationPath);
+        var cut = staged?.CommissionedCut;
+        if (cut is not null && !MatchesScope(cut.Scope)) return ReservationRefusal();
+        using var reservation = cut is null ? HostReservation.Open(_reservationPath) : HostReservation.OpenEnrolled(cut.Scope);
         if (reservation.State.Pending is { } pending)
         {
             if (staged is not null)
             {
+                // Reattaching an enrolled launch requires the protected recovery authority.
+                if (cut is not null) return PendingOperation();
                 if (reservation.State.Phase != HostMutationPhase.LaunchApplied ||
                     reservation.State.LaunchedContainerId is not { } stagedContainerId)
                     return PendingOperation();
@@ -184,23 +190,45 @@ internal sealed partial class HostLifecycleCoordinator(string reservationPath, I
             return LifecycleResult.Fail("host_plan_unbound", "the host authority did not bind the full launch plan");
 
         ct.ThrowIfCancellationRequested();
+        var cut = staged?.CommissionedCut;
+        using var deadline = cut?.HasIncumbent == true ? cut.StartBudget(ct) : null;
+        if (cut is not null)
+        {
+            if (!cut.Matches(occupancy.Resident)) return OccupancyRefusal();
+            if (!await cut.SealAndDrainAsync(deadline).ConfigureAwait(false)) return CommissionedHostCut.Unproven();
+        }
         staged?.Close();
-        using var drain = await provider.CloseAndDrainAsync(occupancy.Resident, ct).ConfigureAwait(false);
+        // The physical port may still return a guard after expiry. This helper keeps
+        // ownership of that guard until the caller either accepts it or abandons it.
+        var providerDrain = provider.CloseAndDrainAsync(occupancy.Resident, ct);
+        using var drain = deadline is null ? await providerDrain.ConfigureAwait(false)
+            : await AwaitGuardAsync(providerDrain.AsTask(), deadline, ct).ConfigureAwait(false);
+        if (drain is null) return UnprovenDrain();
         if (!drain.Result.Succeeded) return drain.Result;
 
         if (occupancy.Resident is { } owned)
         {
-            var revalidated = await provider.PreflightAsync(target, ct).ConfigureAwait(false);
+            var revalidated = deadline is null ? await provider.PreflightAsync(target, ct).ConfigureAwait(false)
+                : await deadline.ObserveAsync(token => provider.PreflightAsync(target, token).AsTask()).ConfigureAwait(false) switch
+                {
+                    { Outcome: ReadinessStepOutcome.Completed, Observation: { } result } => result,
+                    _ => UnprovenDrain(),
+                };
             if (!revalidated.Succeeded) return revalidated;
 
-            var current = await ObserveFreshAsync(ct).ConfigureAwait(false);
+            var current = deadline is null ? await ObserveFreshAsync(ct).ConfigureAwait(false)
+                : (await deadline.ObserveAsync(token => ObserveFreshAsync(token).AsTask()).ConfigureAwait(false)).Observation;
+            if (deadline is { OutcomeForSettlement: not ReadinessStepOutcome.Completed }) return UnprovenDrain();
             if (current.Kind != HostOccupancyKind.Owned || current.Resident != owned) return OccupancyRefusal();
 
             ct.ThrowIfCancellationRequested();
+            using var permit = cut?.TryReserveStop(owned);
+            if (cut is not null && permit is null) return OccupancyRefusal();
             var stop = reservation.Begin(epoch, HostMutationKind.Stop, owned.Engine, owned.ContainerId);
             reservation.MarkDispatching(stop);
             drain.WithdrawIncumbent();
-            var stopped = await ReadOutcomeAsync(() => provider.StopAsync(stop, ct)).ConfigureAwait(false);
+            var stopped = await ReadOutcomeAsync(() => permit is null ?
+                provider.StopAsync(stop, ct) : permit.StopAsync(stop, ct)).ConfigureAwait(false);
             if (!TryRecordOutcome(reservation, stop, stopped)) return PendingOperation();
             if (stopped.Status != HostMutationStatus.Applied)
                 return LifecycleResult.Fail("host_stop_refused", "the host refused to stop the incumbent; check its state before retrying");
@@ -209,7 +237,7 @@ internal sealed partial class HostLifecycleCoordinator(string reservationPath, I
         // A successful stop still needs a fresh vacancy proof. Preflight may also have outlived
         // the initial vacancy observation, so always check again before authorizing launch.
         var released = await ObserveFreshAsync(ct).ConfigureAwait(false);
-        if (!IsVacant(released)) return OccupancyRefusal();
+        if (!IsVacant(released) || cut is not null && !cut.IsKnownVacant()) return OccupancyRefusal();
 
         ct.ThrowIfCancellationRequested();
         var launch = reservation.Begin(epoch, HostMutationKind.Launch, target.EngineName, target.Model,
@@ -222,6 +250,35 @@ internal sealed partial class HostLifecycleCoordinator(string reservationPath, I
 
         return await CompleteLaunchAsync(reservation, launch, launched.ContainerId!, target, drain, publication, staged, ct)
             .ConfigureAwait(false);
+
+        LifecycleResult UnprovenDrain()
+        {
+            cut?.MarkUnproven();
+            return CommissionedHostCut.Unproven();
+        }
+    }
+
+    private static async Task<IHostDrain?> AwaitGuardAsync(Task<IHostDrain> guard, ReadinessDeadline deadline, CancellationToken ct)
+    {
+        try { return await guard.WaitAsync(deadline.Remaining, deadline.Clock, ct).ConfigureAwait(false); }
+        catch (TimeoutException)
+        {
+            _ = DisposeLateGuardAsync(guard);
+            return null;
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            _ = DisposeLateGuardAsync(guard);
+            throw;
+        }
+    }
+
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("IDisposableAnalyzers.Correctness", "IDISP007:Don't dispose injected",
+        Justification = "The timed-out acquisition transfers its late result here. There is no other owner to dispose it.")]
+    private static async Task DisposeLateGuardAsync(Task<IHostDrain> pending)
+    {
+        await ((Task)pending).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+        if (pending.IsCompletedSuccessfully) pending.Result.Dispose();
     }
 
     private bool MatchesRequest(HostMutation launch, LifecycleTarget target, string? expectedDigest = null) =>
@@ -257,8 +314,10 @@ internal sealed partial class HostLifecycleCoordinator(string reservationPath, I
         {
             var observer = provider;
             var expected = new HostResident(launch.Engine, containerId);
-            return await staged.VerifyAndPublishAsync(_reservationPath, reservation.State, launch, containerId,
+            var published = await staged.VerifyAndPublishAsync(_reservationPath, reservation.State, launch, containerId,
                 token => IsCurrentInstanceAsync(observer, expected, token), ct).ConfigureAwait(false);
+            if (published.Succeeded && staged.CommissionedCut is not null) reservation.Settle(launch);
+            return published;
         }
 
         var ready = await provider.VerifyReadyAsync(launch, containerId, ct).ConfigureAwait(false);

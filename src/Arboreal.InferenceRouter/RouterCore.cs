@@ -653,7 +653,9 @@ public sealed partial class RouterCore : IInferenceRouter
         }
 
         if (ClaimQueuedEnd(candidate.Ticket, "switch_failed") != QueueEndClaim.Removed) return;
-        SettleQueueEnd(candidate.Ticket, "switch_failed", null);
+        SettleQueueEnd(candidate.Ticket, "switch_failed", null, accepted.Cut?.DrainUnproven == true
+            ? "The exact incumbent has no current retirement proof. Retry after its physical exchanges retire."
+            : null);
         SignalDispatch();
     }
 
@@ -1134,9 +1136,10 @@ public sealed partial class RouterCore : IInferenceRouter
             (!target.SwitchRequired && !engine.MatchesNamedResident(candidate.Ticket.Model, profile, observation.Capability))))
             return new(profile, group, new("engine_profile_unavailable", engine.Name));
         var uses = _profileUsers.GetValueOrDefault(engine);
-        if ((uses.Switching != 0 && (named is not null || uses.Named != 0)) ||
+        var commissionedSwitch = target.SwitchRequired && _hostManager?.OwnsCommissioned(engine.Name) == true;
+        if (!commissionedSwitch && ((uses.Switching != 0 && (named is not null || uses.Named != 0)) ||
             ((uses.Named != 0 || engine.HasNamedUse) && target.SwitchRequired) ||
-            (named is not null && target.SwitchRequired && group is null && (observation.Inflight != 0 || engine.InferenceUses != 0)))
+            (named is not null && target.SwitchRequired && group is null && (observation.Inflight != 0 || engine.InferenceUses != 0))))
             return new(profile, group, new("engine_profile_in_use", engine.Name));
         var requiredWindow = EngineRuntime.RequiredWindow(profile, candidate.ExplicitContextMinimum);
         if (!UsesExactAdmission(engine) && requiredWindow > serving.WindowFor(candidate.Ticket.Model) &&
@@ -1157,7 +1160,7 @@ public sealed partial class RouterCore : IInferenceRouter
                     return new(profile, group, new("lifecycle_group_residency_changed", group.Name));
             }
         }
-        return new(profile, group, observation.HasCapacity ? null : new("engine_concurrency_limit", engine.Name));
+        return new(profile, group, commissionedSwitch || observation.HasCapacity ? null : new("engine_concurrency_limit", engine.Name));
     }
 
     private Blocker DescribeUnavailable(EngineRuntimeInfo[] infos, QueuedRequest request)
@@ -1399,6 +1402,12 @@ public sealed partial class RouterCore : IInferenceRouter
                 optInOwnsInvocation = true;
                 await ExecuteOptInStreamAsync(candidate, engine, servingProof, invocation, execCts.Token)
                     .ConfigureAwait(false);
+                return;
+            }
+            if (invocation?.IsCommissioned == true)
+            {
+                optInOwnsInvocation = true;
+                await ExecuteCommissionedAsync(candidate, engine, invocation, execCts.Token).ConfigureAwait(false);
                 return;
             }
             var ownsForward = false;

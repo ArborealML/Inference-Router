@@ -129,7 +129,7 @@ public sealed partial class EngineRuntime
         var publication = new HostStagedDeadlinePublication(claimId, timing.Id, timing.Target, ReadinessClockForTests, fixture.ReadAsync,
             Settle, Deliver, TryOpen, NotifyOpened,
             fixture.AfterStageInstalled is { } installed ? _ => installed() : null,
-            fixture.CaptureReadinessCleanup, state.HostTransition?.Recipe.PlanDigest);
+            fixture.CaptureReadinessCleanup, state.HostTransition?.Recipe.PlanDigest, state.HostTransition?.Cut);
         return controller.SwitchStagedAsync(target, publication, stop);
 
         bool MatchesClaim(HostClosedRouteStage binding) =>

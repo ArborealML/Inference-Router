@@ -18,6 +18,12 @@ public static partial class ServerApp
     public static bool TryReadConfigOption(ReadOnlySpan<string> args, out string? path, List<string>? remaining = null)
     {
         path = null;
+        foreach (var arg in args)
+        {
+            if (arg != "--commissioned" && !arg.StartsWith("--commissioned=", StringComparison.Ordinal)) continue;
+            Console.Error.WriteLine("error: this executable has no protected commissioned authority adapter");
+            return false;
+        }
         for (var i = 0; i < args.Length; i++)
         {
             if (args[i] is not ("--config" or "-c"))
@@ -38,15 +44,27 @@ public static partial class ServerApp
     public static WebApplication Build(string[] args, string? configPath = null, RouterConfig? configOverride = null)
         => Build(args, configPath, configOverride, TimeProvider.System);
 
+    // A protected bootstrap supplies the enrolled physical providers and certified issuers.
+    // Both modes use the same server, endpoints, scheduler and queues.
+    internal static WebApplication BuildCommissioned(string[] args,
+        IReadOnlyList<HostManagerEnrollment> enrollments, string? configPath = null, RouterConfig? configOverride = null,
+        TimeProvider? clock = null, TimeSpan? drainBudget = null)
+    {
+        if (enrollments.Count == 0 || enrollments.Any(static enrollment => enrollment.Issuer is not Lifecycle.ICommissionedServingAuthority))
+            throw new RouterConfigException("Commissioned startup requires a certified physical serving authority for every enrollment.");
+        return Build(args, configPath, configOverride, clock ?? TimeProvider.System,
+            hostManager: new InProcessHostManager(enrollments, drainBudget));
+    }
+
     [System.Diagnostics.CodeAnalysis.SuppressMessage("Microsoft.Reliability", "CA2000:Dispose objects before losing scope",
         Justification = "Owned by the DI container: disposed (async) when the WebApplication is disposed in RunAsync.")]
     internal static WebApplication Build(string[] args, string? configPath, RouterConfig? configOverride,
         TimeProvider streamClock, Func<EngineDefinition, Lifecycle.IEngineLifecycleProvider>? lifecycleFactory = null,
         Func<EngineDefinition, HttpMessageHandler>? httpHandlerFactoryForTests = null, string? reloadTokenForTests = null,
-        Func<string?>? readTargetResetOptInForTests = null, TimeProvider? adminSwitchClockForTests = null)
+        Func<string?>? readTargetResetOptInForTests = null, TimeProvider? adminSwitchClockForTests = null, InProcessHostManager? hostManager = null)
     {
         configPath = RouterConfigLoader.ResolveFilePath(configPath);
-        var credential = configOverride is null
+        var credential = configOverride is null && hostManager is null
             ? reloadTokenForTests ?? Environment.GetEnvironmentVariable("ARBOREAL_ROUTER_RELOAD_TOKEN")
             : null;
         FileReloadEndpoint? reload = null;
@@ -68,7 +86,7 @@ public static partial class ServerApp
 
         var builder = WebApplication.CreateSlimBuilder(args);
         builder.Services.AddSingleton(_ => new RouterCore(config, null, null, TimeProvider.System,
-            lifecycleFactory, reload: loaded, nativeResetStartupInstance: targetResetInstance));
+            lifecycleFactory, reload: loaded, nativeResetStartupInstance: targetResetInstance, hostManager: hostManager));
         builder.Services.AddSingleton(streamClock);
         builder.Services.AddSingleton(new AdminSwitchOperations(adminSwitchClockForTests ?? TimeProvider.System));
 

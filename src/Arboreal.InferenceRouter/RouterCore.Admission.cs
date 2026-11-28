@@ -204,6 +204,8 @@ public sealed partial class RouterCore
                 : explicitContext > 0 ? explicitContext : estimated;
             var profileFits = opts?.Profile is not { } profile || generation.Engines.Values.Any(engine =>
                 engine.GetProfile(model, profile) is { } tier && tier.MaxContext >= required && engine.SupportsNamedProfile(model, tier));
+            var managedStream = httpStream && _hostManager is { } host && generation.Engines.Values.Any(engine =>
+                host.OwnsCommissioned(engine.Name) && engine.CanonicalModel(model) is not null);
             var hopeless = CapabilityScan.DefinitelyHopeless(generation.Capabilities, model);
             var noFit = !hopeless && explicitContext > 0 && _scheduler is PrefixAwareScheduler
                 ? LargestInsufficientConfiguredTier(generation, model, explicitContext)
@@ -233,6 +235,7 @@ public sealed partial class RouterCore
                     : AddThread(threadId, opts?.Priority ?? generation.Settings.DefaultPriority, 1.0, null);
                 priority = opts?.Priority ?? thread.Priority;
                 var bufferLimit = generation.Settings.StreamBufferLimitBytes;
+                if (bufferLimit == 0 && managedStream) bufferLimit = int.MaxValue;
                 var ticket = new RouterTicket(ticketId, diagnosticThreadId, model, createdAt)
                 {
                     IsStateless = threadId is null,
@@ -493,10 +496,10 @@ public sealed partial class RouterCore
             SettleQueueEnd(head.Ticket, end, head.Request.Options?.MaxQueueTime);
     }
 
-    private void SettleQueueEnd(RouterTicket ticket, string code, TimeSpan? window)
+    private void SettleQueueEnd(RouterTicket ticket, string code, TimeSpan? window, string? failureReason = null)
     {
         if (_admission?.Invalidate(ticket) == true) _ = CancelQueuedActivationAsync(ticket);
-        var reason = code switch
+        var reason = failureReason ?? code switch
         {
             "cancelled" => "cancelled while queued",
             "slow_consumer" => HttpStreamOutcome.SlowConsumer.Message,
