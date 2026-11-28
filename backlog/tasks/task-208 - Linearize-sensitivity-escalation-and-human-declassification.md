@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@gpt-6.2-sol-config'
 created_date: '2026-11-27'
-updated_date: '2026-11-28T12:31:00Z'
+updated_date: '2026-11-28T13:22:00Z'
 labels: []
 milestone: m-19
 dependencies:
@@ -44,4 +44,8 @@ Keep lowering disabled without independent human privilege bound to owner, group
 
 <!-- SECTION:NOTES:BEGIN -->
 Review of 461b3c7 found a check-before-send gap and one global store writer. Qualify group-local recovery, the final transmission handoff and separately authorized probe traffic. Actual paid egress and human lowering retain their existing owners.
+
+The private escalation and final-send implementation is under review in [PR 102](https://github.com/ArborealML/Inference-Router/pull/102). On the source candidate, 164 focused tests passed. A separately composed Native AOT host served private inference, escalated sensitivity and returned the confirmed policy revision. Lowering and live deployment remain open.
+
+Review of 0c1f05a identified shared engine admission retained across private journal writes. Exercise two groups on one engine during intent creation and retirement. Verify exact content and projected headers at handoff and report exhausted unresolved-intent capacity.
 <!-- SECTION:NOTES:END -->
