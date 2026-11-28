@@ -1,11 +1,11 @@
 ---
 id: TASK-207
 title: Persist authenticated owned inference thread policy
-status: To Do
+status: In Progress
 assignee:
-  - '@gpt-6.2-astra'
+  - '@gpt-6.2-sol-config'
 created_date: '2026-11-27'
-updated_date: '2026-11-28T11:27:00Z'
+updated_date: '2026-11-28T11:55:00Z'
 labels: []
 milestone: m-19
 dependencies:

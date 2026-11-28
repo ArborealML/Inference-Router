@@ -1,11 +1,11 @@
 ---
 id: TASK-170
 title: Run a repeatable live tuning workload for one engine and model
-status: Ready for Review
+status: In Progress
 assignee:
-  - '@gpt-6.2-astra'
+  - '@gpt-6.2-sol-config'
 created_date: '2026-11-22T09:21:00Z'
-updated_date: '2026-11-28T11:52:00Z'
+updated_date: '2026-11-28T11:57:00Z'
 labels: []
 milestone: m-14
 dependencies:
@@ -66,5 +66,5 @@ Use the same fitter, workload planner and stream observer in one run command. Fr
 <!-- SECTION:NOTES:BEGIN -->
 The previously missing prompt-fitter source was recovered at 94a2186 on the original local branch. It includes a Maya count adapter, deterministic body builder and focused checks. Independent commit review identified a false refusal when eight guessed tail lengths all clamp to a full record; the original Release build rejected an attainable exact 32,128-token prompt in a deterministic example with two characters per token. Preserve the original source and existing review. The original plan review also requires traffic isolation, non-disruptive acquisition, exact rendered counts and independent native timing evidence. Earlier handoff: [initial fitter work](https://github.com/ArborealML/Inference-Router/commit/3c60c3cea522c6e1956e03d791fe178d4bd3bd15). The [recovered fitter and bounded search correction](https://github.com/ArborealML/Inference-Router/pull/96) passed eight focused Debug tests, including the formerly failing input, independent source review and hosted CI. The correction is on main. Keep prompt search bounded for nonmonotone counters and qualify count limits, failure and settlement through the runner. Full runner and live hardware qualification remain open.
 
-[Single-model runner](https://github.com/ArborealML/Inference-Router/pull/98) at aeb2703 passed 146 focused tests. The candidate records independent served-output and decode-work counts, checks the hardware before and after each wave, and publishes one comparison-compatible artifact. Timeout with unconfirmed physical release withholds rates. Independent review and hosted CI are pending. Stock hardware runs require a production exclusive-admission and measurement provider.
+[Single-model runner](https://github.com/ArborealML/Inference-Router/pull/98) at aeb2703 passed 146 focused tests. The candidate records independent served-output and decode-work counts, checks the hardware before and after each wave, and publishes one comparison-compatible artifact. Timeout with unconfirmed physical release withholds rates. Review at aeb2703 found that a failed lease release can escape before evidence is saved, and a missing stream count can hide a known native retry. Correct both and qualify the release failure paths. Stock hardware runs require a production exclusive-admission and measurement provider.
 <!-- SECTION:NOTES:END -->
