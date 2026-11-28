@@ -1,7 +1,10 @@
+using System.IO.Pipelines;
 using System.Net;
 using System.Text;
 using Arboreal.InferenceRouter.Lifecycle;
 using Arboreal.InferenceRouter.Server;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Arboreal.InferenceRouter.Tests;
@@ -305,6 +308,122 @@ public sealed partial class HostClosedRouteStagingTests
         }
     }
 
+    [Theory(Timeout = 20_000)]
+    [InlineData(0, true)]
+    [InlineData(4096, true)]
+    [InlineData(0, false)]
+    public async Task CommissionedStreamCreditBoundsTwoSlowClientsAndFlushSettlesTheirPhysicalUses(int configuredLimit, bool exceedsCredit)
+    {
+        using var watchdog = new CancellationTokenSource(TimeSpan.FromSeconds(12));
+        using var discovery = new FakeEngineHandler { LoadedModels = ["shared"], NCtx = 8_192, TotalSlots = 2 };
+        using var legacyHandler = new FakeEngineHandler { LoadedModels = ["shared"] };
+        var ct = watchdog.Token;
+        var domain = MakeCommissionedDomain("a", "shared", 19001, slots: 2);
+        var legacy = new EngineDefinition { Name = "remote", Endpoint = new("http://external.invalid/v1"), Remote = true };
+        var config = new RouterConfig
+        {
+            AutoSwitch = true,
+            Engines = new Dictionary<string, EngineDefinition> { [domain.Engine.Name] = domain.Engine, [legacy.Name] = legacy },
+            HttpHandlerFactory = engine => engine == legacy ? legacyHandler : discovery,
+            StreamBufferLimitBytes = configuredLimit,
+        };
+        await using var app = ServerApp.BuildCommissioned([], [domain.Enrollment], configOverride: config);
+        var router = app.Services.GetRequiredService<RouterCore>();
+        Assert.True(await router.Engines[legacy.Name].ProbeHealthOnceAsync(ct));
+        var legacyTicket = await router.EnqueueHttpAsync("legacy", new InferenceRequest
+        {
+            Model = "shared",
+            Stream = true,
+            Body = """{"model":"shared","stream":true,"messages":[{"role":"user","content":"legacy route"}]}"""u8.ToArray(),
+            Options = new RouterRequestOptions(),
+        }, ct);
+        var legacyWriter = new StreamRelayTests.GatedWriter(int.MaxValue);
+        await RelayAsync(legacyTicket, legacyWriter).WaitAsync(ct);
+        await legacyTicket.CompletionTask.WaitAsync(ct);
+        Assert.Equal(legacy.Name, legacyTicket.Engine);
+        Assert.Equal(configuredLimit != 0, legacyTicket.HttpDelivery is not null);
+        Assert.Equal(1, legacyHandler.CompletionCalls);
+        Assert.Empty(domain.Authority.Offers);
+
+        var limit = configuredLimit == 0 ? HttpStreamDelivery.CommissionedDefaultLimit : configuredLimit;
+        var bytes = Encoding.UTF8.GetBytes(
+            "data: {\"model\":\"shared\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"" +
+            new string('x', exceedsCredit ? 3 * limit : 128) + "\"},\"finish_reason\":\"stop\"}]}\r\n\r\ndata: [DONE]\r\n\r\n");
+        domain.Authority.ResponseBytes = [
+            .. Encoding.ASCII.GetBytes(FormattableString.Invariant(
+                $"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {bytes.Length}\r\nConnection: close\r\n\r\n")),
+            .. bytes,
+        ];
+        var closed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var cleanups = 0;
+        router.AfterOptInTransportTaskForTests = id =>
+        {
+            if (id != legacyTicket.Id && Interlocked.Increment(ref cleanups) == 2) closed.TrySetResult();
+        };
+        var one = await router.EnqueueHttpAsync(null, RecipeRequest("small", stream: true), ct);
+        var two = await router.EnqueueHttpAsync(null, RecipeRequest("small", stream: true), ct);
+        var a = new StreamRelayTests.GatedWriter(2);
+        var b = new StreamRelayTests.GatedWriter(2);
+        var relayOne = RelayAsync(one, a);
+        var relayTwo = RelayAsync(two, b);
+        try
+        {
+            await Task.WhenAll(one.StreamReady, two.StreamReady).WaitAsync(ct);
+            Assert.Equal("a", one.Engine);
+            Assert.Equal("a", two.Engine);
+            var blocked = await Task.WhenAll(a.Blocked.Task, b.Blocked.Task).WaitAsync(ct);
+            Assert.All(blocked, count => Assert.InRange(count, 1, limit));
+            var first = Assert.IsType<HttpStreamDelivery>(one.HttpDelivery);
+            var second = Assert.IsType<HttpStreamDelivery>(two.HttpDelivery);
+            if (!exceedsCredit) await Task.WhenAll(first.Sealed, second.Sealed).WaitAsync(ct);
+            var expectedReservation = Math.Min(limit, bytes.Length);
+            while (first.ReservedBytes < expectedReservation || second.ReservedBytes < expectedReservation)
+                await Task.Delay(10, ct);
+            Assert.Equal(expectedReservation, first.ReservedBytes);
+            Assert.Equal(expectedReservation, second.ReservedBytes);
+            Assert.False(first.Outcome.IsCompleted);
+            Assert.False(second.Outcome.IsCompleted);
+            Assert.False(domain.Authority.CloseStarted.Task.IsCompleted);
+            Assert.Equal(2, domain.Authority.Writes);
+            Assert.Equal(1, domain.Host.Creates);
+            Assert.Equal(0, domain.Host.Stops);
+
+            a.Release.TrySetResult(new FlushResult(false, false));
+            b.Release.TrySetResult(new FlushResult(false, false));
+            await Task.WhenAll(relayOne, relayTwo).WaitAsync(ct);
+            await Task.WhenAll(one.CompletionTask, two.CompletionTask).WaitAsync(ct);
+            await closed.Task.WaitAsync(ct);
+            Assert.Equal(2, domain.Authority.ConfirmedCloses);
+            Assert.Equal(0, first.ReservedBytes);
+            Assert.Equal(0, second.ReservedBytes);
+            foreach (var ticket in new[] { one, two })
+            {
+                var terminal = Assert.Single(router.Events.Replay(0), row => row.TicketId == ticket.Id &&
+                    row.Kind is "request.completed" or "request.cancelled" or "request.failed");
+                Assert.Equal("request.completed", terminal.Kind);
+                Assert.Equal("complete", terminal.UpstreamOutcome);
+            }
+            Assert.Equal(bytes, WithoutFirstKeepalive(a.Received));
+            Assert.Equal(bytes, WithoutFirstKeepalive(b.Received));
+        }
+        finally
+        {
+            a.Release.TrySetResult(new FlushResult(true, false));
+            b.Release.TrySetResult(new FlushResult(true, false));
+        }
+
+        Task RelayAsync(RouterTicket ticket, StreamRelayTests.GatedWriter writer)
+        {
+            var context = new DefaultHttpContext { RequestAborted = ct };
+            context.Features.Set<IHttpResponseBodyFeature>(new StreamRelayTests.BodyFeature(writer));
+            return ServerApp.StreamTicketAsync(context, ticket, TimeProvider.System, router);
+        }
+
+        static byte[] WithoutFirstKeepalive(List<byte[]> chunks) => chunks
+            .Where(static chunk => !chunk.AsSpan().StartsWith(": [router keepalive "u8))
+            .SelectMany(static chunk => chunk).ToArray();
+    }
+
     [Theory]
     [InlineData("--commissioned")]
     [InlineData("--commissioned=/absent")]
@@ -317,9 +436,9 @@ public sealed partial class HostClosedRouteStagingTests
     }
 
     private (EngineDefinition Engine, HostManagerEnrollment Enrollment, FakeHost Host, OfflineCommissionedAuthority Authority)
-        MakeCommissionedDomain(string name, string model, int port, int responseTimeoutMs = 600_000)
+        MakeCommissionedDomain(string name, string model, int port, int responseTimeoutMs = 600_000, int slots = 1)
     {
-        var engine = ManagedEngine(name, model, name, port, equalRecipes: true, responseTimeoutMs);
+        var engine = ManagedEngine(name, model, name, port, equalRecipes: true, responseTimeoutMs, maxSlots: slots);
         var identity = new ExactTicketAdmission.DomainIdentity(name, 1);
         var host = new FakeHost(readinessTimeoutMs: 10_000, vacant: true);
         var staging = new HostClosedRouteStaging(host.FindLaunch, (launch, generation) =>
@@ -331,13 +450,14 @@ public sealed partial class HostClosedRouteStagingTests
         var enrollment = new HostManagerEnrollment(identity, new HostLifecycleCoordinator(scope.Slot, host, staging), staging, authority,
             new Dictionary<string, HostStagedRuntimeFixture>
             {
-                [engine.Name] = new((stage, _) => Task.FromResult<HostStagedReadiness?>(ReadyForManagedDomain(stage))),
+                [engine.Name] = new((stage, _) => Task.FromResult<HostStagedReadiness?>(new(stage, stage.Launch.Plan.Model,
+                    new(stage.Launch.Plan.Model, 8_192, slots, stage.Launch.Plan.Tier)))),
             },
             stage =>
             {
                 var target = new VerifiedDispatchTarget(name, model, stage.Launch.Plan.Tier!, stage.Route.EffectiveTarget, engine.Endpoint);
                 authority.Publish(stage.Route, target);
-                return new(target, stage.Route, 8_192, 8_192, 1, engine.Endpoint,
+                return new(target, stage.Route, 8_192, 8_192, slots, engine.Endpoint,
                     VerifiedDispatchCredential.Capture(engine, resolvedKey: null, epoch: 1), authority);
             }, (definition, target) => target.EffectiveProfile == "unsupported" ? null :
                 new(definition.Name, target.Model, target.EffectiveProfile, host.GetLaunchPlanDigest(target), definition.Endpoint));
@@ -350,12 +470,15 @@ public sealed partial class HostClosedRouteStagingTests
         private readonly Dictionary<VerifiedInstanceInvocation, byte[]> _bytes = [];
         private CommissionedServingStamp? _stamp;
         private CommissionedServingRetirement? _cutoff;
+        private int _confirmedCloses;
 
         internal bool HoldClose { get; set; }
         internal bool HoldCheckout { get; set; }
         internal bool ForgetTerminal { get; set; }
         internal bool HoldReads { get; set; }
         internal bool IncompleteStream { get; set; }
+        internal byte[]? ResponseBytes { get; set; }
+        internal int ConfirmedCloses => Volatile.Read(ref _confirmedCloses);
         internal TaskCompletionSource ReadStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         internal TaskCompletionSource ReleaseReads { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         internal int Writes { get; private set; }
@@ -430,7 +553,7 @@ public sealed partial class HostClosedRouteStagingTests
                 var initial = completeHeaders ? Encoding.UTF8.GetBytes(
                     "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: 8192\r\nConnection: close\r\n\r\n" +
                     """data: {"id":"chatcmpl-test","object":"chat.completion.chunk","created":1,"model":"shared","choices":[{"index":0,"delta":{"content":"hello"},"finish_reason":null}]}""" +
-                    "\r\n\r\n") : null;
+                    "\r\n\r\n") : ResponseBytes;
                 var reads = 0;
                 var channel = new RecordedChannel(initial, HoldReads || completeHeaders ? async () =>
                 {
@@ -446,6 +569,7 @@ public sealed partial class HostClosedRouteStagingTests
                     if (HoldClose) await ReleaseClose.Task;
                     await channel.DisposeAsync();
                     if (ForgetTerminal) throw new IOException("The offline physical terminal acknowledgment was lost.");
+                    Interlocked.Increment(ref _confirmedCloses);
                 });
             }
             if (HoldCheckout)

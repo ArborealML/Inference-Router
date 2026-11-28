@@ -29,7 +29,7 @@ public static partial class ServerApp
 
         internal async ValueTask WriteKeepaliveAsync(ReadOnlyMemory<byte> frame, CancellationToken ct)
         {
-            if (Output is null)
+            if (Output is null || Ticket.HttpDelivery is not null)
             {
                 await WriteFrameAsync(frame, ct).ConfigureAwait(false);
                 return;

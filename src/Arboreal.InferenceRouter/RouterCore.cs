@@ -982,6 +982,8 @@ public sealed partial class RouterCore : IInferenceRouter
             ticket.EndQueueWait();
             var selectedAt = _clock.GetTimestamp();
             var switchRequired = invocation is null && requiresSwitch;
+            if (invocation?.IsCommissioned == true && ticket.IsHttpStream && ticket.HttpDelivery is null)
+                ticket.HttpDelivery = new HttpStreamDelivery(HttpStreamDelivery.CommissionedDefaultLimit, candidate.CallerToken, _shutdownToken);
             if (candidate.Request.Stream && ticket.StreamChannel is null)
             {
                 // Publish the channel with the state change: a listener that sees Executing must be

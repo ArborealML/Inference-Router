@@ -301,7 +301,6 @@ public static partial class ServerApp
         RouterCore? router = null)
     {
         var ct = ctx.RequestAborted;
-        var delivery = ticket.HttpDelivery;
         try
         {
             ctx.Response.StatusCode = 200;
@@ -311,10 +310,12 @@ public static partial class ServerApp
                 ctx.Response.Headers.Connection = "keep-alive";
 
             var writer = ctx.Response.BodyWriter;
-            var output = delivery is null && ticket.IsHttpStream ? new DefaultStreamOutput() : null;
+            var output = ticket.HttpDelivery is null && ticket.IsHttpStream ? new DefaultStreamOutput() : null;
             var sink = new InferenceStreamSink(writer, ticket, router, clock, output);
             ct.ThrowIfCancellationRequested();
             var (reader, first) = await ReadFirstChunkAsync(sink, ticket, clock, ct).ConfigureAwait(false);
+            // Commissioned selection installs delivery before publishing its stream reader.
+            var delivery = ticket.HttpDelivery;
             if (reader is not null)
             {
                 await sink.WritePayloadAsync(first, ct).ConfigureAwait(false);
@@ -338,7 +339,7 @@ public static partial class ServerApp
                 try { await ticket.CompletionTask.WaitAsync(ct).ConfigureAwait(false); }
                 catch (RouterRequestException) { }
             }
-            var defaultShutdown = ticket.State is TicketState.Cancelled && ticket.DefaultStreamReadShutdown &&
+            var defaultShutdown = delivery is null && ticket.State is TicketState.Cancelled && ticket.DefaultStreamReadShutdown &&
                 ctx.Response.HasStarted && ctx.Response.StatusCode == 200 && output?.CanAppendTerminal == true;
             if ((ticket.State is TicketState.Failed && !ticket.SuppressTerminalFrame) || defaultShutdown)
             {
@@ -348,7 +349,7 @@ public static partial class ServerApp
                 await sink.WriteFrameAsync(AirJson.Frame(json, "[DONE]"), ct).ConfigureAwait(false);
             }
         }
-        catch (Exception) when (delivery is not null)
+        catch (Exception) when (ticket.HttpDelivery is { } delivery)
         {
             // A failed writer can leave RequestAborted unset. Always end the sink's side of the
             // exchange, keeping any cause or acknowledgment that already won.
@@ -362,7 +363,7 @@ public static partial class ServerApp
         }
         finally
         {
-            delivery?.StopAndDiscard(ticket.StreamChannel?.Reader);
+            ticket.HttpDelivery?.StopAndDiscard(ticket.StreamChannel?.Reader);
         }
     }
 
