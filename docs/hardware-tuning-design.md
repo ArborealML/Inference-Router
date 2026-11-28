@@ -1,15 +1,15 @@
 # Hardware-specific inference tuning
 
-The proposed `air tune run` would measure context capacity and concurrency on one operator-prepared engine and produce a hardware-specific record and advisory configuration. The run command, collector integration and workloads below describe a design. The example results are illustrative. AIR provides offline commands to plan a short grid from a saved config and compare two saved short-grid summaries on supported Linux x64 systems. [Manifest contract](../SPEC.md#112-offline-tuning-workload-manifests) · [Comparison format](../SPEC.md#111-offline-tuning-comparison)
+AIR provides offline commands to plan a short grid from a saved config and compare two saved short-grid summaries on supported Linux x64 systems. A controlled private resident exercises the `air tune run` command at concurrency one and produces comparable summaries. The shipped CLI records a refusal until a production collector and admission authority are enrolled. The larger grid, long-decode cell, cold-load evidence and advisory configuration remain design work. The example results are illustrative. [Manifest contract](../SPEC.md#112-offline-tuning-workload-manifests) · [Controlled run](../SPEC.md#113-controlled-singleton-tuning-runs) · [Comparison format](../SPEC.md#111-offline-tuning-comparison)
 
 ## Choose an engine and profile
 
 ```text
-air tune run --config tune.toml --engine ENGINE --model MODEL --profile TIER --max-concurrency 4 --host-record host.json --out run.json
-air tune compare --baseline ram64-summary.json --candidate ram128-summary.json
+air tune run --config tune.toml --engine ENGINE --model MODEL --profile TIER --seed HEX --max-concurrency 1 --host-record host.json --out run.json
+air tune compare --baseline ram64-run.json --candidate ram128-run.json
 ```
 
-Each run uses one explicit profile of one configured engine and model. To sweep a ladder, the authorized operator prepares an isolated instance for each supported tier and saves a separate run. The proposed command talks directly to that configured engine so router queuing, routing to another engine, and router admission caps are outside the measurement. Lifecycle, deployment approval, and any subsequent TOML changes stay with the operator. The comparison command reads saved records offline.
+Each run uses one explicit profile of one configured engine and model. The host record pins the expected recipe digest. In the controlled path a private lease binds every count, generation request and observation to the verified resident. For the planned ladder sweep, the authorized operator prepares an isolated instance for each supported tier and saves a separate run. Lifecycle, deployment approval, and any subsequent TOML changes stay with the operator. The comparison command reads an embedded or standalone summary offline.
 
 Today `air config` validates the engine catalog and prints declared profiles. `air chat` and `air complete` send single requests through the router. `air status` shows reported serving capacity and the CLI's `switch` sends an engine and model. The server can take an explicit profile for a switch, but its acknowledgment precedes completion of readiness checks. The proposed tuning record adds request-level timing and host evidence. [CLI dispatch and config readback](../src/Arboreal.InferenceRouter.Cli/Program.cs#L27-L120) · [Chat client](../src/Arboreal.InferenceRouter.Cli/Program.cs#L136-L242) · [Switch client](../src/Arboreal.InferenceRouter.Cli/Program.cs#L371-L398) · [Server switch handling](../src/Arboreal.InferenceRouter.Server/ServerApp.cs#L571-L621)
 

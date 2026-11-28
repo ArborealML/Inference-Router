@@ -127,7 +127,7 @@ internal static class AirTuneWorkloadPlan
             checked(tier.MaxContext - 671), checked(tier.MaxContext - 640), requests);
     }
 
-    private static RouterConfig? ParseConfig(byte[] bytes, string path)
+    internal static RouterConfig? ParseConfig(byte[] bytes, string path)
     {
         if (bytes.Length > AirTuneRecord.MaxBytes || bytes is [0xef, 0xbb, 0xbf, ..])
             return null;
@@ -192,7 +192,7 @@ internal static class AirTuneWorkloadPlan
         }
     }
 
-    private static PlanArguments? ParseArguments(ReadOnlySpan<string> args)
+    internal static PlanArguments? ParseArguments(ReadOnlySpan<string> args)
     {
         if (args.Length is not (8 or 10 or 12))
             return null;
@@ -234,7 +234,7 @@ internal static class AirTuneWorkloadPlan
         return IsDirectPath(path) ? new PlanArguments(path, engine, model, seed, cap, profile) : null;
     }
 
-    private static bool IsDirectPath(string path)
+    internal static bool IsDirectPath(string path)
     {
         if (path.Length == 0 || path[0] == '-' || path[0] == '\\' || path.StartsWith("//", StringComparison.Ordinal))
             return false;
@@ -250,7 +250,7 @@ internal static class AirTuneWorkloadPlan
         return status;
     }
 
-    private sealed record PlanArguments(string Path, string Engine, string Model, string Seed, int Cap, string? Profile);
+    internal sealed record PlanArguments(string Path, string Engine, string Model, string Seed, int Cap, string? Profile);
 }
 
 internal sealed record WorkloadManifest(string Engine, string Model, string? DefaultProfile, string Seed,
