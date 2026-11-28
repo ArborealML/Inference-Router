@@ -1,15 +1,18 @@
 ---
 id: TASK-207
-title: "Persist authenticated owned inference thread policy"
+title: Persist authenticated owned inference thread policy
 status: To Do
 assignee:
   - '@gpt-6.2-astra'
 created_date: '2026-11-27'
-updated_date: '2026-11-28T11:08:00Z'
+updated_date: '2026-11-28T11:27:00Z'
 labels: []
 milestone: m-19
 dependencies:
   - TASK-204
+references:
+  - src/Arboreal.InferenceRouter.Server/ServerApp.cs
+  - src/Arboreal.InferenceRouter/RouterCore.Admission.cs
 priority: high
 ordinal: 207000
 ---
@@ -35,5 +38,17 @@ AIR owns inference-session policy, not identity issuance or agent hierarchy. Con
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Reuse simple scoped credentials or verified principal supplied by the deployment. No identity issuer, agent sandbox, agent graph, backup service or general policy engine. Root authorization and optional de-escalation privilege are separate external contracts; AIR checks applicable scope and revision. Private-only production requires proven egress confinement; offline policy fixtures do not. Explicitly classify trusted private providers; locality is not trust. Strip internal auth headers, scope events and sanitize errors. In owned-policy/hybrid mode unknown trust always fails closed; private-only positive trust and policy checks do not require commercial spend reservations. Coordinate final-send contract with TASK-208/210/212.
+Start with a positively trusted private-only configuration. Inject a verified owner, permitted operations and either stable authorized new-root intent or an existing group association. Keep legacy behavior when the mode is omitted. Neither the reload bearer, headers nor a renamed thread grant root or admin authority. Group-bound stateless calls retain request-scoped admission identity.
+
+Resolve each authorized new root once. Persist scoped association, sensitivity, restrictions and revision before enqueue. Verify concurrent creation, crash boundaries, single writer, missing or corrupt data, and freshness on restore. Refuse unverified rollback or mode removal. Keep I/O outside queue locks. Apply structured owner/group/thread scope through publication, accounting, cache hints and tickets.
+
+Use the same trust, capability and allow/deny predicate through scheduling, preparation and final private send. Validate all senders before startup probes or reload. Disable redirects and proxies on the actual qualified handler, reject unsupported routes and sanitize headers and errors. Deny unclassified and commercial destinations. Test zero egress for probes, inference, retry and auxiliary paths. Preserve finite dispatch and unrelated progress.
+
+Authorize both inference endpoints, catalog/status, tickets, cancel, events, thread controls, switch and reload. Stamp event ownership before replay or publication and scope catalog caching. Keep global actions separately privileged. Test owner collisions, replay after eviction, stale policy and private stream delivery. Production requires proven egress confinement and external root scope. De-escalation needs a separate external privilege or stays disabled. Commercial authorization remains with the commercial guard.
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Independent plan review at 3c7ae3e identified default handler redirect and proxy behavior, catalog caching, the use of raw thread IDs, and event ownership after ticket eviction. The revised plan covers each at its enforcement point. TASK-217 owns the external authority choices, TASK-208 owns sensitivity transitions and TASK-212 owns final commercial liability. This plan qualifies fixtures before any production enablement.
+<!-- SECTION:NOTES:END -->

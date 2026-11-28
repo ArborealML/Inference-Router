@@ -1,11 +1,11 @@
 ---
 id: TASK-170
 title: Run a repeatable live tuning workload for one engine and model
-status: Waiting
+status: In Progress
 assignee:
-  - '@gpt-6.2-astra'
+  - '@gpt-6.2-sol-config'
 created_date: '2026-11-22T09:21:00Z'
-updated_date: '2026-11-27'
+updated_date: '2026-11-28T11:31:00Z'
 labels: []
 milestone: m-14
 dependencies:
@@ -13,6 +13,14 @@ dependencies:
   - TASK-146
 references:
   - docs/hardware-tuning-design.md
+  - src/Arboreal.InferenceRouter.Cli/AirTuneWorkloadPlan.cs
+modified_files:
+  - README.md
+  - SPEC.md
+  - docs/hardware-tuning-design.md
+  - src/Arboreal.InferenceRouter.Cli/AirTunePromptFit.cs
+  - src/Arboreal.InferenceRouter.Cli/AirTuneTextGenerator.cs
+  - tests/Arboreal.InferenceRouter.Tests/AirTunePromptFitTests.cs
 ordinal: 165000
 ---
 
@@ -36,13 +44,13 @@ Implement air tune run for one configured engine/model/exact recipe using the ex
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Continue deterministic fitter/token-count adapter. Reuse existing exclusive local admission and coordinate TASK-187's small shared semantic-observation contract; fixture producers/local instrumentation avoid waiting for commercial integration. Only authoritative complete work counts toward throughput; missing usage stays unavailable. Preserve near-window-text-v1 and normal-use-long-decode-v1 (65536 rendered input + 32768 output); reserve can make 96K insufficient. Record cold load separately. Implement against capture fixtures before an authorized real run. Amend SPEC §11 and tuning design with code/tests.
+Resume the recovered fitter and its original regression deck. Reuse the measured prompt bytes. Search the full remaining record tail within the existing call budget and verify the returned body with the exact count; bounded search can report inconclusive. Qualify the two-bytes-per-token counterexample, exact counter controls, budget limits and rejection paths.
+
+Use the same fitter, workload planner and stream observer in one run command. Freeze seed, configured engine/model/tier, measured count, body and output allowance. Admit only an exclusive verified resident; refuse before workload when a prerequisite is absent. Qualify warmup and repeated measured waves via the normal CLI under controlled capture. Preserve separate measurement, settlement, evidence and cold-load requirements. Count only authoritative completed work toward throughput. Missing usage remains unavailable. Use the shared semantic observer from TASK-187 and the single runner from decision-81 for comparison. Keep real hardware authorization and adopted mode measurements with their owning tasks.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Waiting for the prior worker's recoverable fitter source/handoff. Reconciliation at 62f1c79 found the existing planner/comparator/text generator, but no committed runner/fitter continuation in reachable refs. [Historical handoff](https://github.com/ArborealML/Inference-Router/commit/3c60c3cea522c6e1956e03d791fe178d4bd3bd15) reports two focused offline fitter checks without a source commit; preserve that scoped evidence, not a fresh pass. This does not establish that external work is lost. Existing ownership remains with the coordinator; do not dispatch a duplicate fitter. Wake on recoverable source or explicit reconciliation of the prior handoff.
-
-TASK-187 may independently provide the shared observation record; decision-81 governs one runner. TASK-154 retains real measurement ownership; no live run claimed.
+The previously missing prompt-fitter source was recovered at 94a2186 on the original local branch. It includes a Maya count adapter, deterministic body builder and focused checks. Independent commit review identified a false refusal when eight guessed tail lengths all clamp to a full record; the original Release build rejected an attainable exact 32,128-token prompt in a deterministic example with two characters per token. Preserve the original source and existing review. The original plan review also requires traffic isolation, non-disruptive acquisition, exact rendered counts and independent native timing evidence. Earlier handoff: [initial fitter work](https://github.com/ArborealML/Inference-Router/commit/3c60c3cea522c6e1956e03d791fe178d4bd3bd15). The [recovered fitter and bounded search correction](https://github.com/ArborealML/Inference-Router/pull/96) passed eight focused Debug tests, including the formerly failing input, independent source review and hosted CI. The correction is on main. Keep prompt search bounded for nonmonotone counters and qualify count limits, failure and settlement through the runner. Full runner and live hardware qualification remain open.
 <!-- SECTION:NOTES:END -->
