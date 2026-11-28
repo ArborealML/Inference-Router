@@ -5,9 +5,9 @@ status: Ready for Review
 assignee:
   - '@gpt-6.2-astra'
 created_date: '2026-11-27'
-updated_date: '2026-11-28T08:07:00Z'
+updated_date: '2026-11-28T11:08:00Z'
 labels: []
-milestone: m-6
+milestone: m-18
 dependencies:
   - TASK-64
   - TASK-68

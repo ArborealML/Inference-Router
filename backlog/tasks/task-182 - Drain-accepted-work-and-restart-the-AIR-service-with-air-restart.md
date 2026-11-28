@@ -5,7 +5,9 @@ status: To Do
 assignee:
   - '@gpt-6.2-astra'
 created_date: '2026-11-25T00:25:00Z'
+updated_date: '2026-11-28T11:08:00Z'
 labels: []
+milestone: m-8
 dependencies: []
 priority: medium
 ordinal: 174000

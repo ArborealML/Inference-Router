@@ -7,9 +7,11 @@ status: To Do
 assignee:
   - '@claire'
 created_date: '2026-11-26T06:01:00Z'
+updated_date: '2026-11-28T11:08:00Z'
 labels:
   - config
   - lifecycle
+milestone: m-8
 dependencies: []
 priority: medium
 ordinal: 186000

@@ -7,8 +7,9 @@ status: To Do
 assignee:
   - '@gpt-6.2-astra'
 created_date: '2026-11-25T10:49:00Z'
-updated_date: '2026-11-28'
+updated_date: '2026-11-28T11:08:00Z'
 labels: []
+milestone: m-1
 dependencies:
   - TASK-189
 priority: high

@@ -7,10 +7,11 @@ status: To Do
 assignee:
   - '@gpt-6.2-sol-lifecycle'
 created_date: '2026-11-26T09:21:00Z'
-updated_date: '2026-11-26T10:58:00Z'
+updated_date: '2026-11-28T11:08:00Z'
 labels:
   - scheduling
   - lifecycle
+milestone: m-18
 dependencies:
   - TASK-189
   - TASK-195

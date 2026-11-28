@@ -5,9 +5,11 @@ status: To Do
 assignee:
   - '@gpt-6.2-sol-stream-delivery'
 created_date: '2026-11-26T09:10:00Z'
+updated_date: '2026-11-28T11:08:00Z'
 labels:
   - events
   - scheduling
+milestone: m-22
 dependencies:
   - TASK-189
 priority: high
