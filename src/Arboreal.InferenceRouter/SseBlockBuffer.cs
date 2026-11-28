@@ -1,7 +1,7 @@
 namespace Arboreal.InferenceRouter;
 
 internal enum SseBlockDecision { Allow, Qualified, HoldTerminal, Refuse }
-internal delegate SseBlockDecision SseBlockFilter(ReadOnlySpan<byte> payload);
+internal delegate SseBlockDecision SseBlockFilter(ReadOnlySpan<byte> payload, bool semanticOutput);
 
 /// <summary>Releases only wire bytes through a blank line. Optionally exposes the data payload
 /// of each committed block, using the same line and block boundaries as the byte relay.</summary>
@@ -117,15 +117,15 @@ internal sealed class SseBlockBuffer(int maxBlockBytes = SseBlockBuffer.MaxBlock
 
     private SseBlockDecision ObserveBlock(SemanticStreamObserver target, ReadOnlySpan<byte> bytes, int blockStart)
     {
-        if (_dataLength < 0) return filter?.Invoke(default) ?? SseBlockDecision.Allow;
+        if (_dataLength < 0) return filter?.Invoke(default, false) ?? SseBlockDecision.Allow;
         var start = blockStart + _dataOffset;
         if (_joinedLength == 0 && start < _pendingCount && start + _dataLength > _pendingCount)
             Join(bytes, start, _dataLength);
         var payload = _joinedLength > 0 ? _joined.AsSpan(0, _joinedLength)
             : start >= _pendingCount ? bytes.Slice(start - _pendingCount, _dataLength)
             : _pending.AsSpan(start, _dataLength);
-        target.ObserveData(payload);
-        var decision = filter?.Invoke(payload) ?? SseBlockDecision.Allow;
+        var semanticOutput = target.ObserveData(payload);
+        var decision = filter?.Invoke(payload, semanticOutput) ?? SseBlockDecision.Allow;
         _dataLength = -1;
         _joinedLength = 0;
         return decision;

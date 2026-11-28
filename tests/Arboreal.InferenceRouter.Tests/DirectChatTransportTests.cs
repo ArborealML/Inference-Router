@@ -12,7 +12,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Arboreal.InferenceRouter.Tests;
 
-public sealed class DirectChatTransportTests
+public sealed partial class DirectChatTransportTests
 {
     private const string Chat = "/v1/chat/completions";
     private const string Standard = """{"model":"actual","choices":[{"message":{"content":"ok"}}],"usage":{"prompt_tokens":0,"completion_tokens":12}}""";
@@ -43,6 +43,8 @@ public sealed class DirectChatTransportTests
     [InlineData("output_price_microusd_per_million = -1")]
     [InlineData("maximum_attempt_microusd = 99999999999999999999999")]
     [InlineData("identity_buffer_bytes = 1048577")]
+    [InlineData("semantic_idle_ms = 0")]
+    [InlineData("maximum_stream_ms = 1")]
     public void InvalidProviderDeclarationsFailClosed(string invalid)
     {
         var origin = new Uri("http://127.0.0.1:14141");

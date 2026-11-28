@@ -7,7 +7,7 @@ Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 
 ## 0. Revision log
 
-- v0.12.179 — describe inert direct chat providers and qualify loopback-only exact first-write authorization and served-identity relay (§§5.7, 6–7, 9–10, 14).
+- v0.12.179 — describe inert direct chat providers and qualify loopback-only exact first-write authorization and served-identity relay with sanitized provider refusals, separate first-output and stream deadlines, and bounded terminal bytes (§§5.7, 6–7, 9–10, 14).
 - v0.12.177 — authorize durable owned-group sensitivity escalation and order it with private HTTP handoff (§§5.6, 6, 13, 14).
 - v0.12.176 — connect the executable to the protected catalog, operation head, serving broker, and exact native terminal sources. Attach a checked resident before dispatch and bind the successor before closing its incumbent. The original issuer epoch confirms the cutoff and the anchored journal checks the frozen recipe on replay. Bounded broker snapshots and an authenticated writer generation preserve replay fences through initial-resident restart (§§4, 7.6, 12.1).
 - v0.12.175 — qualify managed local routing with a full remote provider and publish request-scoped, bounded, revision-checked queue observations (§§5.4–5.5, 10, 14).
@@ -3026,10 +3026,15 @@ from connection preparation. SSE comments, byte drips, role events and usage alo
 not extend it. The configured byte bound applies while identity and output are held.
 By default identity comes from a bounded `model` value. A configured response header
 must supply the expected identity, and a conflicting body model still fails the exchange.
-Once verified, accepted bytes go through unchanged. A later conflict preserves the
-already accepted prefix, stops additional output, and records partial failure and possible
-exposure. The upstream sentinel stays buffered until clean EOF, so a later error takes
-precedence. Bounded terminal waiting and buffering apply after the sentinel.
+Once verified, accepted bytes go through unchanged. Later validated semantic output renews
+the independent `semantic_idle_ms` timer. Comments, keepalives, usage and the sentinel do
+not renew it. `maximum_stream_ms` caps the stream from connection preparation regardless of
+progress. An expiry closes the upstream socket and preserves already delivered output and
+possible exposure. Physical cleanup returns the selected engine capacity. A later identity
+conflict also stops additional output and records partial failure. The upstream sentinel
+stays buffered until clean EOF, so a later error takes precedence. The terminal buffer limit
+counts the sentinel, complete trailing blocks and all pending bytes, including an incomplete
+line. Both stream deadlines still apply while the sentinel is held.
 
 ## 6. HTTP surface (server project)
 
@@ -3048,12 +3053,14 @@ sensitivity, admission state and unresolved intent count. The scoped ticket dist
 `PolicyAdmissionState` and `PrivateAttemptMayHaveSent`. Status describes observed policy
 and authorization independently of physical send or cancellation settlement.
 
-For controlled direct chat, `commercial_request_unsupported` returns 400,
-`commercial_rate_limited` returns 429, `commercial_transport_unavailable` returns 503,
-`commercial_identity_timeout` returns 504, and `commercial_identity_invalid` or
-`commercial_exchange_failed` returns 502 when headers have not started. An already
-committed SSE response ends with the router's bounded error frame. The legacy
-completion path cannot use the configured direct chat connector.
+For controlled direct chat, `commercial_request_unsupported` and
+`commercial_provider_bad_request` return 400. `commercial_rate_limited` returns 429.
+`commercial_transport_unavailable` and `commercial_provider_unavailable` return 503.
+`commercial_identity_timeout`, `commercial_stream_idle_timeout` and
+`commercial_stream_deadline` return 504. `commercial_identity_invalid` and
+`commercial_exchange_failed` return 502. These statuses apply before response headers
+start. An already committed SSE response ends with the corresponding code in the
+router's bounded error frame. The legacy completion path cannot use the configured direct chat connector.
 
 The in-process host-manager fixture uses the existing ticket status and event feed for queue
 waits. Managed preparation and activation carry the canonical domain in the existing wait scope.
@@ -3462,8 +3469,10 @@ Provide an origin, absolute `chat_path`, account, external `credential_ref`, pri
 microdollars per million tokens, and a maximum attempt in microdollars. Prices and caps
 are metadata and grant no permission. Each `model` entry declares `request_id`,
 `served_id`, `equivalence` and any allowed `reasoning_efforts`. Capabilities default
-false. `first_output_ms`, `identity_buffer_bytes` and `response_body_bytes` default to
-30,000 ms, 65,536 bytes and 1,048,576 bytes. See the [disabled examples](samples/router.commercial-disabled.toml)
+false. `first_output_ms`, `semantic_idle_ms` and `maximum_stream_ms` default to
+30,000, 60,000 and 900,000 ms. The maximum stream duration must cover the first-output
+interval. `identity_buffer_bytes` defaults to 65,536 bytes, and `response_body_bytes`
+defaults to 1,048,576 bytes. See the [disabled examples](samples/router.commercial-disabled.toml)
 for the complete base declarations. Example addresses, credential references, models
 and pricing are placeholders. The separate table gives older loaders no inference engine
 for these definitions.
@@ -3474,7 +3483,10 @@ or bounded JSON path (`source = "json"`) and its `unit`. Usage pairs use `tokens
 Retry values use `seconds`, `milliseconds`, `unix_seconds` or `unix_milliseconds`.
 Standard OpenAI `usage` and HTTP `Retry-After` work without override declarations.
 The optional `codes` table maps a bounded set of provider codes to `rate_limited`,
-`unavailable` or `bad_request`. Unknown fields and duplicate provider declarations fail
+`unavailable` or `bad_request`. They produce the corresponding sanitized router category
+in JSON and SSE. HTTP 429, 503 and 400 supply those categories when no override matches.
+Other unmapped failures use `commercial_exchange_failed` without provider text.
+Unknown fields and duplicate provider declarations fail
 validation. The authenticated reload endpoint validates both formats. Changing provider
 declarations requires restart. Admitted requests keep their captured definition and a
 controlled permit can be revoked before application writes.
@@ -4766,8 +4778,10 @@ and cohort/residency hysteresis in the scheduler (§12.3 hook).
 - **Configured direct chat** (`DirectChatTransportTests`): parse both formats and disabled
   examples. Use one router with two loopback provider definitions, inspect first-write
   permit decisions and projected bytes, and compare accepted streaming bytes. Include
-  missing and late conflicting identity, error precedence, the absolute semantic deadline,
-  bounded scalar evidence, reload refusal and zero upstream inference on invalid requests.
+  missing and late conflicting identity, mapped error categories, independent first-output,
+  semantic idle and maximum-duration deadlines, and a queued successor after a stalled stream.
+  Cover exact terminal-buffer limits across fragmented reads, bounded scalar evidence, reload
+  refusal and zero upstream inference on invalid requests.
 
 The reverse-provider HTTP fixture holds one delegated remote slot while the original request
 reaches a router-managed local backend. It covers resident reuse and cold activation, each for

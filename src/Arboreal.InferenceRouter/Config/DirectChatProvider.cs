@@ -10,6 +10,8 @@ public sealed record DirectChatProvider(string Name, Uri ChatUri, string Account
     TimeSpan FirstOutputDeadline, int IdentityBufferBytes, int ResponseBodyBytes,
     IReadOnlyDictionary<string, DirectChatModel> Models)
 {
+    public TimeSpan SemanticIdleTimeout { get; init; } = TimeSpan.FromSeconds(60);
+    public TimeSpan MaximumStreamDuration { get; init; } = TimeSpan.FromMinutes(15);
     internal DirectChatResponseMapping Response { get; init; } = new(null, null, null, null, FrozenDictionary<string, string>.Empty);
 
     internal static IReadOnlyDictionary<string, DirectChatProvider> Parse(Dictionary<string, DirectChatProviderDto>? input)
@@ -36,7 +38,9 @@ public sealed record DirectChatProvider(string Name, Uri ChatUri, string Account
             origin.UserInfo.Length != 0 || origin.Query.Length != 0 || origin.Fragment.Length != 0 ||
             (origin.Scheme != "https" && !IsControlledLoopback(origin)) || !IsPath(dto.ChatPath) ||
             dto.InputPrice is null or < 0 || dto.OutputPrice is null or < 0 || dto.AttemptCap is null or <= 0 ||
-            dto.FirstOutputMs is < 1 or > 600_000 || dto.IdentityBufferBytes is < 1024 or > 1024 * 1024 ||
+            dto.FirstOutputMs is < 1 or > 600_000 || dto.SemanticIdleMs is < 1 or > 600_000 ||
+            dto.MaximumStreamMs is < 1 or > 3_600_000 || dto.MaximumStreamMs < (dto.FirstOutputMs ?? 30_000) ||
+            dto.IdentityBufferBytes is < 1024 or > 1024 * 1024 ||
             dto.ResponseBodyBytes is < 1024 or > 16 * 1024 * 1024 || dto.Models is not { Count: > 0 and <= 128 } ||
             dto.BackupParameter is { } backup && (!IsField(backup) || ReservedRequestField(backup)))
             throw Invalid();
@@ -53,7 +57,11 @@ public sealed record DirectChatProvider(string Name, Uri ChatUri, string Account
         var provider = new DirectChatProvider(name, new Uri(origin, dto.ChatPath!), dto.Account!, dto.CredentialRef!, dto.Enabled == true,
             dto.AllowsStreaming == true, dto.AllowsTools == true, dto.AllowsReasoning == true, dto.BackupParameter,
             dto.InputPrice.Value, dto.OutputPrice.Value, dto.AttemptCap.Value, TimeSpan.FromMilliseconds(dto.FirstOutputMs ?? 30_000),
-            dto.IdentityBufferBytes ?? 64 * 1024, dto.ResponseBodyBytes ?? 1024 * 1024, models.ToFrozenDictionary(StringComparer.Ordinal));
+            dto.IdentityBufferBytes ?? 64 * 1024, dto.ResponseBodyBytes ?? 1024 * 1024, models.ToFrozenDictionary(StringComparer.Ordinal))
+        {
+            SemanticIdleTimeout = TimeSpan.FromMilliseconds(dto.SemanticIdleMs ?? 60_000),
+            MaximumStreamDuration = TimeSpan.FromMilliseconds(dto.MaximumStreamMs ?? 900_000),
+        };
         return dto.Response is null ? provider : provider with { Response = DirectChatResponseMapping.Parse(dto.Response) };
     }
 
