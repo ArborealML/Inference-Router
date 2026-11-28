@@ -7,7 +7,7 @@ Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 
 ## 0. Revision log
 
-- v0.12.172 — exercise the singleton tuning runner through CLI dispatch with a controlled private resident, record semantic and physical settlement observations, and publish run evidence and its comparison summary together (§§11.1, 11.3).
+- v0.12.172 — exercise the singleton tuning runner through CLI dispatch with a controlled private resident, retain semantic, physical settlement and failed lease release evidence, and publish run evidence and its comparison summary together (§§11.1, 11.3).
 - v0.12.171 — fit deterministic short-grid prompts using exact backend counts and search the full next-record tail within the count budget (§11.2).
 - v0.12.169 — continue past unavailable preparation and activation offers, withdraw closed managed residents from route ranking, consume an active transition's runtime claim once, and deliver queued cancellation through controller cleanup (§§5.3.1, 5.5, 14).
 - v0.12.168 — scope exact preparation capacity and staged-owner preference to the physical domain, and exercise queue-driven activation and verified delivery through an internally enrolled in-process host manager (§§4–7, 12, 14).
@@ -4175,7 +4175,8 @@ Changes to physical memory, effective memory and CPU limits, CPU affinity, or th
 configured GPU inventory yield an inconclusive run. Missing physical settlement stops
 the run. The lease authority owns exclusion through physical retirement. It must
 acknowledge lease release within five seconds or the remaining tier budget. A missing
-acknowledgement makes the run inconclusive and leaves the fence to the authority.
+acknowledgement or recoverable release fault makes the run inconclusive and leaves
+the fence to the authority.
 
 Passing samples require canonical model identity, matching counted, terminal and native
 prompt totals, the requested native output allowance, a single native attempt with zero
@@ -4183,7 +4184,9 @@ errors and verified reuse from 0 through 64 tokens. A known native violation tak
 precedence when another metric is unavailable. The stream must have actual semantic
 output, finish with `length`, report the requested terminal output count, and end cleanly
 after one `[DONE]`. The request-correlated Maya service `output_tokens` counter uses
-the same units as terminal `usage.completion_tokens` and must agree with it. Native
+the same units as terminal `usage.completion_tokens`. Qualification requires both
+counts to agree at the requested output. A reported zero can contradict the other
+count, and missing usage leaves the stream unqualified. Native
 `engine_generated` measures decode work during the native interval and can differ.
 The runner records client TTFT and send-to-terminator duration in
 100-nanosecond ticks alongside native prefill and decode durations in microseconds and

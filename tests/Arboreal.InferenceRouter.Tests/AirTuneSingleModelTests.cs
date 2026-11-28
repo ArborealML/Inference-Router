@@ -79,7 +79,10 @@ public sealed class AirTuneSingleModelTests : IDisposable
     [InlineData("fit-refused", "refused", "invalid_workload", 0)]
     [InlineData("retry", "failed", "native_workload_mismatch", 1)]
     [InlineData("retry-missing-native", "failed", "native_workload_mismatch", 1)]
+    [InlineData("retry-missing-usage", "failed", "native_workload_mismatch", 1)]
     [InlineData("native-served-mismatch", "failed", "native_workload_mismatch", 1)]
+    [InlineData("native-zero-output", "failed", "native_workload_mismatch", 1)]
+    [InlineData("wire-zero-output", "failed", "native_workload_mismatch", 1)]
     [InlineData("reused", "failed", "native_workload_mismatch", 1)]
     [InlineData("clamped", "failed", "native_workload_mismatch", 1)]
     [InlineData("not-admitted", "inconclusive", "native_evidence_unavailable", 1)]
@@ -122,24 +125,42 @@ public sealed class AirTuneSingleModelTests : IDisposable
         }
     }
 
-    [Fact(Timeout = 30_000)]
-    public async Task HangingLeaseAcknowledgementIsBoundedAndWithholdsRates()
+    [Theory(Timeout = 30_000)]
+    [InlineData("hang-release", 4)]
+    [InlineData("false-release", 4)]
+    [InlineData("throw-release", 4)]
+    [InlineData("fault-release", 4)]
+    [InlineData("disposed-release", 4)]
+    [InlineData("canceled-release", 4)]
+    [InlineData("release-with-count-fault", 0)]
+    [InlineData("release-with-unexpected-count-fault", 0)]
+    public async Task UnprovedLeaseReleaseSavesEvidenceAndWithholdsRates(string mode, int starts)
     {
         if (!OperatingSystem.IsLinux()) return;
-        await using var fixture = new Capture("hang-release");
+        await using var fixture = new Capture(mode);
         var run = await Run("held", fixture);
         Assert.Equal(1, run.Exit);
         Assert.True(fixture.Held);
-        Assert.Equal(4, fixture.Completed.Count);
+        Assert.Equal(starts, fixture.Completed.Count);
         Assert.NotNull(run.Evidence);
+        Assert.DoesNotContain("fixture release failure", run.Evidence, StringComparison.Ordinal);
         using var document = JsonDocument.Parse(run.Evidence);
         Assert.Equal("admission_release_unproved", document.RootElement.GetProperty("reason").GetString());
         Assert.False(document.RootElement.GetProperty("lease_released").GetBoolean());
         var summary = TuneRunEvidence.ReadSummary(Encoding.UTF8.GetBytes(run.Evidence));
         Assert.NotNull(summary);
         var level = Assert.Single(summary.Levels);
-        Assert.Equal("inconclusive", level.Status);
+        Assert.Equal(starts == 0 ? "untested" : "inconclusive", level.Status);
         Assert.Null(level.WaveOutputTokensPerSecond);
+    }
+
+    [Fact(Timeout = 30_000)]
+    public async Task FatalReleaseFailurePropagatesWithoutPublishing()
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        await using var fixture = new Capture("fatal-release");
+        await Assert.ThrowsAsync<SimulatedFatalReleaseException>(() => Run("fatal", fixture));
+        Assert.False(File.Exists(FilePath("fatal.json")));
     }
 
     [Fact(Timeout = 30_000)]
@@ -231,6 +252,8 @@ public sealed class AirTuneSingleModelTests : IDisposable
 
     public void Dispose() => _output.Delete(recursive: true);
 
+    private sealed class SimulatedFatalReleaseException : OutOfMemoryException;
+
     private sealed class Capture : ITuneAdmission, ITuneResident, IAsyncDisposable
     {
         private readonly AirTuneRecord _baseline = AirTuneRecord.Parse(File.ReadAllBytes(BaselinePath))!;
@@ -290,6 +313,8 @@ public sealed class AirTuneSingleModelTests : IDisposable
         {
             Assert.True(_owned);
             Assert.True(Counted.Add(body));
+            if (_mode == "release-with-count-fault") throw new InvalidDataException("fixture count fault");
+            if (_mode == "release-with-unexpected-count-fault") throw new InvalidOperationException("fixture count fault");
             return Task.FromResult(_mode == "fit-refused" ? 32_129 : Count(body));
         }
 
@@ -301,17 +326,19 @@ public sealed class AirTuneSingleModelTests : IDisposable
             Completed.Add(body);
             var count = Count(body);
             int? reused = _mode is "missing-native" or "retry-missing-native" ? null : _mode == "reused" ? 65 : 0;
-            _last = new(request, _mode != "not-admitted", _mode != "unsettled", _mode is "retry" or "retry-missing-native" ? 2 : 1, 0,
-                count, _mode == "clamped" ? 511 : 512, reused, _mode == "native-served-mismatch" ? 1 : 512, 513, 2_000, 4_000);
+            var attempts = _mode is "retry" or "retry-missing-native" or "retry-missing-usage" ? 2 : 1;
+            var served = _mode switch { "native-served-mismatch" => 1, "native-zero-output" => 0, "early-end" => 511, _ => 512 };
+            _last = new(request, _mode != "not-admitted", _mode != "unsettled", attempts, 0,
+                count, _mode == "clamped" ? 511 : 512, reused, served, 513, 2_000, 4_000);
 
             // The private fixture owns both transport and native evidence. The delay keeps the
             // synthetic wall rate in the same finite numeric format as saved comparisons.
             await Task.Delay(TimeSpan.FromMilliseconds(10), cancellationToken);
             const string delta = "data: {\"model\":\"illustrative-model\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"answer\"}}]}\r\n\r\n";
             var finish = _mode == "early-end" ? "stop" : "length";
-            var output = _mode == "early-end" ? 511 : 512;
+            var output = _mode switch { "early-end" => 511, "wire-zero-output" => 0, _ => 512 };
             var prompt = _mode == "count-mismatch" ? count + 1 : count;
-            var usage = _mode == "missing-usage" ? string.Empty : string.Create(CultureInfo.InvariantCulture,
+            var usage = _mode is "missing-usage" or "retry-missing-usage" ? string.Empty : string.Create(CultureInfo.InvariantCulture,
                 $",\"usage\":{{\"prompt_tokens\":{prompt},\"completion_tokens\":{output}}}");
             var terminal = $"data: {{\"model\":\"{Model}\",\"choices\":[{{\"index\":0,\"finish_reason\":\"{finish}\"}}]{usage}}}\n\n";
             var done = _mode switch
@@ -338,6 +365,13 @@ public sealed class AirTuneSingleModelTests : IDisposable
         public Task<bool> ReleaseAsync(CancellationToken cancellationToken)
         {
             if (_mode == "hang-release") return _release.Task;
+            if (_mode is "false-release" or "release-with-unexpected-count-fault") return Task.FromResult(false);
+            if (_mode == "throw-release") throw new InvalidOperationException("fixture release failure");
+            if (_mode == "fault-release") return Task.FromException<bool>(new TimeoutException("fixture release failure"));
+            if (_mode == "disposed-release") return Task.FromException<bool>(new ObjectDisposedException("fixture"));
+            if (_mode == "fatal-release") throw new SimulatedFatalReleaseException();
+            if (_mode == "release-with-count-fault") throw new OverflowException("fixture release failure");
+            if (_mode == "canceled-release") return Task.FromCanceled<bool>(new CancellationToken(canceled: true));
             _owned = false;
             return Task.FromResult(true);
         }

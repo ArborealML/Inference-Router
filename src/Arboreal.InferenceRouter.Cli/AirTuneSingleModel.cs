@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -50,7 +51,8 @@ internal static class AirTuneSingleModel
             }
             return released == true ? Finish(outcome.Status, outcome.Reason) : Finish("inconclusive", "admission_release_unproved");
         }
-        catch (Exception error) when (error is OperationCanceledException or HttpRequestException or IOException or InvalidDataException or JsonException or OverflowException)
+        catch (Exception error) when ((released == false || error is OperationCanceledException or HttpRequestException or
+            IOException or InvalidDataException or JsonException or OverflowException) && IsRecoverableAdapterFailure(error))
         {
             return released == false ? Finish("inconclusive", "admission_release_unproved") :
                 Finish(resident is null ? "refused" : "inconclusive", work.IsCancellationRequested
@@ -112,21 +114,21 @@ internal static class AirTuneSingleModel
                     status = "inconclusive";
                     reason = "resident_hardware_changed";
                 }
-                else if (exchange.Reason is { } streamFailure)
-                {
-                    status = "failed";
-                    reason = streamFailure;
-                }
                 else if (native.Attempts > 1 || native.Errors != 0 || native.ReusedTokens is < 0 or > 64 ||
                     native.PromptTokens > 0 && native.PromptTokens != bodies[index].Tokens ||
-                    native.ServedOutputTokens is { } served && served != exchange.Observation.CompletionTokens ||
+                    native.ServedOutputTokens is { } served && exchange.Observation.CompletionTokens is { } streamed && served != streamed ||
                     native.OutputAllowance > 0 && native.OutputAllowance != policy.TargetOutputTokens)
                 {
                     status = "failed";
                     reason = "native_workload_mismatch";
                 }
+                else if (exchange.Reason is { } streamFailure)
+                {
+                    status = "failed";
+                    reason = streamFailure;
+                }
                 else if (!native.Admitted || native.Attempts != 1 || native.PromptTokens <= 0 || native.OutputAllowance <= 0 ||
-                    native.ReusedTokens is null || native.ServedOutputTokens is null || native.DecodeWorkTokens is not > 0 ||
+                    native.ReusedTokens is null || native.ServedOutputTokens is not > 0 || native.DecodeWorkTokens is not > 0 ||
                     native.PrefillMicroseconds is not > 0 || native.DecodeMicroseconds is not > 0)
                 {
                     status = "inconclusive";
@@ -176,11 +178,18 @@ internal static class AirTuneSingleModel
                 .WaitAsync(token).ConfigureAwait(false);
             return released && !token.IsCancellationRequested;
         }
-        catch (Exception error) when (error is OperationCanceledException or HttpRequestException or IOException or JsonException)
+        catch (Exception error) when (IsRecoverableAdapterFailure(error))
         {
             return false;
         }
     }
+
+    private static bool IsRecoverableAdapterFailure(Exception error) => error switch
+    {
+        OutOfMemoryException or StackOverflowException or AccessViolationException or SEHException => false,
+        AggregateException aggregate => aggregate.InnerExceptions.All(IsRecoverableAdapterFailure),
+        _ => error.InnerException is not { } inner || IsRecoverableAdapterFailure(inner),
+    };
 
     private static async Task<int> CountAsync(ITuneResident lease, byte[] body, CancellationToken cancellationToken)
     {
