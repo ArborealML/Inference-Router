@@ -13,7 +13,8 @@ public sealed class QueuedPriorityTests
         var ct = bound.Token;
         using var backend = new FakeEngineHandler { LoadedModels = ["model"], TotalSlots = 8 };
         await using var router = MakeRouter(backend);
-        Assert.True(await router.Engines["engine"].ProbeHealthOnceAsync(ct));
+        var engine = router.Engines["engine"];
+        Assert.True(await engine.ProbeHealthOnceAsync(ct));
         var background = ThreadPriority.Background();
         var high = ThreadPriority.High(40);
         var thread = router.RegisterThread("changing", background, new() { Weight = 4, ModelAffinity = "model" });
@@ -47,11 +48,62 @@ public sealed class QueuedPriorityTests
 
         async Task DispatchAsync(RouterTicket expected)
         {
+            // The completion waiter can resume before the previous execution releases its engine charge.
+            await ConfigReloadWireTests.WaitUntilAsync(() => engine.Inflight == 0, ct);
+            var before = router.Events.CurrentSeq;
             Assert.True(router.TryDispatchOnce());
+            var selected = Assert.Single(router.Events.Replay(before), entry => entry.Kind == "request.selected");
+            Assert.Equal(expected.Id, selected.TicketId);
             await expected.CompletionTask.WaitAsync(ct);
             Assert.Equal("engine", expected.Engine);
             Assert.Single(router.Events.Replay(0), entry => entry.TicketId == expected.Id && entry.Kind == "request.completed");
         }
+    }
+
+    [Fact(Timeout = 20_000)]
+    public async Task APreviousReleaseDuringManualSelectionReportsAStateChangeBeforeTheNextValidStep()
+    {
+        using var bound = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        var ct = bound.Token;
+        using var backend = new FakeEngineHandler { LoadedModels = ["model"], TotalSlots = 8 };
+        await using var router = MakeRouter(backend);
+        var engine = router.Engines["engine"];
+        Assert.True(await engine.ProbeHealthOnceAsync(ct));
+        using var cleanup = new ConfigReloadRaceTests.Cut();
+        using var selection = new ConfigReloadRaceTests.Cut();
+        engine.AfterForwardReleaseForTests = cleanup.Hold;
+        RouterTicket next;
+        Task<bool> stale;
+        try
+        {
+            var prior = await router.EnqueueAsync("prior", Request("prior"), ct);
+            Assert.True(router.TryDispatchOnce());
+            await prior.CompletionTask.WaitAsync(ct);
+            await cleanup.Entered.Task.WaitAsync(ct);
+            Assert.Equal(1, engine.Inflight);
+
+            next = await router.EnqueueAsync("next", Request("next"), ct);
+            router.BeforeAdmissionCommitForTests = _ => selection.Hold();
+            stale = Task.Run(router.TryDispatchOnce, ct);
+            await selection.Entered.Task.WaitAsync(ct);
+            cleanup.Release();
+            await ConfigReloadWireTests.WaitUntilAsync(() => engine.Inflight == 0, ct);
+        }
+        finally
+        {
+            engine.AfterForwardReleaseForTests = null;
+            router.BeforeAdmissionCommitForTests = null;
+            cleanup.Release();
+            selection.Release();
+        }
+
+        Assert.True(await stale.WaitAsync(ct));
+        Assert.Equal(TicketState.Queued, next.State);
+        Assert.DoesNotContain(router.Events.Replay(0), entry => entry.TicketId == next.Id && entry.Kind == "request.selected");
+        Assert.True(router.TryDispatchOnce());
+        Assert.Single(router.Events.Replay(0), entry => entry.TicketId == next.Id && entry.Kind == "request.selected");
+        await next.CompletionTask.WaitAsync(ct);
+        Assert.Equal(2, backend.CompletionCalls);
     }
 
     [Fact(Timeout = 20_000)]
