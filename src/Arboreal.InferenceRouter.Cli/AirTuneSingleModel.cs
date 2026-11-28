@@ -73,9 +73,10 @@ internal static class AirTuneSingleModel
                         .ConfigureAwait(false);
                     var after = await ObserveAsync(lease, request, deadline.Token).ConfigureAwait(false);
                     var native = after?.Sample;
+                    var settled = SameIdleResident(after, initial, target) && native is { Settled: true } && native.Request == request;
                     string? reason;
                     string status;
-                    if (!SameIdleResident(after, initial, target) || native is null || native.Request != request || !native.Settled)
+                    if (native is null || !settled)
                     {
                         status = "inconclusive";
                         reason = "settlement_unproved";
@@ -102,8 +103,11 @@ internal static class AirTuneSingleModel
                         status = "passed";
                         reason = null;
                     }
-                    samples.Add(new(request, tier.Requests[index], status, reason, exchange.Observation.FirstSemanticOutput?.Ticks,
-                        exchange.Terminal?.Ticks, exchange.Observation.PromptTokens, exchange.Observation.CompletionTokens, native));
+                    var stream = exchange.Observation;
+                    var settlement = new TuneSettlementEvidence(settled, after?.Generation, after?.Exclusive, after?.Active, after?.Queued);
+                    samples.Add(new(request, tier.Requests[index], status, reason, stream.OutcomeName, stream.EndReasonName,
+                        UsageName(stream.UsageAvailability), stream.FirstSemanticOutput?.Ticks, exchange.Terminal?.Ticks,
+                        stream.PromptTokens, stream.CompletionTokens, native, settlement));
                     if (reason is not null)
                         return Finish(status, reason);
                 }
@@ -123,6 +127,13 @@ internal static class AirTuneSingleModel
                 [.. workload], [.. samples], resident is null ? null : BuildSummary(runId, resident, manifest, workload, samples, status));
         }
     }
+
+    private static string UsageName(StreamUsageAvailability usage) => usage switch
+    {
+        StreamUsageAvailability.Available => "available",
+        StreamUsageAvailability.Invalid => "invalid",
+        _ => "unavailable",
+    };
 
     private static async Task<int> CountAsync(ITuneResident lease, byte[] body, CancellationToken cancellationToken)
     {

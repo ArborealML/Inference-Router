@@ -7,7 +7,7 @@ Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 
 ## 0. Revision log
 
-- v0.12.172 — exercise the singleton tuning runner through CLI dispatch with a controlled private resident and persist refused, incomplete and comparable evidence (§11.3).
+- v0.12.172 — exercise the singleton tuning runner through CLI dispatch with a controlled private resident and persist refused, incomplete and comparable evidence, including semantic stream and physical settlement observations (§11.3).
 - v0.12.171 — fit deterministic short-grid prompts using exact backend counts and search the full next-record tail within the count budget (§11.2).
 - v0.12.169 — continue past unavailable preparation and activation offers, withdraw closed managed residents from route ranking, consume an active transition's runtime claim once, and deliver queued cancellation through controller cleanup (§§5.3.1, 5.5, 14).
 - v0.12.168 — scope exact preparation capacity and staged-owner preference to the physical domain, and exercise queue-driven activation and verified delivery through an internally enrolled in-process host manager (§§4–7, 12, 14).
@@ -4180,7 +4180,10 @@ output, finish with `length`, report the requested terminal output count, and en
 after one `[DONE]`. The runner records client TTFT and send-to-terminator duration in
 100-nanosecond ticks alongside native prefill and decode durations in microseconds and
 their raw counters. It retains failed samples and records missing evidence without a
-passing rate. Cold load is unavailable and the separate long-decode cell is untested.
+passing rate. Each attempted sample retains the semantic outcome, end reason, usage
+availability and the available post-request generation, exclusion and occupancy
+observations. Settlement requires cleanup evidence from the admitted generation.
+Cold load is unavailable and the separate long-decode cell is untested.
 
 Run output uses a new Linux x64 file path in a directory that supports anonymous temporary
 files and atomic publication. The CLI publishes complete records without replacing any

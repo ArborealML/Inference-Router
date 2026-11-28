@@ -42,6 +42,9 @@ public sealed class AirTuneSingleModelTests : IDisposable
             Assert.Equal(Digest(fixture.Completed[wave]), frozen[wave].GetProperty("body_sha256").GetString());
             Assert.Equal(32_128, frozen[wave].GetProperty("prompt_tokens").GetInt32());
             Assert.Equal(512, samples[wave].GetProperty("completion_tokens").GetInt32());
+            Assert.Equal("complete", samples[wave].GetProperty("semantic_outcome").GetString());
+            Assert.Equal("available", samples[wave].GetProperty("usage_availability").GetString());
+            Assert.True(samples[wave].GetProperty("settlement").GetProperty("proved").GetBoolean());
             Assert.Equal(wave, samples[wave].GetProperty("coordinate").GetProperty("wave").GetInt32());
             Assert.True(samples[wave].GetProperty("ttft_ticks").GetInt64() <= samples[wave].GetProperty("terminal_ticks").GetInt64());
         }
@@ -60,6 +63,7 @@ public sealed class AirTuneSingleModelTests : IDisposable
 
     [Theory(Timeout = 30_000)]
     [InlineData("busy", "refused", "admission_refused", 0)]
+    [InlineData("not-exclusive", "refused", "preflight_refusal", 0)]
     [InlineData("wrong-recipe", "refused", "preflight_refusal", 0)]
     [InlineData("stale", "refused", "preflight_refusal", 0)]
     [InlineData("fit-refused", "refused", "invalid_workload", 0)]
@@ -86,7 +90,15 @@ public sealed class AirTuneSingleModelTests : IDisposable
         Assert.Equal(status, document.RootElement.GetProperty("status").GetString());
         Assert.Equal(reason, document.RootElement.GetProperty("reason").GetString());
         Assert.Equal(starts, fixture.Completed.Count);
-        if (mode is "busy" or "wrong-recipe" or "stale") Assert.Empty(fixture.Counted);
+        if (mode is "busy" or "not-exclusive" or "wrong-recipe" or "stale") Assert.Empty(fixture.Counted);
+        if (mode == "drift")
+        {
+            var sample = Assert.Single(document.RootElement.GetProperty("samples").EnumerateArray());
+            Assert.True(sample.GetProperty("native").GetProperty("settled").GetBoolean());
+            var settlement = sample.GetProperty("settlement");
+            Assert.False(settlement.GetProperty("proved").GetBoolean());
+            Assert.Equal(2L, settlement.GetProperty("observed_generation").GetInt64());
+        }
     }
 
     [Fact(Timeout = 30_000)]
@@ -190,7 +202,7 @@ public sealed class AirTuneSingleModelTests : IDisposable
             Assert.True(_owned);
             var generation = request is not null && _mode == "drift" ? 2 : 1;
             return ValueTask.FromResult<TuneWitness?>(new(_mode == "stale" ? Guid.Empty : challenge,
-                _baseline.InstanceId.Value!, generation, true, 0, 0, 8, true, Target, _baseline.Hardware,
+                _baseline.InstanceId.Value!, generation, _mode != "not-exclusive", 0, 0, 8, true, Target, _baseline.Hardware,
                 request is null ? null : _last));
         }
 

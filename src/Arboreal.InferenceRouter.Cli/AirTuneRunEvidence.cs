@@ -30,8 +30,12 @@ internal sealed record TuneNativeSample(Guid Request, bool Admitted, bool Settle
 internal sealed record TuneRequestEvidence(WorkloadRequest Coordinate, int PromptTokens, int OutputAllowance,
     int Records, int TailBytes, string CorpusSha256, string BodySha256);
 
+internal sealed record TuneSettlementEvidence(bool Proved, long? ObservedGeneration, bool? Exclusive,
+    int? Active, int? Queued);
+
 internal sealed record TuneSampleEvidence(Guid Request, WorkloadRequest Coordinate, string Status, string? Reason,
-    long? TtftTicks, long? TerminalTicks, long? PromptTokens, long? CompletionTokens, TuneNativeSample? Native);
+    string SemanticOutcome, string SemanticEndReason, string UsageAvailability, long? TtftTicks, long? TerminalTicks,
+    long? PromptTokens, long? CompletionTokens, TuneNativeSample? Native, TuneSettlementEvidence Settlement);
 
 internal sealed record TuneRunEvidence(string RunId, string Engine, string Model, string Profile, string Seed,
     string Status, string? Reason, TuneWitness? Resident, TuneRequestEvidence[] Workload,
