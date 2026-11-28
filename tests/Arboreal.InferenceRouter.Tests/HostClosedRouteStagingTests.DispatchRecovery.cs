@@ -95,8 +95,6 @@ public sealed partial class HostClosedRouteStagingTests
     }
 
     [Theory(Timeout = 20_000)]
-    [InlineData("preparation", false)]
-    [InlineData("take", true)]
     [InlineData("offer", false)]
     [InlineData("first-write", true)]
     public async Task CombinedRecipeWithdrawalNeverWritesToTheRetiredInstance(string cut, bool stream)
@@ -113,8 +111,6 @@ public sealed partial class HostClosedRouteStagingTests
         var reached = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         VerifiedInstanceInvocation? offered = null;
         var ticket = await router.EnqueueAsync("withdrawal", RecipeRequest("small", stream), ct);
-        if (cut == "preparation") router.BeforeAdmissionPreparationForTests = _ => Withdraw();
-        if (cut == "take") router.BeforeAdmissionCommitForTests = _ => Withdraw();
         if (cut == "offer") manager.Admission.BeforeVerifiedOfferForTests = _ => Withdraw();
         if (cut == "first-write") domain.Issuer.BeforeFirstWrite = invocation => { offered = invocation; Withdraw(); };
         _ = Task.Run(router.DispatchLoop, ct);
@@ -134,8 +130,95 @@ public sealed partial class HostClosedRouteStagingTests
             var capability = router.Engines[domain.Engine.Name].Capability;
             Assert.Equal(8_192, capability.Serving.ContextWindow);
             Assert.Equal(1, capability.Serving.TotalSlots);
-            if (cut is "preparation" or "take") Assert.True(router.TryCancel(ticket.Id));
             reached.TrySetResult();
+        }
+    }
+
+    [Theory(Timeout = 20_000)]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    public async Task CombinedRecipeReplacesEqualGaugeInstanceWhileOriginalTicketIsHeld(bool atTake, bool sameRecipe)
+    {
+        using var watchdog = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        using var boundary = new AdmissionFixtureBarrier();
+        using var discovery = new FakeEngineHandler { LoadedModels = ["shared"], NCtx = 8_192, TotalSlots = 1 };
+        var ct = watchdog.Token;
+        var domain = MakeManagedDomain("a", 19001, equalRecipes: true);
+        var manager = new InProcessHostManager([domain.Enrollment]);
+        await using var router = MakeManagedRouter(manager, discovery, domain);
+        await EstablishResidentAsync(manager, domain, ct);
+        var incumbent = Assert.IsType<VerifiedDispatchResident>(domain.Resident);
+        var ticket = await router.EnqueueAsync("original", RecipeRequest("small", stream: atTake && !sameRecipe), ct);
+        var cleanup = new TaskCompletionSource<Exception?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var firstWrite = new TaskCompletionSource<VerifiedInstanceInvocation>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var held = 0;
+        manager.Admission.AfterPreparationCleanupForTests = (claim, error) =>
+        {
+            if (ReferenceEquals(ticket, claim.Ticket) && ReferenceEquals(incumbent, claim.Resident)) cleanup.TrySetResult(error);
+        };
+        domain.Issuer.BeforeFirstWrite = invocation => firstWrite.TrySetResult(invocation);
+        if (atTake) router.BeforeAdmissionCommitForTests = HoldOnce;
+        else router.BeforeAdmissionPreparationForTests = HoldOnce;
+        _ = Task.Run(router.DispatchLoop, ct);
+
+        VerifiedDispatchResident successor;
+        try
+        {
+            await boundary.Reached.WaitAsync(ct);
+            Assert.Equal(TicketState.Queued, ticket.State);
+            Assert.Equal(atTake ? 1 : 0, manager.Snapshot(domain.Engine.Name)?.Preparations);
+            using var withdrawal = domain.Enrollment.Staging.Begin(new HostStagedPublication(Guid.NewGuid(), _ => false, _ => { }));
+            withdrawal.Close();
+            Assert.True(manager.Admission.CloseVerified(incumbent));
+            if (atTake) Assert.Null(await cleanup.Task.WaitAsync(ct));
+            using (var reservation = HostReservation.Open(domain.ReservationPath))
+                reservation.Settle(Assert.IsType<HostMutation>(reservation.State.Pending));
+            var nextTier = sameRecipe ? "small" : "alternate";
+            var transition = Assert.IsType<InProcessHostManager.Transition>(manager.TryAccept(domain.Engine.Name, "shared", nextTier, ticket: null, ct));
+            Assert.True((await manager.ExecuteAsync(transition).WaitAsync(ct)).IsReady);
+
+            successor = Assert.IsType<VerifiedDispatchResident>(domain.Resident);
+            Assert.Equal(nextTier, successor.Target.Tier);
+            Assert.Equal(sameRecipe, successor.Target.PlanDigest == incumbent.Target.PlanDigest);
+            Assert.True(successor.Route.RouteIncarnation > incumbent.Route.RouteIncarnation);
+            Assert.NotEqual(incumbent.Route.ContainerId, successor.Route.ContainerId);
+            Assert.Equal(incumbent.MeasuredWindow, successor.MeasuredWindow);
+            Assert.Equal(incumbent.TotalSlots, successor.TotalSlots);
+            Assert.True(domain.Enrollment.Staging.CanMint(successor.Route));
+            Assert.False(domain.Enrollment.Staging.CanMint(incumbent.Route));
+            Assert.Equal(TicketState.Queued, ticket.State);
+            Assert.Equal(0, domain.Issuer.CertifiedCheckouts);
+        }
+        finally { boundary.Release(); }
+
+        if (sameRecipe)
+        {
+            await ticket.CompletionTask.WaitAsync(ct);
+            var invocation = await firstWrite.Task.WaitAsync(ct);
+            Assert.Equal(successor.Route, invocation.Route);
+            Assert.Contains("\"model\":\"shared\"", Encoding.UTF8.GetString(domain.Issuer.Bytes(invocation)), StringComparison.Ordinal);
+            Assert.Equal(1, domain.Issuer.CertifiedCheckouts);
+            Assert.Equal(1, domain.Issuer.Traffic.Permits);
+            Assert.Single(router.Events.Replay(0), row => row.TicketId == ticket.Id && row.Kind == "request.selected");
+        }
+        else
+        {
+            // The still-held successor journal refuses another recipe until its applied launch is settled.
+            var refusal = await Assert.ThrowsAsync<RouterRequestException>(() => ticket.CompletionTask.WaitAsync(ct));
+            Assert.Equal("switch_failed", refusal.Code);
+            Assert.Equal(0, domain.Issuer.CertifiedCheckouts);
+            Assert.Equal(0, domain.Issuer.Traffic.Permits);
+            Assert.DoesNotContain(router.Events.Replay(0), row => row.TicketId == ticket.Id && row.Kind == "request.selected");
+        }
+        Assert.Equal(2, domain.Host.Creates);
+        Assert.Equal(0, discovery.CompletionCalls);
+
+        void HoldOnce(RouterTicket candidate)
+        {
+            if (ReferenceEquals(candidate, ticket) && Interlocked.Exchange(ref held, 1) == 0)
+                boundary.HoldAsync(ct).GetAwaiter().GetResult();
         }
     }
 
