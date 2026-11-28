@@ -11,7 +11,7 @@ public sealed partial class RouterCore
         if (_directChat is null || !provider.Models.TryGetValue(ticket.Model, out var model)) throw ControlledDirectChat.Unavailable();
         var body = DirectChatProtocol.Project(candidate.Request, provider, model, out var choices);
         if (!engine.TryBeginForward(ct)) throw new OperationCanceledException(ct);
-        using var validation = new DirectChatResponse(provider, model, ResponseTimeoutClockForTests, ct);
+        using var validation = new DirectChatResponse(provider, model, ResponseTimeoutClockForTests, choices, ct);
         using var watchStop = new CancellationTokenSource();
         var watch = ObserveDirectDeadlineAsync();
         try

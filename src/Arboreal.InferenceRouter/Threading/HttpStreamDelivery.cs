@@ -45,22 +45,31 @@ internal sealed class HttpStreamDelivery(int limit, CancellationToken caller = d
         get { lock (_gate) return _reserved; }
     }
 
-    internal async ValueTask WaitForSpaceAsync(CancellationToken cancellationToken)
+    internal ValueTask WaitForSpaceAsync(CancellationToken cancellationToken) => WaitForCreditAsync(1, cancellationToken);
+
+    private async ValueTask WaitForCreditAsync(int minimum, CancellationToken cancellationToken)
     {
-        Task wait;
-        lock (_gate)
+        while (true)
         {
-            ThrowIfStopped();
-            if (_reserved < limit) return;
-            wait = (_space ??= new(TaskCreationOptions.RunContinuationsAsynchronously)).Task;
+            Task wait;
+            lock (_gate)
+            {
+                ThrowIfStopped();
+                if (limit - _reserved >= minimum) return;
+                wait = (_space ??= new(TaskCreationOptions.RunContinuationsAsynchronously)).Task;
+            }
+            await wait.WaitAsync(cancellationToken).ConfigureAwait(false);
         }
-        await wait.WaitAsync(cancellationToken).ConfigureAwait(false);
-        lock (_gate) ThrowIfStopped();
     }
 
+    internal ValueTask PublishAsync(ChannelWriter<ReadOnlyMemory<byte>> writer,
+        ReadOnlyMemory<byte> batch, CancellationToken cancellationToken) =>
+        PublishAsync(writer, batch, fullFirstSlice: false, cancellationToken);
+
     internal async ValueTask PublishAsync(ChannelWriter<ReadOnlyMemory<byte>> writer,
-        ReadOnlyMemory<byte> batch, CancellationToken cancellationToken)
+        ReadOnlyMemory<byte> batch, bool fullFirstSlice, CancellationToken cancellationToken)
     {
+        if (fullFirstSlice) await WaitForCreditAsync(Math.Min(batch.Length, limit), cancellationToken).ConfigureAwait(false);
         while (!batch.IsEmpty)
         {
             await WaitForSpaceAsync(cancellationToken).ConfigureAwait(false);

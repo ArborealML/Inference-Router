@@ -53,6 +53,7 @@ public sealed partial class RouterCore : IInferenceRouter
     internal Action<Task>? AfterDispatchParkForTests;
     internal Action? BeforeShutdownCancellationForTests;
     internal Action? BeforeShutdownUnsubscribeForTests;
+    internal Action? OnDirectTerminalPublishForTests;
     internal TimeProvider ResponseTimeoutClockForTests = TimeProvider.System;
 
     private readonly Func<EngineDefinition, IEngineLifecycleProvider>? _lifecycleFactory;
@@ -2017,7 +2018,9 @@ public sealed partial class RouterCore : IInferenceRouter
         if (directChat is not null)
         {
             if (readCancelled) throw DirectChatProtocol.BadResponse();
-            await directChat.PublishTerminalAsync(PublishAsync).ConfigureAwait(false);
+            var terminal = directChat.PublishTerminalAsync(PublishTerminalAsync);
+            OnDirectTerminalPublishForTests?.Invoke();
+            await terminal.ConfigureAwait(false);
         }
         observer.End(readCancelled ? StreamInputEnd.UpstreamCancelledRead : StreamInputEnd.Eof);
         return null;
@@ -2026,6 +2029,12 @@ public sealed partial class RouterCore : IInferenceRouter
         {
             if (delivery is null) await channel.Writer.WriteAsync(bytes, relayToken).ConfigureAwait(false);
             else await delivery.PublishAsync(channel.Writer, bytes, relayToken).ConfigureAwait(false);
+        }
+
+        async ValueTask PublishTerminalAsync(ReadOnlyMemory<byte> bytes)
+        {
+            if (delivery is null) await channel.Writer.WriteAsync(bytes, relayToken).ConfigureAwait(false);
+            else await delivery.PublishAsync(channel.Writer, bytes, fullFirstSlice: true, relayToken).ConfigureAwait(false);
         }
     }
 
