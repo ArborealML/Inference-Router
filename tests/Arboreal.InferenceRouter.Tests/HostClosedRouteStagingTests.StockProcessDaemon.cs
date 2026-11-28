@@ -21,6 +21,7 @@ public sealed partial class HostClosedRouteStagingTests
         private static readonly string[] BeforeCreate = ["stop", "vacant"];
         private readonly Lock _state = new();
         private readonly List<string> _effects = [];
+        private readonly Queue<string> _requests = new(16);
         private StockResident? _resident = new(seed.Initial, first, initial);
         private WebApplication? _writer;
         private WebApplication? _reader;
@@ -31,6 +32,11 @@ public sealed partial class HostClosedRouteStagingTests
         internal string[] Effects
         {
             get { lock (_state) return [.. _effects]; }
+        }
+
+        internal string Describe()
+        {
+            lock (_state) return $"daemon_effects={string.Join(',', _effects)} daemon_requests={string.Join(',', _requests)}";
         }
 
         internal async Task StartAsync(string writeSocket, string readSocket, CancellationToken ct)
@@ -59,6 +65,39 @@ public sealed partial class HostClosedRouteStagingTests
         private async Task HandleAsync(HttpContext ctx, bool allowsEffects)
         {
             var path = ctx.Request.Path.Value!.Split('/', StringSplitOptions.RemoveEmptyEntries);
+            var kind = path switch
+            {
+                [_, "containers", "json"] => "census",
+                [_, "images", _, "json"] => "image",
+                [_, "containers", _, "json"] => "inspect",
+                [_, "containers", _, "stop"] => "stop",
+                [_, "containers", "create"] => "create",
+                [_, "containers", _, "start"] => "start",
+                _ => "other",
+            };
+            var outcome = "unreported";
+            try
+            {
+                await HandleRequestAsync(ctx, allowsEffects, path);
+                outcome = ctx.Response.StatusCode.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            }
+            catch (Exception error)
+            {
+                outcome = error.GetType().Name;
+                throw;
+            }
+            finally
+            {
+                lock (_state)
+                {
+                    if (_requests.Count == 16) _requests.Dequeue();
+                    _requests.Enqueue(kind + "/" + outcome);
+                }
+            }
+        }
+
+        private async Task HandleRequestAsync(HttpContext ctx, bool allowsEffects, string[] path)
+        {
             if (path.Length < 3 || path[0] != first.ApiVersion || path[0] != next.ApiVersion)
             {
                 ctx.Response.StatusCode = 404;
