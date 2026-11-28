@@ -207,6 +207,125 @@ public sealed partial class OwnedPrivatePolicyTests : IDisposable
         finally { capture.AllowInference.TrySetResult(); }
     }
 
+    [Fact(Timeout = 35_000)]
+    public async Task QueuedOwnedHttpDiagnosticsStayWithTheCurrentOwnerAndAllowedRoute()
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(25));
+        var ct = deadline.Token;
+        var allowed = new Capture();
+        var denied = new Capture();
+        await using var allowedServer = allowed.Build();
+        await using var deniedServer = denied.Build();
+        await allowedServer.StartAsync(ct);
+        await deniedServer.StartAsync(ct);
+        var authority = new Authority();
+        using var store = await OwnedPolicyStore.OpenAsync(StatePath, authority, initialize: true, ct);
+        var verifier = new Verifier();
+        verifier.Scopes["alpha"] = new("alpha", FullScope, newRootIntent: "root", deny: ["restricted"]);
+        verifier.Scopes["beta"] = new("beta", FullScope, newRootIntent: "root", allow: ["restricted"]);
+        var endpoint = EngineUri(allowedServer);
+        var restrictedEndpoint = EngineUri(deniedServer);
+        var config = Config(endpoint);
+        config.Engines = new Dictionary<string, EngineDefinition>(config.Engines, StringComparer.Ordinal)
+        {
+            ["restricted"] = new() { Name = "restricted", Endpoint = restrictedEndpoint, Catalog = config.Engines["private"].Catalog },
+        };
+        await using var app = ServerApp.BuildOwnedPrivate(["--urls=http://127.0.0.1:0"], new OwnedPrivateServerComposition(store,
+            [new("private", endpoint, "/models", "/props", PrivateDestinationCapability.Chat),
+             new("restricted", restrictedEndpoint, "/models", "/props", PrivateDestinationCapability.Chat)], verifier.Verify),
+            configOverride: config);
+        await app.StartAsync(ct);
+        using var direct = DirectHandler();
+        using var client = ClientAt(app, direct);
+        const string thread = "same-thread";
+        const string inference = "/v1/chat/completions";
+        using var beta = await Send(client, HttpMethod.Post, inference, "beta", null, thread, Chat, ct);
+        Assert.Equal(HttpStatusCode.OK, beta.StatusCode);
+        Assert.Single(denied.Inferences);
+
+        allowed.HoldNextInference();
+        var incumbent = Send(client, HttpMethod.Post, inference, "alpha", null, thread, Chat, ct);
+        var router = app.Services.GetRequiredService<RouterCore>();
+        var releasePublication = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        try
+        {
+            await allowed.InferenceEntered.Task.WaitAsync(ct);
+            var pending = Send(client, HttpMethod.Post, inference, "alpha", null, thread, Chat, ct);
+            using var feed = await Send(client, HttpMethod.Get, "/admin/events?kinds=request.waiting", "alpha", null, null, null, ct,
+                completion: HttpCompletionOption.ResponseHeadersRead);
+            Assert.Equal(HttpStatusCode.OK, feed.StatusCode);
+            await using var stream = await feed.Content.ReadAsStreamAsync(ct);
+            using var lines = new StreamReader(stream);
+            string? line;
+            do { line = await lines.ReadLineAsync(ct); }
+            while (line is not null && !line.StartsWith("data: ", StringComparison.Ordinal));
+            using var waiting = JsonDocument.Parse(Assert.IsType<string>(line)[6..]);
+            var item = waiting.RootElement;
+            Assert.Equal("request.waiting", item.GetProperty("Kind").GetString());
+            Assert.Equal(thread, item.GetProperty("ThreadId").GetString());
+            var report = item.GetProperty("QueueDispatch");
+            Assert.Equal("thread_concurrency_limit", report.GetProperty("Reason").GetString());
+            Assert.Equal(thread, report.GetProperty("Scope").GetString());
+            var route = Assert.Single(report.GetProperty("Alternatives").EnumerateArray());
+            Assert.Equal("private", route.GetProperty("Engine").GetString());
+            Assert.Equal("not_evaluated", route.GetProperty("State").GetString());
+            var ticketPath = "/admin/tickets/" + item.GetProperty("TicketId").GetString();
+            using var ticket = await Send(client, HttpMethod.Get, ticketPath, "alpha", null, null, null, ct);
+            Assert.Equal(HttpStatusCode.OK, ticket.StatusCode);
+            using var snapshot = JsonDocument.Parse(await ticket.Content.ReadAsByteArrayAsync(ct));
+            Assert.Equal(thread, snapshot.RootElement.GetProperty("ThreadId").GetString());
+            Assert.Equal(report.GetRawText(), snapshot.RootElement.GetProperty("QueueDispatch").GetRawText());
+            using var foreignTicket = await Send(client, HttpMethod.Get, ticketPath, "beta", null, null, null, ct);
+            Assert.Equal(HttpStatusCode.NotFound, foreignTicket.StatusCode);
+            using var foreignFeed = await Send(client, HttpMethod.Get, ticketPath + "/events", "beta", null, null, null, ct,
+                completion: HttpCompletionOption.ResponseHeadersRead);
+            Assert.Equal(HttpStatusCode.NotFound, foreignFeed.StatusCode);
+            using var cancel = await Send(client, HttpMethod.Delete, ticketPath, "alpha", null, null, null, ct);
+            Assert.Equal(HttpStatusCode.NoContent, cancel.StatusCode);
+            using var canceled = await pending;
+            Assert.Equal((HttpStatusCode)499, canceled.StatusCode);
+            Assert.False(incumbent.IsCompleted);
+
+            var beforePublication = new TaskCompletionSource<RouterTicket>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var afterRound = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            router.BeforeDispatchWaitPublicationForTests = candidate =>
+            {
+                if (beforePublication.TrySetResult(candidate)) releasePublication.Task.WaitAsync(ct).GetAwaiter().GetResult();
+            };
+            router.BeforeDispatchParkForTests = armed =>
+            {
+                if (!armed && beforePublication.Task.IsCompletedSuccessfully) afterRound.TrySetResult();
+            };
+            var invalidated = Send(client, HttpMethod.Post, inference, "alpha", null, thread, Chat, ct);
+            var stale = await beforePublication.Task.WaitAsync(ct);
+            var group = Assert.IsType<OwnedTicketPolicy>(stale.OwnedPolicy).Group;
+            Assert.True(store.IsCurrent(group));
+            authority.ThrowOnCommit = true;
+            Assert.Null(await store.ResolveAsync(new("lost-head", FullScope, newRootIntent: "root"), null, true, ct));
+            Assert.False(store.IsCurrent(group));
+            releasePublication.TrySetResult();
+            await afterRound.Task.WaitAsync(ct);
+            Assert.Null(stale.DispatchWait);
+            Assert.DoesNotContain(router.EventFeed.Replay(0), evt => evt.TicketId == stale.Id && evt.Kind == "request.waiting");
+            allowed.AllowInference.TrySetResult();
+            using var refused = await invalidated;
+            Assert.Equal(HttpStatusCode.Forbidden, refused.StatusCode);
+            Assert.Contains("policy_group_unavailable", await refused.Content.ReadAsStringAsync(ct), StringComparison.Ordinal);
+            Assert.Single(allowed.Inferences);
+            Assert.Single(denied.Inferences);
+        }
+        finally
+        {
+            releasePublication.TrySetResult();
+            allowed.AllowInference.TrySetResult();
+            router.BeforeDispatchWaitPublicationForTests = null;
+            router.BeforeDispatchParkForTests = null;
+        }
+        using var completed = await incumbent;
+        Assert.Equal(HttpStatusCode.OK, completed.StatusCode);
+    }
+
     [Theory(Timeout = 30_000)]
     [InlineData(301)]
     [InlineData(302)]
