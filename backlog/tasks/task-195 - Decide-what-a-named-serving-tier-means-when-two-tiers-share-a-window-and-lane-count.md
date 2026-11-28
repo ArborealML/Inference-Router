@@ -1,16 +1,15 @@
 ---
 id: TASK-195
-title: >-
-  Decide what a named serving tier means when two tiers share a window and lane
-  count
-status: Blocked
+title: "Bind exact recipe identity when context and lane counts coincide"
+status: To Do
 assignee:
-  - '@claire'
+  - '@gpt-6.2-astra'
 created_date: '2026-11-26T07:34:00Z'
-updated_date: '2026-11-26T09:22:00Z'
+updated_date: '2026-11-27'
 labels:
   - config
   - scheduling
+milestone: m-16
 dependencies:
   - TASK-189
 priority: medium
@@ -20,11 +19,25 @@ ordinal: 187000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Decision needed, and the containment work that made capacity the scheduling authority has now merged, so the question is live rather than theoretical. Two declared tiers of one model can request the same context window and the same lane count while launching different things — a different quantization, a different key-value cache type, or a different memory budget. Measured capacity cannot tell them apart, and the inferred profile label is deliberately null whenever more than one declared tier matches the measured pair, so a request naming one tier can be served by an instance launched for the other. Choose one: refuse the configuration at startup, start with a warning and last-declared-wins, or declare such tiers interchangeable and document it. This unblocks the ambiguous-label pin and settles what a tier name means to an operator.
+Equal window/lane recipes may differ in weights, quantization, KV or resource settings. Own stable exact recipe identity and ambiguity refusal, not a second implementation of serving-instance verification. Numeric suitability may use a qualified resident independently of its display label.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 SPEC says whether two tiers of one model with equal declared window and lane count but different launch configuration are refused, warned, or interchangeable, and one test produces that outcome.
-- [ ] #2 The chosen answer matches the accepted rule that the profile name is a display inference and the measured window is the scheduling authority, or the ruling is revised in a decision entry.
+- [ ] #1 Distinct effective settings have distinct stable identities; equivalent resolved aliases/defaults share identity.
+- [ ] #2 Ambiguous exact launch selection refuses before mutation; selected recipe identity is frozen through the operation.
+- [ ] #3 Numeric context-only selection can reuse a verified fitting resident without interpreting ambiguous display labels as proof.
+- [ ] #4 SPEC §§5 and 7.6 distinguish suitability, display inference and exact identity; fixture tests cover equal numeric pairs.
 <!-- AC:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Reuse TASK-118's completed exact-target identity evidence. Bind immutable effective recipe descriptors without duplicating live issuer/conformance work; TASK-118/197 own actual launch and first-write verification.
+<!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Former owner question addressed by the revision 5 reconciliation, subject to decision-83 ratification; not marked Done.
+<!-- SECTION:NOTES:END -->

@@ -8,7 +8,11 @@ assignee:
   - '@gpt-6.2-astra'
 created_date: '2026-11-25T23:57:00Z'
 labels: []
-dependencies: []
+milestone: m-16
+dependencies:
+  - TASK-183
+  - TASK-197
+  - TASK-198
 priority: high
 ordinal: 183000
 ---
@@ -16,19 +20,25 @@ ordinal: 183000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-At startup on the live host the router launched the default model at the narrow-slot tier and switched to the wide-slot tier of the same window about ninety seconds later, costing one full engine reload and killing the sessions that had just connected. That is a separate decision from serving an existing demand on a resident engine: it is about what to launch when nothing is queued yet. The fix must not touch the declared default tier, which the owner has ruled stays as configured.
+Fix the immediate startup relaunch regression before autonomous optimization. Start a configured fitting verified recipe for queued demand or the configured idle default; do not restart a sufficient resident merely because a wider-lane alternative exists.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 With no queued demand, startup launches the declared idle default and does not guess a wider tier.
-- [ ] #2 With demand queued, startup commits one launch chosen against the measured host budget.
-- [ ] #3 No switch follows the initial launch when a wider tier of the same window would already have satisfied the queued demand.
-- [ ] #4 A pin shows a launch that is immediately followed by a tier switch, and then shows it gone.
+- [ ] #1 Without demand, start configured idle default; no speculative resize.
+- [ ] #2 With queued work, choose a configured verified fitting recipe and respect actual admission bounds; no unqualified or larger-lane preference.
+- [ ] #3 A sufficient resident does not relaunch solely because another recipe has more lanes; necessary changes obey exact conformance and lifecycle rules.
+- [ ] #4 Capture fixture reproduces/removes immediate gratuitous restart while preserving unrelated-provider progress.
 <!-- AC:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Use existing configured defaults, exact recipe and conformance; no measured estimator prerequisite. TASK-192 later reuses the same selection seam for qualified demand-driven optimization. Absent comparable evidence keep feasible resident/default.
+<!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Split out of the containment plan by the external plan review, which called it a hidden second plan.
+Retains prior reported startup regression; no new live measurement.
 <!-- SECTION:NOTES:END -->

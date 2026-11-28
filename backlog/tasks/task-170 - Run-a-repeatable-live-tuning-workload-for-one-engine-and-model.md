@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@gpt-6.2-astra'
 created_date: '2026-11-22T09:21:00Z'
-updated_date: '2026-11-23T22:01:00Z'
+updated_date: '2026-11-27'
 labels: []
 milestone: m-14
 dependencies:
@@ -19,25 +19,28 @@ ordinal: 165000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Implement air tune run for one configured engine, model and profile. Reuse the offline planner and comparison format. Use Hy4 for the first live reference run.
+Implement air tune run for one configured engine/model/exact recipe using the existing planner and comparator. Complete deterministic runner/measurement fixtures without live hardware access; TASK-154 owns authorized real reference measurements. Physical lanes and occupied concurrency are distinct.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Resolve aliases and verify actual backend model, context and slots before accepting samples. Record hardware, runtime, effective launch settings and workload identity.
-- [ ] #2 Run a repeatable short workload and a representative long prompt. Record cold-load time, time to first token, prefill tokens/sec and decode tokens/sec separately, with token counts and cache conditions.
-- [ ] #3 Persist successes and failures. Two compatible saved runs can be compared with air tune compare, with long-prompt measurements retained separately from the short grid.
-- [ ] #4 Verify the runner against native Hy4 measurements on an idle host and preserve active user requests.
+- [ ] #1 Verify exact model/recipe, window, physical lanes, tokenizer/template, hardware and exclusive admission before samples; controlled fixtures include refusal.
+- [ ] #2 Freeze deterministic workload, body digests, rendered counts and enforced output allowance; include reserve/cache occupancy. Failed preflight sends no workload.
+- [ ] #3 Run near-window short waves and long-decode cells; measure overlap, generated length, TTFT, prefill/decode and end-to-end time; missing metrics remain unavailable.
+- [ ] #4 Separate per-call bytes, cumulative bytes, calls and time for supported 1M-scale fitting; verify final rendered count and unclamped allowance.
+- [ ] #5 Record each request/wave, occupied concurrency, semantic outcome/usage, failures, resources and physical settlement; timeout cannot prove vacancy.
+- [ ] #6 Persist versioned immutable evidence, failures and inconclusive results; retain offline comparison compatibility without granting qualification.
+- [ ] #7 Deterministic capture and synthetic measurement fixtures exercise exclusive admission, stop on unproved settlement, and bound workloads; actual hardware qualification belongs to the measurement workstream.
 <!-- AC:END -->
 
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Resolve one configured engine, canonical model and named tier through the existing workload planner. Verify the intended endpoint, resident profile and idle measurement scope before any workload. Run deterministic short and representative long prompts using bounded streams. Separate cold-load evidence, first output latency, native cache-adjusted prefill and measured decode. Persist terminal and inconclusive results with compatible comparison evidence. Exercise the normal CLI against a loopback serving fixture before qualifying Hy4 on an idle host.
+Continue deterministic fitter/token-count adapter. Reuse existing exclusive local admission and coordinate TASK-187's small shared semantic-observation contract; fixture producers/local instrumentation avoid waiting for commercial integration. Only authoritative complete work counts toward throughput; missing usage stays unavailable. Preserve near-window-text-v1 and normal-use-long-decode-v1 (65536 rendered input + 32768 output); reserve can make 96K insufficient. Record cold load separately. Implement against capture fixtures before an authorized real run. Amend SPEC §11 and tuning design with code/tests.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-The deterministic prompt fitter is implemented with a call budget and an exact byte limit. Two focused offline checks passed. Next verify the Maya token-count adapter, then connect the runner to admission and residency evidence. A cold-load measurement requires an observed launch. Live qualification requires exclusive admission on an idle host.
+Existing focused offline fitter checks passed as previously recorded; decision-81 governs reuse. Reference real Hy4 run belongs to TASK-154. Refresh worker plan and status after reconciliation; no live run claimed.
 <!-- SECTION:NOTES:END -->

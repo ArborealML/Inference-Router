@@ -17,13 +17,26 @@ ordinal: 167000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Run the same single-model search for every configured engine and canonical model, including cold models. Give each model its own measured recommendation for the selected hardware and workload.
+Run the same single-model search over canonical engine/model pairs, retaining per-host results and resumable compatible evidence. Do not gate the first useful runner on a catalog sweep.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Enumerate each configured engine/model pair once. Aliases do not repeat runs, and a model served by multiple engines retains every engine result.
-- [ ] #2 Run candidates serially on shared GPUs. Save each result as it finishes, record individual failures and continue eligible work. Protect active serving requests.
-- [ ] #3 After interruption, --resume skips completed matching candidates and reruns changed or incomplete ones. Match workload, hardware, model assets, runtime, effective configuration and limits.
-- [ ] #4 Report the best verified configuration per model with its engine, runner-up, measured tradeoffs and unmet requirements. A single-model invocation under the same conditions produces the same score.
+- [ ] #1 Enumerate canonical pairs once; aliases do not repeat; multiple engines retain distinct results.
+- [ ] #2 Serialize shared-GPU trials; independent domains may progress. Save settled outcomes and protect serving.
+- [ ] #3 Resume matching settled cells only, keyed by workload, hardware, weights, runtime and recipe; reconcile interrupted ambiguity before reopening the affected domain.
+- [ ] #4 Report all measured alternatives, stable bound, optimum, skipped/untested and unmet constraints; targeted invocation yields the same score.
+- [ ] #5 SPEC §11 and fixtures cover interruption, changed identity and unresolved cleanup. Resume cannot silently adopt evidence.
 <!-- AC:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Reuse TASK-171 search without a second runner. Keep raw records. Continue independent safe domains after a settled failure.
+<!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Decision-81 remains authoritative.
+<!-- SECTION:NOTES:END -->
