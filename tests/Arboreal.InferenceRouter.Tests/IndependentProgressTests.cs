@@ -361,6 +361,145 @@ public sealed class IndependentProgressTests
         finally { thread.DecrementInflight(); }
     }
 
+    [Fact(Timeout = 20_000)]
+    public async Task ScopedHttpFeedAndTicketShowOnlyTheEligibleAlternativeAtAFullThread()
+    {
+        using var bound = new CancellationTokenSource(TimeSpan.FromSeconds(12));
+        var ct = bound.Token;
+        var entered = NewBarrier();
+        using var eligible = new FakeEngineHandler
+        {
+            LoadedModels = ["a"], TotalSlots = 2, HoldCompletions = true,
+            AfterHeldCompletionEnteredForTests = () => entered.TrySetResult(),
+        };
+        using var irrelevant = new FakeEngineHandler { LoadedModels = ["b"] };
+        var engines = Enumerable.Range(0, 11).Select(i => Definition(FormattableString.Invariant($"unrelated-{i}"), ["b"], managed: false))
+            .ToDictionary(static engine => engine.Name, StringComparer.Ordinal);
+        engines.Add("eligible", Definition("eligible", ["a"], managed: false));
+        var config = new RouterConfig
+        {
+            Engines = engines,
+            HttpHandlerFactory = engine => engine.Name == "eligible" ? eligible : irrelevant,
+            Scheduler = new SchedulerConfig { MaxInflightPerEngine = 2 },
+        };
+        await using var app = ServerApp.Build(["--urls", "http://127.0.0.1:0"], configOverride: config);
+        await app.StartAsync(ct);
+        using var client = new HttpClient { BaseAddress = new Uri(Assert.Single(app.Urls)) };
+        var router = app.Services.GetRequiredService<RouterCore>();
+        Assert.True(await router.Engines["eligible"].ProbeHealthOnceAsync(ct));
+        var (_, first) = await WireHarness.StartStreamAsync(client, "shared-cap", StreamBody("active prompt marker"), ct);
+        using var held = first;
+        try
+        {
+            await entered.Task.WaitAsync(ct);
+            var claim = router.Engines["eligible"].AdmissionClaims;
+            Assert.Equal(1, claim);
+            var (ticketId, second) = await WireHarness.StartStreamAsync(client, "shared-cap", StreamBody("second private marker"), ct);
+            using var queued = second;
+            var (otherId, third) = await WireHarness.StartStreamAsync(client, "shared-cap", StreamBody("third private marker"), ct);
+            using var another = third;
+
+            var frames = await WireHarness.ReadSseFramesAsync(client, $"/admin/events?ticket={ticketId}", idleMs: 400);
+            Assert.NotEmpty(frames);
+            string? packet = null;
+            foreach (var frame in frames)
+            {
+                using var json = JsonDocument.Parse(frame);
+                var row = json.RootElement;
+                Assert.Equal(ticketId, row.GetProperty("TicketId").GetString());
+                Assert.DoesNotContain(otherId, frame, StringComparison.Ordinal);
+                Assert.DoesNotContain("private marker", frame, StringComparison.Ordinal);
+                if (row.GetProperty("Kind").GetString() != "request.waiting") continue;
+                Assert.Null(packet);
+                packet = row.GetProperty("QueueDispatch").GetRawText();
+            }
+
+            Assert.NotNull(packet);
+            var status = await client.GetStringAsync($"/admin/tickets/{ticketId}", ct);
+            using var ticket = JsonDocument.Parse(status);
+            Assert.Equal("Queued", ticket.RootElement.GetProperty("State").GetString());
+            var report = ticket.RootElement.GetProperty("QueueDispatch");
+            Assert.Equal(report.GetRawText(), packet);
+            Assert.Equal("thread_concurrency_limit", report.GetProperty("Reason").GetString());
+            Assert.Equal("shared-cap", report.GetProperty("Scope").GetString());
+            Assert.False(report.TryGetProperty("AlternativesTruncated", out _));
+            var alternative = Assert.Single(report.GetProperty("Alternatives").EnumerateArray());
+            Assert.Equal("eligible", alternative.GetProperty("Engine").GetString());
+            Assert.Equal("not_evaluated", alternative.GetProperty("State").GetString());
+            Assert.DoesNotContain("private marker", status, StringComparison.Ordinal);
+
+            Assert.Empty(await WireHarness.ReadSseFramesAsync(client,
+                $"/admin/events?ticket={ticketId}&engine=eligible&kinds=request.waiting", idleMs: 150));
+            Assert.Equal(claim, router.Engines["eligible"].AdmissionClaims);
+            Assert.Equal(1, eligible.CompletionCalls);
+            Assert.All(router.Engines.Values.Where(engine => engine.Name != "eligible"), engine => Assert.Equal(0, engine.AdmissionClaims));
+            Assert.Equal(0, irrelevant.CompletionCalls);
+
+            eligible.ReleaseGate();
+            await Task.WhenAll(held.Content.ReadAsStringAsync(ct), queued.Content.ReadAsStringAsync(ct),
+                another.Content.ReadAsStringAsync(ct));
+            Assert.Equal(3, router.Engines["eligible"].AdmissionClaims);
+            Assert.Equal(3, eligible.CompletionCalls);
+        }
+        finally { eligible.ReleaseGate(); }
+
+        static string StreamBody(string prompt) =>
+            $$"""{"model":"a","stream":true,"messages":[{"role":"user","content":"{{prompt}}"}]}""";
+    }
+
+    [Fact(Timeout = 20_000)]
+    public async Task ReadyProbeReportsTheEarlierCompetitorWithoutClaimingAnEngineOrGroupUse()
+    {
+        using var bound = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        var ct = bound.Token;
+        using var local = new FakeEngineHandler { LoadedModels = ["shared"], TotalSlots = 1 };
+        using var remote = new FakeEngineHandler { LoadedModels = ["other"] };
+        var provider = new LocalProvider();
+        await using var router = MakeRouter(local, remote, provider, ["shared"], ["other"], 1);
+        await ProbeAllAsync(router, ct);
+        var priming = await router.EnqueueAsync("prime", Request("shared", "prime"), ct);
+        Assert.True(router.TryDispatchOnce());
+        await priming.CompletionTask.WaitAsync(ct);
+
+        var group = Assert.IsType<LocalLifecycleGroup>(router.LocalGroup("local"));
+        var engine = router.Engines["local"];
+        while (!group.IsIdle || engine.Inflight != 0) await Task.Delay(10, ct);
+        var claims = engine.AdmissionClaims;
+        var revision = group.Revision;
+        var earlierThread = router.RegisterThread("earlier", ThreadPriority.High());
+        earlierThread.IncrementInflight();
+        var earlier = await router.EnqueueAsync(earlierThread.ThreadId, Request("shared", "earlier"), ct);
+        var follower = await router.EnqueueAsync("follower", Request("shared", "follower"), ct);
+        router.BeforeAdmissionCommitForTests = ticket =>
+        {
+            Assert.Same(follower, ticket);
+            earlierThread.DecrementInflight();
+        };
+
+        Assert.False(router.TryDispatchRound());
+        Assert.Equal(claims, engine.AdmissionClaims);
+        Assert.Equal(revision, group.Revision);
+        Assert.Equal(0, engine.Inflight);
+        Assert.Equal(0, engine.InferenceUses);
+        Assert.Equal(1, local.CompletionCalls);
+        Assert.Null(group.ReadDrainInterest().Owner);
+        Assert.Equal(TicketState.Queued, follower.State);
+        var report = Assert.IsType<QueueDispatchObservation>(router.TryGetTicket(follower.Id)?.QueueDispatch);
+        Assert.Equal("route_admission_wait", report.Reason);
+        var alternative = Assert.Single(report.Alternatives);
+        Assert.Equal("observed_ready", alternative.State);
+        Assert.Equal("route_admission_wait", alternative.Reason);
+        Assert.Equal("local", alternative.Scope);
+        Assert.DoesNotContain(router.Events.Replay(0), row => row.TicketId == follower.Id && row.Kind == "request.selected");
+
+        router.BeforeAdmissionCommitForTests = null;
+        Assert.True(router.TryDispatchOnce());
+        await earlier.CompletionTask.WaitAsync(ct);
+        Assert.Equal(claims + 1, engine.AdmissionClaims);
+        Assert.Equal("earlier", local.ExecutionOrder.Last());
+        Assert.Equal(TicketState.Queued, follower.State);
+    }
+
     [Fact]
     public async Task RouteChangeDiscardsTheObservedWaitBeforeItReachesTicketOrFeed()
     {

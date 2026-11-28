@@ -430,7 +430,9 @@ public sealed partial class RouterCore : IInferenceRouter
                 var evaluation = new DispatchEvaluation(request, generation, _dispatchWake.Revision);
                 if (!evaluation.HasThreadCapacity)
                 {
-                    var infos = BuildEngineInfos(request, generation, comparison);
+                    // This is the same request-scoped view used by ranking, including route policy.
+                    // A full thread never attempts to acquire an engine or group lease.
+                    var infos = BuildEngineInfos(request, generation, comparison, includeAffinity: false);
                     evaluation.Routes = infos;
                     evaluation.RecordUnevaluated(infos.Where(static info => info.CanServeModel).Select(static info => info.Name));
                     PublishDispatchWait(round[index].Queue, request,
@@ -1292,9 +1294,10 @@ public sealed partial class RouterCore : IInferenceRouter
     }
 
     private EngineRuntimeInfo[] BuildEngineInfos(QueuedRequest request, ConfigurationGeneration generation,
-        SwitchComparison? comparison)
+        SwitchComparison? comparison, bool includeAffinity = true)
     {
-        var messages = request.Messages();
+        includeAffinity &= !OwnedPolicyEnabled;
+        var messages = includeAffinity ? request.Messages() : [];
         var infos = new EngineRuntimeInfo[generation.Engines.Count];
         var index = 0;
         foreach (var engine in generation.Engines.Values)
@@ -1321,7 +1324,7 @@ public sealed partial class RouterCore : IInferenceRouter
                 InflightTokenProxy = observation.InflightTokenProxy,
                 Healthy = fit.Healthy,
                 Switching = fit.Switching,
-                MatchedPrefixChars = OwnedPolicyEnabled ? 0 : engine.MatchedPrefixChars(messages),
+                MatchedPrefixChars = includeAffinity ? engine.MatchedPrefixChars(messages) : 0,
                 ActiveContextWindow = fit.ActiveContextWindow,
                 ServingProfiles = fit.ServingProfiles,
                 DispatchObservation = observation,

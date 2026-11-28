@@ -73,6 +73,7 @@ public sealed partial class RouterCore
 
         internal bool IsCurrent(RouterCore router)
         {
+            if (request.Ticket.OwnedPolicy is { } policy && router._ownedPolicy?.IsCurrent(policy) != true) return false;
             if (!ReferenceEquals(generation, router.CurrentGeneration) || wakeRevision != router._dispatchWake.Revision ||
                 _threadInflight != request.Thread.Inflight || _threadLimit != request.Thread.MaxInflight ||
                 !ReferenceEquals(_priority, request.PriorityNode) || request.CallerToken.IsCancellationRequested)
@@ -80,9 +81,9 @@ public sealed partial class RouterCore
             if (Routes is null) return true;
             foreach (var info in Routes)
             {
-                if (!info.CanServeModel) continue;
                 var engine = generation.Engines[info.Name];
                 if (!engine.IsDispatchObservationCurrent(info.DispatchObservation) ||
+                    info.DispatchObservation.AdmissionClaims != engine.AdmissionClaims ||
                     info.NamedPhysicalUse != engine.HasNamedUse || info.DispatchInferenceUses != engine.InferenceUses ||
                     !ReferenceEquals(info.ManagedResident, router._hostManager?.Admission.ReadManagedResident(info.Name)))
                     return false;

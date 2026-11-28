@@ -43,19 +43,19 @@ Wake after TASK-206's seam and TASK-110/190/197/198 physical ownership, recovery
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Ship router, manager and combined roles from the same Native AOT build. Keep client ingress forwarding to the singleton router separate from the authenticated router-to-manager connection. The manager publishes a bounded advisory inventory and accepts or refuses one operation for an exact enrolled domain. It owns local lifecycle, first write and physical retirement. Keep the existing legacy resident forwarding path.
+Ship router, manager and combined roles in one Native AOT binary. Client ingress forwards to the singleton router. The manager offers bounded inventory, accepts or refuses activation or dispatch, reconciles prior operations and receives cancellation or delivery outcomes. After activation the router rechecks the original ticket’s priority, thread, capacity and exact resident before dispatch.
 
-Bind each offer to the authenticated writer incarnation, operation and ticket identity, destination recipe, body and domain generation. Verify current authority at acceptance and immediately before the first upstream write. Duplicate offers return the recorded disposition. A lost acknowledgment, disconnect or timeout requires reconciliation with the same manager. Track physical settlement after logical cancellation. An unavailable manager must leave other domains usable.
+Bind writer, manager, domain generation, operation, ticket, recipe, projected bytes, credential revision and deadline. Persist acceptance before acknowledgment or effects. Before writing headers, verify local authority and commit possible use. Identical duplicates recover disposition. Conflicting bindings refuse. Fence late offers after cancellation. Missing records cannot prove nonacceptance across restart. Retain unresolved uses. Compact terminal records only behind a durable replay fence. Check client delivery and physical retirement separately.
 
-Run the published binary as separate router and manager processes against controlled backends. Compare the same workload under combined mode. Exercise a warm request, an original queued cold request, foreign occupancy, stale writer, duplicate operation, disconnect before and after acceptance, manager restart and bounded disposition retention. Assert backend write counts, resident identity and unaffected-domain progress. The subsequent two-ingress and two-host deployment measurements remain independently owned.
+Bound bodies, active streams, record windows and both hops’ byte credit. Reconnect cannot extend the deadline. Test one published hash as a router and two separate managers, then combined mode. Exercise warm and original queued cold requests, stale authority, foreign occupancy, duplicate and delayed offers, disconnect, held flush, partial write, actual process restart and exhausted retention. Count upstream writes, resident changes and caller terminals. Show the other domain progresses before recovery.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Integrated lifecycle authority and incumbent recovery: commit 2f04f2b; prior 365/365 Release tests and Native AOT publish. The shipped-sample and authority tests remain evidence for legacy no-owner refusal (6263b83, 9/9; main CI 44704425802). TASK-128 owns concrete provider scope. These do not establish managed-peer activation or foreign occupancy exclusion. Retain conservative readiness withdrawal after uncertain mutation; preserve a valid incumbent after definitive pre-mutation refusal. No existing passed criterion was reset.
+Preserve incumbents on definite pre-mutation refusal and withdraw readiness after uncertain mutation. Prior recovery qualification passed 365 Release tests and Native AOT. TASK-128 owns concrete provider scope.
 
 Historical [authority/recovery](https://github.com/ArborealML/Inference-Router/commit/2f04f2b), [shipped sample test](https://github.com/ArborealML/Inference-Router/blob/7350f71f9c8690e813339f0240ef2e752865f5fe/tests/Arboreal.InferenceRouter.Tests/ConfigLoaderTests.cs#L458-L469), [authority tests](https://github.com/ArborealML/Inference-Router/blob/2f04f2b/tests/Arboreal.InferenceRouter.Tests/LifecycleAuthorityTests.cs#L179) and [Docker provider tests](https://github.com/ArborealML/Inference-Router/blob/09a0d9b/tests/Arboreal.InferenceRouter.Tests/DockerLifecycleProviderTests.cs#L578) retain their original scope.
 
-The standalone role and transport plan is under independent review. Production activation depends on the executable sender and verified host authority.
+Review against 42f2369 and d84dccc identified late offers after cancellation, loss between acceptance and first write, and expiring dispositions as replay risks. The revised protocol and process tests cover each. Production acceptance still requires the executable sender and verified host authority.
 <!-- SECTION:NOTES:END -->
