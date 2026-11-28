@@ -74,6 +74,22 @@ public sealed partial class RouterCore
     internal IAsyncEnumerable<RouterEvent> SubscribeOwnedEvents(RouterEventFilter filter, PolicyGroupKey key, CancellationToken ct) =>
         new EventEnumerable(_events, filter with { OwnerGroup = key }, ct, _shutdown.Token);
 
+    private Task FinishOwnedPrivateAttemptAsync(RouterTicket ticket)
+    {
+        if (Interlocked.Exchange(ref ticket.PrivateAttempt, null) is not { } attempt || _ownedPolicy is not { } policy)
+            return Task.CompletedTask;
+        attempt.DropRequestBinding();
+        return policy.Store.FinishIntentAsync(attempt);
+    }
+
+    internal async ValueTask<OwnedSensitivityOutcome> EscalateOwnedSensitivityAsync(OwnedPolicyGroup group, string operation,
+        long expectedRevision, CancellationToken cancellationToken)
+    {
+        if (_ownedPolicy is not { } authority) throw ScopeRequired();
+        try { return await authority.Store.EscalateAsync(group, operation, expectedRevision, cancellationToken).ConfigureAwait(false); }
+        finally { SignalDispatch(); }
+    }
+
     internal ScopedRouterStats GetOwnedStats(OwnedPolicyGroup group, VerifiedInferenceScope scope)
     {
         var key = group.Key;
@@ -87,7 +103,7 @@ public sealed partial class RouterCore
                 .Where(static row => row.Count > 0).Take(128)
                 .ToDictionary(static row => row.Model, static row => row.Count, StringComparer.Ordinal);
             var threads = _threads.Values.Where(thread => thread.OwnerGroup == key).Take(128).Select(ReadThreadStats).ToArray();
-            return new ScopedRouterStats(engines, queues, threads, new ScopedPolicyStatus(group.Revision, group.Sensitive));
+            return new ScopedRouterStats(engines, queues, threads, new ScopedPolicyStatus(group.Revision, group.Sensitive, _ownedPolicy?.Store.ReadEffectivePolicy(group.Key)));
         }
     }
 
@@ -138,7 +154,9 @@ public sealed partial class RouterCore
     }
 }
 
-internal sealed record ScopedPolicyStatus(long Revision, bool Sensitive);
+internal sealed record ScopedPolicyStatus(long Revision, bool Sensitive,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    OwnedEffectivePolicy? Effective = null);
 internal sealed record ScopedEngineStats(string Engine, int Inflight);
 internal sealed record ScopedRouterStats(ScopedEngineStats[] Engines, IReadOnlyDictionary<string, int> QueueDepths,
     ThreadStats[] Threads, ScopedPolicyStatus Policy);

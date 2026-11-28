@@ -224,6 +224,7 @@ public sealed partial class RouterCore
             await AbortUnstartedInvocationAsync(ticket, invocation).ConfigureAwait(false);
             candidate.LocalLease?.Release();
             if (attempted && !OwnedPolicyEnabled) engine.RecordPrefix(candidate.Messages());
+            await FinishOwnedPrivateAttemptAsync(ticket).ConfigureAwait(false);
         }
 
         async Task ConsumeAsync(HttpResponseMessage response, ResponseGate? gate)
@@ -244,6 +245,7 @@ public sealed partial class RouterCore
                 var error = await PumpStreamAsync(engine, ticket, response.Content, ticket.StreamChannel!, observer, gate,
                     ct, lifetime).ConfigureAwait(false);
                 ct.ThrowIfCancellationRequested();
+                if (error is null && observer.SawDone && !observer.SawError) ticket.PrivateAttempt?.ObserveTerminal();
                 gate?.Pass(); // Clean empty EOF settles the first-byte phase before output drain.
                 if (error is not null)
                     Fail(ticket, "engine_error", error);

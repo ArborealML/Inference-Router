@@ -35,8 +35,12 @@ public sealed partial class OwnedPolicyStore : IDisposable
         _current = current;
     }
 
-    public static async Task<OwnedPolicyStore> OpenAsync(string path, IOwnedPolicyHeadAuthority authority,
-        bool initialize = false, CancellationToken cancellationToken = default)
+    public static Task<OwnedPolicyStore> OpenAsync(string path, IOwnedPolicyHeadAuthority authority,
+        bool initialize = false, CancellationToken cancellationToken = default) =>
+        OpenCoreAsync(path, authority, groupAuthority: null, initialize, cancellationToken);
+
+    private static async Task<OwnedPolicyStore> OpenCoreAsync(string path, IOwnedPolicyHeadAuthority authority,
+        IOwnedPolicyGroupHeadAuthority? groupAuthority, bool initialize, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(authority);
         if (!OperatingSystem.IsLinux()) throw new PlatformNotSupportedException("Owned private policy uses Linux durable file publication.");
@@ -49,20 +53,23 @@ public sealed partial class OwnedPolicyStore : IDisposable
             if (initialize)
             {
                 if (head is not null || File.Exists(fullPath)) throw new IOException("A policy store already exists.");
-                state = await PersistAsync(fullPath, authority, previous: null, new Snapshot(1, Guid.NewGuid(), 1, []),
-                    cancellationToken).ConfigureAwait(false);
+                state = await PersistAsync(fullPath, authority, previous: null,
+                    new Snapshot(1, Guid.NewGuid(), 1, [], GroupAuthorityRequired: groupAuthority is not null), cancellationToken).ConfigureAwait(false);
             }
             else
             {
                 if (head is null) throw new IOException("Current policy store evidence is unavailable.");
-                var bytes = await ReadAsync(fullPath, cancellationToken).ConfigureAwait(false);
+                var bytes = groupAuthority is null
+                    ? await ReadAsync(fullPath, cancellationToken).ConfigureAwait(false)
+                    : await RecoverSnapshotAsync(fullPath, RootProposedPath(fullPath), head, cancellationToken).ConfigureAwait(false);
                 var snapshot = JsonSerializer.Deserialize(bytes, OwnedPolicyJsonContext.Default.Snapshot);
-                if (!IsValid(snapshot) || head != Head(snapshot!, bytes))
+                if (!IsValid(snapshot) || head != Head(snapshot!, bytes) ||
+                    snapshot!.GroupAuthorityRequired != (groupAuthority is not null))
                     throw new IOException("The stored policy does not match its current authority.");
                 state = new State(snapshot!, head);
             }
 
-            return new OwnedPolicyStore(fullPath, authority, writer, state);
+            return new OwnedPolicyStore(fullPath, authority, writer, state) { _groupAuthority = groupAuthority };
         }
         catch (JsonException error)
         {
@@ -77,6 +84,13 @@ public sealed partial class OwnedPolicyStore : IDisposable
     }
 
     internal async ValueTask<OwnedPolicyGroup?> ResolveAsync(VerifiedInferenceScope scope, string? requestedGroup,
+        bool mayCreate, CancellationToken cancellationToken)
+    {
+        var root = await ResolveRootAsync(scope, requestedGroup, mayCreate, cancellationToken).ConfigureAwait(false);
+        return root is null ? null : await ResolveJournalAsync(root, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async ValueTask<OwnedPolicyGroup?> ResolveRootAsync(VerifiedInferenceScope scope, string? requestedGroup,
         bool mayCreate, CancellationToken cancellationToken)
     {
         if (Volatile.Read(ref _unavailable) != 0) return null;
@@ -111,7 +125,7 @@ public sealed partial class OwnedPolicyStore : IDisposable
             catch (Exception error) when (OwnedPrivatePolicy.IsRecoverableAuthorityFailure(error))
             {
                 // Once a write or its external confirmation is uncertain, this writer cannot grant admission.
-                Volatile.Write(ref _unavailable, 1);
+                CloseGrantsGlobally();
                 return null;
             }
         }
@@ -121,12 +135,13 @@ public sealed partial class OwnedPolicyStore : IDisposable
         }
     }
 
-    internal bool IsCurrent(OwnedPolicyGroup group) => Volatile.Read(ref _unavailable) == 0 &&
-        ReferenceEquals(Volatile.Read(ref _current).Groups.GetValueOrDefault(group.Key), group);
+    internal bool IsCurrent(OwnedPolicyGroup group) => Available && (UsesGroupJournals ? IsCurrentInJournal(group) :
+        ReferenceEquals(Volatile.Read(ref _current).Groups.GetValueOrDefault(group.Key), group));
 
     public void Dispose()
     {
-        Interlocked.Exchange(ref _unavailable, 1);
+        CloseGrantsGlobally();
+        foreach (var journal in _journals.Values) journal.Dispose();
         _updates.Dispose();
         _writer.Dispose();
     }
@@ -137,6 +152,29 @@ public sealed partial class OwnedPolicyStore : IDisposable
         var bytes = JsonSerializer.SerializeToUtf8Bytes(snapshot, OwnedPolicyJsonContext.Default.Snapshot);
         if (bytes.Length > MaxBytes) throw new IOException("The owned policy store is full.");
         var head = Head(snapshot, bytes);
+        var target = snapshot.GroupAuthorityRequired ? RootProposedPath(path) : path;
+        await WriteSnapshotAsync(target, bytes, overwrite: snapshot.GroupAuthorityRequired || previous is not null,
+            cancellationToken).ConfigureAwait(false);
+        if (!await authority.CompareAndCommitAsync(previous, head, cancellationToken).ConfigureAwait(false))
+            throw new IOException("The policy authority did not confirm the new revision.");
+        if (snapshot.GroupAuthorityRequired) Promote(target, path);
+        return new State(snapshot, head);
+    }
+
+    private static async Task<byte[]> RecoverSnapshotAsync(string path, string proposed, OwnedPolicyHead head,
+        CancellationToken cancellationToken)
+    {
+        if (await ReadHeadBytesAsync(path, head, cancellationToken).ConfigureAwait(false) is { } confirmed) return confirmed;
+        var next = await ReadHeadBytesAsync(proposed, head, cancellationToken).ConfigureAwait(false)
+            ?? throw new IOException("The owned policy snapshot does not match its current authority.");
+        Promote(proposed, path);
+        return next;
+    }
+
+    private static string RootProposedPath(string path) => path + ".root-proposed";
+
+    private static async Task WriteSnapshotAsync(string path, byte[] bytes, bool overwrite, CancellationToken cancellationToken)
+    {
         var scratch = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
         try
         {
@@ -145,18 +183,23 @@ public sealed partial class OwnedPolicyStore : IDisposable
                 await file.WriteAsync(bytes, cancellationToken).ConfigureAwait(false);
                 file.Flush(flushToDisk: true);
             }
-            File.Move(scratch, path, overwrite: previous is not null);
-            using var directory = OpenDirectory(Path.GetDirectoryName(path)!);
-            if (directory.IsInvalid || SyncDirectory(directory) != 0)
-                throw new IOException("The owned policy directory could not be synchronized.");
-            if (!await authority.CompareAndCommitAsync(previous, head, cancellationToken).ConfigureAwait(false))
-                throw new IOException("The policy authority did not confirm the new revision.");
-            return new State(snapshot, head);
+            File.Move(scratch, path, overwrite);
+            SyncParent(path);
         }
-        finally
-        {
-            File.Delete(scratch);
-        }
+        finally { File.Delete(scratch); }
+    }
+
+    private static void Promote(string proposed, string confirmed)
+    {
+        File.Move(proposed, confirmed, overwrite: true);
+        SyncParent(confirmed);
+    }
+
+    private static void SyncParent(string path)
+    {
+        using var directory = OpenDirectory(Path.GetDirectoryName(path)!);
+        if (directory.IsInvalid || SyncDirectory(directory) != 0)
+            throw new IOException("The owned policy directory could not be synchronized.");
     }
 
     private static async Task<byte[]> ReadAsync(string path, CancellationToken cancellationToken)
@@ -201,7 +244,8 @@ public sealed partial class OwnedPolicyStore : IDisposable
     private static partial int SyncDirectory(SafeFileHandle directory);
 
     internal sealed record Snapshot([property: JsonRequired] int SchemaVersion, [property: JsonRequired] Guid Store,
-        [property: JsonRequired] long Revision, [property: JsonRequired] OwnedPolicyGroup[] Groups);
+        [property: JsonRequired] long Revision, [property: JsonRequired] OwnedPolicyGroup[] Groups,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] bool GroupAuthorityRequired = false);
 
     private sealed class State(Snapshot snapshot, OwnedPolicyHead head)
     {
@@ -217,4 +261,5 @@ public sealed partial class OwnedPolicyStore : IDisposable
 [JsonSourceGenerationOptions(GenerationMode = JsonSourceGenerationMode.Metadata,
     UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow, AllowDuplicateProperties = false)]
 [JsonSerializable(typeof(OwnedPolicyStore.Snapshot))]
+[JsonSerializable(typeof(OwnedPolicyStore.GroupSnapshot))]
 internal sealed partial class OwnedPolicyJsonContext : JsonSerializerContext;

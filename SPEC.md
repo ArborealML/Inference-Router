@@ -7,6 +7,7 @@ Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 
 ## 0. Revision log
 
+- v0.12.177 — authorize durable owned-group sensitivity escalation and order it with private HTTP handoff (§§5.6, 6, 13, 14).
 - v0.12.175 — qualify managed local routing with a full remote provider and publish request-scoped, bounded, revision-checked queue observations (§§5.4–5.5, 10, 14).
 - v0.12.174 — bind owned private inference to verified external scope and durable policy, qualify direct private transport and bounded streaming, and scope catalog, status, events and ticket controls (§§5.6, 6).
 - v0.12.173 — compose enrolled exact dispatch in the standard web application and require generation-specific physical retirement before mutation, and bound commissioned SSE output at route selection, including a pending first heartbeat (§§4, 7.6, 12.1).
@@ -2902,8 +2903,8 @@ through bounded router codes and text. Owned SSE uses the HTTP relay's byte cred
 and pending-write deadline (§6). A zero `stream_buffer_limit_bytes` selects 262,144
 bytes in owned mode. A positive value sets the cap explicitly. A failed writer requests
 cancellation through its admitted ticket even when the HTTP abort token stays live.
-The transport retains ownership until cleanup settles. Commercial inference,
-count/tokenize HTTP endpoints and sensitivity mutation remain outside this increment.
+The transport retains ownership until cleanup settles. Commercial inference and
+count/tokenize HTTP endpoints remain unavailable in owned mode.
 
 The HTTP handlers authenticate scope before consuming bodies or committing SSE
 headers. Group-authorized reads scope `/v1/models`, catalog, status, events and ticket
@@ -2920,7 +2921,67 @@ require separate administrator authority. The forward-only composition offers no
 native switch or reset. Health remains content-free. Global read and mutation methods
 which lack an owned scope expose no group data in this mode.
 
+### 5.6.1 Mutable private sensitivity
+
+A deployment may initialize a mutable policy store with `OpenWithGroupAuthorityAsync`.
+It supplies the usual durable root head and an independent compare-and-commit head for
+each `(store, owner, group)`. Existing read-only stores retain their format and behavior.
+A mutable store requires the group authority on reopen. The deployment protects both
+heads against rollback and supplies a singleton writer across restored copies. A known
+loss of the common authority closes grants for the whole store. An uncertain group
+head closes grants for that group and allows independent groups to continue.
+
+An authorized escalation fences its group before writing. It captures consumed,
+unresolved attempts and requests cancellation without holding the authorization gate.
+The per-group writer retains the confirmed and proposed snapshots while synchronizing
+bytes and obtaining external confirmation. Root creation in a mutable store also
+keeps proposed and confirmed snapshots. Acknowledgment follows confirmed publication.
+Any candidate with uncertain publication or confirmation stays fenced in that process.
+On reopen the authority's exact revision and digest select the confirmed or proposed
+snapshot. A missing match refuses the group. A recorded operation retry returns the
+stored outcome and the group's effective policy without applying the change again.
+
+Each private completion records an owner-bound attempt intent before joining the
+HTTP handler. The final router-controlled handoff validates the captured policy and
+its group fence, enrolled engine instance, URI, method, credential and rewritten
+body binding and consumes the intent once. Consumption means the handler may
+transmit. If the fence races ahead, the stale attempt cannot reach the sending
+handler. If consumption wins, escalation reports possible exposure and requests
+cancellation. A consumed intent alone gives no proof of bytes written, read or
+recalled. A pending intent restored after restart remains unresolved until evidence
+can distinguish its disposition. A recorded private completion can retire an intent
+after a full successful buffered response or a clean stream with a terminal
+sentinel. Cancellation and response disposal alone preserve unresolved intent.
+The existing transport continues to own its physical slot through cleanup.
+
+The group journal stores operation outcomes and bounded attempt metadata, including a
+writer-keyed fingerprint of the rewritten body. It stores no body, prompt or credential.
+Each group holds up to 128 mutation outcomes and 128 unresolved attempt intents and
+refuses an operation that exceeds its journal capacity. The journal preserves policy
+and intent across restart. The ordinary ticket and SSE event history remain in memory.
+
+The handler independently allows the enrolled models and serving probes as service
+traffic with no caller body. Request-derived count/tokenize, managed and commercial
+paths require their own qualified authorization and remain unavailable. Lowering
+sensitivity requires separately qualified human authority and remains unavailable.
+A private policy verifier or a local `Administer` permission cannot grant that authority.
+
 ## 6. HTTP surface (server project)
+
+With mutable owned policy, `POST /admin/policy/sensitivity` requires verified
+`EscalateSensitivity` for an existing owner/group association and canonical
+`X-Inference-Policy-Group` header. It accepts `operation` (a stable bounded identifier),
+`expectedRevision` (a positive integer), and `sensitive` (`true`). Changed-input
+operation reuse and stale revisions return `409 policy_revision_conflict`. An unresolved
+concurrent transition returns `409 policy_transition_pending`. A full journal returns
+`429 policy_journal_full`. Successful PascalCase responses give `Operation`, `Revision`,
+`Sensitive`, `CurrentRevision`, `CurrentSensitive` and `PossibleExposures`. The router
+uses the new revision after confirmed publication. A dependent client waits for the
+acknowledgment or reads confirmed state after recovery. Scoped status adds effective revision,
+sensitivity, admission state and unresolved intent count. The scoped ticket distinguishes
+`AttemptPolicyRevision` and `Sensitive` from `CurrentPolicyRevision`, `CurrentSensitivity`,
+`PolicyAdmissionState` and `PrivateAttemptMayHaveSent`. Status describes observed policy
+and authorization independently of physical send or cancellation settlement.
 
 The in-process host-manager fixture uses the existing ticket status and event feed for queue
 waits. Managed preparation and activation carry the canonical domain in the existing wait scope.
@@ -4438,6 +4499,12 @@ TASK-11 tracks the additional feed and schema work in §10 for expanded views.
 
 ## 13. Pi integration (session-scoped model switching)
 
+An owned integration that requires sensitive policy for a dependent request waits for
+its group escalation to be durably confirmed. Mutating requests carry a verified
+existing-group association and an idempotent operation identifier. The live client or
+orchestrator obtains that authority from its deployment. Pi confirmation and the
+router's HTTP endpoint alone convey no human lowering authority.
+
 Pi (the coding agent harness) is a first-class client of AIR. This section records
 (13.1) what we require from the Pi side, (13.2) the design that satisfies it (a
 design pass rooted in the current Pi extension API and a dated Pi fork snapshot —
@@ -4564,6 +4631,13 @@ the held model and an independent model. Separate fixtures check drain inspectio
 accepted ownership, retirement before reassignment or deadline settlement, and one bounded
 wait observation across ticket status and the feed. Commercial-provider backoff requires the
 actual provider's admission contract.
+
+- **Owned mutable sensitivity** (`OwnedPrivatePolicyTests`): delay the final private
+  HTTP handoff on either side of consumption, check possible exposure separately from
+  captured requests, and exercise an independently progressing group during persistence.
+  Lose external confirmation after commit, reopen against the exact authority head and
+  verify an operation replay returns its recorded result. Tests use disposable loopback
+  transports and controlled authorities.
 
 - **Unit**: priority comparability, queue ordering/overflow, scheduler
   scoring (affinity vs busy), serving-profile escalation decisions (fit, smallest

@@ -116,6 +116,8 @@ public static partial class ServerApp
 
         // Admin / control surface.
         app.MapGet("/admin/catalog", (HttpContext ctx, RouterCore r) => HandleCatalog(ctx, r, instance));
+        if (ownedComposition is not null)
+            app.MapPost("/admin/policy/sensitivity", (HttpContext ctx, RouterCore r) => HandleOwnedSensitivityAsync(ctx, r));
         app.MapGet("/admin/status", (HttpContext ctx, RouterCore r) => HandleStatus(ctx, r));
         app.MapGet("/admin/events", (HttpContext ctx, RouterCore r) => HandleEvents(ctx, r));
         app.MapPost("/admin/threads", (HttpContext ctx, RouterCore r) => HandleThreads(ctx, r));
@@ -543,6 +545,8 @@ public static partial class ServerApp
     private static int MapStatus(string code) => code switch
     {
         "invalid_profile" or "invalid_priority" => 400,
+        "policy_revision_conflict" or "policy_transition_pending" => 409,
+        "policy_journal_full" => 429,
         "verified_scope_required" or "policy_group_unavailable" or "policy_route_denied" or
             "policy_capability_unavailable" or "policy_restriction_invalid" => 403,
         "owned_thread_limit" => 429,
