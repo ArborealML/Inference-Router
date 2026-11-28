@@ -29,11 +29,7 @@ Admin route bodies are read with JsonDocument and then treated as objects: nonob
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Published [PR #90](https://github.com/ArborealML/Inference-Router/pull/90), head ac9d783b8fcc84c4fd95278953f2fceda0af932f. Dependency branch stack/task202-pr86-main at b46824d5245166122c455591802acd92c1f896e6 preserves PR #86 a12012b and planning main 62f1c79; their merge is Backlog-only. [Mappings](../milestones/wave1-publication-map.json) retain reviewed 8a12ba8..ee2fbc8 under TASK-220's provenance exception.
-
-The pre-existing JsonElement kind exception was independently verified. AC1–3 implemented with target-reset's existing error-code exception. Plan/source review passed without blocking findings. Local Release at ee2fbc8: 92 passed, zero failures/skips; build/analyzers passed. Fixtures pin literal refusals, valid nulls and absent registration/admin-use/reservation effects. SPEC v0.12.166 and README state scope.
-
-PR #86 priority code and its outstanding review/client dispositions remain unchanged. [Hosted CI](https://github.com/ArborealML/Inference-Router/actions/runs/46112270273) passed on this head: 2,269 tests, zero failed/skipped, build, Linux AOT/config smoke, strict board and release harness. Source landed in the [main integration](https://github.com/ArborealML/Inference-Router/commit/1bf85d3495ab2517a921d78013ffe69bbefb4325).
+Invalid administrative JSON returns the route-specific 400 response before registration or switch effects. [Reviewed implementation](https://github.com/ArborealML/Inference-Router/pull/90) is included in [main](https://github.com/ArborealML/Inference-Router/commit/1bf85d3495ab2517a921d78013ffe69bbefb4325). [Hosted qualification](https://github.com/ArborealML/Inference-Router/actions/runs/46112270273) passed 2,269 tests and the Linux native build. The [publication record](../milestones/wave1-implementation-evidence.md) preserves the original review and fixture history.
 <!-- SECTION:NOTES:END -->
 
 ## Implementation Plan

@@ -40,9 +40,5 @@ Test inherited promotion/demotion, explicit overrides and FIFO, registration/att
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Published [PR #91](https://github.com/ArborealML/Inference-Router/pull/91), head 658c213e09a9ce75fcec3b3b9eda05558c8fd026, stacked on PR #88 at cb595b2d96646fe038261ff57f6041e813aacd6f. [Mappings](../milestones/wave1-publication-map.json) preserve reviewed 6b72a75..f0f110e and the exact prepared/published trees under TASK-220's provenance exception.
-
-AC1–4 source implemented. Pre-code review required attached-handle/throwing-observer coverage; corrected source review passed. Local Release at f0f110e passed 105 tests, zero failures/skips; build/analyzers passed. CA1861 was fixed without suppression. Earlier integration 203ce78 exposed a fixture that equated StateChanged with admission and raced logical cleanup. Actual release/exact-selection checks and a deterministic existing-hook regression corrected it without runtime changes or longer deadlines. Corrected integration 02087978 passed 608 affected tests.
-
-Pi's explicit per-request priority stays fixed; only inherited pending keys reorder. TASK-185/PR #86 retain client/parser ownership. [Hosted CI](https://github.com/ArborealML/Inference-Router/actions/runs/46112352768) passed on this head: 2,166 tests, zero failed/skipped, build, Linux AOT/config smoke, strict board and release harness. Source landed in the [main integration](https://github.com/ArborealML/Inference-Router/commit/1bf85d3495ab2517a921d78013ffe69bbefb4325).
+Promotion and demotion affect inherited pending work. Explicit request priority and active work keep their existing behavior. [Reviewed implementation](https://github.com/ArborealML/Inference-Router/pull/91) is included in [main](https://github.com/ArborealML/Inference-Router/commit/1bf85d3495ab2517a921d78013ffe69bbefb4325). [Hosted qualification](https://github.com/ArborealML/Inference-Router/actions/runs/46112352768) passed 2,166 tests and the Linux native build. The [publication record](../milestones/wave1-implementation-evidence.md) preserves the original review and fixture history.
 <!-- SECTION:NOTES:END -->

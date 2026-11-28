@@ -40,11 +40,5 @@ Capture-backend tests exercise concurrent omitted HTTP and actual CLI chat/compl
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Published [PR #92](https://github.com/ArborealML/Inference-Router/pull/92), head 1f2acc65304549c196204a6ac126303fa87e2cf0, against stack/wave1-foundations fc3e0146d3b593c607aa74bbe1d4edb06600f751. The dependency preserves PRs #88/#89/#91/#90 and pinned #86. [Mappings](../milestones/wave1-publication-map.json) connect reviewed e641bee..95e8009 and exact prepared/published trees under TASK-220's authorization.
-
-AC1–4 source implemented. Independent plan/source review passed. Local Release at 95e8009: 166 passed, no failures/skips; build/analyzers passed. Actual HTTP/CLI capture fixtures cover independent sends, named/anon caps, malformed refusal, queued equal-label isolation, hints, cancellation, overflow and public-null rejection. Initial 160/166 run exposed six invalid identities returning 500; an explicit header-catch 400 fixed them without changing assertions. SPEC v0.12.167 states scope.
-
-Prepared aggregate 89783fb passed 680 affected tests and local Linux x64 AOT/config smoke. [Hosted CI](https://github.com/ArborealML/Inference-Router/actions/runs/46112396399) passed on this equivalent: 2,341 tests, zero failed/skipped, build, Linux AOT/config smoke, board and release harness. Source landed in the [main integration](https://github.com/ArborealML/Inference-Router/commit/1bf85d3495ab2517a921d78013ffe69bbefb4325).
-
-TASK-207 owns credential-bound identity/authorization; transient identity grants no trust or policy privilege. Priority/weight/scoring are unchanged. Architecture §15.3 legacy cutover remains separately owned; explicit anon is preserved.
+Independent omitted identities, explicit named caps and malformed header refusal are covered by HTTP and CLI fixtures. Deployment and credential-bound policy remain separate. [Reviewed implementation](https://github.com/ArborealML/Inference-Router/pull/92) is included in [main](https://github.com/ArborealML/Inference-Router/commit/1bf85d3495ab2517a921d78013ffe69bbefb4325). [Hosted qualification](https://github.com/ArborealML/Inference-Router/actions/runs/46112396399) passed 2,341 tests and the Linux native build. The [publication record](../milestones/wave1-implementation-evidence.md) preserves the original review and fixture history.
 <!-- SECTION:NOTES:END -->
