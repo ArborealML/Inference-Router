@@ -42,8 +42,8 @@ public sealed partial class HostClosedRouteStagingTests
 #pragma warning restore IDISP003
             await _writer.StartAsync(ct);
             await _reader.StartAsync(ct);
-            StockSetMode(writeSocket, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.OtherWrite);
-            StockSetMode(readSocket, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.OtherWrite);
+            StockSetMode(writeSocket, StockSocketMode);
+            StockSetMode(readSocket, StockSocketMode);
         }
 
         private WebApplication Build(string path, bool allowsEffects)

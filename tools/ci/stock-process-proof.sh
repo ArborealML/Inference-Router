@@ -23,6 +23,7 @@ sha256sum "$scratch/"{air,Arboreal.InferenceRouter.Server,air-operation-head,air
 git rev-parse HEAD
 
 sudo -n unshare --net -- bash -euc '
+  umask 022
   ip link set lo up
   for uid in 1 2 3 4 65534; do getent passwd "$uid" >/dev/null; done
   export AIR_REQUIRE_STOCK_PROCESS_PROOF=1 AIR_STOCK_PROCESS_BINARIES="$2" DOTNET_HOST_PATH="$1"

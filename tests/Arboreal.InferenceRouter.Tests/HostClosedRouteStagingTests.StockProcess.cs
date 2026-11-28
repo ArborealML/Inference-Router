@@ -16,6 +16,8 @@ public sealed partial class HostClosedRouteStagingTests
 {
     private static readonly UnixFileMode ScratchMode = UnixFileMode.UserRead | UnixFileMode.UserWrite |
         UnixFileMode.UserExecute | UnixFileMode.GroupRead | UnixFileMode.GroupExecute | UnixFileMode.OtherRead | UnixFileMode.OtherExecute;
+    private const UnixFileMode StockSocketMode = UnixFileMode.UserRead | UnixFileMode.UserWrite |
+        UnixFileMode.GroupRead | UnixFileMode.GroupWrite;
     private static readonly string[] StockExpectedEffects = ["stop", "vacant", "create", "start"];
     private const uint BackendUid = 65534;
     private const uint HeadUid = 4;
@@ -38,8 +40,11 @@ public sealed partial class HostClosedRouteStagingTests
         var binary = Path.Combine(artifacts, standalone ? "Arboreal.InferenceRouter.Server" : "air");
         var terminalSocket = StockPath("terminal.sock");
         var ingressSocket = StockPath("ingress.sock");
+        // The independently running retirement reader needs group access to newly created
+        // broker slots, including the inactive slot written after this genesis.
+        await SetStockOwnerAsync(_directory.FullName, 0, ct);
+        StockSetMode(_directory.FullName, ScratchMode | UnixFileMode.SetGroup);
         var seed = await SeedStockProcessAsync(ingressSocket, ct);
-        StockSetMode(_directory.FullName, ScratchMode);
         var a = Assert.Single(seed.Configuration.Catalog.Targets, target => target.Key.Engine == DeepSeekEngineName);
         var b = Assert.Single(seed.Configuration.Catalog.Targets, target => target.Key.Engine == QwenEngineName);
         var issuer = Guid.NewGuid();
