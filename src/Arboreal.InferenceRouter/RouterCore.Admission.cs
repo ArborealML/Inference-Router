@@ -251,6 +251,7 @@ public sealed partial class RouterCore
                     : AddThread(threadId, opts?.Priority ?? generation.Settings.DefaultPriority, 1.0, null, policy?.Key, displayId);
                 priority = opts?.Priority ?? thread.Priority;
                 var bufferLimit = generation.Settings.StreamBufferLimitBytes;
+                if (policy is not null && bufferLimit <= 0) bufferLimit = OwnedDefaultStreamBufferLimitBytes;
                 var ticket = new RouterTicket(ticketId, diagnosticThreadId, model, createdAt)
                 {
                     IsStateless = threadId is null,
