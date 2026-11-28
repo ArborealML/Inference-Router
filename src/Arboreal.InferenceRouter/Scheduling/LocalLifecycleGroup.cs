@@ -18,6 +18,11 @@ internal sealed class LocalLifecycleGroup(string name, Action wake)
     internal string Name => name;
     internal long Revision => Volatile.Read(ref _revision);
 
+    internal (RouterTicket? Owner, long Revision) ReadDrainInterest()
+    {
+        lock (_gate) return (_draining?.Ticket, _revision);
+    }
+
     internal bool IsIdle
     {
         get { lock (_gate) return _uses.Count == 0 && _switch is not { IsCompleted: false }; }

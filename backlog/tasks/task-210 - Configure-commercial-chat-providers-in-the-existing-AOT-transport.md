@@ -5,7 +5,7 @@ status: To Do
 assignee:
   - '@gpt-6.2-astra'
 created_date: '2026-11-27'
-updated_date: '2026-11-28T11:08:00Z'
+updated_date: '2026-11-28T12:43:07Z'
 labels: []
 milestone: m-20
 dependencies:
@@ -36,11 +36,15 @@ Extend HTTP forwarding and the existing model rewrite/stream observer with confi
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Reuse TOML/source-generated DTOs, model projection and TASK-187's shared semantic observer; expose supported capabilities for Pi, not engine-name exceptions. Compile protocol semantics, not vendor code. Fixture-only definitions and legacy migration remain disabled for commercial egress until TASK-212's integrated guard is qualified. No redirect or unauthorized proxy/origin, no caller-controlled credentials; sanitize upstream errors. Poll approved telemetry with bounds outside dispatch. Keep decision-75 topology edits router-idle; revocation of uncommitted sends is separate. No vendor DSL or paid calls.
+Extend the existing source-generated engine configuration, semantic observer and HTTP relay. Qualify two disabled provider definitions with explicit origin, model equivalence, capabilities, credential reference, price and limits. Validate startup and authenticated reload in TOML and JSON. A disabled definition must trigger zero requests, including discovery, health and token counting. Keep topology changes router-idle and recheck revocation for uncommitted sends.
+
+Construct the direct client with redirects, ambient proxy and cookies disabled. Freeze the provider/account, rewritten body and allowed headers. Exclude private thread/cache metadata. Use the existing transport only with an exact one-use permit; tests can supply a controlled permit. Keep production metered sending disabled until the durable spend guard lands. Cover alternate authorities, auxiliary requests and revoked configurations.
+
+Extend the existing SSE observer to verify the served model before releasing semantic output. Bound held bytes and the elapsed time until identity and first output, including a stream of keepalives. Qualify wrong, missing and conflicting identity, standard usage, missing versus zero, malformed frames and separately recognized provider errors. Verify exact downstream bytes and legacy behavior through ordinary HTTP with loopback capture. Resolve configuration differences through finite typed mappings. Actual account access and spend authorization belong to release qualification.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Detailed account controls belong to TASK-211–213; other protocol integrations are deferred.
+The direct-provider transport plan is under independent review. Detailed account controls belong to TASK-211–213. Other protocols are deferred.
 <!-- SECTION:NOTES:END -->

@@ -158,7 +158,7 @@ public sealed class RouterTicket
     internal bool PendingEnqueuePublication;
     internal string? DeferredQueueEnd;
     internal LocalLifecycleGroup? LocalDrain; // router gate
-    internal DispatchWaitInfo? DispatchWait;
+    internal QueueDispatchObservation? DispatchWait;
     private int _terminal;
     private int _admissionRevoked;
     internal bool CanPrepareAdmission => Volatile.Read(ref _terminal) == 0 &&
@@ -288,8 +288,6 @@ public sealed class RouterTicket
     private readonly TaskCompletionSource<System.Threading.Channels.Channel<ReadOnlyMemory<byte>>?> _streamReady =
         new(TaskCreationOptions.RunContinuationsAsynchronously);
 }
-
-internal sealed record DispatchWaitInfo(string Reason, string? Scope);
 
 /// <summary>Raw request envelope: the OpenAI-compatible JSON body plus the router's parsed
 /// scheduling probe. Bodies are forwarded verbatim to engines (full tools/multimodal passthrough).</summary>
