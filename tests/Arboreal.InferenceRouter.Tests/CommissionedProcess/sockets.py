@@ -77,9 +77,11 @@ def backend(port, model, context, slots, terminal, release, receipts, stop):
             pass
 
         def answer(self, kind, value, application=None, stream=False):
-            result = json.dumps(value, separators=(",", ":")).encode()
             if stream:
-                result = b"data: " + result + b"\n\ndata: [DONE]\n\n"
+                result = b"\n".join(b"data: " + line for line in json.dumps(value, indent=2).encode().splitlines())
+                result += b"\n\ndata: [DONE]\n\n"
+            else:
+                result = json.dumps(value, separators=(",", ":")).encode()
             with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as peer:
                 peer.settimeout(30)
                 inode = os.fstat(self.connection.fileno()).st_ino
