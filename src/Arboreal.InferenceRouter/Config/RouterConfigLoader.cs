@@ -119,7 +119,7 @@ public static class RouterConfigLoader
     {
         var streamBufferLimit = dto.StreamBufferLimitBytes.GetValueOrDefault();
         if (streamBufferLimit < 0)
-            throw new RouterConfigException("stream_buffer_limit_bytes must be >= 0 (0 disables the bounded relay)");
+            throw new RouterConfigException("stream_buffer_limit_bytes must be >= 0 (0 uses the route default)");
         var cfg = new RouterConfig { StreamBufferLimitBytes = streamBufferLimit, OwnedPrivatePolicy = dto.OwnedPrivatePolicy == true };
         if (dto.Listen is { } listen) cfg.Listen = listen;
         if (dto.DefaultModel is { } dm) cfg.DefaultModel = dm;

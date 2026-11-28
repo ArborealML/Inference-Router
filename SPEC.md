@@ -3377,10 +3377,14 @@ a cardinality limit. The detailed host transcript is held outside the repository
 
 The server loads its startup file before serving. A file-backed server can optionally apply changes
 from that same path as described in §7.7.
-For HTTP SSE, `stream_buffer_limit_bytes` is a top-level nonnegative byte count and
-`stream_idle_timeout_ms` is a nonnegative integer under `[engine.<name>]`. Each defaults to zero
-and independently disables its limit. Changes to the root limit or a retained engine's idle timeout
-require restart. A newly added eligible external engine may declare its own idle limit.
+For HTTP SSE, `stream_buffer_limit_bytes` is a top-level nonnegative byte count.
+A positive value sets the payload credit. With zero, ordinary legacy streams have no byte
+credit limit, selected commissioned routes use 64 KiB (§5.3.1), and owned private
+streams use 256 KiB (§5.6). The separate `stream_idle_timeout_ms` is a nonnegative
+integer under `[engine.<name>]`. Both settings default to zero. A zero idle timeout
+leaves the upstream idle limit disabled. Changes to the root byte count or a retained
+engine's idle timeout require restart. A newly added eligible external engine may declare
+its own idle limit.
 `lifecycle_owner` accepts `external`, `delegated` and `router` in TOML and JSON. Remove `remote`
 when setting it, including `remote = false`. Explicit `external` requires no controller or selector.
 Explicit `delegated` requires a usable selector and no Docker controller. Explicit `router` requires
@@ -4034,8 +4038,10 @@ streaming ticket cancelled before the upstream end is known reports `unknown` fo
   without a narrower scope. The event and queued ticket expose the same optional PascalCase
   `QueueDispatch` object with an `ObservationId`, classified `Reason`, optional `Scope` and
   `AcceptedDrainScope`, and up to eight `Alternatives`. Each alternative names a configured
-  engine that declares or currently reports the requested model and is allowed by the route policy,
-  with one state (`observed_ready`, `activation_required`, `blocked` or `not_evaluated`).
+  engine that declares or currently reports the requested model within the request's authorized
+  destinations. The state is `observed_ready`, `activation_required`, `blocked` or `not_evaluated`.
+  When the shared thread cap is full, listed routes have state `not_evaluated`. That list conveys
+  authorized model membership while engine health and profile readiness are unevaluated.
   An evaluated blocker may include its classified reason and scope. `AlternativesTruncated`
   marks additional omitted alternatives. Ready observations are advisory and exact take still
   checks earlier competitors and shared caps. An `observed_ready` alternative with
