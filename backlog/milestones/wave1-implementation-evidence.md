@@ -1,6 +1,6 @@
 # Wave 1 implementation evidence — 27 November 2026
 
-These are unmerged source and controlled-fixture candidates. Main remains at planning baseline `62f1c79de7b25486cf8669de654a2fd57d8993a2`. No implementation PR has been published: TASK-220 records the unresolved publication capability/attribution choice. Hosted CI and operational qualification remain separate gates. The coordinator owns Backlog; Sol implementers own source, tests, SPEC and README; a distinct Astra reviewer inspected each bounded plan and source range.
+These are unmerged source and controlled-fixture candidates. Main remains at planning baseline `62f1c79de7b25486cf8669de654a2fd57d8993a2`. The owner authorized connector publication with explicit Sol/Astra provenance in TASK-220. Publication is underway; actual remote identities and CI will be recorded after readback. Hosted CI and operational qualification remain separate gates. The coordinator owns Backlog; Sol implementers own source, tests, SPEC and README; a distinct Astra reviewer inspected each bounded plan and source range.
 
 ## Original evidence and prepared source
 
