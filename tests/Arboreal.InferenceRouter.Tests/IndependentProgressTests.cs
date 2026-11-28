@@ -200,7 +200,7 @@ public sealed class IndependentProgressTests
         var ct = bound.Token;
         using var early = new FakeEngineHandler { LoadedModels = ["early"], NCtx = 128 };
         using var later = new FakeEngineHandler { LoadedModels = ["later"], NCtx = 128 };
-        await using var router = MakeRouter(early, later, null, [], [], maxSlots: 1);
+        await using var router = MakeRouter(early, later, null, ["early"], ["later"], maxSlots: 1);
         await ProbeAllAsync(router, ct);
         var original = await router.EnqueueAsync("first", Request("early", "original"), ct);
         const int blockedCount = 40;
@@ -257,8 +257,47 @@ public sealed class IndependentProgressTests
         Assert.Equal("earlier", Assert.Single(one.ExecutionOrder));
     }
 
+    [Fact(Timeout = 20_000)]
+    public async Task AnEarlierRouteBecomingReadyAfterTheProbeProtectsTheLastSharedThreadSlot()
+    {
+        using var bound = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        var ct = bound.Token;
+        using var selected = new FakeEngineHandler { LoadedModels = ["second"] };
+        using var other = new FakeEngineHandler { LoadedModels = [] };
+        var clock = new ExactTakeClock();
+        await using var router = MakeRouter(selected, other, null, ["second"], ["first"], maxSlots: 1, clock);
+        await ProbeAllAsync(router, ct);
+        var earlier = await router.EnqueueAsync("shared", Request("first", "earlier"), ct);
+        var later = await router.EnqueueAsync("shared", Request("second", "later"), ct);
+        using var cut = new ConfigReloadRaceTests.Cut();
+        router.BeforeAdmissionCommitForTests = ticket =>
+        {
+            Assert.Same(later, ticket);
+            clock.AtNextTimestamp = cut.Hold;
+        };
+
+        var dispatch = Task.Run(router.TryDispatchRound, ct);
+        try
+        {
+            // TryTake timestamps the candidate after probing earlier contenders for this slot.
+            await cut.Entered.Task.WaitAsync(ct);
+            other.LoadedModels = ["first"];
+            Assert.True(await router.Engines["remote"].ProbeHealthOnceAsync(ct));
+            Assert.True(router.Engines["remote"].IsReadyFor("first", null));
+        }
+        finally { cut.Release(); }
+
+        Assert.False(await dispatch.WaitAsync(ct));
+        Assert.Equal(TicketState.Queued, later.State);
+        Assert.Equal(0, selected.CompletionCalls);
+        router.BeforeAdmissionCommitForTests = null;
+        Assert.True(router.TryDispatchOnce());
+        await earlier.CompletionTask.WaitAsync(ct);
+        Assert.Equal("earlier", Assert.Single(other.ExecutionOrder));
+    }
+
     private static RouterCore MakeRouter(FakeEngineHandler first, FakeEngineHandler second, LocalProvider? provider,
-                                         string[] firstCatalog, string[] secondCatalog, int maxSlots)
+                                         string[] firstCatalog, string[] secondCatalog, int maxSlots, TimeProvider? clock = null)
     {
         var config = new RouterConfig
         {
@@ -271,14 +310,14 @@ public sealed class IndependentProgressTests
             Scheduler = new SchedulerConfig { MaxInflightPerEngine = maxSlots, PrefillCostAlpha = 1 },
             HttpHandlerFactory = engine => engine.Name == "local" ? first : second,
         };
-        return new RouterCore(config, scheduler: null, events: null, TimeProvider.System,
+        return new RouterCore(config, scheduler: null, events: null, clock ?? TimeProvider.System,
             lifecycleFactory: provider is null ? null : _ => provider);
     }
 
     private static EngineDefinition Definition(string name, string[] catalog, bool managed) => new()
     {
         Name = name,
-        Endpoint = new Uri($"http://{name}.invalid/v1"),
+        Endpoint = managed ? new Uri("http://127.0.0.1:12000/v1") : new Uri($"http://{name}.invalid/v1"),
         Remote = !managed,
         Lifecycle = managed ? EngineLifecycleKind.Docker : EngineLifecycleKind.Delegated,
         LifecycleOwner = managed ? EngineLifecycleOwner.Router : null,
@@ -309,6 +348,17 @@ public sealed class IndependentProgressTests
     }
 
     private static TaskCompletionSource NewBarrier() => new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    private sealed class ExactTakeClock : TimeProvider
+    {
+        internal Action? AtNextTimestamp;
+
+        public override long GetTimestamp()
+        {
+            Interlocked.Exchange(ref AtNextTimestamp, null)?.Invoke();
+            return base.GetTimestamp();
+        }
+    }
 
     private sealed class LocalProvider(TaskCompletionSource? entered = null) : IEngineLifecycleProvider
     {

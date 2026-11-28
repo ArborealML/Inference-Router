@@ -328,6 +328,12 @@ public sealed partial class RouterCore : IInferenceRouter
     private readonly record struct Blocker(string Reason, string? Scope = null);
     private readonly record struct RouteProbe(ServingProfile? Profile, LocalLifecycleGroup? Group, Blocker? Blocker,
                                               bool Drain = false);
+    private readonly record struct PredecessorRoute(EngineRuntime.DispatchObservation Observation,
+        LocalLifecycleGroup? Group, long GroupRevision, bool HasNamedUse, int InferenceUses)
+    {
+        internal bool IsCurrent(EngineRuntime engine) => engine.IsDispatchObservationCurrent(Observation) &&
+            GroupRevision == (Group?.Revision ?? 0) && HasNamedUse == engine.HasNamedUse && InferenceUses == engine.InferenceUses;
+    }
     private enum TakeResult { Taken, QueueChanged, RouteChanged, Ineligible, Terminal, Preparing }
     private readonly record struct AdmissionTake(TakeResult Result, ExactTicketAdmission.Invocation? Invocation = null,
         string? TerminalCode = null);
@@ -435,7 +441,7 @@ public sealed partial class RouterCore : IInferenceRouter
             }
 
             var requiredWindow = EngineRuntime.RequiredWindow(probe.Profile, candidate.ExplicitContextMinimum);
-            var needsCurrentObservation = routes is not null || comparison is not null || requiredWindow > 0 ||
+            var needsCurrentObservation = _admission is null && routes is not null || comparison is not null || requiredWindow > 0 ||
                 selection.Decision.TargetProfile is not null ||
                 (candidate.RequiredContextTokens > 0 && engine.ProfilesForModel(candidate.Ticket.Model).Count > 0);
             EngineRuntime.DispatchObservation? expected = needsCurrentObservation ? observed : null;
@@ -521,11 +527,13 @@ public sealed partial class RouterCore : IInferenceRouter
         var queue = round[selection.QueueIndex].Queue;
         lock (_gate)
         {
+            if (_closing || _shutdownToken.IsCancellationRequested) return new(TakeResult.Ineligible);
             if (!IsCurrentQueue(queue, candidate, generation)) return new(TakeResult.QueueChanged);
             var groupRevision = _localGroups.GetValueOrDefault(engine.Name)?.Revision;
             var resourceAware = _scheduler is PrefixAwareScheduler && claim is null;
+            Dictionary<EngineRuntime, PredecessorRoute>? predecessorRoutes = null;
             bool Competes(QueuedRequest earlier) => resourceAware
-                ? CanCompeteFor(earlier, candidate, engine, generation)
+                ? CanCompeteFor(earlier, candidate, engine, generation, ref predecessorRoutes)
                 : IsPendingAndThreadAdmissible(earlier);
 
             // The outer order is captured. Order within each still-live queue is current, including
@@ -544,18 +552,21 @@ public sealed partial class RouterCore : IInferenceRouter
                 }
                 if (!HasThreadCapacity(candidate.Thread)) return new(TakeResult.Ineligible);
                 var observation = engine.ReadDispatchObservation();
+                if (claim is { } stamped && (!observation.HasCapacity || !CanTakePrepared(stamped, engine, observation, requiredWindow)))
+                    return new(TakeResult.Ineligible);
                 if (expected is { } original && !engine.IsDispatchObservationCurrent(original))
                     return new(TakeResult.RouteChanged);
                 var probe = ProbeRoute(candidate, engine, selection.Decision, observation, generation);
                 if (probe.Blocker is not null) return new(TakeResult.Ineligible);
-                if (claim is { } stamped && !CanTakePrepared(stamped, engine, observation, requiredWindow))
-                    return new(TakeResult.Ineligible);
+
+                var takenAt = _clock.GetTimestamp();
+                if (resourceAware && (!engine.IsDispatchObservationCurrent(observation) || !PredecessorRoutesAreCurrent(predecessorRoutes)))
+                    return new(TakeResult.RouteChanged);
 
                 var named = candidate.Request.Options?.Profile is not null;
                 if (named && (expected is not { } current || !engine.TryReserveNamedUse(current)))
                     return new(TakeResult.RouteChanged);
 
-                var takenAt = _clock.GetTimestamp();
                 if (!ReferenceEquals(candidate.Ticket.LocalDrain, probe.Group)) RetireLocalDrain(candidate.Ticket);
                 if (probe.Group is { } local)
                 {
@@ -621,16 +632,26 @@ public sealed partial class RouterCore : IInferenceRouter
         HasThreadCapacity(request.Thread) && ReadQueueEnd(request) is null;
 
     private bool CanCompeteFor(QueuedRequest earlier, QueuedRequest candidate, EngineRuntime selected,
-                               ConfigurationGeneration generation, bool includeDrain = false)
+                               ConfigurationGeneration generation, ref Dictionary<EngineRuntime, PredecessorRoute>? predecessorRoutes,
+                               bool includeDrain = false)
     {
         if (!IsPendingAndThreadAdmissible(earlier)) return false;
         var group = _localGroups.GetValueOrDefault(selected.Name);
         var sameThread = ReferenceEquals(candidate.Thread, earlier.Thread) && earlier.Thread.Inflight + 1 >= earlier.Thread.MaxInflight;
         foreach (var engine in generation.Engines.Values)
         {
-            if (!ReferenceEquals(engine, selected) && !sameThread &&
-                (group is null || !ReferenceEquals(group, _localGroups.GetValueOrDefault(engine.Name)))) continue;
+            var sameEngine = ReferenceEquals(engine, selected);
+            var routeGroup = _localGroups.GetValueOrDefault(engine.Name);
+            if (!sameEngine && !sameThread && (group is null || !ReferenceEquals(group, routeGroup))) continue;
             var observed = engine.ReadDispatchObservation();
+            if (!sameEngine)
+            {
+                // Record only routes that can contend for this lifecycle group or the last shared thread slot.
+                // The first read fences all subsequent predecessor checks of that route in this take.
+                predecessorRoutes ??= [];
+                predecessorRoutes.TryAdd(engine, new(observed, routeGroup, routeGroup?.Revision ?? 0,
+                    engine.HasNamedUse, engine.InferenceUses));
+            }
             var fit = ReadRouteFit(earlier, engine, observed);
             if (PrefixAwareScheduler.DescribeTarget(earlier, fit, generation.Settings) is not { } target) continue;
             if (target.SwitchRequired && !HasLifecycleRoute(earlier, engine)) continue;
@@ -638,6 +659,14 @@ public sealed partial class RouterCore : IInferenceRouter
             if (probe.Blocker is null || includeDrain && probe.Drain) return true;
         }
         return false;
+    }
+
+    private static bool PredecessorRoutesAreCurrent(Dictionary<EngineRuntime, PredecessorRoute>? routes)
+    {
+        if (routes is null) return true;
+        foreach (var (engine, route) in routes)
+            if (!route.IsCurrent(engine)) return false;
+        return true;
     }
 
     private bool HasLifecycleRoute(QueuedRequest request, EngineRuntime engine) =>
@@ -653,12 +682,15 @@ public sealed partial class RouterCore : IInferenceRouter
             if (probe.Group is not { } group || !IsCurrentQueue(queue, candidate, generation) || candidate.Ticket.LocalDrain is not null ||
                 !IsPendingAndThreadAdmissible(candidate)) return;
             var revision = group.Revision;
-            bool Competes(QueuedRequest earlier) => CanCompeteFor(earlier, candidate, engine, generation, includeDrain: true);
+            Dictionary<EngineRuntime, PredecessorRoute>? predecessorRoutes = null;
+            bool Competes(QueuedRequest earlier) => CanCompeteFor(earlier, candidate, engine, generation,
+                ref predecessorRoutes, includeDrain: true);
             if (HasEarlierQueueCompetitor(round, prefix, Competes)) return;
             lock (queue.Gate)
             {
                 if (queue.FindExactTakeIndexUnderGate(candidate, Competes) >= 0 &&
                     ProbeRoute(candidate, engine, selection.Decision, engine.ReadDispatchObservation(), generation).Drain &&
+                    PredecessorRoutesAreCurrent(predecessorRoutes) &&
                     group.TryStartDrain(candidate, engine, probe.Profile, selection.Decision.SwitchRequired, revision))
                     candidate.Ticket.LocalDrain = group;
             }
@@ -802,21 +834,24 @@ public sealed partial class RouterCore : IInferenceRouter
     {
         var named = candidate.Request.Options?.Profile is not null;
         if (named) engine.ReleaseNamedUse();
-        if (named || candidate.ReservedSwitch)
+        if (invocation is null || named || candidate.ReservedSwitch)
         {
             lock (_gate)
             {
-                var uses = _profileUsers[engine];
-                uses.Named -= named ? 1 : 0;
-                uses.Switching -= candidate.ReservedSwitch ? 1 : 0;
-                if (uses == default) _profileUsers.Remove(engine);
-                else _profileUsers[engine] = uses;
+                if (named || candidate.ReservedSwitch)
+                {
+                    var uses = _profileUsers[engine];
+                    uses.Named -= named ? 1 : 0;
+                    uses.Switching -= candidate.ReservedSwitch ? 1 : 0;
+                    if (uses == default) _profileUsers.Remove(engine);
+                    else _profileUsers[engine] = uses;
+                }
+                // A predecessor can compete for a last thread slot from a different engine.
+                // Ordinary engine release and the cross-engine exact cut share the router gate.
+                if (invocation is null) engine.EndRequest(candidate.PromptChars);
             }
         }
-        if (invocation is null)
-            engine.EndRequest(candidate.PromptChars);
-        else
-            invocation.EndOrdinaryUse(engine, candidate.PromptChars);
+        invocation?.EndOrdinaryUse(engine, candidate.PromptChars);
     }
 
     // The router creates this source before enqueue. Detaching it transfers the router's
