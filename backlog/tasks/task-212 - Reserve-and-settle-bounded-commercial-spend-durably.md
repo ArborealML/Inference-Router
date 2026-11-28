@@ -46,5 +46,5 @@ Single-writer minimal durable attempt store, reusable atomic flush/replace helpe
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-TASK-214/215 own actual authorized release qualification. Do not add generalized financial accounting, secret management or backup infrastructure.
+Independent review is evaluating the durable attempt state and first-write ordering against the integrated direct transport. TASK-214/215 own actual authorized release qualification. Do not add generalized financial accounting, secret management or backup infrastructure.
 <!-- SECTION:NOTES:END -->
