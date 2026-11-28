@@ -7,13 +7,14 @@ status: Waiting
 assignee:
   - '@gpt-6.2-astra'
 created_date: '2026-11-17T02:41:00Z'
-updated_date: '2026-11-28T13:06:36Z'
+updated_date: '2026-11-28T13:12:00Z'
 labels:
   - engine
   - lifecycle
 milestone: m-4
 dependencies:
   - TASK-206
+  - TASK-118
 priority: high
 ordinal: 25000
 ---
