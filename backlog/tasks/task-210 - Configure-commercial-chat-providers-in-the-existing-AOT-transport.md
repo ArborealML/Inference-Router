@@ -1,11 +1,11 @@
 ---
 id: TASK-210
-title: "Configure commercial chat providers in the existing AOT transport"
-status: To Do
+title: Configure commercial chat providers in the existing AOT transport
+status: Waiting
 assignee:
-  - '@gpt-6.2-astra'
+  - '@gpt-6.2-sol-config'
 created_date: '2026-11-27'
-updated_date: '2026-11-28T12:43:07Z'
+updated_date: '2026-11-28T13:22:00Z'
 labels: []
 milestone: m-20
 dependencies:
@@ -17,7 +17,7 @@ ordinal: 210000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Extend HTTP forwarding and the existing model rewrite/stream observer with configuration-defined OpenAI Chat Completions providers. Start with Isoquant and DeepRelay; no OpenRouter intermediary or vendor-specific compiled adapters.
+Wake when the private sensitivity shared-slot correction in TASK-208 passes focused tests. The initial source-generated provider configuration and controlled chat transport are staged. Extend HTTP forwarding and the existing model rewrite and stream observer with configuration-defined OpenAI Chat Completions providers. Start with Isoquant and DeepRelay.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

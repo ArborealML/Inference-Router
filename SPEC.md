@@ -2942,10 +2942,15 @@ On reopen the authority's exact revision and digest select the confirmed or prop
 snapshot. A missing match refuses the group. A recorded operation retry returns the
 stored outcome and the group's effective policy without applying the change again.
 
-Each private completion records an owner-bound attempt intent before joining the
-HTTP handler. The final router-controlled handoff validates the captured policy and
-its group fence, enrolled engine instance, URI, method, credential and rewritten
-body binding and consumes the intent once. Consumption means the handler may
+Each private completion prepares its route-bound intent while queued without an
+engine or thread slot. Pending preparation does not compete with ready work for shared
+capacity. The existing scheduler applies queue priority and rechecks the prepared
+engine instance, configuration and policy before admission. A removed or replaced
+engine invalidates its prepared route. If another enrolled engine is eligible, the router
+retires the unused intent and prepares a fresh one. Each engine instance is tried at most
+once for a ticket. The router freezes its rewritten body and projected HTTP headers.
+At the final handoff it validates the request, engine, URI, method, version and all
+request and content headers before consuming the intent once. Consumption means the handler may
 transmit. If the fence races ahead, the stale attempt cannot reach the sending
 handler. If consumption wins, escalation reports possible exposure and requests
 cancellation. A consumed intent alone gives no proof of bytes written, read or
@@ -2953,13 +2958,23 @@ recalled. A pending intent restored after restart remains unresolved until evide
 can distinguish its disposition. A recorded private completion can retire an intent
 after a full successful buffered response or a clean stream with a terminal
 sentinel. Cancellation and response disposal alone preserve unresolved intent.
-The existing transport continues to own its physical slot through cleanup.
+The existing transport owns its physical slot through local response and socket cleanup.
+Confirmed-safe intent retirement runs independently after that slot is available. Router
+shutdown cancels queued preparation and does not wait for stalled journal I/O. The store
+retains its single-writer lease until an already-entered journal operation settles.
+A consumed permit gives no exactly-once execution guarantee.
 
 The group journal stores operation outcomes and bounded attempt metadata, including a
 writer-keyed fingerprint of the rewritten body. It stores no body, prompt or credential.
-Each group holds up to 128 mutation outcomes and 128 unresolved attempt intents and
-refuses an operation that exceeds its journal capacity. The journal preserves policy
-and intent across restart. The ordinary ticket and SSE event history remain in memory.
+Each group holds up to 128 mutation outcomes and 128 unresolved attempt intents. A group
+at the intent ceiling enters quarantine and rejects new attempts with `429
+policy_journal_quarantined`. Scoped status reports `AdmissionState = "quarantined"`,
+`MaximumUnresolvedAttempts` and `RecoveryRequired = "external_attempt_reconciliation"`.
+A durable terminal or never-sent record can release a known intent. Indeterminate
+records remain until the deployment can reconcile them using independent evidence.
+This increment has no operator endpoint for clearing uncertain intent. Other groups
+can continue. The journal preserves policy and intent across restart. The ordinary
+ticket and SSE event history remain in memory.
 
 The handler independently allows the enrolled models and serving probes as service
 traffic with no caller body. Request-derived count/tokenize, managed and commercial
@@ -4651,8 +4666,11 @@ actual provider's admission contract.
   HTTP handoff on either side of consumption, check possible exposure separately from
   captured requests, and exercise an independently progressing group during persistence.
   Lose external confirmation after commit, reopen against the exact authority head and
-  verify an operation replay returns its recorded result. Tests use disposable loopback
-  transports and controlled authorities.
+  verify an operation replay returns its recorded result. A single shared engine slot
+  stays available during stalled preparation and terminal journal I/O, and remains
+  occupied while the sender is active. Capture mutated projections, socket loss after
+  body receipt, and group-local quarantine. Tests use disposable loopback transports
+  and controlled authorities.
 
 - **Unit**: priority comparability, queue ordering/overflow, scheduler
   scoring (affinity vs busy), serving-profile escalation decisions (fit, smallest

@@ -74,14 +74,6 @@ public sealed partial class RouterCore
     internal IAsyncEnumerable<RouterEvent> SubscribeOwnedEvents(RouterEventFilter filter, PolicyGroupKey key, CancellationToken ct) =>
         new EventEnumerable(_events, filter with { OwnerGroup = key }, ct, _shutdown.Token);
 
-    private Task FinishOwnedPrivateAttemptAsync(RouterTicket ticket)
-    {
-        if (Interlocked.Exchange(ref ticket.PrivateAttempt, null) is not { } attempt || _ownedPolicy is not { } policy)
-            return Task.CompletedTask;
-        attempt.DropRequestBinding();
-        return policy.Store.FinishIntentAsync(attempt);
-    }
-
     internal async ValueTask<OwnedSensitivityOutcome> EscalateOwnedSensitivityAsync(OwnedPolicyGroup group, string operation,
         long expectedRevision, CancellationToken cancellationToken)
     {

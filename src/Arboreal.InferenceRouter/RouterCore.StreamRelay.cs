@@ -142,13 +142,13 @@ public sealed partial class RouterCore
         var ct = transport.Token;
         var attempted = false;
         var upstreamModel = engine.CanonicalModel(ticket.Model) ?? ticket.Model;
-        ulong expectedChoices = 0;
+        var expectedChoices = ticket.PrivatePreparation?.ExpectedChoices ?? 0;
         try
         {
             if (BeforeOptInTransportStartForTests is { } before)
                 await before(ticket.Id).ConfigureAwait(false);
             if (ticket.IsTerminal || invocation?.IsCommissioned == true && ticket.HttpOutputEnded) return;
-            var body = ModelRewriter.Rewrite(candidate.Request.Body, upstreamModel, stream: true, out expectedChoices);
+            var body = UsesOwnedJournal(ticket) ? [] : ModelRewriter.Rewrite(candidate.Request.Body, upstreamModel, stream: true, out expectedChoices);
             var suffix = CompletionSuffix(candidate);
             if (invocation is not null)
             {
@@ -224,7 +224,12 @@ public sealed partial class RouterCore
             await AbortUnstartedInvocationAsync(ticket, invocation).ConfigureAwait(false);
             candidate.LocalLease?.Release();
             if (attempted && !OwnedPolicyEnabled) engine.RecordPrefix(candidate.Messages());
-            await FinishOwnedPrivateAttemptAsync(ticket).ConfigureAwait(false);
+            if (UsesOwnedJournal(ticket))
+            {
+                EndEngineRequest(candidate, engine, invocation: null);
+                SignalDispatch();
+            }
+            RetireOwnedPreparation(ticket);
         }
 
         async Task ConsumeAsync(HttpResponseMessage response, ResponseGate? gate)
