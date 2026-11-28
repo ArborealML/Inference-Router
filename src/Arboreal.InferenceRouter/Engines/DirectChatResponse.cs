@@ -236,8 +236,9 @@ internal sealed class DirectChatResponse : IDisposable
         return SseBlockDecision.Refuse;
     }
 
-    // The producer and timer choose expiration under one gate. A callback already queued
-    // when semantic progress renews the timer reads the current deadlines before acting.
+    // The producer and timer choose expiration under one gate. After qualification,
+    // progress can only move the next deadline later. The armed wake recalculates that
+    // deadline from the latest semantic timestamp before acting.
     private RouterRequestException? CheckDeadline(bool semanticProgress = false, bool finished = false, bool timerCallback = false)
     {
         RouterRequestException failure;
@@ -251,9 +252,12 @@ internal sealed class DirectChatResponse : IDisposable
                 if (finished) CloseDeadline();
                 else if (semanticProgress)
                 {
-                    _verified = true;
                     _lastSemanticAt = now;
-                    ArmTimer(Remaining(now));
+                    if (!_verified)
+                    {
+                        _verified = true;
+                        ArmTimer(Remaining(now));
+                    }
                 }
                 else if (timerCallback) ArmTimer(remaining);
                 return null;
