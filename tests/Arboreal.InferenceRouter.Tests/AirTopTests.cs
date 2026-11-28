@@ -54,19 +54,60 @@ public sealed class AirTopTests
         Assert.Equal("ticket", Assert.Single(top.Read().Rows, r => r.Kind == "Activity").Ticket);
     }
 
-    private sealed class Fixture : HttpMessageHandler
+    [Fact]
+    public async Task WaitAlternativesAreAdvisoryBoundedAndSanitizedInTicketAndHistory()
+    {
+        const string dispatch = """
+            {"ObservationId":17,"Reason":"lifecycle_group_draining","Scope":"gpu\u001b","AcceptedDrainScope":"gpu",
+            "Alternatives":[{"Engine":"two\u001b","State":"observed_ready","Reason":"route_admission_wait","Scope":"two"},
+            {"Engine":"three","State":"not_evaluated"}],"AlternativesTruncated":true}
+            """;
+        var ticket = $$"""
+            {"Id":"waiter","ThreadId":"caller","Model":"shared","QueuedAt":"2026-01-01T00:00:00+00:00",
+            "State":"Queued","QueueDispatch":{{dispatch}}}
+            """;
+        using var handler = new Fixture(ticket);
+        using var http = new HttpClient(handler) { BaseAddress = new Uri("http://monitor.test") };
+        using var monitor = new RouterMonitor(http);
+        monitor.Follow("waiter");
+        await monitor.RefreshAsync(CancellationToken.None);
+        var item = Assert.IsType<TicketSnapshot>(monitor.Snapshot().Ticket);
+        Assert.Equal(17, item.QueueDispatch?.ObservationId);
+        var e = System.Text.Json.JsonSerializer.Deserialize(
+            $$"""{"Seq":1,"Kind":"request.waiting","TicketId":"waiter","Model":"shared","QueueDispatch":{{dispatch}}}""",
+            MonitorJson.Default.RouterEvent);
+        monitor.Observe(Assert.IsType<RouterEvent>(e), false);
+
+        var rows = new AirTop(monitor).Read().Rows;
+        foreach (var row in rows.Where(static row => row.Kind is "Ticket" or "Activity"))
+        {
+            Assert.Contains("Queue advisory", row.Detail, StringComparison.Ordinal);
+            Assert.Contains("Accepted drain gpu", row.Detail, StringComparison.Ordinal);
+            Assert.Contains("observed_ready", row.Detail, StringComparison.Ordinal);
+            Assert.Contains("not_evaluated", row.Detail, StringComparison.Ordinal);
+            Assert.Contains("Other alternatives omitted", row.Detail, StringComparison.Ordinal);
+            Assert.DoesNotContain('\u001b', row.Detail);
+        }
+        Assert.Equal(2, rows.Count(static row => row.Kind is "Ticket" or "Activity"));
+    }
+
+    private sealed class Fixture(string? ticket = null) : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
-            if (request.RequestUri!.AbsolutePath != "/admin/status")
+            var path = request.RequestUri!.AbsolutePath;
+            if (path == "/admin/tickets/waiter" && ticket is not null) return Reply(ticket);
+            if (path != "/admin/status")
                 return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
             const string payload = """
                 {"Engines":[{"Engine":"gpu\u001b","Healthy":true,"Inflight":1,"LoadedModels":["hot"],"SwitchingToward":"cold"}],"QueueDepths":{"cold":8}}
                 """;
-            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
-            {
-                Content = new StringContent(payload, Encoding.UTF8, "application/json"),
-            });
+            return Reply(payload);
         }
+
+        private static Task<HttpResponseMessage> Reply(string payload) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(payload, Encoding.UTF8, "application/json"),
+        });
     }
 }
