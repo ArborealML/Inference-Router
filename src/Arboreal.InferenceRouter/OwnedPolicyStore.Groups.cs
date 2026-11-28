@@ -21,7 +21,9 @@ public sealed class OwnedPolicyAuthorityUnavailableException() : IOException("Th
 internal sealed record OwnedSensitivityOutcome(string Operation, long Revision, bool Sensitive, long CurrentRevision,
     bool CurrentSensitive, int PossibleExposures);
 
-internal sealed record OwnedEffectivePolicy(long Revision, bool Sensitive, string AdmissionState, int UnresolvedAttempts);
+internal sealed record OwnedEffectivePolicy(long Revision, bool Sensitive, string AdmissionState, int UnresolvedAttempts,
+    int MaximumUnresolvedAttempts,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? RecoveryRequired);
 
 public sealed partial class OwnedPolicyStore
 {
@@ -88,8 +90,10 @@ public sealed partial class OwnedPolicyStore
     internal OwnedEffectivePolicy? ReadEffectivePolicy(PolicyGroupKey key)
     {
         if (!_journals.TryGetValue(key, out var journal) || Volatile.Read(ref journal.View) is not { } snapshot) return null;
-        var state = !Available || journal.Uncertain ? "uncertain" : journal.Fenced ? "pending" : "confirmed";
-        return new(snapshot.Policy.Revision, snapshot.Policy.Sensitive, state, snapshot.Intents.Length);
+        var full = snapshot.Intents.Length >= MaxGroupIntents;
+        var state = !Available || journal.Uncertain ? "uncertain" : journal.Fenced ? "pending" : full ? "quarantined" : "confirmed";
+        return new(snapshot.Policy.Revision, snapshot.Policy.Sensitive, state, snapshot.Intents.Length, MaxGroupIntents,
+            full ? "external_attempt_reconciliation" : null);
     }
 
     private bool IsCurrentInJournal(OwnedPolicyGroup group) => _journals.TryGetValue(group.Key, out var journal) &&
@@ -99,6 +103,7 @@ public sealed partial class OwnedPolicyStore
         long expectedRevision, CancellationToken cancellationToken)
     {
         if (_groupAuthority is null) throw new RouterRequestException("policy_capability_unavailable", "sensitivity changes are unavailable");
+        using var storeOperation = EnterOperation() ?? throw GroupUnavailable();
         if (!_journals.TryGetValue(group.Key, out var journal)) throw GroupUnavailable();
         GroupSnapshot current;
         OwnedPolicyHead? prior;
@@ -154,6 +159,7 @@ public sealed partial class OwnedPolicyStore
 
     internal async ValueTask RecordIntentAsync(OwnedPrivateAttempt attempt, CancellationToken cancellationToken)
     {
+        using var operation = EnterOperation() ?? throw GroupUnavailable();
         if (!_journals.TryGetValue(attempt.Key, out var journal)) throw GroupUnavailable();
         await journal.Writer.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
@@ -166,7 +172,7 @@ public sealed partial class OwnedPolicyStore
                 current = journal.View!;
                 prior = journal.Head;
                 if (current.Intents.Length >= MaxGroupIntents)
-                    throw new RouterRequestException("policy_journal_full", "the owned attempt journal is full");
+                    throw new RouterRequestException("policy_journal_quarantined", "the owned attempt journal requires external reconciliation");
                 journal.Active[attempt.Record.Attempt] = attempt;
             }
             var proposed = current with { Sequence = checked(current.Sequence + 1), Intents = [.. current.Intents, attempt.Record] };
@@ -191,7 +197,8 @@ public sealed partial class OwnedPolicyStore
 
     internal async Task FinishIntentAsync(OwnedPrivateAttempt attempt)
     {
-        if (!_journals.TryGetValue(attempt.Key, out var journal)) return;
+        using var operation = EnterOperation();
+        if (operation is null || !_journals.TryGetValue(attempt.Key, out var journal)) return;
         await journal.Writer.WaitAsync().ConfigureAwait(false);
         try
         {
@@ -227,6 +234,7 @@ public sealed partial class OwnedPolicyStore
             await WriteSnapshotAsync(pending, bytes, overwrite: true, cancellationToken).ConfigureAwait(false);
             if (!await _groupAuthority!.CompareAndCommitAsync(proposed.Store, key.Owner, key.Group, previous, head, cancellationToken).ConfigureAwait(false))
                 throw new IOException("The policy group authority rejected its predecessor.");
+            if (!Available) throw GroupUnavailable();
             Promote(pending, confirmed);
             lock (journal.Gate)
             {

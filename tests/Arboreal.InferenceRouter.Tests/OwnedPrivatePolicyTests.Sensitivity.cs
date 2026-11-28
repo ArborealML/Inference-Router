@@ -239,17 +239,18 @@ public sealed partial class OwnedPrivatePolicyTests
     private sealed class GroupAuthority : IOwnedPolicyGroupHeadAuthority
     {
         private readonly ConcurrentDictionary<string, OwnedPolicyHead> _heads = new(StringComparer.Ordinal);
-        private readonly ConcurrentDictionary<string, (TaskCompletionSource Entered, TaskCompletionSource Release)> _holds = new(StringComparer.Ordinal);
+        private readonly ConcurrentDictionary<string, (TaskCompletionSource Entered, TaskCompletionSource Release, bool IgnoreCancellation)> _holds =
+            new(StringComparer.Ordinal);
         internal string? LoseConfirmation;
 
         internal OwnedPolicyHead? ReadConfirmed(string group) => _heads.GetValueOrDefault(group);
 
-        internal (TaskCompletionSource Entered, TaskCompletionSource Release) HoldNext(string group)
+        internal (TaskCompletionSource Entered, TaskCompletionSource Release) HoldNext(string group, bool ignoreCancellation = false)
         {
-            var hold = (new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously),
-                new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously));
-            Assert.True(_holds.TryAdd(group, hold));
-            return hold;
+            var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            Assert.True(_holds.TryAdd(group, (entered, release, ignoreCancellation)));
+            return (entered, release);
         }
 
         public ValueTask<OwnedPolicyHead?> ReadAsync(Guid store, string owner, string group, CancellationToken cancellationToken) =>
@@ -261,7 +262,7 @@ public sealed partial class OwnedPrivatePolicyTests
             if (_holds.TryRemove(group, out var hold))
             {
                 hold.Entered.TrySetResult();
-                await hold.Release.Task.WaitAsync(cancellationToken);
+                await hold.Release.Task.WaitAsync(hold.IgnoreCancellation ? CancellationToken.None : cancellationToken);
             }
             var committed = previous is null ? _heads.TryAdd(group, proposed) : _heads.TryUpdate(group, proposed, previous);
             if (committed && LoseConfirmation == group)
