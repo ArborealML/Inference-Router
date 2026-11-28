@@ -92,13 +92,13 @@ public sealed partial class OwnedPolicyStore : IDisposable
         using var operation = EnterOperation();
         if (operation is null) return null;
         var root = await ResolveRootAsync(scope, requestedGroup, mayCreate, cancellationToken).ConfigureAwait(false);
-        return root is null ? null : await ResolveJournalAsync(root, cancellationToken).ConfigureAwait(false);
+        return root is null || !Available ? null : await ResolveJournalAsync(root, cancellationToken).ConfigureAwait(false);
     }
 
     private async ValueTask<OwnedPolicyGroup?> ResolveRootAsync(VerifiedInferenceScope scope, string? requestedGroup,
         bool mayCreate, CancellationToken cancellationToken)
     {
-        if (Volatile.Read(ref _unavailable) != 0) return null;
+        if (!Available) return null;
         var state = Volatile.Read(ref _current);
         if (scope.ExistingGroup is { } existing)
             return existing == requestedGroup ? state.Groups.GetValueOrDefault(new(scope.Owner, existing)) : null;
@@ -109,7 +109,7 @@ public sealed partial class OwnedPolicyStore : IDisposable
         await _updates.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            if (_unavailable != 0) return null;
+            if (!Available) return null;
             state = _current;
             if (state.Roots.TryGetValue((scope.Owner, intent), out matched)) return matched;
             if (state.Snapshot.Groups.Length >= MaxGroups) return null;
@@ -119,6 +119,7 @@ public sealed partial class OwnedPolicyStore : IDisposable
                 var bytes = await ReadAsync(_path, cancellationToken).ConfigureAwait(false);
                 if (!string.Equals(Digest(bytes), state.Head.Sha256, StringComparison.Ordinal))
                     throw new IOException("The stored policy has changed.");
+                if (!Available) return null;
                 var revision = checked(state.Snapshot.Revision + 1);
                 var group = new OwnedPolicyGroup(scope.Owner, Guid.NewGuid().ToString("N"), intent, false, revision,
                     scope.Allow, scope.Deny);

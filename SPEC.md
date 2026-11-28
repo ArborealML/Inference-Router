@@ -2926,8 +2926,9 @@ The existing transport owns its physical slot through local response and socket 
 Confirmed-safe intent retirement runs independently after that slot is available. Router
 shutdown cancels queued preparation and can return while journal I/O remains stalled.
 Preparation owns a store writer lease through retirement, including exits before execution.
-Closing the store fences new grants while confirmed-safe retirement can finish under the
-retained writer lease.
+Closing the store fences new grants and root creators waiting for the root writer.
+An already-issued root commit and confirmed-safe retirement can finish under the retained
+writer lease.
 A consumed permit gives no exactly-once execution guarantee.
 
 The group journal stores operation outcomes and bounded attempt metadata, including a
