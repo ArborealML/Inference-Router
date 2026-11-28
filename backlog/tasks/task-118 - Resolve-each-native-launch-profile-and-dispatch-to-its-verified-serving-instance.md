@@ -7,7 +7,7 @@ status: Waiting
 assignee:
   - '@gpt-6.2-sol-shutdown'
 created_date: '2026-11-18T18:56:00Z'
-updated_date: '2026-11-20T19:00:00Z'
+updated_date: '2026-11-28T12:07:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -25,7 +25,7 @@ ordinal: 116000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Wake when TASK-206 supplies the ordinary manager/enrollment interface and TASK-195 supplies exact recipe identity. Integrate the commissioned issuer and existing TASK-130 instance-bound transport in production composition. Shared durable issue/revocation, broker monotonic cutoff, bound probe/credential and conclusive exchange retirement remain required. Offline [launch record](https://github.com/ArborealML/Inference-Router/pull/49) identifies the container, not the serving process.
+Wake when TASK-25 publishes its commissioned admission and retirement contract. Connect the verified transport to the existing host authority. The issuer and broker share durable issuance and revocation records and a monotonic cutoff. Bind the probe and credential to the exact serving process and require conclusive exchange retirement. The [launch record](https://github.com/ArborealML/Inference-Router/pull/49) identifies the container.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -42,7 +42,9 @@ Wake when TASK-206 supplies the ordinary manager/enrollment interface and TASK-1
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Review on 084e3e0 ruled out the proposed two-ticket admission test as AC2 evidence. The runtime captures one config per engine and an installed readiness claim cannot receive configuration B. Injecting a second resolver reaches only per-ticket preparation. Ordinary omitted-tier reuse selects the resident tier, so both proposed rows exercise settings drift. Existing effective-input digest, wrong-target refusal before checkout, fresh-generation and positive delivery controls cover that outcome. Drop both rows and the optional substitute. Revisit AC2 when a real join can observe distinct snapshots. For Defiant, connect the verified resident only after original launch provenance and issuer-bound process and capacity evidence are available. Preserve production gates.
+Review on 084e3e0 ruled out the proposed two-ticket admission test as AC2 evidence. The runtime captures one config per engine and an installed readiness claim cannot receive configuration B. Injecting a second resolver reaches only per-ticket preparation. Ordinary omitted-tier reuse selects the resident tier, so both proposed rows exercise settings drift. Existing effective-input digest, wrong-target refusal before checkout, fresh-generation and positive delivery controls cover that outcome. Drop both rows and the optional substitute. Revisit AC2 when a real join can observe distinct snapshots.
+
+Recover the executable bootstrap that selects an installed authority directory. Reuse its catalog and checkpoint verification, authenticated broker and partition reads, terminal listener and process-bound issuer. Feed the same authority through the normal host-manager factory. Both serving entry points must reject explicitly selected commissioning when the authority is missing or stale. Qualify positive startup through the shipping binary with controlled external services and prove the original queued request reaches the verified listener. An internal factory alone leaves this criterion open. Keep physical installation and live acceptance separately scoped.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes

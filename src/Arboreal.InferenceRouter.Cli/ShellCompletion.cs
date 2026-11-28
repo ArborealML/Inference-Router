@@ -21,6 +21,7 @@ internal static class ShellCompletion
         "config" => ["-c", "--config"],
         "serve" => ["-c", "--config", "-l", "--listen"],
         "tune plan" => ["--config", "--engine", "--model", "--profile", "--seed", "--max-concurrency"],
+        "tune run" => ["--config", "--engine", "--model", "--profile", "--seed", "--max-concurrency", "--host-record", "--out"],
         "tune compare" => ["--baseline", "--candidate"],
         _ => [],
     };
@@ -65,8 +66,8 @@ internal static class ShellCompletion
         if (command == "completion") return words.Length == 1 ? Shells : [];
         if (command == "tune")
         {
-            if (words.Length == 1) return ["compare", "plan", "--json"];
-            if (words[1] is not ("compare" or "plan")) return [];
+            if (words.Length == 1) return ["compare", "plan", "run", "--json"];
+            if (words[1] is not ("compare" or "plan" or "run")) return [];
             command += " " + words[1];
         }
 
@@ -75,15 +76,15 @@ internal static class ShellCompletion
         if (options.Contains(previous, StringComparer.Ordinal) && previous != "--no-stream" &&
             (prefix.Length == 0 || prefix[0] != '-'))
         {
-            if (previous is "-c" or "--config" or "--baseline" or "--candidate")
+            if (previous is "-c" or "--config" or "--baseline" or "--candidate" or "--host-record" or "--out")
                 return PathCandidates(prefix);
             if (previous == "--max-concurrency")
-                return Enumerable.Range(1, 8).Select(n => n.ToString(CultureInfo.InvariantCulture));
+                return command == "tune run" ? ["1"] : Enumerable.Range(1, 8).Select(n => n.ToString(CultureInfo.InvariantCulture));
             if (previous is "-p" or "--priority") return ["background", "low", "normal", "high", "interactive"];
             if (previous is not ("-m" or "--model" or "-e" or "--engine" or "--profile")) return [];
 
             var engines = await CatalogAsync(Program.GetOpt(words, ServerOptions), Program.DefaultServer,
-                Program.GetOpt(words, ["--config"]), command == "tune plan").ConfigureAwait(false);
+                Program.GetOpt(words, ["--config"]), command is "tune plan" or "tune run").ConfigureAwait(false);
             if (previous is "-e" or "--engine") return engines.Select(e => e.Name);
             var engine = Program.GetOpt(words, ["-e", "--engine"]);
             var models = engines.Where(e => engine is null || e.Name.Equals(engine, StringComparison.OrdinalIgnoreCase))
