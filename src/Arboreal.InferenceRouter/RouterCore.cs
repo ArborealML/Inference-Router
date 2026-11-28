@@ -19,6 +19,7 @@ public sealed partial class RouterCore : IInferenceRouter
     private readonly TimeProvider _clock;
     private readonly ExactTicketAdmission? _admission;
     private readonly InProcessHostManager? _hostManager;
+    private readonly OwnedPrivatePolicy? _ownedPolicy;
     // An exact caller may share a proven resident. Keep a conflicting ordinary switch
     // from entering between that caller's queue removal and its first transport use.
     private readonly Dictionary<EngineRuntime, (int Named, int Switching)> _profileUsers = [];
@@ -63,8 +64,13 @@ public sealed partial class RouterCore : IInferenceRouter
     internal RouterCore(RouterConfig config, IRequestScheduler? scheduler, EventRing? events, TimeProvider clock,
                         Func<EngineDefinition, IEngineLifecycleProvider>? lifecycleFactory = null,
                         ExactTicketAdmission? admission = null, ReloadConfiguration? reload = null, string? nativeResetStartupInstance = null,
-                        InProcessHostManager? hostManager = null)
+                        InProcessHostManager? hostManager = null, OwnedPrivatePolicy? ownedPolicy = null)
     {
+        if (config.OwnedPrivatePolicy != (ownedPolicy is not null))
+            throw new RouterConfigException("Owned private policy requires a verified external composition.");
+        ownedPolicy?.ValidateTopology(config, scheduler is not null || lifecycleFactory is not null ||
+            admission is not null || hostManager is not null || nativeResetStartupInstance is not null);
+        _ownedPolicy = ownedPolicy;
         config.ValidateLifecycleTopology();
         _shutdownToken = _shutdown.Token;
         _config = config;
@@ -110,14 +116,14 @@ public sealed partial class RouterCore : IInferenceRouter
         var enrollment = _hostManager?.Bind(definition);
         return new(definition, settings, _events, _config.HttpHandlerFactory?.Invoke(definition),
             enrollment is null ? _lifecycleFactory?.Invoke(definition) : null, SignalDispatch, enrollment, _clock, source,
-            localManaged: definition.LifecycleGroup is not null);
+            localManaged: definition.LifecycleGroup is not null, ownedPrivateTransport: _ownedPolicy is not null);
     }
 
     private bool UsesExactAdmission(EngineRuntime engine) => _admission is not null && (_hostManager?.Owns(engine.Name) ?? true);
 
-    public EventRing Events => _events;
+    public EventRing Events => !OwnedPolicyEnabled ? _events : throw ScopeRequired();
     public RouterConfig Config => CurrentGeneration.File?.Observe() ?? _config;
-    public IReadOnlyDictionary<string, EngineRuntime> Engines => CurrentGeneration.Engines;
+    public IReadOnlyDictionary<string, EngineRuntime> Engines => !OwnedPolicyEnabled ? CurrentGeneration.Engines : throw ScopeRequired();
     internal int MaxRequestBodyBytes => _config.MaxRequestBodyBytes;
     internal ThreadPriority DefaultPriority => _config.DefaultPriority;
 
@@ -144,29 +150,37 @@ public sealed partial class RouterCore : IInferenceRouter
             SignalDispatch();
     }
 
-    public RouterStats GetStats()
+    public RouterStats GetStats() => !OwnedPolicyEnabled ? ProjectStats(null, null, null) : throw ScopeRequired();
+
+    private RouterStats ProjectStats(PolicyGroupKey? ownedGroup, OwnedTicketPolicy? chat, OwnedTicketPolicy? text)
     {
         lock (_gate)
         {
-            var engines = CurrentGeneration.Engines.Values.Select(e =>
+            var engines = CurrentGeneration.Engines.Values.Where(e => ownedGroup is null ||
+                AllowsOwnedRoute(chat!, e.Name) || AllowsOwnedRoute(text!, e.Name)).Select(e =>
             {
                 var cap = e.Capability;
                 return new EngineStats
                 {
                     Engine = e.Name,
                     Healthy = cap.Healthy,
-                    LoadedModels = cap.LoadedModels,
-                    Inflight = e.Inflight,
+                    LoadedModels = ownedGroup is null ? cap.LoadedModels : cap.LoadedModels.Take(128).Select(WireText.Ident).ToArray(),
+                    Inflight = ownedGroup is null ? e.Inflight : OwnedInflight(ownedGroup.Value, e.Name),
                     SwitchingToward = cap.SwitchingToward,
                     ActiveProfile = cap.Serving.Profile,
                     ActiveContextWindow = cap.Serving.ContextWindow,
                     ActiveSlots = cap.Serving.TotalSlots,
                 };
             }).ToArray();
-            var queues = _queues.Values.ToDictionary(q => q.Model, q => q.Depth, StringComparer.Ordinal);
-            var threads = _threads.Values.Select(t => new ThreadStats
+            var queues = ownedGroup is null ? _queues.Values.ToDictionary(q => q.Model, q => q.Depth, StringComparer.Ordinal)
+                : _queues.Values.Select(q => (q.Model, Count: q.CaptureRound().Requests.Count(r => r.Ticket.OwnedPolicy?.Key == ownedGroup)))
+                    .Where(static row => row.Count > 0).Take(128)
+                    .ToDictionary(static row => row.Model, static row => row.Count, StringComparer.Ordinal);
+            IEnumerable<RouterThread> visibleThreads = _threads.Values;
+            if (ownedGroup is not null) visibleThreads = visibleThreads.Where(t => t.OwnerGroup == ownedGroup).Take(128);
+            var threads = visibleThreads.Select(t => new ThreadStats
             {
-                ThreadId = t.ThreadId,
+                ThreadId = t.DisplayId ?? t.ThreadId,
                 Priority = t.Priority,
                 Weight = t.Weight,
                 Enqueued = Volatile.Read(ref t.Enqueued),
@@ -174,7 +188,7 @@ public sealed partial class RouterCore : IInferenceRouter
             }).ToArray();
             return new RouterStats(Engines: engines, QueueDepths: queues, Threads: threads)
             {
-                FeedSubscriberFaults = _events.SubscriberFaults,
+                FeedSubscriberFaults = ownedGroup is null ? _events.SubscriberFaults : 0,
             };
         }
     }
@@ -184,11 +198,13 @@ public sealed partial class RouterCore : IInferenceRouter
     /// follows it up — a query, a retry, a cancel — and a cut id is a value that looks valid and matches nothing.
     /// What this response cannot inherit from a request body is an unbounded <b>sentence</b>: <c>Error</c> is capped
     /// where the ticket became terminal, so it arrives here already at reporting length (§10).</summary>
-    public TicketSnapshot? TryGetTicket(string ticketId)
+    public TicketSnapshot? TryGetTicket(string ticketId) => !OwnedPolicyEnabled ? TryGetTicket(ticketId, null) : null;
+
+    internal TicketSnapshot? TryGetTicket(string ticketId, PolicyGroupKey? group)
     {
         lock (_ticketGate)
         {
-            if (!_tickets.TryGetValue(ticketId, out var t)) return null;
+            if (!_tickets.TryGetValue(ticketId, out var t) || t.OwnedPolicy?.Key != group) return null;
             var state = t.State;
             var wait = Volatile.Read(ref t.DispatchWait);
             var upstream = state is TicketState.Completed or TicketState.Cancelled or TicketState.Failed
@@ -207,12 +223,22 @@ public sealed partial class RouterCore : IInferenceRouter
                 QueueWaitScope = wait?.Scope,
                 UpstreamOutcome = upstream?.OutcomeName,
                 UpstreamEndReason = upstream?.EndReasonName,
+                AttemptPolicyRevision = t.OwnedPolicy?.Group.Revision,
+                CurrentPolicyRevision = t.OwnedPolicy is { } policy && _ownedPolicy?.IsCurrent(policy) == true ? policy.Group.Revision : null,
+                Sensitive = t.OwnedPolicy?.Group.Sensitive,
+                DestinationTrust = t.OwnedPolicy is not null && t.Engine is not null ? "private" : null,
             };
         }
     }
 
     public IAsyncEnumerable<RouterEvent> SubscribeEvents(RouterEventFilter? filter = null, CancellationToken ct = default)
-        => new EventEnumerable(_events, filter ?? new RouterEventFilter(), ct, _shutdown.Token);
+        => !OwnedPolicyEnabled ? new EventEnumerable(_events, filter ?? new RouterEventFilter(), ct, _shutdown.Token) : throw ScopeRequired();
+
+    private int OwnedInflight(PolicyGroupKey key, string engine)
+    {
+        lock (_ticketGate)
+            return _tickets.Values.Count(t => t.OwnedPolicy?.Key == key && t.State == TicketState.Executing && t.Engine == engine);
+    }
 
     private sealed class EventEnumerable(EventRing ring, RouterEventFilter filter, CancellationToken caller, CancellationToken shutdown)
         : IAsyncEnumerable<RouterEvent>
@@ -389,6 +415,12 @@ public sealed partial class RouterCore : IInferenceRouter
             {
                 if (_shutdownToken.IsCancellationRequested) return result;
                 if (request.Ticket.IsTerminal) continue;
+                if (request.Ticket.OwnedPolicy is { } policy && _ownedPolicy?.IsCurrent(policy) != true)
+                {
+                    if (ClaimQueuedEnd(request.Ticket, "policy_group_unavailable") == QueueEndClaim.Removed)
+                        SettleQueueEnd(request.Ticket, "policy_group_unavailable", null);
+                    continue;
+                }
                 if (ReadQueueEnd(request) is not null)
                 {
                     MaybeFailDeadline(request);
@@ -396,7 +428,7 @@ public sealed partial class RouterCore : IInferenceRouter
                 }
                 if (!HasThreadCapacity(request.Thread))
                 {
-                    PublishDispatchWait(round[index].Queue, request, new("thread_concurrency_limit", request.Thread.ThreadId));
+                    PublishDispatchWait(round[index].Queue, request, new("thread_concurrency_limit", request.Ticket.ThreadId));
                     continue;
                 }
 
@@ -674,6 +706,7 @@ public sealed partial class RouterCore : IInferenceRouter
             if (_closing || _shutdownToken.IsCancellationRequested) return new(TakeResult.Ineligible);
             if (!IsCurrentQueue(queue, candidate, generation) || !IsCurrentPriorityComparison(selection))
                 return new(TakeResult.QueueChanged);
+            if (!AllowsOwnedRoute(candidate.Ticket, engine.Name)) return new(TakeResult.Ineligible);
             var groupRevision = _localGroups.GetValueOrDefault(engine.Name)?.Revision;
             var resourceAware = _scheduler is PrefixAwareScheduler && claim is null;
             Dictionary<EngineRuntime, PredecessorRoute>? predecessorRoutes = null;
@@ -793,7 +826,7 @@ public sealed partial class RouterCore : IInferenceRouter
         var sameThread = ReferenceEquals(candidate.Thread, earlier.Thread) && earlier.Thread.Inflight + 1 >= earlier.Thread.MaxInflight;
         foreach (var engine in generation.Engines.Values)
         {
-            if ((!sameThread && !admission.SharesDomain(selected.Name, engine.Name)) ||
+            if (!AllowsOwnedRoute(earlier.Ticket, engine.Name) || (!sameThread && !admission.SharesDomain(selected.Name, engine.Name)) ||
                 admission.IsOtherDomain(earlier.Ticket, engine.Name)) continue;
             var observation = engine.ReadDispatchObservation();
             if (!observation.HasCapacity) continue;
@@ -819,6 +852,7 @@ public sealed partial class RouterCore : IInferenceRouter
         var sameThread = ReferenceEquals(candidate.Thread, earlier.Thread) && earlier.Thread.Inflight + 1 >= earlier.Thread.MaxInflight;
         foreach (var engine in generation.Engines.Values)
         {
+            if (!AllowsOwnedRoute(earlier.Ticket, engine.Name)) continue;
             var sameEngine = ReferenceEquals(engine, selected);
             var routeGroup = _localGroups.GetValueOrDefault(engine.Name);
             if (!sameEngine && !sameThread && (group is null || !ReferenceEquals(group, routeGroup))) continue;
@@ -1009,7 +1043,7 @@ public sealed partial class RouterCore : IInferenceRouter
             {
                 Kind = "request.selected",
                 Reason = routingReason,
-                ThreadId = ticket.ThreadId,
+                ThreadId = ticket.ThreadId, OwnerGroup = ticket.OwnedPolicy?.Key,
                 TicketId = ticket.Id,
                 Engine = engine.Name,
                 Model = ticket.Model,
@@ -1194,7 +1228,7 @@ public sealed partial class RouterCore : IInferenceRouter
         _events.AppendIf(new RouterEvent
         {
             Kind = "request.waiting",
-            ThreadId = ticket.ThreadId,
+            ThreadId = ticket.ThreadId, OwnerGroup = ticket.OwnedPolicy?.Key,
             TicketId = ticket.Id,
             Model = ticket.Model,
             Reason = FormatBlocker(new(wait.Reason, wait.Scope)),
@@ -1257,6 +1291,7 @@ public sealed partial class RouterCore : IInferenceRouter
         var index = 0;
         foreach (var engine in generation.Engines.Values)
         {
+            if (!AllowsOwnedRoute(request.Ticket, engine.Name)) continue;
             // The loaded roster, switch marker, and fit come from one published capability.
             var observation = comparison?.Observation ?? engine.ReadDispatchObservation();
             var fit = ReadRouteFit(request, engine, observation);
@@ -1274,7 +1309,7 @@ public sealed partial class RouterCore : IInferenceRouter
                 InflightTokenProxy = observation.InflightTokenProxy,
                 Healthy = fit.Healthy,
                 Switching = fit.Switching,
-                MatchedPrefixChars = engine.MatchedPrefixChars(messages),
+                MatchedPrefixChars = OwnedPolicyEnabled ? 0 : engine.MatchedPrefixChars(messages),
                 ActiveContextWindow = fit.ActiveContextWindow,
                 ServingProfiles = fit.ServingProfiles,
                 DispatchObservation = observation,
@@ -1284,7 +1319,7 @@ public sealed partial class RouterCore : IInferenceRouter
                 DefaultProfile = fit.DefaultProfile,
             };
         }
-        return infos;
+        return index == infos.Length ? infos : infos[..index];
     }
 
     // ── execution ───────────────────────────────────────────────────────────
@@ -1408,7 +1443,7 @@ public sealed partial class RouterCore : IInferenceRouter
                 using var cts = CancellationTokenSource.CreateLinkedTokenSource(_shutdownToken, executionToken, candidate.CallerToken);
                 var upstreamModel = engine.CanonicalModel(ticket.Model) ?? ticket.Model;
                 var body = ModelRewriter.Rewrite(candidate.Request.Body, upstreamModel, candidate.Request.Stream, out var choices);
-                var suffix = LooksLikeCompletion(candidate.Request.Body) ? "completions" : "chat/completions";
+                var suffix = CompletionSuffix(candidate);
 
                 if (invocation is not null)
                 {
@@ -1519,7 +1554,7 @@ public sealed partial class RouterCore : IInferenceRouter
             finally
             {
                 if (ownsForward) engine.EndForward(candidate.Request.Options?.Profile is not null);
-                engine.RecordPrefix(candidate.Messages());
+                if (!OwnedPolicyEnabled) engine.RecordPrefix(candidate.Messages());
             }
         }
         catch (Exception ex)
@@ -1544,7 +1579,7 @@ public sealed partial class RouterCore : IInferenceRouter
         {
             if (error is OperationCanceledException) Fail(ticket, "cancelled", "cancelled");
             else if (error is RouterRequestException refusal) Fail(ticket, refusal.Code, refusal.Message);
-            else Fail(ticket, "engine_unreachable", error.Message);
+            else Fail(ticket, "engine_unreachable", OwnedPolicyEnabled ? "the private upstream exchange failed" : error.Message);
         }
 
         void ReleaseLogical()
@@ -1561,7 +1596,7 @@ public sealed partial class RouterCore : IInferenceRouter
         _events.Append(new RouterEvent
         {
             Kind = "request.cleanup_failed",
-            ThreadId = claim.Ticket.ThreadId,
+            ThreadId = claim.Ticket.ThreadId, OwnerGroup = claim.Ticket.OwnedPolicy?.Key,
             TicketId = claim.Ticket.Id,
             Engine = claim.Target.Engine,
             Model = claim.Target.Model,
@@ -1587,14 +1622,16 @@ public sealed partial class RouterCore : IInferenceRouter
         }
     }
 
-    private static async Task<HttpResponseMessage> SendAsync(
+    private async Task<HttpResponseMessage> SendAsync(
         EngineRuntime engine, byte[] body, string suffix, QueuedRequest candidate, SwitchServingProof? proof, CancellationToken ct)
     {
+        if (!AllowsOwnedRoute(candidate.Ticket, engine.Name))
+            throw new RouterRequestException("policy_route_denied", "the owned private route is no longer eligible");
         using var req = MakeUpstreamRequest(engine, body, suffix, candidate.Ticket);
         engine.ObserveFirstForward(proof, candidate.Ticket.Model, ct);
         try
         {
-            return await engine.Http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
+            return await engine.InferenceHttp.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
         }
         catch (Exception error) when (error is HttpRequestException or IOException && !ct.IsCancellationRequested)
         {
@@ -1603,15 +1640,20 @@ public sealed partial class RouterCore : IInferenceRouter
         }
     }
 
-    private static HttpRequestMessage MakeUpstreamRequest(EngineRuntime engine, byte[] body, string suffix, RouterTicket ticket)
+    private static string CompletionSuffix(QueuedRequest candidate) => (candidate.Ticket.OwnedPolicy is { } policy
+        ? policy.Capability == PrivateDestinationCapability.Text : LooksLikeCompletion(candidate.Request.Body))
+        ? "completions" : "chat/completions";
+
+    private HttpRequestMessage MakeUpstreamRequest(EngineRuntime engine, byte[] body, string suffix, RouterTicket ticket)
     {
         // The suffix is composed against the endpoint path (EngineRuntime.Combine), so an endpoint
         // mounted under /v1 keeps it.
         var req = new HttpRequestMessage(HttpMethod.Post, engine.CompletionUri(suffix));
         if (engine.ApiKey is not null)
             req.Headers.TryAddWithoutValidation("Authorization", $"Bearer {engine.ApiKey}");
-        if (engine.SendsThreadCacheHint && !ticket.IsStateless && !string.IsNullOrWhiteSpace(ticket.ThreadId) && ticket.ThreadId != "anon")
-            req.Headers.Add("X-Inference-Thread", ThreadCacheHint(engine.Name, ticket.ThreadId));
+        if ((engine.SendsThreadCacheHint || _ownedPolicy?.SendsThreadCacheHint(engine.Name) == true) &&
+            !ticket.IsStateless && !string.IsNullOrWhiteSpace(ticket.ThreadId) && ticket.ThreadId != "anon")
+            req.Headers.Add("X-Inference-Thread", ThreadCacheHint(engine.Name, ticket.ScopedThreadKey ?? ticket.ThreadId));
         req.Content = new ByteArrayContent(body);
         req.Content.Headers.TryAddWithoutValidation("Content-Type", "application/json");
         return req;
@@ -1652,6 +1694,12 @@ public sealed partial class RouterCore : IInferenceRouter
         if (!res.IsSuccessStatusCode)
         {
             ticket.ObserveStreamRefusal();
+            if (OwnedPolicyEnabled)
+            {
+                gate?.Pass();
+                Fail(ticket, "engine_error", "the private upstream refused the request");
+                return;
+            }
             const int errorBodyCeiling = 256;
             var errBody = new byte[errorBodyCeiling];
             using var errorStream = await res.Content.ReadAsStreamAsync(bodyCt).ConfigureAwait(false);
@@ -1800,13 +1848,18 @@ public sealed partial class RouterCore : IInferenceRouter
                 _events.Append(new RouterEvent
                 {
                     Kind = "request.streaming_first_token",
-                    ThreadId = ticket.ThreadId,
+                    ThreadId = ticket.ThreadId, OwnerGroup = ticket.OwnedPolicy?.Key,
                     TicketId = ticket.Id,
                     Engine = engine.Name,
                     Value = (long)firstRawByte.TotalMilliseconds,
                 });
             }
             var (complete, limitExceeded) = blocks.Append(buffer.AsSpan(0, read));
+            if (OwnedPolicyEnabled && observer.SawError)
+            {
+                observer.End(StreamInputEnd.Fault);
+                return SemanticStreamObserver.ReportedError;
+            }
             if (!complete.IsEmpty)
             {
                 if (delivery is null)
@@ -1850,7 +1903,7 @@ public sealed partial class RouterCore : IInferenceRouter
         _events.Append(new RouterEvent
         {
             Kind = "request.completed",
-            ThreadId = ticket.ThreadId,
+            ThreadId = ticket.ThreadId, OwnerGroup = ticket.OwnedPolicy?.Key,
             TicketId = ticket.Id,
             Engine = ticket.Engine,
             Model = ticket.Model,
@@ -1895,7 +1948,7 @@ public sealed partial class RouterCore : IInferenceRouter
         _events.Append(new RouterEvent
         {
             Kind = code is "cancelled" ? "request.cancelled" : "request.failed",
-            ThreadId = ticket.ThreadId,
+            ThreadId = ticket.ThreadId, OwnerGroup = ticket.OwnedPolicy?.Key,
             TicketId = ticket.Id,
             Engine = ticket.Engine,
             Model = ticket.Model,
@@ -1924,7 +1977,7 @@ public sealed partial class RouterCore : IInferenceRouter
     private RouterThread? TicketThread(RouterTicket ticket)
     {
         if (ticket.IsStateless) return null;
-        lock (_gate) return _threads.GetValueOrDefault(ticket.ThreadId);
+        lock (_gate) return _threads.GetValueOrDefault(ticket.ScopedThreadKey ?? ticket.ThreadId);
     }
 
     // ── helpers ─────────────────────────────────────────────────────────────
@@ -2126,6 +2179,8 @@ public sealed record RouterStats(
     /// isolated by design — it must not reach the engine that emitted the event — so a broken observer is otherwise
     /// invisible: this count is what tells an operator that a live tail has stopped being delivered.</summary>
     public long FeedSubscriberFaults { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public ScopedPolicyStatus? Policy { get; init; }
 }
 
 /// <summary>Immutable projection of one ticket for the admin API (AOT-safe DTO).</summary>
@@ -2148,6 +2203,14 @@ public sealed record TicketSnapshot
     public string? UpstreamOutcome { get; init; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? UpstreamEndReason { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public long? CurrentPolicyRevision { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public long? AttemptPolicyRevision { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? Sensitive { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? DestinationTrust { get; init; }
 }
 
 public interface IInferenceRouter : IAsyncDisposable

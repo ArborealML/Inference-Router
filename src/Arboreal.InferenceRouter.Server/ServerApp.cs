@@ -43,7 +43,8 @@ public static partial class ServerApp
     internal static WebApplication Build(string[] args, string? configPath, RouterConfig? configOverride,
         TimeProvider streamClock, Func<EngineDefinition, Lifecycle.IEngineLifecycleProvider>? lifecycleFactory = null,
         Func<EngineDefinition, HttpMessageHandler>? httpHandlerFactoryForTests = null, string? reloadTokenForTests = null,
-        Func<string?>? readTargetResetOptInForTests = null, TimeProvider? adminSwitchClockForTests = null)
+        Func<string?>? readTargetResetOptInForTests = null, TimeProvider? adminSwitchClockForTests = null,
+        OwnedPrivateServerComposition? ownedComposition = null)
     {
         configPath = RouterConfigLoader.ResolveFilePath(configPath);
         var credential = configOverride is null
@@ -65,14 +66,19 @@ public static partial class ServerApp
         }
         var config = configOverride ?? loaded?.Config ?? RouterConfigLoader.LoadFile(configPath);
         if (httpHandlerFactoryForTests is not null) config.HttpHandlerFactory = httpHandlerFactoryForTests;
+        if (config.OwnedPrivatePolicy != (ownedComposition is not null))
+            throw new RouterConfigException("Owned private policy requires a verified external composition.");
+        ownedComposition?.Policy.ValidateTopology(config, lifecycleFactory is not null || targetResetInstance is not null);
 
         var builder = WebApplication.CreateSlimBuilder(args);
         builder.Services.AddSingleton(_ => new RouterCore(config, null, null, TimeProvider.System,
-            lifecycleFactory, reload: loaded, nativeResetStartupInstance: targetResetInstance));
+            lifecycleFactory, reload: loaded, nativeResetStartupInstance: targetResetInstance, ownedPolicy: ownedComposition?.Policy));
         builder.Services.AddSingleton(streamClock);
         builder.Services.AddSingleton(new AdminSwitchOperations(adminSwitchClockForTests ?? TimeProvider.System));
 
         var app = builder.Build();
+        if (ownedComposition is not null)
+            app.Use((ctx, next) => AuthorizeOwnedRequestAsync(ctx, next, ownedComposition));
         // Explicit --urls / ASPNETCORE_URLS win over the config's listen address; setting
         // app.Urls at all replaces the host's address list, so only do it when needed.
         if (string.IsNullOrWhiteSpace(builder.Configuration["urls"]))
@@ -136,6 +142,12 @@ public static partial class ServerApp
     private static async Task HandleInference(HttpContext ctx, RouterCore router, TimeProvider streamClock)
     {
         var ct = ctx.RequestAborted;
+        var owned = ReadOwnedRequest(ctx);
+        if (router.OwnedPolicyEnabled && owned is null)
+        {
+            await WriteErrorAsync(ctx, 403, "verified_scope_required", "a verified owned inference scope is required").ConfigureAwait(false);
+            return;
+        }
 
         // Priority and identity defects are decided before consuming the body (§6).
         ThreadPriority? declaredPriority;
@@ -144,6 +156,8 @@ public static partial class ServerApp
         {
             declaredPriority = PriorityFromHeader(ctx);
             threadId = InferenceThreadFromHeader(ctx);
+            if (owned is not null && threadId is { Length: > 96 })
+                throw new RouterRequestException("invalid_request", "the owned thread name exceeds its limit");
         }
         catch (RouterRequestException ex)
         {
@@ -158,9 +172,13 @@ public static partial class ServerApp
         // Minimal probe of the raw body (model, stream) — full passthrough otherwise.
         string? requestedModel = null;
         bool stream = false;
+        PrivateDestinationCapability? requiredCapability = null;
         try
         {
-            using var doc = JsonDocument.Parse(payload);
+            using var doc = JsonDocument.Parse(payload, new JsonDocumentOptions { AllowDuplicateProperties = owned is null });
+            if (owned is not null)
+                requiredCapability = RouterCore.CheckOwnedWorkload(doc.RootElement,
+                    !ctx.Request.Path.Value!.TrimEnd('/').Equals("/v1/completions", StringComparison.OrdinalIgnoreCase));
             if (doc.RootElement.ValueKind == JsonValueKind.Object)
             {
                 if (doc.RootElement.TryGetProperty("model", out var m) && m.ValueKind == JsonValueKind.String)
@@ -174,13 +192,18 @@ public static partial class ServerApp
             await WriteErrorAsync(ctx, 400, "invalid_request", "body is not valid JSON").ConfigureAwait(false);
             return;
         }
+        catch (RouterRequestException ex)
+        {
+            await WriteErrorAsync(ctx, MapStatus(ex.Code), ex.Code, ex.Message).ConfigureAwait(false);
+            return;
+        }
 
         var affinity = ctx.Request.Headers["X-Inference-Affinity"].ToString() is { Length: > 0 } a ? a : null;
 
         RouterTicket ticket;
         try
         {
-            ticket = await router.EnqueueHttpAsync(threadId, new InferenceRequest
+            var request = new InferenceRequest
             {
                 Model = requestedModel,
                 Stream = stream,
@@ -188,11 +211,20 @@ public static partial class ServerApp
                 Options = new RouterRequestOptions
                 {
                     Priority = declaredPriority,
-                    CacheAffinityHash = affinity,
+                    CacheAffinityHash = owned is null ? affinity : null,
                     Profile = ProfileFromHeader(ctx),
                     RequiredContext = RequiredContextFromHeader(ctx),
                 },
-            }, ct).ConfigureAwait(false);
+            };
+            if (owned is null) ticket = await router.EnqueueHttpAsync(threadId, request, ct).ConfigureAwait(false);
+            else
+            {
+                var group = owned.Group ?? await router.ResolveOwnedPolicyAsync(owned.Scope, owned.RequestedGroup,
+                    OwnedInferencePermission.Inference, mayCreate: true, ct).ConfigureAwait(false);
+                ctx.Response.Headers[PolicyGroupHeader] = group.Group;
+                ticket = await router.EnqueueOwnedHttpAsync(threadId, request, new OwnedTicketPolicy(group, owned.Scope,
+                    requiredCapability!.Value), ct).ConfigureAwait(false);
+            }
         }
         catch (RouterRequestException ex)
         {
@@ -210,9 +242,9 @@ public static partial class ServerApp
         // in the stats and in the event feed.
         using var callerAbort = ctx.RequestAborted.Register(static state =>
         {
-            var (core, id) = ((RouterCore, string))state!;
-            core.TryCancel(id);
-        }, (router, ticket.Id));
+            var (core, admitted) = ((RouterCore, RouterTicket))state!;
+            core.CancelTicket(admitted);
+        }, (router, ticket));
 
         if (stream)
         {
@@ -487,6 +519,9 @@ public static partial class ServerApp
     private static int MapStatus(string code) => code switch
     {
         "invalid_profile" or "invalid_priority" => 400,
+        "verified_scope_required" or "policy_group_unavailable" or "policy_route_denied" or
+            "policy_capability_unavailable" or "policy_restriction_invalid" => 403,
+        "owned_thread_limit" => 429,
         "queue_overflow" => 429,
         "deadline_exceeded" => 408,
         "cancelled" => 499,
@@ -500,6 +535,12 @@ public static partial class ServerApp
 
     private static async Task HandleModels(HttpContext ctx, RouterCore router)
     {
+        var owned = ReadOwnedRequest(ctx);
+        if (router.OwnedPolicyEnabled && owned?.Group is null)
+        {
+            await OwnedScopeError(ctx).ConfigureAwait(false);
+            return;
+        }
         using var ms = new MemoryStream(1024);
         using (var w = new Utf8JsonWriter(ms))
         {
@@ -509,11 +550,13 @@ public static partial class ServerApp
             var generation = router.CurrentGeneration;
             foreach (var e in generation.Engines.Values)
             {
+                if (owned?.Group is { } group && !router.CanSeeOwnedEngine(group, owned.Scope, e.Name)) continue;
                 var capability = e.Capability;
-                foreach (var model in capability.ModelRoster)
+                var roster = owned is null ? capability.ModelRoster : capability.ModelRoster.Take(128);
+                foreach (var model in roster)
                 {
                     w.WriteStartObject();
-                    w.WriteString("id", model);
+                    w.WriteString("id", owned is null ? model : WireText.Ident(model));
                     w.WriteString("object", "model");
                     w.WriteNumber("created", DateTimeOffset.UtcNow.ToUnixTimeSeconds());
                     w.WriteString("owned_by", e.Name);
@@ -532,33 +575,57 @@ public static partial class ServerApp
 
     private static Task HandleCatalog(HttpContext ctx, RouterCore router, string instance)
     {
+        var owned = ReadOwnedRequest(ctx);
+        if (router.OwnedPolicyEnabled && owned?.Group is null) return OwnedScopeError(ctx);
         var generation = router.CurrentGeneration;
         var tag = FormattableString.Invariant($"\"catalog-{instance}-{generation.Number}\"");
-        ctx.Response.Headers.ETag = tag;
-        ctx.Response.Headers.CacheControl = "no-cache";
-        if (ctx.Request.GetTypedHeaders().IfNoneMatch?.Any(item => item.Tag.Value == tag || item.Tag.Value == "*") == true)
+        if (owned is null)
         {
-            ctx.Response.StatusCode = StatusCodes.Status304NotModified;
-            return Task.CompletedTask;
+            ctx.Response.Headers.ETag = tag;
+            ctx.Response.Headers.CacheControl = "no-cache";
+            if (ctx.Request.GetTypedHeaders().IfNoneMatch?.Any(item => item.Tag.Value == tag || item.Tag.Value == "*") == true)
+            {
+                ctx.Response.StatusCode = StatusCodes.Status304NotModified;
+                return Task.CompletedTask;
+            }
         }
         var settings = generation.Settings;
-        var engines = settings.Engines.Values.OrderBy(engine => engine.Name, StringComparer.Ordinal)
+        var engines = settings.Engines.Values.Where(engine => owned?.Group is not { } group ||
+                router.CanSeeOwnedEngine(group, owned.Scope, engine.Name)).OrderBy(engine => engine.Name, StringComparer.Ordinal)
             .Select(engine => new CatalogEngine(engine.Name, engine.Catalog.Values.OrderBy(model => model.Name, StringComparer.Ordinal)
                 .Select(model => new CatalogModel(model.Name, model.Aliases,
                     model.Profile ?? (engine.Lifecycle == EngineLifecycleKind.Docker && model.ServingProfiles.Count == 1
                         ? model.ServingProfiles[0].Name : null), model.ServingProfiles)).ToArray())).ToArray();
-        var catalog = new CatalogSnapshot(instance, generation.Number, settings.DefaultModel, engines);
+        var defaultModel = owned is null || engines.Any(engine => engine.Models.Any(model =>
+            model.Id == settings.DefaultModel || model.Aliases.Contains(settings.DefaultModel, StringComparer.OrdinalIgnoreCase)))
+            ? settings.DefaultModel : string.Empty;
+        var catalog = new CatalogSnapshot(instance, generation.Number, defaultModel, engines);
         return AirJson.WriteAsync(ctx.Response, catalog, AirServerJson.AirServerContext.Default.CatalogSnapshot, ctx.RequestAborted);
     }
 
     private static async Task HandleStatus(HttpContext ctx, RouterCore router)
     {
-        await AirJson.WriteAsync(ctx.Response, router.GetStats(),
+        var owned = ReadOwnedRequest(ctx);
+        if (router.OwnedPolicyEnabled && owned?.Group is null)
+        {
+            await OwnedScopeError(ctx).ConfigureAwait(false);
+            return;
+        }
+        var stats = owned?.Group is { } group ? router.GetOwnedStats(group, owned.Scope) : router.GetStats();
+        await AirJson.WriteAsync(ctx.Response, stats,
             AirServerJson.AirServerContext.Default.RouterStats, ctx.RequestAborted).ConfigureAwait(false);
     }
 
     private static Task HandleEvents(HttpContext ctx, RouterCore router, string? ticketOverride = null)
-        => WriteEventStreamAsync(ctx, router, BuildEventFilter(ctx, ticketOverride));
+    {
+        var owned = ReadOwnedRequest(ctx);
+        if (router.OwnedPolicyEnabled && owned?.Group is null) return OwnedScopeError(ctx);
+        var filter = BuildEventFilter(ctx, ticketOverride);
+        var key = owned?.Group?.Key;
+        if (key is { } scope && filter.TicketId is { } ticket && router.TryGetTicket(ticket, scope) is null &&
+            !router.HasOwnedEvent(scope, ticket)) return WriteErrorAsync(ctx, 404, "not_found", "ticket not found");
+        return WriteEventStreamAsync(ctx, router, filter, key);
+    }
 
     /// <summary>Filters come from the query string so one route serves the global feed, a thread's
     /// feed and one ticket's feed. Unknown parameters are ignored, not errors: an agent that sends
@@ -586,13 +653,13 @@ public static partial class ServerApp
         };
     }
 
-    private static async Task WriteEventStreamAsync(HttpContext ctx, RouterCore router, RouterEventFilter filter)
+    private static async Task WriteEventStreamAsync(HttpContext ctx, RouterCore router, RouterEventFilter filter, PolicyGroupKey? ownedGroup)
     {
         // A feed is a subscription the client keeps open, so a full ring is refused with a plain 503
         // before any SSE headers go out. A 200 that ends at once is indistinguishable from a filter
         // that matches nothing, and an exception after the headers are flushed looks to the client
         // like a truncated success. The ring's own refusal is the backstop for a race past this check.
-        if (router.Events.LiveSubscribers >= router.Events.MaxLiveSubscribers)
+        if (router.EventFeed.LiveSubscribers >= router.EventFeed.MaxLiveSubscribers)
         {
             await WriteErrorAsync(ctx, 503, "too_many_subscribers",
                 "the event feed is at its subscriber limit; close a feed and reconnect with the last Seq you saw")
@@ -602,14 +669,16 @@ public static partial class ServerApp
 
         ctx.Response.StatusCode = 200;
         ctx.Response.Headers.ContentType = "text/event-stream";
-        ctx.Response.Headers.CacheControl = "no-cache";
+        ctx.Response.Headers.CacheControl = ownedGroup is null ? "no-cache" : "no-store";
         var writer = ctx.Response.BodyWriter;
         // Headers out before the first event: a filtered stream that matches nothing (an unknown
         // ticket, a quiet engine) must still answer 200 and hold the stream open, not appear to hang.
         await writer.FlushAsync(ctx.RequestAborted).ConfigureAwait(false);
         try
         {
-            await foreach (var e in router.SubscribeEvents(filter, ctx.RequestAborted).ConfigureAwait(false))
+            var events = ownedGroup is { } key ? router.SubscribeOwnedEvents(filter, key, ctx.RequestAborted)
+                : router.SubscribeEvents(filter, ctx.RequestAborted);
+            await foreach (var e in events.ConfigureAwait(false))
             {
                 await AirJson.WriteSseFrameAsync(writer, e, AirServerJson.AirServerContext.Default.RouterEvent, ctx.RequestAborted)
                     .ConfigureAwait(false);
@@ -624,6 +693,12 @@ public static partial class ServerApp
 
     private static async Task HandleThreads(HttpContext ctx, RouterCore router)
     {
+        var owned = ReadOwnedRequest(ctx);
+        if (router.OwnedPolicyEnabled && owned?.Group is null)
+        {
+            await OwnedScopeError(ctx).ConfigureAwait(false);
+            return;
+        }
         var body = await ReadBodyAsync(ctx, router, ctx.RequestAborted).ConfigureAwait(false);
         if (body is null) return;
         try
@@ -684,12 +759,23 @@ public static partial class ServerApp
             if (root.TryGetProperty("weight", out var wt) && wt.ValueKind == JsonValueKind.Number)
                 options = options with { Weight = wt.GetDouble() };
 
-            router.RegisterThread(threadId!, priority, options);
+            if (owned?.Group is { } group)
+            {
+                if (threadId is not { Length: <= 96 } || string.IsNullOrWhiteSpace(threadId) || threadId.Any(char.IsControl))
+                    throw new RouterRequestException("invalid_request", "the owned thread name is invalid");
+                router.RegisterOwnedThread(group, threadId, priority, options);
+            }
+            else router.RegisterThread(threadId!, priority, options);
             ctx.Response.StatusCode = 204;
         }
         catch (JsonException)
         {
             await WriteErrorAsync(ctx, 400, "invalid_request", "body is not valid JSON").ConfigureAwait(false);
+        }
+        catch (RouterRequestException error)
+        {
+            await WriteErrorAsync(ctx, error.Code == "invalid_request" ? 400 : MapStatus(error.Code), error.Code, error.Message)
+                .ConfigureAwait(false);
         }
     }
 
@@ -717,6 +803,12 @@ public static partial class ServerApp
 
     private static async Task HandleSwitch(HttpContext ctx, RouterCore router, AdminSwitchOperations operations)
     {
+        if (router.OwnedPolicyEnabled)
+        {
+            await WriteErrorAsync(ctx, 403, "policy_capability_unavailable", "the owned private composition provides forward-only engines")
+                .ConfigureAwait(false);
+            return;
+        }
         var body = await ReadBodyAsync(ctx, router, ctx.RequestAborted).ConfigureAwait(false);
         if (body is null) return;
         var ownsAdminUse = false;
@@ -838,7 +930,13 @@ public static partial class ServerApp
 
     private static async Task HandleTicket(HttpContext ctx, RouterCore router, string id)
     {
-        var snapshot = router.TryGetTicket(id);
+        var key = ReadOwnedRequest(ctx)?.Group?.Key;
+        if (router.OwnedPolicyEnabled && key is null)
+        {
+            await OwnedScopeError(ctx).ConfigureAwait(false);
+            return;
+        }
+        var snapshot = router.TryGetTicket(id, key);
         if (snapshot is null)
         {
             await WriteErrorAsync(ctx, 404, "not_found", $"ticket {WireText.Ident(id)} not found").ConfigureAwait(false);
@@ -850,7 +948,9 @@ public static partial class ServerApp
 
     private static Task HandleCancel(HttpContext ctx, RouterCore router, string id)
     {
-        var ok = router.TryCancel(id);
+        var key = ReadOwnedRequest(ctx)?.Group?.Key;
+        if (router.OwnedPolicyEnabled && key is null) return OwnedScopeError(ctx);
+        var ok = router.TryCancel(id, key);
         ctx.Response.StatusCode = ok ? 204 : 404;
         return Task.CompletedTask;
     }

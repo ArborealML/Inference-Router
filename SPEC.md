@@ -1,12 +1,13 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.171)
+Status: draft, continuously revised (v0.12.174)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
 
 ## 0. Revision log
 
+- v0.12.174 — bind owned private inference to verified external scope and durable policy, qualify direct private transport, and scope catalog, status, events and ticket controls (§5.6).
 - v0.12.171 — fit deterministic short-grid prompts using exact backend counts and search the full next-record tail within the count budget (§11.2).
 - v0.12.170 — bind named managed recipes through selection and exact admission, resolve engine-local aliases before queue validation, and preserve numeric reuse of a fitting resident (§§5.3.1, 7.6, 14).
 - v0.12.169 — continue past unavailable preparation and activation offers, withdraw closed managed residents from route ranking, consume an active transition's runtime claim once, and deliver queued cancellation through controller cleanup (§§5.3.1, 5.5, 14).
@@ -2811,6 +2812,70 @@ Temporary capacity loss parks the ticket. A definitive refusal settles once with
   `cancelled` state, so open relays end rather than waiting for the process to exit.
 - **Ticket retention**: finished tickets stay answerable on the admin surface for the most recent 4096
   (the event ring's capacity); older ones are evicted so the ticket table cannot grow with traffic.
+
+### 5.6 Owned private inference policy
+
+The opt-in `owned_private_policy = true` configuration requires a host to supply
+`ServerApp.BuildOwnedPrivate` with an external verifier, a durable policy store and
+independent private destination enrolment. The stock composition refuses to start
+with that flag. Omitting it retains the existing HTTP and library behavior. The
+deployment owns the verifier, the singleton writer across any restored copies, the
+store lifetime, the protected state directory and a rollback-resistant compare-and-commit
+authority outside the directory's restore domain. A successful `ReadAsync` with no
+head confirms an unused authority. Temporary
+authority failure must report an error. This composition provides testable integration
+with an external authority. On-host identity, protected ingress and backend egress
+confinement require deployment evidence.
+
+The external verifier supplies a principal, operations and either a stable authorized
+new-root intent or an existing policy group. Each root intent resolves once for its
+owner. A new group begins insensitive and freezes the verified destination
+restrictions before its first request can be enqueued. Repeating or renaming a thread
+under the same intent keeps the policy group and its current sensitivity. Existing
+scopes require the same canonical `X-Inference-Policy-Group` value on each request.
+Successful resolution writes the authorized group in that response header. The group
+ID, any thread name, and the reload bearer alone confer no authority. Owned mode
+accepts no preconfigured legacy thread registrations. An omitted thread header keeps
+the existing stateless scheduling behavior inside the resolved group. A named thread
+is scoped by owner and group for priority, accounting, control and any explicitly
+enrolled upstream cache hint.
+
+The Linux policy store admits one writer per file. Before acknowledging a new root
+it synchronizes a versioned snapshot with its owner, intent, group, sensitivity,
+revision and restrictions, and advances the external head. The store retains policy
+only. A subsequent process requires the current head and exact matching file bytes.
+Missing, stale or corrupt policy is refused. A write with uncertain publication or
+confirmation disables the writer's grants. The owning deployment must reconcile an
+unconfirmed change before reopening. The router resolves policy outside scheduler
+and queue locks. It checks the current policy at enqueue, route ranking, predecessor
+competition, exact take and before the final private send.
+
+Only independently enrolled literal-loopback HTTP(S) endpoints qualify for this
+increment. Enrolment pins the complete configured endpoint, enabled capabilities,
+models probe path and effective serving probe path, including the default `/props`.
+The actual router handler disables
+redirects, ambient proxies and cookies. Unknown destinations, custom HTTP handlers,
+managed or delegated lifecycle providers and unenrolled auxiliary paths are refused
+before they can send. Startup and reload validate the enabled topology before probes.
+Reload also refuses a change to owned mode. Rollback to an earlier binary requires
+deployment controls that preserve the authority boundary. Private text chat and text
+completion, including streaming forms, are qualified. Tools and media prompts receive
+`policy_capability_unavailable`. The destination predicate intersects capability,
+independent trust, durable allow/deny and verified request-scope restrictions. Deny
+wins and an explicit empty allow permits no destination. Engine errors are reported
+through bounded router codes and text. Commercial inference, count/tokenize HTTP
+endpoints and sensitivity mutation remain outside this increment.
+
+The HTTP handlers authenticate scope before consuming bodies or committing SSE
+headers. Group-authorized reads scope `/v1/models`, catalog, status, events and ticket
+lookup. Group-qualified thread controls and cancellation require their own operation.
+Ticket events retain their ownership at publication for replay after eviction. Scoped
+catalog replies use `no-store` and ignore incoming ETags. Ticket status reports the
+admitted policy revision, current revision when available, sensitivity and private
+destination trust without raw provider errors. Global switch and reload operations
+require separate administrator authority. The forward-only composition offers no
+native switch or reset. Health remains content-free. Global read and mutation methods
+which lack an owned scope expose no group data in this mode.
 
 ## 6. HTTP surface (server project)
 

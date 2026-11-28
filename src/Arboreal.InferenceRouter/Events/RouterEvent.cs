@@ -9,6 +9,7 @@ namespace Arboreal.InferenceRouter;
 /// the fields in lowerCamel), not something to change as a side effect of other work.</summary>
 public sealed record RouterEvent
 {
+    internal PolicyGroupKey? OwnerGroup { get; init; }
     public long Seq { get; init; }
     public DateTimeOffset Timestamp { get; init; }
     public required string Kind { get; init; }
@@ -27,6 +28,7 @@ public sealed record RouterEvent
 
 public sealed record RouterEventFilter
 {
+    internal PolicyGroupKey? OwnerGroup { get; init; }
     public long SinceSeq { get; init; }
     public string[]? Kinds { get; init; }
     public string? ThreadId { get; init; }
@@ -41,6 +43,7 @@ public sealed record RouterEventFilter
     // an operator looking at the wrong thread, never a lookup that misses the right one (§6.1).
     public bool Matches(RouterEvent e) =>
         e.Seq > SinceSeq
+        && (OwnerGroup is null || e.OwnerGroup == OwnerGroup)
         && (Kinds is null || Kinds.Contains(e.Kind, StringComparer.Ordinal))
         && (ThreadId is null || e.ThreadId == WireText.Ident(ThreadId))
         && (Engine is null || e.Engine == WireText.Ident(Engine))

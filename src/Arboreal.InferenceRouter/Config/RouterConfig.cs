@@ -275,6 +275,7 @@ public sealed class SchedulerConfig
 
 public sealed class RouterConfig
 {
+    public bool OwnedPrivatePolicy { get; init; }
     public string Listen { get; set; } = "http://127.0.0.1:8321";
     public string DefaultModel { get; set; } = "default";
     public ThreadPriority DefaultPriority { get; set; } = ThreadPriority.Normal();
