@@ -166,6 +166,7 @@ internal sealed class AirTop(RouterMonitor monitor)
             foreach (var alternative in alternatives.Take(8))
                 if (alternative is not null)
                     text.Append($"\n  {Text(alternative.Engine, 80)}  {Text(alternative.State, 40)}" +
+                        (alternative.State == "observed_ready" ? " (probe only)" : "") +
                         (alternative.Reason is { } reason ? $"  {Text(reason, 80)} ({Text(alternative.Scope, 80)})" : ""));
         }
         if (report.AlternativesTruncated || report.Alternatives?.Count > 8) text.Append("\n  Other alternatives omitted");

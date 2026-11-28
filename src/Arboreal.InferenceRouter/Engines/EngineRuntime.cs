@@ -604,6 +604,8 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
 
     public int Inflight => Volatile.Read(ref _inflight);
     private int _inflight;
+    private long _admissionClaims;
+    internal long AdmissionClaims => Interlocked.Read(ref _admissionClaims);
     public long InflightTokenProxy => Interlocked.Read(ref _tokenProxy);
     private long _tokenProxy;
     public bool Switching => SwitchingToward is not null;
@@ -2255,6 +2257,7 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
 
     public void BeginRequest(long promptChars)
     {
+        Interlocked.Increment(ref _admissionClaims);
         Interlocked.Increment(ref _inflight);
         Interlocked.Add(ref _tokenProxy, promptChars);
     }
@@ -2409,7 +2412,7 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
     public bool HasCapacity => Inflight < EffectiveSlotLimit(Capability);
 
     internal readonly record struct DispatchObservation(
-        EngineCapability Capability, int Inflight, long InflightTokenProxy, int SlotLimit)
+        EngineCapability Capability, int Inflight, long InflightTokenProxy, int SlotLimit, long AdmissionClaims)
     {
         internal bool HasCapacity => Inflight < SlotLimit;
     }
@@ -2417,7 +2420,8 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
     internal DispatchObservation ReadDispatchObservation()
     {
         var capability = Capability;
-        return new DispatchObservation(capability, Inflight, InflightTokenProxy, EffectiveSlotLimit(capability));
+        var claims = AdmissionClaims;
+        return new DispatchObservation(capability, Inflight, InflightTokenProxy, EffectiveSlotLimit(capability), claims);
     }
 
     internal bool IsDispatchObservationCurrent(DispatchObservation expected)
