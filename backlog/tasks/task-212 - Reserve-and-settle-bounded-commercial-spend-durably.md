@@ -40,11 +40,15 @@ Own integrated commercial send safety: one attempt and durable maximum exposure 
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Single-writer minimal durable attempt store, reusable atomic flush/replace helpers, per-account reservations and independent asynchronous persistence. External deployment establishes singleton ownership; no leader election. No global queue/admission lock spans I/O. Coordinate policy gate (TASK-208), transport (210) and caps/ranking (211). Reserve worst case even if predicted included when paid fallthrough is possible. Safe rollback cannot reenable legacy bypass; disable unclassified routes in hybrid mode. Manual reconciliation is sufficient initially.
+Compute an integer maximum charge from conservative input, aggregate output including reasoning and choices, cache and tariff bounds. Refuse missing bounds or overflow. Before dequeue, atomically reserve across all canonical budget scopes. Settled charges, unresolved maxima, provisional reservations and the new maximum must fit every limit. Persist the entire reservation vector as one attempt. Confirm its durable publication and writer generation before issuing a one-use capability. Other accounts and private routes can progress during persistence.
+
+At the first application write, verify the exact attempt, request, destination, policy, account reservations, credentials, writer and cancellation together. A crash after durable authorization leaves possible exposure even if no later send record exists. Recovery restores commitments only. Require proven non-send or verified billing settlement before reducing liability. Persist releases before returning headroom. Provider retirement may independently release occupancy. Ambiguity forbids replay. Keep the singleton writer through late I/O and refuse unverified restores.
+
+Exercise the existing dispatcher, protected HTTP writer and scoped read models with controlled accounts. Disable or migrate unclassified and legacy egress before hybrid enablement. Rollback requires external credential or egress fencing. TASK-214/215 own authorized deployment checks.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Independent review is evaluating the durable attempt state and first-write ordering against the integrated direct transport. TASK-214/215 own actual authorized release qualification. Do not add generalized financial accounting, secret management or backup infrastructure.
+Review at d045d69 confirmed the transport’s first-write boundary and identified the separate durable exposure receipt, tariff proof and recovery requirements. Reuse the same attempt identifier as scoped concurrency. Manual reconciliation is sufficient initially.
 <!-- SECTION:NOTES:END -->

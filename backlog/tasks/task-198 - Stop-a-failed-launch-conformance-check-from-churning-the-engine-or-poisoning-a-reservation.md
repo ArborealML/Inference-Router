@@ -41,4 +41,6 @@ When an exact conformance check now fails, the container the launch started keep
 
 <!-- SECTION:NOTES:BEGIN -->
 The lane-drift site to pin for criterion 4 is WithModelsObservation, EngineRuntime.cs:474-492, which keeps a stored readiness proof across a lane change when model, window and profile match. The design pass on the launch-conformance work counted the retry as unbounded today: the two adoption-loop inspections and the local owner timeout are per-ticket bounds, not physical launch bounds, so criterion 2 is pinned by counted provider calls and live inventory rather than by 503 counts or switch events.
+
+[Stock process run](https://github.com/ArborealML/Inference-Router/actions/runs/46155252307) observed a resident successor and open broker followed by exact-profile refusal. Retain the mismatched gauge as a negative control for the next-ticket recovery criteria. That run did not submit a later ticket.
 <!-- SECTION:NOTES:END -->
