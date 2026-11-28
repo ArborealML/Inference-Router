@@ -7,7 +7,7 @@ status: Waiting
 assignee:
   - '@gpt-6.2-sol-shutdown'
 created_date: '2026-11-18T18:56:00Z'
-updated_date: '2026-11-28T12:07:00Z'
+updated_date: '2026-11-28T12:37:29Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -42,9 +42,9 @@ Wake when TASK-25 publishes its commissioned admission and retirement contract. 
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Review on 084e3e0 ruled out the proposed two-ticket admission test as AC2 evidence. The runtime captures one config per engine and an installed readiness claim cannot receive configuration B. Injecting a second resolver reaches only per-ticket preparation. Ordinary omitted-tier reuse selects the resident tier, so both proposed rows exercise settings drift. Existing effective-input digest, wrong-target refusal before checkout, fresh-generation and positive delivery controls cover that outcome. Drop both rows and the optional substitute. Revisit AC2 when a real join can observe distinct snapshots.
+Review at 084e3e0 found the proposed two-ticket fixture exercises settings drift. Each runtime binds one configuration, and an omitted tier reuses the resident tier. Existing digest, wrong-target, fresh-generation and positive-delivery controls cover drift. Revisit AC2 when a real join can observe distinct snapshots.
 
-Recover the executable bootstrap that selects an installed authority directory. Reuse its catalog and checkpoint verification, authenticated broker and partition reads, terminal listener and process-bound issuer. Feed the same authority through the normal host-manager factory. Both serving entry points must reject explicitly selected commissioning when the authority is missing or stale. Qualify positive startup through the shipping binary with controlled external services and prove the original queued request reaches the verified listener. An internal factory alone leaves this criterion open. Keep physical installation and live acceptance separately scoped.
+Recover the executable bootstrap that selects an installed authority directory. Reuse its catalog and checkpoint verification, authenticated broker and partition reads, terminal listener and process-bound issuer. Feed the same authority through the normal host-manager factory. Both serving entry points must reject explicitly selected commissioning when the authority is missing or stale. Qualify positive startup through the shipping binary with controlled external services and prove the original queued request reaches the verified listener. Verify inherited listener activation and peer identity, attach the proven incumbent, and bind its cutoff before the first stop. Reconcile one durable operation through stop and create. Missing readback keeps admission closed. Exercise actual binary HTTP delivery; host provisioning remains separate.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes

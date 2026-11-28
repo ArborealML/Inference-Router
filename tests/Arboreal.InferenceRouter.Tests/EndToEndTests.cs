@@ -16,6 +16,7 @@ public class FakeEngineHandler : HttpMessageHandler
     /// <summary>Block every completion until <see cref="ReleaseGate"/> (for ordering tests).</summary>
     public bool HoldCompletions { get; set; }
     internal Action? AfterHeldCompletionEnteredForTests { get; set; }
+    internal Action<string>? CaptureCompletionBodyForTests { private get; set; }
     internal Action? AfterHeldCompletionCancellationForTests { get; set; }
     /// <summary>A wedged backend: the connection is accepted and then nothing is ever written. The only
     /// way out for either side is cancellation, which is what the per-engine response cap provides.</summary>
@@ -126,6 +127,7 @@ public class FakeEngineHandler : HttpMessageHandler
                 return err;
             }
             var body = ReadBody(request);
+            CaptureCompletionBodyForTests?.Invoke(body);
             var tag = ExtractFirstContent(body);
             if (NeverAnswersCompletions)
             {

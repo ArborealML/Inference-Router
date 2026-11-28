@@ -3,11 +3,11 @@ id: TASK-25
 title: >-
   Reserve the switch's own ticket before a lifecycle transaction drains an
   engine
-status: In Progress
+status: Ready for Review
 assignee:
-  - '@gpt-6.2-sol-lifecycle'
+  - '@gpt-6.2-astra'
 created_date: '2026-11-17T02:41:00Z'
-updated_date: '2026-11-28T11:50:00Z'
+updated_date: '2026-11-28T12:43:07Z'
 labels:
   - engine
   - lifecycle
@@ -51,4 +51,6 @@ Through ordinary server construction, capture the original queued ticket and exa
 
 <!-- SECTION:NOTES:BEGIN -->
 The review found that the current admission check rejects a busy incumbent and that lifecycle staging closes before drain. The historical drain also treated an absent tracker as zero. Capture the original tracker and seal before discarding staging. Recheck its authoritative zero and the exact serving process before any mutation. TASK-25 and TASK-118 consume the same production-composition evidence.
+
+[Host-manager drain](https://github.com/ArborealML/Inference-Router/pull/99) at d84dccc passed 346 focused tests. The ordinary HTTP fixture supplies a controlled host authority. A client disconnect released its logical slot and the incumbent remained active through physical retirement. The shipping executable still requires the positive authority adapter. At aef5e2a, 77 checks passed for selected 64 KiB credit, shared-model legacy behavior and held terminal flushes. Review at 5e163f5 found an earlier heartbeat could stall across selection. At 1ad5cea all 126 stream checks passed, including first write/flush expiry, caller cancellation, late writer failure, separate physical cleanup and legacy controls. Final commit review and CI are pending.
 <!-- SECTION:NOTES:END -->

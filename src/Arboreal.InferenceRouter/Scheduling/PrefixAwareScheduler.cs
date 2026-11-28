@@ -30,6 +30,10 @@ public sealed class EngineRuntimeInfo
     /// <summary>Serving-profile ladder declared for the candidate request's model (empty = no ladder).</summary>
     public IReadOnlyList<ServingProfile> ServingProfiles { get; init; } = Array.Empty<ServingProfile>();
     internal EngineRuntime.DispatchObservation DispatchObservation { get; init; }
+    internal LocalLifecycleGroup? DispatchGroup { get; init; }
+    internal long DispatchGroupRevision { get; init; }
+    internal bool NamedPhysicalUse { get; init; }
+    internal int DispatchInferenceUses { get; init; }
     internal PrefixAwareScheduler.NamedRoute? NamedProfile { get; init; }
     internal VerifiedDispatchResident? ManagedResident { get; init; }
     internal IReadOnlyList<ServingProfile>? ManagedColdProfiles { get; init; }

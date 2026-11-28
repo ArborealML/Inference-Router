@@ -1,11 +1,11 @@
 ---
 id: TASK-203
 title: Dispatch independently admissible work across providers
-status: To Do
+status: In Progress
 assignee:
-  - '@gpt-6.2-astra'
+  - '@gpt-6.2-sol-lifecycle'
 created_date: '2026-11-27'
-updated_date: '2026-11-28T12:06:00Z'
+updated_date: '2026-11-28T12:43:07Z'
 labels: []
 milestone: m-17
 dependencies: []
@@ -35,7 +35,7 @@ Eligible requests must progress while an independent provider is occupied. Prese
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Post to the normal chat endpoint with a delegated remote full and a router-managed local engine. Hold one remote body, then cover warm and cold local service for both the held model and a different one. Observe the original ticket, model, bytes, lifecycle operations and terminal disposition before release. Check again after cleanup for duplicate writes. Reuse the two-domain preparation and shared-thread controls. Account backoff requires the actual provider contract.
+Post to the normal chat endpoint with a delegated remote full and a router-managed local engine. Hold one remote body, then cover warm and cold local service for both the held model and a different one. Verify ticket, model, bytes, lifecycle operations and terminal before release. Count duplicate writes after cleanup. Reuse the two-domain preparation and shared-thread controls. Account backoff requires the actual provider contract.
 
 Exercise pure probes separately from full rounds. Count one accepted drain intent per ticket and domain and demonstrate retirement before a replacement reservation, including caller expiry. Retain pending physical uses until confirmed cleanup. Preserve original deadlines and competitor ordering.
 
@@ -47,9 +47,9 @@ Publish a bounded immutable observation of the blocker and evaluated alternative
 <!-- SECTION:NOTES:BEGIN -->
 Published [PR #88](https://github.com/ArborealML/Inference-Router/pull/88), head cb595b2d96646fe038261ff57f6041e813aacd6f, implements finite rounds, alternatives, exact competing order, explicit drain ownership and bounded wait scope. [Source mappings](../milestones/wave1-publication-map.json) connect reviewed 5beaaa7..9f023f3 to the identical published tree under TASK-220's explicit provenance exception.
 
-The last-thread-slot race correction revalidates competing routes under the router gate. A post-probe barrier verifies precedence. Release at 9f023f3 passed 263 tests. [Hosted CI](https://github.com/ArborealML/Inference-Router/actions/runs/46112027567) passed 2,160 tests, Linux AOT and smoke. SPEC v0.12.163 records the scope.
+A post-probe barrier qualifies precedence for the last thread slot. Release at 9f023f3 passed 263 tests. [Hosted CI](https://github.com/ArborealML/Inference-Router/actions/runs/46112027567) passed 2,160 tests, Linux AOT and smoke. SPEC v0.12.163 records the scope.
 
 The dispatcher and its qualified fixtures landed in the [main integration](https://github.com/ArborealML/Inference-Router/commit/1bf85d3495ab2517a921d78013ffe69bbefb4325). [PR 94](https://github.com/ArborealML/Inference-Router/pull/94) exercised held preparations in either private domain for shared and distinct models. Its shared-thread control identified the limiting credit and allowed a separate thread through. Commercial backoff, explicit ownership across reassignment and full operator diagnostics retain their acceptance here.
 
-Plan review at f66ae74 verified that both endpoints in the existing full-remote fixture are delegated. It also found the wait publication lacks the originating route and group revisions. The revised plan exercises actual managed ingress and stale-observation rejection.
+[Provider progress](https://github.com/ArborealML/Inference-Router/pull/101) at f7529cd passed 139 focused checks. Four normal HTTP cases served warm and cold managed requests for the same or a different model before the remote slot released. Review found unrelated engines could exhaust the alternatives list. Filter by eligibility and demonstrate ticket/event HTTP agreement and zero claims when a predecessor wins. Hosted CI passed.
 <!-- SECTION:NOTES:END -->
