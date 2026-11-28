@@ -3,7 +3,7 @@ id: TASK-118
 title: >-
   Resolve each native launch profile and dispatch to its verified serving
   instance
-status: In Progress
+status: To Do
 assignee:
   - '@gpt-6.2-sol-lifecycle'
 created_date: '2026-11-18T18:56:00Z'
@@ -53,5 +53,5 @@ Recover the executable bootstrap that selects an installed authority directory. 
 <!-- SECTION:NOTES:BEGIN -->
 [Exact-ticket qualification](https://github.com/ArborealML/Inference-Router/pull/20) covered injected issuance, explicit and default launches, resident reuse, exact bytes and credentials and zero checkout on mismatch. [Profile aliases](https://github.com/ArborealML/Inference-Router/pull/21) qualified at 5643b27. Same-instance proof across families remains open. TASK-25 owns the paired production witness.
 
-[Stock serving and broker recovery](https://github.com/ArborealML/Inference-Router/pull/103) merged at cd069cc. Qualified 235 socket and disk cases, bounded replay and broker recovery. [Hosted CI](https://github.com/ArborealML/Inference-Router/actions/runs/46150598776) passed 2,486 tests and Native AOT. [Stock process qualification](https://github.com/ArborealML/Inference-Router/pull/104) checks distinct read-only roles. Review at b4b9515 found the original reply content and final terminal count unverified, and a stale-address check that could pass before checkout. Verify all three through bounded observations. [Hosted diagnostics](https://github.com/ArborealML/Inference-Router/actions/runs/46155252307) recorded stop, vacancy, create, start and an open successor broker on both binaries. B then failed exact readiness: the fixture advertised 262144 tokens for a 256000-token, four-slot tier. Derive both gauges from the selected recipe and verify the original SSE reply. Held, catalog and daemon peers are controlled. TASK-190 owns reconciliation of the separate successor-operation journal after a lost head update.
+[Stock serving and broker recovery](https://github.com/ArborealML/Inference-Router/pull/103) landed. Both [shipped process entry points](https://github.com/ArborealML/Inference-Router/pull/104) then served the original queued SSE request after physical stop, vacancy, create and start. [Hosted qualification](https://github.com/ArborealML/Inference-Router/actions/runs/46156203425) passed both cases without skips. It matched model and content, one terminal per ticket, worker exit and zero bytes at the stale replacement. The held, catalog and daemon peers were controlled. Installed and cross-family qualification remain open. TASK-198 retains the prior profile mismatch as recovery coverage. TASK-190 owns uncertain successor journal heads.
 <!-- SECTION:NOTES:END -->
