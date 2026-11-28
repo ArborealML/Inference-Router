@@ -1,11 +1,11 @@
 ---
 id: TASK-208
 title: Linearize sensitivity escalation and human declassification
-status: In Progress
+status: Ready for Review
 assignee:
-  - '@gpt-6.2-sol-config'
+  - '@gpt-6.2-astra'
 created_date: '2026-11-27'
-updated_date: '2026-11-28T13:48:00Z'
+updated_date: '2026-11-28T14:04:00Z'
 labels: []
 milestone: m-19
 dependencies:
@@ -43,5 +43,7 @@ Keep lowering disabled without independent human privilege bound to owner, group
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-The [private sensitivity candidate](https://github.com/ArborealML/Inference-Router/pull/102) qualifies escalation, confirmed revision readback and scoped cancellation. Review at 0c1f05a found shared-slot admission retained through journal I/O. On a263560, a second group progresses on the same engine through stalled intent registration and retirement. [Hosted CI](https://github.com/ArborealML/Inference-Router/actions/runs/46150685140) passed 2,479 tests and Native AOT. Confirmed review follow-up requires a store lease before scheduling retirement and retirement on abort before execution. Qualify shutdown and final byte binding. Human lowering remains open.
+The [private sensitivity candidate](https://github.com/ArborealML/Inference-Router/pull/102) covers escalation, confirmed revision readback, scoped cancellation and explicit quarantine for potentially used intents. A second group uses the same single-slot engine while journal writes are stalled. [Hosted qualification](https://github.com/ArborealML/Inference-Router/actions/runs/46151958391) covered the combined stock host and privacy implementation.
+
+Review of 87bb388 accepted retention of the writer lease until intent retirement, abort-before-execution cleanup, and the content fingerprint check. The final correction at ca70eb4 prevents a queued root creator from beginning a new write after disposal. Four focused tests passed. Human lowering and deployment qualification remain open.
 <!-- SECTION:NOTES:END -->
