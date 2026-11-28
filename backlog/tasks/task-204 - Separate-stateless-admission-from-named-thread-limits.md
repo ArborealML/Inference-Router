@@ -1,10 +1,11 @@
 ---
 id: TASK-204
 title: "Separate stateless admission from named thread limits"
-status: To Do
+status: Waiting
 assignee:
-  - '@gpt-6.2-astra'
+  - '@gpt-6.2-sol-scheduling'
 created_date: '2026-11-27'
+updated_date: '2026-11-27'
 labels: []
 milestone: m-16
 dependencies: []
@@ -29,11 +30,17 @@ Default HTTP and CLI calls synthesize the shared anon identity, whose default th
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Trace both default ingress and CLI normalization; introduce a transient identity with existing queue lifecycle and bound its lifetime. Make legacy anon behavior an explicit migration, not a larger shared cap. Test cancellation, retirement and named-thread parity with capture backends.
+Only an absent HTTP thread header selects a request-scoped thread; new CLI chat/complete defaults omit it. Explicit names, including legacy anon, retain exact case-sensitive identity and caps. Refuse blank, control, repeated/comma-ambiguous headers and malformed/duplicate CLI options before effects; preserve priority-refusal precedence. Keep the public named library API non-null; only internal HTTP admission accepts absence.
+
+Use an unattached per-request thread and ticket-kind flag, with no registry/publication entry. Diagnostic-label collisions bypass named affinity, priority, counters and all three upstream identity-hint paths. Preserve content-prefix reuse and physical cleanup. Document client omission migration without deployment cutover or reinterpretation of explicit anon.
+
+Capture-backend tests exercise concurrent omitted HTTP and actual CLI chat/complete sends before another provider releases; explicit names/anon still share caps. Pin malformed refusal without effects, equal-label collision, success, queue overflow, queued/active cancellation and no retained transient registration/hints. Cover StatelessAdmission, CLI completion/priority, priority ingress, cache hint, wire, ticket lifetime, queued priority, independent progress and admin fixtures. Update SPEC §§5.1/6/11/14 at v0.12.167 and README.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-No change to priority, thread weight or provider scoring. TASK-207 owns subsequent credential-bound session identity and root authorization. Transient scheduling identity confers no trust or policy privilege.
+Wake: the combined TASK-203 and TASK-205 integration test run passes, then the coordinator transfers overlapping core/server/CLI ownership. TASK-187 and TASK-202 are included in that candidate. Independent pre-code review passed with singleton grammar, public-null contract, full collision isolation and bounded-lifetime fixtures required. No source implementation yet.
+
+No change to priority, thread weight or provider scoring. TASK-207 owns credential-bound identity and root authorization; transient scheduling identity confers no trust or policy privilege. Architecture §15.3's legacy deployment cutover remains a separate owner choice; preserving explicit anon avoids imposing it here.
 <!-- SECTION:NOTES:END -->
