@@ -468,8 +468,9 @@ public sealed partial class RouterCore : IInferenceRouter
             blocker ??= new(take.Result == TakeResult.RouteChanged ? "route_changed" : "route_admission_wait", engine.Name);
         }
 
-        if (drain is { } pending)
-            TryStartLocalDrain(round, index, pending.Selection, pending.Engine, pending.Probe, generation);
+        if (drain is { } pending &&
+            TryStartLocalDrain(round, index, pending.Selection, pending.Engine, pending.Probe, generation) is { } owned)
+            blocker = new("lifecycle_group_draining", owned.Name);
         if (ReadQueueEnd(request) is not null) MaybeFailDeadline(request);
         else PublishDispatchWait(round[index].Queue, request, blocker ?? DescribeUnavailable(infos, request));
         return routeChanged ? DispatchResult.StateChanged : DispatchResult.Parked;
@@ -672,28 +673,30 @@ public sealed partial class RouterCore : IInferenceRouter
     private bool HasLifecycleRoute(QueuedRequest request, EngineRuntime engine) =>
         _localGroups.ContainsKey(engine.Name) || engine.CanSwitchTo(request.Ticket.Model);
 
-    private void TryStartLocalDrain(QueueRound[] round, int prefix, Selection selection, EngineRuntime engine, RouteProbe probe,
-                                    ConfigurationGeneration generation)
+    private LocalLifecycleGroup? TryStartLocalDrain(QueueRound[] round, int prefix, Selection selection, EngineRuntime engine,
+                                                   RouteProbe probe, ConfigurationGeneration generation)
     {
         var candidate = selection.Request;
         var queue = round[selection.QueueIndex].Queue;
         lock (_gate)
         {
-            if (probe.Group is not { } group || !IsCurrentQueue(queue, candidate, generation) || candidate.Ticket.LocalDrain is not null ||
-                !IsPendingAndThreadAdmissible(candidate)) return;
+            if (probe.Group is not { } group || !IsCurrentQueue(queue, candidate, generation) ||
+                !IsPendingAndThreadAdmissible(candidate)) return null;
+            if (candidate.Ticket.LocalDrain is { } existing) return existing;
             var revision = group.Revision;
             Dictionary<EngineRuntime, PredecessorRoute>? predecessorRoutes = null;
             bool Competes(QueuedRequest earlier) => CanCompeteFor(earlier, candidate, engine, generation,
                 ref predecessorRoutes, includeDrain: true);
-            if (HasEarlierQueueCompetitor(round, prefix, Competes)) return;
+            if (HasEarlierQueueCompetitor(round, prefix, Competes)) return null;
             lock (queue.Gate)
             {
                 if (queue.FindExactTakeIndexUnderGate(candidate, Competes) >= 0 &&
                     ProbeRoute(candidate, engine, selection.Decision, engine.ReadDispatchObservation(), generation).Drain &&
                     PredecessorRoutesAreCurrent(predecessorRoutes) &&
                     group.TryStartDrain(candidate, engine, probe.Profile, selection.Decision.SwitchRequired, revision))
-                    candidate.Ticket.LocalDrain = group;
+                    return candidate.Ticket.LocalDrain = group;
             }
+            return null;
         }
     }
 
