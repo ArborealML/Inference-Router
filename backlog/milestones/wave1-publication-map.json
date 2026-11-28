@@ -1,0 +1,618 @@
+{
+  "scope": "Owner-authorized connector publication of the five reviewed Wave1 implementation increments and coordinated Backlog evidence; no merge or live-operation authority.",
+  "baseline": "62f1c79de7b25486cf8669de654a2fd57d8993a2",
+  "original_to_prepared": {
+    "5beaaa70fde5f8377a91e3c0a43c9c82cffc82f0": "5beaaa70fde5f8377a91e3c0a43c9c82cffc82f0",
+    "b9585d0e9567ef7ec02460c702ba50b314b1c3ec": "b9585d0e9567ef7ec02460c702ba50b314b1c3ec",
+    "c85da0822bc3946fa588f69108ba2012af84da94": "c82571d448003b2d9ffea4b64058c12a15ca3a25",
+    "f2b77063a7d5cc7dc71891ddb5512ffe8aee0612": "60329ef2c3d285e2ed718461ede8995eae1f70eb",
+    "06bad56a8d579c2a159134f5c782799da2b657a2": "32866c0fd6fbb924a9dca02644ed36fad13c1c66",
+    "9f023f30e9b5660bafed64c8fccd1b9f3accf3a7": "68969fcaeba654ad09947a12cbe3a3ffa417516a",
+    "45ba97250439e2c60575ee914ee75aac5d9e3490": "a275186e8bf16373bb14794ff5553b5a984a60d9",
+    "6b72a7529963675bae50a12a366690c07e8bd6a8": "466aca8960f90467c3321d1e2d39b9e79fa00606",
+    "7783fdad6143f876954350d4484d413397684b62": "27c4a1af459bb6e8e122566bc62965cb9a0147f6",
+    "786c524e29c2938d92adfc7d0ed3868c6043a968": "ffc8b078c2b9cf559ace2fbc6f9a4104e4a28a3f",
+    "c99b0e1e41bdb9de450fe745663b000b7e5cc418": "819a9b2b30f304b0ec882593a046ddbeceaaea72",
+    "947f5cedde8ed61e8eea0411adebd7453d188268": "b9eabdd47d0465dbe85d00f214d48c722a25434a",
+    "934e7907df6a513fa43d9a9825df1e7a279d4150": "934e7907df6a513fa43d9a9825df1e7a279d4150",
+    "5a62a15f5445e25f5871393f30601720283048a0": "5a62a15f5445e25f5871393f30601720283048a0",
+    "e7baf820b78dfb7f54c04450e6649b15736da81b": "e7baf820b78dfb7f54c04450e6649b15736da81b",
+    "56b24d3cbb21e2554454cc8931f20d03dc175488": "56b24d3cbb21e2554454cc8931f20d03dc175488",
+    "1d2eebb1fa4c7b692e791392358327f071c76541": "1d2eebb1fa4c7b692e791392358327f071c76541",
+    "4c6d14201bad8448cea2d81b7cecb61d51ff567e": "a8176216c778598c219fb58e512219b2c53f81b7",
+    "2c54500d72d6d726a259dcb58a6472346b44254d": "2c54500d72d6d726a259dcb58a6472346b44254d",
+    "8a12ba8ec218971aa0f9e992335dc33b1dc19dc8": "8a12ba8ec218971aa0f9e992335dc33b1dc19dc8",
+    "ee2fbc8ee2ff7b321a0d2a6d4733cb1f5aaea93f": "ee2fbc8ee2ff7b321a0d2a6d4733cb1f5aaea93f",
+    "2bb32ef10f29fe026b062598a30582b7bb4f3a7d": "2bb32ef10f29fe026b062598a30582b7bb4f3a7d",
+    "f64048133b07db9473d678164f61bd903e53f34b": "a699501c59c3071a64ee33d6544686cd80daa6ce",
+    "d7f85c0224987e6a5700ffe6181f83c94f60c079": "d7f85c0224987e6a5700ffe6181f83c94f60c079",
+    "7f5089b83f4d319eb575053e4ff4a38641560d4b": "7f5089b83f4d319eb575053e4ff4a38641560d4b",
+    "198638302e860927aa0ded1c62e0ffd64842ecd6": "198638302e860927aa0ded1c62e0ffd64842ecd6",
+    "bc6c52f9517fa3b36943af1f7653039869624814": "bc6c52f9517fa3b36943af1f7653039869624814",
+    "203ce78e3ebe6dd0d960da2a36e792e4fc494c0f": "7f35bcbd11930fc218e021ae7127a2c8cc08788a",
+    "f0f110e2fe96674a10dd2e8270286751181f2193": "5727c995cf972784d73da90343b29795cef81a4c",
+    "02087978b8a45970f82d08f216b3da32ded8b603": "8bf2c5657881f849e19a84f15e935a1145a58383",
+    "f080e157f04a9c70f7212de5a8c069a7bd32f953": "1e958089f8b63610c94808e0543a5912cfbe16f3",
+    "4522a718b7b4200aef9473455759796237832425": "4522a718b7b4200aef9473455759796237832425",
+    "bfe24899d914cedc832b43a02a89144e81d322e0": "7994a8f39a0959add93d7ebe2ba1aa68932a99be",
+    "5fba34abbe57a286c68cc9e0d44e1cbe8162009d": "9ba74e2350ba16b615f7604574260eead0d11753",
+    "e641bee13427cc2e59b595d7ce96e08ba529ed49": "6aa1e4b5843212d2fe755fd86d2e470e77ae6abb",
+    "abb5a36b0ff60ac8f62f71b2d1d6490fed9c7afd": "a0e99a4cf664d2c1bfe2342ed09057f23e5518b2",
+    "9c6072029b712f6d64eaf142efe4b5ec9d04476b": "f7d2c74c9b3228dcbba6c6c225944b3a79e77112",
+    "415eb78b32104848d8305955582529b0cef704d7": "fcbbbf3a33a5560203e78615978f827b5eb3c5c4",
+    "fc1172ec0c284355e1723e9356964aeab8e1a176": "7f8305168ead2fd5cd24ea0b2f00e234a97956dd",
+    "95e800923040584da4e7793747a807536693e221": "3aa454a073c43f55d22ce0bd69b7002f16b6c879",
+    "63afbd29d2ee9910b97bb4d79f0a8e0e07466637": "de6b86d55f0459db4ee191e64dcebcffe34d3742",
+    "438fb5c3fcd08e812e33f8e8c7e7533c39e44c3e": "d0b72bb63624473e2bedfbbfd720632fa334299a",
+    "964cb2f34d648a53c5a94326499dd3f6953d1d4a": "89783fbaf83bb31de3580030917a8ccf67f779ff",
+    "8821ca791d01003e190134c621966181e6735fd9": "8821ca791d01003e190134c621966181e6735fd9",
+    "c5e0f4ec2f08abdbf64120c4f3c9920201e615f2": "c5e0f4ec2f08abdbf64120c4f3c9920201e615f2",
+    "d52dc02ea828a5ea28ccd1ea9efd5711258f74b1": "d52dc02ea828a5ea28ccd1ea9efd5711258f74b1"
+  },
+  "prepared_to_published": {
+    "5beaaa70fde5f8377a91e3c0a43c9c82cffc82f0": {
+      "remote_sha": "b805377b80aae7a11fbbd7043160c3cc7d9d5881",
+      "tree": "3360c1c91e6c4a857fa31cc36e08ca5b1ac8b1ea",
+      "parents": [
+        "62f1c79de7b25486cf8669de654a2fd57d8993a2"
+      ],
+      "author": "Arboreal Agent (gpt62a \u00b7 board) <agent-gpt62a-board@arboreal.invalid>"
+    },
+    "b9585d0e9567ef7ec02460c702ba50b314b1c3ec": {
+      "remote_sha": "0513df624935c0517388a1c1392e61e0524e238c",
+      "tree": "d73514cff3491a973675839a395edad07735e828",
+      "parents": [
+        "b805377b80aae7a11fbbd7043160c3cc7d9d5881"
+      ],
+      "author": "Arboreal Agent (gpt62s \u00b7 impl) <agent-gpt62s-impl@arboreal.invalid>"
+    },
+    "c82571d448003b2d9ffea4b64058c12a15ca3a25": {
+      "remote_sha": "9a091588fca7a4f5adb84b8f2edda4807a3873d7",
+      "tree": "feecb93cd6fd8e74bcbf9c2c9625a6db25abf813",
+      "parents": [
+        "0513df624935c0517388a1c1392e61e0524e238c"
+      ],
+      "author": "Arboreal Agent (gpt62s \u00b7 impl) <agent-gpt62s-impl@arboreal.invalid>"
+    },
+    "60329ef2c3d285e2ed718461ede8995eae1f70eb": {
+      "remote_sha": "650b603a22208d348e6eea0c78366459ffad20d7",
+      "tree": "26b2f165937528102103ade147bab94a5eb7bce4",
+      "parents": [
+        "9a091588fca7a4f5adb84b8f2edda4807a3873d7"
+      ],
+      "author": "Arboreal Agent (gpt62s \u00b7 impl) <agent-gpt62s-impl@arboreal.invalid>"
+    },
+    "32866c0fd6fbb924a9dca02644ed36fad13c1c66": {
+      "remote_sha": "102b5f0aba39b0b1eb9a50c0dba94d757f8b90ad",
+      "tree": "5887ed29bfe7793af3a4d02bca5607c6df8b2123",
+      "parents": [
+        "650b603a22208d348e6eea0c78366459ffad20d7"
+      ],
+      "author": "Arboreal Agent (gpt62s \u00b7 impl) <agent-gpt62s-impl@arboreal.invalid>"
+    },
+    "68969fcaeba654ad09947a12cbe3a3ffa417516a": {
+      "remote_sha": "6901eaa652d5ceb1fd993c9f40dff34d01978df7",
+      "tree": "60988d92b9db0a5b16f4f2ec1b70f520921eaead",
+      "parents": [
+        "102b5f0aba39b0b1eb9a50c0dba94d757f8b90ad"
+      ],
+      "author": "Arboreal Agent (gpt62s \u00b7 impl) <agent-gpt62s-impl@arboreal.invalid>"
+    },
+    "a275186e8bf16373bb14794ff5553b5a984a60d9": {
+      "remote_sha": "cb595b2d96646fe038261ff57f6041e813aacd6f",
+      "tree": "cd9bff7d438c26aace589ec1fc2a7d7b29c38d37",
+      "parents": [
+        "6901eaa652d5ceb1fd993c9f40dff34d01978df7"
+      ],
+      "author": "Arboreal Agent (gpt62a \u00b7 board) <agent-gpt62a-board@arboreal.invalid>"
+    },
+    "466aca8960f90467c3321d1e2d39b9e79fa00606": {
+      "remote_sha": "c206c3b1f09e4844e42e752a2a0f41ee8803238e",
+      "tree": "7f5b1788fe35c0228a3e0aecc0cfa5b20f195dd5",
+      "parents": [
+        "cb595b2d96646fe038261ff57f6041e813aacd6f"
+      ],
+      "author": "Arboreal Agent (gpt62a \u00b7 board) <agent-gpt62a-board@arboreal.invalid>"
+    },
+    "27c4a1af459bb6e8e122566bc62965cb9a0147f6": {
+      "remote_sha": "869457e4d8474d726e59a1d3c191981c14b5940c",
+      "tree": "d9f23d21768685635f2c185ad17828b91f0c37ca",
+      "parents": [
+        "c206c3b1f09e4844e42e752a2a0f41ee8803238e"
+      ],
+      "author": "Arboreal Agent (gpt62s \u00b7 impl) <agent-gpt62s-impl@arboreal.invalid>"
+    },
+    "ffc8b078c2b9cf559ace2fbc6f9a4104e4a28a3f": {
+      "remote_sha": "25abd031513252573e00f4ec22c704338648e0d7",
+      "tree": "70a1511b91e96311b40d5ea000bee2dda99adc35",
+      "parents": [
+        "869457e4d8474d726e59a1d3c191981c14b5940c"
+      ],
+      "author": "Arboreal Agent (gpt62s \u00b7 impl) <agent-gpt62s-impl@arboreal.invalid>"
+    },
+    "819a9b2b30f304b0ec882593a046ddbeceaaea72": {
+      "remote_sha": "4d60c4100b5056811b3b2aca618c5ea7139363ff",
+      "tree": "ef91cda9585736d5b9fc5a26d01274f6260c679c",
+      "parents": [
+        "25abd031513252573e00f4ec22c704338648e0d7"
+      ],
+      "author": "Arboreal Agent (gpt62a \u00b7 board) <agent-gpt62a-board@arboreal.invalid>"
+    },
+    "b9eabdd47d0465dbe85d00f214d48c722a25434a": {
+      "remote_sha": "8bdb96ee07fff82515c6908f797bfc7deb7bdb68",
+      "tree": "d0c50af499cd508c421539e807a27e77d2d9285d",
+      "parents": [
+        "4d60c4100b5056811b3b2aca618c5ea7139363ff"
+      ],
+      "author": "Arboreal Agent (gpt62a \u00b7 board) <agent-gpt62a-board@arboreal.invalid>"
+    },
+    "934e7907df6a513fa43d9a9825df1e7a279d4150": {
+      "remote_sha": "c893b855550ce23b9dcde0afb2866c7f37cc0b02",
+      "tree": "942fc1c697996010d630e8936dc6834ee520b7bc",
+      "parents": [
+        "62f1c79de7b25486cf8669de654a2fd57d8993a2"
+      ],
+      "author": "Arboreal Agent (gpt62a \u00b7 board) <agent-gpt62a-board@arboreal.invalid>"
+    },
+    "5a62a15f5445e25f5871393f30601720283048a0": {
+      "remote_sha": "f07087f66b58810548402669a57536e687345a02",
+      "tree": "9ef59857d39ce05fadb9b9124b4705f0de1e949d",
+      "parents": [
+        "c893b855550ce23b9dcde0afb2866c7f37cc0b02"
+      ],
+      "author": "Arboreal Agent (gpt62s \u00b7 impl) <agent-gpt62s-impl@arboreal.invalid>"
+    },
+    "e7baf820b78dfb7f54c04450e6649b15736da81b": {
+      "remote_sha": "46cca62b251492d594d31eb9fbefdcc4ea8053bd",
+      "tree": "ff099317bb9116dc5414409b6a6978e0c8d4adce",
+      "parents": [
+        "f07087f66b58810548402669a57536e687345a02"
+      ],
+      "author": "Arboreal Agent (gpt62s \u00b7 impl) <agent-gpt62s-impl@arboreal.invalid>"
+    },
+    "56b24d3cbb21e2554454cc8931f20d03dc175488": {
+      "remote_sha": "5d35d6deb053d7a5059a822188ab2271b81f877d",
+      "tree": "c513b1765cd6d6e4e030f71ea59e289c998e64c1",
+      "parents": [
+        "46cca62b251492d594d31eb9fbefdcc4ea8053bd"
+      ],
+      "author": "Arboreal Agent (gpt62s \u00b7 impl) <agent-gpt62s-impl@arboreal.invalid>"
+    },
+    "1d2eebb1fa4c7b692e791392358327f071c76541": {
+      "remote_sha": "7e42e0fca22565f61294b874de85338daca69250",
+      "tree": "5ffa7ace1183d6735d8f532abcf7c3271ff4b18e",
+      "parents": [
+        "5d35d6deb053d7a5059a822188ab2271b81f877d"
+      ],
+      "author": "Arboreal Agent (gpt62a \u00b7 board) <agent-gpt62a-board@arboreal.invalid>"
+    },
+    "a8176216c778598c219fb58e512219b2c53f81b7": {
+      "remote_sha": "9eb9eeb198171e7b20797f67ffb563b29768c684",
+      "tree": "cb4005053e98e34799fedafe9620d7966eab2ff3",
+      "parents": [
+        "8bdb96ee07fff82515c6908f797bfc7deb7bdb68",
+        "7e42e0fca22565f61294b874de85338daca69250"
+      ],
+      "author": "Arboreal Agent (gpt62s \u00b7 impl) <agent-gpt62s-impl@arboreal.invalid>"
+    },
+    "2c54500d72d6d726a259dcb58a6472346b44254d": {
+      "remote_sha": "b46824d5245166122c455591802acd92c1f896e6",
+      "tree": "2178519616c24aa44b591598022f3cbee028b6c6",
+      "parents": [
+        "a12012b176e84e49603c433a9f934206499b4bcb",
+        "62f1c79de7b25486cf8669de654a2fd57d8993a2"
+      ],
+      "author": "Arboreal Agent (gpt62a \u00b7 board) <agent-gpt62a-board@arboreal.invalid>"
+    },
+    "8a12ba8ec218971aa0f9e992335dc33b1dc19dc8": {
+      "remote_sha": "fe10b71d1cc89ef4fd7b8a5cb65fee50e74f682e",
+      "tree": "8a3d5b1e4b479579617ce63575de9beb6146fec5",
+      "parents": [
+        "b46824d5245166122c455591802acd92c1f896e6"
+      ],
+      "author": "Arboreal Agent (gpt62a \u00b7 board) <agent-gpt62a-board@arboreal.invalid>"
+    },
+    "ee2fbc8ee2ff7b321a0d2a6d4733cb1f5aaea93f": {
+      "remote_sha": "72613c247463b462a415bcc8bf29ca6a0821e06f",
+      "tree": "fc7ba08e1efc99fdb5aa4e9df98a243d8435fc74",
+      "parents": [
+        "fe10b71d1cc89ef4fd7b8a5cb65fee50e74f682e"
+      ],
+      "author": "Arboreal Agent (gpt62s \u00b7 impl) <agent-gpt62s-impl@arboreal.invalid>"
+    },
+    "2bb32ef10f29fe026b062598a30582b7bb4f3a7d": {
+      "remote_sha": "ac9d783b8fcc84c4fd95278953f2fceda0af932f",
+      "tree": "c8224d1bd7ff6029bb4442d3a5208ac028cb158a",
+      "parents": [
+        "72613c247463b462a415bcc8bf29ca6a0821e06f"
+      ],
+      "author": "Arboreal Agent (gpt62a \u00b7 board) <agent-gpt62a-board@arboreal.invalid>"
+    },
+    "a699501c59c3071a64ee33d6544686cd80daa6ce": {
+      "remote_sha": "8d20d0b8af814dc13773f897d977d2528c4adcb3",
+      "tree": "a3539e77788a487e4f960ac8c8a2e84dd418a687",
+      "parents": [
+        "9eb9eeb198171e7b20797f67ffb563b29768c684",
+        "ac9d783b8fcc84c4fd95278953f2fceda0af932f"
+      ],
+      "author": "Arboreal Agent (gpt62s \u00b7 impl) <agent-gpt62s-impl@arboreal.invalid>"
+    },
+    "d7f85c0224987e6a5700ffe6181f83c94f60c079": {
+      "remote_sha": "68c5aa43da45bef5ed780b3934c71eb065be40da",
+      "tree": "ada4517b38336599561095b1bc8cc7727eb48298",
+      "parents": [
+        "62f1c79de7b25486cf8669de654a2fd57d8993a2"
+      ],
+      "author": "Arboreal Agent (gpt62a \u00b7 board) <agent-gpt62a-board@arboreal.invalid>"
+    },
+    "7f5089b83f4d319eb575053e4ff4a38641560d4b": {
+      "remote_sha": "b3742946a802f357e4acc0c96974332c4100a4da",
+      "tree": "83c8894abcf1d64259c450cc690b9a88b5c978f9",
+      "parents": [
+        "68c5aa43da45bef5ed780b3934c71eb065be40da"
+      ],
+      "author": "Arboreal Agent (gpt62a \u00b7 board) <agent-gpt62a-board@arboreal.invalid>"
+    },
+    "198638302e860927aa0ded1c62e0ffd64842ecd6": {
+      "remote_sha": "63509bbae27525f4945f2136a03f11d29d2c22db",
+      "tree": "50df560bce36a7522f4f4fc5774b4a428deee5c5",
+      "parents": [
+        "b3742946a802f357e4acc0c96974332c4100a4da"
+      ],
+      "author": "Arboreal Agent (gpt62a \u00b7 board) <agent-gpt62a-board@arboreal.invalid>"
+    },
+    "bc6c52f9517fa3b36943af1f7653039869624814": {
+      "remote_sha": "494627b542af0655ddb1a2f4922e1ad07851ee91",
+      "tree": "a7effc693b780d562d31e0d040a1fa6322e1181a",
+      "parents": [
+        "63509bbae27525f4945f2136a03f11d29d2c22db"
+      ],
+      "author": "Arboreal Agent (gpt62a \u00b7 board) <agent-gpt62a-board@arboreal.invalid>"
+    },
+    "7f35bcbd11930fc218e021ae7127a2c8cc08788a": {
+      "remote_sha": "bd27ef3e814e2f408eb6f9d47e9247a0254925a3",
+      "tree": "4e6acdcdaf120b7043498541a608ea2aa9fb3527",
+      "parents": [
+        "8d20d0b8af814dc13773f897d977d2528c4adcb3",
+        "494627b542af0655ddb1a2f4922e1ad07851ee91"
+      ],
+      "author": "Arboreal Agent (gpt62a \u00b7 board) <agent-gpt62a-board@arboreal.invalid>"
+    },
+    "7994a8f39a0959add93d7ebe2ba1aa68932a99be": {
+      "remote_sha": "0fad1086d984df397783fd180dd76d6887f1f18c",
+      "tree": "ed5fe1072c4862671010d6686268cac3c4869b7d",
+      "parents": [
+        "bd27ef3e814e2f408eb6f9d47e9247a0254925a3"
+      ],
+      "author": "Arboreal Agent (gpt62a \u00b7 board) <agent-gpt62a-board@arboreal.invalid>"
+    },
+    "5727c995cf972784d73da90343b29795cef81a4c": {
+      "remote_sha": "6cba18c87c35bc9930066b1170d8b6eb494ca043",
+      "tree": "729bd974d983b48be88b298a359e2aec1ce3878e",
+      "parents": [
+        "4d60c4100b5056811b3b2aca618c5ea7139363ff"
+      ],
+      "author": "Arboreal Agent (gpt62s \u00b7 impl) <agent-gpt62s-impl@arboreal.invalid>"
+    },
+    "8bf2c5657881f849e19a84f15e935a1145a58383": {
+      "remote_sha": "d424cf69cb4ebfd4579eba6de919ff3d16913cea",
+      "tree": "0d709a2faefba1d8245cb8f56aa0a7df1f8907bb",
+      "parents": [
+        "bd27ef3e814e2f408eb6f9d47e9247a0254925a3",
+        "6cba18c87c35bc9930066b1170d8b6eb494ca043"
+      ],
+      "author": "Arboreal Agent (gpt62a \u00b7 board) <agent-gpt62a-board@arboreal.invalid>"
+    },
+    "9ba74e2350ba16b615f7604574260eead0d11753": {
+      "remote_sha": "08438d804746eb09b47531fc0c2a7a5a4dd00141",
+      "tree": "ae2d7a14b5047d72f0bcf8f6957d666b716629b6",
+      "parents": [
+        "0fad1086d984df397783fd180dd76d6887f1f18c",
+        "d424cf69cb4ebfd4579eba6de919ff3d16913cea"
+      ],
+      "author": "Arboreal Agent (gpt62a \u00b7 board) <agent-gpt62a-board@arboreal.invalid>"
+    },
+    "6aa1e4b5843212d2fe755fd86d2e470e77ae6abb": {
+      "remote_sha": "fa49e3e2d17c169dffe414225dc4a754f6f782b8",
+      "tree": "b12e5aca7b7a8547a47d97a064454a7155f32f28",
+      "parents": [
+        "08438d804746eb09b47531fc0c2a7a5a4dd00141"
+      ],
+      "author": "Arboreal Agent (gpt62a \u00b7 board) <agent-gpt62a-board@arboreal.invalid>"
+    },
+    "a0e99a4cf664d2c1bfe2342ed09057f23e5518b2": {
+      "remote_sha": "9fd8e912d47dda23d8736239376e2a5ecd3ded51",
+      "tree": "9d25fde6db33d1a01aed6ec526bca1e92fdd0ad9",
+      "parents": [
+        "fa49e3e2d17c169dffe414225dc4a754f6f782b8"
+      ],
+      "author": "Arboreal Agent (gpt62s \u00b7 impl) <agent-gpt62s-impl@arboreal.invalid>"
+    },
+    "f7d2c74c9b3228dcbba6c6c225944b3a79e77112": {
+      "remote_sha": "44557bbe6284a3144fee80be467cd46ccbcdd8c3",
+      "tree": "7f97fc30f8b5d0d360ca9682b09a0460276e5087",
+      "parents": [
+        "9fd8e912d47dda23d8736239376e2a5ecd3ded51"
+      ],
+      "author": "Arboreal Agent (gpt62s \u00b7 impl) <agent-gpt62s-impl@arboreal.invalid>"
+    },
+    "fcbbbf3a33a5560203e78615978f827b5eb3c5c4": {
+      "remote_sha": "627b7463d43349031b376c1897a494e8b9ef618e",
+      "tree": "d51b0e5cdea5ef940c190a763db814238fab4db8",
+      "parents": [
+        "44557bbe6284a3144fee80be467cd46ccbcdd8c3"
+      ],
+      "author": "Arboreal Agent (gpt62s \u00b7 impl) <agent-gpt62s-impl@arboreal.invalid>"
+    },
+    "7f8305168ead2fd5cd24ea0b2f00e234a97956dd": {
+      "remote_sha": "e219b7d328b3fa556b610564752815c236a46913",
+      "tree": "4bd8ad1914f4eebb111e4110cf8788caaf35f67b",
+      "parents": [
+        "627b7463d43349031b376c1897a494e8b9ef618e"
+      ],
+      "author": "Arboreal Agent (gpt62s \u00b7 impl) <agent-gpt62s-impl@arboreal.invalid>"
+    },
+    "3aa454a073c43f55d22ce0bd69b7002f16b6c879": {
+      "remote_sha": "efce1c36717ed948a2c2eb36756ef8f441cf3b6d",
+      "tree": "11103bbab2afde652cf82d5c1c71cc8ce8c8f06b",
+      "parents": [
+        "e219b7d328b3fa556b610564752815c236a46913"
+      ],
+      "author": "Arboreal Agent (gpt62s \u00b7 impl) <agent-gpt62s-impl@arboreal.invalid>"
+    },
+    "1e958089f8b63610c94808e0543a5912cfbe16f3": {
+      "remote_sha": "658c213e09a9ce75fcec3b3b9eda05558c8fd026",
+      "tree": "e28a9586463b492f93b6d64773cc563640ec8fc0",
+      "parents": [
+        "6cba18c87c35bc9930066b1170d8b6eb494ca043"
+      ],
+      "author": "Arboreal Agent (gpt62a \u00b7 board) <agent-gpt62a-board@arboreal.invalid>"
+    },
+    "de6b86d55f0459db4ee191e64dcebcffe34d3742": {
+      "remote_sha": "fc3e0146d3b593c607aa74bbe1d4edb06600f751",
+      "tree": "1fc26b0e94471b9519d6595216769a81b5b088e4",
+      "parents": [
+        "d424cf69cb4ebfd4579eba6de919ff3d16913cea",
+        "658c213e09a9ce75fcec3b3b9eda05558c8fd026"
+      ],
+      "author": "Arboreal Agent (gpt62a \u00b7 board) <agent-gpt62a-board@arboreal.invalid>"
+    },
+    "d0b72bb63624473e2bedfbbfd720632fa334299a": {
+      "remote_sha": "16e19b5cab3d5d9ac9975e728cffe31904427074",
+      "tree": "27e3169c176d13ae8f71be440952b8c617d0a9db",
+      "parents": [
+        "efce1c36717ed948a2c2eb36756ef8f441cf3b6d",
+        "fc3e0146d3b593c607aa74bbe1d4edb06600f751"
+      ],
+      "author": "Arboreal Agent (gpt62a \u00b7 board) <agent-gpt62a-board@arboreal.invalid>"
+    },
+    "89783fbaf83bb31de3580030917a8ccf67f779ff": {
+      "remote_sha": "1f2acc65304549c196204a6ac126303fa87e2cf0",
+      "tree": "e2bdb07dc486bf969e4ee02f7dbb7b185305c55a",
+      "parents": [
+        "16e19b5cab3d5d9ac9975e728cffe31904427074"
+      ],
+      "author": "Arboreal Agent (gpt62a \u00b7 board) <agent-gpt62a-board@arboreal.invalid>"
+    },
+    "4522a718b7b4200aef9473455759796237832425": {
+      "remote_sha": "cb465954a91f2929d914b4db8b91f7089baa14d7",
+      "tree": "e8d26caad6599277bbce51d6d5e427aac0c13e0a",
+      "parents": [
+        "494627b542af0655ddb1a2f4922e1ad07851ee91"
+      ],
+      "author": "Arboreal Agent (gpt62a \u00b7 board) <agent-gpt62a-board@arboreal.invalid>"
+    },
+    "8821ca791d01003e190134c621966181e6735fd9": {
+      "remote_sha": "9530cac1b7fe56d84f757e843a48dbd0b9592ed8",
+      "tree": "6a5c79ac608140f968a6a7da91cd9d0837fe82a4",
+      "parents": [
+        "cb465954a91f2929d914b4db8b91f7089baa14d7"
+      ],
+      "author": "Arboreal Agent (gpt62a \u00b7 board) <agent-gpt62a-board@arboreal.invalid>"
+    },
+    "c5e0f4ec2f08abdbf64120c4f3c9920201e615f2": {
+      "remote_sha": "da24eae9b9ed9399a9293d269f1ddd1f58ddea0a",
+      "tree": "9c863ef92b2107f8b256acb85e0849b6ce58d0f6",
+      "parents": [
+        "9530cac1b7fe56d84f757e843a48dbd0b9592ed8"
+      ],
+      "author": "Arboreal Agent (gpt62a \u00b7 board) <agent-gpt62a-board@arboreal.invalid>"
+    },
+    "d52dc02ea828a5ea28ccd1ea9efd5711258f74b1": {
+      "remote_sha": "1bac2e283e2f3859c4043c41e7fcf440a0165f1b",
+      "tree": "65e916717701080820c4567970e54910aa23ae06",
+      "parents": [
+        "da24eae9b9ed9399a9293d269f1ddd1f58ddea0a"
+      ],
+      "author": "Arboreal Agent (gpt62a \u00b7 board) <agent-gpt62a-board@arboreal.invalid>"
+    }
+  },
+  "initial_pr_heads": {
+    "187": {
+      "number": 89,
+      "url": "https://github.com/ArborealML/Inference-Router/pull/89",
+      "head": "7e42e0fca22565f61294b874de85338daca69250",
+      "branch": "impl/task187-semantic-observer",
+      "base": "main"
+    },
+    "202": {
+      "number": 90,
+      "url": "https://github.com/ArborealML/Inference-Router/pull/90",
+      "head": "ac9d783b8fcc84c4fd95278953f2fceda0af932f",
+      "branch": "impl/task202-admin-json",
+      "base": "stack/task202-pr86-main"
+    },
+    "203": {
+      "number": 88,
+      "url": "https://github.com/ArborealML/Inference-Router/pull/88",
+      "head": "cb595b2d96646fe038261ff57f6041e813aacd6f",
+      "branch": "impl/task203-independent-progress",
+      "base": "main"
+    },
+    "204": {
+      "number": 92,
+      "url": "https://github.com/ArborealML/Inference-Router/pull/92",
+      "head": "1f2acc65304549c196204a6ac126303fa87e2cf0",
+      "branch": "impl/task204-stateless-admission",
+      "base": "stack/wave1-foundations"
+    },
+    "205": {
+      "number": 91,
+      "url": "https://github.com/ArborealML/Inference-Router/pull/91",
+      "head": "658c213e09a9ce75fcec3b3b9eda05558c8fd026",
+      "branch": "impl/task205-inherited-priority",
+      "base": "impl/task203-independent-progress"
+    }
+  },
+  "qualification_note": "Original local execution/review hashes retain historical meaning; prepared and initial remote source trees are identical. CI runs reference actual remote PR heads and synthetic merge trees are checked separately. Subsequent Backlog-only publication receipts do not change these feature heads.",
+  "hosted_ci": {
+    "checked_utc": "2026-11-28 05:36:05 UTC",
+    "prs": {
+      "187": {
+        "number": 89,
+        "head": "7e42e0fca22565f61294b874de85338daca69250",
+        "base": "main",
+        "merge_commit": "2df82528b311979f148e0a32adb62cca1feae401",
+        "run": {
+          "id": 46112187952,
+          "head": "7e42e0fca22565f61294b874de85338daca69250",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/ArborealML/Inference-Router/actions/runs/46112187952",
+          "ref": "impl/task187-semantic-observer"
+        },
+        "job_id": 140877963350,
+        "tests": {
+          "failed": 0,
+          "passed": 2193,
+          "skipped": 0,
+          "total": 2193
+        },
+        "build_warnings": 0,
+        "build_errors": 0,
+        "log_summary": [
+          "2026-11-28T05:28:52.5899670Z Build succeeded.",
+          "2026-11-28T05:28:52.5900196Z     0 Warning(s)",
+          "2026-11-28T05:28:52.5900711Z     0 Error(s)",
+          "2026-11-28T05:31:06.2361798Z Passed!  - Failed:     0, Passed:  2193, Skipped:     0, Total:  2193, Duration: 2 m 10 s - Arboreal.InferenceRouter.Tests.dll (net11.0)"
+        ]
+      },
+      "202": {
+        "number": 90,
+        "head": "ac9d783b8fcc84c4fd95278953f2fceda0af932f",
+        "base": "stack/task202-pr86-main",
+        "merge_commit": "9c3e3a116b1c4dc04470be7fe8a4e45b442886d5",
+        "run": {
+          "id": 46112270273,
+          "head": "ac9d783b8fcc84c4fd95278953f2fceda0af932f",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/ArborealML/Inference-Router/actions/runs/46112270273",
+          "ref": "impl/task202-admin-json"
+        },
+        "job_id": 140878241385,
+        "tests": {
+          "failed": 0,
+          "passed": 2269,
+          "skipped": 0,
+          "total": 2269
+        },
+        "build_warnings": 0,
+        "build_errors": 0,
+        "log_summary": [
+          "2026-11-28T05:30:34.5504312Z Build succeeded.",
+          "2026-11-28T05:30:34.5504781Z     0 Warning(s)",
+          "2026-11-28T05:30:34.5505028Z     0 Error(s)",
+          "2026-11-28T05:32:38.3101361Z Passed!  - Failed:     0, Passed:  2269, Skipped:     0, Total:  2269, Duration: 2 m - Arboreal.InferenceRouter.Tests.dll (net11.0)"
+        ]
+      },
+      "203": {
+        "number": 88,
+        "head": "cb595b2d96646fe038261ff57f6041e813aacd6f",
+        "base": "main",
+        "merge_commit": "93412475e56048ed74a9d4c0a4ff8bc8b27c72b7",
+        "run": {
+          "id": 46112027567,
+          "head": "cb595b2d96646fe038261ff57f6041e813aacd6f",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/ArborealML/Inference-Router/actions/runs/46112027567",
+          "ref": "impl/task203-independent-progress"
+        },
+        "job_id": 140877457052,
+        "tests": {
+          "failed": 0,
+          "passed": 2160,
+          "skipped": 0,
+          "total": 2160
+        },
+        "build_warnings": 0,
+        "build_errors": 0,
+        "log_summary": [
+          "2026-11-28T05:26:54.0436107Z Build succeeded.",
+          "2026-11-28T05:26:54.0436540Z     0 Warning(s)",
+          "2026-11-28T05:26:54.0436757Z     0 Error(s)",
+          "2026-11-28T05:28:58.8224705Z Passed!  - Failed:     0, Passed:  2160, Skipped:     0, Total:  2160, Duration: 2 m 1 s - Arboreal.InferenceRouter.Tests.dll (net11.0)"
+        ]
+      },
+      "204": {
+        "number": 92,
+        "head": "1f2acc65304549c196204a6ac126303fa87e2cf0",
+        "base": "stack/wave1-foundations",
+        "merge_commit": "23943aee8af1788b206bf8d8bc96528f662885ab",
+        "run": {
+          "id": 46112396399,
+          "head": "1f2acc65304549c196204a6ac126303fa87e2cf0",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/ArborealML/Inference-Router/actions/runs/46112396399",
+          "ref": "impl/task204-stateless-admission"
+        },
+        "job_id": 140878643234,
+        "tests": {
+          "failed": 0,
+          "passed": 2341,
+          "skipped": 0,
+          "total": 2341
+        },
+        "build_warnings": 0,
+        "build_errors": 0,
+        "log_summary": [
+          "2026-11-28T05:32:01.2832998Z Build succeeded.",
+          "2026-11-28T05:32:01.2833563Z     0 Warning(s)",
+          "2026-11-28T05:32:01.2834020Z     0 Error(s)",
+          "2026-11-28T05:34:13.1325122Z Passed!  - Failed:     0, Passed:  2341, Skipped:     0, Total:  2341, Duration: 2 m 9 s - Arboreal.InferenceRouter.Tests.dll (net11.0)"
+        ]
+      },
+      "205": {
+        "number": 91,
+        "head": "658c213e09a9ce75fcec3b3b9eda05558c8fd026",
+        "base": "impl/task203-independent-progress",
+        "merge_commit": "61c1c8585ad6e26fe65f06188a312171fd3dcd8e",
+        "run": {
+          "id": 46112352768,
+          "head": "658c213e09a9ce75fcec3b3b9eda05558c8fd026",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/ArborealML/Inference-Router/actions/runs/46112352768",
+          "ref": "impl/task205-inherited-priority"
+        },
+        "job_id": 140878517103,
+        "tests": {
+          "failed": 0,
+          "passed": 2166,
+          "skipped": 0,
+          "total": 2166
+        },
+        "build_warnings": 0,
+        "build_errors": 0,
+        "log_summary": [
+          "2026-11-28T05:31:20.9297787Z Build succeeded.",
+          "2026-11-28T05:31:20.9298251Z     0 Warning(s)",
+          "2026-11-28T05:31:20.9298538Z     0 Error(s)",
+          "2026-11-28T05:33:27.1489182Z Passed!  - Failed:     0, Passed:  2166, Skipped:     0, Total:  2166, Duration: 2 m 3 s - Arboreal.InferenceRouter.Tests.dll (net11.0)"
+        ]
+      }
+    }
+  }
+}

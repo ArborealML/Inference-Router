@@ -29,11 +29,11 @@ Admin route bodies are read with JsonDocument and then treated as objects: nonob
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Found by an external review of the priority branch and verified in the code: the admin routes catch only JsonException, so InvalidOperationException from TryGetProperty/GetString escapes. This is pre-existing and not caused by the priority change, but it is on the same surfaces the priority work touched.
+Published [PR #90](https://github.com/ArborealML/Inference-Router/pull/90), head ac9d783b8fcc84c4fd95278953f2fceda0af932f. Dependency branch stack/task202-pr86-main at b46824d5245166122c455591802acd92c1f896e6 preserves PR #86 a12012b and planning main 62f1c79; their merge is Backlog-only. [Mappings](../milestones/wave1-publication-map.json) retain reviewed 8a12ba8..ee2fbc8 under TASK-220's provenance exception.
 
-Candidate ee2fbc8ee2ff7b321a0d2a6d4733cb1f5aaea93f implements AC1–3 under the clarified existing target-reset exception. Independent plan and source review passed; source range 8a12ba8..ee2fbc8 had no blocking findings. Exact-head Release verification: 92 passed, zero failed/skipped across AdminJsonBodyTests, AdminThreadPriorityTests, AdminSwitchOperationTests, ErrorContractTests and ConfigReloadWireTests; build/analyzers passed. Fixtures pin literal refusals, valid nulls and no registration/admin-use/operation effects.
+The pre-existing JsonElement kind exception was independently verified. AC1–3 implemented with target-reset's existing error-code exception. Plan/source review passed without blocking findings. Local Release at ee2fbc8: 92 passed, zero failures/skips; build/analyzers passed. Fixtures pin literal refusals, valid nulls and absent registration/admin-use/reservation effects. SPEC v0.12.166 and README state scope.
 
-Dependency base 2c54500 merges exact PR #86 head a12012b176e84e49603c433a9f934206499b4bcb with planning main 62f1c79. PR #86 priority code is unchanged and retains its separate review dispositions. SPEC v0.12.166 and README state the correction. Coordinator next publishes this stacked increment, checks hosted build/test/AOT on its actual head and reconciles after the prerequisite lands. No merge/live qualification; not Done. Backlog CLI unavailable; controlled Markdown and strict validation substitute.
+PR #86 priority code and its outstanding review/client dispositions remain unchanged. [Hosted CI](https://github.com/ArborealML/Inference-Router/actions/runs/46112270273) passed on this head: 2,269 tests, zero failed/skipped, build, Linux AOT/config smoke, strict board and release harness. Next: reconcile after #86 lands before final integration approval. No live qualification or Done claim. Backlog CLI unavailable; strict controlled Markdown substitutes.
 <!-- SECTION:NOTES:END -->
 
 ## Implementation Plan
