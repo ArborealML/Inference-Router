@@ -4,6 +4,7 @@ namespace Arboreal.InferenceRouter;
 
 public sealed partial class RouterCore
 {
+    private const int OwnedDefaultStreamBufferLimitBytes = 256 * 1024;
     internal bool OwnedPolicyEnabled => _ownedPolicy is not null;
     internal EventRing EventFeed => _events;
 
@@ -73,12 +74,22 @@ public sealed partial class RouterCore
     internal IAsyncEnumerable<RouterEvent> SubscribeOwnedEvents(RouterEventFilter filter, PolicyGroupKey key, CancellationToken ct) =>
         new EventEnumerable(_events, filter with { OwnerGroup = key }, ct, _shutdown.Token);
 
-    internal RouterStats GetOwnedStats(OwnedPolicyGroup group, VerifiedInferenceScope scope) =>
-        ProjectStats(group.Key, new OwnedTicketPolicy(group, scope, PrivateDestinationCapability.Chat),
-            new OwnedTicketPolicy(group, scope, PrivateDestinationCapability.Text)) with
+    internal ScopedRouterStats GetOwnedStats(OwnedPolicyGroup group, VerifiedInferenceScope scope)
+    {
+        var key = group.Key;
+        lock (_gate)
         {
-            Policy = new ScopedPolicyStatus(group.Revision, group.Sensitive),
-        };
+            var engines = CurrentGeneration.Engines.Values
+                .Where(engine => CanSeeOwnedEngine(group, scope, engine.Name))
+                .Select(engine => new ScopedEngineStats(engine.Name, OwnedInflight(key, engine.Name))).ToArray();
+            var queues = _queues.Values.Select(queue => (queue.Model, Count: queue.CaptureRound().Requests.Count(
+                    request => request.Ticket.OwnedPolicy?.Key == key)))
+                .Where(static row => row.Count > 0).Take(128)
+                .ToDictionary(static row => row.Model, static row => row.Count, StringComparer.Ordinal);
+            var threads = _threads.Values.Where(thread => thread.OwnerGroup == key).Take(128).Select(ReadThreadStats).ToArray();
+            return new ScopedRouterStats(engines, queues, threads, new ScopedPolicyStatus(group.Revision, group.Sensitive));
+        }
+    }
 
     internal bool CanSeeOwnedEngine(OwnedPolicyGroup group, VerifiedInferenceScope scope, string engine) =>
         AllowsOwnedRoute(new OwnedTicketPolicy(group, scope, PrivateDestinationCapability.Chat), engine) ||
@@ -127,4 +138,7 @@ public sealed partial class RouterCore
     }
 }
 
-public sealed record ScopedPolicyStatus(long Revision, bool Sensitive);
+internal sealed record ScopedPolicyStatus(long Revision, bool Sensitive);
+internal sealed record ScopedEngineStats(string Engine, int Inflight);
+internal sealed record ScopedRouterStats(ScopedEngineStats[] Engines, IReadOnlyDictionary<string, int> QueueDepths,
+    ThreadStats[] Threads, ScopedPolicyStatus Policy);

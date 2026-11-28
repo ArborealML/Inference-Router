@@ -150,48 +150,43 @@ public sealed partial class RouterCore : IInferenceRouter
             SignalDispatch();
     }
 
-    public RouterStats GetStats() => !OwnedPolicyEnabled ? ProjectStats(null, null, null) : throw ScopeRequired();
-
-    private RouterStats ProjectStats(PolicyGroupKey? ownedGroup, OwnedTicketPolicy? chat, OwnedTicketPolicy? text)
+    public RouterStats GetStats()
     {
+        if (OwnedPolicyEnabled) throw ScopeRequired();
         lock (_gate)
         {
-            var engines = CurrentGeneration.Engines.Values.Where(e => ownedGroup is null ||
-                AllowsOwnedRoute(chat!, e.Name) || AllowsOwnedRoute(text!, e.Name)).Select(e =>
+            var engines = CurrentGeneration.Engines.Values.Select(e =>
             {
                 var cap = e.Capability;
                 return new EngineStats
                 {
                     Engine = e.Name,
                     Healthy = cap.Healthy,
-                    LoadedModels = ownedGroup is null ? cap.LoadedModels : cap.LoadedModels.Take(128).Select(WireText.Ident).ToArray(),
-                    Inflight = ownedGroup is null ? e.Inflight : OwnedInflight(ownedGroup.Value, e.Name),
+                    LoadedModels = cap.LoadedModels,
+                    Inflight = e.Inflight,
                     SwitchingToward = cap.SwitchingToward,
                     ActiveProfile = cap.Serving.Profile,
                     ActiveContextWindow = cap.Serving.ContextWindow,
                     ActiveSlots = cap.Serving.TotalSlots,
                 };
             }).ToArray();
-            var queues = ownedGroup is null ? _queues.Values.ToDictionary(q => q.Model, q => q.Depth, StringComparer.Ordinal)
-                : _queues.Values.Select(q => (q.Model, Count: q.CaptureRound().Requests.Count(r => r.Ticket.OwnedPolicy?.Key == ownedGroup)))
-                    .Where(static row => row.Count > 0).Take(128)
-                    .ToDictionary(static row => row.Model, static row => row.Count, StringComparer.Ordinal);
-            IEnumerable<RouterThread> visibleThreads = _threads.Values;
-            if (ownedGroup is not null) visibleThreads = visibleThreads.Where(t => t.OwnerGroup == ownedGroup).Take(128);
-            var threads = visibleThreads.Select(t => new ThreadStats
-            {
-                ThreadId = t.DisplayId ?? t.ThreadId,
-                Priority = t.Priority,
-                Weight = t.Weight,
-                Enqueued = Volatile.Read(ref t.Enqueued),
-                Completed = Volatile.Read(ref t.Completed),
-            }).ToArray();
+            var queues = _queues.Values.ToDictionary(q => q.Model, q => q.Depth, StringComparer.Ordinal);
+            var threads = _threads.Values.Select(ReadThreadStats).ToArray();
             return new RouterStats(Engines: engines, QueueDepths: queues, Threads: threads)
             {
-                FeedSubscriberFaults = ownedGroup is null ? _events.SubscriberFaults : 0,
+                FeedSubscriberFaults = _events.SubscriberFaults,
             };
         }
     }
+
+    private static ThreadStats ReadThreadStats(RouterThread thread) => new()
+    {
+        ThreadId = thread.DisplayId ?? thread.ThreadId,
+        Priority = thread.Priority,
+        Weight = thread.Weight,
+        Enqueued = Volatile.Read(ref thread.Enqueued),
+        Completed = Volatile.Read(ref thread.Completed),
+    };
 
     /// <summary>One ticket's state for the admin surface (§6). The identifiers here are <b>whole</b>, not the
     /// reporting-length excerpt the feed carries: an operator who reads a thread id or a model id off this response
@@ -2179,8 +2174,6 @@ public sealed record RouterStats(
     /// isolated by design — it must not reach the engine that emitted the event — so a broken observer is otherwise
     /// invisible: this count is what tells an operator that a live tail has stopped being delivered.</summary>
     public long FeedSubscriberFaults { get; init; }
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public ScopedPolicyStatus? Policy { get; init; }
 }
 
 /// <summary>Immutable projection of one ticket for the admin API (AOT-safe DTO).</summary>
