@@ -214,6 +214,39 @@ public sealed partial class OwnedPrivatePolicyTests
         Assert.False(File.Exists(StatePath + ".root-proposed"));
     }
 
+    [Fact(Timeout = 20_000)]
+    public async Task ClosingTheStorePreventsAWaitingRootFromAdvancingAuthority()
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(12));
+        var ct = deadline.Token;
+        var roots = new Authority();
+        var groups = new GroupAuthority();
+        var first = new VerifiedInferenceScope("first", FullScope, newRootIntent: "root");
+        var second = new VerifiedInferenceScope("second", FullScope, newRootIntent: "root");
+        using var store = await OwnedPolicyStore.OpenWithGroupAuthorityAsync(StatePath, roots, groups, initialize: true, ct);
+        roots.HoldNextCommit();
+        var committing = store.ResolveAsync(first, null, true, ct).AsTask();
+        try
+        {
+            await roots.Entered.Task.WaitAsync(ct);
+            var waiting = store.ResolveAsync(second, null, true, ct).AsTask();
+            Assert.False(waiting.IsCompleted);
+            Assert.Equal(1, roots.Current?.Revision);
+            store.Dispose();
+            await Assert.ThrowsAsync<IOException>(() => OwnedPolicyStore.OpenWithGroupAuthorityAsync(StatePath, roots, groups,
+                cancellationToken: ct));
+            roots.AllowCommit.TrySetResult();
+            Assert.Null(await committing);
+            Assert.Null(await waiting);
+            Assert.Equal(2, roots.Current?.Revision);
+        }
+        finally { roots.AllowCommit.TrySetResult(); }
+        using var reopened = await OwnedPolicyStore.OpenWithGroupAuthorityAsync(StatePath, roots, groups, cancellationToken: ct);
+        Assert.NotNull(await reopened.ResolveAsync(first, null, false, ct));
+        Assert.Null(await reopened.ResolveAsync(second, null, false, ct));
+    }
+
     private static PrivateDestinationEnrollment Destination(string name, Uri endpoint) =>
         new(name, endpoint, "/models", "/props", PrivateDestinationCapability.Chat | PrivateDestinationCapability.Text);
 
