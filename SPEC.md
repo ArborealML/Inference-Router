@@ -7,7 +7,7 @@ Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 
 ## 0. Revision log
 
-- v0.12.173 — compose enrolled exact dispatch in the standard web application and require generation-specific physical retirement before mutation (§§4, 7.6, 12.1).
+- v0.12.173 — compose enrolled exact dispatch in the standard web application and require generation-specific physical retirement before mutation, and bound commissioned SSE output at route selection (§§4, 7.6, 12.1).
 - v0.12.171 — fit deterministic short-grid prompts using exact backend counts and search the full next-record tail within the count budget (§11.2).
 - v0.12.170 — bind named managed recipes through selection and exact admission, resolve engine-local aliases before queue validation, and preserve numeric reuse of a fitting resident (§§5.3.1, 7.6, 14).
 - v0.12.169 — continue past unavailable preparation and activation offers, withdraw closed managed residents from route ranking, consume an active transition's runtime claim once, and deliver queued cancellation through controller cleanup (§§5.3.1, 5.5, 14).
@@ -2171,7 +2171,10 @@ serving-process incarnations and that route's physical-use counter. Staging and 
 authorization share one local gate. The switch ticket stays on the ordinary queue while the
 manager seals that incumbent and waits for preparation cleanup, the exact route's zero counter
 and an independent issuer and ingress retirement cutoff. The response remains borrowed until
-stream delivery acknowledges flush or decides departure. A logical timeout or caller terminal
+stream delivery acknowledges flush or decides departure. The selected commissioned HTTP SSE
+route uses the configured positive output credit, or 64 KiB per ticket when the configured
+credit is zero. Selection installs this credit before publishing the stream reader. Ordinary
+routes sharing the model keep the configured legacy default. A logical timeout or caller terminal
 can release the engine slot while the physical use remains charged.
 
 The coordinator rechecks fresh physical occupancy and reserves a one-use stop permit for the
