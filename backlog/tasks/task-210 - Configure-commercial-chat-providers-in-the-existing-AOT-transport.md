@@ -1,9 +1,9 @@
 ---
 id: TASK-210
 title: Configure commercial chat providers in the existing AOT transport
-status: Ready for Review
+status: In Progress
 assignee:
-  - '@gpt-6.2-astra'
+  - '@gpt-6.2-sol-config'
 created_date: '2026-11-27'
 updated_date: '2026-11-28T14:34:28Z'
 labels: []
@@ -46,5 +46,5 @@ Extend the existing SSE observer to verify the served model before releasing sem
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-[Direct transport](https://github.com/ArborealML/Inference-Router/pull/105) passed a two-provider Native AOT exercise. Review at d045d69 led to distinct error categories, finite idle/absolute deadlines and bounded fragmented tails. Source checks passed 232 tests. Review at 20aabde accepted timer renewal. At a2c3a8a invalid choice indexes are rejected before output. Terminal publication keeps its absolute deadline while waiting for downstream credit. Source qualification passed 202 tests. The integrated relay and delivery checks passed 131. TASK-211–213 own account controls. Live qualification remains open.
+[Direct transport](https://github.com/ArborealML/Inference-Router/pull/105) passed a two-provider Native AOT exercise. Reviews at d045d69 and 20aabde led to distinct error categories, finite stream deadlines, bounded tails and choice validation. Source checks passed 202 tests, integrated delivery checks passed 131. Review at d654518 found a held terminal larger than relay capacity could expose a success sentinel before timeout. The author is correcting terminal publication and checking the response and next ticket with a stalled client. TASK-211–213 own account controls. Live qualification remains open.
 <!-- SECTION:NOTES:END -->
