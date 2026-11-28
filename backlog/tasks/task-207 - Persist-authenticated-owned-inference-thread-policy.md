@@ -1,11 +1,11 @@
 ---
 id: TASK-207
 title: Persist authenticated owned inference thread policy
-status: In Progress
+status: Ready for Review
 assignee:
-  - '@gpt-6.2-sol-config'
+  - '@gpt-6.2-astra'
 created_date: '2026-11-27'
-updated_date: '2026-11-28T12:03:00Z'
+updated_date: '2026-11-28T12:29:00Z'
 labels: []
 milestone: m-19
 dependencies:
@@ -53,4 +53,6 @@ Authorize both inference endpoints, catalog/status, tickets, cancel, events, thr
 Independent plan review at 3c7ae3e identified default handler redirect and proxy behavior, catalog caching, the use of raw thread IDs, and event ownership after ticket eviction. The revised plan covers each at its enforcement point. TASK-217 owns the external authority choices, TASK-208 owns sensitivity transitions and TASK-212 owns final commercial liability. This plan qualifies fixtures before any production enablement.
 
 Implementation began with the existing HTTP handler and owner-scoped private fixtures. Production requires an external authority adapter and verified destination confinement.
+
+[Private policy integration](https://github.com/ArborealML/Inference-Router/pull/100) at 461b3c7 passed 154 focused checks. Real HTTP exercised private delivery, cancellation, redirect and proxy confinement, and a store write whose external confirmation was lost. Review and hosted CI are underway.
 <!-- SECTION:NOTES:END -->
