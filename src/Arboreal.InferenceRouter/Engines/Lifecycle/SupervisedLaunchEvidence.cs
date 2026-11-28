@@ -9,9 +9,11 @@ namespace Arboreal.InferenceRouter.Lifecycle;
 internal sealed record SupervisedLaunchApproval(HostInitialLaunchIntent Intent, DockerImageIdentity Image,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ApiVersion = null)
 {
-    internal bool HasPinnedApiVersion()
+    internal bool HasPinnedApiVersion() => IsPinnedApiVersion(ApiVersion);
+
+    internal static bool IsPinnedApiVersion(string? version)
     {
-        if (ApiVersion is not { Length: >= 4 } version || version[0] != 'v') return false;
+        if (version is not { Length: >= 4 } || version[0] != 'v') return false;
         var dot = version.IndexOf('.', StringComparison.Ordinal);
         return dot > 1 && dot < version.Length - 1 &&
             version.AsSpan(1, dot - 1).IndexOfAnyExceptInRange('0', '9') < 0 &&
@@ -82,7 +84,7 @@ internal sealed record SupervisedObservedCreate(SupervisedLaunchCommand Command,
     string BackendRoute, Uri Endpoint, ImmutableArray<string> Devices);
 internal sealed record SupervisedObservedStart(SupervisedLaunchCommand Command, string InstanceId, bool Running);
 
-// These ports have no live implementation. Observation receives the operation identity, independently
+// The observer receives the operation identity independently
 // of the writer's response and create buffer. An adapter must withhold incomplete effective settings.
 // The observer supplies the commissioned API pin with the launch approval.
 // Commission and policy updates share the issue fence.
@@ -107,11 +109,15 @@ internal static class SupervisedLaunchEvidence
 
     internal static HostInitialCreate? VerifyCreate(SupervisedObservedCreate? observed, SupervisedLaunchCommand command,
         SupervisedLaunchApproval approval, EnrolledPairMemberGrant grant, ImmutableArray<string> devices)
+        => VerifyCreate(observed, command, approval, grant.Member.BackendRoute, grant.Endpoint, devices);
+
+    internal static HostInitialCreate? VerifyCreate(SupervisedObservedCreate? observed, SupervisedLaunchCommand command,
+        SupervisedLaunchApproval approval, string backendRoute, Uri endpoint, ImmutableArray<string> devices)
     {
         if (observed is not { InstanceId: { } instance, EffectiveSettings: { } effective } ||
             observed.Command != command || !IsFullContainerId(instance) || observed.Image != approval.Image ||
-            observed.BackendRoute != grant.Member.BackendRoute ||
-            !VerifiedDispatchEnvelope.SameEffectiveUri(observed.Endpoint, grant.Endpoint) ||
+            observed.BackendRoute != backendRoute ||
+            !VerifiedDispatchEnvelope.SameEffectiveUri(observed.Endpoint, endpoint) ||
             !SupervisedLaunchCommission.SameDevices(devices, observed.Devices)) return null;
 
         var bytes = Convert.FromBase64String(approval.Intent.CreateBytes);

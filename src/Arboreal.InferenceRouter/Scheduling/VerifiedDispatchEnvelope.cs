@@ -84,7 +84,8 @@ internal sealed class VerifiedDispatchEnvelope
 
     internal static VerifiedDispatchEnvelope Freeze(
         VerifiedDispatchTarget target, VerifiedInstanceRoute route, Guid invocationId, Uri endpoint,
-        string requestedSpelling, ReadOnlyMemory<byte> rawBody, VerifiedDispatchCredential credential)
+        string requestedSpelling, ReadOnlyMemory<byte> rawBody, VerifiedDispatchCredential credential,
+        long sequence = 0, Guid writer = default)
     {
         if (!target.Matches(route) || invocationId == Guid.Empty || !SameEffectiveUri(target.Endpoint, endpoint))
             throw new VerifiedDispatchBindingException(VerifiedDispatchRefusal.Target);
@@ -97,7 +98,7 @@ internal sealed class VerifiedDispatchEnvelope
         ValidateModel(rewritten, target.Model, StringComparison.Ordinal, requireMember: true);
 
         var uri = EngineRuntime.Combine(endpoint, suffix);
-        return new VerifiedDispatchEnvelope(new VerifiedInstanceInvocation(route, invocationId, uri),
+        return new VerifiedDispatchEnvelope(new VerifiedInstanceInvocation(route, invocationId, uri, sequence, writer),
             ImmutableArray.CreateRange(rewritten), credential);
     }
 
@@ -105,7 +106,8 @@ internal sealed class VerifiedDispatchEnvelope
         VerifiedInstanceInvocation invocation, HttpRequestMessage offer, long credentialEpoch, CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
-        if (invocation.Route != Invocation.Route || invocation.Id != Invocation.Id ||
+        if (invocation.Route != Invocation.Route || invocation.Id != Invocation.Id || invocation.Sequence != Invocation.Sequence ||
+            invocation.CommissionedWriter != Invocation.CommissionedWriter ||
             !SameEffectiveUri(Invocation.LogicalUri, invocation.LogicalUri) ||
             !SameEffectiveUri(Invocation.LogicalUri, offer.RequestUri) ||
             !string.Equals(offer.Method.Method, "POST", StringComparison.Ordinal) ||

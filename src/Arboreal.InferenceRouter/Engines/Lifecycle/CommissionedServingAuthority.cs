@@ -10,6 +10,7 @@ internal interface ICommissionedServingAuthority : IVerifiedDispatchIssuer
     bool Approves(VerifiedDispatchTarget target);
     bool IsDisjointFromLocalController(EngineDefinition engine);
     long ResourceEpoch { get; }
+    Guid ApplicationWriter => Guid.Empty;
     bool IsKnownVacant(long resourceEpoch);
     CommissionedServingStamp? ReadServing(VerifiedInstanceRoute route);
 
@@ -50,6 +51,7 @@ internal sealed class CommissionedRouteIssuer(ICommissionedServingAuthority auth
     internal HostReservationScope Scope => _scope;
     internal bool IsCurrentScope => authority.Scope == _scope;
     internal Lock Gate => staging.IssuerGate;
+    internal Guid ApplicationWriter => authority.ApplicationWriter;
 
     internal CommissionedServingStamp? Attach(VerifiedInstanceRoute route)
     {
@@ -86,6 +88,13 @@ internal sealed class CommissionedRouteIssuer(ICommissionedServingAuthority auth
         lock (Gate)
             if (!CanIssue(invocation.Route)) return ValueTask.FromResult(new VerifiedCheckout(VerifiedCheckoutDisposition.NoTransfer));
         return authority.CheckoutVerifiedAsync(invocation, ct);
+    }
+
+    public ValueTask<bool> CheckBeforeFirstWriteAsync(VerifiedInstanceGrant grant, CancellationToken ct)
+    {
+        lock (Gate)
+            if (!CanIssue(grant.Invocation.Route)) return ValueTask.FromResult(false);
+        return authority.CheckBeforeFirstWriteAsync(grant, ct);
     }
 
     public IAsyncDisposable? TryAuthorizeFirstWrite(VerifiedInstanceGrant grant)

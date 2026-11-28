@@ -56,8 +56,10 @@ internal sealed class VerifiedPreparedSender : IAsyncDisposable
     private static VerifiedPreparedSender Freeze(ExactTicketAdmission.Claim claim, VerifiedDispatchResident resident,
         string requestedSpelling, Func<ValueTask>? cleanup)
     {
+        var writer = (resident.Issuer as CommissionedRouteIssuer)?.ApplicationWriter ?? Guid.Empty;
+        var sequence = writer != Guid.Empty ? VerifiedInstanceInvocation.IssueSequence() : 0;
         var frozen = VerifiedDispatchEnvelope.Freeze(resident.Target, resident.Route, Guid.NewGuid(), resident.Endpoint,
-            requestedSpelling, claim.Request.Request.Body, resident.Credential);
+            requestedSpelling, claim.Request.Request.Body, resident.Credential, sequence, writer);
         return new VerifiedPreparedSender(claim, frozen, resident.Issuer, cleanup);
     }
 

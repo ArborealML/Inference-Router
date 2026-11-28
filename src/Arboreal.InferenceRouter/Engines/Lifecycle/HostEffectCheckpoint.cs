@@ -68,6 +68,13 @@ internal sealed class HostEffectCheckpoint : IDisposable
         }
     }
 
+    // The worker reads the installed body under its issue fence while the controller owns the stable lock.
+    internal static HostEffectCheckpointState ReadInstalledState(string lockPath) =>
+        ReadInstalled(Path.GetFullPath(lockPath) + CheckpointSuffix);
+
+    internal static HostEffectCheckpointCommitment ReadInstalledCommitment(string lockPath) =>
+        ReadCommitted(Path.GetFullPath(lockPath) + CheckpointSuffix);
+
     public HostMutation PrepareInitialLaunch(HostCheckpointPlan plan)
     {
         var current = RequirePhase(HostCheckpointPhase.Genesis);
@@ -80,22 +87,41 @@ internal sealed class HostEffectCheckpoint : IDisposable
         return launch;
     }
 
-    public HostMutation PrepareSuccessor(HostCheckpointPlan plan)
+    public HostMutation PrepareSuccessor(HostCheckpointPlan plan) =>
+        PrepareSuccessor(plan, ProposeSuccessorStop(plan));
+
+    // Freeze an ID for the exact sealed cutoff without writing stop intent. The protected
+    // controller installs it only after the broker cutoff and attributable use tracker settle.
+    internal HostMutation ProposeSuccessorStop(HostCheckpointPlan plan)
     {
         var current = State;
         if (current.Phase is not (HostCheckpointPhase.Resident or HostCheckpointPhase.RetainedBeforeDispatch or
-            HostCheckpointPhase.RetainedAfterRejection) || current.AppliedLaunch is not { } incumbent || plan == incumbent.Plan)
+            HostCheckpointPhase.RetainedAfterRejection) || current.AppliedLaunch is not { } incumbent || !plan.IsValid() ||
+            plan == incumbent.Plan)
             throw new InvalidOperationException("Only a different plan can supersede a retained launch.");
 
-        var epoch = checked(current.Epoch + 1);
-        var stop = new HostMutation(epoch, Guid.NewGuid(), HostMutationKind.Stop, incumbent.Operation.Engine,
+        return new(checked(current.Epoch + 1), Guid.NewGuid(), HostMutationKind.Stop, incumbent.Operation.Engine,
             incumbent.InstanceId, null, null);
+    }
+
+    internal HostMutation PrepareSuccessor(HostCheckpointPlan plan, HostMutation stop)
+    {
+        var current = State;
+        if (!BindsProposedStop(current, stop) || current.AppliedLaunch?.Plan == plan || !plan.IsValid())
+            throw new InvalidOperationException("The proposed stop does not supersede the installed resident.");
         Install(current, current with
         {
-            Epoch = epoch, Phase = HostCheckpointPhase.StopPrepared, Transition = new HostCheckpointTransition(plan, stop),
+            Epoch = stop.Epoch, Phase = HostCheckpointPhase.StopPrepared, Transition = new HostCheckpointTransition(plan, stop),
         });
         return stop;
     }
+
+    internal static bool BindsProposedStop(HostEffectCheckpointState state, HostMutation? stop) =>
+        state.Phase is HostCheckpointPhase.Resident or HostCheckpointPhase.RetainedBeforeDispatch or
+            HostCheckpointPhase.RetainedAfterRejection && state.AppliedLaunch is { } incumbent &&
+        state.Epoch < long.MaxValue && stop is
+            { Kind: HostMutationKind.Stop, Profile: null, PlanDigest: null } && stop.Id != Guid.Empty &&
+        stop.Epoch == state.Epoch + 1 && stop.Engine == incumbent.Operation.Engine && stop.Target == incumbent.InstanceId;
 
     public void MarkStopDispatching(HostMutation stop)
     {
@@ -219,7 +245,9 @@ internal sealed class HostEffectCheckpoint : IDisposable
         }
     }
 
-    private static HostEffectCheckpointState ReadInstalled(string path)
+    private static HostEffectCheckpointState ReadInstalled(string path) => ReadCommitted(path).State;
+
+    private static HostEffectCheckpointCommitment ReadCommitted(string path)
     {
         using var file = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
         var length = file.Length;
@@ -234,7 +262,7 @@ internal sealed class HostEffectCheckpoint : IDisposable
         try
         {
             var state = JsonSerializer.Deserialize(body, HostEffectCheckpointJsonContext.Default.HostEffectCheckpointState);
-            if (state?.IsValid() == true) return state;
+            if (state?.IsValid() == true) return new(state, Convert.ToHexString(bytes.AsSpan(0, HashLength)));
             throw new IOException("The host effect checkpoint is inconsistent.");
         }
         catch (JsonException ex)
@@ -267,3 +295,5 @@ internal sealed class HostEffectCheckpoint : IDisposable
         }
     }
 }
+
+internal sealed record HostEffectCheckpointCommitment(HostEffectCheckpointState State, string Digest);
