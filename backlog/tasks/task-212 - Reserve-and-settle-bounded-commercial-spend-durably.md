@@ -8,6 +8,7 @@ created_date: '2026-11-27'
 labels: []
 milestone: m-16
 dependencies:
+  - TASK-208
   - TASK-210
   - TASK-211
 priority: high
@@ -17,21 +18,29 @@ ordinal: 212000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Implement a single-writer attempt/spend store before any paid route is enabled. Distinguish admission estimate, actual usage, actual charge and unresolved exposure. Do not persist prompt content by default.
+Own integrated commercial send safety: one attempt and durable maximum exposure before any possible upstream send; then consume TASK-208's final authorization. Reuse existing transport and scoped admission. No general financial service; existing legacy commercial routes must migrate to this path before hybrid enablement.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Before possible send, persist unique attempt/body digest, account/config/policy revision, bounded charge and budget period; reservation and concurrent admission cannot double spend.
-- [ ] #2 Hard budget requires conservative billable input, aggregate output/reasoning/choice bounds, maximum applicable cache/other prices and bounded fees; unknown bounds refuse.
-- [ ] #3 Crash before/after send, partial usage, cancel, reload/removal and reset retain unresolved liability; missing evidence is never zero.
-- [ ] #4 Reconcile authoritative evidence or audited manual adjustment. Unresolved commitments survive backup/restore and cannot expire by retention timer.
-- [ ] #5 No automatic replay after uncertain submission; an explicitly permitted independent replacement reserves separately and never splices semantic output.
-- [ ] #6 Tests inject failures at journal/send/settle boundaries and prove account-local quarantine, no unrelated-provider stall, and unchanged AOT. SPEC §§5–7, 10, 14 records guarantees.
+- [ ] #1 Freeze exact projected body, destination/account/config, scope reservations, price bound and policy revision; atomic concurrent admission cannot double spend.
+- [ ] #2 Persist maximum possible charge before submission; recheck current policy/revocations and consume one authorization after persistence, never reuse it.
+- [ ] #3 Hard budget needs conservative billable input, enforceable aggregate output/reasoning/choices and maximum cache/price/fee bounds; unknown bounds refuse.
+- [ ] #4 Crash, cancel, reset, removal or unverified restore retain unresolved occupancy/liability until proven settlement or audited correction; never expire unknown exposure.
+- [ ] #5 Ambiguous submission never automatically replays; separately authorized replacement reserves independently and never splices output.
+- [ ] #6 Every hybrid commercial path, including legacy forwarding and prompt-bearing count/tokenize, is fail-closed until guard, scoped admission and accounting are ready.
+- [ ] #7 Barrier tests cover persistence/escalation/send/reload order, shared-account races, definite non-send and unknown outcomes; held accounting cannot stall unrelated domains.
+- [ ] #8 SPEC §§5–7, 10, 14 pin guarantees and migration; no live provider call required.
 <!-- AC:END -->
 
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Use durable atomic replacement or append/flush helpers already proven in the repository, not the launch journal state machine. Conservative unresolved bounds count against budget; actual evidence can release only proven surplus. Keep request lookup optional and correlation distinct from idempotency.
+Single-writer minimal durable attempt store, reusable atomic flush/replace helpers, per-account reservations and independent asynchronous persistence. No global queue/admission lock spans I/O. Coordinate policy gate (TASK-208), transport (210) and caps/ranking (211). Reserve worst case even if predicted included when paid fallthrough is possible. Safe rollback cannot reenable legacy bypass; disable unclassified routes in hybrid mode. Manual reconciliation is sufficient initially.
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+TASK-214/215 own actual authorized release qualification. Do not add generalized financial accounting, secret management or backup infrastructure.
+<!-- SECTION:NOTES:END -->

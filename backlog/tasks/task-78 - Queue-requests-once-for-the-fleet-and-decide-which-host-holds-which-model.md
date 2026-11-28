@@ -36,4 +36,6 @@ Fleet delivery umbrella: one authoritative router owns pending work, eligibility
 
 <!-- SECTION:NOTES:BEGIN -->
 At 31179e3 one live ingress served resident Qwen and a remote resident Bonsai in one Pi session. That is not managed peer ownership or two-ingress recovery proof. TASK-203/204 establish independent dispatch and identities; TASK-206 extracts the physical manager; TASK-77 finishes remote ownership; TASK-122 and TASK-124 qualify fixed placement and recovery before TASK-123 adds measured placement. Preserve decision-25 bounded wait and decision-67 physical cleanup.
+
+Umbrella only; closure consumes TASK-122/124 fixed-placement evidence and TASK-123 measured placement with TASK-72 fairness. Do not assign a second fleet implementation.
 <!-- SECTION:NOTES:END -->

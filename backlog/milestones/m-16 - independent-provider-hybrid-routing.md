@@ -7,13 +7,15 @@ title: "Independent-provider hybrid routing"
 
 One authoritative AIR queue and policy, independent progress on each eligible private and commercial resource domain, and direct configuration-defined providers. Context and physical/admission parallelism are separately selected against actual workload. No new deployment or paid request is authorized by this planning milestone.
 
+AIR consumes externally established identity, scoped privileges, credential isolation and assigned resource boundaries. Agent orchestration, sandboxing, human authentication, infrastructure provisioning, backups and generic accounting are outside AIR; fixture contracts do not depend on those systems being implemented.
+
 ## Delivery order
 
 - First: TASK-203 independent dispatch, TASK-204 stateless identity, TASK-205 inherited priority, TASK-219 deployed provenance. TASK-51 and TASK-72 retain finite-wait and measured fairness requirements. Fix TASK-187, TASK-200 and TASK-202 in parallel where independent.
-- Host authority and fixed placement remain m-6 (TASK-206, 77, 110, 118, 122, 124). Do not wait for fleet optimization or the full Tune sweep. TASK-123 follows the fixed-placement proof.
-- Policy: TASK-207/208/209 and the existing Pi/context/provenance tasks. TASK-217 selects the production human-only authority. External egress requires qualified policy.
-- Commercial: TASK-210 transport/configuration, TASK-211 scoped capacity, TASK-212 durable spend. TASK-214 bounded metered qualification can precede TASK-213/215 subscription qualification. TASK-218 gates paid evidence. No vendor scripting, universal meter engine, or assumed subscription-only enforcement.
-- Tune remains m-14; TASK-170/171/154/216 produce exact, matched-work evidence, and TASK-172 expands catalog coverage. TASK-183/184/191/192 implement independent dimension selection and safe resize, after applicable conformance and adopted evidence.
+- Host authority: TASK-206 in-process composition/issuer seam precedes TASK-25/118/110 production integration, then TASK-77 peer roles, TASK-122 fixed placement, TASK-124 live topology proof. TASK-123 offline scoring can overlap; adaptive enablement follows fixed-placement/fairness qualification.
+- Policy: TASK-207/208 own inference group policy and privilege checks; TASK-183 adds numeric API, TASK-184 migrates Pi, TASK-209 integrates policy-aware catalog/auxiliary behavior. TASK-186/188 gate installed Pi safety/parity. TASK-217 chooses an external privileged authority or keeps the affected operation disabled. No legacy retirement before migration.
+- Commercial: TASK-210 transport and all legacy egress coverage, TASK-211 scoped capacity and metered ranking, TASK-212 integrated policy/authorization/durable liability guard. No commercial hybrid enablement without the complete guard. TASK-213 adds included preference and weighted fit. TASK-214/215 independently qualify authorized accounts; TASK-218 affirmative scope gates live evidence, not fixtures. No vendor scripting, universal meter engine, or assumed no-overage enforcement.
+- Tune remains m-14: TASK-170/171/216 fixture implementation, TASK-154 authorized measurement and real adoption, TASK-172 catalog breadth. TASK-191 fixes startup before full optimizer. TASK-192 qualifies finite-demand controller offline and enables physical change only under sole manager authority and adopted real evidence.
 
 ## Qualification
 

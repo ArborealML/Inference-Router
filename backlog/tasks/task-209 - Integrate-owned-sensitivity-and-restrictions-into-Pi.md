@@ -18,20 +18,20 @@ ordinal: 209000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Pi remains a client of AIR, not a router. Preserve session controls, captured turns, compaction and restoration while adding visible sensitivity, escalation and owner-directed declassification through the selected trusted surface.
+Pi remains an AIR client. Associate ordinary and auxiliary calls with the externally established session/policy group, expose effective sensitivity and restrictions, and request escalation/de-escalation through AIR's minimal policy API. No agent sandbox, identity issuer or client route scorer.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Ordinary and auxiliary calls, forks, compaction and restored sessions carry owned lineage and effective restrictions; direct commercial choice cannot bypass the supported AIR integration.
-- [ ] #2 Escalation tool waits for durable acknowledgment before dependent work; failed escalation blocks that work.
-- [ ] #3 User sees sensitivity and affected transcript scope; the agent cannot approve declassification.
-- [ ] #4 Eligibility-filtered catalog drives context ceiling; lower eligibility warns/refuses or compacts privately.
-- [ ] #5 Pinned Pi version and final outbound hook tests cover both paths, retries and restored sessions. Installed bytes match reviewed source before live release.
+- [ ] #1 Ordinary and auxiliary requests, fork/restore/compaction carry authorized group identity and restrictions; supported Pi integration cannot bypass AIR selection.
+- [ ] #2 Escalation waits for durable AIR acknowledgment before dependent inference; failed escalation blocks dependent inference.
+- [ ] #3 Pi displays effective sensitivity and affected transcript/group scope; de-escalation uses externally authorized privileged operation, never an inference tool credential.
+- [ ] #4 Eligibility-filtered catalog controls conversation ceiling; warn/refuse or compact privately when eligibility shrinks.
+- [ ] #5 Pinned Pi API and outbound hook fixtures cover both paths, retries and restore; TASK-186/188 safety and installed parity gate production Pi release.
 <!-- AC:END -->
 
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Reuse session identity and catalog helpers, bind scoped credentials; do not introduce a client route scorer. Test with capture fixtures, then reconcile installed copy under TASK-188. Document unsupported arbitrary tool/shell egress.
+Consume 183/184's migrated numeric API and 207/208's policy contract. Test fake external identity/privilege, no sandbox implementation. The client/orchestrator supplies session associations; AIR validates them. Keep de-escalation disabled until externally authorized. Coordinate existing TASK-186/188; do not require live Pi rollout to qualify direct non-Pi inference.
 <!-- SECTION:PLAN:END -->

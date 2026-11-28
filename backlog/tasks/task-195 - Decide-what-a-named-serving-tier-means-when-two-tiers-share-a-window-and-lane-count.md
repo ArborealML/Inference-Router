@@ -19,21 +19,21 @@ ordinal: 187000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Two recipes with equal window and lane count can launch different weights, quantization, KV or resource settings. Proposed resolution: distinct exact identity; refuse ambiguous exact launch until bound. Numeric suitability may use a qualified resident independent of display label.
+Equal window/lane recipes may differ in weights, quantization, KV or resource settings. Own stable exact recipe identity and ambiguity refusal, not a second implementation of serving-instance verification. Numeric suitability may use a qualified resident independently of its display label.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Same-window/same-lane distinct recipes keep separate identities and effective settings; no last-declared-wins or assumed interchangeability.
-- [ ] #2 Ambiguous exact launch refuses before mutation; bound launch verifies actual recipe and readiness.
-- [ ] #3 Context-only request can use a fitting qualified resident without a bundled label or unproved capacity.
-- [ ] #4 SPEC §§5 and 7.6 and fixtures distinguish suitability, display inference, exact identity and conformance.
+- [ ] #1 Distinct effective settings have distinct stable identities; equivalent resolved aliases/defaults share identity.
+- [ ] #2 Ambiguous exact launch selection refuses before mutation; selected recipe identity is frozen through the operation.
+- [ ] #3 Numeric context-only selection can reuse a verified fitting resident without interpreting ambiguous display labels as proof.
+- [ ] #4 SPEC §§5 and 7.6 distinguish suitability, display inference and exact identity; fixture tests cover equal numeric pairs.
 <!-- AC:END -->
 
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Coordinate TASK-197/118. Preserve null ambiguous display; resolve exact recipe before committing mutation. Review contract before implementing.
+Reuse TASK-118's completed exact-target identity evidence. Bind immutable effective recipe descriptors without duplicating live issuer/conformance work; TASK-118/197 own actual launch and first-write verification.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes

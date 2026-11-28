@@ -29,12 +29,13 @@ Add typed subscription windows and fit prediction for DeepRelay using documented
 - [ ] #4 Predicted included, actual included, metered, included-plus-fees and unknown are distinct; authoritative log correlation can settle evidence but does not deduplicate.
 - [ ] #5 When predicted fit fails, select another permitted eligible route or wait/refuse. Paid overflow requires explicit permission and bounded exposure independent of queue priority.
 - [ ] #6 Synthetic fixtures demonstrate reset/race/missing-log and out-of-order cases without paid requests. SPEC §§5–7, 10, 14 documents no-overage limitation.
+- [ ] #7 When otherwise eligible routes are ready, prefer suitable included capacity per configured policy; paid fallthrough reserves its worst-case monetary exposure even when predicted included.
 <!-- AC:END -->
 
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Use concrete weekly/monthly typed fields and shared account reservations. A bounded configured read can refresh subscription facts; no universal meter framework. Strict subscription-only stays disabled absent verified upstream enforcement. Preserve independent local and peer progress.
+Extend TASK-211's deterministic route evaluator with explicit included preference, weighted weekly/monthly typed fields and shared account reservations. Fit is prediction only. If no-overage is unverified and paid fallthrough unauthorized, refuse or use another eligible route. Use bounded configured telemetry; no universal meter or vendor DSL.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes

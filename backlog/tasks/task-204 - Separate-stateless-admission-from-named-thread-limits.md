@@ -35,5 +35,5 @@ Trace both default ingress and CLI normalization; introduce a transient identity
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-No change to priority, thread weight or provider scoring. TASK-207 owns subsequent credential-bound session identity.
+No change to priority, thread weight or provider scoring. TASK-207 owns subsequent credential-bound session identity and root authorization. Transient scheduling identity confers no trust or policy privilege.
 <!-- SECTION:NOTES:END -->

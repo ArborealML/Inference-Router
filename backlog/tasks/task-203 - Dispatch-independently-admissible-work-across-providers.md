@@ -27,12 +27,13 @@ Fix the existing dispatcher before clustering. A full preferred route masks free
 - [ ] #5 Pure eligibility never acquires a drain owner. An accepted preparation is scoped to one domain and ticket; retire it before reassignment.
 - [ ] #6 Reuse the revision/arm/recheck wake protocol; arrivals, release, readiness, refusal, cancellation and due deadlines wake exactly as needed without busy-spin.
 - [ ] #7 SPEC §§5.4–5.5 and 14 describe independent progress and priority-only ordering; focused tests preserve exact admission, terminal-before-waiter and existing caps.
+- [ ] #8 Finite rounds terminate despite arrivals; resource-aware exact take cannot bypass an earlier currently admissible competitor for the same resource or spin on a permanently blocked predecessor.
 <!-- AC:END -->
 
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Start with complete traversal of bounded queues, using immutable snapshots. Compare only ready eligible routes, then policy-permitted activation/wait. Revalidate exact ticket and competing predecessors under short admission gates, perform I/O outside them. Keep the current lifecycle/physical release invariants. Reuse DispatchWake, measure traversal cost before adding chunks. Use barriers in the capture fixtures; no paid or live host calls.
+Start with complete finite snapshot rounds (bounded by captured tickets or sequence cutoff; arrivals do not extend the round indefinitely). Per-model caps are not a global bound. Enumerate ready eligible alternatives; pure probes and resource-aware exact take revalidate competing predecessors, queue identity, config and actual caps. Preserve existing outer queue order and decision-25 fairness; no priority-dependent route economics. Keep network/disk/observer work outside shared gates. Reuse DispatchWake; measure traversal before chunking. Capture barriers cover long blocked prefixes and independent progress.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes

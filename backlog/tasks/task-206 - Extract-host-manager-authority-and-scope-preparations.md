@@ -8,12 +8,9 @@ created_date: '2026-11-27'
 labels: []
 milestone: m-6
 dependencies:
-  - TASK-203
-  - TASK-110
-  - TASK-118
-  - TASK-190
-  - TASK-197
-  - TASK-198
+  - TASK-64
+  - TASK-68
+  - TASK-130
 priority: high
 ordinal: 206000
 ---
@@ -21,28 +18,28 @@ ordinal: 206000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Extract the smallest physical-manager seam around EngineRuntime, LocalLifecycleGroup, capability publication and existing admission/cleanup. Ordinary construction has no enrollment; injected ExactTicketAdmission and lifecycle groups currently cannot compose. Do not introduce a second scheduler.
+Establish the smallest in-process manager seam around EngineRuntime, LocalLifecycleGroup, capability publication and exact admission. Ordinary construction cannot compose lifecycle groups and injected admission. Reuse verified issuer/transport foundations; production commissioning and remote transport are later acceptance, not prerequisites to this seam.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Combined, router-only and manager-only roles use one Native AOT build and equivalent local/remote authority semantics.
-- [ ] #2 One host or fenced resource domain owns all physical mutation, actual capacity and cleanup; exact admission and lifecycle groups compose on the ordinary production path.
-- [ ] #3 Preparation ownership and capacity are domain-scoped; hold one preparation and prove another domain admits and settles independently.
-- [ ] #4 A snapshot is advisory; accept binds immutable operation/body, instance/recipe, generation and domain. Changed state returns a refusal, not silent reassignment.
-- [ ] #5 Same-ID different content is rejected; lost acceptance, cancellation, restart and partition retain unresolved physical ownership. Stale messages cannot create fresh work after receipt retirement.
-- [ ] #6 No remote container commands, recursive routing, competing pending queue, or speculative duplicate demand. Standalone and legacy forwarding remain qualified.
-- [ ] #7 SPEC §§4, 5, 7, 12, 14 define role composition, admission and recovery; test injected and ordinary entry points.
+- [ ] #1 One compiled contract exposes bounded snapshot, accept/refuse, execute/cancel and disposition; combined role uses in-process calls and one physical owner.
+- [ ] #2 Ordinary composition exercises enrolled admission and lifecycle together against controlled fakes; unsupported or uncommissioned domains refuse mutation and exact send.
+- [ ] #3 Preparation slots, waiting-owner preference and cleanup are scoped to actual domains; holding one does not delay another.
+- [ ] #4 Snapshot is advisory; accepted immutable operation/body, recipe, instance and domain generations bind one attempt; stale or conflicting IDs refuse.
+- [ ] #5 Pure probes acquire no drain intent; at most one accepted intent per ticket/domain, explicitly retire before reassignment.
+- [ ] #6 Fixture restart, late cleanup and lost acknowledgment do not release physical ownership prematurely; no second prioritized queue or remote actuation.
+- [ ] #7 SPEC §§4–7, 12, 14 and AOT fixtures define the seam; existing standalone and legacy forwarding remain compatible.
 <!-- AC:END -->
 
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Extract the existing in-process seam first. Bind exact invocation and prepare IDs to real host fencing, not inferred readiness. Use a bounded snapshot/accept-execute/cancel/status contract for managed peers, with durable acceptance only for unresolved host operations. Fix per-domain preparation scope; reuse settled physical cleanup. Verify manager separately before remote transport in TASK-77.
+Reuse TASK-64/68/130 fixtures and the existing issuer/retirement primitives. Establish an ordinary composition and minimal enrollment/issuer interface with capture fixtures, before TASK-25/118/110 production integration. Define stable IDs, immutable generations and bounded receipt retention; reject stale execution after receipt retirement. TASK-77 owns remote role/transport. Keep direct manager admission and router pending ownership distinct.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Existing TASK-64/142 offline evidence and same-host switch results are not enrolled production qualification.
+TASK-203 fixes traversal separately; coordinate exact-take and wake semantics. Production enablement needs TASK-25/118/110/190/197/198; this seam can land disabled for uncommissioned domains. TASK-190/198 reuse one operation/disposition authority, not competing recovery controllers. Existing fixtures/same-host evidence are not production enrollment. External resource exclusivity is a deployment prerequisite, not sandboxing or provisioning.
 <!-- SECTION:NOTES:END -->

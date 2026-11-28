@@ -1,6 +1,6 @@
 ---
 id: TASK-218
-title: "Decision Authorize bounded live commercial qualification"
+title: "Decision: Authorize bounded live commercial qualification"
 status: To Do
 assignee:
   - '@claire'
@@ -15,17 +15,17 @@ ordinal: 218000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Owner action before any chargeable qualification: choose whether to permit controlled live metered and subscription checks, with named allowed accounts/models, budget ceiling, duration and paid-overflow permission. An answer of fixture-only leaves paid qualification parked.
+Owner chooses whether to permit controlled metered/subscription qualification separately by provider/account, model, purpose, maximum monetary exposure, expiry and paid-overflow policy. Fixture-only or declined permission is valid but never authorizes a live call.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Record explicit authorized scope, maximum spend and whether paid overflow is allowed, or fixture-only refusal.
-- [ ] #2 No account mutation or automatic top-up is authorized implicitly; identify separate approvals needed if applicable.
+- [ ] #1 Record affirmative per-account/model scope, purpose, maximum exposure, expiry and paid-overflow permission, or explicitly fixture-only/declined.
+- [ ] #2 No account mutation or automatic top-up is implied; separately authorize any necessary change. TASK-214/215 may only exercise affirmatively permitted scope.
 <!-- AC:END -->
 
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Review the controlled qualification plan for TASK-214/215 when available. Reply with scope and limit or fixture-only; about five minutes. No paid requests are needed to prepare or review the plan.
+Review controlled plans in TASK-214/215 when available. Reply with each provider/account scope and limit or fixture-only; about five minutes. No paid requests needed to prepare. Mark genuinely human-blocked live work accordingly.
 <!-- SECTION:PLAN:END -->

@@ -16,21 +16,21 @@ ordinal: 207000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Introduce a minimal single-writer durable policy record: owner, thread, lineage, sensitivity and revision. New authorized roots/stateless work default insensitive; agent-bound sessions cannot mint or omit identities to bypass inherited policy. Sensitivity filters trusted private routes only.
+AIR owns inference-session policy, not identity issuance or agent hierarchy. Consume externally authenticated principal/scope and bind owned thread or policy-group ID, sensitivity and revision in a minimal durable store. Authorized new roots/stateless calls default insensitive; scoped existing sessions cannot escape policy through invented IDs.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 A new authorized root defaults insensitive; existing unknown, missing or corrupt policy fails closed, including restore of stale state.
-- [ ] #2 Owner-scoped identity is enforced on ingress, status, cancel and events. Equal raw IDs from distinct principals never share thread state.
-- [ ] #3 Derived/restored sessions inherit an owned policy group; forged or omitted identity using an agent-bound credential is refused.
-- [ ] #4 Provider allow/deny restrictions intersect sensitivity and capabilities, deny wins, malformed/empty/unknown inputs cannot broaden eligibility.
-- [ ] #5 Queued dispatch, count/tokenize, retry, fallback and reload revalidate policy, trust and frozen request restrictions. Sensitive work never reaches commercial capture endpoints.
-- [ ] #6 Durable restart/backup and scope tests preserve policy without storing prompt bodies. SPEC §§5–7, 10, 13–14 document migration and authorization.
+- [ ] #1 Authorized new roots default insensitive; unknown, missing or corrupt existing policy fails closed; unverified restores cannot silently weaken policy.
+- [ ] #2 Enforce owner/scope on inference, catalog/status/ticket/cancel/events and privileged admin operations; equal raw IDs never collide across owners.
+- [ ] #3 External client/orchestrator associates derived/restored sessions with an authorized policy group; AIR checks scope and refuses forged or omitted IDs from group-bound callers.
+- [ ] #4 Allow/deny intersects explicit trust and required capability; deny wins; malformed, empty or unknown restrictions cannot broaden eligibility.
+- [ ] #5 Policy evaluator checks queued dispatch, count/tokenize, retries and reload; capture fixtures refuse sensitive commercial candidates. Real legacy transport integration belongs to the send-boundary work.
+- [ ] #6 Persistent restart and restore fixtures prove conservative policy handling without prompt storage. SPEC §§5–7, 10, 13–14 specify scope and migration.
 <!-- AC:END -->
 
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Use one small versioned policy store and scoped ingress credentials; no identity service or general policy engine. Keep owner-only declassification for TASK-208. Define trust as explicit private control, not transport or ZDR. Strip internal headers before upstream submission.
+Reuse simple scoped credentials or verified principal supplied by the deployment. No identity issuer, agent sandbox, agent graph, backup service or general policy engine. Privileged root creation and de-escalation require an external authority contract; AIR only checks scope and revision. Explicitly classify trusted private providers; locality is not trust. Strip internal auth headers, scope events and sanitize errors. In hybrid mode unknown legacy trust fails closed. Coordinate final-send contract with TASK-208/210/212.
 <!-- SECTION:PLAN:END -->

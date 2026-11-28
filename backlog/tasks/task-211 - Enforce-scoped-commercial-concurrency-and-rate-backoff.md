@@ -27,10 +27,12 @@ Keep provider/account outstanding attempts and scoped rate observations separate
 - [ ] #3 429 and Retry-After cool only the affected scope and wake at the due time; 402, auth, model and service errors stay distinct.
 - [ ] #4 Cancel/disconnect frees socket resources but not unproved upstream occupancy; timeout, restart and reconciliation are conservative.
 - [ ] #5 Hold a rate-blocked account and prove other eligible commercial and private work dispatches. SPEC §§5–7, 10, 14 and race fixtures cover shared caps.
+- [ ] #6 Among simultaneously ready equivalent routes, rank allowed private/metered choices by configured preference, expected permitted cost and service constraints; busy preferred routes never hide another admissible choice.
+- [ ] #7 Changing only priority changes competing pending order, not route eligibility, cost ranking, spend permission or provider capacity. Test deterministic ties and wait-versus-spend policy.
 <!-- AC:END -->
 
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Start with simple configured concurrency and common rate/backoff controls; add documented rate observations only when needed. Distinguish effective limits from remaining values. Use one next-deadline wake, not synchronous polling on the dispatch path.
+Extend existing route comparison: hard model/fit/trust/filter and scoped capacity, then explicit standing spend permission, wait/service constraints and deterministic expected marginal cost/private preference. No global lock over telemetry or preparation; only deliberately shared caps serialize. TASK-213 adds included preference to this same evaluator; no generic optimizer. Use common backoff/deadline wake and synthetic policy/cost/admission snapshots. TASK-212 integrates real durable reservations and authorization; no live enablement from this task.
 <!-- SECTION:PLAN:END -->

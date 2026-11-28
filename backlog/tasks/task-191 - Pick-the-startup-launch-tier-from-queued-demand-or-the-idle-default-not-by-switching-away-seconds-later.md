@@ -11,7 +11,8 @@ labels: []
 milestone: m-16
 dependencies:
   - TASK-183
-  - TASK-192
+  - TASK-197
+  - TASK-198
 priority: high
 ordinal: 183000
 ---
@@ -19,21 +20,21 @@ ordinal: 183000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Choose startup recipe from actual eligible queued demand or configured idle default. Avoid an immediate relaunch simply because a fixed wider-lane tier was preferred. Preserve declared idle default.
+Fix the immediate startup relaunch regression before autonomous optimization. Start a configured fitting verified recipe for queued demand or the configured idle default; do not restart a sufficient resident merely because a wider-lane alternative exists.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Without queued demand, start configured idle default; no speculative demand or gratuitous resize.
-- [ ] #2 With eligible work, select fitting verified recipe and admission target using actual finite demand and comparable evidence.
-- [ ] #3 A sufficient resident does not switch merely because more lanes exist; necessary or demonstrably beneficial changes follow safe transition rules.
-- [ ] #4 A fixture reproduces and removes unnecessary immediate relaunch, preserving independent provider progress.
+- [ ] #1 Without demand, start configured idle default; no speculative resize.
+- [ ] #2 With queued work, choose a configured verified fitting recipe and respect actual admission bounds; no unqualified or larger-lane preference.
+- [ ] #3 A sufficient resident does not relaunch solely because another recipe has more lanes; necessary changes obey exact conformance and lifecycle rules.
+- [ ] #4 Capture fixture reproduces/removes immediate gratuitous restart while preserving unrelated-provider progress.
 <!-- AC:END -->
 
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Reuse TASK-192 evaluator rather than a second controller. Freeze chosen recipe and verify conformance; absent comparable evidence retain configured safe default.
+Use existing configured defaults, exact recipe and conformance; no measured estimator prerequisite. TASK-192 later reuses the same selection seam for qualified demand-driven optimization. Absent comparable evidence keep feasible resident/default.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes

@@ -26,12 +26,13 @@ Qualify an authorized real host/model comparison using the delivered runner and 
 - [ ] #2 Compare identical rendered work at singleton and full occupancy, plus a material partial point when cap exceeds two. Record transition and cache conditions.
 - [ ] #3 Report median end-to-end completed-output throughput, TTFT, decode, completion and resource evidence; long-decode and near-window results remain separate.
 - [ ] #4 Publish passing alternatives, failures, unsupported and untested points; identify missing evidence. Operator adoption is separate.
+- [ ] #5 Run the authorized Hy4 reference where available or record the approved equivalent; pin host/recipe, exclusive load, cold transition and cleanup evidence before publishing a real recommendation.
 <!-- AC:END -->
 
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Reuse TASK-170/171. Compare the same requests, not different near-ceiling prompts. Protect existing sessions and hold the measurement scope. Lower admission does not imply different physical allocation.
+Reuse TASK-170/171. Compare the same requests, not different near-ceiling prompts. Hold the authorized exclusive measurement scope (decision-55), preserve active sessions, prove settlement and retain all evidence. Actual reference/hardware and adoption are release gates, not prerequisites to offline runner/search/adoption code.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes

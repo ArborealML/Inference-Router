@@ -1,6 +1,6 @@
 ---
 id: TASK-217
-title: "Decision Choose the production owner-only sensitivity authority"
+title: "Decision: Choose the production owner-only sensitivity authority"
 status: To Do
 assignee:
   - '@claire'
@@ -15,17 +15,17 @@ ordinal: 217000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Owner action when the policy integration is ready: select the trusted confirmation boundary for lowering sensitivity. Choose a separate OS/service privilege with an owner-only credential, or an equivalent protected human approval surface. Agent-accessible credentials cannot satisfy either option.
+Owner chooses the external control-layer privilege contract that AIR will consume for owner-authorized root creation/de-escalation, or keeps those privileged operations disabled. Agent isolation, authentication and credential issuance belong outside AIR.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Record one chosen boundary, owner identity and who can mint new insensitive roots; state how agent shell/process access is excluded.
-- [ ] #2 Authorize the chosen production configuration or keep external routing disabled until the boundary is available.
+- [ ] #1 Record chosen external privilege/scope contract and who may authorize independent roots or de-escalation; AIR verifies the supplied scope and policy revision.
+- [ ] #2 Record affirmative approved deployment boundary or keep privileged operations disabled; do not claim human-only behavior without externally established credential isolation.
 <!-- AC:END -->
 
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Review the TASK-208 threat model and proposed operational configuration. Reply with the chosen option or a constraint; about five minutes. No credentials are placed in the board.
+Review TASK-208's proposed privilege contract and external deployment prerequisite. Reply with selected existing control/credential mechanism or disabled; about five minutes. No credentials or sandbox implementation in AIR. A refusal does not authorize commercial operation requiring this boundary.
 <!-- SECTION:PLAN:END -->

@@ -14,6 +14,8 @@ dependencies:
   - TASK-26
   - TASK-68
   - TASK-130
+  - TASK-206
+  - TASK-195
 references:
   - src/Arboreal.InferenceRouter/Engines/EngineRuntime.cs
   - src/Arboreal.InferenceRouter/RouterCore.cs
@@ -23,7 +25,7 @@ ordinal: 116000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Wake: host enrollment supplies a commissioned issuer that attests the actual handler of each readiness GET and conclusively retires both exchanges. The reviewed contract requires shared durable issue and revocation ordering, a broker-owned monotonic cutoff, and original launch-bound probe and credential approval. The offline [launch record](https://github.com/ArborealML/Inference-Router/pull/49) identifies the running container. Serving-process evidence remains outstanding.
+Wake when TASK-206 supplies the ordinary manager/enrollment interface and TASK-195 supplies exact recipe identity. Integrate the commissioned issuer and existing TASK-130 instance-bound transport in production composition. Shared durable issue/revocation, broker monotonic cutoff, bound probe/credential and conclusive exchange retirement remain required. Offline [launch record](https://github.com/ArborealML/Inference-Router/pull/49) identifies the container, not the serving process.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

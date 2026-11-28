@@ -12,7 +12,8 @@ labels:
   - engine
   - lifecycle
 milestone: m-4
-dependencies: []
+dependencies:
+  - TASK-206
 priority: high
 ordinal: 25000
 ---
@@ -20,7 +21,7 @@ ordinal: 25000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-A production enrollment path that can close admission and drain the incumbent before stop will wake this task. Defer the owner-only change. Review on b25c259 confirmed that selection already charges the ticket once and only the successful installer owns the switch. Attaching an identity alone changes no drain, stop or first-send outcome.
+Wake when TASK-206 supplies ordinary in-process manager composition and the exact admission/issuer interface. Integrate production close/drain, owner promotion and physical permit retention; do not require remote manager transport. Coordinate TASK-118's bound sender. Defer live host commissioning until the external resource boundary is authorized.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

@@ -9,7 +9,8 @@ assignee:
 created_date: '2026-11-25T18:19:00Z'
 updated_date: '2026-11-26T12:17:00Z'
 labels: []
-dependencies: []
+dependencies:
+  - TASK-206
 priority: high
 ordinal: 182000
 ---

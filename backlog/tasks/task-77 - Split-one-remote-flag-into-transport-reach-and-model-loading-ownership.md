@@ -14,6 +14,9 @@ dependencies:
   - TASK-69
   - TASK-110
   - TASK-206
+  - TASK-190
+  - TASK-197
+  - TASK-198
 priority: high
 ordinal: 77000
 ---
@@ -21,7 +24,7 @@ ordinal: 77000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Wake when TASK-110 and TASK-206 qualify physical host ownership and the manager seam. Preserve the shipped transport/lifecycle split and legacy resident forwarding. Finish managed-peer activation through the narrow authenticated manager contract, not remote container commands.
+Wake after TASK-206's seam and TASK-110/190/197/198 physical ownership, recovery and conformance contracts. Preserve the shipped transport/lifecycle split and legacy resident forwarding. Finish managed-peer activation through the narrow authenticated manager contract, not remote container commands.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -34,6 +37,7 @@ Wake when TASK-110 and TASK-206 qualify physical host ownership and the manager 
 - [x] #6 A shipped sample engine with no lifecycle block still refuses to switch after the migration, pinned by the sample test
 - [ ] #7 A legacy remote endpoint is routable without actuation or adoption. A foreign endpoint sharing a managed host blocks activation until the host authority proves vacancy.
 - [ ] #8 Remote and in-process managers use equivalent snapshot, accept/refuse, cancel and disposition semantics; stale readiness or uncertain acceptance never grants ownership.
+- [ ] #9 Router-only, manager-only and combined roles ship in the same Native AOT binary; manager is a leaf, with scoped authenticated transport and no competing pending queue.
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -46,4 +50,6 @@ Retain qualified lifecycle authority and incumbent restoration. Use the manager 
 
 <!-- SECTION:NOTES:BEGIN -->
 Integrated lifecycle authority and incumbent recovery: commit 2f04f2b; prior 365/365 Release tests and Native AOT publish. The shipped-sample and authority tests remain evidence for legacy no-owner refusal (6263b83, 9/9; main CI 44704425802). TASK-128 owns concrete provider scope. These do not establish managed-peer activation or foreign occupancy exclusion. Retain conservative readiness withdrawal after uncertain mutation; preserve a valid incumbent after definitive pre-mutation refusal. No existing passed criterion was reset.
+
+Historical [authority/recovery](https://github.com/ArborealML/Inference-Router/commit/2f04f2b), [shipped sample test](https://github.com/ArborealML/Inference-Router/blob/7350f71f9c8690e813339f0240ef2e752865f5fe/tests/Arboreal.InferenceRouter.Tests/ConfigLoaderTests.cs#L458-L469), [authority tests](https://github.com/ArborealML/Inference-Router/blob/2f04f2b/tests/Arboreal.InferenceRouter.Tests/LifecycleAuthorityTests.cs#L179) and [Docker provider tests](https://github.com/ArborealML/Inference-Router/blob/09a0d9b/tests/Arboreal.InferenceRouter.Tests/DockerLifecycleProviderTests.cs#L578) retain their original scope.
 <!-- SECTION:NOTES:END -->

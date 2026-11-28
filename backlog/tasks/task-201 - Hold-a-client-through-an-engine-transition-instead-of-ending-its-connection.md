@@ -29,6 +29,7 @@ Hold client through a bounded safe transition where possible. No output received
 - [ ] #4 Emitted semantic content is never spliced or silently rerun; report named cause in band with complete framing.
 - [ ] #5 Slow downstream and stalled upstream are bounded; one terminal event and existing cancellation semantics.
 - [ ] #6 Separately authorized independent replacement is a distinct attempt with its own reservation; original uncertainty remains.
+- [ ] #7 Use the existing reason vocabulary to distinguish producer transition, context limit and stalled generation; no generic error hides the cause.
 <!-- AC:END -->
 
 ## Implementation Plan

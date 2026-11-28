@@ -31,3 +31,9 @@ Enqueue copies inherited priority into immutable pending nodes; updating the thr
 <!-- SECTION:PLAN:BEGIN -->
 Reuse existing synchronization and event/wake paths. Track provenance of inherited versus explicit priority; replace only affected pending values without re-enqueueing. Test repeated updates and a paused exact take.
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Pi's explicit per-request priority is fixed for that ticket; changing a thread reorders inherited pending keys only. TASK-185 owns client command/wire behavior; do not duplicate parsing from PR #86.
+<!-- SECTION:NOTES:END -->

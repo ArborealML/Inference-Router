@@ -8,7 +8,6 @@ created_date: '2026-11-18T20:32:00Z'
 labels: []
 milestone: m-6
 dependencies:
-  - TASK-51
   - TASK-77
   - TASK-203
   - TASK-204
@@ -29,4 +28,11 @@ One router writer owns the fleet queue and assignment. Additional ingress forwar
 - [ ] #3 Test fleet capacity, cancellation and the no-option deadline through both ingress endpoints, including an unreachable host.
 - [ ] #4 Both ingress paths preserve policy, ticket, sequence and limits; the forwarder never owns independent pending work.
 - [ ] #5 A slow/refused or unreachable peer cannot block another admissible provider; exact one-time reservation and unknown-acceptance fixtures prove isolation.
+- [ ] #6 Forwarder authenticates to the writer and preserves verified caller scope, ticket cancellation and deadlines; no caller-supplied header grants owner or manager authority.
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Fixture fixed placement can use explicit finite request deadlines; TASK-51's default deadline is a live cluster release gate, not a prerequisite to building forwarding. No new identity service.
+<!-- SECTION:NOTES:END -->

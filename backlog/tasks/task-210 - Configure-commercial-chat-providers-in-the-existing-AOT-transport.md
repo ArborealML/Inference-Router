@@ -27,12 +27,14 @@ Extend HTTP forwarding and the existing model rewrite/stream observer with confi
 - [ ] #4 Credentials stay outside definitions/logs, redirects disabled by default, outbound headers allowlisted; validated reload freezes admitted configuration and revalidates revocations.
 - [ ] #5 Observe terminal usage, actual model, error versus sentinel and first semantic output separately; byte relay and legacy completions remain compatible.
 - [ ] #6 Tests cover malformed mapping, missing/invalid/zero, overflow, bounds and same-binary smoke; SPEC §§5–7, 9–10, 14 and README distinguish implemented from planned.
+- [ ] #7 Transport exposes a common gate for hybrid sends, including legacy remote and count/tokenize; without bound authorization refuse before bytes. Capture fixtures use fake permits, not live credentials.
+- [ ] #8 Strict model identity is established before semantic output or the route is refused; bounded observer/buffer only where the protocol supports it.
 <!-- AC:END -->
 
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Reuse TOML/source-generated DTOs and the existing HTTP/SSE path. Compile protocol semantics, not vendor code. Poll only approved configured telemetry paths with bounded cadence, body and timeout, outside scheduling. No arbitrary DSL, dynamic plugins or paid requests.
+Reuse TOML/source-generated DTOs, model projection and HTTP/SSE observer. Compile protocol semantics, not vendor code. Fixture-only definitions and legacy migration remain disabled for commercial egress until TASK-212's integrated guard is qualified. No redirect or unauthorized proxy/origin, no caller-controlled credentials; sanitize upstream errors. Poll approved telemetry with bounds outside dispatch. Keep decision-75 topology edits router-idle; revocation of uncommitted sends is separate. No vendor DSL or paid calls.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes

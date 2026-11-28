@@ -16,20 +16,21 @@ ordinal: 208000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Allow an agent to escalate autonomously and require genuine owner authorization to lower sensitivity. Keep policy commit and final send authorization ordered, without holding queue gates across I/O. Design and fake qualification can start before choosing the production confirmation boundary.
+Implement durable autonomous escalation and privileged revision-bound de-escalation plus the final send-authorization ordering. AIR verifies a scoped privilege; the external human control/sandbox layer establishes and protects it. Do not implement human authentication or sandboxing.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Escalation is persisted before acknowledgment; if it wins the send race no old-policy send is authorized, including delayed transport, preparation and parallel tools.
-- [ ] #2 If send authorization wins first, report committed exposure and cancel where possible; never claim previously authorized bytes were recalled.
-- [ ] #3 De-escalation requires owner-only authority bound to lineage, current revision, target and transcript scope; stale approvals fail compare-and-set.
-- [ ] #4 Agent-accessible bearer, tool boolean, slash command or new thread cannot authorize de-escalation; negative capture tests cover retries and derived sessions.
-- [ ] #5 SPEC §§6, 13–14 state supported threat model, user confirmation and distinction from arbitrary agent tool/network containment.
+- [ ] #1 Persist escalation before acknowledgment; if it wins the send-authorization race, delayed transport, preparation and auxiliary inference cannot authorize old-policy egress.
+- [ ] #2 Authorization binds frozen attempt/body/config/provider and policy; consume once after a supplied reservation/durable-liability receipt, rechecking policy/revocation. Use fake receipts in fixtures.
+- [ ] #3 If send authorization wins, record possible exposure and cancel if possible; no claim to recall bytes or prove non-transmission.
+- [ ] #4 De-escalation requires externally supplied privileged scope bound to policy group, revision and target; stale approval fails CAS; no inference/escalation credential can lower policy.
+- [ ] #5 Capture negative tests cover forged scope, retries, derived IDs, and authorization on either side of delayed persistence/send; no shared gate across I/O.
+- [ ] #6 SPEC §§6, 13–14 distinguish AIR checks from external human authority and sandbox guarantees.
 <!-- AC:END -->
 
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Bind the final send to immutable attempt/body/config and policy revision. Use a separate trusted owner credential or confirmation channel inaccessible to the agent; fake both race orders first. Document actual production boundary before enabling commercial egress (TASK-217).
+Use one-use authorization in existing dispatch/transport, not a second scheduler. TASK-212 owns integrated commercial reservation/journal/send path; TASK-210 owns transport coverage. Test with fake privileged versus inference credentials. External control supplies genuine human approval and transcript scope; Pi displays affected context. If external privilege is unavailable, keep de-escalation disabled and never advertise human-only qualification (TASK-217).
 <!-- SECTION:PLAN:END -->

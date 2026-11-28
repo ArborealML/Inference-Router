@@ -9,7 +9,7 @@ labels: []
 milestone: m-14
 dependencies:
   - TASK-171
-  - TASK-154
+  - TASK-195
 priority: high
 ordinal: 216000
 ---
@@ -17,7 +17,7 @@ ordinal: 216000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Publish a small operator-reviewed adoption manifest of exact recipe/evidence identities and safe capacity; AIR consumes only adopted qualified points. Separate physical launch P, nominal context W, admission target C and measured occupied concurrency c.
+Implement explicit operator-reviewed adoption mechanics from exact recipe/evidence identities and safe capacity, with deterministic fixture records first. Separate physical launch P, window W, admission target C and occupancy c. Actual runtime use requires real qualified evidence and explicit adoption.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -27,10 +27,11 @@ Publish a small operator-reviewed adoption manifest of exact recipe/evidence ide
 - [ ] #3 Ordinary restart reuses unchanged evidence with fresh live capability proof; material drift invalidates affected capacity and performance evidence.
 - [ ] #4 Operator adoption is explicit, does not overwrite active settings automatically, and preserves raw records and prior defaults.
 - [ ] #5 SPEC §§5, 7.6, 11, 14 and focused tests cover malformed/changed evidence, restart, reload and conservative fallback.
+- [ ] #6 Synthetic records qualify validation/adoption mechanics but cannot enable production capacity; runtime activation needs real authorized host evidence and explicit operator adoption.
 <!-- AC:END -->
 
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Reuse existing evidence storage and exact recipe identifiers. A small versioned manifest suffices; no new database, forecast service or implicit adoption from a comparator result.
+Reuse versioned evidence and exact recipe identity; test with fixture records without waiting for TASK-154 real trials. Operator-owned manifest records approved hashes and qualified points. No general artifact registry, database or implicit adoption. Production selection is disabled for unverified recipes.
 <!-- SECTION:PLAN:END -->
