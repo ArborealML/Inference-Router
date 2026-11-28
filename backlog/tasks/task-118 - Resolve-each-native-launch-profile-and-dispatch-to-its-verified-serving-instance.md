@@ -3,11 +3,11 @@ id: TASK-118
 title: >-
   Resolve each native launch profile and dispatch to its verified serving
   instance
-status: Preparing
+status: In Progress
 assignee:
   - '@gpt-6.2-sol-lifecycle'
 created_date: '2026-11-18T18:56:00Z'
-updated_date: '2026-11-28T13:48:00Z'
+updated_date: '2026-11-28T14:01:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -25,7 +25,7 @@ ordinal: 116000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Prepare the separate-process acceptance run for the shipping server and CLI. Exercise checked incumbent attachment, the original queued successor, a rebind before first write and physical retirement under distinct authorities. Installation and access control belong to the deployment owner.
+Implement the stock process acceptance run for the shipping server and CLI. Exercise incumbent attachment, the original queued successor, a rebind before first write and physical retirement under distinct authorities. Installation and access control belong to the deployment owner.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -52,5 +52,5 @@ Recover the executable bootstrap that selects an installed authority directory. 
 <!-- SECTION:NOTES:BEGIN -->
 [Exact-ticket qualification](https://github.com/ArborealML/Inference-Router/pull/20) covered injected issuance, explicit and default launches, resident reuse, exact bytes and credentials and zero checkout on mismatch. [Profile aliases](https://github.com/ArborealML/Inference-Router/pull/21) qualified at 5643b27. Same-instance proof across families remains open. TASK-25 owns the paired production witness.
 
-[Stock serving and broker recovery](https://github.com/ArborealML/Inference-Router/pull/103) merged at cd069cc. The protected socket and disk qualification passed 235 tests. [Hosted CI](https://github.com/ArborealML/Inference-Router/actions/runs/46150598776) passed 2,486 tests and Native AOT. Review at 961e109 confirmed bounded replay, recovery before and after broker opening, reconciliation of failed head updates and release of definitely unissued probes. The process qualification plan is in independent review. Installed host and multi-host acceptance remain open. TASK-190 owns reconciliation of a successor operation whose journal append outlives a lost head update.
+[Stock serving and broker recovery](https://github.com/ArborealML/Inference-Router/pull/103) merged at cd069cc. The protected socket and disk qualification passed 235 tests. [Hosted CI](https://github.com/ArborealML/Inference-Router/actions/runs/46150598776) passed 2,486 tests and Native AOT. Review at 961e109 confirmed bounded replay and broker recovery across interrupted startup and failed head updates. The process fixture uses distinct read-only principals for ingress and held observation. Prove each can read the successor journal and neither can advance it. Qualify both stock entry points with original queued traffic and physical occupancy before claiming process acceptance. TASK-190 owns reconciliation of the separate successor-operation journal after a lost head update.
 <!-- SECTION:NOTES:END -->
