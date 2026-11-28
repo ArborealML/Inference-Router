@@ -1,10 +1,11 @@
 ---
 id: TASK-206
-title: "Extract host manager authority and scope preparations"
-status: To Do
+title: Extract host manager authority and scope preparations
+status: Ready for Review
 assignee:
   - '@gpt-6.2-astra'
 created_date: '2026-11-27'
+updated_date: '2026-11-28T08:07:00Z'
 labels: []
 milestone: m-6
 dependencies:
@@ -36,12 +37,12 @@ Establish the smallest in-process manager seam around EngineRuntime, LocalLifecy
 
 <!-- SECTION:PLAN:BEGIN -->
 Reuse TASK-64/68/130 fixtures and the existing issuer/retirement primitives. Establish an ordinary composition and minimal enrollment/issuer interface with capture fixtures, before TASK-25/118/110 production integration. Define stable IDs, immutable generations and bounded receipt retention; reject stale execution after receipt retirement. TASK-77 owns remote role/transport. Supply the shared typed manager snapshot and preparation/drain reason fields to existing status/events and CLI/monitor; no extra UI architecture. Keep direct manager admission and router pending ownership distinct.
+
+Group aliases by verified physical authority and incarnation. Scope preparation capacity, pending-owner preference and cleanup to that authority. Keep one attempt per ticket through retirement. Revalidate the same immutable operation before first write; preserve existing retry fences. Test held preparation in either direction, shared thread limits and fail-closed enrollment.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-TASK-203 fixes traversal separately; coordinate exact-take and wake semantics.
-
-Production enablement needs TASK-25/118/110/190/197/198; this seam can land disabled for uncommissioned domains. TASK-190/198 reuse one operation/disposition authority, not competing recovery controllers. Existing fixtures/same-host evidence are not production enrollment. External resource exclusivity is a deployment prerequisite, not sandboxing or provisioning.
+The first in-process increment is [PR 94](https://github.com/ArborealML/Inference-Router/pull/94). Controlled fixtures cover the original cold request, independent same- and different-model progress in both directions under held preparation, physical aliases, invalid enrollment and intentional shared-thread limits. Plan review identified alias identity, late retirement, and all three preparation gates. Review of 0d216f7 identified blocked preparations hiding eligible cold routes, stale residency after withdrawal and reusable completion handles. Commit 5b05048 addresses these along with cancellation delivery and includes six targeted regression cases. All 279 focused Release tests passed at that commit, zero skipped. Remaining work includes durable disposition/recovery qualification and completing the manager observation surface. Production enrollment, peer transport and actual two-host acceptance belong to the dependent integration tasks.
 <!-- SECTION:NOTES:END -->

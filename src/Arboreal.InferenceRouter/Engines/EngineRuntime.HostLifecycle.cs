@@ -4,7 +4,8 @@ using Arboreal.InferenceRouter.Lifecycle;
 namespace Arboreal.InferenceRouter;
 
 internal sealed record HostEngineEnrollment(string RouterId, string Engine, HostLifecycleCoordinator Controller,
-    HostStagedRuntimeFixture? StagedForTests = null, HostImmediateRuntimeFixture? ImmediateForTests = null);
+    HostStagedRuntimeFixture? StagedForTests = null, HostImmediateRuntimeFixture? ImmediateForTests = null,
+    InProcessHostManager? Manager = null, Action<HostClosedRouteStage, SwitchServingProof>? RouteOpened = null);
 
 internal sealed record HostImmediateRuntimeFixture(Action? BeforeComplete = null, Action<LifecycleResult>? AfterResult = null,
     Action? AfterRun = null);
@@ -123,6 +124,8 @@ public sealed partial class EngineRuntime
         var profile = target.Profile ?? GetProfile(target.Model, target.Definition.Profile);
         var requiredWindow = RequiredWindow(profile, state.RequiredWindow);
         var timing = state.Timing!;
+        HostClosedRouteStage? openedStage = null;
+        SwitchServingProof? openedProof = null;
         var publication = new HostStagedDeadlinePublication(claimId, timing.Id, timing.Target, ReadinessClockForTests, fixture.ReadAsync,
             Settle, Deliver, TryOpen, NotifyOpened,
             fixture.AfterStageInstalled is { } installed ? _ => installed() : null,
@@ -221,15 +224,20 @@ public sealed partial class EngineRuntime
         {
             lock (_transitionGate)
             {
-                return !_stopped && state.End == SwitchEnd.Ready && ReferenceEquals(state.Proof, proof) &&
-                    ReferenceEquals(Capability.SwitchProof, proof) && MatchesClaim(binding) && open();
+                if (_stopped || state.End != SwitchEnd.Ready || !ReferenceEquals(state.Proof, proof) ||
+                    !ReferenceEquals(Capability.SwitchProof, proof) || !MatchesClaim(binding) || !open()) return false;
+                openedStage = binding;
+                openedProof = proof;
+                return true;
             }
         }
 
         void NotifyOpened()
         {
             // Let the staged result report notification faults after the route has opened.
-            if (!Volatile.Read(ref _stopped)) _dispatchHint?.Invoke();
+            if (Volatile.Read(ref _stopped)) return;
+            if (openedStage is not null && openedProof is not null) _hostEnrollment?.RouteOpened?.Invoke(openedStage, openedProof);
+            _dispatchHint?.Invoke();
         }
     }
 }

@@ -40,7 +40,22 @@ internal sealed class VerifiedPreparedSender : IAsyncDisposable
         if (selected != resident.Target)
             throw new VerifiedDispatchBindingException(VerifiedDispatchRefusal.Target);
 
-        var frozen = VerifiedDispatchEnvelope.Freeze(selected, resident.Route, Guid.NewGuid(), resident.Endpoint,
+        return Freeze(claim, resident, requestedSpelling, cleanup);
+    }
+
+    internal static VerifiedPreparedSender CreateFromResident(ExactTicketAdmission.Claim claim)
+    {
+        if (claim.Resident is not { } resident || claim.SwitchRequired || claim.Target.Engine != resident.Target.Engine ||
+            claim.Ticket.Model != resident.Target.Model || (claim.Target.Profile is { } tier && tier != resident.Target.Tier))
+            throw new VerifiedDispatchBindingException(VerifiedDispatchRefusal.Target);
+
+        return Freeze(claim, resident, claim.Request.OriginalModel ?? claim.Ticket.Model, cleanup: null);
+    }
+
+    private static VerifiedPreparedSender Freeze(ExactTicketAdmission.Claim claim, VerifiedDispatchResident resident,
+        string requestedSpelling, Func<ValueTask>? cleanup)
+    {
+        var frozen = VerifiedDispatchEnvelope.Freeze(resident.Target, resident.Route, Guid.NewGuid(), resident.Endpoint,
             requestedSpelling, claim.Request.Request.Body, resident.Credential);
         return new VerifiedPreparedSender(claim, frozen, resident.Issuer, cleanup);
     }

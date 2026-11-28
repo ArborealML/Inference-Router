@@ -51,7 +51,8 @@ internal sealed record HostStagedDeadlinePublication(
 internal sealed class HostClosedRouteStaging(
     Func<HostMutation, HostCheckpointLaunchEffect?> loadLaunch,
     Func<HostCheckpointLaunchEffect, long, VerifiedInstanceRoute> prepareRoute,
-    VerifiedInstanceRoute? incumbentForTests = null)
+    VerifiedInstanceRoute? incumbentForTests = null,
+    ExactTicketAdmission.DomainIdentity? enrolledDomain = null)
 {
     private readonly Lock _gate = new();
     private VerifiedInstanceRoute? _openRoute = incumbentForTests;
@@ -62,6 +63,9 @@ internal sealed class HostClosedRouteStaging(
     private bool _opening;
 
     public Action<HostClosedRouteStage, Func<HostClosedRouteStage, bool>>? BeforeOpenForTests { private get; set; }
+
+    private ExactTicketAdmission.DomainIdentity? Enrollment => enrolledDomain;
+    internal bool MatchesEnrollment(ExactTicketAdmission.DomainIdentity domain) => Enrollment == domain;
 
     public bool CanMint(VerifiedInstanceRoute route)
     {
@@ -239,6 +243,8 @@ internal sealed class HostClosedRouteStaging(
             if (route.RouteIncarnation != generation || route.LaunchEpoch != operation.Epoch || route.Engine != operation.Engine ||
                 route.ContainerId != launch.InstanceId || route.EffectiveTarget != operation.PlanDigest || route.EnrollmentGeneration <= 0 ||
                 string.IsNullOrWhiteSpace(route.HostGroup) || string.IsNullOrWhiteSpace(route.ServingIncarnation)) return null;
+            if (authority.Enrollment is { } domain &&
+                (route.HostGroup != domain.Name || route.EnrollmentGeneration != domain.Generation)) return null;
 
             return new HostClosedRouteStage(1, claimId, launch, route);
         }

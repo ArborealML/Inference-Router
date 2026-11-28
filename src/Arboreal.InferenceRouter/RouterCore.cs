@@ -18,6 +18,7 @@ public sealed partial class RouterCore : IInferenceRouter
     private readonly EventRing _events;
     private readonly TimeProvider _clock;
     private readonly ExactTicketAdmission? _admission;
+    private readonly InProcessHostManager? _hostManager;
     // An exact caller may share a proven resident. Keep a conflicting ordinary switch
     // from entering between that caller's queue removal and its first transport use.
     private readonly Dictionary<EngineRuntime, (int Named, int Switching)> _profileUsers = [];
@@ -61,21 +62,24 @@ public sealed partial class RouterCore : IInferenceRouter
 
     internal RouterCore(RouterConfig config, IRequestScheduler? scheduler, EventRing? events, TimeProvider clock,
                         Func<EngineDefinition, IEngineLifecycleProvider>? lifecycleFactory = null,
-                        ExactTicketAdmission? admission = null, ReloadConfiguration? reload = null, string? nativeResetStartupInstance = null)
+                        ExactTicketAdmission? admission = null, ReloadConfiguration? reload = null, string? nativeResetStartupInstance = null,
+                        InProcessHostManager? hostManager = null)
     {
         config.ValidateLifecycleTopology();
         _shutdownToken = _shutdown.Token;
         _config = config;
         _lifecycleFactory = lifecycleFactory;
+        _hostManager = hostManager;
         _nativeResetStartupInstance = nativeResetStartupInstance;
         _clock = clock;
         _wakeOnEngineState = WakeOnEngineState;
         _scheduler = scheduler ?? new PrefixAwareScheduler();
         _events = events ?? new EventRing(maxLiveSubscribers: config.MaxEventSubscribers);
         reload?.ValidateNames();
-        if (config.Engines.Values.Any(static definition => definition.LifecycleGroup is not null) &&
-            admission is not null)
+        if (admission is not null && (hostManager is not null ||
+            config.Engines.Values.Any(static definition => definition.LifecycleGroup is not null)))
             throw new RouterConfigException("Local lifecycle groups require ordinary queue admission.");
+        var managedDomains = hostManager?.Validate(config);
         var engines = new Dictionary<string, EngineRuntime>(StringComparer.OrdinalIgnoreCase);
         foreach (var (name, def) in config.Engines)
             // The dispatch hint closes the one wake gap the event feed leaves: switch outcome events are
@@ -85,7 +89,7 @@ public sealed partial class RouterCore : IInferenceRouter
         var groups = new Dictionary<string, LocalLifecycleGroup>(StringComparer.Ordinal);
         foreach (var engine in engines.Values)
         {
-            if (engine.Definition.LifecycleGroup is not { } groupName) continue;
+            if (engine.Definition.LifecycleGroup is not { } groupName || hostManager?.Owns(engine.Name) == true) continue;
             if (!groups.TryGetValue(groupName, out var group))
                 groups.Add(groupName, group = new(groupName, SignalDispatch));
             group.Attach(engine);
@@ -94,14 +98,22 @@ public sealed partial class RouterCore : IInferenceRouter
         foreach (var (id, td) in config.Threads)
             _threads[id] = new RouterThread(id, td.Priority, td.Weight, td.ModelAffinity, ChangeOwnedThreadPriority);
         _generation = new ConfigurationGeneration(1, config, reload, engines);
-        _admission = admission;
-        admission?.Attach(engines.Count, _clock, SignalDispatch, ReportAdmissionCleanupFailure, RejectVerifiedBinding);
+        _admission = hostManager?.Admission ?? admission;
+        _admission?.Attach(managedDomains ?? engines.ToDictionary(static entry => entry.Key,
+            static entry => new ExactTicketAdmission.DomainIdentity(entry.Key, Generation: 0), StringComparer.OrdinalIgnoreCase),
+            _clock, SignalDispatch, ReportAdmissionCleanupFailure, RejectVerifiedBinding);
+        hostManager?.Attach(_generation.Engines);
     }
 
-    private EngineRuntime CreateOrdinaryEngine(EngineDefinition definition, RouterConfig settings, ReloadConfiguration? source) =>
-        new(definition, settings, _events, _config.HttpHandlerFactory?.Invoke(definition),
-            _lifecycleFactory?.Invoke(definition), SignalDispatch, hostEnrollment: null, _clock, source,
+    private EngineRuntime CreateOrdinaryEngine(EngineDefinition definition, RouterConfig settings, ReloadConfiguration? source)
+    {
+        var enrollment = _hostManager?.Bind(definition);
+        return new(definition, settings, _events, _config.HttpHandlerFactory?.Invoke(definition),
+            enrollment is null ? _lifecycleFactory?.Invoke(definition) : null, SignalDispatch, enrollment, _clock, source,
             localManaged: definition.LifecycleGroup is not null);
+    }
+
+    private bool UsesExactAdmission(EngineRuntime engine) => _admission is not null && (_hostManager?.Owns(engine.Name) ?? true);
 
     public EventRing Events => _events;
     public RouterConfig Config => CurrentGeneration.File?.Observe() ?? _config;
@@ -344,6 +356,8 @@ public sealed partial class RouterCore : IInferenceRouter
     private enum TakeResult { Taken, QueueChanged, RouteChanged, Ineligible, Terminal, Preparing }
     private readonly record struct AdmissionTake(TakeResult Result, ExactTicketAdmission.Invocation? Invocation = null,
         string? TerminalCode = null);
+    private readonly record struct PreparationOffer(Selection Selection, EngineRuntime Engine, ExactTicketAdmission.Claim Claim);
+    private readonly record struct ManagedOffer(Selection Selection, EngineRuntime Engine, ServingProfile Profile);
 
     // Existing fixtures step one admission transition without starting the background dispatcher.
     internal bool TryDispatchOnce() => DispatchRound(stopAfterTransition: true) != DispatchResult.Parked;
@@ -393,7 +407,7 @@ public sealed partial class RouterCore : IInferenceRouter
                     comparison = null;
                 }
                 if (stopAfterTransition && transition != DispatchResult.Parked) return transition;
-                if (_admission is not null || _scheduler is not PrefixAwareScheduler) break;
+                if (_scheduler is not PrefixAwareScheduler) break;
                 // The measured switch comparison already visited the rest of its single-resource cohort.
                 if (through != index) break;
             }
@@ -417,10 +431,13 @@ public sealed partial class RouterCore : IInferenceRouter
 
         Blocker? blocker = null;
         var routeChanged = false;
+        List<PreparationOffer>? preparations = null;
+        PreparationOffer? blockedPreparation = null;
+        List<ManagedOffer>? activations = null;
         (Selection Selection, EngineRuntime Engine, RouteProbe Probe)? drain = null;
         // Forwarding-only catalog entries preserve the existing typed switch refusal when no
         // candidate can serve or activate. They must not displace an actual route awaiting capacity.
-        var refuseCold = _admission is not null || routes is null || routes.TrueForAll(route => route.Target.SwitchRequired &&
+        var refuseCold = _admission is not null && _hostManager is null || routes is null || routes.TrueForAll(route => route.Target.SwitchRequired &&
             !HasLifecycleRoute(request, generation.Engines[route.Engine.Name]));
         var routeCount = routes?.Count ?? 1;
         for (var routeIndex = 0; routeIndex < routeCount; routeIndex++)
@@ -452,12 +469,20 @@ public sealed partial class RouterCore : IInferenceRouter
                 continue;
             }
 
+            if (selection.Decision.SwitchRequired && _hostManager?.Owns(engine.Name) == true)
+            {
+                if (probe.Profile is { } profile) (activations ??= []).Add(new(selection, engine, profile));
+                blocker ??= new("lifecycle_group_waiting", _hostManager.Scope(engine.Name));
+                continue;
+            }
+
             var requiredWindow = EngineRuntime.RequiredWindow(probe.Profile, candidate.ExplicitContextMinimum);
-            var needsCurrentObservation = _admission is null && routes is not null || comparison is not null || requiredWindow > 0 ||
+            var needsCurrentObservation = !UsesExactAdmission(engine) && routes is not null || comparison is not null || requiredWindow > 0 ||
                 selection.Decision.TargetProfile is not null ||
                 (candidate.RequiredContextTokens > 0 && engine.ProfilesForModel(candidate.Ticket.Model).Count > 0);
             EngineRuntime.DispatchObservation? expected = needsCurrentObservation ? observed : null;
-            var take = TryAdmit(round, index, selection, engine, expected, requiredWindow, compared, generation);
+            var take = TryAdmit(round, index, selection, engine, expected, requiredWindow, compared, generation,
+                ref preparations, ref blockedPreparation);
             if (take.Result == TakeResult.Taken)
             {
                 var proof = selection.Decision.SwitchRequired ? null : observed.Capability.SwitchProof;
@@ -473,14 +498,19 @@ public sealed partial class RouterCore : IInferenceRouter
             if (take.Result == TakeResult.QueueChanged) return DispatchResult.StateChanged;
             if (take.Result == TakeResult.Preparing)
             {
-                blocker ??= new("route_preparing", engine.Name);
-                break;
+                blocker ??= new("route_preparing", _hostManager?.Scope(engine.Name) ?? engine.Name);
+                continue;
             }
             routeChanged |= take.Result == TakeResult.RouteChanged;
             blocker ??= new(take.Result == TakeResult.RouteChanged ? "route_changed" : "route_admission_wait", engine.Name);
         }
 
-        if (drain is { } pending &&
+        var started = preparations?.Exists(offer => StartExactPreparation(round[offer.Selection.QueueIndex].Queue, offer, generation)) == true;
+        if (!started)
+            started = activations?.Exists(offer => StartManagedActivation(round[offer.Selection.QueueIndex].Queue, offer, generation)) == true;
+        if (!started && blockedPreparation is { } blocked)
+            started = StartExactPreparation(round[blocked.Selection.QueueIndex].Queue, blocked, generation);
+        if (!started && drain is { } pending &&
             TryStartLocalDrain(round, index, pending.Selection, pending.Engine, pending.Probe, generation) is { } owned)
             blocker = new("lifecycle_group_draining", owned.Name);
         if (ReadQueueEnd(request) is not null) MaybeFailDeadline(request);
@@ -490,15 +520,26 @@ public sealed partial class RouterCore : IInferenceRouter
 
     private AdmissionTake TryAdmit(QueueRound[] round, int index, Selection selection, EngineRuntime engine,
                                    EngineRuntime.DispatchObservation? expected, long requiredWindow, bool compared,
-                                   ConfigurationGeneration generation)
+                                   ConfigurationGeneration generation, ref List<PreparationOffer>? preparations,
+                                   ref PreparationOffer? blockedPreparation)
     {
         var candidate = selection.Request;
-        if (_admission is not { } admission)
+        if (!UsesExactAdmission(engine))
         {
             if (compared) BeforeCostCommitForTests?.Invoke();
             BeforeAdmissionCommitForTests?.Invoke(candidate.Ticket);
+            if (_hostManager is { } manager)
+            {
+                lock (manager.Admission.Gate)
+                {
+                    if (manager.Admission.HasOutstanding(candidate.Ticket)) return new(TakeResult.Ineligible);
+                    return TryTake(round, index, selection, engine, expected, requiredWindow, claim: null, generation);
+                }
+            }
             return TryTake(round, index, selection, engine, expected, requiredWindow, claim: null, generation);
         }
+
+        var admission = _admission!;
 
         var route = new ExactTicketAdmission.Route(engine.Name, candidate.Ticket.Model, selection.Decision.TargetProfile);
         if (admission.Capture(candidate, route, selection.Decision.SwitchRequired, candidate.ExplicitContextMinimum) is not { } claim)
@@ -510,7 +551,6 @@ public sealed partial class RouterCore : IInferenceRouter
             return new(TakeResult.Ineligible);
         }
 
-        bool prepared;
         lock (admission.Gate)
         {
             var observed = expected ?? engine.ReadDispatchObservation();
@@ -518,18 +558,98 @@ public sealed partial class RouterCore : IInferenceRouter
                 (!admission.IsOpen(claim) || !VerifiedCapacityFits(claim, observed.Capability, requiredWindow) ||
                  !admission.CanTake(claim, engine.ReadDispatchObservation())))
                 return new(TakeResult.Ineligible);
-            prepared = admission.IsPrepared(claim) && admission.IsOpen(claim);
-        }
-        if (!prepared)
-        {
-            BeforeAdmissionPreparationForTests?.Invoke(candidate.Ticket);
-            admission.Prepare(claim);
-            return new(TakeResult.Preparing);
+            if (!admission.IsPrepared(claim) || !admission.IsOpen(claim))
+            {
+                var canStart = admission.CanStartPreparation(claim);
+                if (canStart && generation.Engines.Count > 1 && _scheduler is PrefixAwareScheduler)
+                {
+                    var queue = round[selection.QueueIndex].Queue;
+                    lock (_gate)
+                    lock (queue.Gate)
+                        canStart = IsPreparationCandidate(queue, selection, engine, generation);
+                }
+                var offer = new PreparationOffer(selection, engine, claim);
+                if (canStart) (preparations ??= []).Add(offer);
+                else if (_hostManager is null) blockedPreparation ??= offer;
+                return new(TakeResult.Preparing);
+            }
         }
 
         BeforeAdmissionCommitForTests?.Invoke(candidate.Ticket);
         lock (admission.Gate)
             return TryTake(round, index, selection, engine, expected, requiredWindow, claim, generation);
+
+    }
+
+    private bool StartExactPreparation(ModelQueue queue, PreparationOffer offer, ConfigurationGeneration generation)
+    {
+        var admission = _admission!;
+        var candidate = offer.Selection.Request;
+        BeforeAdmissionPreparationForTests?.Invoke(candidate.Ticket);
+        Action? work;
+        lock (admission.Gate)
+        lock (_gate)
+        lock (queue.Gate)
+        {
+            work = IsPreparationCandidate(queue, offer.Selection, offer.Engine, generation) ? admission.ReservePreparationWork(offer.Claim) : null;
+        }
+        if (work is null) return false;
+        work();
+        return true;
+    }
+
+    private bool IsPreparationCandidate(ModelQueue queue, Selection selection, EngineRuntime engine, ConfigurationGeneration generation)
+    {
+        var candidate = selection.Request;
+        return IsCurrentQueue(queue, candidate, generation) && IsCurrentPriorityComparison(selection) &&
+            IsPendingAndThreadAdmissible(candidate) && queue.FindExactTakeIndexUnderGate(candidate, earlier =>
+                _scheduler is PrefixAwareScheduler ? ExactPredecessorCompetes(earlier, candidate, engine, generation)
+                    : IsPendingAndThreadAdmissible(earlier)) >= 0;
+    }
+
+    private bool StartManagedActivation(ModelQueue queue, ManagedOffer offer, ConfigurationGeneration generation)
+    {
+        var manager = _hostManager!;
+        var candidate = offer.Selection.Request;
+        InProcessHostManager.Transition? accepted;
+        lock (manager.Admission.Gate)
+        lock (_gate)
+        {
+            if (!IsCurrentQueue(queue, candidate, generation) || !IsCurrentPriorityComparison(offer.Selection) ||
+                !IsPendingAndThreadAdmissible(candidate) || candidate.Ticket.ExecCts is not { } execution) return false;
+            lock (queue.Gate)
+            {
+                if (queue.FindExactTakeIndexUnderGate(candidate,
+                        earlier => ExactPredecessorCompetes(earlier, candidate, offer.Engine, generation)) < 0) return false;
+                accepted = manager.TryAccept(offer.Engine.Name, candidate.Ticket.Model, offer.Profile.Name, candidate.Ticket, execution.Token);
+            }
+        }
+        if (accepted is null) return false;
+        _ = CompleteManagedActivationAsync(manager, accepted, candidate);
+        return true;
+    }
+
+    private async Task CompleteManagedActivationAsync(InProcessHostManager manager, InProcessHostManager.Transition accepted,
+        QueuedRequest candidate)
+    {
+        // Only the admitted operation may mutate. Keep the priority queue entry until an
+        // exact verified send can remove it, or the same admission settles its failure.
+        if (await ExecuteManagedActivationAsync(manager, accepted).ConfigureAwait(false)) return;
+        if (ReadQueueEnd(candidate) is not null)
+        {
+            MaybeFailDeadline(candidate);
+            return;
+        }
+
+        if (ClaimQueuedEnd(candidate.Ticket, "switch_failed") != QueueEndClaim.Removed) return;
+        SettleQueueEnd(candidate.Ticket, "switch_failed", null);
+        SignalDispatch();
+    }
+
+    private static async Task<bool> ExecuteManagedActivationAsync(InProcessHostManager manager, InProcessHostManager.Transition accepted)
+    {
+        try { return (await manager.ExecuteAsync(accepted).ConfigureAwait(false)).IsReady; }
+        catch (Exception) { return false; }
     }
 
     private AdmissionTake TryTake(QueueRound[] round, int prefix, Selection selection, EngineRuntime engine,
@@ -546,13 +666,15 @@ public sealed partial class RouterCore : IInferenceRouter
             var groupRevision = _localGroups.GetValueOrDefault(engine.Name)?.Revision;
             var resourceAware = _scheduler is PrefixAwareScheduler && claim is null;
             Dictionary<EngineRuntime, PredecessorRoute>? predecessorRoutes = null;
-            bool Competes(QueuedRequest earlier) => resourceAware
-                ? CanCompeteFor(earlier, candidate, engine, generation, ref predecessorRoutes)
-                : IsPendingAndThreadAdmissible(earlier);
+            bool Competes(QueuedRequest earlier) => _scheduler is not PrefixAwareScheduler
+                ? IsPendingAndThreadAdmissible(earlier)
+                : claim is null ? CanCompeteFor(earlier, candidate, engine, generation, ref predecessorRoutes)
+                : ExactPredecessorCompetes(earlier, candidate, engine, generation);
 
             // The outer order is captured. Order within each still-live queue is current, including
             // a newly published, higher-ranked request. Never acquire two model-queue gates together.
-            if (resourceAware && HasEarlierQueueCompetitor(round, prefix, Competes)) return new(TakeResult.Ineligible);
+            if ((resourceAware || claim is not null && _hostManager is not null) && HasEarlierQueueCompetitor(round, prefix, Competes))
+                return new(TakeResult.Ineligible);
             lock (queue.Gate)
             {
                 if (!queue.Contains(candidate)) return new(TakeResult.QueueChanged);
@@ -650,6 +772,33 @@ public sealed partial class RouterCore : IInferenceRouter
         !request.Ticket.PendingEnqueuePublication && !request.Ticket.IsTerminal &&
         HasThreadCapacity(request.Thread) && ReadQueueEnd(request) is null;
 
+    // The caller holds the exact admission, router and queue gates. An active preparation
+    // excludes other domains for this ticket until retirement settles.
+    private bool ExactPredecessorCompetes(QueuedRequest earlier, QueuedRequest candidate, EngineRuntime selected,
+        ConfigurationGeneration generation)
+    {
+        if (!IsPendingAndThreadAdmissible(earlier)) return false;
+        var admission = _admission!;
+        var sameThread = ReferenceEquals(candidate.Thread, earlier.Thread) && earlier.Thread.Inflight + 1 >= earlier.Thread.MaxInflight;
+        foreach (var engine in generation.Engines.Values)
+        {
+            if ((!sameThread && !admission.SharesDomain(selected.Name, engine.Name)) ||
+                admission.IsOtherDomain(earlier.Ticket, engine.Name)) continue;
+            var observation = engine.ReadDispatchObservation();
+            if (!observation.HasCapacity) continue;
+            var fit = ReadRouteFit(earlier, engine, observation);
+            if (PrefixAwareScheduler.DescribeTarget(earlier, fit, generation.Settings) is not { } target) continue;
+            if (!UsesExactAdmission(engine))
+            {
+                if ((!target.SwitchRequired || HasLifecycleRoute(earlier, engine)) &&
+                    ProbeRoute(earlier, engine, target, observation, generation).Blocker is null) return true;
+                continue;
+            }
+            if (ExactRouteCanCompete(earlier, engine, target, observation)) return true;
+        }
+        return false;
+    }
+
     private bool CanCompeteFor(QueuedRequest earlier, QueuedRequest candidate, EngineRuntime selected,
                                ConfigurationGeneration generation, ref Dictionary<EngineRuntime, PredecessorRoute>? predecessorRoutes,
                                bool includeDrain = false)
@@ -674,10 +823,26 @@ public sealed partial class RouterCore : IInferenceRouter
             var fit = ReadRouteFit(earlier, engine, observed);
             if (PrefixAwareScheduler.DescribeTarget(earlier, fit, generation.Settings) is not { } target) continue;
             if (target.SwitchRequired && !HasLifecycleRoute(earlier, engine)) continue;
+            if (_hostManager is { } manager)
+            {
+                if (!manager.Owns(engine.Name) && manager.Admission.HasOutstanding(earlier.Ticket)) continue;
+                if (manager.Owns(engine.Name) && !ExactRouteCanCompete(earlier, engine, target, observed)) continue;
+            }
             var probe = ProbeRoute(earlier, engine, target, observed, generation);
             if (probe.Blocker is null || includeDrain && probe.Drain) return true;
         }
         return false;
+    }
+
+    private bool ExactRouteCanCompete(QueuedRequest earlier, EngineRuntime engine, PrefixAwareScheduler.Target target,
+        EngineRuntime.DispatchObservation observation)
+    {
+        var admission = _admission!;
+        var route = new ExactTicketAdmission.Route(engine.Name, earlier.Ticket.Model, target.Profile);
+        var window = EngineRuntime.RequiredWindow(engine.GetProfile(earlier.Ticket.Model, target.Profile), earlier.ExplicitContextMinimum);
+        return admission.Capture(earlier, route, target.SwitchRequired, earlier.ExplicitContextMinimum) is { } claim &&
+            admission.IsOpen(claim) && AdmissionWindowFits(admission, claim, observation.Capability, window) &&
+            admission.CanTake(claim, observation);
     }
 
     private static bool PredecessorRoutesAreCurrent(Dictionary<EngineRuntime, PredecessorRoute>? routes)
@@ -781,6 +946,7 @@ public sealed partial class RouterCore : IInferenceRouter
             Fail(claim.Ticket, "deadline_exceeded", "The queued request expired before verified admission.");
         else
             Fail(claim.Ticket, "engine_unreachable", new VerifiedDispatchBindingException(refusal).Message);
+        admission.Invalidate(claim.Ticket);
         SignalDispatch();
     }
 
@@ -953,7 +1119,7 @@ public sealed partial class RouterCore : IInferenceRouter
             (named is not null && target.SwitchRequired && group is null && (observation.Inflight != 0 || engine.InferenceUses != 0)))
             return new(profile, group, new("engine_profile_in_use", engine.Name));
         var requiredWindow = EngineRuntime.RequiredWindow(profile, candidate.ExplicitContextMinimum);
-        if (_admission is null && requiredWindow > serving.WindowFor(candidate.Ticket.Model) &&
+        if (!UsesExactAdmission(engine) && requiredWindow > serving.WindowFor(candidate.Ticket.Model) &&
             !WillWaitForModel(generation.Settings, target.SwitchRequired, profile))
             return new(profile, group, new("engine_context_unavailable", engine.Name));
 
@@ -1034,9 +1200,12 @@ public sealed partial class RouterCore : IInferenceRouter
         var capability = observation.Capability;
         var model = request.Ticket.Model;
         var group = _localGroups.GetValueOrDefault(engine.Name);
+        var managed = _hostManager?.Owns(engine.Name) == true;
         return new(capability.Healthy, capability.SwitchingToward is not null, engine.CanServeModel(model, capability),
-            group is not null, request.Request.Options?.Profile is not null && engine.CanSwitchTo(model),
-            group is null || group.IsResident(engine.Name, model) ? capability.ModelRoster : [],
+            group is not null || managed && engine.CanSwitchTo(model),
+            request.Request.Options?.Profile is not null && engine.CanSwitchTo(model),
+            (group is null || group.IsResident(engine.Name, model)) && (!managed || _hostManager!.IsResident(engine.Name))
+                ? capability.ModelRoster : [],
             capability.Serving.WindowFor(model), engine.ProfilesForModel(model), observation);
     }
 

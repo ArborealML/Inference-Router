@@ -495,15 +495,26 @@ public sealed partial class RouterCore
 
     private void SettleQueueEnd(RouterTicket ticket, string code, TimeSpan? window)
     {
-        _admission?.Invalidate(ticket);
+        if (_admission?.Invalidate(ticket) == true) _ = CancelQueuedActivationAsync(ticket);
         var reason = code switch
         {
             "cancelled" => "cancelled while queued",
             "slow_consumer" => HttpStreamOutcome.SlowConsumer.Message,
+            "switch_failed" => "The enrolled host could not activate the selected recipe.",
             _ => $"queue wait exceeded {window}",
         };
         Fail(ticket, code, reason);
         ReleaseExecutionCancellation(ticket);
+    }
+
+    private static async Task CancelQueuedActivationAsync(RouterTicket ticket)
+    {
+        // The activation can already be waiting on a linked token. Keep its source alive
+        // until cancellation has reached those registrations, independently of ticket settlement.
+        using var execution = Interlocked.Exchange(ref ticket.ExecCts, null);
+        if (execution is null) return;
+        try { await execution.CancelAsync().ConfigureAwait(false); }
+        catch (AggregateException) { /* Callback faults cannot undo cancellation. */ }
     }
 
     private long ReadQueueTimestamp()
