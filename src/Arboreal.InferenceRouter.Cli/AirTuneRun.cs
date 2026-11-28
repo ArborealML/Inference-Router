@@ -36,24 +36,21 @@ internal static class AirTuneRun
         using var directory = AirTuneFile.PinOutputDirectory(options.OutputPath);
         if (directory is null) return Error(error, "error: tuning output directory could not be opened");
         var name = Path.GetFileName(options.OutputPath);
-        var summaryName = Path.GetFileNameWithoutExtension(name) + ".summary.json";
         using var output = AirTuneFile.CreateOutput(directory, name);
-        using var summary = name == summaryName ? null : AirTuneFile.CreateOutput(directory, summaryName);
-        if (output is null || summary is null) return Error(error, "error: tuning output path must be new and supported");
+        if (output is null) return Error(error, "error: tuning output path must be new and supported");
 
         var result = await AirTuneSingleModel.MeasureAsync(admission, config.Engines[manifest.Engine], manifest,
             host.RecipeSha256, cancellationToken).ConfigureAwait(false);
         var bytes = JsonSerializer.SerializeToUtf8Bytes(result, AirTuneRunJsonContext.Default.TuneRunEvidence);
-        if (bytes.Length >= AirTuneRecord.MaxBytes || !AirTuneFile.InstallOutput(proc, directory, output, name, bytes))
-            return Error(error, "error: tuning run could not be saved");
+        if (bytes.Length >= AirTuneRecord.MaxBytes ||
+            (result.Summary is not null || result.Status == "passed") && TuneRunEvidence.ReadSummary(bytes) is null)
+            return Error(error, "error: invalid tuning run evidence");
 
-        if (result.Summary is not null)
-        {
-            var summaryBytes = JsonSerializer.SerializeToUtf8Bytes(result.Summary, AirTuneRunJsonContext.Default.AirTuneRecord);
-            if (summaryBytes.Length >= AirTuneRecord.MaxBytes || AirTuneRecord.Parse(summaryBytes) is null ||
-                !AirTuneFile.InstallOutput(proc, directory, summary, summaryName, summaryBytes))
-                return Error(error, "error: tuning summary could not be saved");
-        }
+        var publication = AirTuneFile.InstallOutput(proc, directory, output, name, bytes);
+        if (publication == AirTuneFile.Publication.NotPublished)
+            return Error(error, "error: tuning run could not be published");
+        if (publication == AirTuneFile.Publication.DurabilityUnconfirmed)
+            return Error(error, "error: complete tuning run is visible but directory durability is unconfirmed");
 
         return result.Status == "passed" ? 0 : Error(error, "error: tuning run " + result.Status + " (" + result.Reason + ")");
     }

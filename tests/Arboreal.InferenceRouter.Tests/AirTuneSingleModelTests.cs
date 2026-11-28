@@ -24,6 +24,7 @@ public sealed class AirTuneSingleModelTests : IDisposable
     {
         if (!OperatingSystem.IsLinux()) return;
         await using var fixture = new Capture("success");
+        File.WriteAllText(FilePath("first.summary.json"), "unrelated file");
         var first = await Run("first", fixture);
         Assert.Equal(0, first.Exit);
         Assert.NotNull(first.Evidence);
@@ -32,6 +33,7 @@ public sealed class AirTuneSingleModelTests : IDisposable
         Assert.Equal("passed", record.GetProperty("status").GetString());
         Assert.Equal("unavailable", record.GetProperty("cold_load").GetString());
         Assert.Equal("untested", record.GetProperty("long_decode").GetString());
+        Assert.True(record.GetProperty("lease_released").GetBoolean());
         var samples = record.GetProperty("samples");
         var frozen = record.GetProperty("workload");
         Assert.Equal(4, fixture.Completed.Count);
@@ -42,6 +44,8 @@ public sealed class AirTuneSingleModelTests : IDisposable
             Assert.Equal(Digest(fixture.Completed[wave]), frozen[wave].GetProperty("body_sha256").GetString());
             Assert.Equal(32_128, frozen[wave].GetProperty("prompt_tokens").GetInt32());
             Assert.Equal(512, samples[wave].GetProperty("completion_tokens").GetInt32());
+            Assert.Equal(512, samples[wave].GetProperty("native").GetProperty("served_output_tokens").GetInt32());
+            Assert.Equal(513, samples[wave].GetProperty("native").GetProperty("decode_work_tokens").GetInt32());
             Assert.Equal("complete", samples[wave].GetProperty("semantic_outcome").GetString());
             Assert.Equal("available", samples[wave].GetProperty("usage_availability").GetString());
             Assert.True(samples[wave].GetProperty("settlement").GetProperty("proved").GetBoolean());
@@ -49,16 +53,22 @@ public sealed class AirTuneSingleModelTests : IDisposable
             Assert.True(samples[wave].GetProperty("ttft_ticks").GetInt64() <= samples[wave].GetProperty("terminal_ticks").GetInt64());
         }
         Assert.DoesNotContain("backend-canary", first.Evidence, StringComparison.Ordinal);
+        Assert.Equal("unrelated file", File.ReadAllText(FilePath("first.summary.json")));
 
         await using var candidate = new Capture("success");
         var second = await Run("second", candidate);
         Assert.Equal(0, second.Exit);
         using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(15));
-        var comparison = await RunCliAsync("tune", ["compare", "--baseline", FilePath("first.summary.json"),
-            "--candidate", FilePath("second.summary.json")], null, deadline.Token);
+        var comparison = await RunCliAsync("tune", ["compare", "--baseline", FilePath("first.json"),
+            "--candidate", FilePath("second.json")], null, deadline.Token);
         Assert.Equal(0, comparison.ExitCode);
+        Assert.Contains("unverified observations", Encoding.UTF8.GetString(comparison.Stdout), StringComparison.Ordinal);
         Assert.Contains("delta", Encoding.UTF8.GetString(comparison.Stdout), StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("incomparable", Encoding.UTF8.GetString(comparison.Stdout), StringComparison.OrdinalIgnoreCase);
+
+        var damaged = JsonNode.Parse(first.Evidence)!;
+        damaged["summary"]!["run_id"] = new string('0', 32);
+        Assert.Null(TuneRunEvidence.ReadSummary(Encoding.UTF8.GetBytes(damaged.ToJsonString())));
     }
 
     [Theory(Timeout = 30_000)]
@@ -68,6 +78,8 @@ public sealed class AirTuneSingleModelTests : IDisposable
     [InlineData("stale", "refused", "preflight_refusal", 0)]
     [InlineData("fit-refused", "refused", "invalid_workload", 0)]
     [InlineData("retry", "failed", "native_workload_mismatch", 1)]
+    [InlineData("retry-missing-native", "failed", "native_workload_mismatch", 1)]
+    [InlineData("native-served-mismatch", "failed", "native_workload_mismatch", 1)]
     [InlineData("reused", "failed", "native_workload_mismatch", 1)]
     [InlineData("clamped", "failed", "native_workload_mismatch", 1)]
     [InlineData("not-admitted", "inconclusive", "native_evidence_unavailable", 1)]
@@ -79,6 +91,8 @@ public sealed class AirTuneSingleModelTests : IDisposable
     [InlineData("missing-usage", "failed", "stream_workload_mismatch", 1)]
     [InlineData("unsettled", "inconclusive", "settlement_unproved", 1)]
     [InlineData("drift", "inconclusive", "settlement_unproved", 1)]
+    [InlineData("hardware-before", "inconclusive", "resident_hardware_changed", 1)]
+    [InlineData("hardware-after", "inconclusive", "resident_hardware_changed", 1)]
     public async Task MissingOrAdverseEvidenceStopsTheRun(string mode, string status, string reason, int starts)
     {
         if (!OperatingSystem.IsLinux()) return;
@@ -99,6 +113,61 @@ public sealed class AirTuneSingleModelTests : IDisposable
             Assert.False(settlement.GetProperty("proved").GetBoolean());
             Assert.Equal(2L, settlement.GetProperty("observed_generation").GetInt64());
         }
+        if (mode == "hardware-after")
+        {
+            var sample = Assert.Single(document.RootElement.GetProperty("samples").EnumerateArray());
+            var settlement = sample.GetProperty("settlement");
+            Assert.True(settlement.GetProperty("proved").GetBoolean());
+            Assert.False(settlement.GetProperty("stable_hardware").GetBoolean());
+        }
+    }
+
+    [Fact(Timeout = 30_000)]
+    public async Task HangingLeaseAcknowledgementIsBoundedAndWithholdsRates()
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        await using var fixture = new Capture("hang-release");
+        var run = await Run("held", fixture);
+        Assert.Equal(1, run.Exit);
+        Assert.True(fixture.Held);
+        Assert.Equal(4, fixture.Completed.Count);
+        Assert.NotNull(run.Evidence);
+        using var document = JsonDocument.Parse(run.Evidence);
+        Assert.Equal("admission_release_unproved", document.RootElement.GetProperty("reason").GetString());
+        Assert.False(document.RootElement.GetProperty("lease_released").GetBoolean());
+        var summary = TuneRunEvidence.ReadSummary(Encoding.UTF8.GetBytes(run.Evidence));
+        Assert.NotNull(summary);
+        var level = Assert.Single(summary.Levels);
+        Assert.Equal("inconclusive", level.Status);
+        Assert.Null(level.WaveOutputTokensPerSecond);
+    }
+
+    [Fact(Timeout = 30_000)]
+    public async Task LateOutputCollisionsLeaveTheExistingFileIntact()
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        await using var fixture = new Capture("success") { FirstStart = () => File.WriteAllText(FilePath("late.json"), "other writer") };
+        var run = await Run("late", fixture);
+        Assert.Equal(1, run.Exit);
+        Assert.Equal(4, fixture.Completed.Count);
+        Assert.Equal("other writer", run.Evidence);
+        Assert.False(File.Exists(FilePath("late.summary.json")));
+    }
+
+    [Fact]
+    public void DirectorySyncFailureReportsACompleteVisibleFileWithUncertainDurability()
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        var path = FilePath("uncertain.json");
+        using var proc = AirTuneFile.OpenProcDescriptors();
+        using var directory = AirTuneFile.PinOutputDirectory(path);
+        Assert.NotNull(proc);
+        Assert.NotNull(directory);
+        using var output = AirTuneFile.CreateOutput(directory, "uncertain.json");
+        Assert.NotNull(output);
+        var publication = AirTuneFile.InstallOutput(proc, directory, output, "uncertain.json", "{}"u8.ToArray(), _ => -1);
+        Assert.Equal(AirTuneFile.Publication.DurabilityUnconfirmed, publication);
+        Assert.Equal("{}\n", File.ReadAllText(path));
     }
 
     [Fact(Timeout = 30_000)]
@@ -107,6 +176,7 @@ public sealed class AirTuneSingleModelTests : IDisposable
         if (!OperatingSystem.IsLinux()) return;
         using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(15));
         var args = Arguments("refusal", BadRecipe);
+        File.WriteAllText(FilePath("refusal.summary.json"), "unrelated file");
         var process = await RunCliAsync("tune", args[1..], null, deadline.Token);
         Assert.Equal(1, process.ExitCode);
         Assert.Empty(process.Stdout);
@@ -115,6 +185,7 @@ public sealed class AirTuneSingleModelTests : IDisposable
         using var document = JsonDocument.Parse(refusal);
         Assert.Equal("admission_unavailable", document.RootElement.GetProperty("reason").GetString());
         Assert.Empty(document.RootElement.GetProperty("samples").EnumerateArray());
+        Assert.Equal("unrelated file", File.ReadAllText(FilePath("refusal.summary.json")));
 
         await using var capture = new Capture("success");
         Assert.Equal(1, await CliProgram.RunAsync(args, capture));
@@ -160,10 +231,12 @@ public sealed class AirTuneSingleModelTests : IDisposable
 
     public void Dispose() => _output.Delete(recursive: true);
 
-    private sealed class Capture : ITuneAdmission, ITuneResident
+    private sealed class Capture : ITuneAdmission, ITuneResident, IAsyncDisposable
     {
         private readonly AirTuneRecord _baseline = AirTuneRecord.Parse(File.ReadAllBytes(BaselinePath))!;
         private readonly string _mode;
+        private readonly TuneHardware _shiftedHardware;
+        private readonly TaskCompletionSource<bool> _release = new(TaskCreationOptions.RunContinuationsAsynchronously);
         private TuneNativeSample? _last;
         private bool _owned;
 
@@ -178,12 +251,17 @@ public sealed class AirTuneSingleModelTests : IDisposable
             node["configured_slots"]!["value"] = 1;
             node["observed_slots"]!["value"] = 1;
             Target = node.Deserialize(AirTuneRunJsonContext.Default.TuneTarget)!;
+            var hardware = JsonNode.Parse(File.ReadAllText(BaselinePath))!["hardware"]!;
+            hardware["cpu_quota"] = JsonNode.Parse("""{"kind":"finite","value":{"quota_us":50000,"period_us":100000}}""");
+            _shiftedHardware = hardware.Deserialize(AirTuneRunJsonContext.Default.TuneHardware)!;
         }
 
         internal string ExpectedRecipe => _mode == "wrong-recipe" ? BadRecipe : Target.RecipeSha256.Value!;
         internal TuneTarget Target { get; }
         internal List<byte[]> Completed { get; } = [];
         internal HashSet<byte[]> Counted { get; } = new(ReferenceEqualityComparer.Instance);
+        internal Action? FirstStart { get; init; }
+        internal bool Held => _owned;
 
         public ValueTask<ITuneResident?> AcquireAsync(EngineDefinition engine, string model, string profile,
             string expectedRecipeSha256, CancellationToken cancellationToken)
@@ -201,8 +279,10 @@ public sealed class AirTuneSingleModelTests : IDisposable
         {
             Assert.True(_owned);
             var generation = request is not null && _mode == "drift" ? 2 : 1;
+            var hardware = request is null && Completed.Count > 0 && _mode == "hardware-before" ||
+                request is not null && _mode == "hardware-after" ? _shiftedHardware : _baseline.Hardware;
             return ValueTask.FromResult<TuneWitness?>(new(_mode == "stale" ? Guid.Empty : challenge,
-                _baseline.InstanceId.Value!, generation, _mode != "not-exclusive", 0, 0, 8, true, Target, _baseline.Hardware,
+                _baseline.InstanceId.Value!, generation, _mode != "not-exclusive", 0, 0, 8, true, Target, hardware,
                 request is null ? null : _last));
         }
 
@@ -217,11 +297,12 @@ public sealed class AirTuneSingleModelTests : IDisposable
         {
             Assert.True(_owned);
             Assert.Contains(Counted, candidate => ReferenceEquals(body, candidate));
+            if (Completed.Count == 0) FirstStart?.Invoke();
             Completed.Add(body);
             var count = Count(body);
-            int? reused = _mode == "missing-native" ? null : _mode == "reused" ? 65 : 0;
-            _last = new(request, _mode != "not-admitted", _mode != "unsettled", _mode == "retry" ? 2 : 1, 0,
-                count, _mode == "clamped" ? 511 : 512, reused, 512, 2_000, 4_000);
+            int? reused = _mode is "missing-native" or "retry-missing-native" ? null : _mode == "reused" ? 65 : 0;
+            _last = new(request, _mode != "not-admitted", _mode != "unsettled", _mode is "retry" or "retry-missing-native" ? 2 : 1, 0,
+                count, _mode == "clamped" ? 511 : 512, reused, _mode == "native-served-mismatch" ? 1 : 512, 513, 2_000, 4_000);
 
             // The private fixture owns both transport and native evidence. The delay keeps the
             // synthetic wall rate in the same finite numeric format as saved comparisons.
@@ -254,8 +335,16 @@ public sealed class AirTuneSingleModelTests : IDisposable
             return root.GetProperty("messages")[0].GetProperty("content").GetString()!.Length / 2 + 8;
         }
 
+        public Task<bool> ReleaseAsync(CancellationToken cancellationToken)
+        {
+            if (_mode == "hang-release") return _release.Task;
+            _owned = false;
+            return Task.FromResult(true);
+        }
+
         public ValueTask DisposeAsync()
         {
+            _release.TrySetResult(false);
             _owned = false;
             return ValueTask.CompletedTask;
         }

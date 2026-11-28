@@ -212,10 +212,13 @@ internal static partial class AirTuneFile
         return temporary < 0 ? null : new SafeFileHandle(temporary, ownsHandle: true);
     }
 
-    internal static bool InstallOutput(SafeFileHandle procDescriptors, SafeFileHandle directory,
-        SafeFileHandle temporary, string name, byte[] bytes)
+    internal enum Publication { NotPublished, Durable, DurabilityUnconfirmed }
+
+    internal static Publication InstallOutput(SafeFileHandle procDescriptors, SafeFileHandle directory,
+        SafeFileHandle temporary, string name, byte[] bytes, Func<int, int>? syncDirectory = null)
     {
         const int followProcDescriptor = 0x400;
+        var linked = false;
         try
         {
             using var file = new FileStream(temporary, FileAccess.Write, bufferSize: 1);
@@ -224,12 +227,14 @@ internal static partial class AirTuneFile
             file.Flush(flushToDisk: true);
             var descriptor = temporary.DangerousGetHandle().ToInt32().ToString(CultureInfo.InvariantCulture);
             var targetFd = directory.DangerousGetHandle().ToInt32();
-            return LinkAt(procDescriptors.DangerousGetHandle().ToInt32(), descriptor, targetFd, name, followProcDescriptor) == 0 &&
-                FlushDirectory(targetFd) == 0;
+            linked = LinkAt(procDescriptors.DangerousGetHandle().ToInt32(), descriptor, targetFd, name, followProcDescriptor) == 0;
+            if (!linked)
+                return Publication.NotPublished;
+            return (syncDirectory ?? FlushDirectory)(targetFd) == 0 ? Publication.Durable : Publication.DurabilityUnconfirmed;
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException)
         {
-            return false;
+            return linked ? Publication.DurabilityUnconfirmed : Publication.NotPublished;
         }
     }
 

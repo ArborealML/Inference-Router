@@ -21,6 +21,8 @@ internal static class AirTuneSingleModel
         var samples = new List<TuneSampleEvidence>();
         TuneWitness? resident = null;
 
+        bool? released = null;
+
         if (admission is null)
             return Finish("refused", "admission_unavailable");
 
@@ -31,99 +33,125 @@ internal static class AirTuneSingleModel
         {
             using var intake = CancellationTokenSource.CreateLinkedTokenSource(work.Token);
             intake.CancelAfter(WitnessTime);
-            await using (var lease = await admission.AcquireAsync(engine, manifest.Model, tier.Profile, recipe, intake.Token)
-                .ConfigureAwait(false))
+            var lease = await admission.AcquireAsync(engine, manifest.Model, tier.Profile, recipe, intake.Token).ConfigureAwait(false);
+            if (lease is null)
+                return Finish("refused", "admission_refused");
+
+            (string Status, string? Reason) outcome;
+            try
             {
-                if (lease is null)
-                    return Finish("refused", "admission_refused");
-
-                var initial = await ObserveAsync(lease, null, work.Token).ConfigureAwait(false);
-                if (initial is null || !ValidResident(initial, manifest, tier, recipe))
-                    return Finish("refused", "preflight_refusal");
-
-                var target = JsonSerializer.SerializeToUtf8Bytes(initial.Target, AirTuneRunJsonContext.Default.TuneTarget);
-                var hardware = JsonSerializer.SerializeToUtf8Bytes(initial.Hardware, AirTuneRunJsonContext.Default.TuneHardware);
-                if (!FitsRecord(target) || !FitsRecord(hardware))
-                    return Finish("refused", "invalid_resident_evidence");
-
-                resident = initial;
-                var bodies = new List<FittedTunePrompt>(tier.Requests.Length);
-                foreach (var coordinate in tier.Requests)
-                {
-                    var generator = new AirTuneTextGenerator(manifest.Seed, tier.Profile, coordinate.Concurrency,
-                        coordinate.Wave, coordinate.Worker);
-                    var prompt = await AirTunePromptFit.FitAsync(generator, manifest.Model, policy.TargetOutputTokens,
-                        checked((int)tier.NominalPromptMin), checked((int)tier.NominalPromptMax),
-                        (body, token) => CountAsync(lease, body, token), work.Token)
-                        .ConfigureAwait(false);
-                    if (prompt is null || prompt.Tokens + (long)policy.TargetOutputTokens > tier.ConfiguredContext - initial.ContextReserve)
-                        return Finish("refused", "invalid_workload");
-                    bodies.Add(prompt);
-                    workload.Add(new(coordinate, prompt.Tokens, policy.TargetOutputTokens, prompt.Records, prompt.TailBytes,
-                        Digest(generator.Candidate(prompt.Records, prompt.TailBytes)), Digest(prompt.Body)));
-                }
-
-                for (var index = 0; index < bodies.Count; index++)
-                {
-                    if (!SameIdleResident(await ObserveAsync(lease, null, work.Token).ConfigureAwait(false), initial, target))
-                        return Finish("inconclusive", "resident_changed");
-
-                    var request = Guid.NewGuid();
-                    var exchange = await ReadSampleAsync(lease, request, manifest.Model, bodies[index], policy, work.Token)
-                        .ConfigureAwait(false);
-                    var after = await ObserveAsync(lease, request, deadline.Token).ConfigureAwait(false);
-                    var native = after?.Sample;
-                    var settled = SameIdleResident(after, initial, target) && native is { Settled: true } && native.Request == request;
-                    string? reason;
-                    string status;
-                    if (native is null || !settled)
-                    {
-                        status = "inconclusive";
-                        reason = "settlement_unproved";
-                    }
-                    else if (exchange.Reason is { } streamFailure)
-                    {
-                        status = "failed";
-                        reason = streamFailure;
-                    }
-                    else if (!native.Admitted || native.Attempts <= 0 || native.ReusedTokens is null ||
-                        native.DecodeTokens is not > 0 || native.PrefillMicroseconds is not > 0 || native.DecodeMicroseconds is not > 0)
-                    {
-                        status = "inconclusive";
-                        reason = "native_evidence_unavailable";
-                    }
-                    else if (native.Attempts != 1 || native.Errors != 0 || native.PromptTokens != bodies[index].Tokens ||
-                        native.OutputAllowance != policy.TargetOutputTokens || native.ReusedTokens is < 0 or > 64)
-                    {
-                        status = "failed";
-                        reason = "native_workload_mismatch";
-                    }
-                    else
-                    {
-                        status = "passed";
-                        reason = null;
-                    }
-                    var stream = exchange.Observation;
-                    var settlement = new TuneSettlementEvidence(settled, after?.Generation, after?.Exclusive, after?.Active, after?.Queued);
-                    samples.Add(new(request, tier.Requests[index], status, reason, stream.OutcomeName, stream.EndReasonName,
-                        UsageName(stream.UsageAvailability), stream.FirstSemanticOutput?.Ticks, exchange.Terminal?.Ticks,
-                        stream.PromptTokens, stream.CompletionTokens, native, settlement));
-                    if (reason is not null)
-                        return Finish(status, reason);
-                }
+                outcome = intake.IsCancellationRequested
+                    ? ("refused", "admission_timed_out")
+                    : await MeasureLeasedAsync(lease).ConfigureAwait(false);
             }
-
-            return Finish("passed", null);
+            finally
+            {
+                released = await ReleaseAsync(lease, deadline.Token).ConfigureAwait(false);
+            }
+            return released == true ? Finish(outcome.Status, outcome.Reason) : Finish("inconclusive", "admission_release_unproved");
         }
         catch (Exception error) when (error is OperationCanceledException or HttpRequestException or IOException or InvalidDataException or JsonException or OverflowException)
         {
-            return Finish(resident is null ? "refused" : "inconclusive", work.IsCancellationRequested
-                ? "budget_exhausted" : "measurement_evidence_unavailable");
+            return released == false ? Finish("inconclusive", "admission_release_unproved") :
+                Finish(resident is null ? "refused" : "inconclusive", work.IsCancellationRequested
+                    ? "budget_exhausted" : "measurement_evidence_unavailable");
+        }
+
+        async Task<(string Status, string? Reason)> MeasureLeasedAsync(ITuneResident lease)
+        {
+            var initial = await ObserveAsync(lease, null, work.Token).ConfigureAwait(false);
+            if (initial is null || !ValidResident(initial, manifest, tier, recipe))
+                return ("refused", "preflight_refusal");
+
+            var target = JsonSerializer.SerializeToUtf8Bytes(initial.Target, AirTuneRunJsonContext.Default.TuneTarget);
+            var hardware = JsonSerializer.SerializeToUtf8Bytes(initial.Hardware, AirTuneRunJsonContext.Default.TuneHardware);
+            if (!FitsRecord(target) || !FitsRecord(hardware))
+                return ("refused", "invalid_resident_evidence");
+
+            resident = initial;
+            var bodies = new List<FittedTunePrompt>(tier.Requests.Length);
+            foreach (var coordinate in tier.Requests)
+            {
+                var generator = new AirTuneTextGenerator(manifest.Seed, tier.Profile, coordinate.Concurrency,
+                    coordinate.Wave, coordinate.Worker);
+                var prompt = await AirTunePromptFit.FitAsync(generator, manifest.Model, policy.TargetOutputTokens,
+                    checked((int)tier.NominalPromptMin), checked((int)tier.NominalPromptMax),
+                    (body, token) => CountAsync(lease, body, token), work.Token)
+                    .ConfigureAwait(false);
+                if (prompt is null || prompt.Tokens + (long)policy.TargetOutputTokens > tier.ConfiguredContext - initial.ContextReserve)
+                    return ("refused", "invalid_workload");
+                bodies.Add(prompt);
+                workload.Add(new(coordinate, prompt.Tokens, policy.TargetOutputTokens, prompt.Records, prompt.TailBytes,
+                    Digest(generator.Candidate(prompt.Records, prompt.TailBytes)), Digest(prompt.Body)));
+            }
+
+            for (var index = 0; index < bodies.Count; index++)
+            {
+                var before = await ObserveAsync(lease, null, work.Token).ConfigureAwait(false);
+                if (!SameIdleResident(before, initial, target))
+                    return ("inconclusive", "resident_changed");
+                if (!SameStableHardware(before?.Hardware, hardware))
+                    return ("inconclusive", "resident_hardware_changed");
+
+                var request = Guid.NewGuid();
+                var exchange = await ReadSampleAsync(lease, request, manifest.Model, bodies[index], policy, work.Token)
+                    .ConfigureAwait(false);
+                var after = await ObserveAsync(lease, request, deadline.Token).ConfigureAwait(false);
+                var native = after?.Sample;
+                var settled = SameIdleResident(after, initial, target) && native is { Settled: true } && native.Request == request;
+                bool? stableHardware = after is null ? null : SameStableHardware(after.Hardware, hardware);
+                string? reason;
+                string status;
+                if (native is null || !settled)
+                {
+                    status = "inconclusive";
+                    reason = "settlement_unproved";
+                }
+                else if (stableHardware != true)
+                {
+                    status = "inconclusive";
+                    reason = "resident_hardware_changed";
+                }
+                else if (exchange.Reason is { } streamFailure)
+                {
+                    status = "failed";
+                    reason = streamFailure;
+                }
+                else if (native.Attempts > 1 || native.Errors != 0 || native.ReusedTokens is < 0 or > 64 ||
+                    native.PromptTokens > 0 && native.PromptTokens != bodies[index].Tokens ||
+                    native.ServedOutputTokens is { } served && served != exchange.Observation.CompletionTokens ||
+                    native.OutputAllowance > 0 && native.OutputAllowance != policy.TargetOutputTokens)
+                {
+                    status = "failed";
+                    reason = "native_workload_mismatch";
+                }
+                else if (!native.Admitted || native.Attempts != 1 || native.PromptTokens <= 0 || native.OutputAllowance <= 0 ||
+                    native.ReusedTokens is null || native.ServedOutputTokens is null || native.DecodeWorkTokens is not > 0 ||
+                    native.PrefillMicroseconds is not > 0 || native.DecodeMicroseconds is not > 0)
+                {
+                    status = "inconclusive";
+                    reason = "native_evidence_unavailable";
+                }
+                else
+                {
+                    status = "passed";
+                    reason = null;
+                }
+                var stream = exchange.Observation;
+                var settlement = new TuneSettlementEvidence(settled, after?.Generation, after?.Exclusive, after?.Active,
+                    after?.Queued, stableHardware);
+                samples.Add(new(request, tier.Requests[index], status, reason, stream.OutcomeName, stream.EndReasonName,
+                    UsageName(stream.UsageAvailability), stream.FirstSemanticOutput?.Ticks, exchange.Terminal?.Ticks,
+                    stream.PromptTokens, stream.CompletionTokens, native, settlement));
+                if (reason is not null)
+                    return (status, reason);
+            }
+            return ("passed", null);
         }
 
         TuneRunEvidence Finish(string status, string? reason)
         {
-            return new(runId, manifest.Engine, manifest.Model, tier.Profile, manifest.Seed, status, reason, resident,
+            return new(runId, manifest.Engine, manifest.Model, tier.Profile, manifest.Seed, status, reason, resident, released,
                 [.. workload], [.. samples], resident is null ? null : BuildSummary(runId, resident, manifest, workload, samples, status));
         }
     }
@@ -134,6 +162,25 @@ internal static class AirTuneSingleModel
         StreamUsageAvailability.Invalid => "invalid",
         _ => "unavailable",
     };
+
+    private static async Task<bool> ReleaseAsync(ITuneResident lease, CancellationToken deadline)
+    {
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(deadline);
+        timeout.CancelAfter(WitnessTime);
+        var token = timeout.Token;
+        try
+        {
+            // A lease can lose its peer or fail to complete asynchronously. The runner still saves
+            // an inconclusive record, and only the authority can resolve the fence afterward.
+            var released = await Task.Run(() => lease.ReleaseAsync(token), CancellationToken.None)
+                .WaitAsync(token).ConfigureAwait(false);
+            return released && !token.IsCancellationRequested;
+        }
+        catch (Exception error) when (error is OperationCanceledException or HttpRequestException or IOException or JsonException)
+        {
+            return false;
+        }
+    }
 
     private static async Task<int> CountAsync(ITuneResident lease, byte[] body, CancellationToken cancellationToken)
     {
@@ -177,7 +224,8 @@ internal static class AirTuneSingleModel
             hardware.PhysicalRamBytes.Value is not null && hardware.PhysicalSwapBytes.Value is not null &&
             hardware.RamLimitBytes.Kind != "unknown" && hardware.RamPlusSwapLimitBytes.Kind != "unknown" &&
             hardware.SwapOnlyLimitBytes.Kind != "unknown" && hardware.CpuModel.Value is not null &&
-            hardware.CpuAffinitySha256.Value is not null && hardware.CpuQuota.Kind != "unknown" && hardware.Gpus.Value is not null;
+            hardware.CpuAffinitySha256.Value is not null && hardware.CpuQuota.Kind != "unknown" &&
+            hardware.Gpus.Value is { } gpus && gpus.All(static gpu => gpu.VramBytes.Value is > 0);
     }
 
     private static bool FitsRecord(byte[] bytes)
@@ -191,6 +239,19 @@ internal static class AirTuneSingleModel
         witness is { Exclusive: true, ExactSettings: true, Active: 0, Queued: 0 } &&
         witness.InstanceId == initial.InstanceId && witness.Generation == initial.Generation && witness.ContextReserve == initial.ContextReserve &&
         JsonSerializer.SerializeToUtf8Bytes(witness.Target, AirTuneRunJsonContext.Default.TuneTarget).AsSpan().SequenceEqual(target);
+
+    private static bool SameStableHardware(TuneHardware? current, byte[] initial)
+    {
+        if (current is null) return false;
+        using var before = JsonDocument.Parse(initial);
+        using var after = JsonDocument.Parse(JsonSerializer.SerializeToUtf8Bytes(current, AirTuneRunJsonContext.Default.TuneHardware));
+        foreach (var field in AirTuneCompare.HardwareMatchFields)
+            if (!Matches(field)) return false;
+        return Matches("physical_ram_bytes") && Matches("physical_swap_bytes");
+
+        bool Matches(string name) => after.RootElement.TryGetProperty(name, out var observation) &&
+            JsonElement.DeepEquals(before.RootElement.GetProperty(name), observation);
+    }
 
     private static async Task<SampleExchange> ReadSampleAsync(ITuneResident lease, Guid request, string model,
         FittedTunePrompt prompt, WorkloadPolicy policy, CancellationToken cancellationToken)

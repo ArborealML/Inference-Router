@@ -6,10 +6,10 @@ AIR provides offline commands to plan a short grid from a saved config and compa
 
 ```text
 air tune run --config tune.toml --engine ENGINE --model MODEL --profile TIER --seed HEX --max-concurrency 1 --host-record host.json --out run.json
-air tune compare --baseline ram64-summary.json --candidate ram128-summary.json
+air tune compare --baseline ram64-run.json --candidate ram128-run.json
 ```
 
-Each run uses one explicit profile of one configured engine and model. The host record pins the expected recipe digest. In the controlled path a private lease binds every count, generation request and observation to the verified resident. For the planned ladder sweep, the authorized operator prepares an isolated instance for each supported tier and saves a separate run. Lifecycle, deployment approval, and any subsequent TOML changes stay with the operator. The comparison command reads saved summaries offline.
+Each run uses one explicit profile of one configured engine and model. The host record pins the expected recipe digest. In the controlled path a private lease binds every count, generation request and observation to the verified resident. For the planned ladder sweep, the authorized operator prepares an isolated instance for each supported tier and saves a separate run. Lifecycle, deployment approval, and any subsequent TOML changes stay with the operator. The comparison command reads an embedded or standalone summary offline.
 
 Today `air config` validates the engine catalog and prints declared profiles. `air chat` and `air complete` send single requests through the router. `air status` shows reported serving capacity and the CLI's `switch` sends an engine and model. The server can take an explicit profile for a switch, but its acknowledgment precedes completion of readiness checks. The proposed tuning record adds request-level timing and host evidence. [CLI dispatch and config readback](../src/Arboreal.InferenceRouter.Cli/Program.cs#L27-L120) · [Chat client](../src/Arboreal.InferenceRouter.Cli/Program.cs#L136-L242) · [Switch client](../src/Arboreal.InferenceRouter.Cli/Program.cs#L371-L398) · [Server switch handling](../src/Arboreal.InferenceRouter.Server/ServerApp.cs#L571-L621)
 

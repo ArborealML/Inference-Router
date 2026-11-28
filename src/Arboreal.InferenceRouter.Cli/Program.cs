@@ -76,7 +76,7 @@ public static class Program
               config [--config path]                    validate a config file and print the plan
                                                       (no sockets, no lifecycle commands)
               tune compare --baseline FILE --candidate FILE
-                                                      compare saved tuning summaries (Linux x64)
+                                                      compare saved tuning runs or summaries (Linux x64)
               tune plan [--config FILE] --engine ENGINE --model MODEL --seed HEX
                         --max-concurrency N [--profile TIER]
                                                       plan an offline tuning workload (Linux x64)

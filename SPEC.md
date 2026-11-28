@@ -7,7 +7,7 @@ Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 
 ## 0. Revision log
 
-- v0.12.172 — exercise the singleton tuning runner through CLI dispatch with a controlled private resident and persist refused, incomplete and comparable evidence, including semantic stream and physical settlement observations (§11.3).
+- v0.12.172 — exercise the singleton tuning runner through CLI dispatch with a controlled private resident, record semantic and physical settlement observations, and publish run evidence and its comparison summary together (§§11.1, 11.3).
 - v0.12.171 — fit deterministic short-grid prompts using exact backend counts and search the full next-record tail within the count budget (§11.2).
 - v0.12.169 — continue past unavailable preparation and activation offers, withdraw closed managed residents from route ranking, consume an active transition's runtime claim once, and deliver queued cancellation through controller cleanup (§§5.3.1, 5.5, 14).
 - v0.12.168 — scope exact preparation capacity and staged-owner preference to the physical domain, and exercise queue-driven activation and verified delivery through an internally enrolled in-process host manager (§§4–7, 12, 14).
@@ -4023,8 +4023,9 @@ in-flight count.
 
 ### 11.1 Offline tuning comparison
 
-`air tune compare` takes two operator-authored `near-window-text-v1` summaries via exactly
-one `--baseline` and one `--candidate`, in either order. It reads regular files on Linux x64
+`air tune compare` takes two `near-window-text-v1` summaries via exactly one `--baseline`
+and one `--candidate`, in either order. Each input may be a standalone summary or a
+singleton run with a validated embedded summary (§11.3). It reads regular files on Linux x64
 with glibc, kernel `openat2` support and trusted procfs. It supports ext2/3/4, XFS, Btrfs,
 tmpfs and overlayfs by descriptor filesystem type. The operator chooses the storage.
 The command pins and checks each file before reopening its owned descriptor via procfs.
@@ -4079,7 +4080,7 @@ concurrency winning a peak tie. Report peaks independently. A candidate-minus-ba
 delta requires two passing rows at the same concurrency, matching level fingerprints,
 and known equal target, workload, effective limits, CPU and ordered GPU facts. Physical
 memory, run/instance IDs, limit source and recorded environmental changes provide
-context alongside the comparison. All results are unverified, operator-authored
+context alongside the comparison. All input evidence is treated as unverified
 observations. The command supplies no measurement, live authority or profile changes.
 
 The report is assembled and checked against a 16,384 UTF-8 byte ceiling before writing
@@ -4170,14 +4171,21 @@ effective settings, hardware limits and idle state. It freezes the warmup and th
 measured bodies using exact counts and checks that the requested output fits the measured
 window after reserve. Each request sends those same bytes through the lease. Before each
 sample and at settlement, the runner witnesses the same generation and an empty queue.
-Missing physical settlement stops the run. The lease authority confirms physical
-retirement and owns exclusion through settlement.
+Changes to physical memory, effective memory and CPU limits, CPU affinity, or the
+configured GPU inventory yield an inconclusive run. Missing physical settlement stops
+the run. The lease authority owns exclusion through physical retirement. It must
+acknowledge lease release within five seconds or the remaining tier budget. A missing
+acknowledgement makes the run inconclusive and leaves the fence to the authority.
 
 Passing samples require canonical model identity, matching counted, terminal and native
 prompt totals, the requested native output allowance, a single native attempt with zero
-errors and verified reuse from 0 through 64 tokens. The stream must have actual semantic
+errors and verified reuse from 0 through 64 tokens. A known native violation takes
+precedence when another metric is unavailable. The stream must have actual semantic
 output, finish with `length`, report the requested terminal output count, and end cleanly
-after one `[DONE]`. The runner records client TTFT and send-to-terminator duration in
+after one `[DONE]`. The request-correlated Maya service `output_tokens` counter uses
+the same units as terminal `usage.completion_tokens` and must agree with it. Native
+`engine_generated` measures decode work during the native interval and can differ.
+The runner records client TTFT and send-to-terminator duration in
 100-nanosecond ticks alongside native prefill and decode durations in microseconds and
 their raw counters. It retains failed samples and records missing evidence without a
 passing rate. Each attempted sample retains the semantic outcome, end reason, usage
@@ -4189,10 +4197,14 @@ Run output uses a new Linux x64 file path in a directory that supports anonymous
 files and atomic publication. The CLI publishes complete records without replacing any
 existing path. A run record includes the canonical selection, seed, redacted resident
 evidence where available, each frozen count and corpus/body digest, and the sample or
-refusal outcomes. When admission supplied a verified resident, a sibling `.summary.json`
-can feed `air tune compare` directly under §11.1's observational comparison rules.
-Run bytes go to the output file. A passing run exits 0, measurement and file
-refusals exit 1, and usage errors exit 2.
+refusal outcomes. When admission supplied a verified resident, the same file carries
+the validated comparison summary. `air tune compare` can read it under §11.1's
+observational rules. The runner validates the complete artifact before linking it.
+A publication collision preserves the existing output path. If the directory sync
+fails after linking, the complete file can be visible with crash durability unconfirmed.
+The command reports that disposition and exits 1. Run bytes go to the output file.
+A durably saved passing run exits 0, measurement and file refusals exit 1, and usage
+errors exit 2.
 
 ## 12. Future architecture commitments
 
