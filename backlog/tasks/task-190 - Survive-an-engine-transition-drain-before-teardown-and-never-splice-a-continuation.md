@@ -25,7 +25,7 @@ When a switch is cancelled or a drain cannot finish, the router today leaves the
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [ ] #1 One lifecycle owner fences admission atomically with reservation, so no dispatch races a teardown and an older generation cannot affect a new one.
-- [ ] #2 A drain that cannot finish inside its bound reopens the still-valid engine and backs off without killing inference, and a controller restart reconciles container and generation state.
+- [ ] #2 Drain expiry preserves running inference and keeps the affected generation fenced. Reopening requires fresh authorization against the exact incumbent and reconciled physical uses, including after controller restart.
 - [ ] #3 A container replaced out of band between two readiness probes cannot have its narrower published capacity suppress an owed relaunch, or the unprotected interval is documented in SPEC.
 - [ ] #4 A cancelled or expired switch leaves exactly one durable disposition naming the operation, its generation and the instance; an unreconciled instance stays fenced under recovery ownership and is never read as vacant, by a restart or a second cancel.
 <!-- AC:END -->

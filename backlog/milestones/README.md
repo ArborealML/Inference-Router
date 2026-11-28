@@ -4,7 +4,7 @@ The program aims to serve private and direct commercial inference through one en
 
 ## Hybrid inference delivery
 
-[Program roadmap](m-16%20-%20independent-provider-hybrid-routing.md) groups the eight delivery outcomes below. Each task has one owning milestone. Shared prerequisites retain that owner.
+[Program roadmap](m-16%20-%20independent-provider-hybrid-routing.md) groups the eight delivery outcomes below. Each task has one owning milestone. Shared prerequisites retain that owner. Task counts also include follow-up work. The first private-cluster release can qualify with fixed placement while measured fleet scoring remains open. A new build can qualify independent progress while diagnosis of an older deployment continues.
 
 | Delivery milestone | Evidence of completion |
 | --- | --- |

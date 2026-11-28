@@ -15,7 +15,7 @@ internal sealed class ExactTicketAdmission(
     internal readonly record struct DomainIdentity(string Name, long Generation);
     internal readonly record struct DomainSnapshot(DomainIdentity Identity, int PreparationLimit, int Preparations,
         int PhysicalUses, bool Transitioning, long RouteGeneration);
-    internal readonly record struct Route(string Engine, string Model, string? Profile);
+    internal readonly record struct Route(string Engine, string Model, string? Profile, VerifiedDispatchTarget? Recipe = null);
     internal readonly record struct Claim(QueuedRequest Request, Route Target, long Generation, bool SwitchRequired,
                                           long ExplicitContext, VerifiedDispatchResident? Resident = null)
     {
@@ -40,7 +40,7 @@ internal sealed class ExactTicketAdmission(
         internal int Preparations;
         internal bool Transitioning;
         internal long RouteGeneration;
-        internal string? ActiveEngine;
+        internal VerifiedDispatchResident? ActiveResident;
         internal RouterTicket? ActivationOwner;
     }
 
@@ -145,7 +145,7 @@ internal sealed class ExactTicketAdmission(
                 ticket is not null && (_preparations.ContainsKey(ticket) || HasActivationOwner(ticket))) return false;
             domain.Transitioning = true;
             domain.ActivationOwner = ticket;
-            Volatile.Write(ref domain.ActiveEngine, null);
+            Volatile.Write(ref domain.ActiveResident, null);
             foreach (var route in _verifiedRoutes.Values)
                 if (ReferenceEquals(route.Engine.Domain, domain)) route.Open = false;
         }
@@ -154,23 +154,25 @@ internal sealed class ExactTicketAdmission(
 
     internal bool EndTransition(DomainIdentity identity)
     {
-        string? engine;
+        VerifiedDispatchResident? resident;
         lock (Gate)
         {
             var domain = _domains[identity];
             domain.Transitioning = false;
             var active = _verifiedRoutes.Values.FirstOrDefault(route => route.Open && ReferenceEquals(route.Engine.Domain, domain));
-            engine = _stopped ? null : active?.Resident?.Route.Engine;
-            Volatile.Write(ref domain.ActiveEngine, engine);
+            resident = _stopped ? null : active?.Resident;
+            Volatile.Write(ref domain.ActiveResident, resident);
         }
         _wake?.Invoke();
-        return engine is not null;
+        return resident is not null;
     }
 
     private bool HasActivationOwner(RouterTicket ticket) => _domains.Values.Any(domain => ReferenceEquals(domain.ActivationOwner, ticket));
 
-    internal bool IsManagedResident(string engine) => _engines.TryGetValue(engine, out var state) &&
-        Volatile.Read(ref state.Domain.ActiveEngine) == engine;
+    internal VerifiedDispatchResident? ReadManagedResident(string engine) => _engines.TryGetValue(engine, out var state) &&
+        Volatile.Read(ref state.Domain.ActiveResident) is { } resident && resident.Route.Engine == engine ? resident : null;
+
+    internal bool IsManagedResident(string engine) => ReadManagedResident(engine) is not null;
 
     internal bool HasOutstanding(RouterTicket ticket)
     {
@@ -257,9 +259,9 @@ internal sealed class ExactTicketAdmission(
                 !ReferenceEquals(route.Resident, resident) || !route.Open) return false;
             route.Open = false;
             var domain = route.Engine.Domain;
-            if (domain.ActiveEngine == resident.Route.Engine)
+            if (ReferenceEquals(domain.ActiveResident, resident))
             {
-                Volatile.Write(ref domain.ActiveEngine, null);
+                Volatile.Write(ref domain.ActiveResident, null);
                 domain.ActivationOwner = null;
             }
             foreach (var entry in _preparations.Values)
@@ -282,7 +284,7 @@ internal sealed class ExactTicketAdmission(
                 return _verifiedRoutes.TryGetValue(target.Engine, out var verified) &&
                     verified.Resident is { } resident &&
                     (verified.Engine.Domain.Identity.Generation == 0 || !switchRequired &&
-                        (target.Profile is null || target.Profile == resident.Target.Tier)) &&
+                        (target.Profile is null || target.Profile == resident.Target.Tier && target.Recipe == resident.Target)) &&
                     string.Equals(target.Model, resident.Target.Model, StringComparison.Ordinal)
                     ? new Claim(request, target, verified.Generation, switchRequired, explicitContext, resident) : null;
             }
@@ -294,6 +296,11 @@ internal sealed class ExactTicketAdmission(
     internal bool IsOpen(Claim claim) => !_stopped && StateFor(claim) is { Open: true } route &&
         !route.Engine.Domain.Transitioning &&
         route.Generation == claim.Generation && ReferenceEquals(route.Resident, claim.Resident);
+
+    private bool IsCurrentManagedOffer(Claim claim)
+    {
+        lock (Gate) return StateFor(claim)?.Engine.Domain.Identity.Generation == 0 || IsOpen(claim);
+    }
 
     internal bool IsOtherDomain(RouterTicket ticket, string engine) =>
         (_preparations.TryGetValue(ticket, out var entry) && _engines.TryGetValue(engine, out var state) &&
@@ -716,7 +723,8 @@ internal sealed class ExactTicketAdmission(
                 else
                 {
                     admission.BeforeVerifiedOfferForTests?.Invoke(request);
-                    operation = await verifiedSender.StartIfProfileReadyAsync(runtime, request, credentialEpoch, ct)
+                    operation = await verifiedSender.StartIfProfileReadyAsync(runtime, request, credentialEpoch,
+                        () => admission.IsCurrentManagedOffer(claim), ct)
                         .ConfigureAwait(false);
                     if (operation is null)
                     {

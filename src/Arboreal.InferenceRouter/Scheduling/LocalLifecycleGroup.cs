@@ -46,7 +46,9 @@ internal sealed class LocalLifecycleGroup(string name, Action wake)
         // The measured window and lanes, rather than an inferred tier label, establish resident fit.
         var cold = switchRequired || _resident is not { } resident || resident.Engine != engine.Name ||
             resident.Model != request.Ticket.Model ||
-            (profile is not null && !engine.Capability.Serving.Matches(request.Ticket.Model, profile));
+            (profile is not null && (request.Request.Options?.Profile is not null
+                ? !engine.MatchesNamedResident(request.Ticket.Model, profile, engine.Capability)
+                : !engine.Capability.Serving.Matches(request.Ticket.Model, profile)));
         if (!cold) return Availability.Warm;
         return _uses.Count == 0 ? Availability.Cold : Availability.Draining;
     }

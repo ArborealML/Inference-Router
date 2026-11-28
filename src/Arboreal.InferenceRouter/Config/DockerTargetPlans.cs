@@ -35,6 +35,10 @@ internal sealed partial class DockerTargetPlans
     internal DockerTargetLaunch? Resolve(LifecycleTarget target) =>
         Resolve(target.EngineName, target.Model, target.Profile?.Name);
 
+    internal DockerTargetLaunch? Find(string requestedModel, string? requestedTier) =>
+        _models.TryGetValue(requestedModel, out var model) && (requestedTier ?? model.DefaultProfile) is { } profile
+            ? model.Profiles.GetValueOrDefault(profile) : null;
+
     internal DockerTargetLaunch? Resolve(string engine, string requestedModel, string? requestedTier)
     {
         if (!string.Equals(_engine, engine, StringComparison.Ordinal) ||

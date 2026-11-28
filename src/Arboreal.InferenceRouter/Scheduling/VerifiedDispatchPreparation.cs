@@ -46,7 +46,8 @@ internal sealed class VerifiedPreparedSender : IAsyncDisposable
     internal static VerifiedPreparedSender CreateFromResident(ExactTicketAdmission.Claim claim)
     {
         if (claim.Resident is not { } resident || claim.SwitchRequired || claim.Target.Engine != resident.Target.Engine ||
-            claim.Ticket.Model != resident.Target.Model || (claim.Target.Profile is { } tier && tier != resident.Target.Tier))
+            claim.Ticket.Model != resident.Target.Model || (claim.Target.Profile is { } tier &&
+                (tier != resident.Target.Tier || claim.Target.Recipe != resident.Target)))
             throw new VerifiedDispatchBindingException(VerifiedDispatchRefusal.Target);
 
         return Freeze(claim, resident, claim.Request.OriginalModel ?? claim.Ticket.Model, cleanup: null);
@@ -68,12 +69,12 @@ internal sealed class VerifiedPreparedSender : IAsyncDisposable
     // A null operation means the local serving observation changed before checkout. Offer
     // bytes and credentials have already been validated. Issuer errors stay on the fault path.
     internal async ValueTask<VerifiedTransportOperation?> StartIfProfileReadyAsync(
-        EngineRuntime runtime, HttpRequestMessage request, long credentialEpoch, CancellationToken ct)
+        EngineRuntime runtime, HttpRequestMessage request, long credentialEpoch, Func<bool> offerIsCurrent, CancellationToken ct)
     {
         await _envelope.CheckOfferAsync(_envelope.Invocation, request, credentialEpoch, ct).ConfigureAwait(false);
         if (AfterOfferValidatedForTests is { } after) await after().ConfigureAwait(false);
         ct.ThrowIfCancellationRequested();
-        return runtime.RequestedProfileReady(_claim.Request) ? _transport.SendVerified(_envelope, ct) : null;
+        return offerIsCurrent() && runtime.RequestedProfileReady(_claim.Request) ? _transport.SendVerified(_envelope, ct) : null;
     }
 
     public ValueTask DisposeAsync() => _cleanup?.Invoke() ?? ValueTask.CompletedTask;

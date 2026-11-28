@@ -6,12 +6,15 @@ namespace Arboreal.InferenceRouter;
 // create a controller, a verified issuer, or evidence that they own the physical domain.
 internal sealed record HostManagerEnrollment(ExactTicketAdmission.DomainIdentity Domain, HostLifecycleCoordinator Controller,
     HostClosedRouteStaging Staging, IVerifiedDispatchIssuer Issuer, IReadOnlyDictionary<string, HostStagedRuntimeFixture> Members,
-    Func<HostClosedRouteStage, VerifiedDispatchResident?> ObserveResident);
+    Func<HostClosedRouteStage, VerifiedDispatchResident?> ObserveResident,
+    Func<EngineDefinition, LifecycleTarget, VerifiedDispatchTarget?> ResolveRecipe);
 
 internal sealed class InProcessHostManager
 {
     private readonly Dictionary<string, HostManagerEnrollment> _members = new(StringComparer.Ordinal);
     private readonly Dictionary<ExactTicketAdmission.DomainIdentity, Transition> _active = [];
+    private readonly Dictionary<(string Engine, string Model, string Tier), VerifiedDispatchTarget> _recipes = [];
+    private readonly Dictionary<(string Engine, string Model), IReadOnlyList<ServingProfile>> _supportedProfiles = [];
     private IReadOnlyDictionary<string, EngineRuntime>? _engines;
 
     internal InProcessHostManager(IEnumerable<HostManagerEnrollment> enrollments)
@@ -40,6 +43,14 @@ internal sealed class InProcessHostManager
 
     internal bool IsResident(string engine) => Admission.IsManagedResident(engine);
 
+    internal VerifiedDispatchTarget? Recipe(string engine, string model, string tier) => _recipes.GetValueOrDefault((engine, model, tier));
+
+    internal IReadOnlyList<ServingProfile> SupportedProfiles(string engine, string model) =>
+        _supportedProfiles.GetValueOrDefault((engine, model)) ?? [];
+
+    internal bool MatchesResident(string engine, string model, string tier) =>
+        Recipe(engine, model, tier) is { } expected && Admission.ReadManagedResident(engine)?.Target == expected;
+
     internal string? Scope(string engine) => _members.GetValueOrDefault(engine)?.Domain.Name;
 
     internal IReadOnlyDictionary<string, ExactTicketAdmission.DomainIdentity> Validate(RouterConfig config)
@@ -57,6 +68,26 @@ internal sealed class InProcessHostManager
                 group.Any(engine => !ReferenceEquals(_members.GetValueOrDefault(engine.Name), enrollment)))
                 throw InvalidEnrollment();
         }
+        foreach (var (name, enrollment) in _members)
+        {
+            var definition = config.Engines[name];
+            foreach (var (model, entry) in definition.Catalog)
+            {
+                var supported = new List<ServingProfile>();
+                foreach (var tier in entry.ServingProfiles)
+                {
+                    if (EngineRuntime.UniqueNamedProfile(entry.ServingProfiles, tier.Name) is null) throw InvalidEnrollment();
+                    var target = new LifecycleTarget(name, model, tier, entry);
+                    if (enrollment.ResolveRecipe(definition, target) is not { } recipe) continue;
+                    if (recipe.Engine != name || recipe.Model != model || recipe.Tier != tier.Name ||
+                        !HostMutation.IsPlanDigest(recipe.PlanDigest) || recipe.Endpoint != definition.Endpoint ||
+                        !enrollment.Controller.MatchesRecipe(target, recipe.PlanDigest)) throw InvalidEnrollment();
+                    _recipes.Add((name, model, tier.Name), recipe);
+                    supported.Add(tier);
+                }
+                _supportedProfiles.Add((name, model), supported.AsReadOnly());
+            }
+        }
         return _members.ToDictionary(static entry => entry.Key, static entry => entry.Value.Domain, StringComparer.Ordinal);
     }
 
@@ -72,15 +103,17 @@ internal sealed class InProcessHostManager
     internal ExactTicketAdmission.DomainSnapshot? Snapshot(string engine) =>
         _members.TryGetValue(engine, out var enrollment) ? Admission.Snapshot(enrollment.Domain) : null;
 
-    internal Transition? TryAccept(string engine, string model, string profile, RouterTicket? ticket, CancellationToken ct)
+    internal Transition? TryAccept(string engine, string model, string profile, RouterTicket? ticket, CancellationToken ct,
+        VerifiedDispatchTarget? expected = null)
     {
         if (ct.IsCancellationRequested || _engines?.GetValueOrDefault(engine) is not { } runtime ||
             !_members.TryGetValue(engine, out var enrollment) || runtime.CanonicalModel(model) is not { } canonical ||
-            runtime.GetProfile(canonical, profile) is not { } tier) return null;
+            runtime.GetProfile(canonical, profile) is not { } tier || Recipe(engine, canonical, tier.Name) is not { } recipe ||
+            expected is not null && expected != recipe) return null;
         lock (Admission.Gate)
         {
             if (!Admission.TryBeginTransition(enrollment.Domain, ticket)) return null;
-            var transition = new Transition(this, runtime, canonical, tier, enrollment.Domain, ct);
+            var transition = new Transition(this, runtime, canonical, tier, enrollment.Domain, recipe, ct);
             _active.Add(enrollment.Domain, transition);
             return transition;
         }
@@ -149,7 +182,10 @@ internal sealed class InProcessHostManager
             runtime.GetProfile(resident.Target.Model, resident.Target.Tier) is not { } tier ||
             resident.TierWindow != tier.MaxContext || resident.MeasuredWindow != runtime.Capability.Serving.ContextWindow ||
             resident.TotalSlots != runtime.Capability.Serving.TotalSlots) return;
-
+        lock (Admission.Gate)
+        {
+            if (_active.GetValueOrDefault(enrollment.Domain)?.Recipe != resident.Target) return;
+        }
         Admission.PublishVerified(resident);
     }
 
@@ -157,7 +193,7 @@ internal sealed class InProcessHostManager
         new("Managed lifecycle requires current enrollment for every physical domain and its engines.");
 
     internal sealed class Transition(InProcessHostManager manager, EngineRuntime runtime, string model, ServingProfile tier,
-        ExactTicketAdmission.DomainIdentity domain, CancellationToken cancellation)
+        ExactTicketAdmission.DomainIdentity domain, VerifiedDispatchTarget recipe, CancellationToken cancellation)
     {
         internal bool Started;
         internal bool RuntimeClaimed;
@@ -166,6 +202,7 @@ internal sealed class InProcessHostManager
         internal string Model => model;
         internal ServingProfile Profile => tier;
         internal ExactTicketAdmission.DomainIdentity Domain => domain;
+        internal VerifiedDispatchTarget Recipe => recipe;
         internal CancellationToken Cancellation => cancellation;
 
         internal bool BelongsTo(InProcessHostManager owner) => ReferenceEquals(owner, manager);

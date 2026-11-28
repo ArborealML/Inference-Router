@@ -911,9 +911,30 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
     public ServingProfile? GetProfile(string canonical, string? name)
     {
         if (name is null) return null;
-        foreach (var p in ProfilesForModel(canonical))
-            if (p.Name.Equals(name, StringComparison.Ordinal)) return p;
-        return null;
+        var recipe = _def.Docker?.TargetPlans?.Find(canonical, name);
+        return UniqueNamedProfile(ProfilesForModel(recipe?.Model ?? CanonicalModel(canonical) ?? canonical), recipe?.Profile ?? name);
+    }
+
+    internal string? DefaultServingTier(string model) => _catalog.GetValueOrDefault(model)?.Profile;
+
+    internal bool SupportsNamedProfile(string model, ServingProfile profile) =>
+        (_hostEnrollment?.Manager is not { } manager || manager.Recipe(Name, model, profile.Name) is not null) &&
+        (_def.Docker?.TargetPlans?.Find(model, requestedTier: null) is null ||
+            _def.Docker.TargetPlans.Find(model, profile.Name) is not null);
+
+    internal bool MatchesNamedResident(string model, ServingProfile profile, EngineCapability capability) =>
+        capability.Serving.Matches(model, profile) &&
+        (_hostEnrollment?.Manager is { } manager ? manager.MatchesResident(Name, model, profile.Name) :
+            MatchesNativeRecipe(model, profile, capability));
+
+    private bool MatchesNativeRecipe(string model, ServingProfile profile, EngineCapability capability)
+    {
+        var plans = _def.Docker?.TargetPlans;
+        if (plans?.Find(model, requestedTier: null) is null) return true;
+        return plans.Find(model, profile.Name) is { } requested &&
+            capability.NativeWatch is { Health: NativeLaunchHealth.Eligible } watch &&
+            watch.Launch.ImageId == _def.Docker?.ImageIdentity?.Id &&
+            ReferenceEquals(requested, plans.Find(watch.Launch.Model, watch.Launch.Profile));
     }
 
     /// <summary>How a switch attempt ended for the requests waiting on it. Failed and TimedOut are
@@ -965,7 +986,9 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
     /// <summary>Ensure the model is loaded AND served under a context window that fits the profile.
     /// Exceeding the active window queues behind a profile switch instead of compacting.</summary>
     public async Task<SwitchResult> WaitForProfileAsync(string model, ServingProfile profile, TimeSpan timeout, CancellationToken ct)
-        => (await EnsureLoadedAsync(model, profile, timeout, queue: null, ct).ConfigureAwait(false)).Result;
+        => (await EnsureLoadedAsync(model, profile, timeout, queue: null, ct,
+            exactProfile: _def.Docker?.TargetPlans?.Find(CanonicalModel(model) ?? model, requestedTier: null) is not null)
+            .ConfigureAwait(false)).Result;
 
     internal readonly record struct ObservedSwitchResult(SwitchResult Result, SwitchServingProof? Proof = null);
 
@@ -982,12 +1005,13 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
     /// <summary>The same predicate against a snapshot the caller already holds. The claim path needs that form:
     /// the readiness decision and the switch marker have to come from one snapshot, or a poll that proves the
     /// model in between buys a second launch (§5.5).</summary>
-    private static bool ReadyIn(EngineCapability cap, string canonical, long requiredWindow, ServingProfile? exact = null)
+    private bool ReadyIn(EngineCapability cap, string canonical, long requiredWindow, ServingProfile? exact = null)
     {
         // The lane floor here is deliberate: this asks whether an engine that is already up satisfies the named
         // tier, which is resident satisfaction, not a publication proof. A launch's Ready claim is proved exactly
         // at the publication sites (§5.3.1).
-        if (!cap.Healthy || cap.SwitchingToward is not null || (exact is not null && !cap.Serving.Matches(canonical, exact))) return false;
+        if (!cap.Healthy || cap.SwitchingToward is not null || (exact is not null &&
+            (!cap.Serving.Matches(canonical, exact) || _hostEnrollment?.Manager is null && !MatchesNativeRecipe(canonical, exact, cap)))) return false;
         foreach (var name in cap.ModelRoster)
         {
             if (string.Equals(name, canonical, StringComparison.OrdinalIgnoreCase))
@@ -1096,6 +1120,13 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
         if (_hostEnrollment?.Manager is { } manager &&
             (hostTransition is null || !manager.TryClaimRuntime(hostTransition, this, canonical, profileOverride)))
             return new(SwitchResult.Failed(SwitchReason.NoLifecycleOwner));
+        if (profileOverride is { } suppliedProfile && _def.Docker?.TargetPlans?.Find(canonical, requestedTier: null) is not null)
+        {
+            var resolved = GetProfile(canonical, suppliedProfile.Name);
+            if (resolved is null || suppliedProfile.MaxContext != resolved.MaxContext || suppliedProfile.MaxSlots != resolved.MaxSlots)
+                return new(SwitchResult.Failed(SwitchReason.NoSelectCommand));
+            profileOverride = resolved;
+        }
         var requiredWindow = RequiredWindow(profileOverride, explicitContextMinimum);
         if (localOwner is not null && (!ReferenceEquals(localOwner.Engine, this) || !localOwner.Cold))
             return new(SwitchResult.Failed(SwitchReason.NoLifecycleOwner));
@@ -2278,12 +2309,14 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
     internal bool RequestedProfileReady(QueuedRequest candidate)
     {
         var named = candidate.Request.Options?.Profile;
-        if (named is null && !UsesVllmArgv) return true;
+        if (named is null && !UsesVllmArgv && _hostEnrollment?.Manager is null) return true;
         var cap = Capability;
         if (UsesVllmArgv && cap.NativeWatch is not { Health: NativeLaunchHealth.Eligible, ServingProcess: not null })
             return false;
         var exact = named is null ? null : GetProfile(candidate.Ticket.Model, named);
-        return (named is null || exact is not null) && ReadyIn(cap, candidate.Ticket.Model, candidate.RequiredContextTokens, exact);
+        var window = named is null && !UsesVllmArgv ? candidate.ExplicitContextMinimum : candidate.RequiredContextTokens;
+        return (named is null || exact is not null && MatchesNamedResident(candidate.Ticket.Model, exact, cap)) &&
+            ReadyIn(cap, candidate.Ticket.Model, window, exact);
     }
 
     internal static RouterRequestException ProfileNoLongerReady() =>

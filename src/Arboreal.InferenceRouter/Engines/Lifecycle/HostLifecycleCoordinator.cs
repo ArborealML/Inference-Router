@@ -66,6 +66,8 @@ internal sealed partial class HostLifecycleCoordinator(string reservationPath, I
 
     internal bool OwnsStaging(HostClosedRouteStaging staging) => ReferenceEquals(stagingForTests, staging);
 
+    internal bool MatchesRecipe(LifecycleTarget target, string digest) => provider.GetLaunchPlanDigest(target) == digest;
+
     public async ValueTask<LifecycleResult> SwitchAsync(
         LifecycleTarget target, CancellationToken ct, HostSwitchPublication? publication = null,
         HostStagedPublication? stagedPublicationForTests = null)
@@ -92,7 +94,8 @@ internal sealed partial class HostLifecycleCoordinator(string reservationPath, I
     internal async ValueTask<HostStagedSwitchResult> SwitchStagedAsync(
         LifecycleTarget target, HostStagedDeadlinePublication publication, CancellationToken ct)
     {
-        if (stagingForTests is null || publication.ClaimId == Guid.Empty)
+        if (stagingForTests is null || publication.ClaimId == Guid.Empty ||
+            publication.ExpectedPlanDigest is { } expected && !MatchesRecipe(target, expected))
             return new(PublicationRefusal(), default);
 
         using var staged = stagingForTests.Begin(publication);
@@ -135,7 +138,7 @@ internal sealed partial class HostLifecycleCoordinator(string reservationPath, I
 
                 // The saved launch already superseded the old route, even if occupancy cannot prove it now.
                 staged.Close();
-                if (!MatchesRequest(pending, target)) return PendingOperation();
+                if (!MatchesRequest(pending, target, staged.ExpectedPlanDigest)) return PendingOperation();
                 return await RecoverLaunchAsync(reservation, pending, stagedContainerId, target, null, staged, ct)
                     .ConfigureAwait(false);
             }
@@ -176,7 +179,7 @@ internal sealed partial class HostLifecycleCoordinator(string reservationPath, I
 
         var preflight = await provider.PreflightAsync(target, ct).ConfigureAwait(false);
         if (!preflight.Succeeded) return preflight;
-        var planDigest = provider.GetLaunchPlanDigest(target);
+        var planDigest = staged?.ExpectedPlanDigest ?? provider.GetLaunchPlanDigest(target);
         if (!HostMutation.IsPlanDigest(planDigest))
             return LifecycleResult.Fail("host_plan_unbound", "the host authority did not bind the full launch plan");
 
@@ -221,10 +224,10 @@ internal sealed partial class HostLifecycleCoordinator(string reservationPath, I
             .ConfigureAwait(false);
     }
 
-    private bool MatchesRequest(HostMutation launch, LifecycleTarget target) =>
+    private bool MatchesRequest(HostMutation launch, LifecycleTarget target, string? expectedDigest = null) =>
         launch.Engine == target.EngineName && launch.Target == target.Model &&
         launch.Profile == (target.Profile?.Name ?? target.Definition.Profile) &&
-        launch.PlanDigest == provider.GetLaunchPlanDigest(target);
+        launch.PlanDigest == (expectedDigest ?? provider.GetLaunchPlanDigest(target));
 
     private async ValueTask<LifecycleResult> RecoverLaunchAsync(HostReservation reservation, HostMutation launch,
         string containerId, LifecycleTarget target, HostSwitchPublication? publication, HostClosedRouteStaging.Attempt? staged,

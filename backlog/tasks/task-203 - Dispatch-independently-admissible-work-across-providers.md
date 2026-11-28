@@ -1,11 +1,11 @@
 ---
 id: TASK-203
-title: "Dispatch independently admissible work across providers"
+title: Dispatch independently admissible work across providers
 status: To Do
 assignee:
   - '@gpt-6.2-astra'
 created_date: '2026-11-27'
-updated_date: '2026-11-28T11:08:00Z'
+updated_date: '2026-11-28T11:50:00Z'
 labels: []
 milestone: m-17
 dependencies: []
@@ -16,7 +16,7 @@ ordinal: 203000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Fix the existing dispatcher before clustering. A full preferred route masks free alternatives; one candidate per model hides runnable followers; a successful dispatch restarts queue traversal. Preserve priority and original enqueue order for competing work, not across independent resources.
+An available provider must serve eligible requests while an independent provider is occupied. Priority and original enqueue order govern requests competing for the same capacity. The dispatcher integration is on main. The remaining work covers reverse blocking, provider backoff, scoped ownership and the operator view.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -35,11 +35,9 @@ Fix the existing dispatcher before clustering. A full preferred route masks free
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Capture finite published-ticket rounds in existing order, excluding later arrivals. Prefer usable built-in routes. Pure probes and exact take revalidate competing predecessors, generations and caps without I/O under gates. Preserve custom schedulers and measured-switch ordering. Continue after refusal, invalidation and success.
+Reuse the merged finite-round and domain-preparation fixtures. Hold remote capacity while eligible same-model and distinct-model requests finish locally. Attach account-scoped backoff checks when the provider rate-limit contract lands. Assert original ticket identity, exactly one send, and the genuine shared-cap control.
 
-Separate observation from explicit ticket/domain drain intent; retire on reassignment/end. Reuse revision/arm/recheck wake and deadlines. Add bounded wait observations; fixture independent/shared groups, remote progress during holds, blocked prefixes, hot arrivals, cancellation and exact-take races. Amend SPEC/README.
-
-Independently reviewed integration plan: isolated actual-ancestry merges of verified 205/203, 187 and 202 receipts; preserve PR #86, keep #83 separate. Resolve additive wait/upstream ticket projections and SPEC entries only. Inspect automatic source merges; run the affected test union including exact admission and review the pinned merge. No main merge.
+Exercise a pure eligibility probe and a ticket that changes domains before first write. Count acquired, retired and outstanding drain intents at each boundary. Carry the blocking resource, alternative availability and wait reason from the same bounded snapshot through status, events and the monitor. Reuse existing wake and ordering checks.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
@@ -51,5 +49,5 @@ Independent plan/source review passed after the cross-engine last-thread-slot ra
 
 [Hosted CI](https://github.com/ArborealML/Inference-Router/actions/runs/46112027567) passed on this actual head: 2,160 tests, zero failed/skipped, build, Linux AOT/config smoke, strict board and release harness. The synthetic merge tree equals the head tree.
 
-AC2 remains partial for commercial account/backoff, AC5 for TASK-206 preparation scoping, AC9 for full available-route diagnostics. Preserve PR #83 progress and #86 parsing; 187/204/205 own their corrections. Source landed in the [main integration](https://github.com/ArborealML/Inference-Router/commit/1bf85d3495ab2517a921d78013ffe69bbefb4325).
+The dispatcher and its qualified fixtures landed in the [main integration](https://github.com/ArborealML/Inference-Router/commit/1bf85d3495ab2517a921d78013ffe69bbefb4325). [PR 94](https://github.com/ArborealML/Inference-Router/pull/94) exercised held preparations in either private domain for shared and distinct models. Its shared-thread control identified the limiting credit and allowed a separate thread through. Commercial backoff, explicit ownership across reassignment and full operator diagnostics retain their acceptance here.
 <!-- SECTION:NOTES:END -->
