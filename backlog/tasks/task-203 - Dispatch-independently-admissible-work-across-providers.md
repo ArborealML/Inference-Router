@@ -1,10 +1,11 @@
 ---
 id: TASK-203
 title: "Dispatch independently admissible work across providers"
-status: To Do
+status: In Progress
 assignee:
-  - '@gpt-6.2-astra'
+  - '@gpt-6.2-sol-scheduling'
 created_date: '2026-11-27'
+updated_date: '2026-11-27'
 labels: []
 milestone: m-16
 dependencies: []
@@ -34,11 +35,15 @@ Fix the existing dispatcher before clustering. A full preferred route masks free
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Start with complete finite snapshot rounds (bounded by captured tickets or sequence cutoff; arrivals do not extend the round indefinitely). Per-model caps are not a global bound. Enumerate ready eligible alternatives; pure probes and resource-aware exact take revalidate competing predecessors, queue identity, config and actual caps. Preserve existing outer queue order and decision-25 fairness; no priority-dependent route economics. Keep network/disk/observer work outside shared gates. Reuse DispatchWake; measure traversal before chunking. Capture barriers cover long blocked prefixes and independent progress.
+Capture finite published-ticket rounds in existing depth/ordinal and priority/FIFO order; arrivals cannot extend them. Enumerate currently usable built-in routes before cold choices. Pure feasibility checks and resource-aware exact take revalidate live competing predecessors, ticket/config generations and real caps without I/O under gates. Preserve custom scheduler compatibility and narrow measured-switch ordering. Continue after refusal, invalidation and success without restarting the round.
+
+Separate local-group observation from explicit ticket/domain drain intent; retire before reassignment and on queue end. Reuse DispatchWake revision/arm/recheck and deadline hooks. Add bounded blocking-scope/alternative observations to existing tickets/events/monitor. Fixtures cover same/different-model remote progress during local holds, inverse saturation, independent/shared groups, long blocked prefixes, hot arrivals, cancellation, reorder and exact-take races. Amend SPEC §§5.4–5.5/14 and README; no parallel scheduler.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Static findings: PrefixAwareScheduler, ModelQueue, RouterCore, LocalLifecycleGroup.TryReserve and DispatchWake at the reviewed main. Deployment-specific busy-resident waiting needs separate provenance; do not claim the actual incident is reproduced until TASK-219. Production injected preparation scoping is covered by TASK-206.
+Implementing against main 62f1c79 after independent plan PASS with bounded conditions. Exact predecessor probes remain pure; preserve admission/router/queue lock order, round-local exclusions and wake revision rechecks. Drain intent retires before reassignment; observations are capped, change-only, and cannot wake scheduling. Barrier tests must prove alternate backend receipt before local release. Injected preparation scope remains partial until TASK-206. Scheduling owns queue, selector, local-group and dispatch ranges; TASK-187 owns forwarding/completion. PR #83's additive lifecycle-progress changes remain preserved; PR #86 owns priority parsing. TASK-204/205 remain separate.
+
+Local .NET SDK and Backlog CLI are unavailable; coordinator uses controlled Markdown edits and strict board validation. Focused C# filters and hosted build/test/AOT must be executed before qualification claims. Production preparation scoping remains TASK-206; deployed incident provenance remains TASK-219. No paid inference, hardware mutation or merge authorized.
 <!-- SECTION:NOTES:END -->
