@@ -7,7 +7,7 @@ status: Waiting
 assignee:
   - '@gpt-6.2-sol-shutdown'
 created_date: '2026-11-18T18:56:00Z'
-updated_date: '2026-11-28T12:02:00Z'
+updated_date: '2026-11-28T12:07:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -25,7 +25,7 @@ ordinal: 116000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Wake when TASK-25 publishes its commissioned admission and retirement contract. The exact recipe and manager interface have landed. Connect the verified transport to the existing host authority. It must retain the issue and revocation record, broker cutoff, exact process and credential, and conclusive exchange retirement. The [launch record](https://github.com/ArborealML/Inference-Router/pull/49) identifies the container.
+Wake when TASK-25 publishes its commissioned admission and retirement contract. Connect the verified transport to the existing host authority. The issuer and broker share durable issuance and revocation records and a monotonic cutoff. Bind the probe and credential to the exact serving process and require conclusive exchange retirement. The [launch record](https://github.com/ArborealML/Inference-Router/pull/49) identifies the container.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
