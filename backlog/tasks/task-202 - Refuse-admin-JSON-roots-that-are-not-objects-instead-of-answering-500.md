@@ -1,9 +1,9 @@
 ---
 id: TASK-202
 title: Refuse admin JSON roots that are not objects instead of answering 500
-status: In Progress
+status: Ready for Review
 assignee:
-  - '@gpt-6.2-sol-shutdown'
+  - '@gpt-6.2-astra'
 created_date: '2026-11-26T22:30:00Z'
 updated_date: '2026-11-27'
 labels:
@@ -31,7 +31,9 @@ Admin route bodies are read with JsonDocument and then treated as objects: nonob
 <!-- SECTION:NOTES:BEGIN -->
 Found by an external review of the priority branch and verified in the code: the admin routes catch only JsonException, so InvalidOperationException from TryGetProperty/GetString escapes. This is pre-existing and not caused by the priority change, but it is on the same surfaces the priority work touched.
 
-Independent pre-code review passed the bounded plan below. AC1 clarifies the existing target-reset exception to preserve AC3's route-specific wire contract; no new refusal code or owner decision. Dependency branch includes exact PR #86 head a12012b176e84e49603c433a9f934206499b4bcb and current planning main 62f1c79. Preserve PR #86 priority parsing unchanged; final PR remains dependent on its integration and follow-up reconciliation. SPEC revision reserved: v0.12.166.
+Candidate ee2fbc8ee2ff7b321a0d2a6d4733cb1f5aaea93f implements AC1–3 under the clarified existing target-reset exception. Independent plan and source review passed; source range 8a12ba8..ee2fbc8 had no blocking findings. Exact-head Release verification: 92 passed, zero failed/skipped across AdminJsonBodyTests, AdminThreadPriorityTests, AdminSwitchOperationTests, ErrorContractTests and ConfigReloadWireTests; build/analyzers passed. Fixtures pin literal refusals, valid nulls and no registration/admin-use/operation effects.
+
+Dependency base 2c54500 merges exact PR #86 head a12012b176e84e49603c433a9f934206499b4bcb with planning main 62f1c79. PR #86 priority code is unchanged and retains its separate review dispositions. SPEC v0.12.166 and README state the correction. Coordinator next publishes this stacked increment, checks hosted build/test/AOT on its actual head and reconciles after the prerequisite lands. No merge/live qualification; not Done. Backlog CLI unavailable; controlled Markdown and strict validation substitute.
 <!-- SECTION:NOTES:END -->
 
 ## Implementation Plan
