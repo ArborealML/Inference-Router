@@ -24,7 +24,9 @@ public static class Program
     /// hand <c>HttpClient</c> a bare path and fail before reaching the router).</summary>
     private static string Url(string server, string path) => server.TrimEnd('/') + path;
 
-    public static async Task<int> Main(string[] args)
+    public static Task<int> Main(string[] args) => RunAsync(args, null);
+
+    internal static async Task<int> RunAsync(string[] args, ITuneAdmission? tuneAdmission)
     {
         bool json = HasFlag(args, "--json");
         while (args is ["--json", ..]) args = args[1..];
@@ -42,7 +44,7 @@ public static class Program
             "switch" => await RunSwitchAsync(args[1..], json).ConfigureAwait(false),
             "config" => await RunConfigCommandAsync(args[1..], json).ConfigureAwait(false),
             "tickets" => await RunTicketAsync(args[1..], json).ConfigureAwait(false),
-            "tune" => RunTune(args[1..].Where(a => a != "--json").ToArray(), json),
+            "tune" => await RunTuneAsync(args[1..].Where(a => a != "--json").ToArray(), json, tuneAdmission).ConfigureAwait(false),
             "help" or "-h" or "--help" => await RunHelpAsync().ConfigureAwait(false),
             _ => await RunHelpAsync().ConfigureAwait(false),
         };
@@ -78,17 +80,23 @@ public static class Program
               tune plan [--config FILE] --engine ENGINE --model MODEL --seed HEX
                         --max-concurrency N [--profile TIER]
                                                       plan an offline tuning workload (Linux x64)
+              tune run [--config FILE] --engine ENGINE --model MODEL --profile TIER
+                       --seed HEX --max-concurrency 1 --host-record FILE --out FILE
+                                                      require an enrolled private tuning resident (Linux x64)
             """);
         return Task.FromResult(0);
     }
 
-    private static int RunTune(ReadOnlySpan<string> args, bool json)
+    private static async Task<int> RunTuneAsync(string[] args, bool json, ITuneAdmission? tuneAdmission)
     {
         if (args is ["plan", ..])
         {
             using var output = Console.OpenStandardOutput();
-            return AirTuneWorkloadPlan.Run(args[1..], output, Console.Error);
+            return AirTuneWorkloadPlan.Run(args.AsSpan(1), output, Console.Error);
         }
+
+        if (args is ["run", ..])
+            return await AirTuneRun.RunAsync(args[1..], tuneAdmission, Console.Error).ConfigureAwait(false);
 
         if (!json) return AirTuneCompare.Run(args, Console.Out, Console.Error);
         using var report = new StringWriter(CultureInfo.InvariantCulture);

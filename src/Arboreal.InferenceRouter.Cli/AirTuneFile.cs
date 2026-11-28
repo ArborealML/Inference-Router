@@ -194,6 +194,45 @@ internal static partial class AirTuneFile
         }
     }
 
+    internal static SafeFileHandle? PinOutputDirectory(string path) =>
+        OpenPath(AtCurrentDirectory, Path.GetDirectoryName(path) is { Length: > 0 } parent ? parent : ".",
+            DirectoryOnly | CloseOnExec, NoSymlinks | NoMagicLinks);
+
+    internal static SafeFileHandle? CreateOutput(SafeFileHandle directory, string name)
+    {
+        const int noFollow = 0x100;
+        const int notFound = 2;
+        const int writeOnlyTemporary = 0x410001; // O_TMPFILE | O_WRONLY
+        var fd = directory.DangerousGetHandle().ToInt32();
+        if (name is "" or "." or ".." || GetStatus(fd, name, noFollow, StatFields, out _) == 0 ||
+            Marshal.GetLastPInvokeError() != notFound)
+            return null;
+
+        var temporary = OpenAt(fd, ".", writeOnlyTemporary | CloseOnExec, 0x180); // 0600
+        return temporary < 0 ? null : new SafeFileHandle(temporary, ownsHandle: true);
+    }
+
+    internal static bool InstallOutput(SafeFileHandle procDescriptors, SafeFileHandle directory,
+        SafeFileHandle temporary, string name, byte[] bytes)
+    {
+        const int followProcDescriptor = 0x400;
+        try
+        {
+            using var file = new FileStream(temporary, FileAccess.Write, bufferSize: 1);
+            file.Write(bytes);
+            file.WriteByte((byte)'\n');
+            file.Flush(flushToDisk: true);
+            var descriptor = temporary.DangerousGetHandle().ToInt32().ToString(CultureInfo.InvariantCulture);
+            var targetFd = directory.DangerousGetHandle().ToInt32();
+            return LinkAt(procDescriptors.DangerousGetHandle().ToInt32(), descriptor, targetFd, name, followProcDescriptor) == 0 &&
+                FlushDirectory(targetFd) == 0;
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        {
+            return false;
+        }
+    }
+
     private static SafeFileHandle? OpenPath(int directory, string path, ulong flags, ulong resolve)
     {
         var how = new OpenHow { Flags = flags, Mode = 0, Resolve = resolve };
@@ -287,4 +326,10 @@ internal static partial class AirTuneFile
 
     [LibraryImport(Libc, EntryPoint = "openat", SetLastError = true, StringMarshalling = StringMarshalling.Utf8)]
     private static partial int OpenAt(int fd, string path, int flags, uint mode);
+
+    [LibraryImport(Libc, EntryPoint = "linkat", SetLastError = true, StringMarshalling = StringMarshalling.Utf8)]
+    private static partial int LinkAt(int sourceDirectory, string source, int targetDirectory, string target, int flags);
+
+    [LibraryImport(Libc, EntryPoint = "fsync", SetLastError = true)]
+    private static partial int FlushDirectory(int directory);
 }

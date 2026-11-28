@@ -1,12 +1,13 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.171)
+Status: draft, continuously revised (v0.12.172)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
 
 ## 0. Revision log
 
+- v0.12.172 — exercise the singleton tuning runner through CLI dispatch with a controlled private resident and persist refused, incomplete and comparable evidence (§11.3).
 - v0.12.171 — fit deterministic short-grid prompts using exact backend counts and search the full next-record tail within the count budget (§11.2).
 - v0.12.169 — continue past unavailable preparation and activation offers, withdraw closed managed residents from route ranking, consume an active transition's runtime claim once, and deliver queued cancellation through controller cleanup (§§5.3.1, 5.5, 14).
 - v0.12.168 — scope exact preparation capacity and staged-owner preference to the physical domain, and exercise queue-driven activation and verified delivery through an internally enrolled in-process host manager (§§4–7, 12, 14).
@@ -3958,13 +3959,14 @@ air tickets id [--server url]
 air config [--config f.toml]
 air tune compare --baseline FILE --candidate FILE
 air tune plan [--config FILE] --engine ENGINE --model MODEL --seed HEX --max-concurrency N [--profile TIER]
+air tune run [--config FILE] --engine ENGINE --model MODEL --profile TIER --seed HEX --max-concurrency 1 --host-record FILE --out FILE
 ```
 
 `air completion SHELL` writes the shell registration script to stdout. Its read-only backend
 accepts the current word and preceding arguments as separate strings and emits one candidate per
 line. The command and option vocabulary is available offline. Engine/model candidates include
 cold configured entries and aliases, scoped to an engine when one precedes the cursor.
-Offline tuning uses its explicit `--config` or the usual config lookup. Other commands first read the applied catalog from `/admin/catalog` on their normal listener,
+Tuning uses its explicit `--config` or the usual config lookup. Other commands first read the applied catalog from `/admin/catalog` on their normal listener,
 including the default listener. A failed read falls back to local configuration. Each completion
 reads its own snapshot with a 750 ms HTTP timeout. File options support home-relative paths. With neither source available,
 dynamic lists are empty. Catalog text is completion data and is never executed as a shell command.
@@ -3979,7 +3981,7 @@ empty HTTP 204 response. Config emits a resolved configuration summary and tune 
 report in the JSON string field `Report`. Command usage and local validation diagnostics remain on
 stderr. Help, the serve host, the tune plan manifest and the completion protocol retain their formats.
 
-`air serve`, `air config`, `air tune plan` and the standalone server use the explicit
+`air serve`, `air config`, `air tune plan`, `air tune run` and the standalone server use the explicit
 configuration path first, then `ARBOREAL_ROUTER_CONFIG`, then `AIR_CONFIG`. With all
 three omitted they open `~/arboreal/inference-router/router.toml` in the user's home directory.
 
@@ -4150,6 +4152,44 @@ including when the tokenizer's count does not increase with length. The Maya cou
 adapter requires an exact text-only result at the selected window, pins the configured
 origin, and allows five seconds per count request. The per-call and aggregate byte
 limits above also constrain which windows the fitter can reach.
+
+### 11.3 Controlled singleton tuning runs
+
+`air tune run` resolves one explicit tier and uses the seed and configuration rules in
+§11.2. This increment accepts a concurrency cap of one. The host record is a small
+JSON object containing `schema_version` (1) and the expected `recipe_sha256` digest.
+The digest selects the operator's intended launch. An enrolled authority must supply
+the current resident's identity, capacity and exclusive generation admission for that
+exact recipe. The host record, an idle gauge or a direct backend URL alone supplies no
+authority. Until production enrolment, the shipped CLI saves an `admission_unavailable`
+refusal with zero count or generation requests.
+
+The controlled adapter uses the same command dispatch with a private resident lease.
+It requires a fresh challenge response for identity, context, physical lane count,
+effective settings, hardware limits and idle state. It freezes the warmup and three
+measured bodies using exact counts and checks that the requested output fits the measured
+window after reserve. Each request sends those same bytes through the lease. Before each
+sample and at settlement, the runner witnesses the same generation and an empty queue.
+Missing physical settlement stops the run. The lease authority confirms physical
+retirement and owns exclusion through settlement.
+
+Passing samples require canonical model identity, matching counted, terminal and native
+prompt totals, the requested native output allowance, a single native attempt with zero
+errors and verified reuse from 0 through 64 tokens. The stream must have actual semantic
+output, finish with `length`, report the requested terminal output count, and end cleanly
+after one `[DONE]`. The runner records client TTFT and send-to-terminator duration in
+100-nanosecond ticks alongside native prefill and decode durations in microseconds and
+their raw counters. It retains failed samples and records missing evidence without a
+passing rate. Cold load is unavailable and the separate long-decode cell is untested.
+
+Run output uses a new Linux x64 file path in a directory that supports anonymous temporary
+files and atomic publication. The CLI publishes complete records without replacing any
+existing path. A run record includes the canonical selection, seed, redacted resident
+evidence where available, each frozen count and corpus/body digest, and the sample or
+refusal outcomes. When admission supplied a verified resident, a sibling `.summary.json`
+can feed `air tune compare` directly under §11.1's observational comparison rules.
+Run bytes go to the output file. A passing run exits 0, measurement and file
+refusals exit 1, and usage errors exit 2.
 
 ## 12. Future architecture commitments
 

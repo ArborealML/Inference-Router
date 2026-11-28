@@ -82,7 +82,7 @@ internal sealed class AirTuneRecord
 
     // Generated metadata owns object member names and required members. This pass also
     // checks decoded strings, absent-vs-null semantics, and the raw numeric grammar.
-    private static bool ValidTokens(JsonElement element, bool rates = false)
+    internal static bool ValidTokens(JsonElement element, bool rates = false)
     {
         switch (element.ValueKind)
         {
@@ -167,6 +167,7 @@ internal sealed class AirTuneRecord
     }
 
     internal static bool IsDigest(string value) => IsHex(value, 64);
+    internal static bool IsRedactedId(string value) => IsHex(value, 32);
 }
 
 internal sealed class TuneFact<T>
