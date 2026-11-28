@@ -126,7 +126,24 @@ public sealed class RouterTicket
     internal bool IsStateless { get; init; }
     internal bool IsStreamingRequest { get; init; }
     internal bool IsHttpStream { get; init; }
-    internal HttpStreamDelivery? HttpDelivery { get; init; }
+    private HttpStreamDelivery? _httpDelivery;
+    private int _httpOutputEnded;
+    internal bool HttpOutputEnded => Volatile.Read(ref _httpOutputEnded) != 0;
+    internal HttpStreamDelivery? HttpDelivery
+    {
+        get => Volatile.Read(ref _httpDelivery);
+        set
+        {
+            Interlocked.Exchange(ref _httpDelivery, value);
+            if (HttpOutputEnded) value?.Decide(HttpStreamOutcome.Cancelled);
+        }
+    }
+
+    internal void MarkHttpOutputEnded()
+    {
+        Interlocked.Exchange(ref _httpOutputEnded, 1);
+        HttpDelivery?.Decide(HttpStreamOutcome.Cancelled);
+    }
     internal bool SuppressTerminalFrame { get; set; }
     internal bool DefaultStreamReadShutdown { get; set; }
     /// <summary>Wiring from the caller's cancellation token to this ticket's cancel path. Dropped

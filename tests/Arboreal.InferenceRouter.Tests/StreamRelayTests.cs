@@ -708,9 +708,13 @@ public partial class StreamRelayTests
             base.ReadAsync(buffer[..1], cancellationToken);
     }
 
-    private sealed class GatedWriter(int blockWrite, bool ignoreCancel = false) : PipeWriter
+    internal sealed class GatedWriter(int blockWrite, bool ignoreCancel = false, bool blockFirstFlush = false,
+        Func<FlushResult>? firstWrite = null, Func<FlushResult>? firstFlush = null) : PipeWriter
     {
         private int _writes;
+        private int _flushes;
+        private int _cancelPending;
+        internal int CancelPendingCalls => Volatile.Read(ref _cancelPending);
         public TaskCompletionSource<int> Blocked { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource<FlushResult> Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public List<byte[]> Received { get; } = [];
@@ -718,21 +722,30 @@ public partial class StreamRelayTests
         public override ValueTask<FlushResult> WriteAsync(ReadOnlyMemory<byte> source, CancellationToken cancellationToken = default)
         {
             Received.Add(source.ToArray());
-            if (++_writes != blockWrite) return ValueTask.FromResult(new FlushResult(false, false));
+            var number = ++_writes;
+            if (number == 1 && firstWrite is not null) return ValueTask.FromResult(firstWrite());
+            if (number != blockWrite) return ValueTask.FromResult(new FlushResult(false, false));
             Blocked.TrySetResult(source.Length);
             return new ValueTask<FlushResult>(Release.Task);
         }
 
         public override void CancelPendingFlush()
         {
+            Interlocked.Increment(ref _cancelPending);
             if (!ignoreCancel) Release.TrySetResult(new FlushResult(true, false));
         }
         public override void Complete(Exception? exception = null) { }
         public override void Advance(int bytes) => throw new NotSupportedException();
         public override Memory<byte> GetMemory(int sizeHint = 0) => throw new NotSupportedException();
         public override Span<byte> GetSpan(int sizeHint = 0) => throw new NotSupportedException();
-        public override ValueTask<FlushResult> FlushAsync(CancellationToken cancellationToken = default) =>
-            throw new NotSupportedException();
+        public override ValueTask<FlushResult> FlushAsync(CancellationToken cancellationToken = default)
+        {
+            var number = ++_flushes;
+            if (number == 1 && firstFlush is not null) return ValueTask.FromResult(firstFlush());
+            if (!blockFirstFlush || number != 1) return ValueTask.FromResult(new FlushResult(false, false));
+            Blocked.TrySetResult(0);
+            return new ValueTask<FlushResult>(Release.Task);
+        }
     }
 
     private sealed class PassiveLifetime : IHttpRequestLifetimeFeature
@@ -742,7 +755,7 @@ public partial class StreamRelayTests
         public void Abort() => Aborted = true;
     }
 
-    private sealed class BodyFeature(PipeWriter writer) : IHttpResponseBodyFeature
+    internal sealed class BodyFeature(PipeWriter writer) : IHttpResponseBodyFeature
     {
         public Stream Stream => Stream.Null;
         public PipeWriter Writer => writer;

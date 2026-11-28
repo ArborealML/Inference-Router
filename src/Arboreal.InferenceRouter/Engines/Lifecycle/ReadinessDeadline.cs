@@ -42,6 +42,8 @@ internal sealed class ReadinessDeadline : IDisposable
         return new(_clock, started, cap < remaining ? cap : remaining, _engineStop);
     }
 
+    internal TimeProvider Clock => _clock;
+
     internal TimeSpan Remaining => RemainingAt(_started, _timeout);
     internal bool IsExpired => Remaining == TimeSpan.Zero;
 

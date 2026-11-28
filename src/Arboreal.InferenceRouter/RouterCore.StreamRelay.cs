@@ -52,6 +52,87 @@ public sealed partial class RouterCore
         }
     }
 
+    private async Task ExecuteCommissionedAsync(QueuedRequest candidate, EngineRuntime engine,
+        ExactTicketAdmission.Invocation invocation, CancellationToken execution)
+    {
+        var ticket = candidate.Ticket;
+        var physical = Task.Run(RunAsync, CancellationToken.None);
+        using var wait = CancellationTokenSource.CreateLinkedTokenSource(_shutdownToken, execution, candidate.CallerToken);
+        try
+        {
+            await Task.WhenAny(ticket.CompletionTask, Task.Delay(Timeout.InfiniteTimeSpan, wait.Token)).ConfigureAwait(false);
+            if (!ticket.IsTerminal && wait.IsCancellationRequested) Fail(ticket, "cancelled", "cancelled");
+        }
+        finally
+        {
+            await wait.CancelAsync().ConfigureAwait(false);
+            _ = ObserveOptInCleanupAsync(physical, ticket);
+        }
+
+        async Task RunAsync()
+        {
+            try
+            {
+                using var transport = CancellationTokenSource.CreateLinkedTokenSource(_shutdownToken, execution, candidate.CallerToken);
+                using var gate = engine.ResponseTimeout is { } ceiling ?
+                    new ResponseGate(ceiling, ResponseTimeoutClockForTests) : null;
+                var body = ModelRewriter.Rewrite(candidate.Request.Body, ticket.Model, candidate.Request.Stream, out var expectedChoices);
+                var suffix = LooksLikeCompletion(candidate.Request.Body) ? "completions" : "chat/completions";
+                using var request = MakeUpstreamRequest(engine, body, suffix, ticket);
+                var watchdog = WatchCommissionedAnswerAsync(ticket, engine, transport, gate);
+                try
+                {
+                    await invocation.RunAsync(request, response =>
+                        FinishWithResponseAsync(engine, candidate, response, ticket.Model, expectedChoices, gate,
+                            defaultExecutionToken: null, transport.Token),
+                        error =>
+                        {
+                            if (gate?.Tripped == true && !transport.IsCancellationRequested)
+                                FailCommissionedTimeout(ticket, engine);
+                            else ReportFailure(error);
+                        }, transport.Token, invocation.VerifiedCredentialEpoch).ConfigureAwait(false);
+                }
+                finally
+                {
+                    if (gate?.Tripped != true) gate?.Pass();
+                    await watchdog.ConfigureAwait(false);
+                }
+            }
+            catch (Exception error) { ReportFailure(error); }
+            finally
+            {
+                await AbortUnstartedInvocationAsync(ticket, invocation).ConfigureAwait(false);
+                engine.RecordPrefix(candidate.Messages());
+            }
+        }
+
+        void ReportFailure(Exception error)
+        {
+            if (error is OperationCanceledException) Fail(ticket, "cancelled", "cancelled");
+            else if (error is RouterRequestException refusal) Fail(ticket, refusal.Code, refusal.Message);
+            else Fail(ticket, "engine_unreachable", "The verified request could not be delivered.");
+        }
+    }
+
+    private async Task WatchCommissionedAnswerAsync(RouterTicket ticket, EngineRuntime engine,
+        CancellationTokenSource transport, ResponseGate? gate)
+    {
+        if (gate is null) return;
+        using var wait = CancellationTokenSource.CreateLinkedTokenSource(transport.Token, gate.Token);
+        await Task.Delay(Timeout.InfiniteTimeSpan, wait.Token).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+        if (!gate.Tripped || ticket.IsTerminal || transport.IsCancellationRequested) return;
+        FailCommissionedTimeout(ticket, engine);
+        await transport.CancelAsync().ConfigureAwait(false);
+    }
+
+    private void FailCommissionedTimeout(RouterTicket ticket, EngineRuntime engine)
+    {
+        ticket.ObserveStreamRefusal();
+        Fail(ticket, "engine_timeout",
+            $"engine {WireText.Ident(engine.Name)} sent no response to {WireText.Ident(ticket.Model)} within " +
+            $"{engine.ResponseTimeout!.Value.TotalMilliseconds.ToString(CultureInfo.InvariantCulture)} ms");
+    }
+
     private async Task RunOptInStreamTransportAsync(QueuedRequest candidate, EngineRuntime engine,
         SwitchServingProof? servingProof, ExactTicketAdmission.Invocation? invocation, CancellationToken execution)
     {
@@ -66,20 +147,31 @@ public sealed partial class RouterCore
         {
             if (BeforeOptInTransportStartForTests is { } before)
                 await before(ticket.Id).ConfigureAwait(false);
-            if (ticket.IsTerminal) return;
+            if (ticket.IsTerminal || invocation?.IsCommissioned == true && ticket.HttpOutputEnded) return;
             var body = ModelRewriter.Rewrite(candidate.Request.Body, upstreamModel, stream: true, out expectedChoices);
             var suffix = LooksLikeCompletion(candidate.Request.Body) ? "completions" : "chat/completions";
             if (invocation is not null)
             {
                 using var request = MakeUpstreamRequest(engine, body, suffix, ticket);
-                await invocation.RunAsync(request, response =>
+                using var verifiedGate = invocation.IsCommissioned && engine.ResponseTimeout is { } ceiling ?
+                    new ResponseGate(ceiling, ResponseTimeoutClockForTests) : null;
+                var watchdog = WatchCommissionedAnswerAsync(ticket, engine, transport, verifiedGate);
+                try
                 {
-                    // A borrowed response is evidence of an actual send. Returning from abort
-                    // or a failed offer alone says nothing about whether inference was attempted.
-                    attempted = true;
-                    return ConsumeAsync(response, gate: null);
-                },
-                    error => ReportFailure(error, gate: null), ct, invocation.VerifiedCredentialEpoch).ConfigureAwait(false);
+                    await invocation.RunAsync(request, async response =>
+                    {
+                        // A borrowed response belongs to the upstream exchange through the sink's decision.
+                        attempted = true;
+                        await ConsumeAsync(response, verifiedGate).ConfigureAwait(false);
+                        if (invocation.IsCommissioned && ticket.HttpDelivery is { } delivery)
+                            await delivery.Outcome.ConfigureAwait(false);
+                    }, error => ReportFailure(error, verifiedGate), ct, invocation.VerifiedCredentialEpoch).ConfigureAwait(false);
+                }
+                finally
+                {
+                    if (verifiedGate?.Tripped != true) verifiedGate?.Pass();
+                    await watchdog.ConfigureAwait(false);
+                }
                 return;
             }
 
@@ -218,7 +310,7 @@ public sealed partial class RouterCore
                 TicketId = ticket.Id,
                 Engine = ticket.Engine,
                 Model = ticket.Model,
-                Reason = "stream transport cleanup failed",
+                Reason = "transport cleanup failed",
             });
         }
         finally
