@@ -7,7 +7,7 @@ Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 
 ## 0. Revision log
 
-- v0.12.178 — describe inert direct chat providers and qualify loopback-only exact first-write authorization and served-identity relay with sanitized provider refusals, separate first-output and stream deadlines, verified stream choice indexes, and bounded terminal bytes (§§5.7, 6–7, 9–10, 14).
+- v0.12.178 — describe inert direct chat providers and qualify loopback-only exact first-write authorization and served-identity relay with sanitized provider refusals, separate first-output and stream deadlines, verified stream choice indexes, and atomic bounded terminal publication (§§5.7, 6–7, 9–10, 14).
 - v0.12.177 — authorize durable owned-group sensitivity escalation and order it with private HTTP handoff (§§5.6, 6, 13, 14).
 - v0.12.175 — qualify managed local routing with a full remote provider and publish request-scoped, bounded, revision-checked queue observations (§§5.4–5.5, 10, 14).
 - v0.12.174 — bind owned private inference to verified external scope and durable policy, qualify direct private transport and bounded streaming, and scope catalog, status, events and ticket controls (§§5.6, 6).
@@ -3018,9 +3018,10 @@ possible exposure. Physical cleanup returns the selected engine capacity. A late
 conflict also stops additional output and records partial failure. The upstream sentinel
 stays buffered until clean EOF, so a later error takes precedence. The terminal buffer limit
 counts the sentinel, complete trailing blocks and all pending bytes, including an incomplete
-line. Both stream deadlines apply until the held bytes enter the bounded relay. A
-terminal publication waits for one entire relay slice of credit before forwarding its
-first bytes. Expiry while waiting returns capacity and discards the held sentinel.
+line. The held tail must fit in the configured HTTP stream credit. The relay waits for
+credit for the entire tail and publishes it in one operation ordered with expiry.
+An over-credit tail or an expiry before publication discards the held sentinel and
+returns capacity.
 
 ## 6. HTTP surface (server project)
 

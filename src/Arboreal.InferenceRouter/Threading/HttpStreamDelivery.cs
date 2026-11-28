@@ -62,14 +62,9 @@ internal sealed class HttpStreamDelivery(int limit, CancellationToken caller = d
         }
     }
 
-    internal ValueTask PublishAsync(ChannelWriter<ReadOnlyMemory<byte>> writer,
-        ReadOnlyMemory<byte> batch, CancellationToken cancellationToken) =>
-        PublishAsync(writer, batch, fullFirstSlice: false, cancellationToken);
-
     internal async ValueTask PublishAsync(ChannelWriter<ReadOnlyMemory<byte>> writer,
-        ReadOnlyMemory<byte> batch, bool fullFirstSlice, CancellationToken cancellationToken)
+        ReadOnlyMemory<byte> batch, CancellationToken cancellationToken)
     {
-        if (fullFirstSlice) await WaitForCreditAsync(Math.Min(batch.Length, limit), cancellationToken).ConfigureAwait(false);
         while (!batch.IsEmpty)
         {
             await WaitForSpaceAsync(cancellationToken).ConfigureAwait(false);
@@ -87,6 +82,26 @@ internal sealed class HttpStreamDelivery(int limit, CancellationToken caller = d
                 }
                 batch = batch[count..];
             }
+        }
+    }
+
+    internal async ValueTask PublishTerminalAsync(ChannelWriter<ReadOnlyMemory<byte>> writer, ReadOnlyMemory<byte> terminal,
+        Action<Action> commit, CancellationToken cancellationToken)
+    {
+        if (terminal.Length > limit) throw DirectChatProtocol.BadResponse();
+        await WaitForCreditAsync(terminal.Length, cancellationToken).ConfigureAwait(false);
+        lock (_gate)
+        {
+            ThrowIfStopped();
+            // One producer owns this delivery, so available credit only increases while it waits.
+            commit(() =>
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                _reserved += terminal.Length;
+                if (writer.TryWrite(terminal)) return;
+                _reserved -= terminal.Length;
+                throw new OperationCanceledException();
+            });
         }
     }
 
