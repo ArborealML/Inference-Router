@@ -228,6 +228,7 @@ public sealed partial class RouterCore
                 var bufferLimit = generation.Settings.StreamBufferLimitBytes;
                 var ticket = new RouterTicket(NewTicketId(), threadId, model, createdAt)
                 {
+                    IsStreamingRequest = request.Stream,
                     IsHttpStream = httpStream,
                     HttpDelivery = httpStream && bufferLimit > 0 ? new HttpStreamDelivery(bufferLimit, ct, _shutdownToken) : null,
                 };

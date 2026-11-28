@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Threading.Channels;
 using Arboreal.InferenceRouter.Lifecycle;
 
@@ -176,19 +177,24 @@ public sealed partial class RouterCore : IInferenceRouter
         lock (_ticketGate)
         {
             if (!_tickets.TryGetValue(ticketId, out var t)) return null;
+            var state = t.State;
             var wait = Volatile.Read(ref t.DispatchWait);
+            var upstream = state is TicketState.Completed or TicketState.Cancelled or TicketState.Failed
+                ? t.StreamObservation : null;
             return new TicketSnapshot
             {
                 Id = t.Id,
                 ThreadId = t.ThreadId,
                 Model = t.Model,
                 QueuedAt = t.QueuedAt,
-                State = t.State.ToString(),
+                State = state.ToString(),
                 Engine = t.Engine,
                 ErrorCode = t.ErrorCode,
                 Error = t.Error,
                 QueueWaitReason = wait?.Reason,
                 QueueWaitScope = wait?.Scope,
+                UpstreamOutcome = upstream?.OutcomeName,
+                UpstreamEndReason = upstream?.EndReasonName,
             };
         }
     }
@@ -1187,7 +1193,8 @@ public sealed partial class RouterCore : IInferenceRouter
             {
                 var executionToken = execCts.Token;
                 using var cts = CancellationTokenSource.CreateLinkedTokenSource(_shutdownToken, executionToken, candidate.CallerToken);
-                var body = ModelRewriter.Rewrite(candidate.Request.Body, engine.CanonicalModel(ticket.Model) ?? ticket.Model);
+                var upstreamModel = engine.CanonicalModel(ticket.Model) ?? ticket.Model;
+                var body = ModelRewriter.Rewrite(candidate.Request.Body, upstreamModel, candidate.Request.Stream, out var choices);
                 var suffix = LooksLikeCompletion(candidate.Request.Body) ? "completions" : "chat/completions";
 
                 if (invocation is not null)
@@ -1196,8 +1203,8 @@ public sealed partial class RouterCore : IInferenceRouter
                     await invocation.RunAsync(request, response =>
                     {
                         cts.Token.ThrowIfCancellationRequested();
-                        return FinishWithResponseAsync(engine, ticket, response, candidate, gate: null, cts.Token,
-                            executionToken);
+                        return FinishWithResponseAsync(engine, candidate, response, upstreamModel, choices, gate: null,
+                            executionToken, cts.Token);
                     }, ReportExecutionFailure, cts.Token, invocation.VerifiedCredentialEpoch).ConfigureAwait(false);
                     return;
                 }
@@ -1224,8 +1231,8 @@ public sealed partial class RouterCore : IInferenceRouter
                 {
                     using var res = await SendAsync(engine, body, suffix, candidate, servingProof, cts.Token)
                         .ConfigureAwait(false);
-                    await FinishWithResponseAsync(engine, ticket, res, candidate, gate: null, cts.Token,
-                        executionToken).ConfigureAwait(false);
+                    await FinishWithResponseAsync(engine, candidate, res, upstreamModel, choices, gate: null,
+                        executionToken, cts.Token).ConfigureAwait(false);
                 }
                 else
                 {
@@ -1245,8 +1252,8 @@ public sealed partial class RouterCore : IInferenceRouter
                             res = await send.ConfigureAwait(false);
                             try
                             {
-                                await FinishWithResponseAsync(engine, ticket, res, candidate, gate, cts.Token,
-                                    executionToken).ConfigureAwait(false);
+                                await FinishWithResponseAsync(engine, candidate, res, upstreamModel, choices, gate,
+                                    executionToken, cts.Token).ConfigureAwait(false);
                                 silent = false;
                             }
                             catch (Exception) when (gate.Tripped && !cts.IsCancellationRequested)
@@ -1288,6 +1295,7 @@ public sealed partial class RouterCore : IInferenceRouter
                             return;
                         }
 
+                        ticket.ObserveStreamRefusal();
                         Fail(ticket, "engine_timeout",
                             $"engine {WireText.Ident(engine.Name)} sent no response to {WireText.Ident(ticket.Model)} within " +
                             $"{responseTimeout.Value.TotalMilliseconds.ToString(CultureInfo.InvariantCulture)} ms");
@@ -1371,7 +1379,15 @@ public sealed partial class RouterCore : IInferenceRouter
     {
         using var req = MakeUpstreamRequest(engine, body, suffix, candidate.Ticket.ThreadId);
         engine.ObserveFirstForward(proof, candidate.Ticket.Model, ct);
-        return await engine.Http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
+        try
+        {
+            return await engine.Http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
+        }
+        catch (Exception error) when (error is HttpRequestException or IOException && !ct.IsCancellationRequested)
+        {
+            candidate.Ticket.ObserveStreamRefusal();
+            throw;
+        }
     }
 
     private static HttpRequestMessage MakeUpstreamRequest(EngineRuntime engine, byte[] body, string suffix, string threadId)
@@ -1408,10 +1424,11 @@ public sealed partial class RouterCore : IInferenceRouter
     /// Split out so the capped and uncapped send paths cannot drift apart. `gate` is the response cap;
     /// for a non-streaming call it stays armed across the body read, and for a stream the pump disarms it
     /// at the first byte so a generation in progress is never truncated.</summary>
-    private async Task FinishWithResponseAsync(EngineRuntime engine, RouterTicket ticket,
-        HttpResponseMessage res, QueuedRequest candidate, ResponseGate? gate, CancellationToken ct,
-        CancellationToken? defaultExecutionToken = null)
+    private async Task FinishWithResponseAsync(EngineRuntime engine, QueuedRequest candidate,
+        HttpResponseMessage res, string upstreamModel, ulong expectedChoices, ResponseGate? gate,
+        CancellationToken? defaultExecutionToken, CancellationToken ct)
     {
+        var ticket = candidate.Ticket;
         // The body is the answer, so the cap covers the body: linked with the caller's token so an abort
         // still ends as cancelled rather than as a timeout.
         using var bodyLink = gate is null
@@ -1421,6 +1438,7 @@ public sealed partial class RouterCore : IInferenceRouter
 
         if (!res.IsSuccessStatusCode)
         {
+            ticket.ObserveStreamRefusal();
             const int errorBodyCeiling = 256;
             var errBody = new byte[errorBodyCeiling];
             using var errorStream = await res.Content.ReadAsStreamAsync(bodyCt).ConfigureAwait(false);
@@ -1434,7 +1452,7 @@ public sealed partial class RouterCore : IInferenceRouter
             return;
         }
 
-        if (candidate.Request.Stream)
+        if (ticket.IsStreamingRequest)
         {
             var channel = ticket.StreamChannel!;
             DefaultStreamShutdown? shutdown = null;
@@ -1446,12 +1464,14 @@ public sealed partial class RouterCore : IInferenceRouter
                     observe is null ? null : (arm, observation) => observe(ticket.Id, arm, observation));
             }
             using var registration = shutdown?.Register() ?? default;
-            var error = await PumpStreamAsync(engine, ticket, res.Content, channel, gate, ct, shutdown: shutdown)
+            var observer = StartStreamObservation(ticket, upstreamModel, expectedChoices);
+            var error = await PumpStreamAsync(engine, ticket, res.Content, channel, observer, gate, ct, shutdown: shutdown)
                 .ConfigureAwait(false);
             // The ticket's terminal transition closes the channel after the safe prefix is queued.
             if (shutdown?.Qualified == true) Fail(ticket, "cancelled", "cancelled", defaultStreamReadShutdown: true);
-            else if (error is null) Complete(ticket);
-            else Fail(ticket, "engine_error", error);
+            else if (error is not null) Fail(ticket, "engine_error", error);
+            else if (observer.SawError) Fail(ticket, "engine_error", SemanticStreamObserver.ReportedError, suppressTerminalFrame: true);
+            else Complete(ticket);
         }
         else
         {
@@ -1459,6 +1479,13 @@ public sealed partial class RouterCore : IInferenceRouter
             gate?.Pass();      // owed bytes delivered: the ceiling is spent before any terminal work
             Complete(ticket, bytes);
         }
+    }
+
+    private SemanticStreamObserver StartStreamObservation(RouterTicket ticket, string upstreamModel, ulong expectedChoices)
+    {
+        var observer = new SemanticStreamObserver(_clock, upstreamModel, expectedChoices);
+        ticket.AttachStreamObserver(observer);
+        return observer;
     }
 
     /// <summary>The response cap as a gate on the bytes the engine owes. Armed with the configured
@@ -1479,11 +1506,10 @@ public sealed partial class RouterCore : IInferenceRouter
     }
 
     private async Task<string?> PumpStreamAsync(EngineRuntime engine, RouterTicket ticket, HttpContent content,
-        Channel<ReadOnlyMemory<byte>> channel, ResponseGate? gate, CancellationToken ct, StreamReadLifetime? lifetime = null,
-        DefaultStreamShutdown? shutdown = null)
+        Channel<ReadOnlyMemory<byte>> channel, SemanticStreamObserver observer, ResponseGate? gate, CancellationToken ct,
+        StreamReadLifetime? lifetime = null, DefaultStreamShutdown? shutdown = null)
     {
         var firstToken = false;
-        var sw = System.Diagnostics.Stopwatch.StartNew();
         // The response ceiling applies to the first raw byte. The first complete SSE block can
         // arrive later, after the gate is disarmed, while the HTTP relay still sends keepalives.
         using var firstReadLink = gate is null
@@ -1491,15 +1517,26 @@ public sealed partial class RouterCore : IInferenceRouter
             : CancellationTokenSource.CreateLinkedTokenSource(ct, gate.Token);
         var firstReadCt = firstReadLink?.Token ?? ct;
         var buffer = new byte[16384];
-        var blocks = new SseBlockBuffer();
+        var blocks = new SseBlockBuffer(observer: observer);
         // Stream acquisition is inside the ceiling too: with ResponseHeadersRead the content object exists
         // before any byte does, and a handler that builds the stream lazily must not be able to stall the
         // request before the first gated read happens.
-        var stream = lifetime is null
-            ? await content.ReadAsStreamAsync(firstReadCt).ConfigureAwait(false)
-            : await lifetime.AcquireAsync(content, firstReadCt).ConfigureAwait(false);
+        Stream stream;
+        try
+        {
+            stream = lifetime is null
+                ? await content.ReadAsStreamAsync(firstReadCt).ConfigureAwait(false)
+                : await lifetime.AcquireAsync(content, firstReadCt).ConfigureAwait(false);
+        }
+        catch (Exception error) when (!ct.IsCancellationRequested &&
+            (error is not OperationCanceledException || gate?.Tripped == true))
+        {
+            observer.End(StreamInputEnd.Fault);
+            throw;
+        }
         using var ownedStream = lifetime is null ? stream : null;
         var delivery = ticket.HttpDelivery;
+        var readCancelled = false;
         while (true)
         {
             if (delivery is not null)
@@ -1526,12 +1563,18 @@ public sealed partial class RouterCore : IInferenceRouter
                 if (arm != 0 && shutdown!.ObserveResult(arm, 0, error)) return null;
                 // Preserve the first-byte deadline path. Otherwise a stopped read still has to
                 // account for any bytes already staged, after checking caller cancellation below.
-                if (!firstToken && gate is not null && gate.Tripped) throw;
+                if (!firstToken && gate is not null && gate.Tripped)
+                {
+                    if (!ct.IsCancellationRequested) observer.End(StreamInputEnd.Fault);
+                    throw;
+                }
+                readCancelled = true;
                 break;
             }
-            catch (Exception error) when (arm != 0)
+            catch (Exception error)
             {
-                shutdown!.ObserveResult(arm, 0, error);
+                if (arm != 0) shutdown!.ObserveResult(arm, 0, error);
+                if (!ct.IsCancellationRequested) observer.End(StreamInputEnd.Fault);
                 throw;
             }
             if (arm != 0 && shutdown!.ObserveResult(arm, read)) return null;
@@ -1539,6 +1582,7 @@ public sealed partial class RouterCore : IInferenceRouter
             if (!firstToken)
             {
                 firstToken = true;
+                var firstRawByte = observer.ObserveRawByte();
                 gate?.Pass();
                 _events.Append(new RouterEvent
                 {
@@ -1546,7 +1590,7 @@ public sealed partial class RouterCore : IInferenceRouter
                     ThreadId = ticket.ThreadId,
                     TicketId = ticket.Id,
                     Engine = engine.Name,
-                    Value = sw.ElapsedMilliseconds,
+                    Value = (long)firstRawByte.TotalMilliseconds,
                 });
             }
             var (complete, limitExceeded) = blocks.Append(buffer.AsSpan(0, read));
@@ -1556,19 +1600,25 @@ public sealed partial class RouterCore : IInferenceRouter
                     await channel.Writer.WriteAsync(complete, ct).ConfigureAwait(false);
                 else
                     await delivery.PublishAsync(channel.Writer, complete, ct).ConfigureAwait(false);
-                lifetime?.ObservePublished(complete.Span);
                 if (shutdown is not null) shutdown.PublishedBlock = true;
             }
             if (limitExceeded)
             {
                 ct.ThrowIfCancellationRequested();
+                observer.End(StreamInputEnd.Fault);
                 return "upstream SSE block exceeded 1 MiB before its blank delimiter";
             }
         }
 
         // Caller cancellation takes precedence over classifying the upstream ending.
         ct.ThrowIfCancellationRequested();
-        return blocks.HasIncompleteBlock ? "upstream SSE stream ended before a blank delimiter" : null;
+        if (blocks.HasIncompleteBlock)
+        {
+            observer.End(StreamInputEnd.Torn);
+            return "upstream SSE stream ended before a blank delimiter";
+        }
+        observer.End(readCancelled ? StreamInputEnd.UpstreamCancelledRead : StreamInputEnd.Eof);
+        return null;
     }
 
     private void Complete(RouterTicket ticket, byte[]? body = null)
@@ -1591,6 +1641,8 @@ public sealed partial class RouterCore : IInferenceRouter
             TicketId = ticket.Id,
             Engine = ticket.Engine,
             Model = ticket.Model,
+            UpstreamOutcome = ticket.StreamObservation?.OutcomeName,
+            UpstreamEndReason = ticket.StreamObservation?.EndReasonName,
         });
         ticket.SignalTerminalStream();
         ticket.StreamChannel?.Writer.TryComplete();
@@ -1598,20 +1650,20 @@ public sealed partial class RouterCore : IInferenceRouter
         SignalDispatch();
     }
 
-    private void Fail(RouterTicket ticket, string code, string message, bool suppressIdleTerminal = false,
+    private void Fail(RouterTicket ticket, string code, string message, bool suppressTerminalFrame = false,
         bool defaultStreamReadShutdown = false)
     {
         if (ticket.HttpDelivery is { } delivery)
         {
             if (ticket.IsTerminal) return;
-            var outcome = delivery.Decide(new HttpStreamOutcome(code, message, suppressIdleTerminal), execution: ticket.ExecCts);
+            var outcome = delivery.Decide(new HttpStreamOutcome(code, message, suppressTerminalFrame), execution: ticket.ExecCts);
             if (outcome.Code is not { } chosenCode) return;
             code = chosenCode;
             message = outcome.Message;
-            suppressIdleTerminal = outcome.SuppressIdleTerminal;
+            suppressTerminalFrame = outcome.SuppressTerminalFrame;
         }
         if (!ticket.TryEnterTerminal()) return;
-        ticket.SuppressIdleTerminal = suppressIdleTerminal;
+        ticket.SuppressTerminalFrame = suppressTerminalFrame;
         ticket.DefaultStreamReadShutdown = defaultStreamReadShutdown;
         // One terminal path, one ceiling. From here the same string is three caller-visible things at once —
         // <c>ticket.Error</c>, the <see cref="RouterRequestException"/> the HTTP writer turns into an error body,
@@ -1635,6 +1687,8 @@ public sealed partial class RouterCore : IInferenceRouter
             Engine = ticket.Engine,
             Model = ticket.Model,
             Reason = message,
+            UpstreamOutcome = ticket.StreamObservation?.OutcomeName,
+            UpstreamEndReason = ticket.StreamObservation?.EndReasonName,
         });
         ticket.SignalTerminalStream();
         ticket.StreamChannel?.Writer.TryComplete();
@@ -1876,6 +1930,10 @@ public sealed record TicketSnapshot
     public string? QueueWaitReason { get; init; }
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public string? QueueWaitScope { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? UpstreamOutcome { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? UpstreamEndReason { get; init; }
 }
 
 public interface IInferenceRouter : IAsyncDisposable
@@ -1892,35 +1950,46 @@ public interface IInferenceRouter : IAsyncDisposable
 /// substituting the model property. Used to map aliases onto the engine's canonical id.</summary>
 public static class ModelRewriter
 {
-    public static byte[] Rewrite(ReadOnlyMemory<byte> body, string model)
+    public static byte[] Rewrite(ReadOnlyMemory<byte> body, string model) => Rewrite(body, model, stream: false, out _);
+
+    internal static byte[] Rewrite(ReadOnlyMemory<byte> body, string model, bool stream, out ulong expectedChoices)
     {
+        expectedChoices = 0;
         try
         {
             using var doc = JsonDocument.Parse(body);
             using var ms = new MemoryStream(body.Length + 16);
             using (var writer = new Utf8JsonWriter(ms))
             {
-                WriteWithModel(doc.RootElement, writer, model);
+                expectedChoices = WriteWithModel(doc.RootElement, writer, model, stream);
             }
             return ms.ToArray();
         }
         catch
         {
+            expectedChoices = 0;
             return body.ToArray();
         }
     }
 
-    private static void WriteWithModel(JsonElement element, Utf8JsonWriter writer, string model)
+    private static ulong WriteWithModel(JsonElement element, Utf8JsonWriter writer, string model, bool stream)
     {
         if (element.ValueKind != JsonValueKind.Object)
         {
             element.WriteTo(writer);
-            return;
+            return 0;
         }
         writer.WriteStartObject();
         var wrote = false;
+        var expectedChoices = stream ? 1UL : 0UL;
+        var sawChoices = false;
         foreach (var p in element.EnumerateObject())
         {
+            if (stream && p.NameEquals("n"))
+            {
+                expectedChoices = sawChoices ? 0 : SemanticStreamObserver.ExpectedChoices(p.Value);
+                sawChoices = true;
+            }
             if (p.Name == "model" && p.Value.ValueKind == JsonValueKind.String)
             {
                 writer.WritePropertyName(p.Name);
@@ -1938,6 +2007,7 @@ public static class ModelRewriter
             writer.WriteStringValue(model);
         }
         writer.WriteEndObject();
+        return expectedChoices;
     }
 }
 

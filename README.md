@@ -31,6 +31,7 @@ AIR gives OpenAI-compatible clients one HTTP endpoint for local inference engine
 - **Configuration reload.** An authenticated apply rereads the startup file. Validated defaults take effect for new requests during active inference. At idle, reload can add or remove external engines, add native engines to an existing local GPU group, and add aliases to existing group models. Accepted streams and switches keep their starting configuration. [Reload contract](SPEC.md#77-runtime-configuration-reload)
 - **Selective native quarantine reset.** Failed native targets stay latched across unrelated reloads. An operator can enable authenticated reset of one exact target at startup. [Reload and reset contract](SPEC.md#77-runtime-configuration-reload)
 - **Opt-in SSE limits.** Configure a per-stream output buffer limit or a per-engine upstream idle timeout for HTTP completions. [Streaming contract](SPEC.md#6-http-surface-server-project)
+- **SSE outcomes.** Terminal streaming tickets and the event feed report upstream completion, truncation, failure or uncertainty alongside client cancellation and delivery status. Upstream error frames are relayed as received. Library callers can inspect first raw byte and first semantic output timing, model identity and usage availability. [Streaming contract](SPEC.md#6-http-surface-server-project)
 
 ### In progress
 

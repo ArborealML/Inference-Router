@@ -114,6 +114,8 @@ public sealed class RouterTicket
     public string? Engine { get; internal set; }
     public string? Error { get; internal set; }
     public string? ErrorCode { get; internal set; }
+    /// <summary>Frozen upstream evidence when a streaming ticket settles.</summary>
+    public SemanticStreamObservation? StreamObservation { get; private set; }
 
     /// <summary>Resolves when a terminal state is reached; value is the raw engine response body
     /// (JSON), or the ticket fails with the router error.</summary>
@@ -121,9 +123,10 @@ public sealed class RouterTicket
     internal readonly TaskCompletionSource<byte[]> CompletionTcs =
         new(TaskCreationOptions.RunContinuationsAsynchronously);
     internal CancellationTokenSource? ExecCts;
+    internal bool IsStreamingRequest { get; init; }
     internal bool IsHttpStream { get; init; }
     internal HttpStreamDelivery? HttpDelivery { get; init; }
-    internal bool SuppressIdleTerminal { get; set; }
+    internal bool SuppressTerminalFrame { get; set; }
     internal bool DefaultStreamReadShutdown { get; set; }
     /// <summary>Wiring from the caller's cancellation token to this ticket's cancel path. Dropped
     /// when the ticket reaches a terminal state, because the registration is rooted in the caller's
@@ -132,6 +135,8 @@ public sealed class RouterTicket
     private Timer? _queueTimer;
     private readonly object _hooks = new();
     private bool _queueWaitEnded;
+    private SemanticStreamObserver? _streamObserver;
+    private bool _streamRefused;
     internal bool PendingEnqueuePublication;
     internal string? DeferredQueueEnd;
     internal LocalLifecycleGroup? LocalDrain; // router gate
@@ -147,7 +152,34 @@ public sealed class RouterTicket
     /// rejection). Every sink goes through this, so a ticket cannot be reported both completed and
     /// failed — which is a real race in streaming, where a late pump cancellation meets a write that
     /// already finished.</summary>
-    internal bool TryEnterTerminal() => Interlocked.CompareExchange(ref _terminal, 1, 0) == 0;
+    internal bool TryEnterTerminal()
+    {
+        if (Interlocked.CompareExchange(ref _terminal, 1, 0) != 0) return false;
+        if (IsStreamingRequest)
+        {
+            lock (_hooks)
+            {
+                StreamObservation = _streamObserver?.Snapshot() ??
+                    (_streamRefused ? SemanticStreamObservation.Failed : SemanticStreamObservation.Unknown);
+                _streamObserver = null;
+            }
+        }
+        return true;
+    }
+
+    internal void AttachStreamObserver(SemanticStreamObserver observer)
+    {
+        lock (_hooks)
+            if (!IsTerminal) _streamObserver = observer;
+    }
+
+    internal void ObserveStreamRefusal()
+    {
+        if (!IsStreamingRequest) return;
+        lock (_hooks)
+            if (!IsTerminal) _streamRefused = true;
+    }
+
     internal bool IsTerminal => Volatile.Read(ref _terminal) != 0;
 
     internal void StoreTerminalState(TicketState state) => _state = state;
