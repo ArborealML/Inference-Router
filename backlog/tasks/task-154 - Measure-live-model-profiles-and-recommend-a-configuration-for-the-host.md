@@ -6,7 +6,10 @@ assignee:
   - '@gpt-6.2-astra'
 created_date: '2026-11-22T01:17:00Z'
 labels: []
-dependencies: []
+milestone: m-14
+dependencies:
+  - TASK-170
+  - TASK-171
 priority: high
 ordinal: 149000
 ---
@@ -14,19 +17,25 @@ ordinal: 149000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-The coordinator is scoping the live tuning executor. Given a model, host and workload requirements, identify the best measured eligible profile and concurrency. Reuse the shipped workload planner and offline comparison. The operator controls deployment.
+Qualify an authorized real host/model comparison using the delivered runner and search. This is the measurement and adoption-input experiment, not a second CLI implementation. Preserve the 262144 singleton TTFT target and compare exact physical recipes.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 An authorized real run produces a comparison-compatible record tied to the observed model, launch profile and hardware.
-- [ ] #2 Record context, concurrency, aggregate output throughput, time to first token and failures for each setting. Incomplete measurements cannot win.
-- [ ] #3 Report the highest median aggregate throughput meeting the workload requirements or report that none qualifies. Include the measured alternatives and supporting evidence.
-- [ ] #4 Demonstrate the recommendation on one model and host with at least two measured settings. Applying it is a separate operator action.
+- [ ] #1 Exclusive real measurements compare at least two feasible exact recipes, recording window, physical lanes, occupied concurrency and hardware identity.
+- [ ] #2 Compare identical rendered work at singleton and full occupancy, plus a material partial point when cap exceeds two. Record transition and cache conditions.
+- [ ] #3 Report median end-to-end completed-output throughput, TTFT, decode, completion and resource evidence; long-decode and near-window results remain separate.
+- [ ] #4 Publish passing alternatives, failures, unsupported and untested points; identify missing evidence. Operator adoption is separate.
 <!-- AC:END -->
 
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-First run the short grid against one verified resident and emit a comparison-compatible summary. Reuse that executor across eligible configured profiles and rank passing measurements. Qualify long-context recommendations with the separate long workload.
+Reuse TASK-170/171. Compare the same requests, not different near-ceiling prompts. Protect existing sessions and hold the measurement scope. Lower admission does not imply different physical allocation.
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Existing planner/compare shipped; no new real measurement asserted. TASK-216 owns adoption.
+<!-- SECTION:NOTES:END -->

@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@gpt-6.2-astra'
 created_date: '2026-11-22T09:21:00Z'
-updated_date: '2026-11-23T22:01:00Z'
+updated_date: '2026-11-27'
 labels: []
 milestone: m-14
 dependencies:
@@ -19,25 +19,28 @@ ordinal: 165000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Implement air tune run for one configured engine, model and profile. Reuse the offline planner and comparison format. Use Hy4 for the first live reference run.
+Implement air tune run for one configured engine/model/exact recipe, reusing offline planner and comparison. Keep the first isolated reference run small; no remote-cluster prerequisite. Physical launch lanes and occupied concurrency are distinct.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Resolve aliases and verify actual backend model, context and slots before accepting samples. Record hardware, runtime, effective launch settings and workload identity.
-- [ ] #2 Run a repeatable short workload and a representative long prompt. Record cold-load time, time to first token, prefill tokens/sec and decode tokens/sec separately, with token counts and cache conditions.
-- [ ] #3 Persist successes and failures. Two compatible saved runs can be compared with air tune compare, with long-prompt measurements retained separately from the short grid.
-- [ ] #4 Verify the runner against native Hy4 measurements on an idle host and preserve active user requests.
+- [ ] #1 Verify actual model, exact recipe, nominal window, physical lanes, tokenizer/template, hardware and exclusive admission before samples.
+- [ ] #2 Freeze deterministic workload, body digests, exact rendered counts and enforced output allowance; include backend reserve and cache occupancy; failed preflight sends no workload.
+- [ ] #3 Run near-window short waves and long-decode cells with measured overlap, actual generation length, TTFT, prefill/decode and end-to-end time; missing metrics remain unavailable.
+- [ ] #4 Separate per-call bytes, cumulative bytes, calls and time for supported 1M-scale fitting. Verify final rendered count and unclamped allowance.
+- [ ] #5 Record each request/wave, occupied concurrency, semantic terminal/usage, failures, resources and physical settlement. Timeout cannot establish vacancy.
+- [ ] #6 Persist immutable versioned evidence, inconclusive and failed results; preserve offline comparison compatibility without granting qualification.
+- [ ] #7 Qualify a real reference run on an authorized idle host; protect active user work and prove cleanup before subsequent runs.
 <!-- AC:END -->
 
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Resolve one configured engine, canonical model and named tier through the existing workload planner. Verify the intended endpoint, resident profile and idle measurement scope before any workload. Run deterministic short and representative long prompts using bounded streams. Separate cold-load evidence, first output latency, native cache-adjusted prefill and measured decode. Persist terminal and inconclusive results with compatible comparison evidence. Exercise the normal CLI against a loopback serving fixture before qualifying Hy4 on an idle host.
+Continue deterministic fitter and token-count adapter. Use an exclusive local verified admission path, even before manager extraction. Preserve near-window-text-v1 and normal-use-long-decode-v1 (65536 rendered input + 32768 output); backend reserve can make nominal 96K insufficient. Record cold load separately. Controlled fixtures first; amend SPEC §11 and tuning design with code/tests.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-The deterministic prompt fitter is implemented with a call budget and an exact byte limit. Two focused offline checks passed. Next verify the Maya token-count adapter, then connect the runner to admission and residency evidence. A cold-load measurement requires an observed launch. Live qualification requires exclusive admission on an idle host.
+Existing focused offline fitter checks passed as previously recorded. Decision-81 governs reuse. Live executor and hardware qualification remain open.
 <!-- SECTION:NOTES:END -->

@@ -5,8 +5,9 @@ status: Waiting
 assignee:
   - '@gpt-6.2-astra'
 created_date: '2026-11-25T07:52:00Z'
-updated_date: '2026-11-25T08:51:00Z'
+updated_date: '2026-11-27'
 labels: []
+milestone: m-16
 dependencies:
   - TASK-183
 priority: high
@@ -16,19 +17,27 @@ ordinal: 176000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-The Pi-side AIR extension still resolves a named tier from the router catalog for its /context choice and carries that name on the request path. Concurrency is not the caller's business: the extension must send the model and the context window it needs, and let AIR pick the tier. Remove the preferred-profile header and stop presenting tier names as a choice; keep a context-size choice only. Contract work is in SPEC §6 and §13 and follows TASK-183, which decides the server half.
+Wake when TASK-183 lands numeric ingress compatibility. Pi retains a conversation/compaction ceiling separate from any intentional hard minimum and actual request fit. Remove bundled profile selection without forcing every small request to reserve the full conversation ceiling.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The extension sets no profile header, named or preferred, on any inference request.
-- [ ] #2 The extension sends a positive required-context value for every request it admits.
-- [ ] #3 The /context picker offers context windows, not slot counts or tier names.
-- [ ] #4 A context choice that no tier on any engine can satisfy is refused with the router's refusal, not a client guess.
+- [ ] #1 Both outbound paths send no named/preferred profile after migration; intentional numeric floor is preserved.
+- [ ] #2 Automatic mode sends actual request demand or lets AIR compute it; selecting a 1M conversation ceiling does not impose a 1M floor on a small request.
+- [ ] #3 Picker shows numeric context and qualified eligible potential, not recipe/lane selection; resident allocation is separate.
+- [ ] #4 Impossible explicit floor gets router refusal; reduced eligible context warns/refuses or compacts privately under policy.
+- [ ] #5 Turn capture, restore, compaction, auxiliary calls and priority survive; test pinned Pi version and final outbound bytes.
+- [ ] #6 SPEC §§6 and 13 document compatibility and cutover; server retires header only after supported installed clients migrate.
 <!-- AC:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Reuse catalog/session controls; distinguish selected conversation ceiling from hard floor. Preserve explicit third-party minima. Consume eligibility-filtered catalog when policy lands. Coordinate TASK-188 provenance.
+<!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Wakes when the server-side contract in TASK-183 lands the first ingress slice. Design direction accepted: the caller supplies model, required context and optional priority only; a retired profile header is refused rather than silently dropped once the Pi side is migrated; the client-facing catalog view must carry numeric context budgets and no tier names or slot counts. The installed Pi build still sends the profile header today, so the server must not refuse it before this task ships.
+Old plan sent the selected window on every call, defeating dynamic allocation. Installed migration remains unqualified.
 <!-- SECTION:NOTES:END -->

@@ -22,6 +22,10 @@ Stream integrity, switch safety and bounded admission can advance in parallel. E
 | [Measured model scheduling](m-5%20-%20measured-model-scheduling.md) | Measured costs change placement decisions. Serve the eight B requests, then A, while bounding wait under continuing arrivals. Measure lock changes after the pi swap proof. |
 | [Cluster routing and model placement](m-6%20-%20cluster-routing-and-model-placement.md) | Either ingress admits against one fleet queue. A managed peer activates the selected model and completes inference. The host can refuse unsafe placement. |
 
+## Hybrid routing: revision 4 delivery sequence
+
+[Independent-provider hybrid routing](m-16%20-%20independent-provider-hybrid-routing.md) is the next-phase plan. Independent scheduling and default request identity are early corrections (TASK-203–205). Reconcile deployed evidence (219). Fixed-placement clustering, policy/Pi, generic commercial transport/accounting and the Tune runner can proceed in parallel once their specific prerequisites land. Production commercial use requires qualified privacy and spend controls and explicit authorized tests. Demand-driven resizing consumes adopted measured operating points; fixed placement and bounded metered routing do not wait for autonomous optimization.
+
 ## Parallel work
 
 | Outcome | What must work |
@@ -50,7 +54,7 @@ Five archived records retain their outcome assignments for reference. The board 
 
 - **The first native swap** needs coherent model and context evidence (76 → 68), provider primitives (26), host exclusivity (110), and exact-target verification (118) before the local configuration can qualify (111). Admission and drain (25, 64), cold activation (114), and client keepalives (108) also feed the real swap proof (112). Provider fakes and offline configuration work can proceed while the live test waits for an authorized host.
 - **Batch scheduling** consumes bounded queue waits (51) and measured activation and shutdown times (71). The lock cleanup (113) starts after the pi swap (112), with the same workload available for comparison.
-- **The cluster** needs separate transport and lifecycle authority (77), a host capable of refusing unsafe work (110), and fleet-wide admission, cost and fairness (78, 71, 72). One ingress has already reached a resident model on another host. The remaining proof requires both ingresses, shared admission and managed peer activation. Use protected ingress for that test. Production exposure also needs the security controls in SPEC §14.1.
+- **The cluster** needs separate transport and lifecycle authority (77), a host capable of refusing unsafe work (110), and fleet-wide admission, cost and fairness (78, 71, 72). One ingress has already reached a resident model on another host. The first remaining proof uses one authoritative writer, either ingress forwarding to it, static placement, independent dispatch and managed peer activation (203, 204, 206, 77, 122, 124). Later measured placement (123) follows fixed-placement qualification. Use protected ingress for that test. Production exposure also needs the security controls in SPEC §14.1.
 - **Reload** can be designed alongside clustering. Its immutable configuration generations must agree with exact-target verification. A fixed configuration suffices for the initial native swap and two-host proof.
 - **Release, tooling and UI** have independent deliverables. The retained canary provides evidence for the stable release gate. The release badge waits for the stable release. Operator views consume bounded, replayable observations.
 
