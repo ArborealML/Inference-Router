@@ -384,7 +384,7 @@ public sealed partial class RouterCore : IInferenceRouter
         internal bool IsCurrent(EngineRuntime engine) => engine.IsDispatchObservationCurrent(Observation) &&
             GroupRevision == (Group?.Revision ?? 0) && HasNamedUse == engine.HasNamedUse && InferenceUses == engine.InferenceUses;
     }
-    private enum TakeResult { Taken, QueueChanged, RouteChanged, Ineligible, Terminal, Preparing }
+    private enum TakeResult { Taken, QueueChanged, RouteChanged, Ineligible, Terminal, Preparing, PreparationExhausted }
     private readonly record struct AdmissionTake(TakeResult Result, ExactTicketAdmission.Invocation? Invocation = null,
         string? TerminalCode = null);
     private readonly record struct PreparationOffer(Selection Selection, EngineRuntime Engine, ExactTicketAdmission.Claim Claim);
@@ -431,6 +431,20 @@ public sealed partial class RouterCore : IInferenceRouter
                     MaybeFailDeadline(request);
                     continue;
                 }
+                if (Volatile.Read(ref request.Ticket.PrivatePreparation) is { } privatePreparation)
+                {
+                    if (!ReferenceEquals(generation.Engines.GetValueOrDefault(privatePreparation.Engine.Name), privatePreparation.Engine))
+                    {
+                        if (ClaimQueuedEnd(request.Ticket, "policy_route_denied") == QueueEndClaim.Removed)
+                            SettleQueueEnd(request.Ticket, "policy_route_denied", null);
+                        continue;
+                    }
+                    if (!privatePreparation.Ready)
+                    {
+                        PublishDispatchWait(round[index].Queue, request, new("route_preparing", privatePreparation.Engine.Name));
+                        continue;
+                    }
+                }
                 if (!HasThreadCapacity(request.Thread))
                 {
                     PublishDispatchWait(round[index].Queue, request, new("thread_concurrency_limit", request.Ticket.ThreadId));
@@ -468,6 +482,8 @@ public sealed partial class RouterCore : IInferenceRouter
 
         Blocker? blocker = null;
         var routeChanged = false;
+        var ownedPreparationExhausted = false;
+        var routePreparing = false;
         List<PreparationOffer>? preparations = null;
         PreparationOffer? blockedPreparation = null;
         List<ManagedOffer>? activations = null;
@@ -539,11 +555,24 @@ public sealed partial class RouterCore : IInferenceRouter
             if (take.Result == TakeResult.QueueChanged) return DispatchResult.StateChanged;
             if (take.Result == TakeResult.Preparing)
             {
+                routePreparing = true;
                 blocker ??= new("route_preparing", _hostManager?.Scope(engine.Name) ?? engine.Name);
+                continue;
+            }
+            if (take.Result == TakeResult.PreparationExhausted)
+            {
+                ownedPreparationExhausted = true;
                 continue;
             }
             routeChanged |= take.Result == TakeResult.RouteChanged;
             blocker ??= new(take.Result == TakeResult.RouteChanged ? "route_changed" : "route_admission_wait", engine.Name);
+        }
+
+        if (ownedPreparationExhausted && !routePreparing && !routeChanged &&
+            ClaimQueuedEnd(request.Ticket, "policy_route_denied") == QueueEndClaim.Removed)
+        {
+            SettleQueueEnd(request.Ticket, "policy_route_denied", null);
+            return DispatchResult.Parked;
         }
 
         var started = preparations?.Exists(offer => StartExactPreparation(round[offer.Selection.QueueIndex].Queue, offer, generation)) == true;
@@ -566,6 +595,8 @@ public sealed partial class RouterCore : IInferenceRouter
                                    ref PreparationOffer? blockedPreparation)
     {
         var candidate = selection.Request;
+        if (!OwnedPreparedFor(candidate.Ticket, engine))
+            return PrepareOwnedDispatch(round[selection.QueueIndex].Queue, candidate, engine, generation);
         if (!UsesExactAdmission(engine))
         {
             if (compared) BeforeCostCommitForTests?.Invoke();
@@ -711,7 +742,8 @@ public sealed partial class RouterCore : IInferenceRouter
             if (_closing || _shutdownToken.IsCancellationRequested) return new(TakeResult.Ineligible);
             if (!IsCurrentQueue(queue, candidate, generation) || !IsCurrentPriorityComparison(selection))
                 return new(TakeResult.QueueChanged);
-            if (!AllowsOwnedRoute(candidate.Ticket, engine.Name)) return new(TakeResult.Ineligible);
+            if (!AllowsOwnedRoute(candidate.Ticket, engine.Name) || !OwnedPreparedFor(candidate.Ticket, engine))
+                return new(TakeResult.Ineligible);
             var groupRevision = _localGroups.GetValueOrDefault(engine.Name)?.Revision;
             var resourceAware = _scheduler is PrefixAwareScheduler && claim is null;
             Dictionary<EngineRuntime, PredecessorRoute>? predecessorRoutes = null;
@@ -857,7 +889,7 @@ public sealed partial class RouterCore : IInferenceRouter
         var sameThread = ReferenceEquals(candidate.Thread, earlier.Thread) && earlier.Thread.Inflight + 1 >= earlier.Thread.MaxInflight;
         foreach (var engine in generation.Engines.Values)
         {
-            if (!AllowsOwnedRoute(earlier.Ticket, engine.Name)) continue;
+            if (!AllowsOwnedRoute(earlier.Ticket, engine.Name) || !OwnedPreparedFor(earlier.Ticket, engine)) continue;
             var sameEngine = ReferenceEquals(engine, selected);
             var routeGroup = _localGroups.GetValueOrDefault(engine.Name);
             if (!sameEngine && !sameThread && (group is null || !ReferenceEquals(group, routeGroup))) continue;
@@ -1340,6 +1372,7 @@ public sealed partial class RouterCore : IInferenceRouter
         var ended = false;
         var optInOwnsInvocation = false;
         var lateForwardOwnsLocalLease = false;
+        var journalOwned = UsesOwnedJournal(ticket);
         void DecrementOnce()
         {
             if (decremented) return;
@@ -1447,7 +1480,8 @@ public sealed partial class RouterCore : IInferenceRouter
                 var executionToken = execCts.Token;
                 using var cts = CancellationTokenSource.CreateLinkedTokenSource(_shutdownToken, executionToken, candidate.CallerToken);
                 var upstreamModel = engine.CanonicalModel(ticket.Model) ?? ticket.Model;
-                var body = ModelRewriter.Rewrite(candidate.Request.Body, upstreamModel, candidate.Request.Stream, out var choices);
+                var choices = ticket.PrivatePreparation?.ExpectedChoices ?? 0;
+                var body = journalOwned ? [] : ModelRewriter.Rewrite(candidate.Request.Body, upstreamModel, candidate.Request.Stream, out choices);
                 var suffix = CompletionSuffix(candidate);
 
                 if (invocation is not null)
@@ -1532,7 +1566,7 @@ public sealed partial class RouterCore : IInferenceRouter
                         {
                             ownsForward = false;
                             lateForwardOwnsLocalLease = true;
-                            _ = DisposeLateForwardAsync(engine, send, candidate);
+                            _ = DisposeLateForwardAsync(engine, send, candidate, journalOwned);
                         }
                     }
 
@@ -1558,11 +1592,7 @@ public sealed partial class RouterCore : IInferenceRouter
             }
             finally
             {
-                if (ownsForward)
-                {
-                    engine.EndForward(candidate.Request.Options?.Profile is not null);
-                    await FinishOwnedPrivateAttemptAsync(ticket).ConfigureAwait(false);
-                }
+                if (ownsForward) engine.EndForward(candidate.Request.Options?.Profile is not null);
                 if (!OwnedPolicyEnabled) engine.RecordPrefix(candidate.Messages());
             }
         }
@@ -1593,11 +1623,12 @@ public sealed partial class RouterCore : IInferenceRouter
 
         void ReleaseLogical()
         {
-            EndEngineOnce();
-            if (!optInOwnsInvocation)
+            if (!journalOwned || (!lateForwardOwnsLocalLease && !optInOwnsInvocation)) EndEngineOnce();
+            if (!optInOwnsInvocation && (!journalOwned || !lateForwardOwnsLocalLease))
                 ReleaseExecutionCancellation(ticket);
             DecrementOnce();
-            SignalDispatch();          // wake dispatch AFTER both capacity counts are released
+            SignalDispatch();          // a retained physical sender issues its own wake after release
+            if (!lateForwardOwnsLocalLease && !optInOwnsInvocation) RetireOwnedPreparation(ticket);
         }
     }
 
@@ -1613,7 +1644,7 @@ public sealed partial class RouterCore : IInferenceRouter
         });
 
     private async Task DisposeLateForwardAsync(EngineRuntime engine, Task<HttpResponseMessage> send,
-        QueuedRequest candidate)
+        QueuedRequest candidate, bool keepOwnedSlot)
     {
         try
         {
@@ -1628,7 +1659,13 @@ public sealed partial class RouterCore : IInferenceRouter
         {
             engine.EndForward(candidate.Request.Options?.Profile is not null);
             candidate.LocalLease?.Release();
-            await FinishOwnedPrivateAttemptAsync(candidate.Ticket).ConfigureAwait(false);
+            if (keepOwnedSlot)
+            {
+                EndEngineRequest(candidate, engine, invocation: null);
+                ReleaseExecutionCancellation(candidate.Ticket);
+                SignalDispatch();
+            }
+            RetireOwnedPreparation(candidate.Ticket);
         }
     }
 
@@ -1637,24 +1674,28 @@ public sealed partial class RouterCore : IInferenceRouter
     {
         if (!AllowsOwnedRoute(candidate.Ticket, engine.Name))
             throw new RouterRequestException("policy_route_denied", "the owned private route is no longer eligible");
-        using var req = MakeUpstreamRequest(engine, body, suffix, candidate.Ticket);
-        if (_ownedPolicy is { Store.UsesGroupJournals: true } policy)
+        if (UsesOwnedJournal(candidate.Ticket))
         {
-            var attempt = policy.FreezeAttempt(candidate.Ticket, engine, req, body);
-            Volatile.Write(ref candidate.Ticket.PrivateAttempt, attempt);
-            Volatile.Write(ref candidate.Ticket.PrivateAttemptDisposition, 1);
-            await policy.Store.RecordIntentAsync(attempt, ct).ConfigureAwait(false);
-            req.Options.Set(OwnedPrivateAttempt.RequestOption, attempt);
+            if (Volatile.Read(ref candidate.Ticket.PrivatePreparation) is not { Ready: true, Attempt: { } attempt } prepared ||
+                !ReferenceEquals(prepared.Engine, engine))
+                throw new RouterRequestException("policy_route_denied", "the owned private route preparation is no longer eligible");
+            return await ForwardAsync(attempt.Request).ConfigureAwait(false);
         }
-        engine.ObserveFirstForward(proof, candidate.Ticket.Model, ct);
-        try
+        using var direct = MakeUpstreamRequest(engine, body, suffix, candidate.Ticket);
+        return await ForwardAsync(direct).ConfigureAwait(false);
+
+        async Task<HttpResponseMessage> ForwardAsync(HttpRequestMessage request)
         {
-            return await engine.InferenceHttp.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
-        }
-        catch (Exception error) when (error is HttpRequestException or IOException && !ct.IsCancellationRequested)
-        {
-            candidate.Ticket.ObserveStreamRefusal();
-            throw;
+            engine.ObserveFirstForward(proof, candidate.Ticket.Model, ct);
+            try
+            {
+                return await engine.InferenceHttp.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
+            }
+            catch (Exception error) when (error is HttpRequestException or IOException && !ct.IsCancellationRequested)
+            {
+                candidate.Ticket.ObserveStreamRefusal();
+                throw;
+            }
         }
     }
 
@@ -1662,7 +1703,8 @@ public sealed partial class RouterCore : IInferenceRouter
         ? policy.Capability == PrivateDestinationCapability.Text : LooksLikeCompletion(candidate.Request.Body))
         ? "completions" : "chat/completions";
 
-    private HttpRequestMessage MakeUpstreamRequest(EngineRuntime engine, byte[] body, string suffix, RouterTicket ticket)
+    private HttpRequestMessage MakeUpstreamRequest(EngineRuntime engine, byte[] body, string suffix, RouterTicket ticket,
+        bool freezeBody = false)
     {
         // The suffix is composed against the endpoint path (EngineRuntime.Combine), so an endpoint
         // mounted under /v1 keeps it.
@@ -1672,7 +1714,7 @@ public sealed partial class RouterCore : IInferenceRouter
         if ((engine.SendsThreadCacheHint || _ownedPolicy?.SendsThreadCacheHint(engine.Name) == true) &&
             !ticket.IsStateless && !string.IsNullOrWhiteSpace(ticket.ThreadId) && ticket.ThreadId != "anon")
             req.Headers.Add("X-Inference-Thread", ThreadCacheHint(engine.Name, ticket.ScopedThreadKey ?? ticket.ThreadId));
-        req.Content = new ByteArrayContent(body);
+        req.Content = freezeBody ? new ReadOnlyMemoryContent(body) : new ByteArrayContent(body);
         req.Content.Headers.TryAddWithoutValidation("Content-Type", "application/json");
         return req;
     }
@@ -2144,6 +2186,7 @@ public sealed partial class RouterCore : IInferenceRouter
             foreach (var queued in pending)
             {
                 Fail(queued.Ticket, "cancelled", "router shutting down");
+                RetireOwnedPreparation(queued.Ticket, queued: true);
                 ReleaseExecutionCancellation(queued.Ticket);
             }
             if (housekeeping is not null) await housekeeping.ConfigureAwait(false);

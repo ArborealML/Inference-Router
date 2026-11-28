@@ -524,7 +524,7 @@ public static partial class ServerApp
     {
         "invalid_profile" or "invalid_priority" => 400,
         "policy_revision_conflict" or "policy_transition_pending" => 409,
-        "policy_journal_full" => 429,
+        "policy_journal_full" or "policy_journal_quarantined" => 429,
         "verified_scope_required" or "policy_group_unavailable" or "policy_route_denied" or
             "policy_capability_unavailable" or "policy_restriction_invalid" => 403,
         "owned_thread_limit" => 429,

@@ -89,8 +89,8 @@ internal sealed class OwnedPrivatePolicy(OwnedPolicyStore store, IEnumerable<Pri
     internal Func<OwnedPrivateAttempt, Task>? BeforeHandoffForTests;
     internal Func<OwnedPrivateAttempt, Task>? AfterHandoffClaimForTests;
 
-    internal OwnedPrivateAttempt FreezeAttempt(RouterTicket ticket, EngineRuntime engine, HttpRequestMessage request,
-        ReadOnlySpan<byte> body) => new(ticket, engine, request, body, _fingerprintKey);
+    internal OwnedPrivateAttempt FreezeAttempt(RouterTicket ticket, EngineRuntime engine, Func<HttpRequestMessage> project,
+        ReadOnlySpan<byte> body) => new(ticket, engine, project, body, _fingerprintKey);
 
     internal void ValidateTopology(RouterConfig config, bool unqualifiedComposition)
     {

@@ -524,6 +524,9 @@ public sealed partial class OwnedPrivatePolicyTests : IDisposable
         private int _modelsProbes;
         private int _servingProbes;
         private int _holdNext;
+        private int _dropNextResponse;
+        private int _droppedResponses;
+        private int _refuseInferences;
         internal int Requests => Volatile.Read(ref _requests);
         internal int ModelsProbes => Volatile.Read(ref _modelsProbes);
         internal int ServingProbes => Volatile.Read(ref _servingProbes);
@@ -535,6 +538,9 @@ public sealed partial class OwnedPrivatePolicyTests : IDisposable
         internal TaskCompletionSource AllowInference { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         internal TaskCompletionSource InferenceAborted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         internal void HoldNextInference() => Interlocked.Exchange(ref _holdNext, 1);
+        internal void DropNextResponseAfterBody() => Interlocked.Exchange(ref _dropNextResponse, 1);
+        internal int DroppedResponses => Volatile.Read(ref _droppedResponses);
+        internal void RefuseInferences(int count) => Interlocked.Exchange(ref _refuseInferences, count);
 
         internal WebApplication Build()
         {
@@ -584,6 +590,17 @@ public sealed partial class OwnedPrivatePolicyTests : IDisposable
                 return;
             }
             using var json = await JsonDocument.ParseAsync(request.Body, cancellationToken: request.HttpContext.RequestAborted);
+            if (Interlocked.Exchange(ref _dropNextResponse, 0) != 0)
+            {
+                Interlocked.Increment(ref _droppedResponses);
+                context.Abort();
+                return;
+            }
+            if (Interlocked.Decrement(ref _refuseInferences) >= 0)
+            {
+                response.StatusCode = 400;
+                return;
+            }
             if (json.RootElement.TryGetProperty("stream", out var stream) && stream.ValueKind == JsonValueKind.True)
             {
                 response.ContentType = "text/event-stream";

@@ -98,6 +98,7 @@ public sealed class RouterTicket
     internal string? ScopedThreadKey { get; init; }
     internal OwnedTicketPolicy? OwnedPolicy { get; init; }
     internal OwnedPrivateAttempt? PrivateAttempt;
+    internal OwnedPrivatePreparation? PrivatePreparation;
     internal int PrivateAttemptDisposition;
     public string Model { get; }
     public DateTimeOffset QueuedAt { get; }

@@ -526,10 +526,13 @@ public sealed partial class RouterCore
             "cancelled" => "cancelled while queued",
             "slow_consumer" => HttpStreamOutcome.SlowConsumer.Message,
             "switch_failed" => "The enrolled host could not activate the selected recipe.",
-            "policy_group_unavailable" => "the policy changed before the request was dispatched",
+            "policy_group_unavailable" => "the policy could not authorize the queued request",
+            "policy_route_denied" => "the owned private route changed during preparation",
+            "policy_journal_quarantined" => "the owned attempt journal is quarantined pending external reconciliation",
             _ => $"queue wait exceeded {window}",
         };
         Fail(ticket, code, reason);
+        RetireOwnedPreparation(ticket, queued: true);
         ReleaseExecutionCancellation(ticket);
     }
 

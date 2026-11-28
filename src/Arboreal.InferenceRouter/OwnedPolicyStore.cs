@@ -26,6 +26,9 @@ public sealed partial class OwnedPolicyStore : IDisposable
     private readonly SemaphoreSlim _updates = new(1);
     private State _current;
     private int _unavailable;
+    private readonly object _operationGate = new();
+    private int _operations;
+    private bool _disposing;
 
     private OwnedPolicyStore(string path, IOwnedPolicyHeadAuthority authority, FileStream writer, State current)
     {
@@ -86,6 +89,8 @@ public sealed partial class OwnedPolicyStore : IDisposable
     internal async ValueTask<OwnedPolicyGroup?> ResolveAsync(VerifiedInferenceScope scope, string? requestedGroup,
         bool mayCreate, CancellationToken cancellationToken)
     {
+        using var operation = EnterOperation();
+        if (operation is null) return null;
         var root = await ResolveRootAsync(scope, requestedGroup, mayCreate, cancellationToken).ConfigureAwait(false);
         return root is null ? null : await ResolveJournalAsync(root, cancellationToken).ConfigureAwait(false);
     }
@@ -140,10 +145,44 @@ public sealed partial class OwnedPolicyStore : IDisposable
 
     public void Dispose()
     {
-        CloseGrantsGlobally();
+        bool release;
+        lock (_operationGate)
+        {
+            if (_disposing) return;
+            _disposing = true;
+            CloseGrantsGlobally();
+            release = _operations == 0;
+        }
+        if (release) ReleaseWriter();
+    }
+
+    private StoreOperation? EnterOperation()
+    {
+        lock (_operationGate)
+        {
+            if (_disposing) return null;
+            _operations++;
+            return new(this);
+        }
+    }
+
+    private void LeaveOperation()
+    {
+        bool release;
+        lock (_operationGate) release = --_operations == 0 && _disposing;
+        if (release) ReleaseWriter();
+    }
+
+    private void ReleaseWriter()
+    {
         foreach (var journal in _journals.Values) journal.Dispose();
         _updates.Dispose();
         _writer.Dispose();
+    }
+
+    private sealed class StoreOperation(OwnedPolicyStore owner) : IDisposable
+    {
+        public void Dispose() => owner.LeaveOperation();
     }
 
     private static async Task<State> PersistAsync(string path, IOwnedPolicyHeadAuthority authority,
