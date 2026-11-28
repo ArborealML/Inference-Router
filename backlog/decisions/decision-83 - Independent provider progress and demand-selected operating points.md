@@ -2,7 +2,7 @@
 id: decision-83
 title: Independent provider progress and demand-selected operating points
 date: '2026-11-27'
-status: proposed
+status: accepted
 ---
 
 ## Context
@@ -11,7 +11,7 @@ The next-phase architecture review and corrective reconciliation (revisions 4–
 
 ## Decision
 
-Proposed implementation baseline for owner/maintainer review: retain one router writer and existing ordered pending queues. Enumerate available alternatives and complete finite snapshot/continuation rounds before parking; probes are side-effect-free and preparation is scoped to one physical domain. Preserve queue-only priority, not provider economics, capacity or context policy. Omitted stateless identity is request-scoped, explicit named thread limits remain.
+Accepted implementation baseline: retain one router writer and existing ordered pending queues. Enumerate available alternatives and complete finite snapshot/continuation rounds before parking; probes are side-effect-free and preparation is scoped to one physical domain. Preserve queue-only priority, not provider economics, capacity or context policy. Omitted stateless identity is request-scoped, explicit named thread limits remain.
 
 Router selects desired operating points and work; a host manager alone grants verified physical admission, lifecycle mutation and settlement within an externally established resource boundary. Establish the in-process composition/issuer seam before production admission and host qualification. TASK-25 owns the paired production witness with TASK-118's bound sender; host/peer integration consumes that pinned proof. Combined/router/manager roles use one Native AOT build. Static configured peer placement first; one ingress writer with forwarding, not distributed consensus. External deployment establishes singleton authority and protected ingress; no automatic takeover while the old writer can submit. Stale incarnations and ambiguous ingress replay refuse. Never infer vacancy or non-execution from heartbeat/timeout.
 
@@ -23,6 +23,12 @@ Use one configuration-defined HTTP transport and shared protocol handlers. No ow
 
 ## Consequences
 
-This amends the planned scope of decision-25 (independent resource progress without replacing pending order), decision-74 (independent selection within qualified binary tiers), and decision-81 (matched-work occupancy/recipe evidence). Preserve decision-67 physical cleanup, decision-71 intended dedication (not host enforcement) and decision-75 frozen configuration/router-idle external topology edits. Revoking uncommitted authority is distinct from removing topology. SPEC sections 4–7, 10–14 and future/open-gap sections change with their owning code/tests under AGENTS.md, not by asserting unimplemented behavior here. The milestone and task acceptance criteria are the reconciliation map. Ratification and CLI visibility must be checked before treating this proposed record as binding. Existing completed work and recorded qualification remain intact.
+This amends the planned scope of decision-25 (independent resource progress without replacing pending order), decision-74 (independent selection within qualified binary tiers), and decision-81 (matched-work occupancy/recipe evidence). Preserve decision-67 physical cleanup, decision-71 intended dedication (not host enforcement) and decision-75 frozen configuration/router-idle external topology edits. Revoking uncommitted authority is distinct from removing topology. SPEC sections 4–7, 10–14 and future/open-gap sections change with their owning code/tests under AGENTS.md, not by asserting unimplemented behavior here. The milestone and task acceptance criteria are the reconciliation map. Ratified by the owner on 27 November 2026 by directing closure of the planning gates and merge of PR #87 after review of revision 6. CLI visibility remains an operational check. Existing completed work and recorded qualification remain intact.
 
-Reconciliation: dispositions of independent reviews of PR #87 at e96136d6c0f51161863356c67188bc1fe414b92c and 7139cedc573d68e775d590c6cf8a053766aa2b56; proposed, not ratified. The board tracks offline implementation separately from live provider/host/installed-client qualification. External guarantees are prerequisites only for deployment claims that require them. No new owner approval or live activity inferred from a fixture pass.
+Reconciliation: dispositions of independent reviews of PR #87 at e96136d6c0f51161863356c67188bc1fe414b92c and 7139cedc573d68e775d590c6cf8a053766aa2b56; revision 6 corrective head a7f198332e3e5ade258b7f81fc36a633864dc029. The board tracks offline implementation separately from live provider/host/installed-client qualification. External guarantees are prerequisites only for deployment claims that require them. No live activity or provider spend is authorized by planning approval.
+
+## Planning landing evidence
+
+The revision-5 independent review returned PASS WITH CONDITIONS; revision 6's focused coordinator readback confirms the requested staged private-only/guarded-commercial release boundary, paired production witness, scope and singleton guarantees, reservation race tests, real mode evidence, observation contract and task hygiene. The reviewed source and dependency metadata are unchanged by this ratification. [Exact-head hosted CI](https://github.com/ArborealML/Inference-Router/actions/runs/46094616728) passed all three jobs, including strict board validation (211 tasks, 85 open, zero defects), .NET tests, Linux x64 AOT smoke and the release harness. This follow-up is a coordinator confirmation, not a second independent external review.
+
+The owner directed this board-only merge after the connector attribution and local-tool limits were disclosed. Use a non-rewriting squash landing through the authorized GitHub account and preserve the original PR history. The connector cannot set the prescribed agent author/committer; record that the planning amendments were prepared by ChatGPT in the board role, not authored manually by the owner. This is a scoped landing disposition, not a change to decisions 24/26/29/47 or TASK-70's prevention work. Backlog and Groma executables and local checkout were unavailable; use pinned file/metadata readback and hosted board checks for this landing, without reporting native CLI views or a fresh external review as passed. Actual CLI views and normal independent implementation-plan and commit reviews remain required for subsequent implementation work. No source, deployments, account changes or live qualification are included.
