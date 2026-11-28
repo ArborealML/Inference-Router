@@ -27,5 +27,7 @@ Claire must choose whether this implementation session may publish through the c
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Review candidate TASK-187 source 56b24d3cbb21e2554454cc8931f20d03dc175488: 150 focused tests passed; separate source review passed after correction. Prepared PR packet identifies scope, exact local evidence, remaining hosted checks and downstream contracts. Answer in this implementation session: authorize connector publication for these implementation PRs with explicit Sol/Astra provenance, or preserve strict Git identities and provide an authenticated push capability. Decision takes approximately one minute. No implementation merge, paid request, deployment or live host action is included.
+Five concrete candidates are prepared: TASK-203, 187, 205, 202 and 204. The combined prepared aggregate 89783fbaf83bb31de3580030917a8ccf67f779ff passed 680 affected tests; distinct implementer/reviewer source and history audits passed. [Reviewable scope and source mappings](../milestones/wave1-implementation-evidence.md) identify exact evidence and remaining hosted gates. No response was selected in the session's publication choice; no exception or PR publication is claimed.
+
+Answer in this implementation session: authorize connector publication for these implementation PRs with explicit Sol/Astra provenance, or preserve strict Git identities and provide an authenticated push capability. Decision takes approximately one minute. No implementation merge, paid request, deployment or live host action is included. TASK-70 retains independent ownership of preventive attribution enforcement.
 <!-- SECTION:NOTES:END -->

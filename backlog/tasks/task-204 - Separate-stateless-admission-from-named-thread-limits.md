@@ -1,9 +1,9 @@
 ---
 id: TASK-204
 title: "Separate stateless admission from named thread limits"
-status: In Progress
+status: Ready for Review
 assignee:
-  - '@gpt-6.2-sol-scheduling'
+  - '@gpt-6.2-astra'
 created_date: '2026-11-27'
 updated_date: '2026-11-27'
 labels: []
@@ -40,7 +40,9 @@ Capture-backend tests exercise concurrent omitted HTTP and actual CLI chat/compl
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Implementing on combined reviewed base 02087978b8a45970f82d08f216b3da32ded8b603 with PR #86 preserved. Its 608-test affected union passed after correcting the priority fixture's completion-versus-capacity-release assumption; no runtime change was needed. Preserved work resumes with explicit core/server/CLI ownership. Independent pre-code review passed with singleton grammar, public-null contract, full collision isolation and bounded-lifetime fixtures required.
+Candidate 95e800923040584da4e7793747a807536693e221 implements AC1–4. Independent plan and source review e641bee..95e8009 passed after bounded corrections. Exact-head Release verification: 166 passed, zero failed/skipped; build/analyzers passed. Fixtures cover actual HTTP/CLI independent sends, named/anon caps, malformed refusal, queued equal-label priority isolation, affinity/counters/hints, cancellation, overflow and public null rejection.
+
+Prior fc1172e run passed 160/166: six malformed identities returned 500 through the shared mapper. The header-only catch now emits 400; failing assertions remain unchanged. Analyzer/fixture/comment fixes preserve contracts. Base 02087978 passed 608 tests and preserves PR #86. SPEC v0.12.167 describes supported scope. Prepared aggregate 89783fb passed 680 affected tests and local Linux x64 AOT/config smoke; publication awaits TASK-220, after which the coordinator publishes focused PRs and checks hosted build/test/AOT on actual heads. No Done, deployed-client, policy or live qualification claim; Backlog CLI unavailable.
 
 No change to priority, thread weight or provider scoring. TASK-207 owns credential-bound identity and root authorization; transient scheduling identity confers no trust or policy privilege. Architecture §15.3's legacy deployment cutover remains a separate owner choice; preserving explicit anon avoids imposing it here.
 <!-- SECTION:NOTES:END -->
