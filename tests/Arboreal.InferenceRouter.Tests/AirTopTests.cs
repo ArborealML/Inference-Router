@@ -83,7 +83,7 @@ public sealed class AirTopTests
         {
             Assert.Contains("Queue advisory", row.Detail, StringComparison.Ordinal);
             Assert.Contains("Accepted drain gpu", row.Detail, StringComparison.Ordinal);
-            Assert.Contains("observed_ready", row.Detail, StringComparison.Ordinal);
+            Assert.Contains("observed_ready (probe only)", row.Detail, StringComparison.Ordinal);
             Assert.Contains("not_evaluated", row.Detail, StringComparison.Ordinal);
             Assert.Contains("Other alternatives omitted", row.Detail, StringComparison.Ordinal);
             Assert.DoesNotContain('\u001b', row.Detail);

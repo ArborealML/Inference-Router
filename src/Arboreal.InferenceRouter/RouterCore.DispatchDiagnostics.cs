@@ -80,9 +80,9 @@ public sealed partial class RouterCore
             if (Routes is null) return true;
             foreach (var info in Routes)
             {
-                if (!info.CanServeModel) continue;
                 var engine = generation.Engines[info.Name];
                 if (!engine.IsDispatchObservationCurrent(info.DispatchObservation) ||
+                    info.DispatchObservation.AdmissionClaims != engine.AdmissionClaims ||
                     info.NamedPhysicalUse != engine.HasNamedUse || info.DispatchInferenceUses != engine.InferenceUses ||
                     !ReferenceEquals(info.ManagedResident, router._hostManager?.Admission.ReadManagedResident(info.Name)))
                     return false;
