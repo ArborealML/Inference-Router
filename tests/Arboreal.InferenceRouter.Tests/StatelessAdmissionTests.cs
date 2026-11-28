@@ -114,28 +114,65 @@ public sealed class StatelessAdmissionTests
         using var second = new FakeEngineHandler { LoadedModels = ["different"] };
         await using var app = await StartAsync(first, second, ct);
         var router = app.Services.GetRequiredService<RouterCore>();
+        var engine = router.Engines["a"];
+        engine.BeginRequest(0);
+        var occupied = true;
+        var enqueued = new TaskCompletionSource<RouterEvent>(TaskCreationOptions.RunContinuationsAsynchronously);
+        router.Events.Subscribe(entry =>
+        {
+            if (entry.Kind == "request.enqueued") enqueued.TrySetResult(entry);
+        });
+        router.BeforeAdmissionCommitForTests = pending =>
+        {
+            if (pending.Model == "shared") first.HoldCompletions = pending.IsStateless;
+        };
         using var http = Client(app);
         using var heldRequest = Request(model: null, "diagnostic");
         var held = http.SendAsync(heldRequest, ct);
+        string label;
         try
         {
-            await entered.Task.WaitAsync(ct);
+            var transient = await enqueued.Task.WaitAsync(ct);
             Assert.Empty(router.GetStats().Threads);
-            var firstSelection = Assert.Single(router.Events.Replay(0), entry => entry.Kind == "request.selected");
-            var label = Assert.IsType<string>(firstSelection.ThreadId);
+            label = Assert.IsType<string>(transient.ThreadId);
             var thread = router.RegisterThread(label, ThreadPriority.Low(), new() { ModelAffinity = "different" });
-            thread.SetPriority(ThreadPriority.High());
+            var competitor = router.RegisterThread("competitor", ThreadPriority.High());
+            var competing = await router.EnqueueAsync(competitor.ThreadId, new InferenceRequest
+            {
+                Model = "shared",
+                Body = """{"model":"shared","messages":[{"role":"user","content":"competing priority"}]}"""u8.ToArray(),
+                Options = new(),
+            }, ct);
+            thread.SetPriority(ThreadPriority.Interactive());
+            Assert.Equal(TicketState.Queued.ToString(), router.TryGetTicket(transient.TicketId!)?.State);
+
+            engine.EndRequest(0);
+            occupied = false;
+            Assert.True(await engine.ProbeHealthOnceAsync(ct));
+            await competing.CompletionTask.WaitAsync(ct);
+            await entered.Task.WaitAsync(ct);
+            var selected = router.Events.Replay(0).Where(entry => entry.Kind == "request.selected").ToArray();
+            Assert.Collection(selected,
+                entry => Assert.Equal(competing.Id, entry.TicketId),
+                entry => Assert.Equal(transient.TicketId, entry.TicketId));
             using var namedRequest = Request(model: null, "deliberately named", label);
             using var named = await http.SendAsync(namedRequest, ct);
             Assert.Equal(HttpStatusCode.OK, named.StatusCode);
             Assert.Equal("deliberately named", Assert.Single(second.ExecutionOrder));
             Assert.False(held.IsCompleted);
         }
-        finally { first.ReleaseGate(); }
+        finally
+        {
+            router.BeforeAdmissionCommitForTests = null;
+            if (occupied) engine.EndRequest(0);
+            first.ReleaseGate();
+        }
         using var released = await held.WaitAsync(ct);
         Assert.Equal(HttpStatusCode.OK, released.StatusCode);
-        Assert.Equal("diagnostic", Assert.Single(first.ExecutionOrder));
-        var namedStats = Assert.Single(router.GetStats().Threads);
+        Assert.Collection(first.ExecutionOrder,
+            marker => Assert.Equal("competing priority", marker),
+            marker => Assert.Equal("diagnostic", marker));
+        var namedStats = Assert.Single(router.GetStats().Threads, thread => thread.ThreadId == label);
         Assert.Equal(1, namedStats.Enqueued);
         Assert.Equal(1, namedStats.Completed);
     }
@@ -143,6 +180,7 @@ public sealed class StatelessAdmissionTests
     [Theory(Timeout = 20_000)]
     [InlineData("empty", false)]
     [InlineData("space", false)]
+    [InlineData("control", false)]
     [InlineData("duplicated", false)]
     [InlineData("conflict", false)]
     [InlineData("comma", false)]
@@ -159,6 +197,7 @@ public sealed class StatelessAdmissionTests
         {
             "empty" => [""],
             "space" => ["   "],
+            "control" => ["before\tafter"],
             "duplicated" => ["same", "same"],
             "conflict" => ["first", "second"],
             _ => ["first, second"],
