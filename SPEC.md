@@ -1,12 +1,13 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.163)
+Status: draft, continuously revised (v0.12.165)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
 
 ## 0. Revision log
 
+- v0.12.165 — refresh inherited priorities in pending queues when callers update a thread and validate the new order at exact take (§§5.1, 5.5, 14).
 - v0.12.163 — dispatch complete finite rounds across the existing model queues, try available route alternatives, and report scoped queue waits (§§5.4–5.5, 10, 14).
 - v0.12.161 — a selected serving tier whose window the resident already measures and whose reported lanes are at least the tier's is a zero-cost target: no lifecycle call, no switch event and no epoch bump, proved by the measured window rather than by the inferred profile label; extra lanes satisfy a narrower tier, missing lanes do not (§7.6).
 - v0.12.160 — send an opaque per-engine thread cache hint on completion requests to explicitly router-owned local Docker lifecycle groups (§6).
@@ -1591,6 +1592,14 @@ public interface IInferenceRouter : IAsyncDisposable {
 }
 ```
 
+A pending request inherits its thread priority when it omits a per-request override. Updating the thread
+refreshes inherited keys in place and preserves each pending ticket's age and FIFO sequence. An explicit
+override stays fixed for its ticket. `SetThreadPriority`, re-registering an existing thread and
+`SetPriority` on its attached `RouterThread` handle share one mutation, `thread.priority_changed`
+publication and dispatch wake. Registration of a new thread publishes `thread.registered`. The router
+publishes priority changes in mutation order, including updates deferred during registration and reentrant
+updates. Thread weight, affinity and active admission stay in effect through a priority change.
+
 `RouterRequestTicket` exposes: `TicketId`, `State`
 (Queued|SelectingEngine|WaitingForModel|Executing|Completed|Cancelled|Failed),
 `QueuedAt`, `Model`, `Engine`, and a `Task<OpenAiChatResult>`-style completion
@@ -2325,6 +2334,8 @@ Temporary capacity loss parks the ticket. A definitive refusal settles once with
   it rechecks earlier live, published contenders for the same engine, declared lifecycle group or
   limiting thread cap in the captured outer order and current inner order. A caller-supplied
   scheduler and the offline injected sender retain the first thread-admissible cut within a model.
+  A priority update can change that live predecessor order during a round. A measured switch comparison
+  also revalidates the captured pending-priority revision before taking its selected ticket.
 - A local group can explicitly accept a drain intent for one queued ticket when its active uses
   must finish before activation. The scheduler considers ready alternatives first. Queue removal or
   reassignment retires the intent. An accepted execution keeps its physical lease until cleanup.
@@ -4203,6 +4214,10 @@ and cohort/residency hysteresis in the scheduler (§12.3 hook).
   local groups. Exercise a replenished early queue, a blocked same-model prefix, shared thread
   and lifecycle caps, an exact-take reservation loss, and drain-intent retirement on cancellation
   or reassignment. Preserve the explicit expiry and revision/arm/recheck tests.
+- **Queued priority** (`QueuedPriorityTests`, `SwitchCostDispatchTests`): promote and demote inherited
+  requests through all thread update entry points, preserve explicit overrides and FIFO, and verify
+  that a change racing an exact take or measured switch comparison follows the updated order. Verify
+  that the feed and dispatcher wake survive a throwing thread observer.
 - **Configuration reload** (`ConfigReloadWireTests`, `ConfigReloadRaceTests`): authenticated
   file apply, generation readback and rejection, exact stream bytes and a held native switch,
   queue and shutdown ordering, idle external retirement, detached response disposal, and

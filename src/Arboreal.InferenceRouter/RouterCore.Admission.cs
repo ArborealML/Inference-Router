@@ -22,61 +22,67 @@ public sealed partial class RouterCore
     internal bool SuppressQueueHooksForTests;
     internal long QueueTimestampForTests;
 
-    public RouterThread RegisterThread(string threadId, ThreadPriority priority, RouterThreadOptions? options = null)
-    {
-        RouterThread thread;
-        bool created;
-        lock (_gate)
-        {
-            created = !_threads.TryGetValue(threadId, out var current);
-            thread = current ?? AddThread(threadId, priority, options?.Weight ?? 1.0, options?.ModelAffinity);
-            if (!created) thread.SetPriorityValue(priority);
-        }
-        if (created) PublishThreadRegistration(thread, priority);
-        else thread.NotifyPriorityChanged(priority);
-        return thread;
-    }
+    private long _pendingPriorityRevision;
 
-    public void SetThreadPriority(string threadId, ThreadPriority priority)
+    public RouterThread RegisterThread(string threadId, ThreadPriority priority, RouterThreadOptions? options = null) =>
+        ApplyThreadPriority(threadId, priority, options, expected: null)!;
+
+    public void SetThreadPriority(string threadId, ThreadPriority priority) =>
+        ApplyThreadPriority(threadId, priority, options: null, expected: null);
+
+    internal bool ChangeOwnedThreadPriority(RouterThread expected, ThreadPriority priority) =>
+        ApplyThreadPriority(expected.ThreadId, priority, options: null, expected) is not null;
+
+    private RouterThread? ApplyThreadPriority(string threadId, ThreadPriority priority, RouterThreadOptions? options,
+                                               RouterThread? expected)
     {
         RouterThread thread;
         bool created;
         lock (_gate)
         {
-            created = !_threads.TryGetValue(threadId, out var current);
-            thread = current ?? AddThread(threadId, priority, 1.0, null);
+            var current = _threads.GetValueOrDefault(threadId);
+            if (expected is not null && !ReferenceEquals(expected, current)) return null;
+            created = current is null;
+            thread = current ?? AddThread(threadId, priority, options?.Weight ?? 1.0, options?.ModelAffinity);
             if (!created)
             {
                 thread.SetPriorityValue(priority);
-                foreach (var queue in _queues.Values) queue.Resort();
+                var changed = false;
+                foreach (var queue in _queues.Values)
+                    changed |= queue.RefreshInheritedPriority(thread, priority);
+                if (changed) _pendingPriorityRevision++;
+
                 if (_threadPublications.TryGetValue(threadId, out var pending))
                 {
                     (pending.PriorityChanges ??= []).Add(priority);
-                    return;
+                    return thread;
                 }
                 _threadPublications.Add(threadId, new ThreadPublication());
             }
         }
-        if (created)
+        if (created) PublishThreadRegistration(thread, priority);
+        else
         {
-            PublishThreadRegistration(thread, priority);
-            return;
+            try { PublishThreadPriorityChange(thread, priority); }
+            finally { DrainThreadPriorityChanges(thread); }
         }
-        try { PublishThreadPriorityChange(thread, priority); }
-        finally { DrainThreadPriorityChanges(thread); }
+        return thread;
     }
 
     private void PublishThreadPriorityChange(RouterThread thread, ThreadPriority priority)
     {
         BeforeThreadPriorityFeedForTests?.Invoke(priority);
-        thread.NotifyPriorityChanged(priority);
-        _events.Append(new RouterEvent { Kind = "thread.priority_changed", ThreadId = thread.ThreadId, Value = priority.Class });
-        SignalDispatch();
+        try { thread.NotifyPriorityChanged(priority); }
+        finally
+        {
+            _events.Append(new RouterEvent { Kind = "thread.priority_changed", ThreadId = thread.ThreadId, Value = priority.Class });
+            SignalDispatch();
+        }
     }
 
     private RouterThread AddThread(string id, ThreadPriority priority, double weight, string? affinity)
     {
-        var thread = new RouterThread(id, priority, weight, affinity);
+        var thread = new RouterThread(id, priority, weight, affinity, ChangeOwnedThreadPriority);
         _threads.Add(id, thread);
         _threadPublications.Add(id, new ThreadPublication { Enqueues = [] });
         return thread;

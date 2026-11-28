@@ -261,6 +261,22 @@ public sealed class SwitchCostDispatchTests
     }
 
     [Fact(Timeout = 20_000)]
+    public async Task AChangedInheritedPriorityInvalidatesTheCapturedMeasuredCohort()
+    {
+        await using var rig = new SwitchRig(aLoadMs: 80, bLoadMs: 20);
+        await rig.TrainAsync();
+        rig.Clock.Set(TimeSpan.FromMinutes(1));
+        var moreExpensive = await rig.EnqueueAsync("a");
+        var cheaper = await rig.EnqueueAsync("b");
+
+        await rig.PromoteBeforeCostCommitAsync(moreExpensive);
+
+        Assert.Equal(TicketState.Queued, moreExpensive.State);
+        Assert.Equal(TicketState.Queued, cheaper.State);
+        await rig.AssertDispatchAsync(moreExpensive);
+    }
+
+    [Fact(Timeout = 20_000)]
     public async Task TheSingleEngineCostWinnerSurvivesAChangeInPressureAtEqualInflight()
     {
         await using var rig = new SwitchRig(aLoadMs: 80, bLoadMs: 20);
@@ -661,6 +677,12 @@ public sealed class SwitchCostDispatchTests
                 await LoadAsync(newIncumbent);
                 Assert.NotEqual(previous.Version, Engine.Capability.Version);
             });
+
+        internal Task PromoteBeforeCostCommitAsync(RouterTicket pending) => InterruptCostCommitAsync(() =>
+        {
+            _router.SetThreadPriority(pending.ThreadId, ThreadPriority.High());
+            return Task.CompletedTask;
+        });
 
         internal Task ChangeSlotsBeforeCommitAsync(int slots) => InterruptCostCommitAsync(async () =>
         {

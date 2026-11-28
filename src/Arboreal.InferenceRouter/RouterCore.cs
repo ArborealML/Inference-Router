@@ -91,7 +91,7 @@ public sealed partial class RouterCore : IInferenceRouter
             _localGroups[engine.Name] = group;
         }
         foreach (var (id, td) in config.Threads)
-            _threads[id] = new RouterThread(id, td.Priority, td.Weight, td.ModelAffinity);
+            _threads[id] = new RouterThread(id, td.Priority, td.Weight, td.ModelAffinity, ChangeOwnedThreadPriority);
         _generation = new ConfigurationGeneration(1, config, reload, engines);
         _admission = admission;
         admission?.Attach(engines.Count, _clock, SignalDispatch, ReportAdmissionCleanupFailure, RejectVerifiedBinding);
@@ -307,9 +307,9 @@ public sealed partial class RouterCore : IInferenceRouter
 
     private readonly record struct SwitchComparison(
         EngineRuntime Engine, EngineRuntime.DispatchObservation Observation, SwitchSampleKey Incumbent,
-        long Timestamp, DateTimeOffset UtcNow);
+        long Timestamp, DateTimeOffset UtcNow, long PendingPriorityRevision);
 
-    private SwitchComparison? ReadSwitchComparison(ConfigurationGeneration generation)
+    private SwitchComparison? ReadSwitchComparison(ConfigurationGeneration generation, long pendingPriorityRevision)
     {
         if (_scheduler is not PrefixAwareScheduler || !generation.Settings.AutoSwitch || generation.Engines.Count != 1)
             return null;
@@ -320,11 +320,12 @@ public sealed partial class RouterCore : IInferenceRouter
             engine.ReadVerifiedSwitchIncumbent(observation.Capability) is not { } incumbent)
             return null;
 
-        return new SwitchComparison(engine, observation, incumbent, _clock.GetTimestamp(), _clock.GetUtcNow());
+        return new SwitchComparison(engine, observation, incumbent, _clock.GetTimestamp(), _clock.GetUtcNow(), pendingPriorityRevision);
     }
 
     private readonly record struct QueueRound(ModelQueue Queue, ModelQueueRound Snapshot);
-    private readonly record struct Selection(int QueueIndex, QueuedRequest Request, SchedulerDecision Decision);
+    private readonly record struct Selection(int QueueIndex, QueuedRequest Request, SchedulerDecision Decision,
+                                             long? PendingPriorityRevision = null);
     private readonly record struct Blocker(string Reason, string? Scope = null);
     private readonly record struct RouteProbe(ServingProfile? Profile, LocalLifecycleGroup? Group, Blocker? Blocker,
                                               bool Drain = false);
@@ -347,10 +348,12 @@ public sealed partial class RouterCore : IInferenceRouter
         _admission?.ResumePendingOpeningOwnerPreparations();
         QueueRound[] round;
         ConfigurationGeneration generation;
+        long pendingPriorityRevision;
         lock (_gate)
         {
             if (_closing) return DispatchResult.Parked;
             generation = CurrentGeneration;
+            pendingPriorityRevision = _pendingPriorityRevision;
             round = [.. _queues.Values
                 .Select(static queue => new QueueRound(queue, queue.CaptureRound()))
                 .OrderBy(static entry => entry.Snapshot.Depth)
@@ -358,7 +361,7 @@ public sealed partial class RouterCore : IInferenceRouter
         }
 
         var result = DispatchResult.Parked;
-        var comparison = ReadSwitchComparison(generation);
+        var comparison = ReadSwitchComparison(generation, pendingPriorityRevision);
         for (var index = 0; index < round.Length; index++)
         {
             var through = index;
@@ -420,7 +423,10 @@ public sealed partial class RouterCore : IInferenceRouter
             var selection = new Selection(index, request, decision);
             var compared = comparison is not null && decision.SwitchRequired;
             if (comparison is { } cost && compared)
-                selection = OrderEligibleSwitches(round, ref through, selection, cost, generation);
+                selection = OrderEligibleSwitches(round, ref through, selection, cost, generation) with
+                {
+                    PendingPriorityRevision = cost.PendingPriorityRevision,
+                };
 
             var candidate = selection.Request;
             var engine = generation.Engines[selection.Decision.Engine!];
@@ -529,7 +535,8 @@ public sealed partial class RouterCore : IInferenceRouter
         lock (_gate)
         {
             if (_closing || _shutdownToken.IsCancellationRequested) return new(TakeResult.Ineligible);
-            if (!IsCurrentQueue(queue, candidate, generation)) return new(TakeResult.QueueChanged);
+            if (!IsCurrentQueue(queue, candidate, generation) || !IsCurrentPriorityComparison(selection))
+                return new(TakeResult.QueueChanged);
             var groupRevision = _localGroups.GetValueOrDefault(engine.Name)?.Revision;
             var resourceAware = _scheduler is PrefixAwareScheduler && claim is null;
             Dictionary<EngineRuntime, PredecessorRoute>? predecessorRoutes = null;
@@ -618,6 +625,11 @@ public sealed partial class RouterCore : IInferenceRouter
         ReferenceEquals(_queues.GetValueOrDefault(candidate.Ticket.Model), queue) &&
         !candidate.Ticket.PendingEnqueuePublication && !candidate.Ticket.IsTerminal;
 
+    // Ordinary takes read the current queue order. The measured cohort can overtake earlier
+    // queues, so its captured priority membership needs its own validation.
+    private bool IsCurrentPriorityComparison(Selection selection) =>
+        selection.PendingPriorityRevision is not { } revision || revision == _pendingPriorityRevision;
+
     private bool HasEarlierQueueCompetitor(QueueRound[] round, int prefix, Predicate<QueuedRequest> competes)
     {
         for (var i = 0; i < prefix; i++)
@@ -680,7 +692,7 @@ public sealed partial class RouterCore : IInferenceRouter
         var queue = round[selection.QueueIndex].Queue;
         lock (_gate)
         {
-            if (probe.Group is not { } group || !IsCurrentQueue(queue, candidate, generation) ||
+            if (probe.Group is not { } group || !IsCurrentQueue(queue, candidate, generation) || !IsCurrentPriorityComparison(selection) ||
                 !IsPendingAndThreadAdmissible(candidate)) return null;
             if (candidate.Ticket.LocalDrain is { } existing) return existing;
             var revision = group.Revision;
