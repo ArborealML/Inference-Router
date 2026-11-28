@@ -116,7 +116,7 @@ public sealed class CliCompletionProcessTests
         Assert.Equal("POST", request.Method);
         Assert.Equal("/v1/chat/completions", request.Path);
         Assert.Equal(scenario.Stream, request.Body.GetProperty("stream").GetBoolean());
-        Assert.Equal("anon", request.Thread);
+        Assert.Null(request.Thread);
         Assert.Null(request.Priority);
         Assert.False(request.Body.TryGetProperty("model", out _));
         Assert.Equal("user", Assert.Single(request.Body.GetProperty("messages").EnumerateArray()).GetProperty("role").GetString());
@@ -179,7 +179,7 @@ public sealed class CliCompletionProcessTests
         {
             using var request = await JsonDocument.ParseAsync(context.Request.Body, cancellationToken: deadline.Token);
             received.TrySetResult(new ObservedRequest(context.Request.Method, context.Request.Path.Value,
-                context.Request.Headers["X-Inference-Thread"].ToString(),
+                context.Request.Headers.TryGetValue("X-Inference-Thread", out var thread) ? thread.ToString() : null,
                 context.Request.Headers.TryGetValue("X-Inference-Priority", out var priority) ? priority.ToString() : null,
                 request.RootElement.Clone()));
             context.Response.StatusCode = scenario.Status;
@@ -278,6 +278,6 @@ public sealed class CliCompletionProcessTests
 
     private sealed record Scenario(int Status, bool Stream, string Body, int ExitCode, string TextOut, string JsonOut,
         string TextError, string JsonError);
-    private sealed record ObservedRequest(string Method, string? Path, string Thread, string? Priority, JsonElement Body);
+    private sealed record ObservedRequest(string Method, string? Path, string? Thread, string? Priority, JsonElement Body);
     internal sealed record ProcessResult(int ExitCode, byte[] Stdout, byte[] Stderr);
 }

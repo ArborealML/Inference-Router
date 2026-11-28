@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace Arboreal.InferenceRouter;
 
 /// <summary>Router observability event. Monotonic Seq; replayable from the ring buffer.
@@ -15,6 +17,10 @@ public sealed record RouterEvent
     public string? Engine { get; init; }
     public string? Model { get; init; }
     public string? Reason { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? UpstreamOutcome { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? UpstreamEndReason { get; init; }
     /// <summary>Structured detail (numbers: affinity/busy scores, latency ms, token counts…).</summary>
     public double? Value { get; init; }
 }
@@ -84,6 +90,10 @@ public sealed class EventRing
                 Engine = @event.Engine is { } e ? WireText.Ident(e) : null,
                 ThreadId = @event.ThreadId is { } t ? WireText.Ident(t) : null,
                 Reason = @event.Reason is { } r ? WireText.Bound(r, WireText.ReasonChars) : null,
+                UpstreamOutcome = @event.UpstreamOutcome is "complete" or "incomplete" or "failed" or "unknown"
+                    ? @event.UpstreamOutcome : null,
+                UpstreamEndReason = @event.UpstreamEndReason is "complete" or "upstream_closed_without_terminator"
+                    or "stream_incomplete" or "failed" or "unknown" ? @event.UpstreamEndReason : null,
             };
             _ring[(int)(_head % _ring.Length)] = @event;
             _head++;
@@ -110,6 +120,12 @@ public sealed class EventRing
     }
 
     public long CurrentSeq => Volatile.Read(ref _head);
+
+    internal void AppendIf(RouterEvent @event, Func<bool> isCurrent)
+    {
+        lock (_lock)
+            if (isCurrent()) Append(@event);
+    }
 
     /// <summary>How many subscriber invocations have thrown since startup. This is the only sign a feed observer
     /// is broken: the exception is swallowed by design, so without a counter a permanently failing observer — a

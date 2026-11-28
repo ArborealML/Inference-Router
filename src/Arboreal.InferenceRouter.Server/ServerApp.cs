@@ -136,6 +136,21 @@ public static partial class ServerApp
     private static async Task HandleInference(HttpContext ctx, RouterCore router, TimeProvider streamClock)
     {
         var ct = ctx.RequestAborted;
+
+        // Priority and identity defects are decided before consuming the body (§6).
+        ThreadPriority? declaredPriority;
+        string? threadId;
+        try
+        {
+            declaredPriority = PriorityFromHeader(ctx);
+            threadId = InferenceThreadFromHeader(ctx);
+        }
+        catch (RouterRequestException ex)
+        {
+            await WriteErrorAsync(ctx, 400, ex.Code, ex.Message).ConfigureAwait(false);
+            return;
+        }
+
         var read = await ReadBodyAsync(ctx, router, ct).ConfigureAwait(false);
         if (read is null) return;              // the refusal is already on the wire
         var payload = read;
@@ -160,10 +175,6 @@ public static partial class ServerApp
             return;
         }
 
-        var threadId = ctx.Request.Headers["X-Inference-Thread"].ToString() is { Length: > 0 } t ? t : "anon";
-        ThreadPriority? priority = null;
-        if (ThreadPriority.TryParse(ctx.Request.Headers["X-Inference-Priority"].ToString(), out var p))
-            priority = p;
         var affinity = ctx.Request.Headers["X-Inference-Affinity"].ToString() is { Length: > 0 } a ? a : null;
 
         RouterTicket ticket;
@@ -176,7 +187,7 @@ public static partial class ServerApp
                 Body = payload,
                 Options = new RouterRequestOptions
                 {
-                    Priority = priority,
+                    Priority = declaredPriority,
                     CacheAffinityHash = affinity,
                     Profile = ProfileFromHeader(ctx),
                     RequiredContext = RequiredContextFromHeader(ctx),
@@ -231,6 +242,32 @@ public static partial class ServerApp
         return long.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var v) && v > 0 ? v : null;
     }
 
+    private static string? InferenceThreadFromHeader(HttpContext ctx)
+    {
+        if (!ctx.Request.Headers.TryGetValue("X-Inference-Thread", out var header)) return null;
+        if (header.Count != 1 || header[0] is not { } name || string.IsNullOrWhiteSpace(name) ||
+            name.Contains(',', StringComparison.Ordinal) || name.Any(char.IsControl))
+            throw new RouterRequestException("invalid_request", "X-Inference-Thread requires one non-blank thread name without commas or control characters.");
+        return name;
+    }
+
+    /// <summary>X-Inference-Priority: the request's own priority as `class[:sub]` (§6). Absent → the
+    /// configured default, which is the only way a caller asks for nothing. A value that is present but
+    /// outside the grammar is refused with 400 `invalid_priority` rather than dropped: a caller that asked
+    /// for `interactive` and was served at the default has no way to notice, and the queue would already
+    /// have been mutated for a priority nobody asked for. A repeated header arrives as one joined string and
+    /// fails the same way, because two values for one request is not a choice the router gets to make.
+    /// The refusal happens while the headers are still being read, before the body is read and before the
+    /// ticket exists (§6.1).</summary>
+    private static ThreadPriority? PriorityFromHeader(HttpContext ctx)
+    {
+        if (!ctx.Request.Headers.TryGetValue("X-Inference-Priority", out var values)) return null;
+        var declared = values.ToString();
+        if (ThreadPriority.TryParse(declared, out var priority)) return priority;
+        throw new RouterRequestException("invalid_priority", FormattableString.Invariant(
+            $"X-Inference-Priority '{WireText.Ident(declared)}' is not one of background, low, normal, high, interactive with an optional :sub of 0-{ThreadPriority.MaxSubPriority}."));
+    }
+
     private static string? ProfileFromHeader(HttpContext ctx)
     {
         if (!ctx.Request.Headers.TryGetValue("X-Inference-Profile", out var values)) return null;
@@ -278,14 +315,14 @@ public static partial class ServerApp
             ct.ThrowIfCancellationRequested();
             if (delivery is not null && delivery.Sealed.IsCompletedSuccessfully)
             {
-                delivery.Decide(HttpStreamOutcome.Acknowledged, ticket.ExecCts, ct);
+                delivery.AcknowledgeFlush(ticket.ExecCts, ct);
                 // Publish the outcome before the endpoint returns HTTP EOF.
                 try { await ticket.CompletionTask.WaitAsync(ct).ConfigureAwait(false); }
                 catch (RouterRequestException) { }
             }
             var defaultShutdown = ticket.State is TicketState.Cancelled && ticket.DefaultStreamReadShutdown &&
                 ctx.Response.HasStarted && ctx.Response.StatusCode == 200 && output?.CanAppendTerminal == true;
-            if ((ticket.State is TicketState.Failed && !ticket.SuppressIdleTerminal) || defaultShutdown)
+            if ((ticket.State is TicketState.Failed && !ticket.SuppressTerminalFrame) || defaultShutdown)
             {
                 var json = JsonSerializer.Serialize(
                     new ErrorBody { Error = new ErrorDetail { Message = ticket.Error ?? "engine error", Code = ticket.ErrorCode ?? "engine_error" } },
@@ -449,7 +486,7 @@ public static partial class ServerApp
 
     private static int MapStatus(string code) => code switch
     {
-        "invalid_profile" => 400,
+        "invalid_profile" or "invalid_priority" => 400,
         "queue_overflow" => 429,
         "deadline_exceeded" => 408,
         "cancelled" => 499,
@@ -593,31 +630,59 @@ public static partial class ServerApp
         {
             using var doc = JsonDocument.Parse(body);
             var root = doc.RootElement;
-            var threadId = root.TryGetProperty("threadId", out var t) ? t.GetString() : null;
-            if (string.IsNullOrEmpty(threadId))
+            if (root.ValueKind != JsonValueKind.Object)
+            {
+                await WriteErrorAsync(ctx, 400, "invalid_request", "body must be a JSON object").ConfigureAwait(false);
+                return;
+            }
+            if (!TryReadAdminString(root, "threadId", out var threadId) || string.IsNullOrEmpty(threadId))
             {
                 await WriteErrorAsync(ctx, 400, "invalid_request", "threadId is required").ConfigureAwait(false);
                 return;
             }
             var priority = router.DefaultPriority;
-            if (root.TryGetProperty("priority", out var prio) && prio.ValueKind == JsonValueKind.Object)
+            if (root.TryGetProperty("priority", out var prio))
             {
-                var classStr = prio.TryGetProperty("class", out var c) ? c.GetString() : null;
-                var sub = prio.TryGetProperty("sub", out var sub2) && sub2.ValueKind == JsonValueKind.Number
-                    ? (int)sub2.GetDouble() : 0;
+                // A supplied priority is read exactly or refused: this surface admits what the
+                // `X-Inference-Priority` header admits, and nothing else (§6). An absent `sub` is the whole
+                // class at 0; a present one that this cannot read is the caller's defect, not something to
+                // cast and clamp into a value the caller could not have written on the request path.
+                if (prio.ValueKind != JsonValueKind.Object)
+                {
+                    await WriteErrorAsync(ctx, 400, "invalid_request",
+                        "priority must be an object or absent").ConfigureAwait(false);
+                    return;
+                }
+                // A `class` that is not a JSON string is unreadable rather than something to call GetString on:
+                // JsonElement.GetString throws for any other kind, and an exception here answers 500 to a caller
+                // whose body the route can read well enough to refuse (§6.1).
+                var classStr = prio.TryGetProperty("class", out var c) && c.ValueKind == JsonValueKind.String
+                    ? c.GetString() : null;
                 if (classStr is null || !ThreadPriorityClass.TryParseClass(classStr, out var cls))
                 {
                     await WriteErrorAsync(ctx, 400, "invalid_request", $"priority.class '{WireText.Ident(classStr ?? string.Empty)}' unknown")
                         .ConfigureAwait(false);
                     return;
                 }
-                priority = new ThreadPriority(cls, (byte)Math.Clamp(sub, 0, ThreadPriority.MaxSubPriority));
+                byte sub = 0;
+                if (prio.TryGetProperty("sub", out var subElement) && !TryReadSubPriority(subElement, out sub))
+                {
+                    await WriteErrorAsync(ctx, 400, "invalid_request",
+                        $"priority.sub '{WireText.Ident(subElement.GetRawText())}' is not an integer from 0 to {ThreadPriority.MaxSubPriority}")
+                        .ConfigureAwait(false);
+                    return;
+                }
+                priority = new ThreadPriority(cls, sub);
             }
-            var options = new RouterThreadOptions();
+            if (!TryReadAdminString(root, "modelAffinity", out var modelAffinity))
+            {
+                await WriteErrorAsync(ctx, 400, "invalid_request", "modelAffinity must be a string or null")
+                    .ConfigureAwait(false);
+                return;
+            }
+            var options = new RouterThreadOptions { ModelAffinity = modelAffinity };
             if (root.TryGetProperty("weight", out var wt) && wt.ValueKind == JsonValueKind.Number)
                 options = options with { Weight = wt.GetDouble() };
-            if (root.TryGetProperty("modelAffinity", out var ma) && ma.ValueKind == JsonValueKind.String)
-                options = options with { ModelAffinity = ma.GetString() };
 
             router.RegisterThread(threadId!, priority, options);
             ctx.Response.StatusCode = 204;
@@ -626,6 +691,28 @@ public static partial class ServerApp
         {
             await WriteErrorAsync(ctx, 400, "invalid_request", "body is not valid JSON").ConfigureAwait(false);
         }
+    }
+
+    /// <summary>The sub-priority as the admin JSON has to write it: a JSON number whose own text is plain
+    /// decimal digits within <see cref="ThreadPriority.MaxSubPriority"/>. The text is the check rather than the
+    /// parsed double, so a fractional (<c>255.7</c>), signed (<c>-5</c>) or exponent (<c>1e10</c>) form is
+    /// refused instead of arriving at a byte through a cast and a clamp — spellings the header grammar does
+    /// not admit and <c>ThreadPriority.ToString</c> can never echo back (§6).</summary>
+    private static bool TryReadSubPriority(JsonElement element, out byte sub)
+    {
+        sub = 0;
+        return element.ValueKind == JsonValueKind.Number
+            && byte.TryParse(element.GetRawText(), NumberStyles.None, CultureInfo.InvariantCulture, out sub);
+    }
+
+    // The callers have validated the object root. Preserve explicit null as an omitted string.
+    private static bool TryReadAdminString(JsonElement root, string name, out string? value)
+    {
+        value = null;
+        if (!root.TryGetProperty(name, out var property) || property.ValueKind == JsonValueKind.Null) return true;
+        if (property.ValueKind != JsonValueKind.String) return false;
+        value = property.GetString();
+        return true;
     }
 
     private static async Task HandleSwitch(HttpContext ctx, RouterCore router, AdminSwitchOperations operations)
@@ -637,10 +724,21 @@ public static partial class ServerApp
         try
         {
             using var doc = JsonDocument.Parse(body);
-            var engineName = doc.RootElement.TryGetProperty("engine", out var e) ? e.GetString() : null;
-            var model = doc.RootElement.TryGetProperty("model", out var m) ? m.GetString() : null;
-            var profileName = doc.RootElement.TryGetProperty("profile", out var p) ? p.GetString() : null;
-            if (engineName is null || model is null || router.AcceptEngineAdmin(engineName) is not { } engine)
+            var root = doc.RootElement;
+            if (root.ValueKind != JsonValueKind.Object)
+            {
+                await WriteErrorAsync(ctx, 400, "invalid_request", "body must be a JSON object").ConfigureAwait(false);
+                return;
+            }
+            if (!TryReadAdminString(root, "profile", out var profileName))
+            {
+                await WriteErrorAsync(ctx, 400, "invalid_request", "profile must be a string or null")
+                    .ConfigureAwait(false);
+                return;
+            }
+            if (!TryReadAdminString(root, "engine", out var engineName) ||
+                !TryReadAdminString(root, "model", out var model) || engineName is null || model is null ||
+                router.AcceptEngineAdmin(engineName) is not { } engine)
             {
                 await WriteErrorAsync(ctx, 400, "invalid_request", "engine and model are required (engine must exist)")
                     .ConfigureAwait(false);

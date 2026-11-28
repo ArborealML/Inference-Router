@@ -1,7 +1,7 @@
 ---
 id: TASK-170
 title: Run a repeatable live tuning workload for one engine and model
-status: In Progress
+status: Waiting
 assignee:
   - '@gpt-6.2-astra'
 created_date: '2026-11-22T09:21:00Z'
@@ -42,5 +42,7 @@ Continue deterministic fitter/token-count adapter. Reuse existing exclusive loca
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Existing focused offline fitter checks passed as previously recorded; decision-81 governs reuse. Reference real Hy4 run belongs to TASK-154. Refresh worker plan and status after reconciliation; no live run claimed.
+Waiting for the prior worker's recoverable fitter source/handoff. Reconciliation at 62f1c79 found the existing planner/comparator/text generator, but no committed runner/fitter continuation in reachable refs. [Historical handoff](https://github.com/ArborealML/Inference-Router/commit/3c60c3cea522c6e1956e03d791fe178d4bd3bd15) reports two focused offline fitter checks without a source commit; preserve that scoped evidence, not a fresh pass. This does not establish that external work is lost. Existing ownership remains with the coordinator; do not dispatch a duplicate fitter. Wake on recoverable source or explicit reconciliation of the prior handoff.
+
+TASK-187 may independently provide the shared observation record; decision-81 governs one runner. TASK-154 retains real measurement ownership; no live run claimed.
 <!-- SECTION:NOTES:END -->

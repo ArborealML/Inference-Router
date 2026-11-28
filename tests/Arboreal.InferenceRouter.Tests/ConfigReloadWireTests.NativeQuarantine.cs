@@ -107,8 +107,22 @@ public sealed partial class ConfigReloadWireTests
         }
 
         var foreignTag = $"\"reload-{Guid.NewGuid():N}-2\"";
-        using (var unauthorized = await PostTargetResetAsync(http, currentTag, ExactSmallReset, "wrong-token", ct))
+        using (var unauthorized = await PostTargetResetAsync(http, currentTag, "[]", "wrong-token", ct))
             await AssertErrorAsync(unauthorized, HttpStatusCode.Unauthorized, "reload_unauthorized", ct);
+        using (var badTag = await PostTargetResetAsync(http, "bad-tag", "[]", Token, ct))
+        {
+            Assert.Equal(HttpStatusCode.BadRequest, badTag.StatusCode);
+            Assert.Equal("""{"error":{"message":"Send one current reload ETag in If-Match.","code":"invalid_target_reset","type":"air_error"}}"""u8.ToArray(),
+                await badTag.Content.ReadAsByteArrayAsync(ct));
+        }
+        foreach (var badBody in new[] { "[]", "\"reset\"", "42", "true", "false", "null",
+            """{"engine":"native","model":"candidate","profile":4}""" })
+        {
+            using var malformed = await PostTargetResetAsync(http, currentTag, badBody, Token, ct);
+            Assert.Equal(HttpStatusCode.BadRequest, malformed.StatusCode);
+            Assert.Equal("""{"error":{"message":"Send the exact engine, canonical model and effective profile.","code":"invalid_target_reset","type":"air_error"}}"""u8.ToArray(),
+                await malformed.Content.ReadAsByteArrayAsync(ct));
+        }
         using (var stale = await PostTargetResetAsync(http, originalTag, ExactSmallReset, Token, ct))
             await AssertErrorAsync(stale, HttpStatusCode.PreconditionFailed, "reload_stale", ct);
         using (var foreign = await PostTargetResetAsync(http, foreignTag, ExactSmallReset, Token, ct))

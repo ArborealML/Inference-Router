@@ -33,7 +33,7 @@ public sealed partial class RouterCore
                 if (BeforeOptInStreamSettlementForTests is { } before)
                     await before(ticket.Id).ConfigureAwait(false);
                 if (outcome.Code is { } code)
-                    Fail(ticket, code, outcome.Message, outcome.SuppressIdleTerminal);
+                    Fail(ticket, code, outcome.Message, outcome.SuppressTerminalFrame);
                 else
                     Complete(ticket);
                 return;
@@ -60,16 +60,18 @@ public sealed partial class RouterCore
         var ticket = candidate.Ticket;
         var ct = transport.Token;
         var attempted = false;
+        var upstreamModel = engine.CanonicalModel(ticket.Model) ?? ticket.Model;
+        ulong expectedChoices = 0;
         try
         {
             if (BeforeOptInTransportStartForTests is { } before)
                 await before(ticket.Id).ConfigureAwait(false);
             if (ticket.IsTerminal) return;
-            var body = ModelRewriter.Rewrite(candidate.Request.Body, engine.CanonicalModel(ticket.Model) ?? ticket.Model);
+            var body = ModelRewriter.Rewrite(candidate.Request.Body, upstreamModel, stream: true, out expectedChoices);
             var suffix = LooksLikeCompletion(candidate.Request.Body) ? "completions" : "chat/completions";
             if (invocation is not null)
             {
-                using var request = MakeUpstreamRequest(engine, body, suffix, ticket.ThreadId);
+                using var request = MakeUpstreamRequest(engine, body, suffix, ticket);
                 await invocation.RunAsync(request, response =>
                 {
                     // A borrowed response is evidence of an actual send. Returning from abort
@@ -137,21 +139,26 @@ public sealed partial class RouterCore
             ct.ThrowIfCancellationRequested();
             if (ticket.IsTerminal) return;
             var lifetime = new StreamReadLifetime(engine.StreamIdleTimeout, StreamIdleClockForTests);
+            SemanticStreamObserver? observer = null;
             try
             {
                 if (!response.IsSuccessStatusCode)
                 {
-                    await FinishWithResponseAsync(engine, ticket, response, candidate, gate, ct).ConfigureAwait(false);
+                    await FinishWithResponseAsync(engine, candidate, response, upstreamModel, expectedChoices, gate,
+                        defaultExecutionToken: null, ct).ConfigureAwait(false);
                     return;
                 }
-                var error = await PumpStreamAsync(engine, ticket, response.Content, ticket.StreamChannel!, gate, ct,
-                    lifetime).ConfigureAwait(false);
+                observer = StartStreamObservation(ticket, upstreamModel, expectedChoices);
+                var error = await PumpStreamAsync(engine, ticket, response.Content, ticket.StreamChannel!, observer, gate,
+                    ct, lifetime).ConfigureAwait(false);
                 ct.ThrowIfCancellationRequested();
                 gate?.Pass(); // Clean empty EOF settles the first-byte phase before output drain.
                 if (error is not null)
                     Fail(ticket, "engine_error", error);
                 else if (ticket.HttpDelivery is { } delivery)
-                    delivery.Seal();
+                    delivery.Seal(observer.SawError ? HttpStreamOutcome.UpstreamReportedError : HttpStreamOutcome.Acknowledged);
+                else if (observer.SawError)
+                    Fail(ticket, "engine_error", SemanticStreamObserver.ReportedError, suppressTerminalFrame: true);
                 else
                     Complete(ticket);
             }
@@ -159,7 +166,7 @@ public sealed partial class RouterCore
             {
                 Fail(ticket, "engine_timeout",
                     $"upstream stream was idle for {engine.StreamIdleTimeout!.Value.TotalMilliseconds.ToString(CultureInfo.InvariantCulture)} ms",
-                    suppressIdleTerminal: lifetime.SawDone);
+                    suppressTerminalFrame: observer?.SawDone == true);
             }
             catch (Exception error)
             {
@@ -184,9 +191,12 @@ public sealed partial class RouterCore
             if (ct.IsCancellationRequested)
                 Fail(ticket, "cancelled", "cancelled");
             else if (gate?.Tripped == true)
+            {
+                ticket.ObserveStreamRefusal();
                 Fail(ticket, "engine_timeout",
                     $"engine {WireText.Ident(engine.Name)} sent no response to {WireText.Ident(ticket.Model)} within " +
                     $"{engine.ResponseTimeout!.Value.TotalMilliseconds.ToString(CultureInfo.InvariantCulture)} ms");
+            }
             else if (error is OperationCanceledException)
                 Fail(ticket, "cancelled", "cancelled");
             else if (error is RouterRequestException refusal)
@@ -226,7 +236,6 @@ public sealed partial class RouterCore
     {
 #pragma warning disable IDISP006, IDISP003 // The stored task is only awaited; it never creates a disposable wait handle.
         internal Task? Pending { get; private set; }
-        internal bool SawDone { get; private set; }
 
         internal Task<Stream> AcquireAsync(HttpContent content, CancellationToken ct) =>
             WaitAsync(content.ReadAsStreamAsync(ct), null, ct);
@@ -265,40 +274,5 @@ public sealed partial class RouterCore
             }
         }
 #pragma warning restore IDISP006, IDISP003
-
-        internal void ObservePublished(ReadOnlySpan<byte> complete)
-        {
-            if (idle is null || SawDone || complete.IndexOf("[DONE]"u8) < 0) return;
-            var dataLines = 0;
-            var sentinel = false;
-            while (!complete.IsEmpty)
-            {
-                var end = complete.IndexOfAny((byte)'\r', (byte)'\n');
-                if (end < 0) break;
-                var line = complete[..end];
-                var ending = complete[end];
-                complete = complete[(end + 1)..];
-                if (ending == (byte)'\r' && !complete.IsEmpty && complete[0] == (byte)'\n')
-                    complete = complete[1..];
-                if (line.IsEmpty)
-                {
-                    if (sentinel && dataLines == 1)
-                    {
-                        SawDone = true;
-                        return;
-                    }
-                    dataLines = 0;
-                    sentinel = false;
-                }
-                else if (line.StartsWith("data:"u8) || line.SequenceEqual("data"u8))
-                {
-                    dataLines++;
-                    if (line.Length <= 5) continue;
-                    var value = line[5..];
-                    if (value[0] == (byte)' ') value = value[1..];
-                    sentinel |= value.SequenceEqual("[DONE]"u8);
-                }
-            }
-        }
     }
 }
