@@ -68,26 +68,42 @@ public sealed partial class DockerLifecycleProvider : IEngineLifecycleProvider, 
         _cfg = cfg;
         _command = cfg.Command.ToArray();
         _env = cfg.Env.ToArray();
-        if (handler is null)
+        _ownedHandler = handler is null ? CreateDaemonHandler(_scope.Daemon.UnixPath) : null;
+        try { _http = CreateDaemonClient(_scope.Daemon.BaseAddress, handler ?? _ownedHandler!); }
+        catch
         {
-            var sockets = new SocketsHttpHandler
-            {
-                // A daemon is not a web server: a system proxy would send container control to some
-                // third host, and a redirect would do the same on the daemon's say-so.
-                UseProxy = false,
-                AllowAutoRedirect = false,
-            };
-            if (_scope.Daemon.UnixPath is { } socketPath)
-                sockets.ConnectCallback = (_, ct) => ConnectUnixAsync(socketPath, ct);
-            _ownedHandler = sockets;
-            _http = new HttpClient(_ownedHandler, disposeHandler: false);
+            _ownedHandler?.Dispose();
+            throw;
         }
-        else
+    }
+
+    private static HttpClient CreateDaemonClient(Uri baseAddress, HttpMessageHandler handler)
+    {
+        var client = new HttpClient(handler, disposeHandler: false);
+        try
         {
-            _http = new HttpClient(handler, disposeHandler: false);
+            client.BaseAddress = baseAddress;
+            client.Timeout = Timeout.InfiniteTimeSpan; // Each call carries its own token.
+            return client;
         }
-        _http.BaseAddress = _scope.Daemon.BaseAddress;
-        _http.Timeout = Timeout.InfiniteTimeSpan;      // every call carries its own token
+        catch
+        {
+            client.Dispose();
+            throw;
+        }
+    }
+
+    private static SocketsHttpHandler CreateDaemonHandler(string? socketPath)
+    {
+        var handler = new SocketsHttpHandler
+        {
+            // A system proxy or redirect could send container control to a different daemon.
+            UseProxy = false,
+            AllowAutoRedirect = false,
+        };
+        if (socketPath is { } path)
+            handler.ConnectCallback = (_, ct) => ConnectUnixAsync(path, ct);
+        return handler;
     }
 
     public string Kind => ProviderKind;
@@ -738,6 +754,11 @@ public sealed partial class DockerLifecycleProvider : IEngineLifecycleProvider, 
         var want = pinned[1..];
         return VersionToLong(daemon) >= VersionToLong(want);
     }
+
+    private static string ContainerPath(string apiVersion, string id) =>
+        $"{apiVersion}/containers/{Uri.EscapeDataString(id)}";
+
+    private static string CreateContainerPath(string apiVersion) => $"{apiVersion}/containers/create";
 
     private static long VersionToLong(string version)
     {

@@ -64,6 +64,7 @@ public static class Program
             commands:
               completion bash|powershell|zsh|fish       print the shell’s tab-completion registration
               serve [--config path] [--listen url]      run the router host in this process
+              serve --commissioned PATH [--listen url]  use installed protected host authority
               chat  [-m model] [-t thread] [-p prio]    send a chat completion (prompt args or stdin)
                     [--system text] [--no-stream] [--json] [-s server-url]
               models [-s server-url]                    list observed models and context windows
@@ -108,6 +109,7 @@ public static class Program
     // ── serve ───────────────────────────────────────────────────────────────
     private static async Task<int> RunServeAsync(string[] args)
     {
+        if (await ServerApp.TryRunCommissionedAsync(args).ConfigureAwait(false) is { } commissioned) return commissioned;
         if (!ServerApp.TryReadConfigOption(args, out var config))
             return 2;
         string? listen = GetOpt(args, ["--listen", "-l"]);

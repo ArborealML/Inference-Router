@@ -27,7 +27,7 @@ internal sealed partial class SupervisedLaunchJsonContext : JsonSerializerContex
 internal sealed class SupervisedLaunchJournal(HostReservationScope scope, ISupervisedLaunchHead head)
 {
     internal const int CurrentFormat = 1;
-    private const int LastRevision = 5;
+    internal const int LastRevision = 5;
     private const int MaxFrameLength = 512 * 1024;
     private string FencePath => Path.Combine(scope.AuthorityDirectory, "supervised-launch.lock");
     internal string JournalPath => Path.Combine(scope.AuthorityDirectory, "supervised-launch.journal");
@@ -52,11 +52,20 @@ internal sealed class SupervisedLaunchJournal(HostReservationScope scope, ISuper
         if (head.Read(scope) is not { } current || current.Scope != scope ||
             current.Revision is < 0 or > LastRevision || !HostMutation.IsPlanDigest(current.Digest)) return null;
 
+        var prefix = ReadInitialPrefix(current.Revision);
+        return prefix?.Head == current && head.Read(scope) == current ? prefix : null;
+    }
+
+    // Structural validation only. The successor journal must anchor this digest through the entire tail.
+    internal SupervisedLaunchSnapshot? ReadInitialTerminalPrefix() => ReadInitialPrefix(LastRevision);
+
+    private SupervisedLaunchSnapshot? ReadInitialPrefix(int lastRevision)
+    {
         using var journal = new FileStream(JournalPath, FileMode.Open, FileAccess.Read, FileShare.Read);
         string? digest = null;
         SupervisedLaunchFrame? previous = null;
         Span<byte> length = stackalloc byte[sizeof(int)];
-        for (var revision = 0; revision <= current.Revision; revision++)
+        for (var revision = 0; revision <= lastRevision; revision++)
         {
             journal.ReadExactly(length);
             var size = BinaryPrimitives.ReadInt32LittleEndian(length);
@@ -72,8 +81,8 @@ internal sealed class SupervisedLaunchJournal(HostReservationScope scope, ISuper
 
         // An unanchored tail is quarantined even if all of its bytes parse. A reopen cannot
         // distinguish a refused advance from an uncertain install and never trims the file.
-        return journal.Position == journal.Length && digest == current.Digest && head.Read(scope) == current
-            ? new(current, previous!) : null;
+        return journal.Position == journal.Length && digest is not null && previous is not null
+            ? new(new(scope, lastRevision, digest), previous) : null;
     }
 
     internal void Advance(SupervisedLaunchSnapshot previous, HostInitialHistory history,

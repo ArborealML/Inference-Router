@@ -88,6 +88,13 @@ internal sealed class CommissionedRouteIssuer(ICommissionedServingAuthority auth
         return authority.CheckoutVerifiedAsync(invocation, ct);
     }
 
+    public ValueTask<bool> CheckBeforeFirstWriteAsync(VerifiedInstanceGrant grant, CancellationToken ct)
+    {
+        lock (Gate)
+            if (!CanIssue(grant.Invocation.Route)) return ValueTask.FromResult(false);
+        return authority.CheckBeforeFirstWriteAsync(grant, ct);
+    }
+
     public IAsyncDisposable? TryAuthorizeFirstWrite(VerifiedInstanceGrant grant)
     {
         lock (Gate) return CanIssue(grant.Invocation.Route) ? authority.TryAuthorizeFirstWrite(grant) : null;

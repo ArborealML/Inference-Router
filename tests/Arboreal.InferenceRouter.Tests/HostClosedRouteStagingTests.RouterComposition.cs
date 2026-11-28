@@ -40,7 +40,7 @@ public sealed partial class HostClosedRouteStagingTests
             return ready ? new(stage, stage.Launch.Plan.Model, new(stage.Launch.Plan.Model, 8_192, 1, "small")) : null;
         });
         var enrollment = new HostManagerEnrollment(domain, controller, staging, issuer,
-            new Dictionary<string, HostStagedRuntimeFixture>(StringComparer.Ordinal) { [first.Name] = fixture, [alias.Name] = fixture },
+            new Dictionary<string, HostStagedRuntimeFixture?>(StringComparer.Ordinal) { [first.Name] = fixture, [alias.Name] = fixture },
             stage =>
             {
                 var engine = config.Engines[stage.Route.Engine];
@@ -54,7 +54,7 @@ public sealed partial class HostClosedRouteStagingTests
         Assert.Throws<RouterConfigException>(() => new InProcessHostManager([enrollment, enrollment with { Domain = domain with { Name = "duplicate" } }]));
         var partial = new InProcessHostManager([enrollment with
         {
-            Members = new Dictionary<string, HostStagedRuntimeFixture>(StringComparer.Ordinal) { [first.Name] = fixture },
+            Members = new Dictionary<string, HostStagedRuntimeFixture?>(StringComparer.Ordinal) { [first.Name] = fixture },
         }]);
         Assert.Throws<RouterConfigException>(() => new RouterCore(config, null, null, TimeProvider.System, hostManager: partial));
         Assert.Equal(0, host.Creates);
