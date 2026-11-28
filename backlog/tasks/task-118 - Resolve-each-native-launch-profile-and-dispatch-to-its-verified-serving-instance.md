@@ -14,6 +14,8 @@ dependencies:
   - TASK-26
   - TASK-68
   - TASK-130
+  - TASK-206
+  - TASK-195
 references:
   - src/Arboreal.InferenceRouter/Engines/EngineRuntime.cs
   - src/Arboreal.InferenceRouter/RouterCore.cs
@@ -23,7 +25,7 @@ ordinal: 116000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Wake: host enrollment supplies a commissioned issuer that attests the actual handler of each readiness GET and conclusively retires both exchanges. The reviewed contract requires shared durable issue and revocation ordering, a broker-owned monotonic cutoff, and original launch-bound probe and credential approval. The offline [launch record](https://github.com/ArborealML/Inference-Router/pull/49) identifies the running container. Serving-process evidence remains outstanding.
+Wake when TASK-206 supplies the ordinary manager/enrollment interface and TASK-195 supplies exact recipe identity. Integrate the commissioned issuer and existing TASK-130 instance-bound transport in production composition. Shared durable issue/revocation, broker monotonic cutoff, bound probe/credential and conclusive exchange retirement remain required. Offline [launch record](https://github.com/ArborealML/Inference-Router/pull/49) identifies the container, not the serving process.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -46,5 +48,5 @@ Review on 084e3e0 ruled out the proposed two-ticket admission test as AC2 eviden
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-[PR #20](https://github.com/ArborealML/Inference-Router/pull/20) merged at 4537b1a after focused qualification, AOT and hosted CI. Its offline exact-ticket fixture verifies explicit launch, omitted default and ordinary resident reuse, exact rewritten bytes and credential, and mismatch refusal with zero checkout. AC5 and AC7 are satisfied at the injected issuer. AC1 has model alias/default and settings-digest evidence; [PR #21](https://github.com/ArborealML/Inference-Router/pull/21) landed the profile-alias witness at 5643b27. AC3 still requires same-instance evidence across families. AC4 and AC6 retain standalone rebind and exact-ticket first-write evidence; the real enrolled paused waiter remains open. Enrolled dispatch and admission (TASK-25) must require the exact open generation at mint and first write even when a waiter retains Ready.
+[PR #20](https://github.com/ArborealML/Inference-Router/pull/20) merged at 4537b1a after focused qualification, AOT and hosted CI. Its offline exact-ticket fixture verifies explicit launch, omitted default and ordinary resident reuse, exact rewritten bytes and credential, and mismatch refusal with zero checkout. AC5 and AC7 are satisfied at the injected issuer. AC1 has model alias/default and settings-digest evidence; [PR #21](https://github.com/ArborealML/Inference-Router/pull/21) landed the profile-alias witness at 5643b27. AC3 still requires same-instance evidence across families. AC4 and AC6 retain standalone rebind and exact-ticket first-write evidence; the real enrolled paused waiter remains open. TASK-25's assignee owns the paired ordinary-composition integration witness; this assignee delivers the bound sender and its component tests. Both production acceptance sets consume the same pinned witness. Exact open generation is required at mint and first write even if a waiter retains Ready.
 <!-- SECTION:NOTES:END -->

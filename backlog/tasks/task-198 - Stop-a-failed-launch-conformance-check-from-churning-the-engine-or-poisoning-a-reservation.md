@@ -13,6 +13,8 @@ labels:
   - scheduling
 dependencies:
   - TASK-189
+  - TASK-190
+  - TASK-197
 priority: high
 ordinal: 190000
 ---

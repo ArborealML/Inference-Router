@@ -12,7 +12,8 @@ labels:
   - engine
   - lifecycle
 milestone: m-4
-dependencies: []
+dependencies:
+  - TASK-206
 priority: high
 ordinal: 25000
 ---
@@ -20,7 +21,7 @@ ordinal: 25000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-A production enrollment path that can close admission and drain the incumbent before stop will wake this task. Defer the owner-only change. Review on b25c259 confirmed that selection already charges the ticket once and only the successful installer owns the switch. Attaching an identity alone changes no drain, stop or first-send outcome.
+Wake when TASK-206 supplies ordinary in-process manager composition and the exact admission/issuer interface. Integrate production close/drain, owner promotion and physical permit retention; do not require remote manager transport. The TASK-25 assignee owns the paired ordinary enrollment/admission + bound-sender integration witness; the TASK-118 assignee supplies the sender. Coordinate one integration candidate. Defer live host commissioning until the external resource boundary is authorized.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -31,6 +32,7 @@ A production enrollment path that can close admission and drain the incumbent be
 - [ ] #4 Queue counters and terminal events still agree with what actually happened to each ticket
 - [ ] #5 Pause a waiter after Ready and begin a competing switch. Its request reaches only the instance its reservation authorizes, or returns to admission before any upstream write.
 - [ ] #6 Hold an upstream send past caller timeout. Verify one caller terminal, a released logical slot, and zero stop or rebind operations through drain expiry. After late-response disposal, a fresh authorized drain can proceed.
+- [ ] #7 One paired production-composition fixture pins ordinary enrollment, exact recipe/body/generation, rebind before first write, and late retirement; neither component claims production closure without the same pinned witness.
 <!-- AC:END -->
 
 ## Implementation Plan

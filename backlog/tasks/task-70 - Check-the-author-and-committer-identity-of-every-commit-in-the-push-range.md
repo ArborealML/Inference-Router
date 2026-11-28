@@ -30,4 +30,6 @@ Decision-26 replaced the identity ruling: commits carry per-agent linkable ident
 
 <!-- SECTION:NOTES:BEGIN -->
 Live near-miss at 07:23Z, the reason this row matters: an identity written into the shared git config from a linked worktree would have misattributed every seat's next commit (decision-42). Per-commit identity overrides (decision-29) are what saved it; this row's author-and-committer check across the push range is the mechanical backstop for the case where such a config write does land.
+
+PR #87 planning reconciliation uses the GitHub connector, which cannot set the prescribed agent identity. Decision-83 records the scoped owner-directed squash landing and provenance; preserve published history and do not treat this as permission for future fallback attribution. The range guard remains open.
 <!-- SECTION:NOTES:END -->
