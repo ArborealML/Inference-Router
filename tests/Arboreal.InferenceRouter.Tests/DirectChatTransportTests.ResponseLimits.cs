@@ -1,8 +1,11 @@
+using System.IO.Pipelines;
 using System.Net;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Channels;
+using Arboreal.InferenceRouter.Server;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Arboreal.InferenceRouter.Tests;
@@ -163,6 +166,186 @@ public sealed partial class DirectChatTransportTests
         finally { chunks.Writer.TryComplete(); }
     }
 
+    [Theory(Timeout = 20_000)]
+    [InlineData(false, "missing")]
+    [InlineData(false, "noninteger")]
+    [InlineData(false, "out_of_range")]
+    [InlineData(false, "duplicate")]
+    [InlineData(true, "missing")]
+    [InlineData(true, "noninteger")]
+    [InlineData(true, "out_of_range")]
+    [InlineData(true, "duplicate")]
+    public async Task UnverifiedChoiceIndexesDoNotReleaseTheirStreamBlock(bool afterProgress, string invalid)
+    {
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(12));
+        var ct = deadline.Token;
+        var choices = invalid switch
+        {
+            "missing" => "{\"delta\":{\"content\":\"blocked\"}}",
+            "noninteger" => "{\"index\":0.5,\"delta\":{\"content\":\"blocked\"}}",
+            "out_of_range" => "{\"index\":1,\"delta\":{\"content\":\"blocked\"}}",
+            _ => "{\"index\":0,\"delta\":{\"content\":\"blocked\"}},{\"index\":0,\"delta\":{}}",
+        };
+        var malformed = "data: {\"model\":\"actual\",\"choices\":[" + choices + "]}\n\n";
+        var capture = new Capture((afterProgress ? Started : string.Empty) + malformed + Done, stream: true);
+        await using var upstream = await capture.StartAsync(ct);
+        await using var app = await RouterAsync(RouterConfigLoader.Load(Declaration(new(upstream.Urls.Single()))), PermitAll(), ct);
+        using var transport = DirectHandler();
+        using var client = ClientAt(app, transport);
+        using var response = await SendAsync(client, Chat, Request("public", stream: true), ct);
+        var delivered = await response.Content.ReadAsStringAsync(ct);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(afterProgress, delivered.Contains("allowed", StringComparison.Ordinal));
+        Assert.DoesNotContain("blocked", delivered, StringComparison.Ordinal);
+        Assert.DoesNotContain(Done, delivered, StringComparison.Ordinal);
+        Assert.Contains("commercial_exchange_failed", delivered, StringComparison.Ordinal);
+        var ticket = await TicketAsync(client, response, ct);
+        Assert.Equal(afterProgress ? JsonValueKind.Number : JsonValueKind.Null,
+            ticket.GetProperty("CommercialEvidence").GetProperty("FirstSemanticMilliseconds").ValueKind);
+        Assert.Single(capture.Requests);
+    }
+
+    [Fact(Timeout = 20_000)]
+    public async Task StreamForTwoRequestedChoicesAcceptsBothIndexesAndUsageOnlyFrames()
+    {
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(12));
+        var ct = deadline.Token;
+        var second = Started.Replace("\"index\":0", "\"index\":1", StringComparison.Ordinal);
+        var whole = Meta + second + Started + Done;
+        var capture = new Capture(string.Empty, stream: true)
+        {
+            Write = async context =>
+            {
+                var splitAt = Meta.Length + second.Length - 3;
+                await context.Response.WriteAsync(whole[..splitAt], context.RequestAborted);
+                await context.Response.WriteAsync(whole[splitAt..], context.RequestAborted);
+            },
+        };
+        await using var upstream = await capture.StartAsync(ct);
+        await using var app = await RouterAsync(RouterConfigLoader.Load(Declaration(new(upstream.Urls.Single()))), PermitAll(), ct);
+        using var transport = DirectHandler();
+        using var client = ClientAt(app, transport);
+        using var response = await SendAsync(client, Chat, Request("public", stream: true).Insert(1, "\"n\":2,"), ct);
+        Assert.Equal(whole, StripRouterComments(await response.Content.ReadAsStringAsync(ct)));
+        Assert.Equal("Completed", (await TicketAsync(client, response, ct)).GetProperty("State").GetString());
+        using var sent = JsonDocument.Parse(Assert.Single(capture.Requests).Body);
+        Assert.Equal(2, sent.RootElement.GetProperty("n").GetInt32());
+    }
+
+    [Fact]
+    public async Task ValidFragmentedChoiceIndexesAndUsageRemainAcceptedWithoutRenewingOnMalformedActivity()
+    {
+        var provider = RouterConfigLoader.Load(Declaration(new Uri("http://127.0.0.1:14141")))
+            .CommercialProviders["fixture"] with { SemanticIdleTimeout = TimeSpan.FromSeconds(1) };
+        var clock = new ReadinessDeadlineTests.ManualClock();
+        var model = provider.Models["public"];
+        using var response = new HttpResponseMessage(HttpStatusCode.OK);
+        using var validation = new DirectChatResponse(provider, model, clock, 0b11, CancellationToken.None);
+        validation.Bind(response);
+        var observer = new SemanticStreamObserver(clock, model.ServedId, 0b11);
+        validation.Observe(observer);
+        var frames = new SseBlockBuffer(observer: observer, filter: validation.Filter);
+        var delivered = new StringBuilder();
+        var otherChoice = Started.Replace("\"index\":0", "\"index\":1", StringComparison.Ordinal);
+        await Receive(Meta + Started[..^3]);
+        Assert.Empty(delivered.ToString());
+        await Receive(Started[^3..] + otherChoice[..^4]);
+        Assert.Equal(Meta + Started, delivered.ToString());
+        clock.AdvanceTo(750);
+        await Receive(otherChoice[^4..]);
+        Assert.Equal(Meta + Started + otherChoice, delivered.ToString());
+        clock.AdvanceTo(1500);
+        const string malformed = "data: {\"model\":\"actual\",\"choices\":[{\"delta\":{\"content\":\"blocked\"}}]}\n\n";
+        var refused = await Assert.ThrowsAsync<RouterRequestException>(() => Receive(malformed).AsTask());
+        Assert.Equal("commercial_exchange_failed", refused.Code);
+        Assert.Equal(Meta + Started + otherChoice, delivered.ToString());
+        clock.AdvanceTo(1749);
+        Assert.False(validation.TimedOut);
+        clock.AdvanceTo(1750);
+        Assert.True(validation.TimedOut);
+
+        ValueTask Receive(string text)
+        {
+            var (complete, limitExceeded) = frames.Append(Encoding.UTF8.GetBytes(text));
+            Assert.False(limitExceeded);
+            return validation.RelayAsync(frames, complete, heldBeforeRead: false, bytes =>
+            {
+                delivered.Append(Encoding.UTF8.GetString(bytes.Span));
+                return ValueTask.CompletedTask;
+            });
+        }
+    }
+
+    [Fact(Timeout = 20_000)]
+    public async Task TerminalAtEofWaitsForCreditInsideTheMaximumAndWakesTheNextRequestOnExpiry()
+    {
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(14));
+        var ct = deadline.Token;
+        var invocations = 0;
+        var capture = new Capture(string.Empty, stream: true)
+        {
+            Write = async context =>
+            {
+                if (Interlocked.Increment(ref invocations) == 1)
+                    await context.Response.WriteAsync(Started + Done, context.RequestAborted);
+                else
+                {
+                    context.Response.ContentType = "application/json";
+                    await context.Response.WriteAsync(Standard, context.RequestAborted);
+                }
+            },
+        };
+        await using var upstream = await capture.StartAsync(ct);
+        var declaration = Declaration(new(upstream.Urls.Single())).Replace("allows_streaming = true",
+            "allows_streaming = true\nfirst_output_ms = 100\nsemantic_idle_ms = 2000\nmaximum_stream_ms = 500", StringComparison.Ordinal);
+        var prefixBytes = Encoding.UTF8.GetByteCount(Started);
+        var settings = RouterConfigLoader.Load(FormattableString.Invariant($"stream_buffer_limit_bytes = {prefixBytes + 1}\n") + declaration);
+        settings.Scheduler.MaxInflightPerEngine = 1;
+        await using var app = await RouterAsync(settings, PermitAll(), ct);
+        var router = app.Services.GetRequiredService<RouterCore>();
+        var clock = new ReadinessDeadlineTests.ManualClock();
+        router.ResponseTimeoutClockForTests = clock;
+        var publishing = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        router.OnDirectTerminalPublishForTests = () => publishing.TrySetResult();
+        var first = await router.EnqueueHttpAsync("held-writer", Input(stream: true), ct);
+        var writer = new StreamRelayTests.GatedWriter(2);
+        var context = new DefaultHttpContext { RequestAborted = ct };
+        context.Features.Set<IHttpResponseBodyFeature>(new StreamRelayTests.BodyFeature(writer));
+        var relay = ServerApp.StreamTicketAsync(context, first, TimeProvider.System, router);
+        try
+        {
+            Assert.Equal(prefixBytes, await writer.Blocked.Task.WaitAsync(ct));
+            await publishing.Task.WaitAsync(ct);
+            var delivery = Assert.IsType<HttpStreamDelivery>(first.HttpDelivery);
+            Assert.Equal(prefixBytes, delivery.ReservedBytes);
+            var successor = await router.EnqueueAsync("independent-writer", Input(stream: false), ct);
+            clock.AdvanceTo(499);
+            Assert.False(successor.CompletionTask.IsCompleted);
+            Assert.Equal(1, router.Engines["fixture"].Inflight);
+            Assert.Single(capture.Requests);
+
+            clock.AdvanceTo(500);
+            var failure = await Assert.ThrowsAsync<RouterRequestException>(() => first.CompletionTask.WaitAsync(ct));
+            Assert.Equal("commercial_stream_deadline", failure.Code);
+            Assert.Equal(Standard, Encoding.UTF8.GetString(await successor.CompletionTask.WaitAsync(ct)));
+            Assert.Equal(2, capture.Requests.Count);
+            Assert.True(first.CommercialMayHaveSent);
+
+            writer.Release.TrySetResult(new FlushResult(false, false));
+            await relay.WaitAsync(ct);
+            var output = Encoding.UTF8.GetString(writer.Received.SelectMany(static chunk => chunk).ToArray());
+            Assert.StartsWith(Started, StripRouterComments(output), StringComparison.Ordinal);
+            Assert.Contains("commercial_stream_deadline", output, StringComparison.Ordinal);
+            Assert.DoesNotContain(Done, output, StringComparison.Ordinal);
+        }
+        finally { writer.Release.TrySetResult(new FlushResult(true, false)); }
+
+        static InferenceRequest Input(bool stream) => new()
+        {
+            Model = "public", Stream = stream, Body = Encoding.UTF8.GetBytes(Request("public", stream)), Options = new(),
+        };
+    }
+
     [Theory]
     [InlineData(false, false)]
     [InlineData(false, true)]
@@ -177,7 +360,7 @@ public sealed partial class DirectChatTransportTests
         var clock = new ReadinessDeadlineTests.ManualClock();
         var model = provider.Models["public"];
         using var response = new HttpResponseMessage(HttpStatusCode.OK);
-        using var validation = new DirectChatResponse(provider, model, clock, CancellationToken.None);
+        using var validation = new DirectChatResponse(provider, model, clock, 1, CancellationToken.None);
         validation.Bind(response);
         var observer = new SemanticStreamObserver(clock, model.ServedId, 1);
         validation.Observe(observer);

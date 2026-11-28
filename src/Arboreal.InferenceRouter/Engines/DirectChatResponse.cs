@@ -8,6 +8,7 @@ internal sealed class DirectChatResponse : IDisposable
     private readonly long _start;
     private readonly DirectChatProvider _provider;
     private readonly DirectChatModel _model;
+    private readonly ulong _choices;
     private readonly CancellationTokenSource _expired = new();
     private readonly CancellationTokenSource _input;
     private readonly object _deadlineGate = new();
@@ -27,11 +28,13 @@ internal sealed class DirectChatResponse : IDisposable
     private RouterRequestException? _failure;
     private SemanticStreamObserver? _observer;
 
-    internal DirectChatResponse(DirectChatProvider provider, DirectChatModel model, TimeProvider clock, CancellationToken cancellationToken)
+    internal DirectChatResponse(DirectChatProvider provider, DirectChatModel model, TimeProvider clock, ulong choices,
+        CancellationToken cancellationToken)
     {
         _clock = clock;
         _provider = provider;
         _model = model;
+        _choices = choices;
         _start = clock.GetTimestamp();
         _input = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _expired.Token);
         ArmTimer(provider.FirstOutputDeadline);
@@ -81,7 +84,6 @@ internal sealed class DirectChatResponse : IDisposable
     {
         if (CheckDeadline() is { } expired) return Fail(expired);
         var observer = _observer!;
-        if (observer.HasSemanticOutput) _firstSemantic ??= _clock.GetElapsedTime(_start).TotalMilliseconds;
         if (observer.ModelIdentity is StreamModelIdentity.Mismatch or StreamModelIdentity.Conflicting)
             return Fail(DirectChatProtocol.Identity());
         if (observer.SawError)
@@ -107,12 +109,13 @@ internal sealed class DirectChatResponse : IDisposable
             try
             {
                 using var metadata = DirectChatProtocol.Parse(data.ToArray());
-                if (!ValidateOutput(metadata.RootElement, "delta")) return Fail(DirectChatProtocol.BadResponse());
+                if (!ValidateOutput(metadata.RootElement, "delta", verifyIndexes: true)) return Fail(DirectChatProtocol.BadResponse());
                 Metrics.Observe(metadata.RootElement);
             }
             catch (JsonException) { return Fail(DirectChatProtocol.BadResponse()); }
         }
-        var qualifies = !_verified && observer.HasSemanticOutput && (_headerIdentity || observer.ModelIdentity == StreamModelIdentity.Matched);
+        if (semanticOutput) _firstSemantic ??= _clock.GetElapsedTime(_start).TotalMilliseconds;
+        var qualifies = !_verified && _firstSemantic is not null && (_headerIdentity || observer.ModelIdentity == StreamModelIdentity.Matched);
         if (CheckDeadline(semanticProgress: qualifies || _verified && semanticOutput) is { } expiredAtRelease)
             return Fail(expiredAtRelease);
         return qualifies ? SseBlockDecision.Qualified : SseBlockDecision.Allow;
@@ -150,8 +153,9 @@ internal sealed class DirectChatResponse : IDisposable
     {
         if (!_verified) throw DirectChatProtocol.Identity();
         if (!_terminal || _terminalTail.Length == 0) throw DirectChatProtocol.BadResponse();
-        if (CheckDeadline(finished: true) is { } expired) throw expired;
+        if (CheckDeadline() is { } expired) throw expired;
         await publish(_terminalTail.ToArray()).ConfigureAwait(false);
+        if (CheckDeadline(finished: true) is { } expiredDuringPublish) throw expiredDuringPublish;
     }
 
     internal async Task<byte[]> ReadBufferedAsync(HttpResponseMessage response)
@@ -192,14 +196,23 @@ internal sealed class DirectChatResponse : IDisposable
         catch (JsonException) { throw DirectChatProtocol.BadResponse(); }
     }
 
-    private bool ValidateOutput(JsonElement root, string outputName)
+    private bool ValidateOutput(JsonElement root, string outputName, bool verifyIndexes = false)
     {
         if (root.ValueKind != JsonValueKind.Object) return false;
         if (!root.TryGetProperty("choices", out var choices)) return true;
         if (choices.ValueKind != JsonValueKind.Array || choices.GetArrayLength() > 64) return false;
+        ulong seen = 0;
         foreach (var choice in choices.EnumerateArray())
         {
             if (choice.ValueKind != JsonValueKind.Object) return false;
+            if (verifyIndexes)
+            {
+                if (!choice.TryGetProperty("index", out var indexValue) || indexValue.ValueKind != JsonValueKind.Number ||
+                    !indexValue.TryGetInt32(out var index) || index is < 0 or >= 64) return false;
+                var bit = 1UL << index;
+                if ((_choices & bit) == 0 || (seen & bit) != 0) return false;
+                seen |= bit;
+            }
             if (!choice.TryGetProperty(outputName, out var output)) continue;
             if (output.ValueKind != JsonValueKind.Object) return false;
             foreach (var field in output.EnumerateObject())
