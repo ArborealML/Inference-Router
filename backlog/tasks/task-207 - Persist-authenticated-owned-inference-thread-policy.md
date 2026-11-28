@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@gpt-6.2-sol-config'
 created_date: '2026-11-27'
-updated_date: '2026-11-28T11:55:00Z'
+updated_date: '2026-11-28T12:03:00Z'
 labels: []
 milestone: m-19
 dependencies:
@@ -51,4 +51,6 @@ Authorize both inference endpoints, catalog/status, tickets, cancel, events, thr
 
 <!-- SECTION:NOTES:BEGIN -->
 Independent plan review at 3c7ae3e identified default handler redirect and proxy behavior, catalog caching, the use of raw thread IDs, and event ownership after ticket eviction. The revised plan covers each at its enforcement point. TASK-217 owns the external authority choices, TASK-208 owns sensitivity transitions and TASK-212 owns final commercial liability. This plan qualifies fixtures before any production enablement.
+
+Implementation began with the existing HTTP handler and owner-scoped private fixtures. Production requires an external authority adapter and verified destination confinement.
 <!-- SECTION:NOTES:END -->
