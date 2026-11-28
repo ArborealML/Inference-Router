@@ -9,9 +9,10 @@ internal static class AirTuneCompare
 {
     private const int MaxReportBytes = 16_384;
     private const string FileError = "error: unsupported platform or file admission facility";
-    private static readonly string[] HardwareMatchFields =
+    private static readonly string[] StableHardwareFields =
         ["ram_limit_bytes", "ram_plus_swap_limit_bytes", "swap_only_limit_bytes", "cpu_model",
          "cpu_affinity_sha256", "cpu_quota", "gpus"];
+    internal static ReadOnlySpan<string> HardwareMatchFields => StableHardwareFields;
     private static readonly string[] EnvironmentFields = ["os", "driver", "power", "thermals", "background", "limit_source"];
     private static readonly string[] FullyMatchedGroups = ["target", "workload"];
 
@@ -44,6 +45,8 @@ internal static class AirTuneCompare
             return 1;
         }
         var baseline = AirTuneRecord.Parse(baselineBytes);
+        var standaloneBaseline = baseline is not null;
+        baseline ??= TuneRunEvidence.ReadSummary(baselineBytes);
         if (baseline is null)
         {
             error.WriteLine("error: invalid baseline tuning summary");
@@ -57,13 +60,15 @@ internal static class AirTuneCompare
             return 1;
         }
         var candidate = AirTuneRecord.Parse(candidateBytes);
+        var standaloneCandidate = candidate is not null;
+        candidate ??= TuneRunEvidence.ReadSummary(candidateBytes);
         if (candidate is null)
         {
             error.WriteLine("error: invalid candidate tuning summary");
             return 1;
         }
 
-        return WriteReport(BuildReport(baseline, candidate), output, error);
+        return WriteReport(BuildReport(baseline, candidate, standaloneBaseline && standaloneCandidate), output, error);
     }
 
     private static (string? Baseline, string? Candidate) ParseArguments(ReadOnlySpan<string> args)
@@ -104,9 +109,11 @@ internal static class AirTuneCompare
         return 0;
     }
 
-    private static string BuildReport(AirTuneRecord baseline, AirTuneRecord candidate)
+    private static string BuildReport(AirTuneRecord baseline, AirTuneRecord candidate, bool standalone)
     {
-        var report = new StringBuilder("Short-grid comparison (unverified, operator-authored observations)\n");
+        var report = new StringBuilder(standalone
+            ? "Short-grid comparison (unverified, operator-authored observations)\n"
+            : "Short-grid comparison (unverified observations)\n");
         AppendSummary(report, "baseline", baseline);
         AppendSummary(report, "candidate", candidate);
 

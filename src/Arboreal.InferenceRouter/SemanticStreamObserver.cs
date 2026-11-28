@@ -52,9 +52,13 @@ public sealed record SemanticStreamObservation
 
 internal enum StreamInputEnd : byte { Unobserved, Eof, Torn, Fault, UpstreamCancelledRead }
 
+internal readonly record struct ExactLengthStreamEvidence(
+    bool Complete, TimeSpan? LastSemanticOutput, TimeSpan? Terminator);
+
 /// <summary>Observes fully framed SSE data on the upstream producer. Parsing is synchronous and commits
 /// only scalars. The ticket's terminal owner can take a consistent snapshot while the producer unwinds.</summary>
-internal sealed class SemanticStreamObserver(TimeProvider clock, string expectedModel, ulong expectedChoices)
+internal sealed class SemanticStreamObserver(TimeProvider clock, string expectedModel, ulong expectedChoices,
+    bool requireExactLength = false)
 {
     internal const int MaxModelUtf8Bytes = 512;
     private const int MaxChoices = sizeof(ulong) * 8;
@@ -62,6 +66,7 @@ internal sealed class SemanticStreamObserver(TimeProvider clock, string expected
 
     private readonly object _gate = new();
     private readonly long _started = clock.GetTimestamp();
+    private readonly ExactLengthEvidence? _exact = requireExactLength ? new() : null;
     private TimeSpan? _firstRawByte;
     private TimeSpan? _firstSemanticOutput;
     private string? _model;
@@ -95,10 +100,25 @@ internal sealed class SemanticStreamObserver(TimeProvider clock, string expected
 
     internal void ObserveData(ReadOnlySpan<byte> payload)
     {
-        if (payload.IsEmpty) return;
+        if (payload.IsEmpty)
+        {
+            if (_exact is { } exact)
+            {
+                lock (_gate) exact.Invalid = true;
+            }
+            return;
+        }
         if (payload.SequenceEqual("[DONE]"u8))
         {
-            lock (_gate) _sawDone = true;
+            lock (_gate)
+            {
+                if (_exact is { } exact)
+                {
+                    exact.Invalid |= _sawDone || !exact.Finished || !exact.HasTerminalUsage;
+                    exact.Terminator ??= clock.GetElapsedTime(_started);
+                }
+                _sawDone = true;
+            }
             return;
         }
 
@@ -123,12 +143,29 @@ internal sealed class SemanticStreamObserver(TimeProvider clock, string expected
             _sawError |= chunk.Error;
             _invalidPayload |= chunk.InvalidPayload;
             if (chunk.Error || chunk.InvalidPayload) return;
-            if (chunk.SemanticOutput) _firstSemanticOutput ??= clock.GetElapsedTime(_started);
+            if (chunk.SemanticOutput && (_firstSemanticOutput is null || _exact is not null))
+            {
+                var at = clock.GetElapsedTime(_started);
+                _firstSemanticOutput ??= at;
+                if (_exact is { } exact) exact.LastSemanticOutput = at;
+            }
+            _exact?.Observe(chunk, _sawDone, expectedChoices, expectedModel);
             _seenChoices |= chunk.SeenChoices;
             _finishedChoices = (_finishedChoices & ~chunk.SeenChoices) | chunk.FinishedChoices;
             _unverifiedChoice |= chunk.UnverifiedChoice;
             RecordModel(chunk.Model, chunk.InvalidModel);
             RecordUsage(chunk);
+        }
+    }
+
+    internal ExactLengthStreamEvidence GetExactLengthEvidence()
+    {
+        lock (_gate)
+        {
+            if (_exact is not { } exact) return default;
+            return new ExactLengthStreamEvidence(_end == StreamInputEnd.Eof && _sawDone &&
+                !_sawError && !_invalidPayload && !exact.Invalid && exact.LastSemanticOutput is not null,
+                exact.LastSemanticOutput, exact.Terminator);
         }
     }
 
@@ -279,6 +316,7 @@ internal sealed class SemanticStreamObserver(TimeProvider clock, string expected
         var sawIndex = false;
         var sawFinish = false;
         var finished = false;
+        var length = false;
         while (reader.Read() && reader.TokenType == JsonTokenType.PropertyName)
         {
             if (reader.ValueTextEquals("index"u8))
@@ -293,6 +331,7 @@ internal sealed class SemanticStreamObserver(TimeProvider clock, string expected
             {
                 reader.Read();
                 finished = !sawFinish && IsNonemptyString(reader);
+                length = finished && reader.ValueTextEquals("length"u8);
                 sawFinish = true;
                 reader.Skip();
             }
@@ -305,7 +344,7 @@ internal sealed class SemanticStreamObserver(TimeProvider clock, string expected
             else if (reader.ValueTextEquals("delta"u8))
             {
                 reader.Read();
-                chunk.SemanticOutput |= ReadDelta(ref reader);
+                chunk.SemanticOutput |= ReadDelta(ref reader, ref chunk.NonTextDelta);
             }
             else
             {
@@ -323,9 +362,10 @@ internal sealed class SemanticStreamObserver(TimeProvider clock, string expected
         chunk.UnverifiedChoice |= (chunk.SeenChoices & bit) != 0;
         chunk.SeenChoices |= bit;
         if (finished) chunk.FinishedChoices |= bit;
+        if (length) chunk.LengthFinishedChoices |= bit;
     }
 
-    private static bool ReadDelta(ref Utf8JsonReader reader)
+    private static bool ReadDelta(ref Utf8JsonReader reader, ref bool nonTextDelta)
     {
         if (reader.TokenType != JsonTokenType.StartObject)
         {
@@ -339,18 +379,23 @@ internal sealed class SemanticStreamObserver(TimeProvider clock, string expected
             if (reader.ValueTextEquals("content"u8) || reader.ValueTextEquals("reasoning_content"u8) ||
                 reader.ValueTextEquals("reasoning"u8) || reader.ValueTextEquals("refusal"u8))
             {
+                var refusal = reader.ValueTextEquals("refusal"u8);
                 reader.Read();
-                output |= IsNonemptyString(reader);
+                var hasText = IsNonemptyString(reader);
+                output |= hasText;
+                nonTextDelta |= refusal && hasText;
                 reader.Skip();
             }
             else if (reader.ValueTextEquals("function_call"u8))
             {
                 reader.Read();
+                nonTextDelta |= reader.TokenType != JsonTokenType.Null;
                 output |= ReadToolOutput(ref reader, function: true);
             }
             else if (reader.ValueTextEquals("tool_calls"u8))
             {
                 reader.Read();
+                nonTextDelta |= reader.TokenType != JsonTokenType.Null;
                 if (reader.TokenType == JsonTokenType.StartArray)
                 {
                     while (reader.Read() && reader.TokenType != JsonTokenType.EndArray)
@@ -441,13 +486,41 @@ internal sealed class SemanticStreamObserver(TimeProvider clock, string expected
         internal bool Error;
         internal bool InvalidPayload;
         internal bool SemanticOutput;
+        internal bool NonTextDelta;
         internal bool UnverifiedChoice;
         internal ulong SeenChoices;
         internal ulong FinishedChoices;
+        internal ulong LengthFinishedChoices;
         internal string? Model;
         internal bool InvalidModel;
         internal StreamUsageAvailability Usage;
         internal long PromptTokens;
         internal long CompletionTokens;
+    }
+
+    private sealed class ExactLengthEvidence
+    {
+        internal bool Invalid;
+        internal bool Finished;
+        internal bool HasTerminalUsage;
+        internal TimeSpan? LastSemanticOutput;
+        internal TimeSpan? Terminator;
+
+        internal void Observe(Chunk chunk, bool sawDone, ulong expectedChoices, string expectedModel)
+        {
+            Invalid |= sawDone || chunk.UnverifiedChoice || chunk.NonTextDelta || (chunk.SeenChoices & ~expectedChoices) != 0 ||
+                Finished && chunk.SeenChoices != 0;
+            if (chunk.FinishedChoices != 0)
+            {
+                Invalid |= chunk.LengthFinishedChoices != expectedChoices;
+                Finished = true;
+            }
+            if (chunk.Usage != StreamUsageAvailability.Unavailable)
+            {
+                Invalid |= !Finished || HasTerminalUsage || chunk.Usage != StreamUsageAvailability.Available ||
+                    !string.Equals(chunk.Model, expectedModel, StringComparison.Ordinal);
+                HasTerminalUsage = true;
+            }
+        }
     }
 }
