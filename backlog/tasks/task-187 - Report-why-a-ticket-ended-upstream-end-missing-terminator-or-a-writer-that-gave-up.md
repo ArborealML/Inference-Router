@@ -3,11 +3,11 @@ id: TASK-187
 title: >-
   Report why a ticket ended: upstream end, missing terminator, or a writer that
   gave up
-status: Ready for Review
+status: To Do
 assignee:
   - '@gpt-6.2-astra'
 created_date: '2026-11-25T10:49:00Z'
-updated_date: '2026-11-27'
+updated_date: '2026-11-28'
 labels: []
 dependencies:
   - TASK-189
@@ -23,12 +23,12 @@ A stream that ends with no finish_reason and no [DONE] sentinel currently ends a
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 A finished ticket states how its upstream ended: complete, ended without a terminator, or failed, and the event feed carries it.
-- [ ] #2 A downstream stream that stopped early records the reason and does not read as completed.
-- [ ] #3 The existing wire bytes do not change: an in-band error frame and terminator still end a failed stream.
-- [ ] #4 One ticket produces exactly one terminal event and one terminal state, including the in-band error plus terminator path that today can settle as completed.
-- [ ] #5 Cancellation stays its own axis: a client hang-up or an induced abort is never reclassified as an upstream end reason.
-- [ ] #6 An additive authoritative protocol outcome distinguishes complete, incomplete, failed and unknown; clean EOF or legacy Completed alone cannot establish successful generation or complete usage.
+- [x] #1 A finished ticket states how its upstream ended: complete, ended without a terminator, or failed, and the event feed carries it.
+- [x] #2 A downstream stream that stopped early records the reason and does not read as completed.
+- [x] #3 The existing wire bytes do not change: an in-band error frame and terminator still end a failed stream.
+- [x] #4 One ticket produces exactly one terminal event and one terminal state, including the in-band error plus terminator path that today can settle as completed.
+- [x] #5 Cancellation stays its own axis: a client hang-up or an induced abort is never reclassified as an upstream end reason.
+- [x] #6 An additive authoritative protocol outcome distinguishes complete, incomplete, failed and unknown; clean EOF or legacy Completed alone cannot establish successful generation or complete usage.
 - [ ] #7 One bounded semantic observation contract supplies first raw byte, first semantic output, model identity, usage availability and authoritative outcome; local Tune uses fixture/local observations, commercial extends it.
 <!-- AC:END -->
 
@@ -43,9 +43,11 @@ Precedence: structured error, transport/idle failure, committed terminator, then
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Candidate 56b24d3cbb21e2554454cc8931f20d03dc175488 against main 62f1c79 implements AC1–6 and AC7's shared observation foundation; downstream Tune/commercial consumption remains separately owned. Independent plan review passed before code. Terminal CAS freezes the bounded synchronized record; malformed/over-limit data disables positive completion, and invalid usage remains sticky-invalid. Preserve PR #83 progress fields and PR #86 parsing ownership.
+Published [PR #89](https://github.com/ArborealML/Inference-Router/pull/89), head 7e42e0fca22565f61294b874de85338daca69250, implements AC1–6 and AC7's observation foundation. Tune/commercial consumption remains separately owned. [Source mappings](../milestones/wave1-publication-map.json) preserve reviewed 934e790..56b24d3 and the identical published tree under TASK-220's provenance exception.
 
-Independent source review of 934e790..56b24d3 passed after fixing lost structured-error evidence when a later field in the same event is malformed/overdeep. Added complete-versus-partial error, byte-preservation and partial-positive-evidence regressions. Release verification at exact 56b24d3: 150 passed, zero failed/skipped across SemanticStreamObservationTests, StreamFrameIdentityTests, StreamRelayTests, StreamingFailureTests and EventSurfaceTests; build/analyzers passed. SPEC v0.12.164 records behavior and limitations.
+Independent plan/source review passed after retaining fully observed structured errors when later same-event data is malformed/overdeep. Complete/partial-error, byte-preservation and positive-evidence regressions passed. Local Release at 56b24d3: 150 passed, zero failures/skips; build/analyzers passed. Terminal CAS freezes the bounded record; malformed/over-limit data disables positive completion and invalid usage remains sticky-invalid. SPEC v0.12.164 records scope.
 
-Historical attempts and accepted wire disposition remain at the [planning baseline](https://github.com/ArborealML/Inference-Router/commit/62f1c79de7b25486cf8669de654a2fd57d8993a2). Boundary EOF may retain legacy Completed with authoritative incomplete; cancellation is orthogonal and upstream error adds no second terminal frame. No nonstreaming, commercial, hardware or installed-client qualification is claimed. Coordinator next publishes the reviewed candidate through an attribution-compliant capability, then checks exact-head hosted build/test/AOT. Backlog CLI unavailable; controlled Markdown and strict board validation substitute. Not Done before integration and remaining qualification.
+[Hosted CI](https://github.com/ArborealML/Inference-Router/actions/runs/46112187952) passed on this actual head: 2,193 tests, zero failed/skipped, build, Linux AOT/config smoke, board and release harness. Synthetic merge/head trees match.
+
+Preserve PR #83 progress and #86 parsing. Boundary EOF may retain legacy Completed with authoritative incomplete; cancellation remains orthogonal and upstream error adds no second terminator. Historical attempts remain at the planning baseline. Source landed in the [main integration](https://github.com/ArborealML/Inference-Router/commit/1bf85d3495ab2517a921d78013ffe69bbefb4325).
 <!-- SECTION:NOTES:END -->

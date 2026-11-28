@@ -1,11 +1,11 @@
 ---
 id: TASK-202
 title: Refuse admin JSON roots that are not objects instead of answering 500
-status: Ready for Review
+status: Done
 assignee:
   - '@gpt-6.2-astra'
 created_date: '2026-11-26T22:30:00Z'
-updated_date: '2026-11-27'
+updated_date: '2026-11-28'
 labels:
   - wire
 dependencies: []
@@ -21,19 +21,15 @@ Admin route bodies are read with JsonDocument and then treated as objects: nonob
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Every admin route parsing a JSON body refuses nonobject roots with its existing 400 envelope: invalid_request for threads/switch, invalid_target_reset for target-reset.
-- [ ] #2 A well-shaped root with a non-string member is refused, not thrown through.
-- [ ] #3 The route's own refusal body is byte-pinned for each malformed root class, and no exception reaches the server's 500 path.
+- [x] #1 Every admin route parsing a JSON body refuses nonobject roots with its existing 400 envelope: invalid_request for threads/switch, invalid_target_reset for target-reset.
+- [x] #2 A well-shaped root with a non-string member is refused, not thrown through.
+- [x] #3 The route's own refusal body is byte-pinned for each malformed root class, and no exception reaches the server's 500 path.
 <!-- AC:END -->
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Found by an external review of the priority branch and verified in the code: the admin routes catch only JsonException, so InvalidOperationException from TryGetProperty/GetString escapes. This is pre-existing and not caused by the priority change, but it is on the same surfaces the priority work touched.
-
-Candidate ee2fbc8ee2ff7b321a0d2a6d4733cb1f5aaea93f implements AC1–3 under the clarified existing target-reset exception. Independent plan and source review passed; source range 8a12ba8..ee2fbc8 had no blocking findings. Exact-head Release verification: 92 passed, zero failed/skipped across AdminJsonBodyTests, AdminThreadPriorityTests, AdminSwitchOperationTests, ErrorContractTests and ConfigReloadWireTests; build/analyzers passed. Fixtures pin literal refusals, valid nulls and no registration/admin-use/operation effects.
-
-Dependency base 2c54500 merges exact PR #86 head a12012b176e84e49603c433a9f934206499b4bcb with planning main 62f1c79. PR #86 priority code is unchanged and retains its separate review dispositions. SPEC v0.12.166 and README state the correction. Coordinator next publishes this stacked increment, checks hosted build/test/AOT on its actual head and reconciles after the prerequisite lands. No merge/live qualification; not Done. Backlog CLI unavailable; controlled Markdown and strict validation substitute.
+Invalid administrative JSON returns the route-specific 400 response before registration or switch effects. [Reviewed implementation](https://github.com/ArborealML/Inference-Router/pull/90) is included in [main](https://github.com/ArborealML/Inference-Router/commit/1bf85d3495ab2517a921d78013ffe69bbefb4325). [Hosted qualification](https://github.com/ArborealML/Inference-Router/actions/runs/46112270273) passed 2,269 tests and the Linux native build. The [publication record](../milestones/wave1-implementation-evidence.md) preserves the original review and fixture history.
 <!-- SECTION:NOTES:END -->
 
 ## Implementation Plan

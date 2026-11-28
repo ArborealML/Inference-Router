@@ -28,19 +28,23 @@ Stream integrity, switch safety and bounded admission can advance in parallel. E
 
 ## Coordinated implementation ownership
 
-The 27 November implementation session is pinned to planning main `62f1c79`. The coordinator is the sole Backlog writer. At most one primary and one independent companion implementation run; preparation and independent review may proceed alongside them. Native subagent messages and isolated worktrees replace the unavailable local tmux service in this session. No implementation merges or live operations are authorized.
+The 28 November [main integration](https://github.com/ArborealML/Inference-Router/commit/1bf85d3495ab2517a921d78013ffe69bbefb4325) includes #86 and #88–92. PR #83 remains open for service lifecycle corrections.
+
+The following 27 November publication snapshot was pinned to planning main `62f1c79`. The coordinator is the sole Backlog writer. At most one primary and one independent companion implementation run; preparation and independent review may proceed alongside them. Native subagent messages and isolated worktrees replace the unavailable local tmux service in this session. Its authorization covered publication.
 
 | Workstream | Current assignment and next handoff |
 | --- | --- |
-| A — Scheduling/admission | TASK-203 source 9f023f3 independently reviewed; 263 focused tests passed. TASK-205 implements inherited priority on that pinned dependency. TASK-204 remains next. Own queue traversal/take/wake contract. |
+| A — Scheduling/admission | TASK-203/205/204 published as PRs #88/#91/#92. Independent source review and exact-head hosted CI passed (2,160/2,166/2,341 tests respectively). Coordinator owns remaining acceptance. Own queue traversal/take/wake contract. |
 | B — Physical authority | Prepare TASK-206 seam and TASK-195 identity from existing primitives; TASK-25 owns paired production witness with 118. No production composition claim yet. |
-| C — Protocol observation | TASK-187 source 56b24d3 independently reviewed; 150 focused tests passed. TASK-202 corrects admin parsing on preserved PR #86. Own semantic observation contract consumed by D/E. |
-| D — Commercial | Await 187 observation contract and 203 traversal; extend one integrated transport and reservation path. Fixtures only. |
+| C — Protocol observation | TASK-187/202 published as PRs #89/#90. Independent source review and exact-head hosted CI passed (2,193/2,269 tests respectively); PR #86 remains preserved. Own semantic observation contract consumed by D/E. |
+| D — Commercial | Consume PR #89 observation and #88 traversal through explicit dependencies; extend one transport/reservation path. Fixtures only. |
 | E — Tune | TASK-170 preserves existing owner and reported fitter evidence; waiting for recoverable worker handoff. No duplicate runner dispatched. |
 | F — Policy/Pi | Prepare 207/208 external-authority fixtures; preserve existing priority parser work and numeric/legacy compatibility boundaries. |
-| G — Integration/review | Reconciled 83/86 source overlap and CI, independently reviewed A/C plans, and prepares bounded physical-contract inventory. |
+| G — Integration/review | Reconciled 83/86 overlap and CI; completed bounded physical-contract inventory, A/C plan/source reviews, integration review and publication-history audit. Exact published-tree/parent/provenance audit and PR-base review completed; final Backlog review follows. |
 
-TASK-203/187/205/202 plans received independent passes with bounded corrections before code. PR #83's source auto-merges at the pinned base but SPEC needs reconciliation; PR #86's source merge is clean at that base, and its outstanding TASK-185 review corrections remain open. Preserve both branches and their historical checks. The pinned .NET SDK is installed and focused Release builds/tests run locally. Backlog CLI remains unavailable; controlled Markdown updates use the strict board checker. Exact-head hosted build/test/AOT remain required. Publication awaits TASK-220's explicit capability/attribution decision; the planning-only connector exception is not reused. Local candidates are not merged or production-qualified.
+TASK-203/187/205/202/204 plans received independent passes with bounded corrections before code. PR #83's source auto-merges at the pinned base but SPEC needs reconciliation; PR #86's source merge is clean at that base, and its outstanding TASK-185 review corrections remain open. Preserve both branches and their historical checks. The pinned .NET SDK is installed and focused Release builds/tests run locally. Backlog CLI remains unavailable; controlled Markdown updates use the strict board checker. All five published heads passed hosted build/full-test/Linux-AOT, board and release-harness checks. TASK-220 records the owner's explicit implementation-session connector exception with Sol/Astra provenance; publication may proceed without another permission request. These checks preceded integration.
+
+The final prepared aggregate 89783fbaf83bb31de3580030917a8ccf67f779ff passed 680 affected Release tests across 32 named fixture classes, with no failures or skips. Local Linux x64 AOT passed without compiler/trim warnings; the native configuration-only smoke passed. Independent source/integration and publication-history reviews passed. Earlier integration 02087978 passed 608 tests after a deterministic priority-fixture cleanup/selection correction; runtime assertions and deadlines were preserved. The aggregate preserves PR #86 and leaves #83 separate. [Exact source mappings and qualification evidence](wave1-implementation-evidence.md) distinguish historical reviewed hashes from equivalent prepared commits. No task is closed by fixture receipts; the published equivalents passed hosted CI; remaining operational qualification is tracked separately.
 
 ## Parallel work
 
