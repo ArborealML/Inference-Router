@@ -316,6 +316,7 @@ public static partial class ServerApp
             var (reader, first) = await ReadFirstChunkAsync(sink, ticket, clock, ct).ConfigureAwait(false);
             // Commissioned selection installs delivery before publishing its stream reader.
             var delivery = ticket.HttpDelivery;
+            if (delivery is not null && ticket.HttpOutputEnded) throw new OperationCanceledException(ct);
             if (reader is not null)
             {
                 await sink.WritePayloadAsync(first, ct).ConfigureAwait(false);
@@ -397,6 +398,7 @@ public static partial class ServerApp
             var ready = ticket.StreamReady;
             await WaitWithKeepalivesAsync(ready).ConfigureAwait(false);
             var reader = (await ready.WaitAsync(ct).ConfigureAwait(false))?.Reader;
+            if (ticket.HttpOutputEnded && ticket.HttpDelivery is not null) throw new OperationCanceledException(ct);
             if (reader is null) return default;
 
             while (true)
