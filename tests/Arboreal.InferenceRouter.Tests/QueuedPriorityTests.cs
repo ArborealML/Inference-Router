@@ -4,6 +4,8 @@ namespace Arboreal.InferenceRouter.Tests;
 
 public sealed class QueuedPriorityTests
 {
+    private static readonly string[] ExpectedPriorityOrder = ["first", "normal", "explicit", "second", "third"];
+
     [Fact(Timeout = 20_000)]
     public async Task PromotionAndDemotionKeepExplicitOverridesAndOriginalFifo()
     {
@@ -39,7 +41,7 @@ public sealed class QueuedPriorityTests
         Assert.Equal(new[] { (double)high.Class, (double)ThreadPriority.Interactive().Class, (double)background.Class },
             router.Events.Replay(0).Where(entry => entry.ThreadId == thread.ThreadId && entry.Kind == "thread.priority_changed")
                 .Select(entry => entry.Value.GetValueOrDefault()));
-        Assert.Equal(new[] { "first", "normal", "explicit", "second", "third" }, backend.ExecutionOrder);
+        Assert.Equal(ExpectedPriorityOrder, backend.ExecutionOrder);
         Assert.Equal(originalTimes, queued.Select(ticket => ticket.QueuedAt));
         Assert.Equal(4, thread.MaxInflight);
 
