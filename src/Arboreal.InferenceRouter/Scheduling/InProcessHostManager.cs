@@ -99,17 +99,28 @@ internal sealed class InProcessHostManager
         return transition.Completion.Task;
     }
 
+    internal bool TryClaimRuntime(Transition transition, EngineRuntime engine, string model, ServingProfile? profile)
+    {
+        lock (Admission.Gate)
+        {
+            if (!ReferenceEquals(_active.GetValueOrDefault(transition.Domain), transition) || !transition.Started ||
+                transition.RuntimeClaimed || !transition.Matches(engine, model, profile)) return false;
+            transition.RuntimeClaimed = true;
+            return true;
+        }
+    }
+
     private async Task ExecuteAcceptedAsync(Transition transition)
     {
         EngineRuntime.SwitchResult result;
         Exception? failure = null;
+        bool published;
         try
         {
             var observed = await transition.Runtime.EnsureLoadedAsync(transition.Model, transition.Profile, Timeout.InfiniteTimeSpan,
                 queue: null, transition.Cancellation,
                 exactProfile: true, hostTransition: transition).ConfigureAwait(false);
-            result = observed.Result.IsReady && !Admission.HasTransitionPublication(transition.Domain)
-                ? EngineRuntime.SwitchResult.Failed(SwitchReason.LaunchFailed) : observed.Result;
+            result = observed.Result;
         }
         catch (Exception error)
         {
@@ -119,8 +130,9 @@ internal sealed class InProcessHostManager
         finally
         {
             lock (Admission.Gate) _active.Remove(transition.Domain);
-            Admission.EndTransition(transition.Domain);
+            published = Admission.EndTransition(transition.Domain);
         }
+        if (result.IsReady && !published) result = EngineRuntime.SwitchResult.Failed(SwitchReason.LaunchFailed);
         if (failure is OperationCanceledException cancellation) transition.Completion.TrySetCanceled(cancellation.CancellationToken);
         else if (failure is not null) transition.Completion.TrySetException(failure);
         else transition.Completion.TrySetResult(result);
@@ -148,6 +160,7 @@ internal sealed class InProcessHostManager
         ExactTicketAdmission.DomainIdentity domain, CancellationToken cancellation)
     {
         internal bool Started;
+        internal bool RuntimeClaimed;
         internal TaskCompletionSource<EngineRuntime.SwitchResult> Completion { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         internal EngineRuntime Runtime => runtime;
         internal string Model => model;
@@ -157,8 +170,7 @@ internal sealed class InProcessHostManager
 
         internal bool BelongsTo(InProcessHostManager owner) => ReferenceEquals(owner, manager);
 
-        internal bool Matches(InProcessHostManager owner, EngineRuntime engine, string target, ServingProfile? profile) =>
-            Started && BelongsTo(owner) && ReferenceEquals(engine, runtime) &&
-            target == model && ReferenceEquals(profile, tier);
+        internal bool Matches(EngineRuntime engine, string target, ServingProfile? profile) =>
+            ReferenceEquals(engine, runtime) && target == model && ReferenceEquals(profile, tier);
     }
 }

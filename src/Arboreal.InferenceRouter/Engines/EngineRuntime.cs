@@ -1094,7 +1094,7 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
         if (Volatile.Read(ref _stopped) || Volatile.Read(ref _retiring)) return new(SwitchResult.RouterStopped);
         var canonical = CanonicalModel(model) ?? model;
         if (_hostEnrollment?.Manager is { } manager &&
-            (hostTransition is null || !hostTransition.Matches(manager, this, canonical, profileOverride)))
+            (hostTransition is null || !manager.TryClaimRuntime(hostTransition, this, canonical, profileOverride)))
             return new(SwitchResult.Failed(SwitchReason.NoLifecycleOwner));
         var requiredWindow = RequiredWindow(profileOverride, explicitContextMinimum);
         if (localOwner is not null && (!ReferenceEquals(localOwner.Engine, this) || !localOwner.Cold))

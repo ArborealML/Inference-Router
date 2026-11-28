@@ -1,12 +1,13 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.168)
+Status: draft, continuously revised (v0.12.169)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
 
 ## 0. Revision log
 
+- v0.12.169 — continue past unavailable preparation and activation offers, withdraw closed managed residents from route ranking, consume an active transition's runtime claim once, and deliver queued cancellation through controller cleanup (§§5.3.1, 5.5, 14).
 - v0.12.168 — scope exact preparation capacity and staged-owner preference to the physical domain, and exercise queue-driven activation and verified delivery through an internally enrolled in-process host manager (§§4–7, 12, 14).
 - v0.12.167 — give each inference call with an omitted thread header a request-scoped scheduling identity. The CLI omits the header by default. Explicit names retain their thread limits and ambiguous identity is refused before admission (§§5.1, 6, 11, 14).
 - v0.12.166 — validate admin thread and switch JSON object roots and string fields before registration or switch admission. Malformed shapes return 400 in the route's existing error envelope. Target reset keeps its `invalid_target_reset` contract (§§6, 6.1, 14).
@@ -2267,8 +2268,10 @@ The composition refuses a missing or mismatched enrollment before creating manag
 queued cold request can accept one transition for the chosen engine, model and recipe. The transition
 closes the prior exact route while the domain has no counted uses or preparations. The accepted
 operation holds the domain through controller cleanup. Its handle gives repeated execution calls
-the same outcome. The initiating ticket stays queued until the staged proof opens the exact route
-and the ticket passes the live admission cut. The issuer still controls the first application write
+the same outcome and grants one runtime claim while the transition is active. The initiating ticket
+stays queued until the staged proof opens the exact route and the ticket passes the live admission
+cut. Closing the current exact route withdraws the managed resident from route ranking and allows
+fresh verification after any outstanding use settles. The issuer still controls the first application write
 and physical retirement. Journal and issuer evidence remain authoritative across recovery. The
 in-process fixture carries no new durable receipt store or remote authority.
 
@@ -2378,7 +2381,9 @@ Temporary capacity loss parks the ticket. A definitive refusal settles once with
   Preparation owns no physical slot. A preparing head preserves its queue order and another
   queue or an independent candidate in the same queue may progress. Each ticket may start one
   preparation per binding and route generation and have only one outstanding attempt, including
-  retirement. Each domain has a preparation limit of the greater of two and its member count at
+  retirement. A full or spent preparation offer leaves an independent cold route eligible when
+  the ticket has no outstanding attempt. A declined activation leaves later candidates eligible.
+  Each domain has a preparation limit of the greater of two and its member count at
   construction. Preparing, ready and retiring work consume their originating domain's budget.
   Cancellation, expiry, supersession and shutdown signal retirement. Work
   that ignores cancellation still occupies its preparation slot until it settles. A parked
@@ -4368,6 +4373,11 @@ and cohort/residency hysteresis in the scheduler (§12.3 hook).
   Construct the combined router with two group names for one enrolled domain, exercise its original
   cold ticket through activation and the verified issuer, and capture an independent ordinary send
   while readiness is held. Refuse stale, duplicate and incomplete enrollment before mutation.
+  Use another cold domain after preparation is full or spent and an earlier activation is
+  unavailable. Close an exact resident while its model remains visible in capability, recover
+  through a fresh route generation, and refuse reuse of an ended runtime claim. Cancel the
+  activation owner during readiness and hold controller cleanup before recovering the successor.
+  Cancel at proof opening and just before the verified offer and confirm zero first writes.
 - **Queued priority** (`QueuedPriorityTests`, `SwitchCostDispatchTests`): promote and demote inherited
   requests through all thread update entry points, preserve explicit overrides and FIFO, and verify
   that a change racing an exact take or measured switch comparison follows the updated order. Verify

@@ -356,8 +356,7 @@ public sealed partial class RouterCore : IInferenceRouter
     private enum TakeResult { Taken, QueueChanged, RouteChanged, Ineligible, Terminal, Preparing }
     private readonly record struct AdmissionTake(TakeResult Result, ExactTicketAdmission.Invocation? Invocation = null,
         string? TerminalCode = null);
-    private readonly record struct PreparationOffer(Selection Selection, EngineRuntime Engine,
-        ExactTicketAdmission.Claim Claim, bool CanStart);
+    private readonly record struct PreparationOffer(Selection Selection, EngineRuntime Engine, ExactTicketAdmission.Claim Claim);
     private readonly record struct ManagedOffer(Selection Selection, EngineRuntime Engine, ServingProfile Profile);
 
     // Existing fixtures step one admission transition without starting the background dispatcher.
@@ -432,8 +431,9 @@ public sealed partial class RouterCore : IInferenceRouter
 
         Blocker? blocker = null;
         var routeChanged = false;
-        PreparationOffer? preparation = null;
-        ManagedOffer? activation = null;
+        List<PreparationOffer>? preparations = null;
+        PreparationOffer? blockedPreparation = null;
+        List<ManagedOffer>? activations = null;
         (Selection Selection, EngineRuntime Engine, RouteProbe Probe)? drain = null;
         // Forwarding-only catalog entries preserve the existing typed switch refusal when no
         // candidate can serve or activate. They must not displace an actual route awaiting capacity.
@@ -471,7 +471,7 @@ public sealed partial class RouterCore : IInferenceRouter
 
             if (selection.Decision.SwitchRequired && _hostManager?.Owns(engine.Name) == true)
             {
-                if (probe.Profile is { } profile) activation ??= new(selection, engine, profile);
+                if (probe.Profile is { } profile) (activations ??= []).Add(new(selection, engine, profile));
                 blocker ??= new("lifecycle_group_waiting", _hostManager.Scope(engine.Name));
                 continue;
             }
@@ -481,7 +481,8 @@ public sealed partial class RouterCore : IInferenceRouter
                 selection.Decision.TargetProfile is not null ||
                 (candidate.RequiredContextTokens > 0 && engine.ProfilesForModel(candidate.Ticket.Model).Count > 0);
             EngineRuntime.DispatchObservation? expected = needsCurrentObservation ? observed : null;
-            var take = TryAdmit(round, index, selection, engine, expected, requiredWindow, compared, generation, ref preparation);
+            var take = TryAdmit(round, index, selection, engine, expected, requiredWindow, compared, generation,
+                ref preparations, ref blockedPreparation);
             if (take.Result == TakeResult.Taken)
             {
                 var proof = selection.Decision.SwitchRequired ? null : observed.Capability.SwitchProof;
@@ -504,11 +505,12 @@ public sealed partial class RouterCore : IInferenceRouter
             blocker ??= new(take.Result == TakeResult.RouteChanged ? "route_changed" : "route_admission_wait", engine.Name);
         }
 
-        if (preparation is { } offer)
-            StartExactPreparation(round[offer.Selection.QueueIndex].Queue, offer, generation);
-        else if (activation is { } managed)
-            StartManagedActivation(round[managed.Selection.QueueIndex].Queue, managed, generation);
-        else if (drain is { } pending &&
+        var started = preparations?.Exists(offer => StartExactPreparation(round[offer.Selection.QueueIndex].Queue, offer, generation)) == true;
+        if (!started)
+            started = activations?.Exists(offer => StartManagedActivation(round[offer.Selection.QueueIndex].Queue, offer, generation)) == true;
+        if (!started && blockedPreparation is { } blocked)
+            started = StartExactPreparation(round[blocked.Selection.QueueIndex].Queue, blocked, generation);
+        if (!started && drain is { } pending &&
             TryStartLocalDrain(round, index, pending.Selection, pending.Engine, pending.Probe, generation) is { } owned)
             blocker = new("lifecycle_group_draining", owned.Name);
         if (ReadQueueEnd(request) is not null) MaybeFailDeadline(request);
@@ -518,7 +520,8 @@ public sealed partial class RouterCore : IInferenceRouter
 
     private AdmissionTake TryAdmit(QueueRound[] round, int index, Selection selection, EngineRuntime engine,
                                    EngineRuntime.DispatchObservation? expected, long requiredWindow, bool compared,
-                                   ConfigurationGeneration generation, ref PreparationOffer? preparation)
+                                   ConfigurationGeneration generation, ref List<PreparationOffer>? preparations,
+                                   ref PreparationOffer? blockedPreparation)
     {
         var candidate = selection.Request;
         if (!UsesExactAdmission(engine))
@@ -565,8 +568,9 @@ public sealed partial class RouterCore : IInferenceRouter
                     lock (queue.Gate)
                         canStart = IsPreparationCandidate(queue, selection, engine, generation);
                 }
-                if (preparation is null || (!preparation.Value.CanStart && canStart))
-                    preparation = new(selection, engine, claim, canStart);
+                var offer = new PreparationOffer(selection, engine, claim);
+                if (canStart) (preparations ??= []).Add(offer);
+                else if (_hostManager is null) blockedPreparation ??= offer;
                 return new(TakeResult.Preparing);
             }
         }
@@ -577,7 +581,7 @@ public sealed partial class RouterCore : IInferenceRouter
 
     }
 
-    private void StartExactPreparation(ModelQueue queue, PreparationOffer offer, ConfigurationGeneration generation)
+    private bool StartExactPreparation(ModelQueue queue, PreparationOffer offer, ConfigurationGeneration generation)
     {
         var admission = _admission!;
         var candidate = offer.Selection.Request;
@@ -589,7 +593,9 @@ public sealed partial class RouterCore : IInferenceRouter
         {
             work = IsPreparationCandidate(queue, offer.Selection, offer.Engine, generation) ? admission.ReservePreparationWork(offer.Claim) : null;
         }
-        work?.Invoke();
+        if (work is null) return false;
+        work();
+        return true;
     }
 
     private bool IsPreparationCandidate(ModelQueue queue, Selection selection, EngineRuntime engine, ConfigurationGeneration generation)
@@ -601,7 +607,7 @@ public sealed partial class RouterCore : IInferenceRouter
                     : IsPendingAndThreadAdmissible(earlier)) >= 0;
     }
 
-    private void StartManagedActivation(ModelQueue queue, ManagedOffer offer, ConfigurationGeneration generation)
+    private bool StartManagedActivation(ModelQueue queue, ManagedOffer offer, ConfigurationGeneration generation)
     {
         var manager = _hostManager!;
         var candidate = offer.Selection.Request;
@@ -610,15 +616,17 @@ public sealed partial class RouterCore : IInferenceRouter
         lock (_gate)
         {
             if (!IsCurrentQueue(queue, candidate, generation) || !IsCurrentPriorityComparison(offer.Selection) ||
-                !IsPendingAndThreadAdmissible(candidate) || candidate.Ticket.ExecCts is not { } execution) return;
+                !IsPendingAndThreadAdmissible(candidate) || candidate.Ticket.ExecCts is not { } execution) return false;
             lock (queue.Gate)
             {
                 if (queue.FindExactTakeIndexUnderGate(candidate,
-                        earlier => ExactPredecessorCompetes(earlier, candidate, offer.Engine, generation)) < 0) return;
+                        earlier => ExactPredecessorCompetes(earlier, candidate, offer.Engine, generation)) < 0) return false;
                 accepted = manager.TryAccept(offer.Engine.Name, candidate.Ticket.Model, offer.Profile.Name, candidate.Ticket, execution.Token);
             }
         }
-        if (accepted is not null) _ = CompleteManagedActivationAsync(manager, accepted, candidate);
+        if (accepted is null) return false;
+        _ = CompleteManagedActivationAsync(manager, accepted, candidate);
+        return true;
     }
 
     private async Task CompleteManagedActivationAsync(InProcessHostManager manager, InProcessHostManager.Transition accepted,

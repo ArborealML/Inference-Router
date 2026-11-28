@@ -495,7 +495,7 @@ public sealed partial class RouterCore
 
     private void SettleQueueEnd(RouterTicket ticket, string code, TimeSpan? window)
     {
-        if (_admission?.Invalidate(ticket) == true && ticket.ExecCts is { } execution) _ = execution.CancelAsync();
+        if (_admission?.Invalidate(ticket) == true) _ = CancelQueuedActivationAsync(ticket);
         var reason = code switch
         {
             "cancelled" => "cancelled while queued",
@@ -505,6 +505,16 @@ public sealed partial class RouterCore
         };
         Fail(ticket, code, reason);
         ReleaseExecutionCancellation(ticket);
+    }
+
+    private static async Task CancelQueuedActivationAsync(RouterTicket ticket)
+    {
+        // The activation can already be waiting on a linked token. Keep its source alive
+        // until cancellation has reached those registrations, independently of ticket settlement.
+        using var execution = Interlocked.Exchange(ref ticket.ExecCts, null);
+        if (execution is null) return;
+        try { await execution.CancelAsync().ConfigureAwait(false); }
+        catch (AggregateException) { /* Callback faults cannot undo cancellation. */ }
     }
 
     private long ReadQueueTimestamp()
