@@ -35,17 +35,48 @@ public static partial class ServerApp
                 return;
             }
 
-            Output.Observe(await Writer.WriteAsync(frame, ct).ConfigureAwait(false));
-            Output.Observe(await Writer.FlushAsync(ct).ConfigureAwait(false));
+            var started = Clock.GetTimestamp();
+            Output.Observe(await FinishKeepaliveAsync(Writer.WriteAsync(frame, ct), frame, started, ct).ConfigureAwait(false));
+            started = Clock.GetTimestamp();
+            Output.Observe(await FinishKeepaliveAsync(Writer.FlushAsync(ct), frame, started, ct).ConfigureAwait(false));
+        }
+
+        private async ValueTask<FlushResult> FinishKeepaliveAsync(ValueTask<FlushResult> write,
+            ReadOnlyMemory<byte> frame, long started, CancellationToken ct)
+        {
+            if (write.IsCompletedSuccessfully) return write.Result;
+
+            var pending = write.AsTask();
+            if (!pending.IsCompleted && !Ticket.StreamReady.IsCompleted)
+                await Task.WhenAny(pending, Ticket.StreamReady).ConfigureAwait(false);
+
+            // A keepalive can start before selection. Delivery is installed before StreamReady
+            // publishes a commissioned reader. Apply the original write's remaining budget.
+            if (Ticket.HttpDelivery is not { } delivery) return await pending.ConfigureAwait(false);
+            var remaining = WriteTimeout - Clock.GetElapsedTime(started);
+            return await ObserveWriteAsync(delivery, new ValueTask<FlushResult>(pending), frame, charged: false,
+                remaining > TimeSpan.Zero ? remaining : TimeSpan.Zero, ct).ConfigureAwait(false);
         }
 
         private async ValueTask WriteWatchedAsync(HttpStreamDelivery delivery, ReadOnlyMemory<byte> bytes,
             bool charged, CancellationToken ct)
         {
+            ValueTask<FlushResult> write;
+            try { write = Writer.WriteAsync(bytes, ct); }
+            catch
+            {
+                if (charged) delivery.Release(bytes.Length);
+                throw;
+            }
+            await ObserveWriteAsync(delivery, write, bytes, charged, WriteTimeout, ct).ConfigureAwait(false);
+        }
+
+        private async ValueTask<FlushResult> ObserveWriteAsync(HttpStreamDelivery delivery, ValueTask<FlushResult> write,
+            ReadOnlyMemory<byte> bytes, bool charged, TimeSpan remaining, CancellationToken ct)
+        {
             var releaseHere = charged;
             try
             {
-                var write = Writer.WriteAsync(bytes, ct);
                 FlushResult result;
                 if (write.IsCompletedSuccessfully)
                 {
@@ -56,7 +87,7 @@ public static partial class ServerApp
                     var pending = write.AsTask();
                     try
                     {
-                        result = await pending.WaitAsync(WriteTimeout, Clock, ct).ConfigureAwait(false);
+                        result = await pending.WaitAsync(remaining, Clock, ct).ConfigureAwait(false);
                     }
                     catch (TimeoutException) when (!pending.IsCompleted)
                     {
@@ -80,8 +111,8 @@ public static partial class ServerApp
                         result = await pending.ConfigureAwait(false);
                     }
                 }
-                if (result.IsCanceled || result.IsCompleted)
-                    throw new OperationCanceledException(ct);
+                if (result.IsCanceled || result.IsCompleted) throw new OperationCanceledException(ct);
+                return result;
             }
             finally
             {
