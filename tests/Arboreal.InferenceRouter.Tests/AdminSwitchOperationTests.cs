@@ -41,6 +41,16 @@ public sealed class AdminSwitchOperationTests
     }
 
     [Fact]
+    public async Task Malformed_Switch_Profile_Does_Not_Hold_An_Admin_Use()
+    {
+        await using var rig = await Fixture.StartAsync();
+        using var response = await rig.PostBodyAsync("""{"engine":"native","model":"b","profile":false}""");
+        await ErrorAsync(response, HttpStatusCode.BadRequest, "invalid_request", rig.Token, "profile must be a string or null");
+        Assert.Equal(0, rig.Provider.Launches);
+        await rig.AssertTopologyAppliesAsync();
+    }
+
+    [Fact]
     public async Task AdminSwitch_ImmediateRefusalsAndUnknownLookup()
     {
         await using var rig = await Fixture.StartAsync();
@@ -826,11 +836,16 @@ public sealed class AdminSwitchOperationTests
             await ConfigReloadWireTests.WaitUntilAsync(() => Router.Engines.Values.All(e => e.Healthy), Token);
         }
 
-        internal async Task<HttpResponseMessage> PostAsync(string model, string? profile = null, bool gated = false)
+        internal Task<HttpResponseMessage> PostAsync(string model, string? profile = null, bool gated = false)
         {
             var body = profile is null
                 ? $$"""{"engine":"native","model":"{{model}}"}"""
                 : $$"""{"engine":"native","model":"{{model}}","profile":"{{profile}}"}""";
+            return PostBodyAsync(body, gated);
+        }
+
+        internal async Task<HttpResponseMessage> PostBodyAsync(string body, bool gated = false)
+        {
             using var request = new HttpRequestMessage(HttpMethod.Post, "/admin/switch");
             request.Content = new StringContent(body, Encoding.UTF8, "application/json");
             if (gated) request.Headers.Add("X-Test-Ack", "1");
