@@ -22,6 +22,7 @@ public sealed class QueuedRequest
 }
 
 internal readonly record struct QueueDispatchCandidate(int Depth, long BaselineOrdinal, QueuedRequest? Request);
+internal readonly record struct ModelQueueRound(int Depth, QueuedRequest[] Requests);
 
 /// <summary>Per-model FIFO priority queue. Ordering: thread class, then sub, then seq.
 /// Reorders in place when a thread's priority changes while queued.</summary>
@@ -85,6 +86,32 @@ public sealed class ModelQueue
             var index = FirstAdmissibleIndex(admission);
             return new QueueDispatchCandidate(_heap.Count, baselineOrdinal, index < 0 ? null : _heap[index]);
         }
+    }
+
+    internal ModelQueueRound CaptureRound()
+    {
+        lock (_lock) return new(_heap.Count, [.. _heap.Where(static item => !item.Ticket.PendingEnqueuePublication)]);
+    }
+
+    internal int FindExactTakeIndexUnderGate(QueuedRequest request, Predicate<QueuedRequest> competes)
+    {
+        for (var i = 0; i < _heap.Count; i++)
+        {
+            var current = _heap[i];
+            if (ReferenceEquals(current, request)) return i;
+            if (competes(current)) break;
+        }
+        return -1;
+    }
+
+    internal bool HasCompetitor(Predicate<QueuedRequest> competes)
+    {
+        lock (_lock) return _heap.Exists(competes);
+    }
+
+    internal bool Contains(QueuedRequest request)
+    {
+        lock (_lock) return _heap.Contains(request);
     }
 
     /// <summary>Take only the request the scheduler evaluated, while it is still first admissible.</summary>

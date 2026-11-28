@@ -111,6 +111,12 @@ public sealed class EventRing
 
     public long CurrentSeq => Volatile.Read(ref _head);
 
+    internal void AppendIf(RouterEvent @event, Func<bool> isCurrent)
+    {
+        lock (_lock)
+            if (isCurrent()) Append(@event);
+    }
+
     /// <summary>How many subscriber invocations have thrown since startup. This is the only sign a feed observer
     /// is broken: the exception is swallowed by design, so without a counter a permanently failing observer — a
     /// socket handler that throws on every write, say — would be invisible and would silently stop delivering

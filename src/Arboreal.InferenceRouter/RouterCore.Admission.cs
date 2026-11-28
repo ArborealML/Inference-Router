@@ -465,6 +465,7 @@ public sealed partial class RouterCore
             lock (queue.Gate)
             {
                 if (!queue.TryRemove(ticket)) return QueueEndClaim.Absent;
+                ClearQueuedScheduling(ticket);
                 RetireQueueIfEmpty(queue);
                 return QueueEndClaim.Removed;
             }

@@ -1,12 +1,13 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.161)
+Status: draft, continuously revised (v0.12.162)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
 
 ## 0. Revision log
 
+- v0.12.162 — dispatch complete finite rounds across the existing model queues, try available route alternatives, and report scoped queue waits (§§5.4–5.5, 10, 14).
 - v0.12.161 — a selected serving tier whose window the resident already measures and whose reported lanes are at least the tier's is a zero-cost target: no lifecycle call, no switch event and no epoch bump, proved by the measured window rather than by the inferred profile label; extra lanes satisfy a narrower tier, missing lanes do not (§7.6).
 - v0.12.160 — send an opaque per-engine thread cache hint on completion requests to explicitly router-owned local Docker lifecycle groups (§6).
 
@@ -2259,15 +2260,10 @@ Podman socket at its own version floor. A native containerd adapter is out of sc
 
 ```csharp
 public interface IRequestScheduler {
-    // Chooses the next (request, engine) pair. Implementations must be
-    // deterministic under the event log for testability.
-    SchedulerDecision SelectNext(SchedulerView view);
+    SchedulerDecision SelectNext(QueuedRequest request, SchedulerView view, RouterConfig config);
 }
 
-public sealed record SchedulerView(
-    ImmutableArray<QueuedRequest> Queue,      // priority-sorted, with metadata
-    ImmutableArray<EngineRuntimeInfo> Engines // busy-ness, loaded models
-);
+public sealed record SchedulerView(IReadOnlyList<EngineRuntimeInfo> Engines, DateTimeOffset Now);
 ```
 
 **v1 policy (`PrefixAwareScheduler`)**, in priority order:
@@ -2281,13 +2277,17 @@ public sealed record SchedulerView(
 3. **Busy-ness score**: `B = inflightTokens + α·queueDepth + β·estPrefillMiss`
    where `estPrefillMiss` = prompt length − matched prefix (the new tokens the
    engine must actually prefill, which stalls other requests).
-4. **Decision**: engine with highest `A(P) − λ·B` wins; if all scores tie,
-   least-loaded engine wins (round-robin tiebreak by engine name).
-   Prefix affinity dominates only when `P ≥ PrefixAffinityThreshold`
-   (config, default ≈ 512 normalized chars) — this implements "uncached
-   requests go to the least busy server with the model loaded".
+4. **Decision**: the built-in scheduler considers compatible resident routes before routes
+   requiring activation. Within each group it ranks by descending affinity minus load score,
+   then ordinal engine name. A full engine, an ineligible local resource group, or a stale
+   route at exact take lets the same ticket try the next ranked route in that round. The public
+   scheduler interface still returns one decision for a caller-supplied scheduler.
 5. **Preemption**: none in v1 (engines we target don't support it); document
    as future hook (Llumnix-style migration is out of scope).
+
+Priority determines pending order. Route fit, affinity and load scores, configured caps and physical
+lanes are independent of priority. Eligibility probes read current state without reserving capacity
+or establishing a lifecycle drain owner.
 
 **Suffix reuse (forward design)**: `EngineCapabilities.SuffixCache` +
 `PrefixAwareScheduler` gains a `SuffixAffinity` scorer once engines report
@@ -2300,9 +2300,9 @@ engine forks land; the scheduler interface will not change shape.
 ### 5.5 Queue semantics
 
 An enqueue commits its canonical model, queue position and ticket index from one current configuration
-generation. An exact take checks the selected generation, engine identity and mapped queue identity
-before it removes or charges the ticket. A stale selection ends the current dispatch pass before
-selection commits. The next pass scans the current queues with the accepted canonical model.
+generation. An exact take checks the selected generation, engine identity, mapped queue identity,
+published ticket reference, live order, original deadline and relevant capacity before removal and
+accounting. A stale route or ticket leaves other captured tickets available for consideration.
 The admission feed reports thread registration, when needed, before enqueue and reports
 enqueue before selection or terminal settlement. A pending enqueue counts toward capacity. It cannot dispatch before its feed
 publication, and later published tickets can use the queue while it waits. Cancellation and the original
@@ -2317,12 +2317,19 @@ Temporary capacity loss parks the ticket. A definitive refusal settles once with
   immediate retirement of the exact mapped queue when its last member leaves. Pending
   enqueue publication counts as membership. Simultaneously populated queues follow normal
   admission with `max_queue_per_model` applying to each queue.
-- Dispatch scans queues by increasing observed depth, then by the creation order of the
-  live queues. A recreated queue goes after all existing queues of equal depth and preserves
-  their relative order. Each scheduler call evaluates the first published ticket in that
-  queue whose thread has capacity. Commit takes that exact ticket only while it is still
-  first admissible. If the candidate is removed or displaced before commit, the next
-  dispatch pass scans the current queues.
+- A round captures the published tickets in each live queue by priority and enqueue sequence.
+  It visits those queues by captured depth and then creation order. A recreated queue follows
+  the surviving queues of equal depth. Successful dispatch continues through the round, and
+  arrivals wait for the next capture. A blocked predecessor can be bypassed when it cannot use
+  the later ticket's available resource. Before the built-in ordinary admission removes a ticket,
+  it rechecks earlier live, published contenders for the same engine, declared lifecycle group or
+  limiting thread cap in the captured outer order and current inner order. A caller-supplied
+  scheduler and the offline injected sender retain the first thread-admissible cut within a model.
+- A local group can explicitly accept a drain intent for one queued ticket when its active uses
+  must finish before activation. The scheduler considers ready alternatives first. Queue removal or
+  reassignment retires the intent. An accepted execution keeps its physical lease until cleanup.
+  The existing dispatch revision, arm and recheck protocol parks after a round finds no progress.
+  Arrivals, queue expiry or cancellation, readiness and releases wake the next round.
 - **Offline exact-ticket admission.** The injected sender qualifies the queue handshake.
   Schedule outside the router lock. The host admission gate, router lock and model queue lock
   order the live check and exact removal. Validate the ranked route generation, model-bound
@@ -3742,7 +3749,10 @@ keeps the terminal reason cap.
 
 - `thread.registered`, `thread.priority_changed`
 - `request.enqueued {thread, ticket, model, priority, promptChars}`
-- `request.selected {ticket, engine, model, affinityScore, busyScore}`
+- `request.waiting {ticket, thread, model, reason}` — a changed, scoped queue blocker. The ticket
+  snapshot exposes `QueueWaitReason` and `QueueWaitScope` while the ticket remains queued.
+- `request.selected {ticket, engine, model, reason}` — the chosen route and, when one was skipped,
+  the first observed higher-ranked blocker
 - `request.streaming_first_token {ticket, engine, msFromEnqueue}`
 - `request.completed {ticket, engine, tokens, msFromEnqueue, msFromFirstToken}`
 - `request.failed {ticket, reason}` — includes queue expiry, which has ticket error code
@@ -4188,6 +4198,11 @@ and cohort/residency hysteresis in the scheduler (§12.3 hook).
   (small request served, oversized request queues behind a profile switch that
   widens the engine's reported window, then completes); health probe failure;
   real HTTP through Kestrel against the stub engine.
+- **Independent dispatch** (`IndependentProgressTests`, `LocalLifecycleGroupTests`): capture
+  backend sends while another route is held, including same-model alternatives and separate
+  local groups. Exercise a replenished early queue, a blocked same-model prefix, shared thread
+  and lifecycle caps, an exact-take reservation loss, and drain-intent retirement on cancellation
+  or reassignment. Preserve the explicit expiry and revision/arm/recheck tests.
 - **Configuration reload** (`ConfigReloadWireTests`, `ConfigReloadRaceTests`): authenticated
   file apply, generation readback and rejection, exact stream bytes and a held native switch,
   queue and shutdown ordering, idle external retirement, detached response disposal, and

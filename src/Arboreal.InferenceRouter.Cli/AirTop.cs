@@ -97,7 +97,8 @@ internal sealed class AirTop(RouterMonitor monitor)
             if (item is not null && state.TicketError is not null) phase += " (stale: " + state.TicketError + ")";
             followed = new("followed", "Ticket", $"{Text(id)}  {Text(phase)}",
                 $"Following {Text(id)}\nState {Text(phase)}\nModel {Text(item?.Model)}   Engine {Text(item?.Engine)}" +
-                $"\nThread {Text(item?.ThreadId)}\nError {Text(item?.ErrorCode)} {Text(item?.Error, 1600)}");
+                $"\nThread {Text(item?.ThreadId)}\nError {Text(item?.ErrorCode)} {Text(item?.Error, 1600)}" +
+                (item?.QueueWaitReason is { } reason ? $"\nQueue wait {Text(reason)}  Scope {Text(item.QueueWaitScope)}" : ""));
         }
         if (!ReferenceEquals(_lastGauges, state.Gauges))
         {

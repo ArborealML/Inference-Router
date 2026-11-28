@@ -176,6 +176,7 @@ public sealed partial class RouterCore : IInferenceRouter
         lock (_ticketGate)
         {
             if (!_tickets.TryGetValue(ticketId, out var t)) return null;
+            var wait = Volatile.Read(ref t.DispatchWait);
             return new TicketSnapshot
             {
                 Id = t.Id,
@@ -186,6 +187,8 @@ public sealed partial class RouterCore : IInferenceRouter
                 Engine = t.Engine,
                 ErrorCode = t.ErrorCode,
                 Error = t.Error,
+                QueueWaitReason = wait?.Reason,
+                QueueWaitScope = wait?.Scope,
             };
         }
     }
@@ -282,7 +285,7 @@ public sealed partial class RouterCore : IInferenceRouter
         while (!_shutdownToken.IsCancellationRequested)
         {
             var revision = _dispatchWake.Revision;
-            if (DispatchOnce() == DispatchResult.Dispatched) continue;
+            if (DispatchRound() == DispatchResult.Dispatched) continue;
 
             BeforeDispatchParkForTests?.Invoke(false);
             var wake = _dispatchWake.Arm();
@@ -320,210 +323,366 @@ public sealed partial class RouterCore : IInferenceRouter
         return new SwitchComparison(engine, observation, incumbent, _clock.GetTimestamp(), _clock.GetUtcNow());
     }
 
-    private readonly record struct QueueHead(ModelQueue Queue, QueueDispatchCandidate Candidate);
-    private readonly record struct Selection(QueueHead Head, SchedulerDecision Decision);
-    private enum TakeResult { Taken, Changed, Ineligible, Terminal }
+    private readonly record struct QueueRound(ModelQueue Queue, ModelQueueRound Snapshot);
+    private readonly record struct Selection(int QueueIndex, QueuedRequest Request, SchedulerDecision Decision);
+    private readonly record struct Blocker(string Reason, string? Scope = null);
+    private readonly record struct RouteProbe(ServingProfile? Profile, LocalLifecycleGroup? Group, Blocker? Blocker,
+                                              bool Drain = false);
+    private enum TakeResult { Taken, QueueChanged, RouteChanged, Ineligible, Terminal, Preparing }
     private readonly record struct AdmissionTake(TakeResult Result, ExactTicketAdmission.Invocation? Invocation = null,
         string? TerminalCode = null);
 
-    internal bool TryDispatchOnce() => DispatchOnce() != DispatchResult.Parked;
+    // Existing fixtures step one admission transition without starting the background dispatcher.
+    internal bool TryDispatchOnce() => DispatchRound(stopAfterTransition: true) != DispatchResult.Parked;
+    internal bool TryDispatchRound() => DispatchRound() == DispatchResult.Dispatched;
 
-    private DispatchResult DispatchOnce()
+    private DispatchResult DispatchRound(bool stopAfterTransition = false)
     {
         _admission?.ResumePendingOpeningOwnerPreparations();
-
-        QueueHead[] heads;
+        QueueRound[] round;
         ConfigurationGeneration generation;
         lock (_gate)
         {
             if (_closing) return DispatchResult.Parked;
             generation = CurrentGeneration;
-            heads = [.. _queues.Values
-                .Select(static queue => new QueueHead(queue, queue.SnapshotCandidate(queue.CreationOrdinal, HasThreadCapacity)))
-                .OrderBy(static head => head.Candidate.Depth)
-                .ThenBy(static head => head.Candidate.BaselineOrdinal)];
+            round = [.. _queues.Values
+                .Select(static queue => new QueueRound(queue, queue.CaptureRound()))
+                .OrderBy(static entry => entry.Snapshot.Depth)
+                .ThenBy(static entry => entry.Queue.CreationOrdinal)];
         }
 
+        var result = DispatchResult.Parked;
         var comparison = ReadSwitchComparison(generation);
-        for (var next = 0; next < heads.Length;)
+        for (var index = 0; index < round.Length; index++)
         {
-            var head = heads[next++];
-            if (head.Candidate.Request is not { } request) continue;
-            var infos = BuildEngineInfos(request, generation, comparison);
-            var decision = _scheduler.SelectNext(request,
-                new SchedulerView(infos, comparison?.UtcNow ?? _clock.GetUtcNow()), generation.Settings);
-            if (decision.Engine is null)
+            var through = index;
+            foreach (var request in round[index].Snapshot.Requests)
             {
-                MaybeFailDeadline(request);
-                continue;
-            }
+                if (_shutdownToken.IsCancellationRequested) return result;
+                if (request.Ticket.IsTerminal) continue;
+                if (ReadQueueEnd(request) is not null)
+                {
+                    MaybeFailDeadline(request);
+                    continue;
+                }
+                if (!HasThreadCapacity(request.Thread))
+                {
+                    PublishDispatchWait(round[index].Queue, request, new("thread_concurrency_limit", request.Thread.ThreadId));
+                    continue;
+                }
 
-            var selection = new Selection(head, decision);
+                var transition = DispatchCandidate(round, index, request, generation, comparison, ref through);
+                if (transition == DispatchResult.Dispatched)
+                {
+                    result = transition;
+                    comparison = null;
+                }
+                if (stopAfterTransition && transition != DispatchResult.Parked) return transition;
+                if (_admission is not null || _scheduler is not PrefixAwareScheduler) break;
+                // The measured switch comparison already visited the rest of its single-resource cohort.
+                if (through != index) break;
+            }
+            index = through;
+        }
+        return result;
+    }
+
+    private DispatchResult DispatchCandidate(QueueRound[] round, int index, QueuedRequest request,
+                                             ConfigurationGeneration generation, SwitchComparison? comparison, ref int through)
+    {
+        var infos = BuildEngineInfos(request, generation, comparison);
+        var routes = _scheduler is PrefixAwareScheduler ? PrefixAwareScheduler.RankRoutes(request, infos, generation.Settings) : null;
+        var custom = routes is null
+            ? _scheduler.SelectNext(request, new SchedulerView(infos, _clock.GetUtcNow()), generation.Settings) : null;
+        if (custom is { Engine: null })
+        {
+            MaybeFailDeadline(request);
+            return DispatchResult.Parked;
+        }
+
+        Blocker? blocker = null;
+        var routeChanged = false;
+        (Selection Selection, EngineRuntime Engine, RouteProbe Probe)? drain = null;
+        // Forwarding-only catalog entries preserve the existing typed switch refusal when no
+        // candidate can serve or activate. They must not displace an actual route awaiting capacity.
+        var refuseCold = _admission is not null || routes is null || routes.TrueForAll(route => route.Target.SwitchRequired &&
+            !HasLifecycleRoute(request, generation.Engines[route.Engine.Name]));
+        var routeCount = routes?.Count ?? 1;
+        for (var routeIndex = 0; routeIndex < routeCount; routeIndex++)
+        {
+            var decision = routes is null ? custom! : routes[routeIndex].Decision;
+            var selection = new Selection(index, request, decision);
             var compared = comparison is not null && decision.SwitchRequired;
             if (comparison is { } cost && compared)
-                selection = OrderEligibleSwitches(heads, ref next, selection, request, cost, generation);
+                selection = OrderEligibleSwitches(round, ref through, selection, cost, generation);
 
-            var candidate = selection.Head.Candidate.Request!;
+            var candidate = selection.Request;
             var engine = generation.Engines[selection.Decision.Engine!];
-            var observation = comparison?.Observation ?? FindDispatchObservation(infos, engine.Name);
-            var explicitMinimum = candidate.ExplicitContextMinimum;
-            var profile = engine.GetProfile(candidate.Ticket.Model, selection.Decision.TargetProfile);
-            if (candidate.Request.Options?.Profile is { } named &&
-                (profile?.Name != named || profile.MaxContext < candidate.RequiredContextTokens ||
-                 (!selection.Decision.SwitchRequired && !observation.Capability.Serving.Matches(candidate.Ticket.Model, profile)) ||
-                 (selection.Decision.SwitchRequired && !_localGroups.ContainsKey(engine.Name) && (engine.Inflight != 0 || engine.InferenceUses != 0))))
+            if (!refuseCold && selection.Decision.SwitchRequired && !HasLifecycleRoute(candidate, engine))
             {
-                MaybeFailDeadline(candidate);
+                blocker ??= new("engine_lifecycle_unavailable", engine.Name);
                 continue;
             }
-            var requiredWindow = EngineRuntime.RequiredWindow(profile, explicitMinimum);
-            var needsCurrentObservation = comparison is not null || requiredWindow > 0 ||
+            var observed = comparison?.Observation ?? FindDispatchObservation(infos, engine.Name);
+            RouteProbe probe;
+            lock (_gate)
+                probe = ProbeRoute(candidate, engine, selection.Decision, observed, generation);
+            if (probe.Blocker is { } unavailable)
+            {
+                blocker ??= unavailable;
+                if (probe.Drain) drain ??= (selection, engine, probe);
+                continue;
+            }
+
+            var requiredWindow = EngineRuntime.RequiredWindow(probe.Profile, candidate.ExplicitContextMinimum);
+            var needsCurrentObservation = routes is not null || comparison is not null || requiredWindow > 0 ||
                 selection.Decision.TargetProfile is not null ||
                 (candidate.RequiredContextTokens > 0 && engine.ProfilesForModel(candidate.Ticket.Model).Count > 0);
-            EngineRuntime.DispatchObservation? expected = needsCurrentObservation ? observation : null;
-            if (!(expected?.HasCapacity ?? engine.HasCapacity)) continue;
-            var proof = selection.Decision.SwitchRequired ? null : observation.Capability.SwitchProof;
-
-            AdmissionTake take;
-            if (_admission is { } admission)
-            {
-                var route = new ExactTicketAdmission.Route(engine.Name, candidate.Ticket.Model, selection.Decision.TargetProfile);
-                if (admission.Capture(candidate, route, selection.Decision.SwitchRequired, explicitMinimum) is not { } claim)
-                    continue;
-                if (compared) BeforeCostCommitForTests?.Invoke();
-                if (candidate.QueueExpired(_clock))
-                {
-                    MaybeFailDeadline(candidate);
-                    continue;
-                }
-
-                bool prepared;
-                lock (admission.Gate)
-                {
-                    if (claim.Resident is not null &&
-                        (!admission.IsOpen(claim) || !VerifiedCapacityFits(claim, observation.Capability, requiredWindow) ||
-                         !admission.CanTake(claim, engine.ReadDispatchObservation())))
-                        continue;
-                    prepared = admission.IsPrepared(claim) && admission.IsOpen(claim);
-                }
-                if (!prepared)
-                {
-                    BeforeAdmissionPreparationForTests?.Invoke(candidate.Ticket);
-                    admission.Prepare(claim);
-                    continue;
-                }
-
-                BeforeAdmissionCommitForTests?.Invoke(candidate.Ticket);
-                lock (admission.Gate)
-                {
-                    take = TryTake(selection, engine, expected, requiredWindow, claim, generation);
-                }
-            }
-            else
-            {
-                if (compared) BeforeCostCommitForTests?.Invoke();
-                if (requiredWindow > 0 &&
-                    observation.Capability.Serving.WindowFor(candidate.Ticket.Model) < requiredWindow &&
-                    !WillWaitForModel(generation.Settings, selection.Decision.SwitchRequired, profile))
-                {
-                    MaybeFailDeadline(candidate);
-                    continue;
-                }
-                BeforeAdmissionCommitForTests?.Invoke(candidate.Ticket);
-                take = TryTake(selection, engine, expected, requiredWindow, claim: null, generation);
-            }
-
+            EngineRuntime.DispatchObservation? expected = needsCurrentObservation ? observed : null;
+            var take = TryAdmit(round, index, selection, engine, expected, requiredWindow, compared, generation);
             if (take.Result == TakeResult.Taken)
             {
-                StartSelected(candidate, engine, generation.Settings, selection.Decision.SwitchRequired, profile, proof, take.Invocation);
+                var proof = selection.Decision.SwitchRequired ? null : observed.Capability.SwitchProof;
+                StartSelected(candidate, engine, generation.Settings, selection.Decision.SwitchRequired, probe.Profile, proof,
+                    take.Invocation, blocker is { } skipped ? FormatBlocker(skipped) : null);
                 return DispatchResult.Dispatched;
             }
             if (take.Result == TakeResult.Terminal)
             {
                 SettleQueueEnd(candidate.Ticket, take.TerminalCode!, candidate.Request.Options?.MaxQueueTime);
-                continue;
+                return DispatchResult.Parked;
             }
-            if (take.Result == TakeResult.Changed) return DispatchResult.StateChanged;
-            if (take.Result == TakeResult.Ineligible) MaybeFailDeadline(candidate);
+            if (take.Result == TakeResult.QueueChanged) return DispatchResult.StateChanged;
+            if (take.Result == TakeResult.Preparing)
+            {
+                blocker ??= new("route_preparing", engine.Name);
+                break;
+            }
+            routeChanged |= take.Result == TakeResult.RouteChanged;
+            blocker ??= new(take.Result == TakeResult.RouteChanged ? "route_changed" : "route_admission_wait", engine.Name);
         }
-        return DispatchResult.Parked;
+
+        if (drain is { } pending)
+            TryStartLocalDrain(round, index, pending.Selection, pending.Engine, pending.Probe, generation);
+        if (ReadQueueEnd(request) is not null) MaybeFailDeadline(request);
+        else PublishDispatchWait(round[index].Queue, request, blocker ?? DescribeUnavailable(infos, request));
+        return routeChanged ? DispatchResult.StateChanged : DispatchResult.Parked;
     }
 
-    private AdmissionTake TryTake(Selection selection, EngineRuntime engine, EngineRuntime.DispatchObservation? expected,
-                                  long requiredWindow, ExactTicketAdmission.Claim? claim, ConfigurationGeneration generation)
+    private AdmissionTake TryAdmit(QueueRound[] round, int index, Selection selection, EngineRuntime engine,
+                                   EngineRuntime.DispatchObservation? expected, long requiredWindow, bool compared,
+                                   ConfigurationGeneration generation)
     {
-        var head = selection.Head;
-        var candidate = head.Candidate.Request!;
-        lock (_gate)
-        lock (head.Queue.Gate)
+        var candidate = selection.Request;
+        if (_admission is not { } admission)
         {
-            if (_closing || _shutdownToken.IsCancellationRequested) return new(TakeResult.Ineligible);
-            if (!ReferenceEquals(CurrentGeneration, generation) ||
-                !ReferenceEquals(generation.Engines.GetValueOrDefault(engine.Name), engine))
-                return new(TakeResult.Changed);
-            if (!ReferenceEquals(_queues.GetValueOrDefault(candidate.Ticket.Model), head.Queue))
-                return new(TakeResult.Changed);
-            if (candidate.Ticket.PendingEnqueuePublication || candidate.Ticket.IsTerminal)
-                return new(TakeResult.Changed);
-            if (claim is { } stamped && _admission is { } admission)
-            {
-                if (!admission.IsOpen(stamped) || !admission.IsPrepared(stamped)) return new(TakeResult.Ineligible);
-                var observation = engine.ReadDispatchObservation();
-                if (!observation.HasCapacity || !observation.Capability.Healthy ||
-                    observation.Capability.SwitchingToward is not null ||
-                    !engine.CanServeModel(candidate.Ticket.Model, observation.Capability))
-                    return new(TakeResult.Ineligible);
-
-                if (candidate.Request.Options?.Profile is { } requested &&
-                    (engine.GetProfile(candidate.Ticket.Model, requested) is not { } tier ||
-                     !observation.Capability.Serving.Matches(candidate.Ticket.Model, tier) ||
-                     stamped.Resident is { } resident && (resident.Target.Tier != requested ||
-                         resident.MeasuredWindow != tier.MaxContext || resident.TotalSlots != tier.MaxSlots)))
-                    return new(TakeResult.Ineligible);
-                if (!AdmissionWindowFits(admission, stamped, observation.Capability, requiredWindow) ||
-                    !admission.CanTake(stamped, observation))
-                    return new(TakeResult.Ineligible);
-            }
-
-            if (expected is { } observationAtSelection && !engine.IsDispatchObservationCurrent(observationAtSelection))
-                return new(TakeResult.Changed);
-            if (!engine.HasCapacity) return new(TakeResult.Ineligible);
-            var uses = _profileUsers.GetValueOrDefault(engine);
-            var named = candidate.Request.Options?.Profile is not null;
-            if ((uses.Switching != 0 && (named || uses.Named != 0)) ||
-                ((uses.Named != 0 || engine.HasNamedUse) && selection.Decision.SwitchRequired))
-                return new(TakeResult.Ineligible);
-            var index = head.Queue.FindExactTakeIndexUnderGate(head.Candidate, HasThreadCapacity);
-            if (index < 0) return new(TakeResult.Changed);
-            var takenAt = _clock.GetTimestamp();
-            var terminal = ReadQueueEnd(candidate);
-            if (terminal is null && _localGroups.TryGetValue(engine.Name, out var local))
-            {
-                var selectedProfile = engine.GetProfile(candidate.Ticket.Model, selection.Decision.TargetProfile);
-                var lease = local.TryReserve(candidate, engine, selectedProfile, selection.Decision.SwitchRequired,
-                    new OwnerSwitchBudget(_clock, takenAt,
-                        generation.Settings.Scheduler.SwitchWaitTimeoutMs));
-                if (lease is null) return new(TakeResult.Ineligible);
-                candidate.LocalLease = lease;
-            }
-            if (terminal is null && named && (expected is not { } current || !engine.TryReserveNamedUse(current)))
-            {
-                candidate.LocalLease?.Release();
-                candidate.LocalLease = null;
-                return new(TakeResult.Changed);
-            }
-            head.Queue.RemoveExactTakeUnderGate(index);
-            RetireQueueIfEmpty(head.Queue);
-            if (terminal is not null) return new(TakeResult.Terminal, TerminalCode: terminal);
-
-            var invocation = claim is { } exact ? _admission!.Authorize(exact, engine) : null;
-            candidate.ReservedSwitch = selection.Decision.SwitchRequired;
-            if (named || candidate.ReservedSwitch)
-                _profileUsers[engine] = (uses.Named + (named ? 1 : 0), uses.Switching + (candidate.ReservedSwitch ? 1 : 0));
-            candidate.Thread.IncrementInflight();
-            engine.BeginRequest(candidate.PromptChars);
-            return new(TakeResult.Taken, invocation);
+            if (compared) BeforeCostCommitForTests?.Invoke();
+            BeforeAdmissionCommitForTests?.Invoke(candidate.Ticket);
+            return TryTake(round, index, selection, engine, expected, requiredWindow, claim: null, generation);
         }
+
+        var route = new ExactTicketAdmission.Route(engine.Name, candidate.Ticket.Model, selection.Decision.TargetProfile);
+        if (admission.Capture(candidate, route, selection.Decision.SwitchRequired, candidate.ExplicitContextMinimum) is not { } claim)
+            return new(TakeResult.Ineligible);
+        if (compared) BeforeCostCommitForTests?.Invoke();
+        if (ReadQueueEnd(candidate) is not null)
+        {
+            MaybeFailDeadline(candidate);
+            return new(TakeResult.Ineligible);
+        }
+
+        bool prepared;
+        lock (admission.Gate)
+        {
+            var observed = expected ?? engine.ReadDispatchObservation();
+            if (claim.Resident is not null &&
+                (!admission.IsOpen(claim) || !VerifiedCapacityFits(claim, observed.Capability, requiredWindow) ||
+                 !admission.CanTake(claim, engine.ReadDispatchObservation())))
+                return new(TakeResult.Ineligible);
+            prepared = admission.IsPrepared(claim) && admission.IsOpen(claim);
+        }
+        if (!prepared)
+        {
+            BeforeAdmissionPreparationForTests?.Invoke(candidate.Ticket);
+            admission.Prepare(claim);
+            return new(TakeResult.Preparing);
+        }
+
+        BeforeAdmissionCommitForTests?.Invoke(candidate.Ticket);
+        lock (admission.Gate)
+            return TryTake(round, index, selection, engine, expected, requiredWindow, claim, generation);
+    }
+
+    private AdmissionTake TryTake(QueueRound[] round, int prefix, Selection selection, EngineRuntime engine,
+                                  EngineRuntime.DispatchObservation? expected, long requiredWindow,
+                                  ExactTicketAdmission.Claim? claim, ConfigurationGeneration generation)
+    {
+        var candidate = selection.Request;
+        var queue = round[selection.QueueIndex].Queue;
+        lock (_gate)
+        {
+            if (!IsCurrentQueue(queue, candidate, generation)) return new(TakeResult.QueueChanged);
+            var groupRevision = _localGroups.GetValueOrDefault(engine.Name)?.Revision;
+            var resourceAware = _scheduler is PrefixAwareScheduler && claim is null;
+            bool Competes(QueuedRequest earlier) => resourceAware
+                ? CanCompeteFor(earlier, candidate, engine, generation)
+                : IsPendingAndThreadAdmissible(earlier);
+
+            // The outer order is captured. Order within each still-live queue is current, including
+            // a newly published, higher-ranked request. Never acquire two model-queue gates together.
+            if (resourceAware && HasEarlierQueueCompetitor(round, prefix, Competes)) return new(TakeResult.Ineligible);
+            lock (queue.Gate)
+            {
+                if (!queue.Contains(candidate)) return new(TakeResult.QueueChanged);
+                var terminal = ReadQueueEnd(candidate);
+                var index = queue.FindExactTakeIndexUnderGate(candidate, Competes);
+                if (index < 0) return new(TakeResult.Ineligible);
+                if (terminal is not null)
+                {
+                    RemoveDispatchCandidate(queue, index, candidate);
+                    return new(TakeResult.Terminal, TerminalCode: terminal);
+                }
+                if (!HasThreadCapacity(candidate.Thread)) return new(TakeResult.Ineligible);
+                var observation = engine.ReadDispatchObservation();
+                if (expected is { } original && !engine.IsDispatchObservationCurrent(original))
+                    return new(TakeResult.RouteChanged);
+                var probe = ProbeRoute(candidate, engine, selection.Decision, observation, generation);
+                if (probe.Blocker is not null) return new(TakeResult.Ineligible);
+                if (claim is { } stamped && !CanTakePrepared(stamped, engine, observation, requiredWindow))
+                    return new(TakeResult.Ineligible);
+
+                var named = candidate.Request.Options?.Profile is not null;
+                if (named && (expected is not { } current || !engine.TryReserveNamedUse(current)))
+                    return new(TakeResult.RouteChanged);
+
+                var takenAt = _clock.GetTimestamp();
+                if (!ReferenceEquals(candidate.Ticket.LocalDrain, probe.Group)) RetireLocalDrain(candidate.Ticket);
+                if (probe.Group is { } local)
+                {
+                    var lease = local.TryReserve(candidate, engine, probe.Profile, selection.Decision.SwitchRequired,
+                        new OwnerSwitchBudget(_clock, takenAt, generation.Settings.Scheduler.SwitchWaitTimeoutMs), groupRevision!.Value);
+                    if (lease is null)
+                    {
+                        if (named) engine.ReleaseNamedUse();
+                        return new(local.Revision == groupRevision ? TakeResult.Ineligible : TakeResult.RouteChanged);
+                    }
+                    candidate.LocalLease = lease;
+                }
+                RemoveDispatchCandidate(queue, index, candidate);
+
+                var invocation = claim is { } exact ? _admission!.Authorize(exact, engine) : null;
+                candidate.ReservedSwitch = selection.Decision.SwitchRequired;
+                if (named || candidate.ReservedSwitch)
+                {
+                    var uses = _profileUsers.GetValueOrDefault(engine);
+                    _profileUsers[engine] = (uses.Named + (named ? 1 : 0), uses.Switching + (candidate.ReservedSwitch ? 1 : 0));
+                }
+                candidate.Thread.IncrementInflight();
+                engine.BeginRequest(candidate.PromptChars);
+                return new(TakeResult.Taken, invocation);
+            }
+        }
+    }
+
+    private bool CanTakePrepared(ExactTicketAdmission.Claim claim, EngineRuntime engine,
+                                 EngineRuntime.DispatchObservation observation, long requiredWindow)
+    {
+        var admission = _admission!;
+        var candidate = claim.Request;
+        if (!admission.IsOpen(claim) || !admission.IsPrepared(claim) || !observation.Capability.Healthy ||
+            observation.Capability.SwitchingToward is not null ||
+            !engine.CanServeModel(candidate.Ticket.Model, observation.Capability)) return false;
+
+        if (candidate.Request.Options?.Profile is { } requested &&
+            (engine.GetProfile(candidate.Ticket.Model, requested) is not { } tier ||
+             !observation.Capability.Serving.Matches(candidate.Ticket.Model, tier) ||
+             claim.Resident is { } resident && (resident.Target.Tier != requested ||
+                 resident.MeasuredWindow != tier.MaxContext || resident.TotalSlots != tier.MaxSlots))) return false;
+        return AdmissionWindowFits(admission, claim, observation.Capability, requiredWindow) && admission.CanTake(claim, observation);
+    }
+
+    private bool IsCurrentQueue(ModelQueue queue, QueuedRequest candidate, ConfigurationGeneration generation) =>
+        !_closing && !_shutdownToken.IsCancellationRequested && ReferenceEquals(CurrentGeneration, generation) &&
+        ReferenceEquals(_queues.GetValueOrDefault(candidate.Ticket.Model), queue) &&
+        !candidate.Ticket.PendingEnqueuePublication && !candidate.Ticket.IsTerminal;
+
+    private bool HasEarlierQueueCompetitor(QueueRound[] round, int prefix, Predicate<QueuedRequest> competes)
+    {
+        for (var i = 0; i < prefix; i++)
+        {
+            var queue = round[i].Queue;
+            if (ReferenceEquals(_queues.GetValueOrDefault(queue.Model), queue) && queue.HasCompetitor(competes)) return true;
+        }
+        return false;
+    }
+
+    private bool IsPendingAndThreadAdmissible(QueuedRequest request) =>
+        !request.Ticket.PendingEnqueuePublication && !request.Ticket.IsTerminal &&
+        HasThreadCapacity(request.Thread) && ReadQueueEnd(request) is null;
+
+    private bool CanCompeteFor(QueuedRequest earlier, QueuedRequest candidate, EngineRuntime selected,
+                               ConfigurationGeneration generation, bool includeDrain = false)
+    {
+        if (!IsPendingAndThreadAdmissible(earlier)) return false;
+        var group = _localGroups.GetValueOrDefault(selected.Name);
+        var sameThread = ReferenceEquals(candidate.Thread, earlier.Thread) && earlier.Thread.Inflight + 1 >= earlier.Thread.MaxInflight;
+        foreach (var engine in generation.Engines.Values)
+        {
+            if (!ReferenceEquals(engine, selected) && !sameThread &&
+                (group is null || !ReferenceEquals(group, _localGroups.GetValueOrDefault(engine.Name)))) continue;
+            var observed = engine.ReadDispatchObservation();
+            var fit = ReadRouteFit(earlier, engine, observed);
+            if (PrefixAwareScheduler.DescribeTarget(earlier, fit, generation.Settings) is not { } target) continue;
+            if (target.SwitchRequired && !HasLifecycleRoute(earlier, engine)) continue;
+            var probe = ProbeRoute(earlier, engine, target, observed, generation);
+            if (probe.Blocker is null || includeDrain && probe.Drain) return true;
+        }
+        return false;
+    }
+
+    private bool HasLifecycleRoute(QueuedRequest request, EngineRuntime engine) =>
+        _localGroups.ContainsKey(engine.Name) || engine.CanSwitchTo(request.Ticket.Model);
+
+    private void TryStartLocalDrain(QueueRound[] round, int prefix, Selection selection, EngineRuntime engine, RouteProbe probe,
+                                    ConfigurationGeneration generation)
+    {
+        var candidate = selection.Request;
+        var queue = round[selection.QueueIndex].Queue;
+        lock (_gate)
+        {
+            if (probe.Group is not { } group || !IsCurrentQueue(queue, candidate, generation) || candidate.Ticket.LocalDrain is not null ||
+                !IsPendingAndThreadAdmissible(candidate)) return;
+            var revision = group.Revision;
+            bool Competes(QueuedRequest earlier) => CanCompeteFor(earlier, candidate, engine, generation, includeDrain: true);
+            if (HasEarlierQueueCompetitor(round, prefix, Competes)) return;
+            lock (queue.Gate)
+            {
+                if (queue.FindExactTakeIndexUnderGate(candidate, Competes) >= 0 &&
+                    ProbeRoute(candidate, engine, selection.Decision, engine.ReadDispatchObservation(), generation).Drain &&
+                    group.TryStartDrain(candidate, engine, probe.Profile, selection.Decision.SwitchRequired, revision))
+                    candidate.Ticket.LocalDrain = group;
+            }
+        }
+    }
+
+    private void RemoveDispatchCandidate(ModelQueue queue, int index, QueuedRequest request)
+    {
+        queue.RemoveExactTakeUnderGate(index);
+        ClearQueuedScheduling(request.Ticket);
+        RetireQueueIfEmpty(queue);
+    }
+
+    private static void ClearQueuedScheduling(RouterTicket ticket)
+    {
+        Volatile.Write(ref ticket.DispatchWait, null);
+        RetireLocalDrain(ticket);
+    }
+
+    private static void RetireLocalDrain(RouterTicket ticket)
+    {
+        var group = ticket.LocalDrain;
+        ticket.LocalDrain = null;
+        group?.RetireDrain(ticket);
     }
 
     private static bool AdmissionWindowFits(ExactTicketAdmission admission, ExactTicketAdmission.Claim claim,
@@ -562,6 +721,7 @@ public sealed partial class RouterCore : IInferenceRouter
                 RetireQueueIfEmpty(queue);
             }
             expired = claim.Request.QueueExpired(_clock);
+            ClearQueuedScheduling(claim.Ticket);
             claim.Ticket.RevokeAdmission();
         }
         if (expired)
@@ -573,7 +733,7 @@ public sealed partial class RouterCore : IInferenceRouter
 
     private void StartSelected(QueuedRequest candidate, EngineRuntime engine, RouterConfig settings, bool requiresSwitch,
                                ServingProfile? targetProfile, SwitchServingProof? servingProof,
-                               ExactTicketAdmission.Invocation? invocation)
+                               ExactTicketAdmission.Invocation? invocation, string? routingReason)
     {
         var ticket = candidate.Ticket;
         var publishedSelection = false;
@@ -610,6 +770,7 @@ public sealed partial class RouterCore : IInferenceRouter
             _events.Append(new RouterEvent
             {
                 Kind = "request.selected",
+                Reason = routingReason,
                 ThreadId = ticket.ThreadId,
                 TicketId = ticket.Id,
                 Engine = engine.Name,
@@ -628,7 +789,7 @@ public sealed partial class RouterCore : IInferenceRouter
         finally
         {
             EndEngineRequest(candidate, engine, invocation);
-            candidate.Thread.DecrementInflight();
+            lock (_gate) candidate.Thread.DecrementInflight();
             Fail(candidate.Ticket, "cancelled", "router is shutting down");
             candidate.LocalLease?.Release();
             ReleaseExecutionCancellation(candidate.Ticket);
@@ -680,38 +841,126 @@ public sealed partial class RouterCore : IInferenceRouter
         }
     }
 
-    private Selection OrderEligibleSwitches(QueueHead[] heads, ref int next, Selection baseline,
-                                            QueuedRequest first, SwitchComparison comparison, ConfigurationGeneration generation)
+    private Selection OrderEligibleSwitches(QueueRound[] round, ref int through, Selection baseline,
+                                            SwitchComparison comparison, ConfigurationGeneration generation)
     {
         var order = new SwitchCostOrder<Selection>();
-        Consider(first, baseline);
-        while (next < heads.Length)
+        Consider(baseline);
+        while (through + 1 < round.Length)
         {
-            var head = heads[next];
-            if (head.Candidate.Depth != baseline.Head.Candidate.Depth) break;
-            if (head.Candidate.Request is not { } request)
+            var next = through + 1;
+            if (round[next].Snapshot.Depth != round[baseline.QueueIndex].Snapshot.Depth) break;
+            var request = Array.Find(round[next].Snapshot.Requests, IsPendingAndThreadAdmissible);
+            if (request is null)
             {
-                next++;
+                through = next;
                 continue;
             }
-            var decision = _scheduler.SelectNext(request,
-                new SchedulerView(BuildEngineInfos(request, generation, comparison), comparison.UtcNow), generation.Settings);
-            if (decision.Engine is not null &&
-                (!decision.SwitchRequired || request.PriorityNode.Priority.CompareTo(first.PriorityNode.Priority) != 0))
-                break;
-            next++;
-            if (decision.Engine is not null) Consider(request, new Selection(head, decision));
+            var view = new SchedulerView(BuildEngineInfos(request, generation, comparison), comparison.UtcNow);
+            var decision = _scheduler.SelectNext(request, view, generation.Settings);
+            if (decision.Engine is not null && (!decision.SwitchRequired ||
+                request.PriorityNode.Priority.CompareTo(baseline.Request.PriorityNode.Priority) != 0)) break;
+            through = next;
+            if (decision.Engine is not null) Consider(new Selection(next, request, decision));
         }
         return order.Selected ?? baseline;
 
-        void Consider(QueuedRequest request, Selection selection)
+        void Consider(Selection selection)
         {
+            var request = selection.Request;
             var estimate = comparison.Engine.EstimateVerifiedTransition(comparison.Incumbent, request.Ticket.Model,
                 selection.Decision.TargetProfile, comparison.Timestamp);
             var age = _clock.GetElapsedTime(request.EnqueuedAtTimestamp, comparison.Timestamp);
             order.Consider(selection, request.EnqueuedSeq, age, estimate);
         }
     }
+
+    private RouteProbe ProbeRoute(QueuedRequest candidate, EngineRuntime engine, SchedulerDecision decision,
+                                  EngineRuntime.DispatchObservation observation, ConfigurationGeneration generation) =>
+        ProbeRoute(candidate, engine, new PrefixAwareScheduler.Target(decision.SwitchRequired, decision.TargetProfile),
+            observation, generation);
+
+    // Read only. Each mutation is a separate exact-take or explicit drain-intent commit.
+    private RouteProbe ProbeRoute(QueuedRequest candidate, EngineRuntime engine, PrefixAwareScheduler.Target target,
+                                  EngineRuntime.DispatchObservation observation, ConfigurationGeneration generation)
+    {
+        var profile = engine.GetProfile(candidate.Ticket.Model, target.Profile);
+        var group = _localGroups.GetValueOrDefault(engine.Name);
+        var named = candidate.Request.Options?.Profile;
+        var serving = observation.Capability.Serving;
+        if (named is not null && (profile?.Name != named || profile.MaxContext < candidate.RequiredContextTokens ||
+            (!target.SwitchRequired && !serving.Matches(candidate.Ticket.Model, profile))))
+            return new(profile, group, new("engine_profile_unavailable", engine.Name));
+        var uses = _profileUsers.GetValueOrDefault(engine);
+        if ((uses.Switching != 0 && (named is not null || uses.Named != 0)) ||
+            ((uses.Named != 0 || engine.HasNamedUse) && target.SwitchRequired) ||
+            (named is not null && target.SwitchRequired && group is null && (observation.Inflight != 0 || engine.InferenceUses != 0)))
+            return new(profile, group, new("engine_profile_in_use", engine.Name));
+        var requiredWindow = EngineRuntime.RequiredWindow(profile, candidate.ExplicitContextMinimum);
+        if (_admission is null && requiredWindow > serving.WindowFor(candidate.Ticket.Model) &&
+            !WillWaitForModel(generation.Settings, target.SwitchRequired, profile))
+            return new(profile, group, new("engine_context_unavailable", engine.Name));
+
+        if (group is not null)
+        {
+            switch (group.Probe(candidate, engine, profile, target.SwitchRequired))
+            {
+                case LocalLifecycleGroup.Availability.Draining:
+                    return new(profile, group, new("lifecycle_group_draining", group.Name), Drain: true);
+                case LocalLifecycleGroup.Availability.Owned:
+                    return new(profile, group, new("lifecycle_group_reserved", group.Name));
+                case LocalLifecycleGroup.Availability.Switching:
+                    return new(profile, group, new("lifecycle_group_switching", group.Name));
+                case LocalLifecycleGroup.Availability.Cold when !target.SwitchRequired:
+                    return new(profile, group, new("lifecycle_group_residency_changed", group.Name));
+            }
+        }
+        return new(profile, group, observation.HasCapacity ? null : new("engine_concurrency_limit", engine.Name));
+    }
+
+    private Blocker DescribeUnavailable(EngineRuntimeInfo[] infos, QueuedRequest request)
+    {
+        foreach (var engine in infos)
+        {
+            if (!engine.CanServeModel) continue;
+            if (engine.Switching)
+            {
+                var group = _localGroups.GetValueOrDefault(engine.Name);
+                return group is null ? new("engine_switching", engine.Name) : new("lifecycle_group_switching", group.Name);
+            }
+            if (!engine.Healthy) return new("engine_unhealthy", engine.Name);
+            if (!engine.LoadedModels.Contains(request.Ticket.Model, StringComparer.OrdinalIgnoreCase))
+                return new("engine_model_not_ready", engine.Name);
+        }
+        return new("no_available_engine");
+    }
+
+    private void PublishDispatchWait(ModelQueue queue, QueuedRequest request, Blocker blocker)
+    {
+        var ticket = request.Ticket;
+        var wait = new DispatchWaitInfo(blocker.Reason, blocker.Scope is { } scope ? WireText.Ident(scope) : null);
+        lock (_gate)
+        {
+            if (_closing || ticket.IsTerminal || !ReferenceEquals(_queues.GetValueOrDefault(ticket.Model), queue) ||
+                !queue.Contains(request) || ticket.DispatchWait == wait) return;
+            Volatile.Write(ref ticket.DispatchWait, wait);
+        }
+
+        if (wait.Scope is null) return;
+        // The feed gate orders this observation against terminal publication without calling any
+        // observer under the router/queue gate. Exact removal clears the current observation.
+        _events.AppendIf(new RouterEvent
+        {
+            Kind = "request.waiting",
+            ThreadId = ticket.ThreadId,
+            TicketId = ticket.Id,
+            Model = ticket.Model,
+            Reason = FormatBlocker(new(wait.Reason, wait.Scope)),
+        }, () => ReferenceEquals(Volatile.Read(ref ticket.DispatchWait), wait) && !ticket.IsTerminal);
+    }
+
+    private static string FormatBlocker(Blocker blocker) => blocker.Scope is { } scope
+        ? $"{blocker.Reason} ({WireText.Ident(scope)})" : blocker.Reason;
 
     private static bool WillWaitForModel(RouterConfig settings, bool switchRequired, ServingProfile? profile) =>
         settings.AutoSwitch && (switchRequired || profile is not null);
@@ -723,39 +972,50 @@ public sealed partial class RouterCore : IInferenceRouter
         throw new InvalidOperationException("The selected engine is missing from the scheduler view.");
     }
 
-    private EngineRuntimeInfo[] BuildEngineInfos(QueuedRequest head, ConfigurationGeneration generation,
+    private PrefixAwareScheduler.RouteFit ReadRouteFit(QueuedRequest request, EngineRuntime engine,
+                                                        EngineRuntime.DispatchObservation observation)
+    {
+        var capability = observation.Capability;
+        var model = request.Ticket.Model;
+        var group = _localGroups.GetValueOrDefault(engine.Name);
+        return new(capability.Healthy, capability.SwitchingToward is not null, engine.CanServeModel(model, capability),
+            group is not null, request.Request.Options?.Profile is not null && engine.CanSwitchTo(model),
+            group is null || group.IsResident(engine.Name, model) ? capability.ModelRoster : [],
+            capability.Serving.WindowFor(model), engine.ProfilesForModel(model), observation);
+    }
+
+    private EngineRuntimeInfo[] BuildEngineInfos(QueuedRequest request, ConfigurationGeneration generation,
         SwitchComparison? comparison)
     {
-        var messages = head.Messages();
-        var list = new List<EngineRuntimeInfo>(generation.Engines.Count);
-        foreach (var e in generation.Engines.Values)
+        var messages = request.Messages();
+        var infos = new EngineRuntimeInfo[generation.Engines.Count];
+        var index = 0;
+        foreach (var engine in generation.Engines.Values)
         {
-            // One snapshot per engine, and every capability-shaped field derived from that one read: the
-            // loaded list, the switch marker and the eligibility bit cannot come from different instants and
-            // then disagree inside one scheduling decision (§5.5).
-            var observation = comparison?.Observation ?? e.ReadDispatchObservation();
-            var cap = observation.Capability;
-            list.Add(new EngineRuntimeInfo
+            // The loaded roster, switch marker, and fit come from one published capability.
+            var observation = comparison?.Observation ?? engine.ReadDispatchObservation();
+            var fit = ReadRouteFit(request, engine, observation);
+            var switching = observation.Capability.SwitchingToward;
+            infos[index++] = new EngineRuntimeInfo
             {
-                Name = e.Name,
-                LoadedModels = _localGroups.TryGetValue(e.Name, out var local) &&
-                    !local.IsResident(e.Name, head.Ticket.Model) ? [] : cap.ModelRoster,
-                CanLoad = local is not null,
-                CanSwitchProfile = head.Request.Options?.Profile is not null && e.CanSwitchTo(head.Ticket.Model),
-                CatalogModels = e.CatalogModelNames.ToArray(),
-                SwitchingToward = cap.SwitchingToward is null ? [] : [cap.SwitchingToward],
-                CanServeModel = e.CanServeModel(head.Ticket.Model, cap),
+                Name = engine.Name,
+                LoadedModels = fit.LoadedModels,
+                CanLoad = fit.CanLoad,
+                CanSwitchProfile = fit.CanSwitchProfile,
+                CatalogModels = engine.CatalogModelNames.ToArray(),
+                SwitchingToward = switching is null ? [] : [switching],
+                CanServeModel = fit.CanServeModel,
                 Inflight = observation.Inflight,
                 InflightTokenProxy = observation.InflightTokenProxy,
-                Healthy = cap.Healthy,
-                Switching = cap.SwitchingToward is not null,
-                MatchedPrefixChars = e.MatchedPrefixChars(messages),
-                ActiveContextWindow = cap.Serving.WindowFor(head.Ticket.Model),
-                ServingProfiles = e.ProfilesForModel(head.Ticket.Model),
+                Healthy = fit.Healthy,
+                Switching = fit.Switching,
+                MatchedPrefixChars = engine.MatchedPrefixChars(messages),
+                ActiveContextWindow = fit.ActiveContextWindow,
+                ServingProfiles = fit.ServingProfiles,
                 DispatchObservation = observation,
-            });
+            };
         }
-        return list.ToArray();
+        return infos;
     }
 
     // ── execution ───────────────────────────────────────────────────────────
@@ -775,7 +1035,7 @@ public sealed partial class RouterCore : IInferenceRouter
         {
             if (decremented) return;
             decremented = true;
-            thread.DecrementInflight();
+            lock (_gate) thread.DecrementInflight();
         }
         void EndEngineOnce()
         {
@@ -1471,8 +1731,11 @@ public sealed partial class RouterCore : IInferenceRouter
             foreach (var q in _queues.Values) pending.AddRange(q.DrainAll());
             _queues.Clear();
             foreach (var queued in pending)
+            {
+                ClearQueuedScheduling(queued.Ticket);
                 if (queued.Ticket.PendingEnqueuePublication)
                     queued.Ticket.DeferredQueueEnd ??= "cancelled";
+            }
             pending.RemoveAll(queued => queued.Ticket.PendingEnqueuePublication);
         }
         _ = CompleteShutdownAsync(generation, housekeeping, pending, completion);
@@ -1559,6 +1822,10 @@ public sealed record TicketSnapshot
     public string? Engine { get; init; }
     public string? ErrorCode { get; init; }
     public string? Error { get; init; }
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public string? QueueWaitReason { get; init; }
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public string? QueueWaitScope { get; init; }
 }
 
 public interface IInferenceRouter : IAsyncDisposable
