@@ -48,7 +48,7 @@ public sealed partial class HostClosedRouteStagingTests
                 var target = new VerifiedDispatchTarget(engine.Name, stage.Launch.Plan.Model, "small", stage.Route.EffectiveTarget,
                     engine.Endpoint);
                 return new(target, stage.Route, 8_192, 8_192, 1, engine.Endpoint, credential, issuer);
-            });
+            }, (engine, target) => new(engine.Name, target.Model, target.EffectiveProfile, host.GetLaunchPlanDigest(target), engine.Endpoint));
 
         Assert.Throws<RouterConfigException>(() => new InProcessHostManager([enrollment with { Domain = domain with { Generation = 2 } }]));
         Assert.Throws<RouterConfigException>(() => new InProcessHostManager([enrollment, enrollment with { Domain = domain with { Name = "duplicate" } }]));
@@ -114,7 +114,7 @@ public sealed partial class HostClosedRouteStagingTests
         Assert.Single(router.Events.Replay(0), row => row.TicketId == ticket.Id && row.Kind == "request.selected");
     }
 
-    private static EngineDefinition ManagedEngine(string engine, string model, string group, int port) => new()
+    private static EngineDefinition ManagedEngine(string engine, string model, string group, int port, bool equalRecipes = false) => new()
     {
         Name = engine,
         Endpoint = new UriBuilder(Uri.UriSchemeHttp, "127.0.0.1", port, "/v1").Uri,
@@ -122,11 +122,18 @@ public sealed partial class HostClosedRouteStagingTests
         LifecycleOwner = EngineLifecycleOwner.Router,
         Lifecycle = EngineLifecycleKind.Docker,
         Docker = new DockerLifecycleConfig { Image = "fixture", RouterId = "fixture" },
+        Health = equalRecipes ? new HealthProbeDefinition { Path = "/props" } : null,
         Catalog = new Dictionary<string, EngineModelDefinition>(StringComparer.Ordinal)
         {
-            [model] = new() { Name = model, Profile = "small", ServingProfiles = [new() { Name = "small", MaxContext = 8_192, MaxSlots = 1 }] },
+            [model] = new()
+            {
+                Name = model, Aliases = equalRecipes ? ["model-alias"] : [], Profile = equalRecipes ? "alternate" : "small",
+                ServingProfiles = equalRecipes ? [ManagedTier("unsupported"), ManagedTier("small"), ManagedTier("alternate")] : [ManagedTier("small")],
+            },
         },
     };
+
+    private static ServingProfile ManagedTier(string name) => new() { Name = name, MaxContext = 8_192, MaxSlots = 1 };
 
     private static InferenceRequest ManagedRequest(string model, string prompt, bool named = true) => new()
     {

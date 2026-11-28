@@ -39,12 +39,14 @@ internal sealed record HostStagedDeadlinePublication(
     Func<HostClosedRouteStage, SwitchServingProof, Func<bool>, bool> TryOpen,
     Action Opened,
     Action<HostClosedRouteStage>? AfterStageInstalledForTests = null,
-    Action<Task>? CaptureReadinessCleanupForTests = null)
+    Action<Task>? CaptureReadinessCleanupForTests = null,
+    string? ExpectedPlanDigest = null)
 {
     public bool MatchesLaunch(HostCheckpointPlan plan) =>
         ExpectedAttempt.RuntimeEpoch != Guid.Empty && ExpectedAttempt.Sequence > 0 &&
         ExpectedTarget.RuntimeEpoch == ExpectedAttempt.RuntimeEpoch &&
-        ExpectedTarget.CanonicalModel == plan.Model && ExpectedTarget.EffectiveProfile == (plan.Tier ?? "");
+        ExpectedTarget.CanonicalModel == plan.Model && ExpectedTarget.EffectiveProfile == (plan.Tier ?? "") &&
+        (ExpectedPlanDigest is null || plan.Digest() == ExpectedPlanDigest);
 }
 
 /// <summary>Internal staged fixture authority. Only Open exposes an exact generation to the issuer.</summary>
@@ -93,6 +95,7 @@ internal sealed class HostClosedRouteStaging(
     {
         private HostClosedRouteStage? _completedStage;
         public bool UsesDeadline => deadlinePublication is not null;
+        public string? ExpectedPlanDigest => deadlinePublication?.ExpectedPlanDigest;
         public HostStagedDecision Decision { get; private set; }
         public bool Opened { get; private set; }
 

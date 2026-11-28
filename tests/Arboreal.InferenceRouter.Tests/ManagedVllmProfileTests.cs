@@ -272,6 +272,41 @@ public sealed class ManagedVllmProfileTests
     }
 
     [Theory(Timeout = 15_000)]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    public async Task EqualCapacityNamedRecipeUsesItsOwnLaunchWhileAliasAndNumericFitReuseIt(bool stream, bool alias)
+    {
+        using var fixture = new Fixture(adopt: true, equalRecipes: true);
+        await using var router = fixture.Start();
+        var aliased = await EnqueueAsync(router, profile: alias ? "one-alias" : "one", stream);
+        await aliased.CompletionTask.WaitAsync(Limit);
+        Assert.Empty(fixture.Writes);
+        Assert.Equal("one", router.Engines["strata"].Capability.NativeWatch?.Launch.Profile);
+
+        var alternate = await EnqueueAsync(router, profile: "alternate", stream);
+        await alternate.CompletionTask.WaitAsync(Limit);
+        Assert.Equal("alternate", router.Engines["strata"].Capability.NativeWatch?.Launch.Profile);
+        Assert.Contains("RECIPE=alternate", fixture.LastCreate, StringComparison.Ordinal);
+        var writes = fixture.Writes.Count;
+        Assert.Equal(3, writes);
+
+        var numeric = await EnqueueAsync(router, profile: null, stream);
+        await numeric.CompletionTask.WaitAsync(Limit);
+        Assert.Equal(writes, fixture.Writes.Count);
+        Assert.Equal(3, fixture.App.CompletionCalls);
+
+        static ValueTask<RouterTicket> EnqueueAsync(RouterCore router, string? profile, bool stream) =>
+            router.EnqueueAsync("recipe", new InferenceRequest
+            {
+                Model = Model, Stream = stream, Options = new RouterRequestOptions { Profile = profile, RequiredContext = 262_144 },
+                Body = stream ? """{"messages":[{"role":"user","content":"hi"}],"stream":true}"""u8.ToArray() :
+                    """{"messages":[{"role":"user","content":"hi"}]}"""u8.ToArray(),
+            });
+    }
+
+    [Theory(Timeout = 15_000)]
     [InlineData("wrapper")]
     [InlineData("context")]
     [InlineData("slots")]
@@ -426,10 +461,10 @@ public sealed class ManagedVllmProfileTests
         public string Children => Path.Combine(Root, "101", "task", "101", "children");
         public string Cmdline => Path.Combine(Root, "102", "cmdline");
 
-        public void Write(byte[] argv, ulong childStart)
+        public void Write(byte[] argv, ulong childStart, string containerId = Id)
         {
-            WriteProcess(InitPid, "docker-init", 1, 100, Id);
-            WriteProcess(ChildPid, "vllm", InitPid, childStart, Id);
+            WriteProcess(InitPid, "docker-init", 1, 100, containerId);
+            WriteProcess(ChildPid, "vllm", InitPid, childStart, containerId);
             Directory.CreateDirectory(Path.GetDirectoryName(Children)!);
             File.WriteAllText(Children, "102 ");
             File.WriteAllBytes(Cmdline, argv);
@@ -483,9 +518,11 @@ public sealed class ManagedVllmProfileTests
         private readonly JsonObject _containerConfig;
         private readonly JsonNode _host;
         private string _state;
+        private string _containerId = Id;
         private int _inspects;
         private int _cmdlineOpens;
         public ConcurrentQueue<string> Writes { get; } = new();
+        public string? LastCreate { get; private set; }
         public ProcFixture Proc { get; } = new();
         public AppHandler App { get; } = new();
         public FakeEngineHandler NextApp { get; } = new() { LoadedModels = ["next"], TotalSlots = 2 };
@@ -497,10 +534,14 @@ public sealed class ManagedVllmProfileTests
         public TaskCompletionSource StopEntered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource ReleaseStop { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        public Fixture(bool adopt, int startupMs = 600000)
+        public Fixture(bool adopt, int startupMs = 600000, bool equalRecipes = false)
         {
             _state = adopt ? "running" : "absent";
             var settings = Settings.Replace("init = true", FormattableString.Invariant($"init = true\nwait_timeout_ms = {startupMs}"), StringComparison.Ordinal);
+            if (equalRecipes) settings = settings.Replace(
+                "{ name = \"one\", max_context = 262144, max_slots = 1 }, { name = \"three\", max_context = 524288, max_slots = 3 }",
+                """{ name = "one", max_context = 262144, max_slots = 1, aliases = ["one-alias"], docker = { env = ["RECIPE=one"] } }, { name = "alternate", max_context = 262144, max_slots = 1, docker = { env = ["RECIPE=alternate"] } }""",
+                StringComparison.Ordinal);
             _config = RouterConfigLoader.Load(settings);
             var model = _config.Engines["strata"];
             var config = model.Docker!;
@@ -559,14 +600,14 @@ public sealed class ManagedVllmProfileTests
             }
             if (path.Contains("/containers/json?", StringComparison.Ordinal))
             {
-                var entry = new JsonObject { ["Id"] = Id, ["ImageID"] = _config.Engines["strata"].Docker!.ImageIdentity!.Id,
+                var entry = new JsonObject { ["Id"] = _containerId, ["ImageID"] = _config.Engines["strata"].Docker!.ImageIdentity!.Id,
                     ["State"] = _state, ["Labels"] = _containerConfig["Labels"]!.DeepClone() };
                 return Reply(HttpStatusCode.OK, _state == "absent" ? "[]" : new JsonArray(entry).ToJsonString());
             }
-            if (path.EndsWith($"/{Id}/json", StringComparison.Ordinal))
+            if (path.EndsWith($"/{_containerId}/json", StringComparison.Ordinal))
             {
                 var restarted = Interlocked.Increment(ref _inspects) >= ChangeGenerationAtInspect;
-                var inspect = JsonNode.Parse(DockerLifecycleProviderTests.NativeContainerInspect(Id, Model, "one", state: _state,
+                var inspect = JsonNode.Parse(DockerLifecycleProviderTests.NativeContainerInspect(_containerId, Model, "one", state: _state,
                     running: _state == "running", restarts: restarted ? 1 : 0))!;
                 inspect["HostConfig"] = _host.DeepClone();
                 inspect["HostConfig"]!["PidMode"] = InspectedPidMode;
@@ -580,15 +621,24 @@ public sealed class ManagedVllmProfileTests
                 var query = request.RequestUri.Query;
                 Assert.StartsWith(namePrefix, query, StringComparison.Ordinal);
                 Assert.True(Guid.TryParseExact(query.AsSpan(namePrefix.Length), "N", out _));
+                LastCreate = await request.Content!.ReadAsStringAsync(ct);
+                var created = JsonNode.Parse(LastCreate)!.AsObject();
+                _containerConfig["Labels"] = created["Labels"]!.DeepClone();
+                _containerConfig["Env"] = created["Env"]!.DeepClone();
+                if (created["Labels"]![DockerLifecycleProvider.LabelProfile]!.GetValue<string>() == "alternate")
+                {
+                    _containerId = new string('b', 64);
+                    Proc.Write(Argv("--max-num-seqs=1\0"), 300, _containerId);
+                }
                 _state = "created";
-                return Reply(HttpStatusCode.Created, $$"""{"Id":"{{Id}}"}""");
+                return Reply(HttpStatusCode.Created, $$"""{"Id":"{{_containerId}}"}""");
             }
-            if (path.EndsWith($"/{Id}/start", StringComparison.Ordinal))
+            if (path.EndsWith($"/{_containerId}/start", StringComparison.Ordinal))
             {
                 _state = "running";
                 return Reply(HttpStatusCode.NoContent);
             }
-            if (path.Contains($"/{Id}/stop?", StringComparison.Ordinal))
+            if (path.Contains($"/{_containerId}/stop?", StringComparison.Ordinal))
             {
                 StopEntered.TrySetResult();
                 if (HoldStop) await ReleaseStop.Task.WaitAsync(ct);

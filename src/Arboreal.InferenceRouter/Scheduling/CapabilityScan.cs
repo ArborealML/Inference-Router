@@ -19,10 +19,9 @@ internal readonly record struct ServingCapacity(string? Model, long ContextWindo
     /// and a measured capacity never rewrites a named profile. Slot count is a floor, not an identity: an
     /// eight-lane resident satisfies a four-lane tier of the same window, while fewer reported lanes than the
     /// tier declares is a mismatch, so a named tier is never silently run short of the concurrency it promises
-    /// (and the same gauge caps admission — §7.6 Admission). This is the question *"does an engine that is
-    /// already up owe a switch?"*, asked by the scheduler's escalation rule, the local group's cold/warm
-    /// classification and the named-take gates on the dispatch path; the answer for what a launch may publish
-    /// is <see cref="MatchesExactly"/>. <c>MaxContext &gt; 0</c> is what rules out a
+    /// (and the same gauge caps admission — §7.6 Admission). The router separately checks recipe identity
+    /// for recipe-backed named requests. A launch uses <see cref="MatchesExactly"/> for its numeric readiness
+    /// proof. <c>MaxContext &gt; 0</c> is what rules out a
     /// splice: an unread gauge or a window bound to another model row reads as zero through
     /// <see cref="WindowFor"/>, and zero must never satisfy a tier that declares no window.</summary>
     internal bool Matches(string model, ServingProfile profile) =>

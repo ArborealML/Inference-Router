@@ -203,7 +203,7 @@ public sealed partial class RouterCore
             var required = opts?.Profile is not null ? Math.Max(estimated, explicitContext)
                 : explicitContext > 0 ? explicitContext : estimated;
             var profileFits = opts?.Profile is not { } profile || generation.Engines.Values.Any(engine =>
-                EngineRuntime.UniqueNamedProfile(engine.ProfilesForModel(model), profile) is { } tier && tier.MaxContext >= required);
+                engine.GetProfile(model, profile) is { } tier && tier.MaxContext >= required && engine.SupportsNamedProfile(model, tier));
             var hopeless = CapabilityScan.DefinitelyHopeless(generation.Capabilities, model);
             var noFit = !hopeless && explicitContext > 0 && _scheduler is PrefixAwareScheduler
                 ? LargestInsufficientConfiguredTier(generation, model, explicitContext)

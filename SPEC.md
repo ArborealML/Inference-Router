@@ -1,12 +1,13 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.169)
+Status: draft, continuously revised (v0.12.170)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
 
 ## 0. Revision log
 
+- v0.12.170 — bind named managed recipes through selection and exact admission, resolve engine-local aliases before queue validation, and preserve numeric reuse of a fitting resident (§§5.3.1, 7.6, 14).
 - v0.12.169 — continue past unavailable preparation and activation offers, withdraw closed managed residents from route ranking, consume an active transition's runtime claim once, and deliver queued cancellation through controller cleanup (§§5.3.1, 5.5, 14).
 - v0.12.168 — scope exact preparation capacity and staged-owner preference to the physical domain, and exercise queue-driven activation and verified delivery through an internally enrolled in-process host manager (§§4–7, 12, 14).
 - v0.12.167 — give each inference call with an omitted thread header a request-scoped scheduling identity. The CLI omits the header by default. Explicit names retain their thread limits and ambiguous identity is refused before admission (§§5.1, 6, 11, 14).
@@ -2275,6 +2276,15 @@ fresh verification after any outstanding use settles. The issuer still controls 
 and physical retirement. Journal and issuer evidence remain authoritative across recovery. The
 in-process fixture carries no new durable receipt store or remote authority.
 
+Enrollment resolves each supported canonical recipe independently of the resident. Its existing
+plan digest binds the requested Docker create settings, pinned image, endpoint and host plan.
+The selected digest is captured before accepting the operation and checked against the controller's
+plan and staged publication. For a named request, admission carries this selection with the
+ranked verified resident and route generation. A changed route or instance requires fresh admission.
+The issuer continues to arbitrate the first application write for the exact instance. The local
+native path binds a named recipe to the compiled target from the qualified launch or adoption watch.
+Recipe selection supplies launch intent. Host and provider verification still establish what is running.
+
 **Production evidence.** The raw Docker inventory can report known foreign containers. Even an
 empty inventory leaves vacancy unproven, and raw Docker supplies no terminal receipt for an
 unacknowledged router operation ID. Positive authority requires independently verified enrollment,
@@ -3596,19 +3606,22 @@ Semantics:
   that matches a canonical catalog key case-insensitively. An additional upstream row with a
   string ID makes the window unbound. Total slots can still be reported. The inferred profile
   requires a unique matching tier in the bound model and serves as a display label.
-- **Resident reuse**: a selected named tier is already satisfied when the window measured for that exact model
-  equals the tier's declared `max_context` and the reported slot count is at least its declared `max_slots`,
-  read from one current capability snapshot. That measurement is the whole proof: the resident is a zero-cost
-  target, so no lifecycle operation, no switch event and no launch epoch follows. The inferred label never
-  enters the comparison — it is a display label, it is absent when more than one declared tier matches the
-  observed pair, and a stale label must not stop and recreate a container that already serves the requested
-  window. Slots are a floor, not an identity: a four-lane demand is satisfied by an eight-lane resident of the
-  same window, while fewer reported lanes than the tier declares is a mismatch, so a named tier is never run
-  short of the concurrency it promises and the same gauge caps admission (§7.6 Admission). A measured window
-  narrower or wider than the tier declares is a mismatch, so a measured capacity never rewrites a named
-  profile, and launch verification keeps its exact expected-and-observed window and slot proof (§5.3.1).
-  Offline exact-instance dispatch keeps its separate resident-tier identity check and its live observation
-  veto (§5.5).
+- **Exact recipe selection**: for a model with compiled Docker recipes or enrolled host recipes,
+  resolve the requested name against the serving engine's captured catalog. Model aliases use
+  the catalog's case-insensitive comparison and profile aliases are case-sensitive. An alias or
+  the configured default resolves the same compiled recipe as its canonical name. The requested
+  recipe needs matching current recipe proof and sufficient measured capacity. Equal windows and
+  slots can still describe different recipes when, for example, the conversation cache differs.
+  A matching proven recipe is a zero-cost reuse. Unsupported or ambiguous exact names grant no
+  lifecycle authority. With no named profile, cold demand selects the smallest fitting supported
+  window and keeps declaration order on ties. A cold request without tier demand uses the
+  configured default. Activation still requires support for the selected recipe.
+- **Numeric resident reuse**: unnamed requests can reuse a fitting qualified resident regardless
+  of the display label or the configured launch default. A legacy profile with no independently
+  configured recipe keeps its named numeric behavior. The measured window must equal its declared
+  `max_context` and the reported slots must meet its `max_slots` floor. No stop, switch event or
+  launch epoch follows a valid reuse. A fresh launch still uses its separate readiness check (§5.3.1).
+  Display inference supplies neither recipe identity nor admission authority.
 - **Observability**: `engine.profile` events report committed positive window or inferred-profile
   changes. `EngineStats` reads `active_profile` / `active_context_window` / `active_slots` from one snapshot.
 - **Non-goal for now**: automatic *de*-escalation (shrinking a window when big-context
@@ -4378,6 +4391,11 @@ and cohort/residency hysteresis in the scheduler (§12.3 hook).
   through a fresh route generation, and refuse reuse of an ended runtime claim. Cancel the
   activation owner during readiness and hold controller cleanup before recovering the successor.
   Cancel at proof opening and just before the verified offer and confirm zero first writes.
+- **Named recipe identity** (`VerifiedDispatchTargetTests`, `ManagedVllmProfileTests`,
+  `HostClosedRouteStagingTests`): compare equal-window and equal-lane Strata recipes with different
+  cache settings, assert equivalent alias and default resolution, and exercise named versus numeric
+  reuse and activation with controlled native and enrolled fixtures. Withdraw the exact resident
+  while gauges remain equal at preparation, take, offer and first-write boundaries.
 - **Queued priority** (`QueuedPriorityTests`, `SwitchCostDispatchTests`): promote and demote inherited
   requests through all thread update entry points, preserve explicit overrides and FIFO, and verify
   that a change racing an exact take or measured switch comparison follows the updated order. Verify

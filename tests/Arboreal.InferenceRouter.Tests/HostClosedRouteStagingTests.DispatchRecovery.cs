@@ -5,6 +5,148 @@ namespace Arboreal.InferenceRouter.Tests;
 
 public sealed partial class HostClosedRouteStagingTests
 {
+    [Fact]
+    public void StrataEqualCapacityCacheRecipesProjectDifferentExactDigests()
+    {
+        var engine = LoadDeepSeekQwenEngine(ReadDeepSeekQwenConfig("strata.toml"), QwenEngineName);
+        var model = engine.Catalog[QwenPairModel];
+        var concurrent = Assert.Single(model.ServingProfiles, tier => tier.Name == "concurrent");
+        var cache = Assert.Single(model.ServingProfiles, tier => tier.Name == "64k-4");
+        Assert.Equal((65_536L, 4), (concurrent.MaxContext, concurrent.MaxSlots));
+        Assert.Equal((concurrent.MaxContext, concurrent.MaxSlots), (cache.MaxContext, cache.MaxSlots));
+        var resolver = new VerifiedDispatchTargetResolver(engine);
+        var (first, firstPlan, firstCreate) = resolver.ResolveProjection(QwenPairModel, concurrent.Name, null, "fixture-config", "fixture-route");
+        var (second, secondPlan, secondCreate) = resolver.ResolveProjection("flash-next", cache.Name, null, "fixture-config", "fixture-route");
+        Assert.Contains("PRESET=defiant-qwen-concurrent", firstCreate.Env!);
+        Assert.Contains("PRESET=defiant-qwen-64k-4", secondCreate.Env!);
+        Assert.Contains(firstCreate.Env!, value => value.Contains("conversation-cache-slots=4", StringComparison.Ordinal));
+        Assert.Contains(secondCreate.Env!, value => value.Contains("conversation-cache-slots=8", StringComparison.Ordinal));
+        Assert.NotEqual(firstPlan.LaunchSettingsDigest, secondPlan.LaunchSettingsDigest);
+        Assert.NotEqual(first.PlanDigest, second.PlanDigest);
+        Assert.Equal(second, resolver.Resolve(QwenPairModel, cache.Name, second, "fixture-config", "fixture-route"));
+        Assert.Equal(resolver.Resolve(QwenPairModel, model.Profile, null, "fixture-config", "fixture-route"),
+            resolver.Resolve("flash-next", null, null, "fixture-config", "fixture-route"));
+    }
+
+    [Fact(Timeout = 20_000)]
+    public async Task CombinedRecipeColdNumericDemandSkipsUnsupportedTiersAndKeepsSupportedOrder()
+    {
+        using var watchdog = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        using var discovery = new FakeEngineHandler { LoadedModels = [] };
+        var ct = watchdog.Token;
+        var domain = MakeManagedDomain("a", 19001, equalRecipes: true);
+        var manager = new InProcessHostManager([domain.Enrollment]);
+        await using var router = MakeManagedRouter(manager, discovery, domain);
+        _ = Task.Run(router.DispatchLoop, ct);
+        var ticket = await router.EnqueueAsync("numeric", RecipeRequest(profile: null), ct);
+        await ticket.CompletionTask.WaitAsync(ct);
+        Assert.Equal("small", domain.Resident?.Target.Tier);
+        Assert.Equal(1, domain.Host.Creates);
+        Assert.Equal(1, domain.Issuer.FirstWriteAttempts);
+    }
+
+    [Fact(Timeout = 20_000)]
+    public async Task CombinedRecipeSwitchDoesNotTreatEqualGaugesAsExactIdentity()
+    {
+        using var watchdog = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        using var discovery = new FakeEngineHandler { LoadedModels = ["shared"], NCtx = 8_192, TotalSlots = 1 };
+        var ct = watchdog.Token;
+        var domain = MakeManagedDomain("a", 19001, equalRecipes: true);
+        var manager = new InProcessHostManager([domain.Enrollment]);
+        await using var router = MakeManagedRouter(manager, discovery, domain);
+        await EstablishResidentAsync(manager, domain, ct);
+        var resident = Assert.IsType<VerifiedDispatchResident>(domain.Resident);
+        var runtime = router.Engines[domain.Engine.Name];
+        Assert.True(await runtime.ProbeHealthOnceAsync(ct));
+        Assert.Null(runtime.ActiveProfile);
+        Assert.Equal(8_192, runtime.ActiveContextWindow);
+        Assert.Equal(1, runtime.ActiveSlots);
+
+        var unauthorized = await Assert.ThrowsAsync<RouterRequestException>(async () =>
+            await router.EnqueueAsync("refused", RecipeRequest("unsupported"), ct));
+        Assert.Equal("invalid_profile", unauthorized.Code);
+        Assert.Same(resident, manager.Admission.ReadManagedResident(domain.Engine.Name));
+        Assert.Equal(1, domain.Host.Creates);
+        Assert.Equal(1, domain.Host.Stops);
+        Assert.Equal(0, domain.Issuer.CertifiedCheckouts);
+
+        _ = Task.Run(router.DispatchLoop, ct);
+        var named = await router.EnqueueAsync("same", RecipeRequest("small"), ct);
+        var numeric = await router.EnqueueAsync("numeric", RecipeRequest(profile: null), ct);
+        await Task.WhenAll(named.CompletionTask, numeric.CompletionTask).WaitAsync(ct);
+        Assert.Equal(1, domain.Host.Creates);
+        Assert.Same(resident, domain.Resident);
+        Assert.Equal(2, domain.Issuer.FirstWriteAttempts);
+
+        // The fixture settles the already verified launch so its single host can accept a new recipe.
+        using (var reservation = HostReservation.Open(domain.ReservationPath))
+            reservation.Settle(Assert.IsType<HostMutation>(reservation.State.Pending));
+        var alternate = await router.EnqueueAsync("different", RecipeRequest("alternate"), ct);
+        await alternate.CompletionTask.WaitAsync(ct);
+        var replacement = Assert.IsType<VerifiedDispatchResident>(domain.Resident);
+        Assert.Equal("alternate", replacement.Target.Tier);
+        Assert.NotEqual(resident.Target.PlanDigest, replacement.Target.PlanDigest);
+        Assert.Equal(resident.MeasuredWindow, replacement.MeasuredWindow);
+        Assert.Equal(resident.TotalSlots, replacement.TotalSlots);
+        Assert.Equal(2, domain.Host.Creates);
+        Assert.Equal(2, domain.Host.Stops);
+        Assert.Equal(3, domain.Issuer.FirstWriteAttempts);
+        Assert.Equal(0, discovery.CompletionCalls);
+    }
+
+    [Theory(Timeout = 20_000)]
+    [InlineData("preparation", false)]
+    [InlineData("take", true)]
+    [InlineData("offer", false)]
+    [InlineData("first-write", true)]
+    public async Task CombinedRecipeWithdrawalNeverWritesToTheRetiredInstance(string cut, bool stream)
+    {
+        using var watchdog = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        using var discovery = new FakeEngineHandler { LoadedModels = ["shared"], NCtx = 8_192, TotalSlots = 1 };
+        var ct = watchdog.Token;
+        var domain = MakeManagedDomain("a", 19001, equalRecipes: true);
+        var manager = new InProcessHostManager([domain.Enrollment]);
+        await using var router = MakeManagedRouter(manager, discovery, domain);
+        await EstablishResidentAsync(manager, domain, ct);
+        var resident = Assert.IsType<VerifiedDispatchResident>(domain.Resident);
+        using var withdrawal = domain.Enrollment.Staging.Begin(new HostStagedPublication(Guid.NewGuid(), _ => false, _ => { }));
+        var reached = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        VerifiedInstanceInvocation? offered = null;
+        var ticket = await router.EnqueueAsync("withdrawal", RecipeRequest("small", stream), ct);
+        if (cut == "preparation") router.BeforeAdmissionPreparationForTests = _ => Withdraw();
+        if (cut == "take") router.BeforeAdmissionCommitForTests = _ => Withdraw();
+        if (cut == "offer") manager.Admission.BeforeVerifiedOfferForTests = _ => Withdraw();
+        if (cut == "first-write") domain.Issuer.BeforeFirstWrite = invocation => { offered = invocation; Withdraw(); };
+        _ = Task.Run(router.DispatchLoop, ct);
+
+        await reached.Task.WaitAsync(ct);
+        await Assert.ThrowsAsync<RouterRequestException>(() => ticket.CompletionTask.WaitAsync(ct));
+        Assert.Equal(cut == "first-write" ? 1 : 0, domain.Issuer.FirstWriteAttempts);
+        if (offered is { } wrong) Assert.Empty(domain.Issuer.Bytes(wrong));
+        Assert.Equal(0, domain.Issuer.Traffic.Permits);
+        Assert.Equal(0, discovery.CompletionCalls);
+
+        void Withdraw()
+        {
+            if (reached.Task.IsCompleted) return;
+            withdrawal.Close();
+            Assert.True(manager.Admission.CloseVerified(resident));
+            var capability = router.Engines[domain.Engine.Name].Capability;
+            Assert.Equal(8_192, capability.Serving.ContextWindow);
+            Assert.Equal(1, capability.Serving.TotalSlots);
+            if (cut is "preparation" or "take") Assert.True(router.TryCancel(ticket.Id));
+            reached.TrySetResult();
+        }
+    }
+
+    private static InferenceRequest RecipeRequest(string? profile, bool stream = false) => new()
+    {
+        Model = "model-alias", Stream = stream,
+        Options = new RouterRequestOptions { Profile = profile, RequiredContext = 8_192 },
+        Body = stream ? """{"model":"model-alias","messages":[],"stream":true}"""u8.ToArray() :
+            """{"model":"model-alias","messages":[]}"""u8.ToArray(),
+    };
+
     [Theory(Timeout = 20_000)]
     [InlineData(true)]
     [InlineData(false)]
@@ -212,7 +354,8 @@ public sealed partial class HostClosedRouteStagingTests
             Ticket = ticket, Request = ManagedRequest("shared", "occupied preparation"),
             PriorityNode = new(ticket, priority, 1), Thread = new(id, priority, 1, null), EnqueuedSeq = 1, PromptChars = 20,
         };
-        return Assert.IsType<ExactTicketAdmission.Claim>(manager.Admission.Capture(request, new(domain.Engine.Name, "shared", "small"),
+        return Assert.IsType<ExactTicketAdmission.Claim>(manager.Admission.Capture(request, new(domain.Engine.Name, "shared", "small",
+            manager.Recipe(domain.Engine.Name, "shared", "small")),
             switchRequired: false, explicitContext: 0));
     }
 
@@ -223,42 +366,51 @@ public sealed partial class HostClosedRouteStagingTests
             HttpHandlerFactory = _ => discovery,
         }, null, null, TimeProvider.System, hostManager: manager);
 
-    private ManagedDomain MakeManagedDomain(string name, int port, HostStagedRuntimeFixture? fixture = null)
+    private ManagedDomain MakeManagedDomain(string name, int port, HostStagedRuntimeFixture? fixture = null, bool equalRecipes = false)
     {
-        var engine = ManagedEngine(name, "shared", name, port);
+        var engine = ManagedEngine(name, "shared", name, port, equalRecipes);
         var domain = new ExactTicketAdmission.DomainIdentity(name, 1);
-        var host = new FakeHost(readinessTimeoutMs: 10_000);
+        var host = new FakeHost(readinessTimeoutMs: 10_000)
+        {
+            FrozenPlan = equalRecipes ? target => new(target.EngineName, target.Model, target.EffectiveProfile, target.Definition.Name,
+                10_000, "fixture-private-route", new string(target.EffectiveProfile == "small" ? 'A' : 'B', 64)) : null,
+        };
         var staging = new HostClosedRouteStaging(host.FindLaunch, (launch, generation) =>
             new(domain.Name, domain.Generation, launch.Operation.Engine, launch.Operation.PlanDigest!, launch.InstanceId,
                 launch.InstanceId + "-serving", launch.Operation.Epoch, generation), enrolledDomain: domain);
         var issuer = new CertifiedPairIssuer(staging);
         var reservation = Path.Combine(_directory.FullName, name + ".host.reservation");
         HostReservation.ProvisionNew(reservation);
-        return new ManagedDomain(engine, host, issuer, staging, new HostLifecycleCoordinator(reservation, host, staging), domain,
+        return new ManagedDomain(engine, host, issuer, staging, new HostLifecycleCoordinator(reservation, host, staging), domain, reservation,
             fixture ?? new HostStagedRuntimeFixture(static (stage, _) => Task.FromResult<HostStagedReadiness?>(ReadyForManagedDomain(stage))));
     }
 
     private static HostStagedReadiness ReadyForManagedDomain(HostClosedRouteStage stage) =>
-        new(stage, stage.Launch.Plan.Model, new(stage.Launch.Plan.Model, 8_192, 1, "small"));
+        new(stage, stage.Launch.Plan.Model, new(stage.Launch.Plan.Model, 8_192, 1, stage.Launch.Plan.Tier));
 
     private sealed class ManagedDomain
     {
         internal ManagedDomain(EngineDefinition engine, FakeHost host, CertifiedPairIssuer issuer, HostClosedRouteStaging staging,
-            HostLifecycleCoordinator controller, ExactTicketAdmission.DomainIdentity domain, HostStagedRuntimeFixture fixture)
+            HostLifecycleCoordinator controller, ExactTicketAdmission.DomainIdentity domain, string reservationPath,
+            HostStagedRuntimeFixture fixture)
         {
             Engine = engine;
             Host = host;
             Issuer = issuer;
+            ReservationPath = reservationPath;
             Enrollment = new(domain, controller, staging, issuer,
                 new Dictionary<string, HostStagedRuntimeFixture>(StringComparer.Ordinal) { [engine.Name] = fixture },
-                stage => Resident = new(new(engine.Name, stage.Launch.Plan.Model, "small", stage.Route.EffectiveTarget, engine.Endpoint),
-                    stage.Route, 8_192, 8_192, 1, engine.Endpoint, VerifiedDispatchCredential.Capture(engine, resolvedKey: null, epoch: 1), issuer));
+                stage => Resident = new(new(engine.Name, stage.Launch.Plan.Model, stage.Launch.Plan.Tier!, stage.Route.EffectiveTarget, engine.Endpoint),
+                    stage.Route, 8_192, 8_192, 1, engine.Endpoint, VerifiedDispatchCredential.Capture(engine, resolvedKey: null, epoch: 1), issuer),
+                (definition, target) => target.EffectiveProfile == "unsupported" ? null :
+                    new(definition.Name, target.Model, target.EffectiveProfile, host.GetLaunchPlanDigest(target), definition.Endpoint));
         }
 
         internal EngineDefinition Engine { get; }
         internal FakeHost Host { get; }
         internal CertifiedPairIssuer Issuer { get; }
         internal HostManagerEnrollment Enrollment { get; }
+        internal string ReservationPath { get; }
         internal VerifiedDispatchResident? Resident { get; private set; }
     }
 }
