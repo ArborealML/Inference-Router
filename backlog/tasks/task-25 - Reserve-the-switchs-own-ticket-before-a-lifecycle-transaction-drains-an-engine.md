@@ -3,11 +3,11 @@ id: TASK-25
 title: >-
   Reserve the switch's own ticket before a lifecycle transaction drains an
   engine
-status: Waiting
+status: In Progress
 assignee:
-  - '@gpt-6.2-sol-scheduling'
+  - '@gpt-6.2-sol-lifecycle'
 created_date: '2026-11-17T02:41:00Z'
-updated_date: '2026-11-25T23:57:00Z'
+updated_date: '2026-11-28T11:50:00Z'
 labels:
   - engine
   - lifecycle
@@ -21,7 +21,7 @@ ordinal: 25000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Wake when TASK-206 supplies ordinary in-process manager composition and the exact admission/issuer interface. Integrate production close/drain, owner promotion and physical permit retention; do not require remote manager transport. The TASK-25 assignee owns the paired ordinary enrollment/admission + bound-sender integration witness; the TASK-118 assignee supplies the sender. Coordinate one integration candidate. Defer live host commissioning until the external resource boundary is authorized.
+The manager interface and exact recipe identity are on main. Wire ordinary startup, exact physical draining and the existing instance-bound sender into one acceptance run shared with TASK-118. The router owns the queue and the selected ticket. The host manager owns physical execution. Live commissioning requires its existing external authority.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -38,11 +38,17 @@ Wake when TASK-206 supplies ordinary in-process manager composition and the exac
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Deliver the reservation with its first production consumer. Preserve the selected ticket’s single logical charge and keep direct/admin switches ownerless. Before native stop, close admission and exclude the triggering provisional owner from the drain while accounting for outstanding physical inference uses. Local HTTP uses include health traffic and cannot prove backend retirement. Coordinate the interface with host enrollment, avoiding a circular prerequisite. Reuse existing held-provider and cancellation evidence when qualifying the combined behavior.
+Build one normal startup factory around the established enrollment, issuer and staging interfaces. Require authentic scope for each enrolled group. Check mixed local and enrolled membership for conflicting physical ownership. Reuse the existing verified sender and retain the plain local startup path.
+
+Reserve the original ticket once. Capture its frozen recipe, enrollment, resource epoch, full incumbent process and per-incarnation usage tracker before closing admission and the issuer together. Count each authorized write through conclusive exchange retirement and preparation cleanup. Retire older preparations outside the gates. Preserve existing admission, router and queue lock ordering. Keep waits and callbacks outside locks.
+
+Use one monotonic drain budget. Before stop, recheck the captured transition, incarnation, tracker, issuer cutoff and reservation epoch under authority, then persist stop intent for that exact target. Missing evidence, timeout or uncertain restart retains exclusion. Late retirement permits fresh authorization. A stale finalizer cannot clear a successor.
+
+Through ordinary server construction, capture the original queued ticket and exact upstream bytes. Test busy drain, rebind before first write, downstream departure, held physical retirement, lost acknowledgment, restart, independent-domain progress and local serving. Count stops, writes and terminals. TASK-190 owns durable reconciliation, TASK-197 conformance and TASK-198 quarantine.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Plan review of the containment branch (external, 2026-11-25) places the safety-critical half of the busy-resize problem here, not in the no-op guard: reserve the switch's own ticket, mark the engine draining atomically under the same lock as admission, fence new admissions, wait for leases that cover first-byte generation and downstream relay, recheck zero leases and resident state in the same synchronisation as the stop, fail closed with queued tickets expired with a reason when a reader is stuck, and never timer-expire a still-live lease and then stop. Deduplicate deferral events; include the two-minute reload and lost cache in switch cost; cost must never override safety.
+The review found that the current admission check rejects a busy incumbent and that lifecycle staging closes before drain. The historical drain also treated an absent tracker as zero. Capture the original tracker and seal before discarding staging. Recheck its authoritative zero and the exact serving process before any mutation. TASK-25 and TASK-118 consume the same production-composition evidence.
 <!-- SECTION:NOTES:END -->
