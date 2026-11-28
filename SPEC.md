@@ -1,13 +1,13 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.162)
+Status: draft, continuously revised (v0.12.163)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
 
 ## 0. Revision log
 
-- v0.12.162 — dispatch complete finite rounds across the existing model queues, try available route alternatives, and report scoped queue waits (§§5.4–5.5, 10, 14).
+- v0.12.163 — dispatch complete finite rounds across the existing model queues, try available route alternatives, and report scoped queue waits (§§5.4–5.5, 10, 14).
 - v0.12.161 — a selected serving tier whose window the resident already measures and whose reported lanes are at least the tier's is a zero-cost target: no lifecycle call, no switch event and no epoch bump, proved by the measured window rather than by the inferred profile label; extra lanes satisfy a narrower tier, missing lanes do not (§7.6).
 - v0.12.160 — send an opaque per-engine thread cache hint on completion requests to explicitly router-owned local Docker lifecycle groups (§6).
 
