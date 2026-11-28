@@ -1,12 +1,13 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.162)
+Status: draft, continuously revised (v0.12.166)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
 
 ## 0. Revision log
 
+- v0.12.166 — validate admin thread and switch JSON object roots and string fields before registration or switch admission. Malformed shapes return 400 in the route's existing error envelope. Target reset keeps its `invalid_target_reset` contract (§§6, 6.1, 14).
 - v0.12.162 — a malformed `X-Inference-Priority` is refused at ingress instead of dropped: 400 `invalid_priority` in the existing lowercase envelope, added to the §6.1 code list with no new field and no shape change, and written before the ticket exists, so the refusal leaves no thread, no queue member, no forward to an engine and no `request.enqueued`. An absent header keeps the configured default; a repeated header is refused rather than resolved (§6, §6.1). `PriorityIngressTests` pins absent, empty, malformed, duplicated and differently cased values, sub 0/255/256, the ordinary and streaming paths, and the zero-effect counters. §6 now states the grammar that parser enforces instead of summarising it: the five lowercase class names spelled exactly, an optional `:` and one to three ASCII digits with no sign, no whitespace and no leading zero, at most 255, matched against the whole value with nothing trimmed. `air threads --priority` refuses a value outside that grammar locally — exit 2, the grammar on stderr, no request sent — where it used to post the default priority and accept the 204 for a spelling the request path rejects; `air chat --priority` still forwards the header so the router's 400 reaches that caller. `CliThreadPriorityTests` pins the refusal with no request and the parsed admin body for accepted values, and `ThreadPriorityTests` pins the accepted and rejected spellings row by row. The same revision closes what a second review of that commit found on the caller side and in the admin route: `POST /admin/threads` now reads a supplied priority exactly instead of on trust, so a present `priority` that is not an object and a present `sub` that is not a JSON number written in plain decimal digits within 0-255 both return 400 `invalid_request` in the existing envelope — where `255.7`, `-5` and `1e10` were cast and clamped into a byte and answered 204, a non-string `class` reached a 500, and a `priority` of any other shape was ignored wholesale — while an absent `sub` still means the whole class at 0; `AdminThreadPriorityTests` pins each refusal body byte for byte, proves nothing was registered, and pins that each accepted body registers exactly what it says. Both verbs also refuse an unusable `--priority` option *shape* — given no value, an empty value, a token that reads as another option, or given more than once — locally with exit 2 and no request, where each used to read exactly like an absent option and ask for the default; that stub counts arrivals ahead of reading any body, so "no request" is the fact of a request rather than a parse failure.
 
 - v0.12.161 — a selected serving tier whose window the resident already measures and whose reported lanes are at least the tier's is a zero-cost target: no lifecycle call, no switch event and no epoch bump, proved by the measured window rather than by the inferred profile label; extra lanes satisfy a narrower tier, missing lanes do not (§7.6).
@@ -2777,12 +2778,17 @@ Admin/control (not OpenAI-compatible, our own contract):
 
 - `POST /admin/threads` register/update thread (priority API over HTTP):
   body `{ threadId, priority: {class, sub}, weight?, modelAffinity? }`.
+  The body must have an object root and a nonempty string `threadId`. A supplied `modelAffinity`
+  is a string or JSON `null`. Shape errors return 400 `invalid_request` before thread registration.
 - `POST /admin/switch` — request model switch: `{engine, model, profile?}`;
   refuses if a switch is in flight unless `force`. `profile` names a declared
   serving tier; the ack echoes it and the wait-for-ready loop requires the
   reported window to fit. An accepted request returns 202 with `Engine`, `Model`, `Profile`,
   `Switching: true` and `OperationId`, a server-generated ID of 32 lowercase hex characters.
   Save the ID for lookup. Acceptance starts a detached waiter that continues if the POST disconnects.
+  The body must have an object root and string `engine` and `model` members. A supplied `profile`
+  is a string or JSON `null`. Shape errors return 400 `invalid_request` before any admin use or
+  operation reservation begins. On both routes, JSON `null` for an optional string means it was omitted.
 - `GET /admin/switch/{operationId}` returns 200, `Cache-Control: no-store` and the PascalCase
   object `{"OperationId":"…","Status":"…","Reason":…}` for a known operation. Status is
   `pending`, `succeeded`, `failed` or `cancelled`. A success means the target was ready for that
@@ -3071,6 +3077,11 @@ prefixes, delimiters and the sentinel. The pair's limit excludes preceding keepa
 data. These limits count encoded body bytes. `ErrorContractTests` and `StreamFrameIdentityTests`
 pin the error shape, reported reason and encoded sizes. `docs/ai-integration.md` carries the error
 code table for integrators.
+
+`POST /admin/threads` and `POST /admin/switch` use the lowercase 400 `invalid_request` envelope
+for malformed JSON, any nonobject root, or an invalid string-member kind (§6). The authenticated
+target reset route retains 400 `invalid_target_reset` for malformed bodies after authentication
+and `If-Match` syntax validation.
 
 ## 7. Configuration (TOML)
 
@@ -4219,6 +4230,10 @@ and cohort/residency hysteresis in the scheduler (§12.3 hook).
   (small request served, oversized request queues behind a profile switch that
   widens the engine's reported window, then completes); health probe failure;
   real HTTP through Kestrel against the stub engine.
+- **Admin JSON input** (`AdminJsonBodyTests`, `AdminThreadPriorityTests`, `AdminSwitchOperationTests`,
+  `ConfigReloadWireTests`): literal 400 envelopes for nonobject roots and invalid string kinds, no
+  thread registration or switch operation on refusal, available topology changes after malformed
+  switch input, and the existing target-reset authentication and tag checks.
 - **Configuration reload** (`ConfigReloadWireTests`, `ConfigReloadRaceTests`): authenticated
   file apply, generation readback and rejection, exact stream bytes and a held native switch,
   queue and shutdown ordering, idle external retirement, detached response disposal, and

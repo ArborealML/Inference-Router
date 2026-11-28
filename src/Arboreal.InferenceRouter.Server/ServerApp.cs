@@ -624,8 +624,12 @@ public static partial class ServerApp
         {
             using var doc = JsonDocument.Parse(body);
             var root = doc.RootElement;
-            var threadId = root.TryGetProperty("threadId", out var t) ? t.GetString() : null;
-            if (string.IsNullOrEmpty(threadId))
+            if (root.ValueKind != JsonValueKind.Object)
+            {
+                await WriteErrorAsync(ctx, 400, "invalid_request", "body must be a JSON object").ConfigureAwait(false);
+                return;
+            }
+            if (!TryReadAdminString(root, "threadId", out var threadId) || string.IsNullOrEmpty(threadId))
             {
                 await WriteErrorAsync(ctx, 400, "invalid_request", "threadId is required").ConfigureAwait(false);
                 return;
@@ -664,11 +668,15 @@ public static partial class ServerApp
                 }
                 priority = new ThreadPriority(cls, sub);
             }
-            var options = new RouterThreadOptions();
+            if (!TryReadAdminString(root, "modelAffinity", out var modelAffinity))
+            {
+                await WriteErrorAsync(ctx, 400, "invalid_request", "modelAffinity must be a string or null")
+                    .ConfigureAwait(false);
+                return;
+            }
+            var options = new RouterThreadOptions { ModelAffinity = modelAffinity };
             if (root.TryGetProperty("weight", out var wt) && wt.ValueKind == JsonValueKind.Number)
                 options = options with { Weight = wt.GetDouble() };
-            if (root.TryGetProperty("modelAffinity", out var ma) && ma.ValueKind == JsonValueKind.String)
-                options = options with { ModelAffinity = ma.GetString() };
 
             router.RegisterThread(threadId!, priority, options);
             ctx.Response.StatusCode = 204;
@@ -691,6 +699,16 @@ public static partial class ServerApp
             && byte.TryParse(element.GetRawText(), NumberStyles.None, CultureInfo.InvariantCulture, out sub);
     }
 
+    // The callers have validated the object root. Preserve explicit null as an omitted string.
+    private static bool TryReadAdminString(JsonElement root, string name, out string? value)
+    {
+        value = null;
+        if (!root.TryGetProperty(name, out var property) || property.ValueKind == JsonValueKind.Null) return true;
+        if (property.ValueKind != JsonValueKind.String) return false;
+        value = property.GetString();
+        return true;
+    }
+
     private static async Task HandleSwitch(HttpContext ctx, RouterCore router, AdminSwitchOperations operations)
     {
         var body = await ReadBodyAsync(ctx, router, ctx.RequestAborted).ConfigureAwait(false);
@@ -700,10 +718,21 @@ public static partial class ServerApp
         try
         {
             using var doc = JsonDocument.Parse(body);
-            var engineName = doc.RootElement.TryGetProperty("engine", out var e) ? e.GetString() : null;
-            var model = doc.RootElement.TryGetProperty("model", out var m) ? m.GetString() : null;
-            var profileName = doc.RootElement.TryGetProperty("profile", out var p) ? p.GetString() : null;
-            if (engineName is null || model is null || router.AcceptEngineAdmin(engineName) is not { } engine)
+            var root = doc.RootElement;
+            if (root.ValueKind != JsonValueKind.Object)
+            {
+                await WriteErrorAsync(ctx, 400, "invalid_request", "body must be a JSON object").ConfigureAwait(false);
+                return;
+            }
+            if (!TryReadAdminString(root, "profile", out var profileName))
+            {
+                await WriteErrorAsync(ctx, 400, "invalid_request", "profile must be a string or null")
+                    .ConfigureAwait(false);
+                return;
+            }
+            if (!TryReadAdminString(root, "engine", out var engineName) ||
+                !TryReadAdminString(root, "model", out var model) || engineName is null || model is null ||
+                router.AcceptEngineAdmin(engineName) is not { } engine)
             {
                 await WriteErrorAsync(ctx, 400, "invalid_request", "engine and model are required (engine must exist)")
                     .ConfigureAwait(false);
