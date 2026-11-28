@@ -173,8 +173,9 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
     internal EngineRuntime(EngineDefinition def, RouterConfig config, EventRing events, HttpMessageHandler? handler,
                            IEngineLifecycleProvider? lifecycle, Action? dispatchHint, HostEngineEnrollment? hostEnrollment,
                            TimeProvider? clock = null, ReloadConfiguration? reloadSource = null, bool localManaged = false,
-                           bool ownedPrivateTransport = false)
+                           OwnedPrivatePolicy? ownedPolicy = null)
     {
+        var ownedPrivateTransport = ownedPolicy is not null;
         if (config.OwnedPrivatePolicy != ownedPrivateTransport || ownedPrivateTransport && handler is not null)
             throw new RouterConfigException("Owned private destinations require the qualified router transport.");
         _ownedPrivateTransport = ownedPrivateTransport;
@@ -220,13 +221,17 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
             def.Lifecycle == EngineLifecycleKind.Docker && def.Endpoint.IsLoopback;
         if (handler is null)
         {
-            _ownedHandler = new HttpClientHandler
+            var directHandler = new HttpClientHandler
             {
                 AutomaticDecompression = System.Net.DecompressionMethods.None,
                 AllowAutoRedirect = !SendsThreadCacheHint && !ownedPrivateTransport,
                 UseProxy = !SendsThreadCacheHint && !ownedPrivateTransport,
                 UseCookies = !ownedPrivateTransport,
             };
+            _ownedHandler = ownedPolicy is { Store.UsesGroupJournals: true }
+                ? new OwnedPrivateTransport(ownedPolicy, this, Combine(def.Endpoint, def.ModelsEndpoint),
+                    Combine(def.Endpoint, ServingProbePath(def)), directHandler)
+                : directHandler;
             _http = new HttpClient(_ownedHandler, disposeHandler: false);
         }
         else
@@ -714,6 +719,7 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
     private HttpRequestMessage AuthedGet(string path)
     {
         var req = new HttpRequestMessage(HttpMethod.Get, Combine(_def.Endpoint, path));
+        if (_ownedPrivateTransport) req.Options.Set(OwnedPrivateTransport.ServiceProbe, true);
         if (_apiKey is not null) req.Headers.TryAddWithoutValidation("Authorization", $"Bearer {_apiKey}");
         return req;
     }

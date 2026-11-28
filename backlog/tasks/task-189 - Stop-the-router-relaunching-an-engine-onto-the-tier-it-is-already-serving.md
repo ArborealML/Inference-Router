@@ -5,10 +5,9 @@ status: Done
 assignee:
   - '@gpt-6.2-astra'
 created_date: '2026-11-25T18:00:00Z'
-updated_date: '2026-11-26T09:19:00Z'
+updated_date: '2026-11-28T13:12:00Z'
 labels: []
-dependencies:
-  - TASK-25
+dependencies: []
 priority: high
 ordinal: 181000
 ---

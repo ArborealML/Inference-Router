@@ -36,7 +36,7 @@ AIR gives OpenAI-compatible clients one HTTP endpoint for local inference engine
 
 ### In progress
 
-- **Owned private inference policy.** The opt-in server composition takes externally verified scope, persists policy before admission and confines requests to explicitly enrolled private transports. Group-scoped status, catalog, tickets and events exercise the real handlers with controlled endpoints. Deployment still needs an external verifier, a rollback-resistant policy head and on-host confinement evidence. [Owned policy contract](SPEC.md#56-owned-private-inference-policy)
+- **Owned private inference policy.** The opt-in server composition takes externally verified scope, persists policy before admission and confines requests to explicitly enrolled private transports. The optional mutable store adds privileged sensitivity escalation with a group-specific authority. Group-scoped status, catalog, tickets and events exercise the real handlers with controlled endpoints. Deployment still needs an external verifier, rollback-resistant policy heads and a singleton writer and on-host confinement evidence. [Owned policy contract](SPEC.md#56-owned-private-inference-policy)
 
 - **Current selector catalog.** All ten current selector models and fifteen aliases are ported into the local configuration, preserving the live pair and using default profiles for the eight additions. Offline validation passed; those eight additions are not yet live-qualified. [Coverage](docs/selector-launch-coverage.md#current-local-catalog-port)
 
