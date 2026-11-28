@@ -64,6 +64,8 @@ internal sealed partial class HostLifecycleCoordinator(string reservationPath, I
     private readonly string _reservationPath = reservationPath;
     private readonly IHostInitialLaunchAuthority? _initialLaunch = initialLaunch;
 
+    internal bool OwnsStaging(HostClosedRouteStaging staging) => ReferenceEquals(stagingForTests, staging);
+
     public async ValueTask<LifecycleResult> SwitchAsync(
         LifecycleTarget target, CancellationToken ct, HostSwitchPublication? publication = null,
         HostStagedPublication? stagedPublicationForTests = null)

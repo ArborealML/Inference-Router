@@ -1,12 +1,13 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.167)
+Status: draft, continuously revised (v0.12.168)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
 
 ## 0. Revision log
 
+- v0.12.168 — scope exact preparation capacity and staged-owner preference to the physical domain, and exercise queue-driven activation and verified delivery through an internally enrolled in-process host manager (§§4–7, 12, 14).
 - v0.12.167 — give each inference call with an omitted thread header a request-scoped scheduling identity. The CLI omits the header by default. Explicit names retain their thread limits and ambiguous identity is refused before admission (§§5.1, 6, 11, 14).
 - v0.12.166 — validate admin thread and switch JSON object roots and string fields before registration or switch admission. Malformed shapes return 400 in the route's existing error envelope. Target reset keeps its `invalid_target_reset` contract (§§6, 6.1, 14).
 - v0.12.165 — refresh inherited priorities in pending queues when callers update a thread and validate the new order at exact take (§§5.1, 5.5, 14).
@@ -1554,6 +1555,11 @@ Projects:
   fake engine).
 - (future, stubbed only) `src/Arboreal.InferenceRouter.Web` — Blazor live view.
 
+An internal combined composition can enroll a physical domain with one lifecycle controller and
+verified issuer. `RouterCore` still owns the pending queues and selects the next request. The in-process
+manager owns accepted lifecycle work and binds the authorized send to the current staged resident.
+Two engine or configuration-group names can resolve to the same enrolled domain and generation.
+
 ## 5. Domain model (library API)
 
 ### 5.1 Threads and priority
@@ -2255,6 +2261,17 @@ and preserves the original logical result. Standalone exchanges preserve each ob
 cleanup exception alongside any primary send failure. Engine-local stop authority has no
 issuer bridge in this fixture.
 
+**Combined in-process fixture.** Trusted enrollment binds a nonzero generation, one canonical
+physical domain, its member engines, and the controller, staged publication and verified issuer.
+The composition refuses a missing or mismatched enrollment before creating managed runtimes. A
+queued cold request can accept one transition for the chosen engine, model and recipe. The transition
+closes the prior exact route while the domain has no counted uses or preparations. The accepted
+operation holds the domain through controller cleanup. Its handle gives repeated execution calls
+the same outcome. The initiating ticket stays queued until the staged proof opens the exact route
+and the ticket passes the live admission cut. The issuer still controls the first application write
+and physical retirement. Journal and issuer evidence remain authoritative across recovery. The
+in-process fixture carries no new durable receipt store or remote authority.
+
 **Production evidence.** The raw Docker inventory can report known foreign containers. Even an
 empty inventory leaves vacancy unproven, and raw Docker supplies no terminal receipt for an
 unacknowledged router operation ID. Positive authority requires independently verified enrollment,
@@ -2354,15 +2371,16 @@ Temporary capacity loss parks the ticket. A definitive refusal settles once with
   reassignment retires the intent. An accepted execution keeps its physical lease until cleanup.
   The existing dispatch revision, arm and recheck protocol parks after a round finds no progress.
   Arrivals, queue expiry or cancellation, readiness and releases wake the next round.
-- **Offline exact-ticket admission.** The injected sender qualifies the queue handshake.
+- **Offline exact-ticket admission.** The injected sender and enrolled manager qualify the queue handshake.
   Schedule outside the router lock. The host admission gate, router lock and model queue lock
   order the live check and exact removal. Validate the ranked route generation, model-bound
   window for an explicit minimum, free slots, thread room and original elapsed queue deadline.
   Preparation owns no physical slot. A preparing head preserves its queue order and another
-  queue may progress. Each ticket may start one preparation per binding and route generation
-  and have only one outstanding attempt, including retirement. The scoped preparation limit is
-  the greater of two and the engine count at construction, shared by preparing, ready and
-  retiring work. Cancellation, expiry, supersession and shutdown signal retirement. Work
+  queue or an independent candidate in the same queue may progress. Each ticket may start one
+  preparation per binding and route generation and have only one outstanding attempt, including
+  retirement. Each domain has a preparation limit of the greater of two and its member count at
+  construction. Preparing, ready and retiring work consume their originating domain's budget.
+  Cancellation, expiry, supersession and shutdown signal retirement. Work
   that ignores cancellation still occupies its preparation slot until it settles. A parked
   scan wakes on published state and checks its revision after arming. Its wait uses the
   captured shutdown token even if teardown has already disposed the source. Public `Start`
@@ -2383,8 +2401,9 @@ Temporary capacity loss parks the ticket. A definitive refusal settles once with
   the slot to an ordinary joiner. The staged owner holds no counted use while closed.
   When a prior attempt or a full preparation table blocks an exact staged owner,
   a dispatcher wake reconsiders that request. An eligible owner waiting for capacity gets the
-  first available preparation slot ahead of ordinary routes. An ordinary preparation rechecks
-  that priority under the admission gate, including when a slot opens after the scan starts.
+  first available preparation slot in its domain ahead of ordinary routes. A full domain leaves
+  other domains eligible. A waiting owner needs room under its thread cap. An ordinary preparation
+  rechecks that priority under the admission gate, including when a slot opens after the scan starts.
   Production admission still needs the enrolled host and verified transport. Production owner
   promotion and late cleanup remain TASK-25.
 - **Engine-local send permission.** A historical switch result may still be delivered after
@@ -2779,6 +2798,10 @@ Temporary capacity loss parks the ticket. A definitive refusal settles once with
 
 ## 6. HTTP surface (server project)
 
+The in-process host-manager fixture uses the existing ticket status and event feed for queue
+waits. Managed preparation and activation carry the canonical domain in the existing wait scope.
+The manager contract is internal to the combined process.
+
 OpenAI-compatible (path-for-verbatim):
 
 - `POST /v1/chat/completions` — body `chat/completions` DTO; `stream: true`
@@ -3169,6 +3192,11 @@ target reset route retains 400 `invalid_target_reset` for malformed bodies after
 and `If-Match` syntax validation.
 
 ## 7. Configuration (TOML)
+
+TOML supplies the ordinary local lifecycle groups. The internal managed composition takes its
+physical membership and generation from trusted enrollment before using any managed runtime.
+The same group must belong to one enrolled domain. Enrollment may map multiple group names to
+one domain. This increment adds no commissioning setting to TOML.
 
 **Local lifecycle groups.** An engine may opt into a named
 `lifecycle_group` with native Docker lifecycle owned by this router. Every member of a group
@@ -4119,6 +4147,10 @@ existing host (`--host`), start a local host (`--local`), or start the
 listener (`--listen-only`). v1 keeps the interfaces (`IInferenceRouter`,
 event feed) host-agnostic; the wire contract lands when host mode lands.
 
+The internal combined host-manager fixture uses in-process calls to the one enrolled controller
+and issuer per physical domain. Separate manager processes, remote transport and production
+commissioning require further qualification.
+
 ### 12.2 Cross-host prefix prioritization
 Scheduler gains a peer-level trie: prefer the peer whose trie already holds
 the longest prefix match, before load balancing (mirrors §5.4 step 4 at host
@@ -4330,6 +4362,12 @@ and cohort/residency hysteresis in the scheduler (§12.3 hook).
   local groups. Exercise a replenished early queue, a blocked same-model prefix, shared thread
   and lifecycle caps, an exact-take reservation loss, and drain-intent retirement on cancellation
   or reassignment. Preserve the explicit expiry and revision/arm/recheck tests.
+- **Host-scoped preparation** (`DomainPreparationTests`, `HostClosedRouteStagingTests`): exhaust a
+  preparation budget through held work and retirement, then capture independent backend sends in
+  both domain orders for the same and different models. Preserve real shared-thread limits.
+  Construct the combined router with two group names for one enrolled domain, exercise its original
+  cold ticket through activation and the verified issuer, and capture an independent ordinary send
+  while readiness is held. Refuse stale, duplicate and incomplete enrollment before mutation.
 - **Queued priority** (`QueuedPriorityTests`, `SwitchCostDispatchTests`): promote and demote inherited
   requests through all thread update entry points, preserve explicit overrides and FIFO, and verify
   that a change racing an exact take or measured switch comparison follows the updated order. Verify

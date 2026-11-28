@@ -127,6 +127,7 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
         /// rather than a model load; carries "profile:<name>" for observability.</summary>
         public string? Profile;
         public LocalLifecycleGroup.Lease? LocalOwner;
+        public InProcessHostManager.Transition? HostTransition;
         public LocalLifecycleGroup.Lease? AdoptionOwner => LocalOwner?.Adopt is null ? null : LocalOwner;
         public LegacyReadinessObservation? AdoptionProbe;
         public ServingProfile? ExactProfile;
@@ -209,7 +210,7 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
         _maxInflight = Math.Max(1, config.Scheduler.MaxInflightPerEngine);
         _trie = new PrefixTrie(config.Scheduler.PrefixTrieMaxNodes);
         _apiKey = ResolveApiKey(def);
-        SendsThreadCacheHint = localManaged && def.LifecycleGroup is not null && def.HasExplicitRouterLifecycle &&
+        SendsThreadCacheHint = hostEnrollment?.Manager is null && localManaged && def.LifecycleGroup is not null && def.HasExplicitRouterLifecycle &&
             def.Lifecycle == EngineLifecycleKind.Docker && def.Endpoint.IsLoopback;
         if (handler is null)
         {
@@ -1087,16 +1088,20 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
 
     internal async Task<ObservedSwitchResult> EnsureLoadedAsync(
         string model, ServingProfile? profileOverride, TimeSpan timeout, SwitchQueueTiming? queue, CancellationToken ct,
-        long explicitContextMinimum = 0, LocalLifecycleGroup.Lease? localOwner = null, bool exactProfile = false)
+        long explicitContextMinimum = 0, LocalLifecycleGroup.Lease? localOwner = null, bool exactProfile = false,
+        InProcessHostManager.Transition? hostTransition = null)
     {
         if (Volatile.Read(ref _stopped) || Volatile.Read(ref _retiring)) return new(SwitchResult.RouterStopped);
         var canonical = CanonicalModel(model) ?? model;
+        if (_hostEnrollment?.Manager is { } manager &&
+            (hostTransition is null || !hostTransition.Matches(manager, this, canonical, profileOverride)))
+            return new(SwitchResult.Failed(SwitchReason.NoLifecycleOwner));
         var requiredWindow = RequiredWindow(profileOverride, explicitContextMinimum);
         if (localOwner is not null && (!ReferenceEquals(localOwner.Engine, this) || !localOwner.Cold))
             return new(SwitchResult.Failed(SwitchReason.NoLifecycleOwner));
         var exact = exactProfile ? profileOverride : null;
         var initial = Capability;
-        if (localOwner is null && ReadyIn(initial, canonical, requiredWindow, exact))
+        if (localOwner is null && hostTransition is null && ReadyIn(initial, canonical, requiredWindow, exact))
             return Volatile.Read(ref _stopped) || Volatile.Read(ref _retiring)
                 ? new(SwitchResult.RouterStopped) : ReadyFrom(initial.SwitchProof, canonical, profileOverride);
         // `timeout` bounds the *waiting*, never the switch: the transaction belongs to the engine and
@@ -1161,7 +1166,7 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
                     {
                         // An active claim takes precedence over the optimistic offer. An idle attempt can publish
                         // only from the exact snapshot it evaluated, and retries release both locks.
-                        if (localOwner is null && ReadyIn(offered, canonical, requiredWindow, exact))
+                        if (localOwner is null && hostTransition is null && ReadyIn(offered, canonical, requiredWindow, exact))
                         {
                             if (ReferenceEquals(Capability, offered))
                                 return ReadyFrom(offered.SwitchProof, canonical, profileOverride);
@@ -1196,6 +1201,7 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
                                     Model = canonical,
                                     Profile = profileOverride?.Name,
                                     LocalOwner = localOwner,
+                                    HostTransition = hostTransition,
                                     ExactProfile = exact,
                                     RequiredWindow = requiredWindow,
                                     QuarantineTarget = quarantineTarget,
@@ -1256,7 +1262,7 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
                             // transaction runs, and a request that hangs up must not be able to abort it halfway
                             // through a model load.
                             CancellationToken.None);
-                        if (localOwner is not null) localTransaction = transaction;
+                        if (localOwner is not null || hostTransition is not null) localTransaction = transaction;
 #pragma warning restore IDISP013
                     }
                     catch (Exception)
@@ -1643,8 +1649,9 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
         var lifecycle = _lifecycle!;
         var timing = state.Timing!;
         var nativeTransaction = false;
-        using var ownerLifetime = state.LocalOwner is { } owner
-            ? CancellationTokenSource.CreateLinkedTokenSource(ct, owner.MutationToken) : null;
+        var authorityToken = state.LocalOwner?.MutationToken ?? state.HostTransition?.Cancellation;
+        using var ownerLifetime = authorityToken is { } authority
+            ? CancellationTokenSource.CreateLinkedTokenSource(ct, authority) : null;
         var operation = ownerLifetime?.Token ?? ct;
         // The idle claim already validated this target against the runtime binding.
         try
@@ -1661,7 +1668,7 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
             EngineLifecycleCoordinator.SwitchReport report;
             if (_hostEnrollment is { StagedForTests: { } fixture } stagedEnrollment)
             {
-                var staged = await SwitchStagedHostAsync(stagedEnrollment.Controller, fixture, state, target, ct)
+                var staged = await SwitchStagedHostAsync(stagedEnrollment.Controller, fixture, state, target, operation)
                     .ConfigureAwait(false);
                 fixture.AfterHostResult?.Invoke(staged);
                 // The guarded verdict owns the outcome even when delivery, cleanup or Open refuses.
@@ -2263,7 +2270,7 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
 
     internal bool TryBeginForward(CancellationToken ct, bool named = false)
     {
-        if (!TryBeginHttpUse(ct, inference: true)) return false;
+        if (_hostEnrollment?.Manager is not null || !TryBeginHttpUse(ct, inference: true)) return false;
         if (named) RetainNamedUse();
         return true;
     }
@@ -2393,7 +2400,8 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
     private int EffectiveSlotLimit(EngineCapability cap) => cap.Serving.TotalSlots > 0
         ? Math.Max(1, Math.Min(_maxInflight, cap.Serving.TotalSlots)) : _maxInflight;
 
-    public HttpClient Http => _http;
+    public HttpClient Http => _hostEnrollment?.Manager is null ? _http :
+        throw new InvalidOperationException("This runtime uses the enrolled issuer for upstream requests.");
     public string? ApiKey => _apiKey;
 
     internal void Emit(string kind, string? model = null, string? reason = null, double? value = null)

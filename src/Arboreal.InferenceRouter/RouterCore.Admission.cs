@@ -495,11 +495,12 @@ public sealed partial class RouterCore
 
     private void SettleQueueEnd(RouterTicket ticket, string code, TimeSpan? window)
     {
-        _admission?.Invalidate(ticket);
+        if (_admission?.Invalidate(ticket) == true && ticket.ExecCts is { } execution) _ = execution.CancelAsync();
         var reason = code switch
         {
             "cancelled" => "cancelled while queued",
             "slow_consumer" => HttpStreamOutcome.SlowConsumer.Message,
+            "switch_failed" => "The enrolled host could not activate the selected recipe.",
             _ => $"queue wait exceeded {window}",
         };
         Fail(ticket, code, reason);

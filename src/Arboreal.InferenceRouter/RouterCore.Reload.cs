@@ -51,7 +51,8 @@ public sealed partial class RouterCore
     {
         lock (_gate)
         {
-            var engine = _closing || _localGroups.ContainsKey(name) ? null : CurrentGeneration.Engines.GetValueOrDefault(name);
+            var engine = _closing || _localGroups.ContainsKey(name) || _hostManager?.Owns(name) == true
+                ? null : CurrentGeneration.Engines.GetValueOrDefault(name);
             if (engine is not null) _engineAdminUses++;
             return engine;
         }

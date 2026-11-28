@@ -12,6 +12,9 @@ internal sealed class ExactTicketAdmission(
     Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> send,
     Func<ExactTicketAdmission.Claim, CancellationToken, ValueTask<VerifiedPreparedSender?>>? prepareVerified = null)
 {
+    internal readonly record struct DomainIdentity(string Name, long Generation);
+    internal readonly record struct DomainSnapshot(DomainIdentity Identity, int PreparationLimit, int Preparations,
+        int PhysicalUses, bool Transitioning, long RouteGeneration);
     internal readonly record struct Route(string Engine, string Model, string? Profile);
     internal readonly record struct Claim(QueuedRequest Request, Route Target, long Generation, bool SwitchRequired,
                                           long ExplicitContext, VerifiedDispatchResident? Resident = null)
@@ -29,8 +32,21 @@ internal sealed class ExactTicketAdmission(
         internal VerifiedDispatchResident? Resident;
     }
 
-    private sealed class EngineAdmissionState
+    private sealed class DomainState(DomainIdentity identity)
     {
+        internal DomainIdentity Identity { get; } = identity;
+        internal List<EngineAdmissionState> Engines { get; } = [];
+        internal int Limit => Math.Max(2, Engines.Count);
+        internal int Preparations;
+        internal bool Transitioning;
+        internal long RouteGeneration;
+        internal string? ActiveEngine;
+        internal RouterTicket? ActivationOwner;
+    }
+
+    private sealed class EngineAdmissionState(DomainState domain)
+    {
+        internal DomainState Domain { get; } = domain;
         internal int PhysicalUses;
         internal int LogicalOverlap;
         internal Claim? OpeningOwner;
@@ -43,9 +59,10 @@ internal sealed class ExactTicketAdmission(
         }
     }
 
-    private sealed class Preparation(Claim claim)
+    private sealed class Preparation(Claim claim, DomainState domain)
     {
         internal Claim Claim { get; } = claim;
+        internal DomainState Domain { get; } = domain;
         internal bool Ready { get; set; }
         internal VerifiedPreparedSender? VerifiedSender { get; set; }
         internal bool Borrowed { get; set; }
@@ -78,7 +95,6 @@ internal sealed class ExactTicketAdmission(
     private Action<Claim, Exception>? _reportCleanupFailure;
     private Action<Claim, VerifiedDispatchRefusal>? _rejectBinding;
     private TimeProvider _clock = TimeProvider.System;
-    private int _preparationLimit;
     private int _releases;
     private bool _stopped;
 
@@ -97,14 +113,79 @@ internal sealed class ExactTicketAdmission(
 
     internal bool UsesVerifiedDispatch => prepareVerified is not null;
 
-    internal void Attach(int engineCount, TimeProvider clock, Action wake, Action<Claim, Exception> reportCleanupFailure,
+    internal void Attach(IReadOnlyDictionary<string, DomainIdentity> engines, TimeProvider clock,
+                         Action wake, Action<Claim, Exception> reportCleanupFailure,
                          Action<Claim, VerifiedDispatchRefusal>? rejectBinding = null)
     {
-        _preparationLimit = Math.Max(2, engineCount);
+        if (_wake is not null) throw new InvalidOperationException("An admission owner is already attached.");
+        foreach (var (engine, identity) in engines)
+        {
+            if (!_domains.TryGetValue(identity, out var domain)) _domains.Add(identity, domain = new(identity));
+            var state = new EngineAdmissionState(domain);
+            _engines.Add(engine, state);
+            domain.Engines.Add(state);
+        }
         _clock = clock;
         _wake = wake;
         _reportCleanupFailure = reportCleanupFailure;
         _rejectBinding = rejectBinding;
+    }
+
+    private readonly Dictionary<DomainIdentity, DomainState> _domains = [];
+
+    // Called under the admission gate at the queue acceptance cut. No provider work starts here.
+    internal bool TryBeginTransition(DomainIdentity identity, RouterTicket? ticket)
+    {
+        lock (Gate)
+        {
+            if (_stopped || !_domains.TryGetValue(identity, out var domain) || domain.Transitioning ||
+                domain.ActivationOwner is not null || domain.Preparations != 0 ||
+                domain.Engines.Exists(static engine => engine.PhysicalUses != 0) ||
+                ticket is not null && (_preparations.ContainsKey(ticket) || HasActivationOwner(ticket))) return false;
+            domain.Transitioning = true;
+            domain.ActivationOwner = ticket;
+            Volatile.Write(ref domain.ActiveEngine, null);
+            foreach (var route in _verifiedRoutes.Values)
+                if (ReferenceEquals(route.Engine.Domain, domain)) route.Open = false;
+        }
+        return true;
+    }
+
+    internal void EndTransition(DomainIdentity identity)
+    {
+        lock (Gate)
+        {
+            var domain = _domains[identity];
+            domain.Transitioning = false;
+            var active = _verifiedRoutes.Values.FirstOrDefault(route => route.Open && ReferenceEquals(route.Engine.Domain, domain));
+            Volatile.Write(ref domain.ActiveEngine, _stopped ? null : active?.Resident?.Route.Engine);
+        }
+        _wake?.Invoke();
+    }
+
+    private bool HasActivationOwner(RouterTicket ticket) => _domains.Values.Any(domain => ReferenceEquals(domain.ActivationOwner, ticket));
+
+    internal bool IsManagedResident(string engine) => _engines.TryGetValue(engine, out var state) &&
+        Volatile.Read(ref state.Domain.ActiveEngine) == engine;
+
+    internal bool HasOutstanding(RouterTicket ticket)
+    {
+        lock (Gate) return _preparations.ContainsKey(ticket) || HasActivationOwner(ticket);
+    }
+
+    internal bool HasTransitionPublication(DomainIdentity identity)
+    {
+        lock (Gate) return !_stopped && _verifiedRoutes.Values.Any(route => route.Open && route.Engine.Domain.Identity == identity);
+    }
+
+    internal DomainSnapshot Snapshot(DomainIdentity identity)
+    {
+        lock (Gate)
+        {
+            var domain = _domains[identity];
+            return new(identity, domain.Limit, domain.Preparations, domain.Engines.Sum(static engine => engine.PhysicalUses),
+                domain.Transitioning, domain.RouteGeneration);
+        }
     }
 
     internal void Publish(Route target, long generation, bool open, long window = 0)
@@ -115,8 +196,7 @@ internal sealed class ExactTicketAdmission(
             if (_stopped) return;
             if (!_routes.TryGetValue(target, out var route))
             {
-                if (!_engines.TryGetValue(target.Engine, out var engine))
-                    _engines.Add(target.Engine, engine = new());
+                if (!_engines.TryGetValue(target.Engine, out var engine) || engine.Domain.Identity.Generation > 0) return;
                 _routes.Add(target, route = new(engine));
             }
             if (generation < route.Generation) return;
@@ -144,10 +224,13 @@ internal sealed class ExactTicketAdmission(
         {
             if (_stopped || !UsesVerifiedDispatch || !resident.Target.Matches(resident.Route)) return false;
             var engineName = resident.Route.Engine;
+            if (!_engines.TryGetValue(engineName, out var engine)) return false;
+            var domain = engine.Domain;
+            if (domain.Identity.Generation > 0 && (!domain.Transitioning || resident.Route.HostGroup != domain.Identity.Name ||
+                resident.Route.EnrollmentGeneration != domain.Identity.Generation ||
+                resident.Route.RouteIncarnation <= domain.RouteGeneration)) return false;
             if (!_verifiedRoutes.TryGetValue(engineName, out var route))
             {
-                if (!_engines.TryGetValue(engineName, out var engine))
-                    _engines.Add(engineName, engine = new());
                 _verifiedRoutes.Add(engineName, route = new(engine));
             }
             if (resident.Route.RouteIncarnation <= route.Generation) return false;
@@ -155,6 +238,7 @@ internal sealed class ExactTicketAdmission(
             route.Generation = resident.Route.RouteIncarnation;
             route.Resident = resident;
             route.Open = true;
+            domain.RouteGeneration = resident.Route.RouteIncarnation;
             foreach (var entry in _preparations.Values)
                 if (entry.Claim.Resident is { } old &&
                     string.Equals(old.Route.Engine, engineName, StringComparison.Ordinal) && Retire(entry))
@@ -192,6 +276,8 @@ internal sealed class ExactTicketAdmission(
             {
                 return _verifiedRoutes.TryGetValue(target.Engine, out var verified) &&
                     verified.Resident is { } resident &&
+                    (verified.Engine.Domain.Identity.Generation == 0 || !switchRequired &&
+                        (target.Profile is null || target.Profile == resident.Target.Tier)) &&
                     string.Equals(target.Model, resident.Target.Model, StringComparison.Ordinal)
                     ? new Claim(request, target, verified.Generation, switchRequired, explicitContext, resident) : null;
             }
@@ -201,7 +287,24 @@ internal sealed class ExactTicketAdmission(
     }
 
     internal bool IsOpen(Claim claim) => !_stopped && StateFor(claim) is { Open: true } route &&
+        !route.Engine.Domain.Transitioning &&
         route.Generation == claim.Generation && ReferenceEquals(route.Resident, claim.Resident);
+
+    internal bool IsOtherDomain(RouterTicket ticket, string engine) =>
+        (_preparations.TryGetValue(ticket, out var entry) && _engines.TryGetValue(engine, out var state) &&
+        !ReferenceEquals(entry.Domain, state.Domain)) || _domains.Values.Any(domain =>
+            ReferenceEquals(domain.ActivationOwner, ticket) && _engines.GetValueOrDefault(engine)?.Domain != domain);
+
+    internal bool SharesDomain(string firstEngine, string secondEngine) =>
+        _engines.TryGetValue(firstEngine, out var first) && _engines.TryGetValue(secondEngine, out var second) &&
+        ReferenceEquals(first.Domain, second.Domain);
+
+    // Advisory only. The dispatch round uses this to choose one preparation after trying
+    // every ready alternative. Prepare makes the final decision under the same gate.
+    internal bool CanStartPreparation(Claim claim) => IsOpen(claim) && CanPrepare(claim) &&
+        !_preparations.ContainsKey(claim.Ticket) && !IsOtherDomain(claim.Ticket, claim.Target.Engine) && !AttemptSpent(claim) &&
+        StateFor(claim)!.Engine.Domain is { } domain && domain.Preparations < domain.Limit &&
+        !HasRunnablePendingOwner(domain);
 
     private RouteState? StateFor(Claim claim) => claim.Resident is null
         ? _routes.GetValueOrDefault(claim.Target) : _verifiedRoutes.GetValueOrDefault(claim.Target.Engine);
@@ -256,7 +359,8 @@ internal sealed class ExactTicketAdmission(
         var slots = claim.Resident is { } resident ? Math.Min(observation.SlotLimit, resident.TotalSlots) : observation.SlotLimit;
         var free = slots - observation.Inflight - (state.PhysicalUses - state.LogicalOverlap);
         return free > 0 && (free > 1 || state.OpeningOwner is not { } owner || owner == claim ||
-            !IsOpen(owner) || !OpeningOwnerEligible(owner, observation.Capability));
+            !IsOpen(owner) || !OpeningOwnerEligible(owner, observation.Capability)) &&
+            (state.Domain.ActivationOwner is not { } activation || ReferenceEquals(activation, claim.Ticket));
     }
 
     private bool OpeningOwnerEligible(Claim owner, EngineCapability capability) =>
@@ -275,40 +379,49 @@ internal sealed class ExactTicketAdmission(
 
     internal void Prepare(Claim claim)
     {
-        Preparation? start = null;
-        Preparation? cleanup = null;
-        lock (Gate)
+        Action? work;
+        lock (Gate) work = ReservePreparationWork(claim);
+        work?.Invoke();
+    }
+
+    // Called under Gate, and under the router and queue gates for an ordinary pending ticket.
+    // Run the resulting work after releasing all three gates.
+    internal Action? ReservePreparationWork(Claim claim)
+    {
+        if (_stopped || !CanPrepare(claim) || StateFor(claim) is not { } state ||
+            state.Generation != claim.Generation || (claim.Resident is not null && !IsOpen(claim)) ||
+            IsOtherDomain(claim.Ticket, claim.Target.Engine)) return null;
+
+        var domain = state.Engine.Domain;
+        var ownerState = _routes.TryGetValue(claim.Target, out var route) && route.Engine.OpeningOwner == claim
+            ? route.Engine : null;
+        if (_preparations.TryGetValue(claim.Ticket, out var current))
         {
-            if (_stopped || !CanPrepare(claim) || (claim.Resident is not null && !IsOpen(claim))) return;
-            var ownerState = _routes.TryGetValue(claim.Target, out var route) && route.Engine.OpeningOwner == claim
-                ? route.Engine : null;
-            if (_preparations.TryGetValue(claim.Ticket, out var current))
-            {
-                if (current.Claim != claim)
-                {
-                    if (ownerState is not null) ownerState.OwnerPreparationPending = true;
-                    if (Retire(current)) cleanup = current;
-                }
-            }
-            else if (_preparations.Count >= _preparationLimit)
-            {
-                if (ownerState is not null) ownerState.OwnerPreparationPending = true;
-            }
-            else if (ownerState is not null || (IsOpen(claim) && !HasRunnablePendingOwner()))
-            {
-                if (ownerState is not null) ownerState.OwnerPreparationPending = false;
-                start = ReservePreparation(claim);
-            }
+            if (current.Claim == claim) return null;
+            if (ownerState is not null) ownerState.OwnerPreparationPending = true;
+            // A different viable route cannot replace an active attempt. The old domain
+            // keeps the charge until a superseded preparation actually finishes cleanup.
+            return !IsOpen(current.Claim) && Retire(current) ? current.RequestRetirement : null;
         }
-        cleanup?.RequestRetirement();
-        if (start is not null) _ = Task.Run(() => PrepareAsync(start));
+
+        if (domain.Preparations >= domain.Limit || ownerState is not null && !HasThreadRoom(claim))
+        {
+            if (ownerState is not null) ownerState.OwnerPreparationPending = true;
+            return null;
+        }
+        if (ownerState is null && (!IsOpen(claim) || HasRunnablePendingOwner(domain))) return null;
+
+        if (ownerState is not null) ownerState.OwnerPreparationPending = false;
+        return ReservePreparation(claim, domain) is { } start ? () => _ = Task.Run(() => PrepareAsync(start)) : null;
     }
 
     // Called under Gate. Retirement can free capacity after the dispatch pass has already
     // checked pending owners. Ordinary preparation must leave that capacity available.
-    private bool HasRunnablePendingOwner() => _engines.Values.Any(state =>
+    private static bool HasThreadRoom(Claim owner) => owner.Request.Thread.Inflight < owner.Request.Thread.MaxInflight;
+
+    private bool HasRunnablePendingOwner(DomainState domain) => domain.Engines.Any(state =>
         state.OwnerPreparationPending && state.OpeningOwner is { } owner &&
-        CanPrepare(owner) && !_preparations.ContainsKey(owner.Ticket));
+        CanPrepare(owner) && HasThreadRoom(owner) && !_preparations.ContainsKey(owner.Ticket));
 
     // The detached owner has no queue head to rescan. Its exact request survives a full table
     // or a prior attempt until a dispatch pass can reserve capacity for it.
@@ -320,13 +433,14 @@ internal sealed class ExactTicketAdmission(
             if (_stopped) return;
             foreach (var state in _engines.Values)
             {
-                if (_preparations.Count >= _preparationLimit) break;
+                var domain = state.Domain;
+                if (domain.Preparations >= domain.Limit) continue;
                 if (!state.OwnerPreparationPending || state.OpeningOwner is not { } owner ||
-                    _preparations.ContainsKey(owner.Ticket))
+                    _preparations.ContainsKey(owner.Ticket) || !HasThreadRoom(owner))
                     continue;
 
                 state.OwnerPreparationPending = false;
-                if (CanPrepare(owner) && ReservePreparation(owner) is { } start)
+                if (CanPrepare(owner) && ReservePreparation(owner, domain) is { } start)
                     (starts ??= []).Add(start);
                 else
                     state.ClearOpeningOwner();
@@ -337,16 +451,23 @@ internal sealed class ExactTicketAdmission(
     }
 
     // Called under Gate after checking the preparation limit and the ticket's outstanding entry.
-    private Preparation? ReservePreparation(Claim claim)
+    private Preparation? ReservePreparation(Claim claim, DomainState domain)
     {
         var binding = new Binding(claim.Target, claim.SwitchRequired, claim.ExplicitContext);
         var spent = _spent.GetOrCreateValue(claim.Ticket);
         if (spent.TryGetValue(binding, out var generation) && generation >= claim.Generation) return null;
 
         spent[binding] = claim.Generation;
-        var start = new Preparation(claim);
+        var start = new Preparation(claim, domain);
         _preparations.Add(claim.Ticket, start);
+        domain.Preparations++;
         return start;
+    }
+
+    private void RemovePreparation(Preparation entry)
+    {
+        _preparations.Remove(entry.Claim.Ticket);
+        entry.Domain.Preparations--;
     }
 
     private async Task PrepareAsync(Preparation entry)
@@ -393,7 +514,7 @@ internal sealed class ExactTicketAdmission(
                 {
                     if (_preparations.TryGetValue(entry.Claim.Ticket, out var current) && ReferenceEquals(current, entry))
                     {
-                        _preparations.Remove(entry.Claim.Ticket);
+                        RemovePreparation(entry);
                         if (!published && _routes.TryGetValue(entry.Claim.Target, out var route) &&
                             route.Engine.OpeningOwner == entry.Claim)
                             route.Engine.ClearOpeningOwner();
@@ -445,14 +566,22 @@ internal sealed class ExactTicketAdmission(
         }
     }
 
-    internal void Invalidate(RouterTicket ticket)
+    internal bool Invalidate(RouterTicket ticket)
     {
         Preparation? cleanup = null;
         var ownerReleased = false;
+        var cancelledActivation = false;
         lock (Gate)
         {
             ticket.RevokeAdmission();
             if (_preparations.TryGetValue(ticket, out var entry) && Retire(entry)) cleanup = entry;
+            foreach (var domain in _domains.Values)
+            {
+                if (!ReferenceEquals(domain.ActivationOwner, ticket)) continue;
+                domain.ActivationOwner = null;
+                cancelledActivation = domain.Transitioning;
+                ownerReleased = true;
+            }
             foreach (var state in _engines.Values)
             {
                 if (state.OpeningOwner is not { } owner || !ReferenceEquals(owner.Ticket, ticket)) continue;
@@ -462,6 +591,7 @@ internal sealed class ExactTicketAdmission(
         }
         cleanup?.RequestRetirement();
         if (ownerReleased) _wake?.Invoke();
+        return cancelledActivation;
     }
 
     internal void Stop()
@@ -491,8 +621,9 @@ internal sealed class ExactTicketAdmission(
     {
         var prepared = _preparations[claim.Ticket];
         prepared.Borrowed = true;
-        _preparations.Remove(claim.Ticket);
+        RemovePreparation(prepared);
         var state = StateFor(claim)!.Engine;
+        if (ReferenceEquals(state.Domain.ActivationOwner, claim.Ticket)) state.Domain.ActivationOwner = null;
         if (state.OpeningOwner == claim) state.ClearOpeningOwner();
         state.PhysicalUses++;
         if (!detachedOwner) state.LogicalOverlap++;
