@@ -19,6 +19,8 @@ public sealed record RouterEvent
     public string? Model { get; init; }
     public string? Reason { get; init; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public QueueDispatchObservation? QueueDispatch { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? UpstreamOutcome { get; init; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? UpstreamEndReason { get; init; }

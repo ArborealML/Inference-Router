@@ -221,6 +221,7 @@ public sealed partial class RouterCore : IInferenceRouter
                 Error = t.Error,
                 QueueWaitReason = wait?.Reason,
                 QueueWaitScope = wait?.Scope,
+                QueueDispatch = wait,
                 UpstreamOutcome = upstream?.OutcomeName,
                 UpstreamEndReason = upstream?.EndReasonName,
                 AttemptPolicyRevision = t.OwnedPolicy?.Group.Revision,
@@ -426,13 +427,18 @@ public sealed partial class RouterCore : IInferenceRouter
                     MaybeFailDeadline(request);
                     continue;
                 }
-                if (!HasThreadCapacity(request.Thread))
+                var evaluation = new DispatchEvaluation(request, generation, _dispatchWake.Revision);
+                if (!evaluation.HasThreadCapacity)
                 {
-                    PublishDispatchWait(round[index].Queue, request, new("thread_concurrency_limit", request.Ticket.ThreadId));
+                    var infos = BuildEngineInfos(request, generation, comparison);
+                    evaluation.Routes = infos;
+                    evaluation.RecordUnevaluated(infos.Where(static info => info.CanServeModel).Select(static info => info.Name));
+                    PublishDispatchWait(round[index].Queue, request,
+                        new("thread_concurrency_limit", request.Ticket.ThreadId), evaluation);
                     continue;
                 }
 
-                var transition = DispatchCandidate(round, index, request, generation, comparison, ref through);
+                var transition = DispatchCandidate(round, index, request, generation, comparison, evaluation, ref through);
                 if (transition == DispatchResult.Dispatched)
                 {
                     result = transition;
@@ -449,15 +455,18 @@ public sealed partial class RouterCore : IInferenceRouter
     }
 
     private DispatchResult DispatchCandidate(QueueRound[] round, int index, QueuedRequest request,
-                                             ConfigurationGeneration generation, SwitchComparison? comparison, ref int through)
+                                             ConfigurationGeneration generation, SwitchComparison? comparison, DispatchEvaluation evaluation, ref int through)
     {
         var infos = BuildEngineInfos(request, generation, comparison);
+        evaluation.Routes = infos;
         var routes = _scheduler is PrefixAwareScheduler ? PrefixAwareScheduler.RankRoutes(request, infos, generation.Settings) : null;
         var custom = routes is null
             ? _scheduler.SelectNext(request, new SchedulerView(infos, _clock.GetUtcNow()), generation.Settings) : null;
         if (custom is { Engine: null })
         {
-            MaybeFailDeadline(request);
+            evaluation.RecordUnevaluated(infos.Where(static info => info.CanServeModel).Select(static info => info.Name));
+            if (ReadQueueEnd(request) is not null) MaybeFailDeadline(request);
+            else PublishDispatchWait(round[index].Queue, request, DescribeUnavailable(infos, request), evaluation);
             return DispatchResult.Parked;
         }
 
@@ -487,7 +496,9 @@ public sealed partial class RouterCore : IInferenceRouter
             var engine = generation.Engines[selection.Decision.Engine!];
             if (!refuseCold && selection.Decision.SwitchRequired && !HasLifecycleRoute(candidate, engine))
             {
-                blocker ??= new("engine_lifecycle_unavailable", engine.Name);
+                var noLifecycle = new Blocker("engine_lifecycle_unavailable", engine.Name);
+                blocker ??= noLifecycle;
+                evaluation.Record(engine.Name, "blocked", noLifecycle);
                 continue;
             }
             var observed = comparison?.Observation ?? FindDispatchObservation(infos, engine.Name);
@@ -497,6 +508,7 @@ public sealed partial class RouterCore : IInferenceRouter
             if (probe.Blocker is { } unavailable)
             {
                 blocker ??= unavailable;
+                evaluation.Record(engine.Name, "blocked", unavailable);
                 if (probe.Drain) drain ??= (selection, engine, probe);
                 continue;
             }
@@ -507,7 +519,9 @@ public sealed partial class RouterCore : IInferenceRouter
                 var tier = probe.Profile?.Name ?? engine.DefaultServingTier(model);
                 if (tier is not null && _hostManager.Recipe(engine.Name, model, tier) is { } recipe)
                     (activations ??= []).Add(new(selection, engine, recipe));
-                blocker ??= new("lifecycle_group_waiting", _hostManager.Scope(engine.Name));
+                var waiting = new Blocker("lifecycle_group_waiting", _hostManager.Scope(engine.Name));
+                blocker ??= waiting;
+                evaluation.Record(engine.Name, tier is null ? "blocked" : "activation_required", waiting);
                 continue;
             }
 
@@ -534,12 +548,19 @@ public sealed partial class RouterCore : IInferenceRouter
             if (take.Result == TakeResult.QueueChanged) return DispatchResult.StateChanged;
             if (take.Result == TakeResult.Preparing)
             {
-                blocker ??= new("route_preparing", _hostManager?.Scope(engine.Name) ?? engine.Name);
+                var preparing = new Blocker("route_preparing", _hostManager?.Scope(engine.Name) ?? engine.Name);
+                blocker ??= preparing;
+                evaluation.Record(engine.Name, "blocked", preparing);
                 continue;
             }
             routeChanged |= take.Result == TakeResult.RouteChanged;
-            blocker ??= new(take.Result == TakeResult.RouteChanged ? "route_changed" : "route_admission_wait", engine.Name);
+            var wait = new Blocker(take.Result == TakeResult.RouteChanged ? "route_changed" : "route_admission_wait", engine.Name);
+            blocker ??= wait;
+            evaluation.Record(engine.Name, take.Result == TakeResult.RouteChanged ? "not_evaluated"
+                : selection.Decision.SwitchRequired ? "activation_required" : "observed_ready", wait);
         }
+        evaluation.RecordUnevaluated(infos.Where(info => info.CanServeModel && (routes is null
+            ? info.Name != custom?.Engine : !routes.Exists(route => ReferenceEquals(route.Engine, info)))).Select(static info => info.Name));
 
         var started = preparations?.Exists(offer => StartExactPreparation(round[offer.Selection.QueueIndex].Queue, offer, generation)) == true;
         if (!started)
@@ -547,10 +568,11 @@ public sealed partial class RouterCore : IInferenceRouter
         if (!started && blockedPreparation is { } blocked)
             started = StartExactPreparation(round[blocked.Selection.QueueIndex].Queue, blocked, generation);
         if (!started && drain is { } pending &&
-            TryStartLocalDrain(round, index, pending.Selection, pending.Engine, pending.Probe, generation) is { } owned)
+            TryStartLocalDrain(round, index, pending.Selection, pending.Engine, pending.Probe, generation, evaluation) is { } owned)
             blocker = new("lifecycle_group_draining", owned.Name);
         if (ReadQueueEnd(request) is not null) MaybeFailDeadline(request);
-        else PublishDispatchWait(round[index].Queue, request, blocker ?? DescribeUnavailable(infos, request));
+        else if (!routeChanged && through == index)
+            PublishDispatchWait(round[index].Queue, request, blocker ?? DescribeUnavailable(infos, request), evaluation);
         return routeChanged ? DispatchResult.StateChanged : DispatchResult.Parked;
     }
 
@@ -908,11 +930,13 @@ public sealed partial class RouterCore : IInferenceRouter
         return true;
     }
 
+    internal LocalLifecycleGroup? LocalGroup(string engine) => _localGroups.GetValueOrDefault(engine);
+
     private bool HasLifecycleRoute(QueuedRequest request, EngineRuntime engine) =>
         _localGroups.ContainsKey(engine.Name) || engine.CanSwitchTo(request.Ticket.Model);
 
     private LocalLifecycleGroup? TryStartLocalDrain(QueueRound[] round, int prefix, Selection selection, EngineRuntime engine,
-                                                   RouteProbe probe, ConfigurationGeneration generation)
+                                                   RouteProbe probe, ConfigurationGeneration generation, DispatchEvaluation evaluation)
     {
         var candidate = selection.Request;
         var queue = round[selection.QueueIndex].Queue;
@@ -932,7 +956,10 @@ public sealed partial class RouterCore : IInferenceRouter
                     ProbeRoute(candidate, engine, selection.Decision, engine.ReadDispatchObservation(), generation).Drain &&
                     PredecessorRoutesAreCurrent(predecessorRoutes) &&
                     group.TryStartDrain(candidate, engine, probe.Profile, selection.Decision.SwitchRequired, revision))
+                {
+                    evaluation.AcceptDrain(group, revision + 1, engine.Name);
                     return candidate.Ticket.LocalDrain = group;
+                }
             }
             return null;
         }
@@ -1164,7 +1191,7 @@ public sealed partial class RouterCore : IInferenceRouter
                                   EngineRuntime.DispatchObservation observation, ConfigurationGeneration generation)
     {
         var profile = engine.GetProfile(candidate.Ticket.Model, target.Profile);
-        var group = _localGroups.GetValueOrDefault(engine.Name);
+        var group = LocalGroup(engine.Name);
         var named = candidate.Request.Options?.Profile;
         var serving = observation.Capability.Serving;
         if (named is not null && (profile is null || engine.GetProfile(candidate.Ticket.Model, named) != profile ||
@@ -1206,7 +1233,7 @@ public sealed partial class RouterCore : IInferenceRouter
             if (!engine.CanServeModel) continue;
             if (engine.Switching)
             {
-                var group = _localGroups.GetValueOrDefault(engine.Name);
+                var group = LocalGroup(engine.Name);
                 return group is null ? new("engine_switching", engine.Name) : new("lifecycle_group_switching", group.Name);
             }
             if (!engine.Healthy) return new("engine_unhealthy", engine.Name);
@@ -1214,30 +1241,6 @@ public sealed partial class RouterCore : IInferenceRouter
                 return new("engine_model_not_ready", engine.Name);
         }
         return new("no_available_engine");
-    }
-
-    private void PublishDispatchWait(ModelQueue queue, QueuedRequest request, Blocker blocker)
-    {
-        var ticket = request.Ticket;
-        var wait = new DispatchWaitInfo(blocker.Reason, blocker.Scope is { } scope ? WireText.Ident(scope) : null);
-        lock (_gate)
-        {
-            if (_closing || ticket.IsTerminal || !ReferenceEquals(_queues.GetValueOrDefault(ticket.Model), queue) ||
-                !queue.Contains(request) || ticket.DispatchWait == wait) return;
-            Volatile.Write(ref ticket.DispatchWait, wait);
-        }
-
-        if (wait.Scope is null) return;
-        // The feed gate orders this observation against terminal publication without calling any
-        // observer under the router/queue gate. Exact removal clears the current observation.
-        _events.AppendIf(new RouterEvent
-        {
-            Kind = "request.waiting",
-            ThreadId = ticket.ThreadId, OwnerGroup = ticket.OwnedPolicy?.Key,
-            TicketId = ticket.Id,
-            Model = ticket.Model,
-            Reason = FormatBlocker(new(wait.Reason, wait.Scope)),
-        }, () => ReferenceEquals(Volatile.Read(ref ticket.DispatchWait), wait) && !ticket.IsTerminal);
     }
 
     private static string FormatBlocker(Blocker blocker) => blocker.Scope is { } scope
@@ -1265,7 +1268,7 @@ public sealed partial class RouterCore : IInferenceRouter
     {
         var capability = observation.Capability;
         var model = request.Ticket.Model;
-        var group = _localGroups.GetValueOrDefault(engine.Name);
+        var group = LocalGroup(engine.Name);
         var managed = _hostManager?.Owns(engine.Name) == true;
         var resident = managed ? _hostManager!.Admission.ReadManagedResident(engine.Name) : null;
         PrefixAwareScheduler.NamedRoute? named = null;
@@ -1298,7 +1301,11 @@ public sealed partial class RouterCore : IInferenceRouter
         {
             if (!AllowsOwnedRoute(request.Ticket, engine.Name)) continue;
             // The loaded roster, switch marker, and fit come from one published capability.
+            var group = LocalGroup(engine.Name);
+            var groupRevision = group?.Revision ?? 0;
             var observation = comparison?.Observation ?? engine.ReadDispatchObservation();
+            var namedUse = engine.HasNamedUse;
+            var inferenceUses = engine.InferenceUses;
             var fit = ReadRouteFit(request, engine, observation);
             var switching = observation.Capability.SwitchingToward;
             infos[index++] = new EngineRuntimeInfo
@@ -1318,6 +1325,10 @@ public sealed partial class RouterCore : IInferenceRouter
                 ActiveContextWindow = fit.ActiveContextWindow,
                 ServingProfiles = fit.ServingProfiles,
                 DispatchObservation = observation,
+                DispatchGroup = group,
+                DispatchGroupRevision = groupRevision,
+                NamedPhysicalUse = namedUse,
+                DispatchInferenceUses = inferenceUses,
                 NamedProfile = fit.NamedProfile,
                 ManagedResident = fit.ManagedResident,
                 ManagedColdProfiles = fit.ManagedColdProfiles,
@@ -2210,6 +2221,8 @@ public sealed record TicketSnapshot
     public string? QueueWaitReason { get; init; }
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public string? QueueWaitScope { get; init; }
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public QueueDispatchObservation? QueueDispatch { get; init; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? UpstreamOutcome { get; init; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]

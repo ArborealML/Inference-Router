@@ -98,7 +98,8 @@ internal sealed class AirTop(RouterMonitor monitor)
             followed = new("followed", "Ticket", $"{Text(id)}  {Text(phase)}",
                 $"Following {Text(id)}\nState {Text(phase)}\nModel {Text(item?.Model)}   Engine {Text(item?.Engine)}" +
                 $"\nThread {Text(item?.ThreadId)}\nError {Text(item?.ErrorCode)} {Text(item?.Error, 1600)}" +
-                (item?.QueueWaitReason is { } reason ? $"\nQueue wait {Text(reason)}  Scope {Text(item.QueueWaitScope)}" : ""));
+                (item?.QueueDispatch is { } observation ? FormatDispatch(observation) :
+                    item?.QueueWaitReason is { } reason ? $"\nQueue wait {Text(reason)}  Scope {Text(item.QueueWaitScope)}" : ""));
         }
         if (!ReferenceEquals(_lastGauges, state.Gauges))
         {
@@ -123,7 +124,8 @@ internal sealed class AirTop(RouterMonitor monitor)
             string when = e.Timestamp.UtcDateTime.ToString("HH:mm:ss", CultureInfo.InvariantCulture);
             string summary = $"{when} {Text(e.Kind)}  {Text(e.TicketId)}  {Text(e.Model)}";
             rows.Add(new("event/" + key, "Activity", summary,
-                FormattableString.Invariant($"{e.Timestamp:O}  {Text(e.Kind)}\nTicket {Text(e.TicketId)}   Thread {Text(e.ThreadId)}\nEngine {Text(e.Engine)}   Model {Text(e.Model)}\nReason {Text(e.Reason, 1600)}"),
+                FormattableString.Invariant($"{e.Timestamp:O}  {Text(e.Kind)}\nTicket {Text(e.TicketId)}   Thread {Text(e.ThreadId)}\nEngine {Text(e.Engine)}   Model {Text(e.Model)}\nReason {Text(e.Reason, 1600)}") +
+                    (e.QueueDispatch is { } observation ? FormatDispatch(observation) : ""),
                 Ticket: e.TicketId));
         }
         _frame = new("AIR | " + status + " | Enter open · Esc back · q quit", new TopRows(followed, _gaugeRows, rows.ToArray()));
@@ -152,6 +154,22 @@ internal sealed class AirTop(RouterMonitor monitor)
                     "Global queue depth from status. Enter filters observed activity for " + Text(model), Queue: model));
         }
         return rows.ToArray();
+    }
+
+    private static string FormatDispatch(QueueDispatchObservation report)
+    {
+        var text = new StringBuilder();
+        text.Append(CultureInfo.InvariantCulture, $"\nQueue advisory {Text(report.Reason)}  Scope {Text(report.Scope)}");
+        if (report.AcceptedDrainScope is { } drain) text.Append(CultureInfo.InvariantCulture, $"\nAccepted drain {Text(drain)}");
+        if (report.Alternatives is { } alternatives)
+        {
+            foreach (var alternative in alternatives.Take(8))
+                if (alternative is not null)
+                    text.Append($"\n  {Text(alternative.Engine, 80)}  {Text(alternative.State, 40)}" +
+                        (alternative.Reason is { } reason ? $"  {Text(reason, 80)} ({Text(alternative.Scope, 80)})" : ""));
+        }
+        if (report.AlternativesTruncated || report.Alternatives?.Count > 8) text.Append("\n  Other alternatives omitted");
+        return text.ToString();
     }
 
     private static string Count(long value) => value > 0 ? value.ToString(CultureInfo.InvariantCulture) : "unreported";

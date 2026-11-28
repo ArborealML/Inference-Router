@@ -1,12 +1,13 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.174)
+Status: draft, continuously revised (v0.12.175)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
 
 ## 0. Revision log
 
+- v0.12.175 — qualify managed local routing with a full remote provider and publish bounded, revision-checked queue observations (§§5.4–5.5, 10, 14).
 - v0.12.174 — bind owned private inference to verified external scope and durable policy, qualify direct private transport, and scope catalog, status, events and ticket controls (§5.6).
 - v0.12.173 — compose enrolled exact dispatch in the standard web application and require generation-specific physical retirement before mutation, and bound commissioned SSE output at route selection, including a pending first heartbeat (§§4, 7.6, 12.1).
 - v0.12.172 — exercise the singleton tuning runner through CLI dispatch with a controlled private resident, retain semantic, physical settlement and failed lease release evidence, and publish run evidence and its comparison summary together (§§11.1, 11.3).
@@ -4019,8 +4020,17 @@ streaming ticket cancelled before the upstream end is known reports `unknown` fo
 
 - `thread.registered`, `thread.priority_changed`
 - `request.enqueued {thread, ticket, model, priority, promptChars}`
-- `request.waiting {ticket, thread, model, reason}` — a changed, scoped queue blocker. The ticket
-  snapshot exposes `QueueWaitReason` and `QueueWaitScope` while the ticket remains queued.
+- `request.waiting {ticket, thread, model, reason}` — a changed queue blocker, including waits
+  without a narrower scope. The event and queued ticket expose the same optional PascalCase
+  `QueueDispatch` object with an `ObservationId`, classified `Reason`, optional `Scope` and
+  `AcceptedDrainScope`, and up to eight `Alternatives`. Each alternative names a configured
+  engine and one state (`observed_ready`, `activation_required`, `blocked` or `not_evaluated`).
+  An evaluated blocker may include its classified reason and scope. `AlternativesTruncated`
+  marks additional omitted alternatives. Ready observations are advisory and exact take still
+  checks earlier competitors and shared caps. The router publishes only from the current queue,
+  ticket, configuration, and relevant route and group observations. Equivalent later passes
+  reuse the same report. Selection and queue retirement clear it. `QueueWaitReason` and
+  `QueueWaitScope` remain available for clients that use the earlier status fields.
 - `request.selected {ticket, engine, model, reason}` — the chosen route and, when one was skipped,
   the first observed higher-ranked blocker
 - `request.streaming_first_token {ticket, engine, msFromEnqueue}`
@@ -4527,6 +4537,13 @@ enriched with `air:{engine,profile,availability,loaded}`; the stable `air_error`
 and cohort/residency hysteresis in the scheduler (§12.3 hook).
 
 ## 14. Testing & acceptance
+
+The reverse-provider HTTP fixture holds one delegated remote slot while the original request
+reaches a router-managed local backend. It covers resident reuse and cold activation, each for
+the held model and an independent model. Separate fixtures check drain inspection against
+accepted ownership, retirement before reassignment or deadline settlement, and one bounded
+wait observation across ticket status and the feed. Commercial-provider backoff requires the
+actual provider's admission contract.
 
 - **Unit**: priority comparability, queue ordering/overflow, scheduler
   scoring (affinity vs busy), serving-profile escalation decisions (fit, smallest
