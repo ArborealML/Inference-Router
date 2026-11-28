@@ -3,11 +3,11 @@ id: TASK-118
 title: >-
   Resolve each native launch profile and dispatch to its verified serving
   instance
-status: In Progress
+status: Preparing
 assignee:
   - '@gpt-6.2-sol-lifecycle'
 created_date: '2026-11-18T18:56:00Z'
-updated_date: '2026-11-28T13:24:00Z'
+updated_date: '2026-11-28T13:48:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -25,7 +25,7 @@ ordinal: 116000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-The [host-manager admission and retirement contract](https://github.com/ArborealML/Inference-Router/pull/99) landed. Connect both shipping serve entry points to the verified host authority. The issuer and broker share durable issuance and revocation records and a monotonic cutoff. Bind the probe and credential to the exact serving process and require conclusive exchange retirement. The [launch record](https://github.com/ArborealML/Inference-Router/pull/49) identifies the container.
+Prepare the separate-process acceptance run for the shipping server and CLI. Exercise checked incumbent attachment, the original queued successor, a rebind before first write and physical retirement under distinct authorities. Installation and access control belong to the deployment owner.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -50,7 +50,7 @@ Recover the executable bootstrap that selects an installed authority directory. 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-[Exact-ticket qualification](https://github.com/ArborealML/Inference-Router/pull/20) covered injected issuance, explicit and default launches, resident reuse, exact body and credential, and zero checkout on mismatch. [Profile aliases](https://github.com/ArborealML/Inference-Router/pull/21) qualified at 5643b27. Same-instance proof across families remains open. Mint and first write require the current open generation even for a paused waiter. TASK-25 owns the paired production witness using this sender.
+[Exact-ticket qualification](https://github.com/ArborealML/Inference-Router/pull/20) covered injected issuance, explicit and default launches, resident reuse, exact bytes and credentials and zero checkout on mismatch. [Profile aliases](https://github.com/ArborealML/Inference-Router/pull/21) qualified at 5643b27. Same-instance proof across families remains open. TASK-25 owns the paired production witness.
 
-The [stock serving candidate](https://github.com/ArborealML/Inference-Router/pull/103) connects both executables. Review of 6d6de93 found unbounded retired-use history, interrupted startup without reattachment, incomplete file-head recovery and an unissued probe reservation that can block future probes. Qualify these repairs, both stock entry points and the queued successor with separate authority processes.
+[Stock serving and broker recovery](https://github.com/ArborealML/Inference-Router/pull/103) merged at cd069cc. The protected socket and disk qualification passed 235 tests. [Hosted CI](https://github.com/ArborealML/Inference-Router/actions/runs/46150598776) passed 2,486 tests and Native AOT. Review at 961e109 confirmed bounded replay, recovery before and after broker opening, reconciliation of failed head updates and release of definitely unissued probes. The process qualification plan is in independent review. Installed host and multi-host acceptance remain open. TASK-190 owns reconciliation of a successor operation whose journal append outlives a lost head update.
 <!-- SECTION:NOTES:END -->
