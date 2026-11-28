@@ -3,7 +3,7 @@ namespace Arboreal.InferenceRouter;
 // A preparation belongs to one queued ticket, policy revision and engine instance.
 // It never reserves a thread, engine request count or physical sender.
 internal sealed class OwnedPrivatePreparation(EngineRuntime engine, HashSet<EngineRuntime> tried,
-    CancellationToken shutdown, CancellationToken caller, CancellationToken execution) : IDisposable
+    IDisposable storeWriter, CancellationToken shutdown, CancellationToken caller, CancellationToken execution) : IDisposable
 {
     internal EngineRuntime Engine { get; } = engine;
     internal CancellationTokenSource Stop { get; } = CancellationTokenSource.CreateLinkedTokenSource(shutdown, caller, execution);
@@ -12,13 +12,22 @@ internal sealed class OwnedPrivatePreparation(EngineRuntime engine, HashSet<Engi
     internal OwnedPrivateAttempt? Attempt { get; private set; }
 
     internal OwnedPrivateAttempt SetAttempt(OwnedPrivatePolicy policy, RouterTicket ticket, Func<HttpRequestMessage> project,
-        ReadOnlySpan<byte> body) => Attempt = policy.FreezeAttempt(ticket, Engine, project, body);
+        byte[] body) => Attempt = policy.FreezeAttempt(ticket, Engine, project, body);
     internal ulong ExpectedChoices { get; set; }
     internal volatile bool Ready;
-    public void Dispose()
+    internal void ReleaseRequest()
     {
         Attempt?.Dispose();
+        Attempt = null;
+    }
+
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("IDisposableAnalyzers.Correctness", "IDISP007:Don't dispose injected",
+        Justification = "The preparing ticket exclusively owns this helper and its transferred writer lease.")]
+    public void Dispose()
+    {
+        ReleaseRequest();
         Stop.Dispose();
+        storeWriter.Dispose();
     }
 }
 
@@ -49,7 +58,9 @@ public sealed partial class RouterCore
             if (previous is { Ready: false }) return new(TakeResult.Preparing);
             var tried = previous?.Tried ?? [];
             if (!tried.Add(engine)) return new(TakeResult.PreparationExhausted);
-            preparation = new(engine, tried, _shutdownToken, candidate.CallerToken, execution.Token);
+            var writer = _ownedPolicy!.Store.RetainWriterForRetirement();
+            if (writer is null) return new(TakeResult.Ineligible);
+            preparation = new(engine, tried, writer, _shutdownToken, candidate.CallerToken, execution.Token);
             Volatile.Write(ref ticket.PrivatePreparation, preparation);
         }
         if (previous is not null) ScheduleOwnedRetirement(ticket, previous, queued: true);
@@ -99,6 +110,8 @@ public sealed partial class RouterCore
         ScheduleOwnedRetirement(ticket, preparation, queued);
     }
 
+    internal Func<RouterTicket, Task>? BeforeOwnedRetirementForTests { get; set; }
+
     private void ScheduleOwnedRetirement(RouterTicket ticket, OwnedPrivatePreparation preparation, bool queued) =>
         _ = Task.Run(() => RetireOwnedPreparationAsync(ticket, preparation, queued), CancellationToken.None);
 
@@ -108,15 +121,18 @@ public sealed partial class RouterCore
     {
         try
         {
-            OwnedPrivateAttempt? attempt;
             using (preparation)
             {
+                if (BeforeOwnedRetirementForTests is { } before) await before(ticket).ConfigureAwait(false);
                 if (queued) await preparation.Stop.CancelAsync().ConfigureAwait(false);
                 await preparation.Finished.Task.ConfigureAwait(false);
-                attempt = preparation.Attempt;
-                if (attempt is not null) Interlocked.CompareExchange(ref ticket.PrivateAttempt, null, attempt);
+                if (preparation.Attempt is { } attempt)
+                {
+                    Interlocked.CompareExchange(ref ticket.PrivateAttempt, null, attempt);
+                    preparation.ReleaseRequest();
+                    await _ownedPolicy!.Store.FinishIntentAsync(attempt).ConfigureAwait(false);
+                }
             }
-            if (attempt is not null) await _ownedPolicy!.Store.FinishIntentAsync(attempt).ConfigureAwait(false);
         }
         catch (Exception error) when (OwnedPrivatePolicy.IsRecoverableAuthorityFailure(error))
         {

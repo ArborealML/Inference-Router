@@ -149,8 +149,7 @@ public sealed partial class OwnedPolicyStore : IDisposable
         lock (_operationGate)
         {
             if (_disposing) return;
-            _disposing = true;
-            CloseGrantsGlobally();
+            lock (_grantGate) Volatile.Write(ref _disposing, true);
             release = _operations == 0;
         }
         if (release) ReleaseWriter();

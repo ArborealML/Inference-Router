@@ -10,6 +10,7 @@ public sealed partial class OwnedPrivatePolicyTests
 {
     [Theory(Timeout = 25_000)]
     [InlineData("body")]
+    [InlineData("same_length_body")]
     [InlineData("thread")]
     [InlineData("content_type")]
     [InlineData("authority")]
@@ -38,6 +39,9 @@ public sealed partial class OwnedPrivatePolicyTests
                     request.Content?.Dispose();
                     request.Content = new ByteArrayContent("altered"u8.ToArray());
                     request.Content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
+                    break;
+                case "same_length_body":
+                    attempt.AlterProjectedBodyForTests();
                     break;
                 case "thread":
                     Assert.True(request.Headers.Remove("X-Inference-Thread"));

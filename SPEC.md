@@ -2949,8 +2949,8 @@ engine instance, configuration and policy before admission. A removed or replace
 engine invalidates its prepared route. If another enrolled engine is eligible, the router
 retires the unused intent and prepares a fresh one. Each engine instance is tried at most
 once for a ticket. The router freezes its rewritten body and projected HTTP headers.
-At the final handoff it validates the request, engine, URI, method, version and all
-request and content headers before consuming the intent once. Consumption means the handler may
+At the final handoff it validates the request, engine, URI, method, version, all
+request and content headers, and the body authenticator before consuming the intent once. Consumption means the handler may
 transmit. If the fence races ahead, the stale attempt cannot reach the sending
 handler. If consumption wins, escalation reports possible exposure and requests
 cancellation. A consumed intent alone gives no proof of bytes written, read or
@@ -2960,8 +2960,10 @@ after a full successful buffered response or a clean stream with a terminal
 sentinel. Cancellation and response disposal alone preserve unresolved intent.
 The existing transport owns its physical slot through local response and socket cleanup.
 Confirmed-safe intent retirement runs independently after that slot is available. Router
-shutdown cancels queued preparation and does not wait for stalled journal I/O. The store
-retains its single-writer lease until an already-entered journal operation settles.
+shutdown cancels queued preparation and can return while journal I/O remains stalled.
+Preparation owns a store writer lease through retirement, including exits before execution.
+Closing the store fences new grants while confirmed-safe retirement can finish under the
+retained writer lease.
 A consumed permit gives no exactly-once execution guarantee.
 
 The group journal stores operation outcomes and bounded attempt metadata, including a

@@ -46,6 +46,7 @@ public sealed partial class RouterCore : IInferenceRouter
     internal Action? BeforeCostCommitForTests;
     internal Action<string, EngineRuntime.SwitchOutcome>? AfterModelReadinessForTests;
     internal Action<RouterTicket>? BeforeAdmissionCommitForTests;
+    internal Action<RouterTicket>? BeforeSelectedExecutionForTests;
     internal Action<RouterTicket>? BeforeAdmissionPreparationForTests;
     internal Action<bool>? BeforeDispatchParkForTests;
     internal Action<Task>? AfterDispatchParkForTests;
@@ -1098,6 +1099,7 @@ public sealed partial class RouterCore : IInferenceRouter
             ticket.State = switchRequired ? TicketState.WaitingForModel : TicketState.Executing;
             ticket.Engine = engine.Name;
             PublishSelection();
+            BeforeSelectedExecutionForTests?.Invoke(ticket);
             // No cancellation token on Task.Run here: with an already-cancelled token Task.Run hands
             // back a task that never runs the delegate, which would strand the thread slot and the
             // engine slot reserved at pop. ExecuteAsync links its own CTS to _shutdown.
@@ -1135,6 +1137,7 @@ public sealed partial class RouterCore : IInferenceRouter
         {
             EndEngineRequest(candidate, engine, invocation);
             lock (_gate) candidate.Thread.DecrementInflight();
+            RetireOwnedPreparation(candidate.Ticket);
             Fail(candidate.Ticket, "cancelled", "router is shutting down");
             candidate.LocalLease?.Release();
             ReleaseExecutionCancellation(candidate.Ticket);
