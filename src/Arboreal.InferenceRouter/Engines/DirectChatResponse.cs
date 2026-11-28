@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Threading.Channels;
 
 namespace Arboreal.InferenceRouter;
 
@@ -149,13 +150,26 @@ internal sealed class DirectChatResponse : IDisposable
         }
     }
 
-    internal async ValueTask PublishTerminalAsync(Func<ReadOnlyMemory<byte>, ValueTask> publish)
+    internal async ValueTask PublishTerminalAsync(ChannelWriter<ReadOnlyMemory<byte>> writer, HttpStreamDelivery? delivery)
     {
         if (!_verified) throw DirectChatProtocol.Identity();
         if (!_terminal || _terminalTail.Length == 0) throw DirectChatProtocol.BadResponse();
-        if (CheckDeadline() is { } expired) throw expired;
-        await publish(_terminalTail.ToArray()).ConfigureAwait(false);
-        if (CheckDeadline(finished: true) is { } expiredDuringPublish) throw expiredDuringPublish;
+        var terminal = _terminalTail.ToArray();
+        if (delivery is not null)
+        {
+            await delivery.PublishTerminalAsync(writer, terminal, CommitTerminal, Token).ConfigureAwait(false);
+            return;
+        }
+        CommitTerminal(() =>
+        {
+            Token.ThrowIfCancellationRequested();
+            if (!writer.TryWrite(terminal)) throw new OperationCanceledException();
+        });
+    }
+
+    private void CommitTerminal(Action publish)
+    {
+        if (CheckDeadline(finished: true, publishTerminal: publish) is { } expired) throw expired;
     }
 
     internal async Task<byte[]> ReadBufferedAsync(HttpResponseMessage response)
@@ -252,7 +266,8 @@ internal sealed class DirectChatResponse : IDisposable
     // The producer and timer choose expiration under one gate. After qualification,
     // progress can only move the next deadline later. The armed wake recalculates that
     // deadline from the latest semantic timestamp before acting.
-    private RouterRequestException? CheckDeadline(bool semanticProgress = false, bool finished = false, bool timerCallback = false)
+    private RouterRequestException? CheckDeadline(bool semanticProgress = false, bool finished = false, bool timerCallback = false,
+        Action? publishTerminal = null)
     {
         RouterRequestException failure;
         lock (_deadlineGate)
@@ -262,7 +277,13 @@ internal sealed class DirectChatResponse : IDisposable
             var remaining = Remaining(now);
             if (remaining > TimeSpan.Zero)
             {
-                if (finished) CloseDeadline();
+                if (finished)
+                {
+                    // Credit is already available. The synchronous channel write and deadline
+                    // closure share one decision, so expiry cannot follow a published sentinel.
+                    publishTerminal?.Invoke();
+                    CloseDeadline();
+                }
                 else if (semanticProgress)
                 {
                     _lastSemanticAt = now;

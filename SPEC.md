@@ -7,7 +7,7 @@ Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 
 ## 0. Revision log
 
-- v0.12.179 — describe inert direct chat providers and qualify loopback-only exact first-write authorization and served-identity relay with sanitized provider refusals, separate first-output and stream deadlines, verified stream choice indexes, and bounded terminal bytes (§§5.7, 6–7, 9–10, 14).
+- v0.12.179 — describe inert direct chat providers and qualify loopback-only exact first-write authorization and served-identity relay with sanitized provider refusals, separate first-output and stream deadlines, verified stream choice indexes, and atomic bounded terminal publication (§§5.7, 6–7, 9–10, 14).
 - v0.12.178 — permit separate authenticated operation-head readers for mutation ingress and serving registration. Both successor readers are read-only (§12.1).
 - v0.12.177 — authorize durable owned-group sensitivity escalation and order it with private HTTP handoff (§§5.6, 6, 13, 14).
 - v0.12.176 — connect the executable to the protected catalog, operation head, serving broker, and exact native terminal sources. Attach a checked resident before dispatch and bind the successor before closing its incumbent. The original issuer epoch confirms the cutoff and the anchored journal checks the frozen recipe on replay. Bounded broker snapshots and an authenticated writer generation preserve replay fences through initial-resident restart (§§4, 7.6, 12.1).
@@ -3038,9 +3038,10 @@ possible exposure. Physical cleanup returns the selected engine capacity. A late
 conflict also stops additional output and records partial failure. The upstream sentinel
 stays buffered until clean EOF, so a later error takes precedence. The terminal buffer limit
 counts the sentinel, complete trailing blocks and all pending bytes, including an incomplete
-line. Both stream deadlines apply until the held bytes enter the bounded relay. A
-terminal publication waits for one entire relay slice of credit before forwarding its
-first bytes. Expiry while waiting returns capacity and discards the held sentinel.
+line. The held tail must fit in the configured HTTP stream credit. The relay waits for
+credit for the entire tail and publishes it in one operation ordered with expiry.
+An over-credit tail or an expiry before publication discards the held sentinel and
+returns capacity.
 
 ## 6. HTTP surface (server project)
 

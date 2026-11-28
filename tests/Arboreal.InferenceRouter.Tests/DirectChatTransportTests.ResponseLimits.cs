@@ -276,8 +276,10 @@ public sealed partial class DirectChatTransportTests
         }
     }
 
-    [Fact(Timeout = 20_000)]
-    public async Task TerminalAtEofWaitsForCreditInsideTheMaximumAndWakesTheNextRequestOnExpiry()
+    [Theory(Timeout = 20_000)]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task TerminalCreditLimitAndExpiryNeverReleaseAFalseSuccess(bool overCredit)
     {
         using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(14));
         var ct = deadline.Token;
@@ -287,7 +289,8 @@ public sealed partial class DirectChatTransportTests
             Write = async context =>
             {
                 if (Interlocked.Increment(ref invocations) == 1)
-                    await context.Response.WriteAsync(Started + Done, context.RequestAborted);
+                    await context.Response.WriteAsync(Started + Done + (overCredit ? ": " + new string('z', 300) + "\n\n" : ""),
+                        context.RequestAborted);
                 else
                 {
                     context.Response.ContentType = "application/json";
@@ -308,25 +311,29 @@ public sealed partial class DirectChatTransportTests
         var publishing = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         router.OnDirectTerminalPublishForTests = () => publishing.TrySetResult();
         var first = await router.EnqueueHttpAsync("held-writer", Input(stream: true), ct);
-        var writer = new StreamRelayTests.GatedWriter(2);
+        var writer = new StreamRelayTests.GatedWriter(overCredit ? 3 : 2);
         var context = new DefaultHttpContext { RequestAborted = ct };
         context.Features.Set<IHttpResponseBodyFeature>(new StreamRelayTests.BodyFeature(writer));
         var relay = ServerApp.StreamTicketAsync(context, first, TimeProvider.System, router);
         try
         {
-            Assert.Equal(prefixBytes, await writer.Blocked.Task.WaitAsync(ct));
+            var blockedLength = await writer.Blocked.Task.WaitAsync(ct);
             await publishing.Task.WaitAsync(ct);
             var delivery = Assert.IsType<HttpStreamDelivery>(first.HttpDelivery);
-            Assert.Equal(prefixBytes, delivery.ReservedBytes);
+            Assert.Equal(overCredit ? 0 : prefixBytes, delivery.ReservedBytes);
             var successor = await router.EnqueueAsync("independent-writer", Input(stream: false), ct);
-            clock.AdvanceTo(499);
-            Assert.False(successor.CompletionTask.IsCompleted);
-            Assert.Equal(1, router.Engines["fixture"].Inflight);
-            Assert.Single(capture.Requests);
-
-            clock.AdvanceTo(500);
+            if (!overCredit)
+            {
+                Assert.Equal(prefixBytes, blockedLength);
+                clock.AdvanceTo(499);
+                Assert.False(successor.CompletionTask.IsCompleted);
+                Assert.Equal(1, router.Engines["fixture"].Inflight);
+                Assert.Single(capture.Requests);
+                clock.AdvanceTo(500);
+            }
+            var expected = overCredit ? "commercial_exchange_failed" : "commercial_stream_deadline";
             var failure = await Assert.ThrowsAsync<RouterRequestException>(() => first.CompletionTask.WaitAsync(ct));
-            Assert.Equal("commercial_stream_deadline", failure.Code);
+            Assert.Equal(expected, failure.Code);
             Assert.Equal(Standard, Encoding.UTF8.GetString(await successor.CompletionTask.WaitAsync(ct)));
             Assert.Equal(2, capture.Requests.Count);
             Assert.True(first.CommercialMayHaveSent);
@@ -335,8 +342,10 @@ public sealed partial class DirectChatTransportTests
             await relay.WaitAsync(ct);
             var output = Encoding.UTF8.GetString(writer.Received.SelectMany(static chunk => chunk).ToArray());
             Assert.StartsWith(Started, StripRouterComments(output), StringComparison.Ordinal);
-            Assert.Contains("commercial_stream_deadline", output, StringComparison.Ordinal);
+            Assert.Contains(expected, output, StringComparison.Ordinal);
             Assert.DoesNotContain(Done, output, StringComparison.Ordinal);
+            Assert.DoesNotContain(new string('z', 30), output, StringComparison.Ordinal);
+            Assert.Equal(1, output.Split("[DONE]", StringSplitOptions.None).Length - 1);
         }
         finally { writer.Release.TrySetResult(new FlushResult(true, false)); }
 
@@ -388,7 +397,13 @@ public sealed partial class DirectChatTransportTests
         Assert.Equal(Started, delivered.ToString());
         await Receive("\n\n");
         Assert.False(frames.HasIncompleteBlock);
-        await validation.PublishTerminalAsync(Publish);
+        var terminal = Channel.CreateUnbounded<ReadOnlyMemory<byte>>();
+        await validation.PublishTerminalAsync(terminal.Writer, new HttpStreamDelivery(limit));
+        Assert.True(terminal.Reader.TryRead(out var terminalBytes));
+        await Publish(terminalBytes);
+        Assert.False(terminal.Reader.TryRead(out _));
+        clock.AdvanceTo(60_000);
+        Assert.False(validation.TimedOut);
         Assert.Equal(limit, delivered.Length - Started.Length);
         Assert.Equal(Started + Done + comment + incomplete + "\n\n", delivered.ToString());
 

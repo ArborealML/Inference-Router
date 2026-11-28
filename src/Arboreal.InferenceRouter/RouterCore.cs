@@ -2018,7 +2018,7 @@ public sealed partial class RouterCore : IInferenceRouter
         if (directChat is not null)
         {
             if (readCancelled) throw DirectChatProtocol.BadResponse();
-            var terminal = directChat.PublishTerminalAsync(PublishTerminalAsync);
+            var terminal = directChat.PublishTerminalAsync(channel.Writer, delivery);
             OnDirectTerminalPublishForTests?.Invoke();
             await terminal.ConfigureAwait(false);
         }
@@ -2031,11 +2031,6 @@ public sealed partial class RouterCore : IInferenceRouter
             else await delivery.PublishAsync(channel.Writer, bytes, relayToken).ConfigureAwait(false);
         }
 
-        async ValueTask PublishTerminalAsync(ReadOnlyMemory<byte> bytes)
-        {
-            if (delivery is null) await channel.Writer.WriteAsync(bytes, relayToken).ConfigureAwait(false);
-            else await delivery.PublishAsync(channel.Writer, bytes, fullFirstSlice: true, relayToken).ConfigureAwait(false);
-        }
     }
 
     private void Complete(RouterTicket ticket, byte[]? body = null)
