@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@gpt-6.2-sol-lifecycle'
 created_date: '2026-11-18T18:56:00Z'
-updated_date: '2026-11-28T13:06:36Z'
+updated_date: '2026-11-28T13:24:00Z'
 labels: []
 milestone: m-4
 dependencies:
@@ -50,5 +50,7 @@ Recover the executable bootstrap that selects an installed authority directory. 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-[PR #20](https://github.com/ArborealML/Inference-Router/pull/20) merged at 4537b1a after focused qualification, AOT and hosted CI. Its offline exact-ticket fixture verifies explicit launch, omitted default and ordinary resident reuse, exact rewritten bytes and credential, and mismatch refusal with zero checkout. AC5 and AC7 are satisfied at the injected issuer. AC1 has model alias/default and settings-digest evidence; [PR #21](https://github.com/ArborealML/Inference-Router/pull/21) landed the profile-alias witness at 5643b27. AC3 still requires same-instance evidence across families. AC4 and AC6 retain standalone rebind and exact-ticket first-write evidence; the real enrolled paused waiter remains open. TASK-25's assignee owns the paired ordinary-composition integration witness; this assignee delivers the bound sender and its component tests. Both production acceptance sets consume the same pinned witness. Exact open generation is required at mint and first write even if a waiter retains Ready.
+[Exact-ticket qualification](https://github.com/ArborealML/Inference-Router/pull/20) covered injected issuance, explicit and default launches, resident reuse, exact body and credential, and zero checkout on mismatch. [Profile aliases](https://github.com/ArborealML/Inference-Router/pull/21) qualified at 5643b27. Same-instance proof across families remains open. Mint and first write require the current open generation even for a paused waiter. TASK-25 owns the paired production witness using this sender.
+
+The [stock serving candidate](https://github.com/ArborealML/Inference-Router/pull/103) connects both executables. Review of 6d6de93 found unbounded retired-use history, interrupted startup without reattachment, incomplete file-head recovery and an unissued probe reservation that can block future probes. Qualify these repairs, both stock entry points and the queued successor with separate authority processes.
 <!-- SECTION:NOTES:END -->
