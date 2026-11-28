@@ -1,9 +1,9 @@
 ---
 id: TASK-203
 title: "Dispatch independently admissible work across providers"
-status: In Progress
+status: Ready for Review
 assignee:
-  - '@gpt-6.2-sol-scheduling'
+  - '@gpt-6.2-astra'
 created_date: '2026-11-27'
 updated_date: '2026-11-27'
 labels: []
@@ -43,7 +43,9 @@ Separate local-group observation from explicit ticket/domain drain intent; retir
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Implementing against main 62f1c79 after independent plan PASS with bounded conditions. Exact predecessor probes remain pure; preserve admission/router/queue lock order, round-local exclusions and wake revision rechecks. Drain intent retires before reassignment; observations are capped, change-only, and cannot wake scheduling. Barrier tests must prove alternate backend receipt before local release. Injected preparation scope remains partial until TASK-206. Scheduling owns queue, selector, local-group and dispatch ranges; TASK-187 owns forwarding/completion. PR #83's additive lifecycle-progress changes remain preserved; PR #86 owns priority parsing. TASK-204/205 remain separate.
+Candidate 9f023f30e9b5660bafed64c8fccd1b9f3accf3a7 against main 62f1c79 implements finite rounds, route reconsideration, exact competing order, explicit local drain ownership and bounded wait scope. Independent plan review preceded code. Source range 5beaaa7..9f023f3 independently passed after a cross-engine last-thread-slot race correction: ordinary release shares the router gate, and only competing route evidence is revalidated. A post-probe readiness barrier verifies the earlier ticket wins. Accepted drain scope now remains visible over unusable alternatives.
 
-Local .NET SDK and Backlog CLI are unavailable; coordinator uses controlled Markdown edits and strict board validation. Focused C# filters and hosted build/test/AOT must be executed before qualification claims. Production preparation scoping remains TASK-206; deployed incident provenance remains TASK-219. No paid inference, hardware mutation or merge authorized.
+Release verification at exact 9f023f3: 263 passed, zero failed/skipped across independent progress, queue/selector, lifecycle groups, switch cost/fairness, exact admission, ticket lifetime, monitor, reload, lifecycle authority and configuration fixtures. Build/analyzers passed. Earlier fixture/diagnostic failures and injected live-cap/window precedence regressions were corrected without weakening assertions. SPEC v0.12.163 and README state supported scope.
+
+AC2 remains partial for commercial backoff/account controls; AC5 remains partial for injected preparation scoping owned by TASK-206; AC9 reports current/first-blocker scope, not the full available-route set. Preserve PR #83 progress and PR #86 parsing; TASK-187 owns observation, TASK-204/205 separate corrections. Coordinator next publishes the reviewed candidate, checks exact-head hosted build/test/AOT and reconciles integration. Backlog CLI unavailable; controlled Markdown and strict checker substitute. No deployed incident, hardware or commercial qualification; not Done.
 <!-- SECTION:NOTES:END -->
