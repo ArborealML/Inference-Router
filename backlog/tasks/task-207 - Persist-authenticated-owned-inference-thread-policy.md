@@ -1,15 +1,18 @@
 ---
 id: TASK-207
-title: "Persist authenticated owned inference thread policy"
-status: To Do
+title: Persist authenticated owned inference thread policy
+status: Preparing
 assignee:
   - '@gpt-6.2-astra'
 created_date: '2026-11-27'
-updated_date: '2026-11-28T11:08:00Z'
+updated_date: '2026-11-28T11:21:00Z'
 labels: []
 milestone: m-19
 dependencies:
   - TASK-204
+references:
+  - src/Arboreal.InferenceRouter.Server/ServerApp.cs
+  - src/Arboreal.InferenceRouter/RouterCore.Admission.cs
 priority: high
 ordinal: 207000
 ---
@@ -35,5 +38,15 @@ AIR owns inference-session policy, not identity issuance or agent hierarchy. Con
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Reuse simple scoped credentials or verified principal supplied by the deployment. No identity issuer, agent sandbox, agent graph, backup service or general policy engine. Root authorization and optional de-escalation privilege are separate external contracts; AIR checks applicable scope and revision. Private-only production requires proven egress confinement; offline policy fixtures do not. Explicitly classify trusted private providers; locality is not trust. Strip internal auth headers, scope events and sanitize errors. In owned-policy/hybrid mode unknown trust always fails closed; private-only positive trust and policy checks do not require commercial spend reservations. Coordinate final-send contract with TASK-208/210/212.
+Add an opt-in private-only policy mode that consumes an authenticated principal and independent-root or existing-group scope from the deployment. Treat untrusted request headers as ordinary input. An explicit authorized root creation may establish an insensitive group. Resolve derived, restored and stateless calls without granting authority to create a new root by changing an ID. Use structured owner/group/thread keys and opaque external identifiers. Omitted mode preserves existing behavior.
+
+Persist minimal policy metadata and revision before acceptance. Establish an explicit initialization path and distinguish absence of a previously established record from authorized creation. Reject corrupt or ambiguous state. Never persist prompts, backend credentials or stream content. Share the evaluator across ordinary inference, queued dispatch, discovery, auxiliary calls and retries. Intersect capabilities, positive destination trust and allow/deny restrictions. Refuse unclassified or guardless commercial routes on startup, reload and rollback while owned policy is enabled.
+
+Enforce ownership on named and stateless admissions, catalog, tickets, cancellation, replay/live events and thread views. Reserve global aggregates, switch and configuration actions for independently privileged callers. Test cross-owner identical IDs, forced reload, restart, forged root/restore and zero egress to untrusted capture endpoints. Keep authenticated deployment integration, sensitivity transitions and commercial authorization with their existing owners. Document the supported opt-in scope in SPEC and README.
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Source preparation found raw thread keys in RouterCore and separate bearer checks only on the reload surface. Independent plan review was requested for legacy-mode compatibility, scoped reads and event replay, restart durability, missing-policy behavior and private-only egress confinement. Deployment identity issuance and production credential selection remain external.
+<!-- SECTION:NOTES:END -->
