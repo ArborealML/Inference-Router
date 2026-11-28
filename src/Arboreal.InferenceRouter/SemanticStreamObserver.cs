@@ -86,6 +86,9 @@ internal sealed class SemanticStreamObserver(TimeProvider clock, string expected
     // These two flags are read only by the upstream producer. Snapshot accesses them under _gate.
     internal bool SawDone => _sawDone;
     internal bool SawError => _sawError;
+    internal bool HasInvalidPayload => _invalidPayload || _invalidModel;
+    internal bool HasSemanticOutput => _firstSemanticOutput is not null;
+    internal StreamModelIdentity ModelIdentity => _identity;
     internal const string ReportedError = "upstream stream reported an error";
 
     internal TimeSpan ObserveRawByte()

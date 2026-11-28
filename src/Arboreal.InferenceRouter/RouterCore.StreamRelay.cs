@@ -148,6 +148,11 @@ public sealed partial class RouterCore
             if (BeforeOptInTransportStartForTests is { } before)
                 await before(ticket.Id).ConfigureAwait(false);
             if (ticket.IsTerminal || invocation?.IsCommissioned == true && ticket.HttpOutputEnded) return;
+            if (engine.DirectChat is not null)
+            {
+                await RunControlledDirectChatAsync(candidate, engine, ct).ConfigureAwait(false);
+                return;
+            }
             var body = ModelRewriter.Rewrite(candidate.Request.Body, upstreamModel, stream: true, out expectedChoices);
             var suffix = CompletionSuffix(candidate);
             if (invocation is not null)
@@ -224,6 +229,11 @@ public sealed partial class RouterCore
             await AbortUnstartedInvocationAsync(ticket, invocation).ConfigureAwait(false);
             candidate.LocalLease?.Release();
             if (attempted && !OwnedPolicyEnabled) engine.RecordPrefix(candidate.Messages());
+            if (engine.DirectChat is not null)
+            {
+                EndEngineRequest(candidate, engine, invocation: null);
+                SignalDispatch();
+            }
             await FinishOwnedPrivateAttemptAsync(ticket).ConfigureAwait(false);
         }
 
@@ -296,7 +306,8 @@ public sealed partial class RouterCore
             else if (error is RouterRequestException refusal)
                 Fail(ticket, refusal.Code, refusal.Message);
             else
-                Fail(ticket, "engine_unreachable", OwnedPolicyEnabled ? "the private upstream exchange failed" : error.Message);
+                Fail(ticket, "engine_unreachable", engine.DirectChat is not null ? "the configured chat exchange failed" :
+                    OwnedPolicyEnabled ? "the private upstream exchange failed" : error.Message);
         }
     }
 

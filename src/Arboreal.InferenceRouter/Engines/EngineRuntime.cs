@@ -173,12 +173,13 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
     internal EngineRuntime(EngineDefinition def, RouterConfig config, EventRing events, HttpMessageHandler? handler,
                            IEngineLifecycleProvider? lifecycle, Action? dispatchHint, HostEngineEnrollment? hostEnrollment,
                            TimeProvider? clock = null, ReloadConfiguration? reloadSource = null, bool localManaged = false,
-                           OwnedPrivatePolicy? ownedPolicy = null)
+                           OwnedPrivatePolicy? ownedPolicy = null, DirectChatProvider? directChat = null)
     {
         var ownedPrivateTransport = ownedPolicy is not null;
         if (config.OwnedPrivatePolicy != ownedPrivateTransport || ownedPrivateTransport && handler is not null)
             throw new RouterConfigException("Owned private destinations require the qualified router transport.");
         _ownedPrivateTransport = ownedPrivateTransport;
+        DirectChat = directChat;
         if (def.LifecycleGroup is not null && !localManaged)
             throw new RouterConfigException("Local lifecycle engines must be bound through their router group.");
         config.ValidateLifecycleTopology(def);
@@ -215,10 +216,16 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
         }
         _maxInflight = Math.Max(1, config.Scheduler.MaxInflightPerEngine);
         _trie = new PrefixTrie(config.Scheduler.PrefixTrieMaxNodes);
-        _apiKey = ResolveApiKey(def);
+        _apiKey = directChat is null ? ResolveApiKey(def) : null;
         SendsThreadCacheHint = hostEnrollment?.Manager is null && localManaged && def.LifecycleGroup is not null && def.HasExplicitRouterLifecycle &&
             def.Lifecycle == EngineLifecycleKind.Docker && def.Endpoint.IsLoopback;
-        if (handler is null)
+        if (directChat is not null)
+        {
+            _cap = new EngineCapability(1, true, null, [.. directChat.Models.Keys]);
+            _ownedHandler = new DeniedDirectChatHttpHandler();
+            _http = new HttpClient(_ownedHandler, disposeHandler: false);
+        }
+        else if (handler is null)
         {
             var directHandler = new HttpClientHandler
             {
@@ -631,7 +638,18 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
         return def.ApiKey;
     }
 
-    public void StartHealthLoop(CancellationToken ct) { _ = Task.Run(() => RunHealthLoopAsync(ct), ct); }
+    internal DirectChatProvider? DirectChat { get; }
+
+    public void StartHealthLoop(CancellationToken ct)
+    {
+        if (DirectChat is null) _ = Task.Run(() => RunHealthLoopAsync(ct), ct);
+    }
+
+    private sealed class DeniedDirectChatHttpHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
+            Task.FromException<HttpResponseMessage>(ControlledDirectChat.Unavailable());
+    }
 
     internal async Task RunHealthLoopAsync(CancellationToken ct)
     {
@@ -651,6 +669,7 @@ public sealed partial class EngineRuntime : IAsyncDisposable, ICapabilitySource
 
     internal async Task<bool> ProbeHealthOnceAsync(CancellationToken ct)
     {
+        if (DirectChat is not null) return !Volatile.Read(ref _stopped);
         // Capture the version before either read. The poll may publish only against that evidence.
         var capBefore = Capability;
         try

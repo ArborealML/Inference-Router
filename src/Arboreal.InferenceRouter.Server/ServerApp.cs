@@ -62,7 +62,8 @@ public static partial class ServerApp
         TimeProvider streamClock, Func<EngineDefinition, Lifecycle.IEngineLifecycleProvider>? lifecycleFactory = null,
         Func<EngineDefinition, HttpMessageHandler>? httpHandlerFactoryForTests = null, string? reloadTokenForTests = null,
         Func<string?>? readTargetResetOptInForTests = null, TimeProvider? adminSwitchClockForTests = null,
-        OwnedPrivateServerComposition? ownedComposition = null, InProcessHostManager? hostManager = null)
+        OwnedPrivateServerComposition? ownedComposition = null, InProcessHostManager? hostManager = null,
+        ControlledDirectChat? directChat = null)
     {
         configPath = RouterConfigLoader.ResolveFilePath(configPath);
         var credential = configOverride is null && hostManager is null
@@ -91,7 +92,7 @@ public static partial class ServerApp
         var builder = WebApplication.CreateSlimBuilder(args);
         builder.Services.AddSingleton(_ => new RouterCore(config, null, null, TimeProvider.System,
             lifecycleFactory, reload: loaded, nativeResetStartupInstance: targetResetInstance,
-            hostManager: hostManager, ownedPolicy: ownedComposition?.Policy));
+            hostManager: hostManager, ownedPolicy: ownedComposition?.Policy, directChat: directChat));
         builder.Services.AddSingleton(streamClock);
         builder.Services.AddSingleton(new AdminSwitchOperations(adminSwitchClockForTests ?? TimeProvider.System));
 
@@ -227,6 +228,7 @@ public static partial class ServerApp
             var request = new InferenceRequest
             {
                 Model = requestedModel,
+                IsLegacyCompletionHttp = ctx.Request.Path.Value!.TrimEnd('/').Equals("/v1/completions", StringComparison.OrdinalIgnoreCase),
                 Stream = stream,
                 Body = payload,
                 Options = new RouterRequestOptions
@@ -544,16 +546,18 @@ public static partial class ServerApp
 
     private static int MapStatus(string code) => code switch
     {
-        "invalid_profile" or "invalid_priority" => 400,
+        "invalid_profile" or "invalid_priority" or "commercial_request_unsupported" => 400,
         "policy_revision_conflict" or "policy_transition_pending" => 409,
-        "policy_journal_full" => 429,
+        "policy_journal_full" or "commercial_rate_limited" => 429,
         "verified_scope_required" or "policy_group_unavailable" or "policy_route_denied" or
             "policy_capability_unavailable" or "policy_restriction_invalid" => 403,
         "owned_thread_limit" => 429,
         "queue_overflow" => 429,
         "deadline_exceeded" => 408,
         "cancelled" => 499,
-        "switch_failed" or "model_unavailable" => 503,
+        "switch_failed" or "model_unavailable" or "commercial_transport_unavailable" => 503,
+        "commercial_identity_timeout" => 504,
+        "commercial_identity_invalid" or "commercial_exchange_failed" => 502,
         "engine_error" or "engine_unreachable" => 502,
         "engine_timeout" => 504,
         _ => 500,

@@ -98,6 +98,8 @@ public sealed class RouterTicket
     internal string? ScopedThreadKey { get; init; }
     internal OwnedTicketPolicy? OwnedPolicy { get; init; }
     internal OwnedPrivateAttempt? PrivateAttempt;
+    internal volatile bool CommercialMayHaveSent;
+    internal volatile DirectChatEvidence? CommercialEvidence;
     internal int PrivateAttemptDisposition;
     public string Model { get; }
     public DateTimeOffset QueuedAt { get; }
@@ -299,6 +301,7 @@ public sealed class RouterTicket
 /// scheduling probe. Bodies are forwarded verbatim to engines (full tools/multimodal passthrough).</summary>
 public sealed class InferenceRequest
 {
+    internal bool IsLegacyCompletionHttp { get; init; }
     /// <summary>Requested model (OpenAI alias or canonical id); null falls back to thread
     /// affinity, then the router default.</summary>
     public string? Model { get; init; }
