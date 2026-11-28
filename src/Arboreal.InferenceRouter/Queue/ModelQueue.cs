@@ -3,12 +3,17 @@ namespace Arboreal.InferenceRouter;
 /// <summary>One queued request with scheduler metadata.</summary>
 public sealed class QueuedRequest
 {
+    private PrioritizedRequest _priorityNode = null!;
     internal bool ReservedSwitch { get; set; }
     internal LocalLifecycleGroup.Lease? LocalLease { get; set; }
     public required RouterTicket Ticket { get; init; }
     public required InferenceRequest Request { get; init; }
     internal string? OriginalModel { get; init; }
-    public required PrioritizedRequest PriorityNode { get; init; }
+    public required PrioritizedRequest PriorityNode
+    {
+        get => Volatile.Read(ref _priorityNode);
+        init => _priorityNode = value;
+    }
     public required RouterThread Thread { get; init; }
     public required long EnqueuedSeq { get; init; }
     internal long EnqueuedAtTimestamp { get; init; }
@@ -19,9 +24,18 @@ public sealed class QueuedRequest
     /// <summary>Context demand for tier selection, from the client minimum or the prompt estimate (§7.6).</summary>
     public long RequiredContextTokens { get; init; }
     internal long ExplicitContextMinimum => Math.Max(0L, Request.Options?.RequiredContext ?? 0);
+
+    // Called under the model queue gate. The ticket, original sequence and age stay with this node.
+    internal bool RefreshInheritedPriority(ThreadPriority priority)
+    {
+        if (Request.Options?.Priority is not null || _priorityNode.Priority == priority) return false;
+        Volatile.Write(ref _priorityNode, _priorityNode with { Priority = priority });
+        return true;
+    }
 }
 
 internal readonly record struct QueueDispatchCandidate(int Depth, long BaselineOrdinal, QueuedRequest? Request);
+internal readonly record struct ModelQueueRound(int Depth, QueuedRequest[] Requests);
 
 /// <summary>Per-model FIFO priority queue. Ordering: thread class, then sub, then seq.
 /// Reorders in place when a thread's priority changes while queued.</summary>
@@ -85,6 +99,32 @@ public sealed class ModelQueue
             var index = FirstAdmissibleIndex(admission);
             return new QueueDispatchCandidate(_heap.Count, baselineOrdinal, index < 0 ? null : _heap[index]);
         }
+    }
+
+    internal ModelQueueRound CaptureRound()
+    {
+        lock (_lock) return new(_heap.Count, [.. _heap.Where(static item => !item.Ticket.PendingEnqueuePublication)]);
+    }
+
+    internal int FindExactTakeIndexUnderGate(QueuedRequest request, Predicate<QueuedRequest> competes)
+    {
+        for (var i = 0; i < _heap.Count; i++)
+        {
+            var current = _heap[i];
+            if (ReferenceEquals(current, request)) return i;
+            if (competes(current)) break;
+        }
+        return -1;
+    }
+
+    internal bool HasCompetitor(Predicate<QueuedRequest> competes)
+    {
+        lock (_lock) return _heap.Exists(competes);
+    }
+
+    internal bool Contains(QueuedRequest request)
+    {
+        lock (_lock) return _heap.Contains(request);
     }
 
     /// <summary>Take only the request the scheduler evaluated, while it is still first admissible.</summary>
@@ -153,6 +193,18 @@ public sealed class ModelQueue
     public void Resort()
     {
         lock (_lock) _heap.Sort(HeadFirst);
+    }
+
+    internal bool RefreshInheritedPriority(RouterThread thread, ThreadPriority priority)
+    {
+        lock (_lock)
+        {
+            var changed = false;
+            foreach (var item in _heap)
+                if (ReferenceEquals(item.Thread, thread)) changed |= item.RefreshInheritedPriority(priority);
+            if (changed) _heap.Sort(HeadFirst);
+            return changed;
+        }
     }
 
     /// <summary>Head-of-queue ordering: higher priority first, FIFO (enqueue sequence) within

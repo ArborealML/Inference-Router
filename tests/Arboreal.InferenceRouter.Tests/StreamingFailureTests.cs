@@ -137,6 +137,9 @@ public class StreamingFailureTests
             var outcome = Assert.Single(replay, evt =>
                 evt.Kind is "queue.rejected" or "request.completed" or "request.failed" or "request.cancelled");
             Assert.Equal("request.cancelled", outcome.Kind);
+            Assert.Equal("unknown", outcome.UpstreamOutcome);
+            Assert.Equal("unknown", outcome.UpstreamEndReason);
+            Assert.NotNull(ticket.StreamObservation?.FirstSemanticOutput);
             Assert.True(queued.Seq < outcome.Seq);
             checkedReplay = true;
         }

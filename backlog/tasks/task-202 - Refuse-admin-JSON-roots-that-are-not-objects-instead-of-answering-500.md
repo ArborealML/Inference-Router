@@ -1,11 +1,11 @@
 ---
 id: TASK-202
 title: Refuse admin JSON roots that are not objects instead of answering 500
-status: Ready for Review
+status: Done
 assignee:
   - '@gpt-6.2-astra'
 created_date: '2026-11-26T22:30:00Z'
-updated_date: '2026-11-27'
+updated_date: '2026-11-28'
 labels:
   - wire
 dependencies: []
@@ -21,9 +21,9 @@ Admin route bodies are read with JsonDocument and then treated as objects: nonob
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Every admin route parsing a JSON body refuses nonobject roots with its existing 400 envelope: invalid_request for threads/switch, invalid_target_reset for target-reset.
-- [ ] #2 A well-shaped root with a non-string member is refused, not thrown through.
-- [ ] #3 The route's own refusal body is byte-pinned for each malformed root class, and no exception reaches the server's 500 path.
+- [x] #1 Every admin route parsing a JSON body refuses nonobject roots with its existing 400 envelope: invalid_request for threads/switch, invalid_target_reset for target-reset.
+- [x] #2 A well-shaped root with a non-string member is refused, not thrown through.
+- [x] #3 The route's own refusal body is byte-pinned for each malformed root class, and no exception reaches the server's 500 path.
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -33,7 +33,7 @@ Published [PR #90](https://github.com/ArborealML/Inference-Router/pull/90), head
 
 The pre-existing JsonElement kind exception was independently verified. AC1–3 implemented with target-reset's existing error-code exception. Plan/source review passed without blocking findings. Local Release at ee2fbc8: 92 passed, zero failures/skips; build/analyzers passed. Fixtures pin literal refusals, valid nulls and absent registration/admin-use/reservation effects. SPEC v0.12.166 and README state scope.
 
-PR #86 priority code and its outstanding review/client dispositions remain unchanged. [Hosted CI](https://github.com/ArborealML/Inference-Router/actions/runs/46112270273) passed on this head: 2,269 tests, zero failed/skipped, build, Linux AOT/config smoke, strict board and release harness. Next: reconcile after #86 lands before final integration approval. No live qualification or Done claim. Backlog CLI unavailable; strict controlled Markdown substitutes.
+PR #86 priority code and its outstanding review/client dispositions remain unchanged. [Hosted CI](https://github.com/ArborealML/Inference-Router/actions/runs/46112270273) passed on this head: 2,269 tests, zero failed/skipped, build, Linux AOT/config smoke, strict board and release harness. Source landed in the [main integration](https://github.com/ArborealML/Inference-Router/commit/1bf85d3495ab2517a921d78013ffe69bbefb4325).
 <!-- SECTION:NOTES:END -->
 
 ## Implementation Plan

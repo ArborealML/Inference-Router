@@ -7,7 +7,7 @@ internal sealed class HttpStreamDelivery(int limit, CancellationToken caller = d
 {
     private readonly object _gate = new();
     private readonly object _outcomeGate = new();
-    private readonly TaskCompletionSource _sealed = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly TaskCompletionSource<HttpStreamOutcome> _sealed = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly TaskCompletionSource<HttpStreamOutcome> _outcome = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private TaskCompletionSource? _space;
     private int _reserved;
@@ -15,7 +15,11 @@ internal sealed class HttpStreamDelivery(int limit, CancellationToken caller = d
 
     internal Task Sealed => _sealed.Task;
     internal Task<HttpStreamOutcome> Outcome => _outcome.Task;
-    internal void Seal() => _sealed.TrySetResult();
+    internal void Seal(HttpStreamOutcome outcome) => _sealed.TrySetResult(outcome);
+
+    // Called only after the writer observes the producer's seal and acknowledges all bytes.
+    internal void AcknowledgeFlush(CancellationTokenSource? execution, CancellationToken caller) =>
+        Decide(_sealed.Task.Result, execution, caller);
 
     internal HttpStreamOutcome Decide(HttpStreamOutcome proposal, CancellationTokenSource? execution = null,
         CancellationToken observedCaller = default)
@@ -104,9 +108,11 @@ internal sealed class HttpStreamDelivery(int limit, CancellationToken caller = d
     }
 }
 
-internal readonly record struct HttpStreamOutcome(string? Code, string Message, bool SuppressIdleTerminal = false)
+internal readonly record struct HttpStreamOutcome(string? Code, string Message, bool SuppressTerminalFrame = false)
 {
     internal static HttpStreamOutcome Acknowledged => new(null, "");
+    internal static HttpStreamOutcome UpstreamReportedError => new("engine_error", SemanticStreamObserver.ReportedError,
+        SuppressTerminalFrame: true);
     internal static HttpStreamOutcome Cancelled => new("cancelled", "cancelled");
     internal static HttpStreamOutcome SlowConsumer => new("slow_consumer", "slow_consumer: downstream write made no progress for 30 seconds");
 }

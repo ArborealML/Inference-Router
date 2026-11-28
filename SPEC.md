@@ -1,11 +1,18 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.161)
+Status: draft, continuously revised (v0.12.167)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
 
 ## 0. Revision log
+
+- v0.12.167 — give each inference call with an omitted thread header a request-scoped scheduling identity. The CLI omits the header by default. Explicit names retain their thread limits and ambiguous identity is refused before admission (§§5.1, 6, 11, 14).
+- v0.12.166 — validate admin thread and switch JSON object roots and string fields before registration or switch admission. Malformed shapes return 400 in the route's existing error envelope. Target reset keeps its `invalid_target_reset` contract (§§6, 6.1, 14).
+- v0.12.165 — refresh inherited priorities in pending queues when callers update a thread and validate the new order at exact take (§§5.1, 5.5, 14).
+- v0.12.164 — report the upstream outcome and end reason on terminal streaming tickets and events. One bounded SSE observer supplies raw-byte and semantic-output timing, reported model identity, and usage availability. An upstream error followed by `[DONE]` fails the ticket and preserves the original bytes (§§6, 10, 14).
+- v0.12.163 — dispatch complete finite rounds across the existing model queues, try available route alternatives, and report scoped queue waits (§§5.4–5.5, 10, 14).
+- v0.12.162 — a malformed `X-Inference-Priority` is refused at ingress instead of dropped: 400 `invalid_priority` in the existing lowercase envelope, added to the §6.1 code list with no new field and no shape change, and written before the ticket exists, so the refusal leaves no thread, no queue member, no forward to an engine and no `request.enqueued`. An absent header keeps the configured default; a repeated header is refused rather than resolved (§6, §6.1). `PriorityIngressTests` pins absent, empty, malformed, duplicated and differently cased values, sub 0/255/256, the ordinary and streaming paths, and the zero-effect counters. §6 now states the grammar that parser enforces instead of summarising it: the five lowercase class names spelled exactly, an optional `:` and one to three ASCII digits with no sign, no whitespace and no leading zero, at most 255, matched against the whole value with nothing trimmed. `air threads --priority` refuses a value outside that grammar locally — exit 2, the grammar on stderr, no request sent — where it used to post the default priority and accept the 204 for a spelling the request path rejects; `air chat --priority` still forwards the header so the router's 400 reaches that caller. `CliThreadPriorityTests` pins the refusal with no request and the parsed admin body for accepted values, and `ThreadPriorityTests` pins the accepted and rejected spellings row by row. The same revision closes what a second review of that commit found on the caller side and in the admin route: `POST /admin/threads` now reads a supplied priority exactly instead of on trust, so a present `priority` that is not an object and a present `sub` that is not a JSON number written in plain decimal digits within 0-255 both return 400 `invalid_request` in the existing envelope — where `255.7`, `-5` and `1e10` were cast and clamped into a byte and answered 204, a non-string `class` reached a 500, and a `priority` of any other shape was ignored wholesale — while an absent `sub` still means the whole class at 0; `AdminThreadPriorityTests` pins each refusal body byte for byte, proves nothing was registered, and pins that each accepted body registers exactly what it says. Both verbs also refuse an unusable `--priority` option *shape* — given no value, an empty value, a token that reads as another option, or given more than once — locally with exit 2 and no request, where each used to read exactly like an absent option and ask for the default; that stub counts arrivals ahead of reading any body, so "no request" is the fact of a request rather than a parse failure.
 
 - v0.12.161 — a selected serving tier whose window the resident already measures and whose reported lanes are at least the tier's is a zero-cost target: no lifecycle call, no switch event and no epoch bump, proved by the measured window rather than by the inferred profile label; extra lanes satisfy a narrower tier, missing lanes do not (§7.6).
 - v0.12.160 — send an opaque per-engine thread cache hint on completion requests to explicitly router-owned local Docker lifecycle groups (§6).
@@ -1590,6 +1597,22 @@ public interface IInferenceRouter : IAsyncDisposable {
 }
 ```
 
+A pending request inherits its thread priority when it omits a per-request override. Updating the thread
+refreshes inherited keys in place and preserves each pending ticket's age and FIFO sequence. An explicit
+override stays fixed for its ticket. `SetThreadPriority`, re-registering an existing thread and
+`SetPriority` on its attached `RouterThread` handle share one mutation, `thread.priority_changed`
+publication and dispatch wake. Registration of a new thread publishes `thread.registered`. The router
+publishes priority changes in mutation order, including updates deferred during registration and reentrant
+updates. Thread weight, affinity and active admission stay in effect through a priority change.
+
+An omitted HTTP thread header creates one unattached scheduling thread using the configured default
+priority and that request's optional override. It uses the default model when the request omits a model.
+The request carries this identity through queueing, execution and cleanup. The named-thread registry,
+status counters and registration feed track registered and explicitly supplied names. The retained ticket
+and its events identify an omitted-thread call with `request:<ticket-id>`. A deliberately named thread
+with the same text has its own affinity, priority, cap and counters. The public library `EnqueueAsync`
+accepts an explicit thread name.
+
 `RouterRequestTicket` exposes: `TicketId`, `State`
 (Queued|SelectingEngine|WaitingForModel|Executing|Completed|Cancelled|Failed),
 `QueuedAt`, `Model`, `Engine`, and a `Task<OpenAiChatResult>`-style completion
@@ -2259,15 +2282,10 @@ Podman socket at its own version floor. A native containerd adapter is out of sc
 
 ```csharp
 public interface IRequestScheduler {
-    // Chooses the next (request, engine) pair. Implementations must be
-    // deterministic under the event log for testability.
-    SchedulerDecision SelectNext(SchedulerView view);
+    SchedulerDecision SelectNext(QueuedRequest request, SchedulerView view, RouterConfig config);
 }
 
-public sealed record SchedulerView(
-    ImmutableArray<QueuedRequest> Queue,      // priority-sorted, with metadata
-    ImmutableArray<EngineRuntimeInfo> Engines // busy-ness, loaded models
-);
+public sealed record SchedulerView(IReadOnlyList<EngineRuntimeInfo> Engines, DateTimeOffset Now);
 ```
 
 **v1 policy (`PrefixAwareScheduler`)**, in priority order:
@@ -2281,13 +2299,17 @@ public sealed record SchedulerView(
 3. **Busy-ness score**: `B = inflightTokens + α·queueDepth + β·estPrefillMiss`
    where `estPrefillMiss` = prompt length − matched prefix (the new tokens the
    engine must actually prefill, which stalls other requests).
-4. **Decision**: engine with highest `A(P) − λ·B` wins; if all scores tie,
-   least-loaded engine wins (round-robin tiebreak by engine name).
-   Prefix affinity dominates only when `P ≥ PrefixAffinityThreshold`
-   (config, default ≈ 512 normalized chars) — this implements "uncached
-   requests go to the least busy server with the model loaded".
+4. **Decision**: the built-in scheduler considers compatible resident routes before routes
+   requiring activation. Within each group it ranks by descending affinity minus load score,
+   then ordinal engine name. A full engine, an ineligible local resource group, or a stale
+   route at exact take lets the same ticket try the next ranked route in that round. The public
+   scheduler interface still returns one decision for a caller-supplied scheduler.
 5. **Preemption**: none in v1 (engines we target don't support it); document
    as future hook (Llumnix-style migration is out of scope).
+
+Priority determines pending order. Route fit, affinity and load scores, configured caps and physical
+lanes are independent of priority. Eligibility probes read current state without reserving capacity
+or establishing a lifecycle drain owner.
 
 **Suffix reuse (forward design)**: `EngineCapabilities.SuffixCache` +
 `PrefixAwareScheduler` gains a `SuffixAffinity` scorer once engines report
@@ -2300,9 +2322,9 @@ engine forks land; the scheduler interface will not change shape.
 ### 5.5 Queue semantics
 
 An enqueue commits its canonical model, queue position and ticket index from one current configuration
-generation. An exact take checks the selected generation, engine identity and mapped queue identity
-before it removes or charges the ticket. A stale selection ends the current dispatch pass before
-selection commits. The next pass scans the current queues with the accepted canonical model.
+generation. An exact take checks the selected generation, engine identity, mapped queue identity,
+published ticket reference, live order, original deadline and relevant capacity before removal and
+accounting. A stale route or ticket leaves other captured tickets available for consideration.
 The admission feed reports thread registration, when needed, before enqueue and reports
 enqueue before selection or terminal settlement. A pending enqueue counts toward capacity. It cannot dispatch before its feed
 publication, and later published tickets can use the queue while it waits. Cancellation and the original
@@ -2317,12 +2339,21 @@ Temporary capacity loss parks the ticket. A definitive refusal settles once with
   immediate retirement of the exact mapped queue when its last member leaves. Pending
   enqueue publication counts as membership. Simultaneously populated queues follow normal
   admission with `max_queue_per_model` applying to each queue.
-- Dispatch scans queues by increasing observed depth, then by the creation order of the
-  live queues. A recreated queue goes after all existing queues of equal depth and preserves
-  their relative order. Each scheduler call evaluates the first published ticket in that
-  queue whose thread has capacity. Commit takes that exact ticket only while it is still
-  first admissible. If the candidate is removed or displaced before commit, the next
-  dispatch pass scans the current queues.
+- A round captures the published tickets in each live queue by priority and enqueue sequence.
+  It visits those queues by captured depth and then creation order. A recreated queue follows
+  the surviving queues of equal depth. Successful dispatch continues through the round, and
+  arrivals wait for the next capture. A blocked predecessor can be bypassed when it cannot use
+  the later ticket's available resource. Before the built-in ordinary admission removes a ticket,
+  it rechecks earlier live, published contenders for the same engine, declared lifecycle group or
+  limiting thread cap in the captured outer order and current inner order. A caller-supplied
+  scheduler and the offline injected sender retain the first thread-admissible cut within a model.
+  A priority update can change that live predecessor order during a round. A measured switch comparison
+  also revalidates the captured pending-priority revision before taking its selected ticket.
+- A local group can explicitly accept a drain intent for one queued ticket when its active uses
+  must finish before activation. The scheduler considers ready alternatives first. Queue removal or
+  reassignment retires the intent. An accepted execution keeps its physical lease until cleanup.
+  The existing dispatch revision, arm and recheck protocol parks after a round finds no progress.
+  Arrivals, queue expiry or cancellation, readiness and releases wake the next round.
 - **Offline exact-ticket admission.** The injected sender qualifies the queue handshake.
   Schedule outside the router lock. The host admission gate, router lock and model queue lock
   order the live check and exact removal. Validate the ranked route generation, model-bound
@@ -2775,12 +2806,17 @@ Admin/control (not OpenAI-compatible, our own contract):
 
 - `POST /admin/threads` register/update thread (priority API over HTTP):
   body `{ threadId, priority: {class, sub}, weight?, modelAffinity? }`.
+  The body must have an object root and a nonempty string `threadId`. A supplied `modelAffinity`
+  is a string or JSON `null`. Shape errors return 400 `invalid_request` before thread registration.
 - `POST /admin/switch` — request model switch: `{engine, model, profile?}`;
   refuses if a switch is in flight unless `force`. `profile` names a declared
   serving tier; the ack echoes it and the wait-for-ready loop requires the
   reported window to fit. An accepted request returns 202 with `Engine`, `Model`, `Profile`,
   `Switching: true` and `OperationId`, a server-generated ID of 32 lowercase hex characters.
   Save the ID for lookup. Acceptance starts a detached waiter that continues if the POST disconnects.
+  The body must have an object root and string `engine` and `model` members. A supplied `profile`
+  is a string or JSON `null`. Shape errors return 400 `invalid_request` before any admin use or
+  operation reservation begins. On both routes, JSON `null` for an optional string means it was omitted.
 - `GET /admin/switch/{operationId}` returns 200, `Cache-Control: no-store` and the PascalCase
   object `{"OperationId":"…","Status":"…","Reason":…}` for a known operation. Status is
   `pending`, `succeeded`, `failed` or `cancelled`. A success means the target was ready for that
@@ -2881,6 +2917,56 @@ empty upstream or after complete blocks without a sentinel. A caller disconnect 
 without an extra terminal frame. The benchmark harness measured the time-to-first-token delay from
 the previous poll-based handoff (§14, `docs/benchmarks.md`).
 
+**Upstream SSE observation.** The relay observes OpenAI-style data in the same committed blocks it
+forwards. It combines a block's data lines with line feeds for observation and forwards the original
+bytes. A single contiguous data line needs no additional payload copy. A split or multiline payload
+uses at most 1 MiB of scratch retained by the framer for that stream. JSON observation has a maximum
+depth of 32. The observer retains timing, fixed scalar evidence, finish bits for up to 64 indexed
+choices, and one reported model whose encoded JSON string content fits 512 bytes. It retains no delta
+text or upstream error message for observation.
+
+The authoritative upstream outcome and end reason are selected in this order.
+
+| Evidence | `UpstreamOutcome` | `UpstreamEndReason` |
+|---|---|---|
+| An observed structured upstream `error` object, HTTP refusal, transport fault, idle timeout or oversized SSE block | `failed` | `failed` |
+| EOF or upstream-only read cancellation with an unfinished block | `incomplete` | `stream_incomplete` |
+| Malformed or over-depth nonempty data with no stronger failure evidence, or a stop before the upstream end is known | `unknown` | `unknown` |
+| A blank-delimited `[DONE]` data event, or clean boundary EOF with finish evidence for every observed and requested choice | `complete` | `complete` |
+| Clean boundary EOF with insufficient finish evidence | `incomplete` | `upstream_closed_without_terminator` |
+
+The finish-only path requires unique in-range choice indices and a nonempty `finish_reason` for
+each tracked choice. The request's `n` defaults to one. An invalid or unsupported `n` leaves the
+finish-only path unproven. A read cancelled by upstream at a block boundary can preserve an observed
+sentinel's evidence. It cannot supply the clean EOF required by the finish-only path. Malformed data
+is relayed verbatim and prevents a subsequent sentinel from establishing success. An observed
+structured `error` object takes precedence over `[DONE]`, including when both arrive in one read.
+A fully read error object retains that precedence if later data in the same event exceeds the JSON
+depth limit or fails parsing. Positive evidence from a partially observed event is discarded.
+An in-band error on a clean boundary end settles the ticket as `Failed` with `engine_error`. The relay
+preserves the upstream error and any terminator and adds no second error frame. I/O faults, idle and
+torn framing retain their existing terminal wire behavior. A boundary EOF lacking a terminator or
+sufficient finish evidence retains the legacy `Completed` ticket state and original response bytes.
+
+Library callers can read the frozen `RouterTicket.StreamObservation` after settlement. Both timings
+are monotonic durations from pump start. A positive upstream read sets `FirstRawByte` and the legacy
+`request.streaming_first_token` event. `FirstSemanticOutput` records the first committed nonempty
+completion text, chat content, reasoning, refusal or tool/function name or arguments. Comments,
+role-only and empty deltas, a tool-call ID alone, and usage alone supply no semantic output.
+The model evidence reports the first bounded
+upstream model and whether it exactly matches the selected upstream ID. Invalid identity evidence
+leaves the match unknown. Distinct repeated identities report a conflict. Missing or null usage is
+unavailable. A usage report requires unique nonnegative integer `prompt_tokens` and
+`completion_tokens`, including zero. An optional `total_tokens` must equal their sum. Partial,
+malformed, duplicate or conflicting usage makes the counts invalid. An identical repeated report
+keeps the counts available. Upstream protocol completion, model match and reported usage remain
+independent facts. They provide no physical or financial settlement.
+
+The ticket freezes one consistent observation at its terminal transition. Client cancellation and
+downstream writer failure keep their own state and error code. A late physical exit cannot replace
+the ticket's observation or terminal event. An independently established upstream end can still be
+reported when the writer fails or the caller disconnects after that observation.
+
 **Core shutdown during a default active read.** After publishing a complete upstream block, the
 producer arms a subsequent raw read only when it returns an incomplete operation and the linked,
 shutdown, execution and caller tokens are still live. The linked-token callback can record the
@@ -2908,8 +2994,9 @@ as `cancelled` unless another outcome already won. A pending write keeps its own
 until the operation settles, even after the exchange ends and unrelated queued output is discarded.
 A successful flush restores credit. On clean
 upstream EOF, the router disarms the response timer and starts transport cleanup. The HTTP ticket
-succeeds after the last required successful flush, including the initial comment on an empty body
-and any upstream `[DONE]`. The first selected terminal outcome stands. Caller or shutdown
+settles after the last required successful flush, including the initial comment on an empty body
+and any upstream `[DONE]`. A relayed structured upstream error selects `Failed` at that acknowledgment.
+The first selected terminal outcome stands. Caller or shutdown
 cancellation observed before a watchdog or final acknowledgment claims the outcome is recorded
 as cancellation. A later cancellation leaves an already accepted final acknowledgment intact.
 Kestrel's flush acknowledgment describes relay progress.
@@ -2924,10 +3011,16 @@ transport ownership lasts through actual cleanup under §5.5. These settings app
 HTTP SSE. Direct library callers retain producer-side stream completion and may drain after
 awaiting `CompletionTask`.
 
-**Threading through HTTP**: clients convey thread + priority via headers:
-`X-Inference-Thread: agent-42`, `X-Inference-Priority: high:200`
-(`class[:sub]`), `X-Inference-Affinity: <normalized-prefix-hash>` (optional,
-server-side prefix normalization is authoritative anyway (§7.6),
+**Threading through HTTP.** Omit `X-Inference-Thread` for a request-scoped identity. An explicit
+`X-Inference-Thread: agent-42` supplies a case-sensitive named identity and its associated queue cap.
+One non-blank value is required when the header is present. AIR refuses repeated values, comma-joined
+values and control characters with 400 `invalid_request` before it reads the body or creates a ticket.
+Priority header validation still runs first. `anon` supplied explicitly remains a named thread with its
+existing limit. A legacy client can migrate to request-scoped admission by omitting that header.
+
+`X-Inference-Priority` carries the optional priority override. `X-Inference-Affinity` carries an
+optional normalized-prefix hash. Server-side prefix normalization is authoritative (§7.6).
+
 `X-Inference-Profile: <name>` selects one case-sensitive named serving tier for this inference
 request. AIR resolves the model or alias in the applied generation. The tier on a candidate
 engine must fit both the estimated prompt tokens and any explicit minimum. Malformed, unknown
@@ -2944,8 +3037,8 @@ The issuer then enforces its existing route and first-write authorization. Witho
 For ordinary and streaming completions on a loopback Docker engine with explicit router ownership and a local
 lifecycle group, AIR sets the upstream `X-Inference-Thread` to a 64-character lowercase SHA-256 digest.
 The hash input is the UTF-8 bytes of `AIR local inference thread v1`, the four-byte big-endian byte length
-of the engine name, the UTF-8 engine name, and the UTF-8 ticket thread ID. Anonymous (`anon`) and blank
-threads omit the header. Other engines, verified dispatch, and probes receive no hint. The built-in HTTP
+of the engine name, the UTF-8 engine name, and the UTF-8 ticket thread ID. Stateless requests, explicit
+`anon` and blank library names omit the header. Other engines, verified dispatch, and probes receive no hint. The built-in HTTP
 transport for eligible engines connects directly and returns redirect responses to AIR. A backend can use
 the hint to replace a conversation's parked state after checking the prompt and its cached tensors.
 
@@ -2953,7 +3046,35 @@ the hint to replace a conversation's parked state after checking the prompt and 
 request. With the header absent, the prompt estimate informs serving-tier selection (§7.6). Every admitted request
 carries its ticket id back on the response as `X-Inference-Ticket`, which is how a client reaches
 `GET|DELETE /admin/tickets/{id}` (watch / cancel) without scraping the event stream. Body-only
-callers (default thread `anon`, priority Normal) work unchanged.
+callers use request-scoped admission and the configured default priority.
+
+`X-Inference-Priority` carries one value, and the whole value has to match the grammar: one of the five
+class names `background`, `low`, `normal`, `high`, `interactive` written in lowercase exactly as spelled
+here, optionally followed by `:` and a sub-priority written as one to three ASCII decimal digits — unsigned,
+no whitespace, no leading zero unless the sub is exactly `0`, and at most 255. Nothing is trimmed, so a
+leading or trailing space makes the value malformed. `high`, `high:0` and `high:255` are in; ` high `,
+`HIGH`, `high:`, `high: 12`, `high:+12`, `high:001`, `high:0255`, `high:256`, `high:999`, `high:1:2` and
+any non-ASCII digit are out. `POST /admin/threads` names that class in JSON: `priority` is an object with
+`class`, and an absent `sub` means the whole class at 0. That surface admits what the header admits and nothing
+else: a `priority` that is present and not an object returns 400 `invalid_request`, and so does a present `sub`
+that is not a JSON number written as plain decimal digits within 0-255 (`255.7`, `-5`, `1e10`, `"10"`, `true`,
+`[10]`) rather than arriving at a byte through a cast and a clamp. A `class` outside the five, or one that is
+not a string, returns the same 400 it always did instead of a 500. Each of those refusals registers nothing —
+neither the priority the caller asked for nor the default it did not. `air threads --priority` parses this
+grammar locally: a value outside it is refused before any request is sent, with the grammar on stderr and exit
+2, because the route would otherwise have answered 204 for the default priority the caller did not ask for.
+`air chat --priority` forwards the value unread instead, so that caller reads the router's own refusal. Both
+verbs refuse an unusable option shape locally with exit 2 and no request: `-p` given no value, given an empty
+value, given a token that reads as another option, or given more than once — each of which used to read exactly
+like an absent `-p` and ask for the default. An absent option or header is the configured default, and is
+the only way to ask for nothing. A value that is present and outside that grammar returns
+**400 `invalid_priority`** from the same lowercase envelope, written while
+the headers are still being read: no thread registration, no queue member, no forward to an engine, no
+`X-Inference-Ticket`, and no `request.enqueued` on the feed. A streaming request is refused the same way an
+ordinary one is — a JSON body at 400, never a committed SSE stream. Two `X-Inference-Priority` headers are
+two values for one request and are refused rather than resolved. The accepted value is the priority of the
+request that carries it and the priority a first-seen thread is registered with; it never reprioritises
+work already queued or running.
 
 Priority is **not** clamped to the configured default and there is no general caller authentication, so a
 caller can currently promote itself. Pinning that at the edge is v0.1 ingress work (§15.1); until
@@ -2981,7 +3102,8 @@ event and sequence without adding a fault record.
 
 The shipped error contract is one lowercase body on every surface —
 `{"error":{"type":"air_error","code":…,"message":…}}` — and the code picks the status:
-`invalid_request` 400, `not_found` 404, `deadline_exceeded` 408, `cancelled` 499, `queue_overflow`
+`invalid_request` 400, `invalid_priority` 400 (a malformed `X-Inference-Priority`, refused at ingress
+before the ticket exists — §6), `not_found` 404, `deadline_exceeded` 408, `cancelled` 499, `queue_overflow`
 429, `request_body_too_large` 413 (over `max_request_body_bytes`), `engine_error` / `engine_unreachable` 502,
 `switch_failed` / `model_unavailable` 503. A switch that outlives `switch_wait_timeout_ms` can
 return `switch_failed`. The absence proof and the configured explicit-context proof in §5.5
@@ -3040,6 +3162,11 @@ prefixes, delimiters and the sentinel. The pair's limit excludes preceding keepa
 data. These limits count encoded body bytes. `ErrorContractTests` and `StreamFrameIdentityTests`
 pin the error shape, reported reason and encoded sizes. `docs/ai-integration.md` carries the error
 code table for integrators.
+
+`POST /admin/threads` and `POST /admin/switch` use the lowercase 400 `invalid_request` envelope
+for malformed JSON, any nonobject root, or an invalid string-member kind (§6). The authenticated
+target reset route retains 400 `invalid_target_reset` for malformed bodies after authentication
+and `If-Match` syntax validation.
 
 ## 7. Configuration (TOML)
 
@@ -3740,9 +3867,17 @@ serialized snapshot includes the full identities and JSON escaping, so `max_requ
 bodies and supplies no snapshot byte ceiling. The feed still uses reporting excerpts and the snapshot's `Error`
 keeps the terminal reason cap.
 
+Terminal streaming ticket snapshots and `request.completed`, `request.failed` and `request.cancelled`
+events carry the PascalCase fields `UpstreamOutcome` and `UpstreamEndReason` (§6). Each takes values
+from a fixed vocabulary independent of the legacy ticket `State` and the terminal error code. A
+streaming ticket cancelled before the upstream end is known reports `unknown` for both fields.
+
 - `thread.registered`, `thread.priority_changed`
 - `request.enqueued {thread, ticket, model, priority, promptChars}`
-- `request.selected {ticket, engine, model, affinityScore, busyScore}`
+- `request.waiting {ticket, thread, model, reason}` — a changed, scoped queue blocker. The ticket
+  snapshot exposes `QueueWaitReason` and `QueueWaitScope` while the ticket remains queued.
+- `request.selected {ticket, engine, model, reason}` — the chosen route and, when one was skipped,
+  the first observed higher-ranked blocker
 - `request.streaming_first_token {ticket, engine, msFromEnqueue}`
 - `request.completed {ticket, engine, tokens, msFromEnqueue, msFromFirstToken}`
 - `request.failed {ticket, reason}` — includes queue expiry, which has ticket error code
@@ -3818,14 +3953,16 @@ three omitted they open `~/arboreal/inference-router/router.toml` in the user's 
 read the router's responses directly.
 
 `air chat` and its alias `air complete` send `POST /v1/chat/completions`. Use `-s` or `--server`
-for the base URL. `-m` or `--model` supplies the JSON `model` when nonempty. `-t` or `--thread`
-sets `X-Inference-Thread`, which defaults to `anon`. `-p` or `--priority` sets the optional
+for the base URL. `-m` or `--model` supplies the JSON `model` when nonempty. With no `-t` or `--thread`
+option the client omits `X-Inference-Thread`. An explicit option supplies one valid name, including
+`anon` when requested. A missing, invalid or repeated option value exits 2 before sending the request.
+`-p` or `--priority` sets the optional
 `X-Inference-Priority` header. The request streams by default. `--no-stream` sets `stream` to
 `false`, and `--json` controls output rendering.
 
 Options can appear before, between or after positional words. Value options take a separate
-following argument with no leading dash. The first eligible value supplies each option, and
-the parser consumes every eligible operand, including repeated ones. The CLI joins the remaining
+following argument with no leading dash. For options allowing repetition, the first eligible value
+supplies the option and the parser consumes every eligible operand. The CLI joins the remaining
 positional arguments with single spaces. If none remain, it reads stdin to EOF and trims leading
 and trailing whitespace. The resulting prompt fills one `user` message. A nonempty `--system`
 value fills a separate `system` message before it.
@@ -4188,6 +4325,27 @@ and cohort/residency hysteresis in the scheduler (§12.3 hook).
   (small request served, oversized request queues behind a profile switch that
   widens the engine's reported window, then completes); health probe failure;
   real HTTP through Kestrel against the stub engine.
+- **Independent dispatch** (`IndependentProgressTests`, `LocalLifecycleGroupTests`): capture
+  backend sends while another route is held, including same-model alternatives and separate
+  local groups. Exercise a replenished early queue, a blocked same-model prefix, shared thread
+  and lifecycle caps, an exact-take reservation loss, and drain-intent retirement on cancellation
+  or reassignment. Preserve the explicit expiry and revision/arm/recheck tests.
+- **Queued priority** (`QueuedPriorityTests`, `SwitchCostDispatchTests`): promote and demote inherited
+  requests through all thread update entry points, preserve explicit overrides and FIFO, and verify
+  that a change racing an exact take or measured switch comparison follows the updated order. Verify
+  that the feed and dispatcher wake survive a throwing thread observer.
+- **Stateless admission** (`StatelessAdmissionTests`, `CliCompletionProcessTests`, `ThreadCacheHintTests`):
+  send omitted-header HTTP and CLI calls to available backends while another request holds a slot.
+  Preserve explicit named caps and reject malformed identities before queue effects. Verify diagnostic-label
+  collisions, cancellation and refusal leave named counters, registration and cache hints scoped correctly.
+- **SSE observation** (`SemanticStreamObservationTests`, `StreamFrameIdentityTests`, `StreamRelayTests`,
+  `StreamingFailureTests`): split SSE lines and unchanged relay bytes, timing, identity and usage
+  availability, outcome precedence, one terminal event for upstream error plus `[DONE]`, sibling stream
+  isolation, and cancellation or writer failure independently of observed upstream evidence.
+- **Admin JSON input** (`AdminJsonBodyTests`, `AdminThreadPriorityTests`, `AdminSwitchOperationTests`,
+  `ConfigReloadWireTests`): literal 400 envelopes for nonobject roots and invalid string kinds, no
+  thread registration or switch operation on refusal, available topology changes after malformed
+  switch input, and the existing target-reset authentication and tag checks.
 - **Configuration reload** (`ConfigReloadWireTests`, `ConfigReloadRaceTests`): authenticated
   file apply, generation readback and rejection, exact stream bytes and a held native switch,
   queue and shutdown ordering, idle external retirement, detached response disposal, and

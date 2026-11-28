@@ -1,11 +1,11 @@
 ---
 id: TASK-204
 title: "Separate stateless admission from named thread limits"
-status: Ready for Review
+status: Done
 assignee:
   - '@gpt-6.2-astra'
 created_date: '2026-11-27'
-updated_date: '2026-11-27'
+updated_date: '2026-11-28'
 labels: []
 milestone: m-16
 dependencies: []
@@ -21,10 +21,10 @@ Default HTTP and CLI calls synthesize the shared anon identity, whose default th
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Concurrent omitted-thread HTTP and CLI calls dispatch independently, including different models; no permanent transient thread or cache entry remains.
-- [ ] #2 Two explicitly shared named-thread requests respect their cap; status identifies the blocking scope.
-- [ ] #3 SPEC §§5.1, 6 and 11 specify omitted identity, reserved legacy sentinel migration, and compatibility for deliberate named threads.
-- [ ] #4 Malformed or conflicting identity is refused before queue effects; a deliberately named identity keeps its configured limits.
+- [x] #1 Concurrent omitted-thread HTTP and CLI calls dispatch independently, including different models; no permanent transient thread or cache entry remains.
+- [x] #2 Two explicitly shared named-thread requests respect their cap; status identifies the blocking scope.
+- [x] #3 SPEC §§5.1, 6 and 11 specify omitted identity, reserved legacy sentinel migration, and compatibility for deliberate named threads.
+- [x] #4 Malformed or conflicting identity is refused before queue effects; a deliberately named identity keeps its configured limits.
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -44,7 +44,7 @@ Published [PR #92](https://github.com/ArborealML/Inference-Router/pull/92), head
 
 AC1–4 source implemented. Independent plan/source review passed. Local Release at 95e8009: 166 passed, no failures/skips; build/analyzers passed. Actual HTTP/CLI capture fixtures cover independent sends, named/anon caps, malformed refusal, queued equal-label isolation, hints, cancellation, overflow and public-null rejection. Initial 160/166 run exposed six invalid identities returning 500; an explicit header-catch 400 fixed them without changing assertions. SPEC v0.12.167 states scope.
 
-Prepared aggregate 89783fb passed 680 affected tests and local Linux x64 AOT/config smoke. [Hosted CI](https://github.com/ArborealML/Inference-Router/actions/runs/46112396399) passed on this equivalent: 2,341 tests, zero failed/skipped, build, Linux AOT/config smoke, board and release harness. Next: reconcile prerequisites and obtain final integration approval. No Done or live/client qualification claim; Backlog CLI unavailable.
+Prepared aggregate 89783fb passed 680 affected tests and local Linux x64 AOT/config smoke. [Hosted CI](https://github.com/ArborealML/Inference-Router/actions/runs/46112396399) passed on this equivalent: 2,341 tests, zero failed/skipped, build, Linux AOT/config smoke, board and release harness. Source landed in the [main integration](https://github.com/ArborealML/Inference-Router/commit/1bf85d3495ab2517a921d78013ffe69bbefb4325).
 
 TASK-207 owns credential-bound identity/authorization; transient identity grants no trust or policy privilege. Priority/weight/scoring are unchanged. Architecture §15.3 legacy cutover remains separately owned; explicit anon is preserved.
 <!-- SECTION:NOTES:END -->

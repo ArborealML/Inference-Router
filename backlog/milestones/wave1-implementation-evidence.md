@@ -1,10 +1,10 @@
 # Wave 1 implementation evidence — 27 November 2026
 
-These are unmerged source and controlled-fixture candidates. Main remains at planning baseline `62f1c79de7b25486cf8669de654a2fd57d8993a2`. The owner authorized connector publication with explicit Sol/Astra provenance in TASK-220. All five implementation PR heads passed the existing hosted CI workflow; operational qualification and final integration approval remain separate gates. The coordinator owns Backlog; Sol implementers own source, tests, SPEC and README; a distinct Astra reviewer inspected each bounded plan and source range.
+The owner approved repository integration on 28 November. PR #92 landed the exact tested aggregate, including the original heads of #86, #88, #89, #90 and #91. Its [main integration](https://github.com/ArborealML/Inference-Router/commit/1bf85d3495ab2517a921d78013ffe69bbefb4325) has tree `e2bdb07dc486bf969e4ee02f7dbb7b185305c55a`. The checks below apply to source and controlled fixtures. Live deployment and provider qualification are separate.
 
 ## Published implementation PRs
 
-All five PRs remain open and unmerged. GitHub Actions checked their synthetic merge refs; independent readback verifies that each tested merge tree equals its PR head tree. Every run passed Release build with zero warnings/errors, the full test suite with zero failures/skips, Linux x64 Native AOT/config smoke, strict Backlog checks and the release-gate harness. The original local tests below remain scoped historical evidence.
+GitHub Actions checked their synthetic merge refs; independent readback verifies that each tested merge tree equals its PR head tree. Every run passed Release build with zero warnings/errors, the full test suite with zero failures/skips, Linux x64 Native AOT/config smoke, strict Backlog checks and the release-gate harness. The original local tests below remain scoped historical evidence.
 
 | Task | PR / exact published head | Hosted tests | Successful CI run |
 | --- | --- | ---: | --- |
@@ -14,7 +14,7 @@ All five PRs remain open and unmerged. GitHub Actions checked their synthetic me
 | 202 | [#90](https://github.com/ArborealML/Inference-Router/pull/90) · `ac9d783b8fcc84c4fd95278953f2fceda0af932f` | 2,269 | [Run 46112270273](https://github.com/ArborealML/Inference-Router/actions/runs/46112270273) |
 | 204 | [#92](https://github.com/ArborealML/Inference-Router/pull/92) · `1f2acc65304549c196204a6ac126303fa87e2cf0` | 2,341 | [Run 46112396399](https://github.com/ArborealML/Inference-Router/actions/runs/46112396399) |
 
-[Machine-readable original → prepared → published mapping](wave1-publication-map.json) records the complete reproduced graph, original authors, exact trees and ordered parents. Connector-generated Git identities use the owner's explicitly authorized exception; source authorship remains GPT-6.2 Sol, with GPT-6.2 Astra coordination, Backlog and distinct independent review. Main and existing PRs #83/#86 are unchanged.
+[Machine-readable original → prepared → published mapping](wave1-publication-map.json) records the complete reproduced graph, original authors, exact trees and ordered parents. Connector-generated Git identities use the owner's explicitly authorized exception; source authorship remains GPT-6.2 Sol, with GPT-6.2 Astra coordination, Backlog and distinct independent review. This mapping records publication before integration.
 
 ## Original evidence and prepared source
 
@@ -56,7 +56,7 @@ Independent source/integration review covered the shared ticket projection, term
 
 ## Integration order and remaining work
 
-PRs #88 (TASK-203) and #89 (TASK-187) target main independently. PR #91 (TASK-205) stacks on #88. Preserve PR #86's exact head `a12012b176e84e49603c433a9f934206499b4bcb`; PR #90 (TASK-202) stacks on its reconciled base. PR #92 (TASK-204) is reviewed against the combined integration dependency so its own diff remains focused. Reconcile each stack after its prerequisites land and rerun affected checks. Do not merge implementation without final approval.
+PRs #88 (TASK-203) and #89 (TASK-187) target main independently. PR #91 (TASK-205) stacks on #88. Preserve PR #86's exact head `a12012b176e84e49603c433a9f934206499b4bcb`; PR #90 (TASK-202) stacks on its reconciled base. PR #92 (TASK-204) is reviewed against the combined integration dependency so its own diff remains focused. The exact aggregate was subsequently retargeted to main. Its synthetic merge tree equaled the tested tree.
 
 PR #83 remains separate at `6fbbd2e3abdac6f1ced4edb6a6d146fad604ea21`, with branch-only progress preserved. Its additive ticket-progress fields and SPEC need a later bounded reconciliation. PR #86's outstanding TASK-185 review/client work is not closed here.
 

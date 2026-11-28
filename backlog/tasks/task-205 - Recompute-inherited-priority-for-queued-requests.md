@@ -1,11 +1,11 @@
 ---
 id: TASK-205
 title: "Recompute inherited priority for queued requests"
-status: Ready for Review
+status: Done
 assignee:
   - '@gpt-6.2-astra'
 created_date: '2026-11-27'
-updated_date: '2026-11-27'
+updated_date: '2026-11-28'
 labels: []
 milestone: m-16
 dependencies: []
@@ -21,10 +21,10 @@ Enqueue copies inherited priority into immutable pending nodes; updating the thr
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Promotion and demotion reorder inherited pending requests; explicit overrides and FIFO enqueue sequence are unchanged.
-- [ ] #2 Register/update share the same mutation, event and wake contract. Selection racing an update revalidates the exact pending candidate before admission.
-- [ ] #3 Priority changes neither inflight cap nor active work, provider score, spend, context, admission target or physical lanes.
-- [ ] #4 SPEC §§5.1 and 5.5 and focused race tests pin ordering and terminal behavior.
+- [x] #1 Promotion and demotion reorder inherited pending requests; explicit overrides and FIFO enqueue sequence are unchanged.
+- [x] #2 Register/update share the same mutation, event and wake contract. Selection racing an update revalidates the exact pending candidate before admission.
+- [x] #3 Priority changes neither inflight cap nor active work, provider score, spend, context, admission target or physical lanes.
+- [x] #4 SPEC §§5.1 and 5.5 and focused race tests pin ordering and terminal behavior.
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -44,5 +44,5 @@ Published [PR #91](https://github.com/ArborealML/Inference-Router/pull/91), head
 
 AC1–4 source implemented. Pre-code review required attached-handle/throwing-observer coverage; corrected source review passed. Local Release at f0f110e passed 105 tests, zero failures/skips; build/analyzers passed. CA1861 was fixed without suppression. Earlier integration 203ce78 exposed a fixture that equated StateChanged with admission and raced logical cleanup. Actual release/exact-selection checks and a deterministic existing-hook regression corrected it without runtime changes or longer deadlines. Corrected integration 02087978 passed 608 affected tests.
 
-Pi's explicit per-request priority stays fixed; only inherited pending keys reorder. TASK-185/PR #86 retain client/parser ownership. [Hosted CI](https://github.com/ArborealML/Inference-Router/actions/runs/46112352768) passed on this head: 2,166 tests, zero failed/skipped, build, Linux AOT/config smoke, strict board and release harness. Next: reconcile after #88 lands and obtain final integration approval. No merge/live/Done claim; Backlog CLI unavailable.
+Pi's explicit per-request priority stays fixed; only inherited pending keys reorder. TASK-185/PR #86 retain client/parser ownership. [Hosted CI](https://github.com/ArborealML/Inference-Router/actions/runs/46112352768) passed on this head: 2,166 tests, zero failed/skipped, build, Linux AOT/config smoke, strict board and release harness. Source landed in the [main integration](https://github.com/ArborealML/Inference-Router/commit/1bf85d3495ab2517a921d78013ffe69bbefb4325).
 <!-- SECTION:NOTES:END -->

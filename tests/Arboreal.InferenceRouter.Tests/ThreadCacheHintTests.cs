@@ -3,6 +3,7 @@ using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using Arboreal.InferenceRouter.Server;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Arboreal.InferenceRouter.Tests;
 
@@ -46,6 +47,14 @@ public sealed class ThreadCacheHintTests
             Assert.NotEqual(firstHint, otherThread);
             Assert.NotEqual(firstHint, otherEngine);
             Assert.Null(await Send("first", null));
+            var router = app.Services.GetRequiredService<RouterCore>();
+            router.BeforeAdmissionCommitForTests = pending =>
+            {
+                if (pending.IsStateless)
+                    router.RegisterThread(pending.ThreadId, ThreadPriority.Normal());
+            };
+            try { Assert.Null(await Send("first", null, stream: true)); }
+            finally { router.BeforeAdmissionCommitForTests = null; }
             Assert.Null(await Send("first", "anon"));
             Assert.Null(await Send("external", "private-42"));
             Assert.Null(await Send("legacy", "private-42"));

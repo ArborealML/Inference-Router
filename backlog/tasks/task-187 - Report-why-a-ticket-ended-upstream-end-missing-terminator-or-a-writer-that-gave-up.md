@@ -3,11 +3,11 @@ id: TASK-187
 title: >-
   Report why a ticket ended: upstream end, missing terminator, or a writer that
   gave up
-status: Ready for Review
+status: To Do
 assignee:
   - '@gpt-6.2-astra'
 created_date: '2026-11-25T10:49:00Z'
-updated_date: '2026-11-27'
+updated_date: '2026-11-28'
 labels: []
 dependencies:
   - TASK-189
@@ -23,12 +23,12 @@ A stream that ends with no finish_reason and no [DONE] sentinel currently ends a
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 A finished ticket states how its upstream ended: complete, ended without a terminator, or failed, and the event feed carries it.
-- [ ] #2 A downstream stream that stopped early records the reason and does not read as completed.
-- [ ] #3 The existing wire bytes do not change: an in-band error frame and terminator still end a failed stream.
-- [ ] #4 One ticket produces exactly one terminal event and one terminal state, including the in-band error plus terminator path that today can settle as completed.
-- [ ] #5 Cancellation stays its own axis: a client hang-up or an induced abort is never reclassified as an upstream end reason.
-- [ ] #6 An additive authoritative protocol outcome distinguishes complete, incomplete, failed and unknown; clean EOF or legacy Completed alone cannot establish successful generation or complete usage.
+- [x] #1 A finished ticket states how its upstream ended: complete, ended without a terminator, or failed, and the event feed carries it.
+- [x] #2 A downstream stream that stopped early records the reason and does not read as completed.
+- [x] #3 The existing wire bytes do not change: an in-band error frame and terminator still end a failed stream.
+- [x] #4 One ticket produces exactly one terminal event and one terminal state, including the in-band error plus terminator path that today can settle as completed.
+- [x] #5 Cancellation stays its own axis: a client hang-up or an induced abort is never reclassified as an upstream end reason.
+- [x] #6 An additive authoritative protocol outcome distinguishes complete, incomplete, failed and unknown; clean EOF or legacy Completed alone cannot establish successful generation or complete usage.
 - [ ] #7 One bounded semantic observation contract supplies first raw byte, first semantic output, model identity, usage availability and authoritative outcome; local Tune uses fixture/local observations, commercial extends it.
 <!-- AC:END -->
 
@@ -49,5 +49,5 @@ Independent plan/source review passed after retaining fully observed structured 
 
 [Hosted CI](https://github.com/ArborealML/Inference-Router/actions/runs/46112187952) passed on this actual head: 2,193 tests, zero failed/skipped, build, Linux AOT/config smoke, board and release harness. Synthetic merge/head trees match.
 
-Preserve PR #83 progress and #86 parsing. Boundary EOF may retain legacy Completed with authoritative incomplete; cancellation remains orthogonal and upstream error adds no second terminator. Historical attempts remain at the planning baseline. Next: final integration approval and separately owned consumers. No nonstreaming, hardware, account or installed-client qualification; not Done. Backlog CLI unavailable; strict controlled Markdown substitutes.
+Preserve PR #83 progress and #86 parsing. Boundary EOF may retain legacy Completed with authoritative incomplete; cancellation remains orthogonal and upstream error adds no second terminator. Historical attempts remain at the planning baseline. Source landed in the [main integration](https://github.com/ArborealML/Inference-Router/commit/1bf85d3495ab2517a921d78013ffe69bbefb4325).
 <!-- SECTION:NOTES:END -->

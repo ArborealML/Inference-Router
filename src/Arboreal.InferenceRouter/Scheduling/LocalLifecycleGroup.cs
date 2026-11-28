@@ -10,10 +10,13 @@ internal sealed class LocalLifecycleGroup(string name, Action wake)
     private readonly object _gate = new();
     private readonly Dictionary<string, EngineRuntime> _engines = new(StringComparer.Ordinal);
     private readonly HashSet<Lease> _uses = [];
+    private QueuedRequest? _draining;
     private QueuedRequest? _waiting;
     private Task<EngineRuntime.ObservedSwitchResult>? _switch;
     private (string Engine, string Model)? _resident;
+    private long _revision;
     internal string Name => name;
+    internal long Revision => Volatile.Read(ref _revision);
 
     internal bool IsIdle
     {
@@ -27,35 +30,66 @@ internal sealed class LocalLifecycleGroup(string name, Action wake)
         lock (_gate) return _resident is { } resident && resident.Engine == engine && resident.Model == model;
     }
 
-    internal Lease? TryReserve(QueuedRequest request, EngineRuntime engine, ServingProfile? profile, bool switchRequired, OwnerSwitchBudget budget)
+    internal enum Availability { Warm, Cold, Draining, Owned, Switching }
+
+    internal Availability Probe(QueuedRequest request, EngineRuntime engine, ServingProfile? profile, bool switchRequired)
+    {
+        lock (_gate) return ProbeUnderGate(request, engine, profile, switchRequired);
+    }
+
+    private Availability ProbeUnderGate(QueuedRequest request, EngineRuntime engine, ServingProfile? profile, bool switchRequired)
+    {
+        if (_switch is { IsCompleted: false }) return Availability.Switching;
+        if ((_waiting is not null && !ReferenceEquals(_waiting, request)) ||
+            (_draining is not null && !ReferenceEquals(_draining, request))) return Availability.Owned;
+
+        // The measured window and lanes, rather than an inferred tier label, establish resident fit.
+        var cold = switchRequired || _resident is not { } resident || resident.Engine != engine.Name ||
+            resident.Model != request.Ticket.Model ||
+            (profile is not null && !engine.Capability.Serving.Matches(request.Ticket.Model, profile));
+        if (!cold) return Availability.Warm;
+        return _uses.Count == 0 ? Availability.Cold : Availability.Draining;
+    }
+
+    // Drain ownership is an exact queued intent and is established only after ready routes were tried.
+    internal bool TryStartDrain(QueuedRequest request, EngineRuntime engine, ServingProfile? profile, bool switchRequired,
+                                long expectedRevision)
     {
         lock (_gate)
         {
-            if (_switch is { IsCompleted: false }) return null;
-            if (_switch is { IsCompleted: true }) _switch = null;
-            if (_waiting is { } waiting && (waiting.Ticket.IsTerminal || waiting.CallerToken.IsCancellationRequested))
-                _waiting = null;
-            if (_waiting is not null && !ReferenceEquals(_waiting, request)) return null;
-            // Cold means this request owes the group a lifecycle transaction. The resident's recorded tier label
-            // decides nothing here: §7.6 makes it a display inference that is absent whenever more than one
-            // declared tier matches the measured pair and goes stale across a reload, so a name comparison
-            // reopens the group — inventory, preflight, stop, relaunch — on a container that already serves the
-            // requested window. The proof is the measurement, the same satisfaction predicate the scheduler and
-            // the named-take gate use: the window measured for this exact model equals the tier's declared
-            // window, with at least the tier's declared lanes (eight lanes satisfy a four-lane tier of that
-            // window; four never satisfy an eight-lane one). Launch readiness keeps its exact
-            // expected-and-observed proof (§5.3.1), so classification stays looser than publication.
-            var cold = switchRequired || _resident is not { } resident ||
-                resident.Engine != engine.Name || resident.Model != request.Ticket.Model ||
-                (profile is not null && !engine.Capability.Serving.Matches(request.Ticket.Model, profile));
-            if (cold)
-            {
-                _waiting ??= request;
-                if (_uses.Count != 0) return null;
-            }
+            if (_revision != expectedRevision || ProbeUnderGate(request, engine, profile, switchRequired) != Availability.Draining)
+                return false;
+            _draining = request;
+            Interlocked.Increment(ref _revision);
+            return true;
+        }
+    }
+
+    internal void RetireDrain(RouterTicket ticket)
+    {
+        lock (_gate)
+        {
+            if (!ReferenceEquals(_draining?.Ticket, ticket)) return;
+            _draining = null;
+            Interlocked.Increment(ref _revision);
+        }
+        _wake();
+    }
+
+    internal Lease? TryReserve(QueuedRequest request, EngineRuntime engine, ServingProfile? profile, bool switchRequired,
+                                OwnerSwitchBudget budget, long expectedRevision)
+    {
+        lock (_gate)
+        {
+            if (_revision != expectedRevision) return null;
+            var available = ProbeUnderGate(request, engine, profile, switchRequired);
+            if (available is not (Availability.Warm or Availability.Cold)) return null;
+            var cold = available == Availability.Cold;
             var lease = new Lease(this, request, engine, profile, cold, budget);
             _uses.Add(lease);
+            if (ReferenceEquals(_draining, request)) _draining = null;
             if (cold) _waiting = request;
+            Interlocked.Increment(ref _revision);
             return lease;
         }
     }
@@ -169,6 +203,8 @@ internal sealed class LocalLifecycleGroup(string name, Action wake)
             {
                 _resident = succeeded ? (owner.Engine.Name, owner.Request.Ticket.Model) : null;
                 _waiting = null;
+                _switch = null;
+                Interlocked.Increment(ref _revision);
             }
             _wake();
         }
@@ -226,6 +262,7 @@ internal sealed class LocalLifecycleGroup(string name, Action wake)
                 if (!group._uses.Remove(this)) return;
                 if (ReferenceEquals(group._waiting, request) && group._switch is null) group._waiting = null;
                 if (group._switch is { IsCompleted: true }) group._switch = null;
+                Interlocked.Increment(ref group._revision);
             }
             group._wake();
         }

@@ -172,7 +172,8 @@ public class StreamFrameIdentityTests
         var bytes = Encoding.UTF8.GetBytes(CompletePrefix + unfinished);
         var releaseEnd = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         using var upstream = new FragmentedBody(bytes, bytes.Length, 1, releaseEnd.Task, endFailure: fault ? Disconnect() : null);
-        await AssertUpstreamOutcomeAsync(upstream, prefix, code, releaseEnd);
+        await AssertUpstreamOutcomeAsync(upstream, prefix, code, releaseEnd,
+            expectedEndReason: fault ? "failed" : "stream_incomplete");
     }
 
     [Fact]
@@ -204,7 +205,8 @@ public class StreamFrameIdentityTests
     {
         var bytes = Encoding.UTF8.GetBytes(CompletePrefix + unfinished);
         using var upstream = new FragmentedBody(bytes, 0, 1, endFailure: fault ? Disconnect() : null);
-        await AssertUpstreamOutcomeAsync(upstream, Encoding.UTF8.GetBytes(CompletePrefix), code);
+        await AssertUpstreamOutcomeAsync(upstream, Encoding.UTF8.GetBytes(CompletePrefix), code,
+            expectedEndReason: fault ? "failed" : "stream_incomplete");
     }
 
     [Theory]
@@ -229,7 +231,8 @@ public class StreamFrameIdentityTests
         var bytes = Encoding.UTF8.GetBytes(CompletePrefix + unfinished);
         var upstreamCancellation = new OperationCanceledException("scripted upstream cancellation", new CancellationToken(canceled: true));
         using var upstream = new FragmentedBody(bytes, 0, 1, endFailure: upstreamCancellation);
-        await AssertUpstreamOutcomeAsync(upstream, Encoding.UTF8.GetBytes(CompletePrefix), code);
+        await AssertUpstreamOutcomeAsync(upstream, Encoding.UTF8.GetBytes(CompletePrefix), code,
+            expectedEndReason: code is null ? "unknown" : "stream_incomplete");
     }
 
     [Theory]
@@ -239,7 +242,54 @@ public class StreamFrameIdentityTests
     {
         var bytes = Encoding.UTF8.GetBytes(complete);
         using var upstream = new FragmentedBody(bytes, 0, 1);
-        await AssertUpstreamOutcomeAsync(upstream, bytes, errorCode: null);
+        await AssertUpstreamOutcomeAsync(upstream, bytes, errorCode: null,
+            expectedEndReason: "upstream_closed_without_terminator");
+    }
+
+    [Fact]
+    public async Task A_Capacity_Error_Frame_Does_Not_End_A_Concurrent_Sibling_Stream()
+    {
+        var failed = "data: {\"error\":{\"message\":\"scripted capacity warning\"}}\n\ndata: [DONE]\n\n"u8.ToArray();
+        var good = "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"sibling reply\"}}]}\n\ndata: [DONE]\n\n"u8.ToArray();
+        var releaseFailed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseGood = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var first = new FragmentedBody(failed, failed.Length, failed.Length, releaseFailed.Task);
+        using var sibling = new FragmentedBody(good, good.Length, good.Length, releaseGood.Task);
+        using var fake = new FragmentedEngine();
+        var (app, _, port) = await WireHarness.StartAsync(fake: fake, maxInflight: 2);
+        await using var server = app;
+        using var http = Client(port);
+        using var bound = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        var ct = bound.Token;
+        var router = app.Services.GetRequiredService<RouterCore>();
+        fake.Responses.Enqueue(first);
+        fake.Responses.Enqueue(sibling);
+        try
+        {
+            var (badId, stopped) = await WireHarness.StartStreamAsync(http, "warned", Request, ct);
+            using var stoppedResponse = stopped;
+            await first.AtGate.Task.WaitAsync(ct);
+            var (goodId, serving) = await WireHarness.StartStreamAsync(http, "sibling", Request, ct);
+            using var servingResponse = serving;
+            await sibling.AtGate.Task.WaitAsync(ct);
+
+            releaseFailed.TrySetResult();
+            var failedWire = await stopped.Content.ReadAsByteArrayAsync(ct);
+            Assert.Equal(failed, failedWire[LeadingKeepaliveLength(failedWire)..]);
+            Assert.Equal("Failed", router.TryGetTicket(badId)?.State);
+            Assert.Equal("Executing", router.TryGetTicket(goodId)?.State);
+
+            releaseGood.TrySetResult();
+            var goodWire = await serving.Content.ReadAsByteArrayAsync(ct);
+            Assert.Equal(good, goodWire[LeadingKeepaliveLength(goodWire)..]);
+            Assert.Equal("Completed", router.TryGetTicket(goodId)?.State);
+            Assert.Equal("complete", router.TryGetTicket(goodId)?.UpstreamOutcome);
+        }
+        finally
+        {
+            releaseFailed.TrySetResult();
+            releaseGood.TrySetResult();
+        }
     }
 
     [Theory]
@@ -591,7 +641,7 @@ public class StreamFrameIdentityTests
 
     private static async Task AssertUpstreamOutcomeAsync(
         FragmentedBody upstream, byte[] prefix, string? errorCode, TaskCompletionSource? releaseEnd = null,
-        string? expectedReason = null)
+        string? expectedReason = null, string? expectedEndReason = null)
     {
         using var fake = new FragmentedEngine();
         var (app, _, port) = await WireHarness.StartAsync(fake: fake);
@@ -618,6 +668,7 @@ public class StreamFrameIdentityTests
         var terminal = Encoding.UTF8.GetString(terminalBytes.Span);
         var ticket = app.Services.GetRequiredService<RouterCore>().TryGetTicket(ticketId);
         Assert.NotNull(ticket);
+        if (expectedEndReason is not null) Assert.Equal(expectedEndReason, ticket.UpstreamEndReason);
 
         if (errorCode is null)
         {

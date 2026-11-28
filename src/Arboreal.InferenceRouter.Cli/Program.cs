@@ -168,8 +168,16 @@ public static class Program
     private static async Task<int> RunChatAsync(string[] args, bool json)
     {
         var model = GetOpt(args, ["-m", "--model"]);
-        var thread = GetOpt(args, ["-t", "--thread"]) ?? "anon";
-        var priority = GetOpt(args, ["-p", "--priority"]);
+        if (!TryGetPriorityOption(args, out var priority, out var priorityUsage))
+        {
+            Console.Error.WriteLine(priorityUsage);
+            return 2;
+        }
+        if (!TryGetInferenceThreadOption(args, out var thread))
+        {
+            Console.Error.WriteLine("invalid thread: --thread requires one non-blank thread name without commas or control characters");
+            return 2;
+        }
         var system = GetOpt(args, ["--system"]);
         var server = GetOpt(args, ["-s", "--server"]) ?? DefaultServer;
         var since = GetOpt(args, ["--since"]);
@@ -206,8 +214,10 @@ public static class Program
         using var req = new HttpRequestMessage(HttpMethod.Post, Url(server, "/v1/chat/completions"));
         req.Content = new ByteArrayContent(body.ToArray());
         req.Content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
-        req.Headers.TryAddWithoutValidation("X-Inference-Thread", thread);
-        if (priority is { Length: > 0 }) req.Headers.TryAddWithoutValidation("X-Inference-Priority", priority);
+        if (thread is not null) req.Headers.TryAddWithoutValidation("X-Inference-Thread", thread);
+        // The value is forwarded unread: this caller asks the router, so the router's own 400 is what it
+        // reads (§6). Only the option's own shape is checked here, in TryGetPriorityOption.
+        if (priority is not null) req.Headers.TryAddWithoutValidation("X-Inference-Priority", priority);
 
         using var res = await http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead).ConfigureAwait(false);
         if (!res.IsSuccessStatusCode)
@@ -374,10 +384,25 @@ public static class Program
     {
         var server = GetOpt(args, ["-s", "--server"]) ?? DefaultServer;
         var id = GetOpt(args, ["-i", "--id"]) ?? GetOpt(args, ["--thread"]);
-        var priority = GetOpt(args, ["-p", "--priority"]);
         if (id is null)
         {
             Console.Error.WriteLine("threads -i threadId [-p class:sub]");
+            return 2;
+        }
+        if (!TryGetPriorityOption(args, out var priority, out var priorityUsage))
+        {
+            Console.Error.WriteLine(priorityUsage);
+            return 2;
+        }
+        // A malformed -p is refused here, before the request goes out. The admin route answers 400
+        // invalid_request for a class name it does not know, but it takes class and sub as separate JSON
+        // fields, so TryParse's Normal-on-failure used to post "high:+12" as normal/0 and take the 204 — a
+        // priority nobody asked for (§6). `air chat -p` is deliberately different: it forwards the raw
+        // header, so that caller reads the router's own 400.
+        ThreadPriority requested = default;
+        if (priority is not null && !ThreadPriority.TryParse(priority, out requested))
+        {
+            Console.Error.WriteLine($"invalid priority \"{priority}\": expected {PriorityGrammar}");
             return 2;
         }
         using var body = new MemoryStream();
@@ -385,12 +410,11 @@ public static class Program
         {
             w.WriteStartObject();
             w.WriteString("threadId", id);
-            if (priority is { Length: > 0 })
+            if (priority is not null)
             {
-                var p = ParsePriority(priority);
                 w.WriteStartObject("priority");
-                w.WriteString("class", ThreadPriorityClass.ClassName(p.Class));
-                w.WriteNumber("sub", p.Sub);
+                w.WriteString("class", ThreadPriorityClass.ClassName(requested.Class));
+                w.WriteNumber("sub", requested.Sub);
                 w.WriteEndObject();
             }
             w.WriteEndObject();
@@ -562,11 +586,60 @@ public static class Program
         return null;
     }
 
+    /// <summary>Read the priority option from the raw arguments, where its shape is visible. An absent option
+    /// is the caller asking for nothing, which is the default (§6); one option with one usable value is the
+    /// request. Anything else is a typing mistake the CLI can see for itself — <c>-p</c> followed by another
+    /// option, by nothing, or by an empty string, or the option given twice — and each of those used to read
+    /// exactly like an absent one, registering the default priority and exiting 0 for a value the caller
+    /// typed. The verbs check this rather than the shared <see cref="GetOpt"/>, because other verbs pass
+    /// values that legitimately begin with a dash (a <c>--system</c> prompt, a <c>--since</c> sequence) and
+    /// GetOpt cannot tell those from an option. The value is returned unread: only <c>air threads</c> parses
+    /// it, and <c>air chat</c> forwards it so the router refuses it in its own words.
+    /// </summary>
+    private static bool TryGetPriorityOption(string[] args, out string? priority, out string usage)
+    {
+        priority = null;
+        usage = string.Empty;
+        var given = 0;
+        for (var i = 0; i < args.Length; i++)
+        {
+            if (args[i] is not ("-p" or "--priority")) continue;
+            given++;
+            var value = i + 1 < args.Length ? args[i + 1] : null;
+            if (value is null) usage = "--priority given with no value";
+            else if (value.Length == 0) usage = "--priority given an empty value";
+            else if (value.StartsWith('-')) usage = $"--priority given \"{value}\", which reads as another option";
+            else priority ??= value;
+            i++;    // the token after the option belongs to it, even when it spells another option
+        }
+        if (given == 0) return true;
+        if (usage.Length == 0 && given <= 1) return true;
+        if (usage.Length == 0) usage = $"--priority given {given} times, expected one value";
+        usage = $"invalid priority: {usage}; expected {PriorityGrammar}";
+        return false;
+    }
+
+    private static bool TryGetInferenceThreadOption(string[] args, out string? thread)
+    {
+        thread = null;
+        for (var i = 0; i < args.Length; i++)
+        {
+            if (args[i] is not ("-t" or "--thread")) continue;
+            if (thread is not null || ++i >= args.Length) return false;
+            var name = args[i];
+            if (string.IsNullOrWhiteSpace(name) || name.StartsWith('-') ||
+                name.Contains(',', StringComparison.Ordinal) || name.Any(char.IsControl))
+                return false;
+            thread = name;
+        }
+        return true;
+    }
+
     private static bool HasFlag(string[] args, string flag) => args.Contains(flag);
 
-    private static ThreadPriority ParsePriority(string value)
-    {
-        _ = ThreadPriority.TryParse(value, out var p);
-        return p;
-    }
+    /// <summary>The priority grammar, in the one form the router's parser admits (§6). Quoted on stderr by
+    /// <c>air threads -p</c> so the operator can see the spelling to retry rather than a silent default.</summary>
+    private const string PriorityGrammar =
+        "class[:sub] with class one of background|low|normal|high|interactive written in lowercase and " +
+        "sub 0-255 as one to three digits with no sign, spaces or leading zero";
 }

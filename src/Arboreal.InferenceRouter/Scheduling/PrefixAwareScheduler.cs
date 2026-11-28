@@ -58,96 +58,79 @@ public sealed record SchedulerView(IReadOnlyList<EngineRuntimeInfo> Engines, Dat
 /// that already has the model loaded. Prefix affinity dominates only past
 /// PrefixAffinityThreshold. Engines mid-switch are excluded; engines that could
 /// serve the model after a switch are considered only when auto_switch allows and
-/// nothing healthy has it loaded.
+/// no eligible resident has capacity.
 /// </summary>
 public sealed class PrefixAwareScheduler : IRequestScheduler
 {
+    internal readonly record struct Target(bool SwitchRequired, string? Profile);
+    internal readonly record struct RouteFit(bool Healthy, bool Switching, bool CanServeModel, bool CanLoad,
+        bool CanSwitchProfile, IReadOnlyList<string> LoadedModels, long ActiveContextWindow,
+        IReadOnlyList<ServingProfile> ServingProfiles, EngineRuntime.DispatchObservation Observation);
+    internal readonly record struct RankedRoute(EngineRuntimeInfo Engine, Target Target, double Score)
+    {
+        internal SchedulerDecision Decision => new()
+        {
+            Engine = Engine.Name,
+            SwitchRequired = Target.SwitchRequired,
+            TargetProfile = Target.Profile,
+        };
+    }
+
     public SchedulerDecision SelectNext(QueuedRequest request, SchedulerView view, RouterConfig config)
     {
-        if (view.Engines.Count == 0)
-            return SchedulerDecision.Wait("no_engines");
+        foreach (var route in RankRoutes(request, view.Engines, config))
+            if (route.Engine.DispatchObservation.SlotLimit == 0 || route.Engine.DispatchObservation.HasCapacity)
+                return route.Decision;
+        return SchedulerDecision.Wait(view.Engines.Count == 0 ? "no_engines" : "no_available_engine");
+    }
 
-        var scored = new List<(EngineRuntimeInfo E, double Score, bool Loaded)>();
-        var loadable = new List<(EngineRuntimeInfo E, double Score, ServingProfile? Profile)>();
+    internal static List<RankedRoute> RankRoutes(QueuedRequest request, IReadOnlyList<EngineRuntimeInfo> engines,
+                                                 RouterConfig config)
+    {
+        var routes = new List<RankedRoute>(engines.Count);
+        foreach (var engine in engines)
+            if (DescribeTarget(request, new(engine.Healthy, engine.Switching, engine.CanServeModel, engine.CanLoad,
+                engine.CanSwitchProfile, engine.LoadedModels, engine.ActiveContextWindow, engine.ServingProfiles,
+                engine.DispatchObservation), config) is { } target)
+                routes.Add(new(engine, target, AffinityScore(engine) - BusyScore(engine, request, config)));
+        routes.Sort(static (a, b) =>
+        {
+            var order = a.Target.SwitchRequired.CompareTo(b.Target.SwitchRequired);
+            if (order != 0) return order;
+            order = b.Score.CompareTo(a.Score);
+            return order != 0 ? order : string.CompareOrdinal(a.Engine.Name, b.Engine.Name);
+        });
+        return routes;
+    }
+
+    // No affinity score, queue mutation, or resource acquisition is needed to check fit for one route.
+    internal static Target? DescribeTarget(QueuedRequest request, RouteFit engine, RouterConfig config)
+    {
+        if ((!engine.Healthy && !engine.CanLoad) || engine.Switching || !engine.CanServeModel) return null;
+        var model = request.Ticket.Model;
+        var loaded = engine.Healthy && engine.LoadedModels.Contains(model, StringComparer.OrdinalIgnoreCase);
         var named = request.Request.Options?.Profile;
-        var explicitMinimum = request.ExplicitContextMinimum;
-        foreach (var e in view.Engines)
+        ServingProfile? target = null;
+        if (named is not null)
         {
-            if ((!e.Healthy && !e.CanLoad) || e.Switching || (named is not null && !e.DispatchObservation.HasCapacity)) continue;
-            // Compare on the canonical model (Ticket.Model), not the raw requested alias.
-            var model = request.Ticket.Model;
-            var loaded = e.Healthy && e.LoadedModels.Contains(model, StringComparer.OrdinalIgnoreCase);
-            if (!e.CanServeModel) continue;
-
-            // Context-window escalation: the request needs more context than the engine serves.
-            // A ladder change is a switch even when the model is already loaded; small windows buy
-            // concurrency, so we never de-escalate automatically (§7.6 non-goal).
-            ServingProfile? target = null;
-            if (named is not null)
-            {
-                target = EngineRuntime.UniqueNamedProfile(e.ServingProfiles, named);
-                if (target is null || target.MaxContext < request.RequiredContextTokens) continue;
-            }
-            else if (request.RequiredContextTokens > 0 && e.ServingProfiles.Count > 0)
-            {
-                target = SmallestFittingProfile(e.ServingProfiles, request.RequiredContextTokens);
-                if (target is null) continue;   // ladder exists but nothing fits: wrong engine
-            }
-            if (named is null && loaded && target is not null && e.ActiveContextWindow <= 0) continue;
-            if (loaded && target is null && explicitMinimum > 0 && e.ActiveContextWindow < explicitMinimum) continue;
-            var needsEscalation = target is not null && (named is null ? e.ActiveContextWindow < target.MaxContext
-                : !e.DispatchObservation.Capability.Serving.Matches(model, target));
-
-            var affinity = AffinityScore(e);
-            var busy = BusyScore(e, request, config);
-            var score = affinity - busy;
-            if (loaded && !needsEscalation) scored.Add((e, score, true));
-            else if (config.AutoSwitch && (named is null || e.CanSwitchProfile && (e.CanLoad || e.Inflight == 0))) loadable.Add((e, score, target));
+            if (engine.Observation.SlotLimit == 0) return null;
+            target = EngineRuntime.UniqueNamedProfile(engine.ServingProfiles, named);
+            if (target is null || target.MaxContext < request.RequiredContextTokens) return null;
         }
-
-        if (scored.Count > 0)
+        else if (request.RequiredContextTokens > 0 && engine.ServingProfiles.Count > 0)
         {
-            var best = Best(scored.Select(s => (s.E, s.Score)));
-            return new SchedulerDecision { Engine = best.Name, SwitchRequired = false, TargetProfile = named };
+            target = SmallestFittingProfile(engine.ServingProfiles, request.RequiredContextTokens);
+            if (target is null) return null;
         }
-        if (loadable.Count > 0)
-        {
-            var best = BestLoadable(loadable);
-            return new SchedulerDecision { Engine = best.E.Name, SwitchRequired = true, TargetProfile = best.Profile?.Name };
-        }
-        // Everything healthy is mid-switch or unhealthy: wait.
-        return SchedulerDecision.Wait("no_available_engine");
+        if (named is null && loaded && target is not null && engine.ActiveContextWindow <= 0) return null;
+        if (loaded && target is null && request.ExplicitContextMinimum > 0 && engine.ActiveContextWindow < request.ExplicitContextMinimum) return null;
 
-        static EngineRuntimeInfo Best(IEnumerable<(EngineRuntimeInfo E, double Score)> seq)
-        {
-            EngineRuntimeInfo? best = null;
-            var bestScore = double.NegativeInfinity;
-            foreach (var s in seq)
-            {
-                if (best is null || s.Item2 > bestScore || (s.Item2 == bestScore &&
-                    string.CompareOrdinal(s.E.Name, best.Name) < 0))
-                {
-                    best = s.E;
-                    bestScore = s.Item2;
-                }
-            }
-            return best ?? throw new InvalidOperationException("no candidates");
-        }
-
-        static (EngineRuntimeInfo E, double Score, ServingProfile? Profile) BestLoadable(
-            List<(EngineRuntimeInfo E, double Score, ServingProfile? Profile)> seq)
-        {
-            (EngineRuntimeInfo E, double Score, ServingProfile? Profile)? best = null;
-            foreach (var s in seq)
-            {
-                if (best is null || s.Score > best.Value.Score || (s.Score == best.Value.Score &&
-                    string.CompareOrdinal(s.E.Name, best.Value.E.Name) < 0))
-                {
-                    best = s;
-                }
-            }
-            return best!.Value;
-        }
+        var needsEscalation = target is not null && (named is null ? engine.ActiveContextWindow < target.MaxContext
+            : !engine.Observation.Capability.Serving.Matches(model, target));
+        if (loaded && !needsEscalation) return new(false, named);
+        if (config.AutoSwitch && (named is null || engine.CanSwitchProfile && (engine.CanLoad || engine.Observation.Inflight == 0)))
+            return new(true, target?.Name);
+        return null;
     }
 
     internal static ServingProfile? SmallestFittingProfile(IReadOnlyList<ServingProfile> profiles, long requiredTokens)
