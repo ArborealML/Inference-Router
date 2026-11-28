@@ -1,11 +1,11 @@
 ---
 id: TASK-77
 title: Split one remote flag into transport reach and model-loading ownership
-status: Waiting
+status: In Progress
 assignee:
   - '@gpt-6.2-sol-release'
 created_date: '2026-11-18T02:37:00Z'
-updated_date: '2026-11-28T12:29:00Z'
+updated_date: '2026-11-28T14:18:17Z'
 labels:
   - lifecycle
   - scheduling
@@ -24,7 +24,7 @@ ordinal: 77000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Wake after TASK-206's seam and TASK-110/190/197/198 physical ownership, recovery and conformance contracts. Preserve the shipped transport/lifecycle split and legacy resident forwarding. Finish managed-peer activation through the narrow authenticated manager contract, not remote container commands.
+Implement the authenticated router and host-manager roles on the protected serving path. The router owns admission and placement. Each manager owns its domain’s physical execution and recovery. Integrated private transport and process qualification supply the local boundary. Multi-host deployment remains a separate acceptance measurement.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

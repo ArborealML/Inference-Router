@@ -5,7 +5,7 @@ status: To Do
 assignee:
   - '@gpt-6.2-astra'
 created_date: '2026-11-27'
-updated_date: '2026-11-28T11:08:00Z'
+updated_date: '2026-11-28T14:18:17Z'
 labels: []
 milestone: m-20
 dependencies:
@@ -40,3 +40,9 @@ Extend existing route comparison: hard model/fit/trust/filter and scoped capacit
 
 TASK-213 adds included preference to this same evaluator; no generic optimizer. TASK-212 integrates real durable reservations and authorization; no live enablement from this task.
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+The account-capacity plan is under independent review. Check shared-account retention across uncertain sends, scoped cooldown wakes and selection when another route is eligible before starting implementation.
+<!-- SECTION:NOTES:END -->

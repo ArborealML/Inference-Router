@@ -1,11 +1,11 @@
 ---
 id: TASK-210
 title: Configure commercial chat providers in the existing AOT transport
-status: In Progress
+status: Ready for Review
 assignee:
-  - '@gpt-6.2-sol-config'
+  - '@gpt-6.2-astra'
 created_date: '2026-11-27'
-updated_date: '2026-11-28T14:04:00Z'
+updated_date: '2026-11-28T14:18:17Z'
 labels: []
 milestone: m-20
 dependencies:
@@ -47,4 +47,6 @@ Extend the existing SSE observer to verify the served model before releasing sem
 
 <!-- SECTION:NOTES:BEGIN -->
 Review at 42f2369 found default probes, permissive older loaders, projection fallback and passive identity observation. Test these paths with renamed loopback definitions in one AOT binary. Account controls remain with TASK-211–213.
+
+[Controlled direct transport](https://github.com/ArborealML/Inference-Router/pull/105) passed 180 source checks and a two-provider Native AOT loopback run. Combined with commissioned startup and owned-private cleanup, 159 focused Release tests passed. Independent review and hosted CI cover the integrated candidate. Live provider qualification and spending authority remain open.
 <!-- SECTION:NOTES:END -->
