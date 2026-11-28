@@ -1,11 +1,11 @@
 ---
 id: TASK-208
-title: "Linearize sensitivity escalation and human declassification"
+title: Linearize sensitivity escalation and human declassification
 status: To Do
 assignee:
   - '@gpt-6.2-astra'
 created_date: '2026-11-27'
-updated_date: '2026-11-28T11:08:00Z'
+updated_date: '2026-11-28T12:31:00Z'
 labels: []
 milestone: m-19
 dependencies:
@@ -33,5 +33,15 @@ Implement durable autonomous escalation and privileged revision-bound de-escalat
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Use one-use authorization in existing dispatch/transport, not a second scheduler. TASK-212 owns integrated commercial reservation/journal/send path; TASK-210 owns transport coverage. Test with fake privileged versus inference credentials. External control supplies genuine human approval and transcript scope; Pi displays affected context. If external lowering privilege is unavailable, keep de-escalation disabled and never advertise human-only qualification (TASK-217). Require independently authorized principal/root scope regardless. Fixture receipts confer no production egress permission.
+Use the verified owner and policy-group store from TASK-207. Add durable escalation and revision-bound lowering. Expose lowering only when the external authority explicitly supplies the separate human privilege for that group, revision and target. Retried escalation is idempotent; concurrent stale lowering fails. Preserve restrictions across restore and derived sessions.
+
+Order policy publication with the last reversible dispatch decision for the same group. Bind a one-use authorization to the exact provider, body, attempt, configuration and policy revision. Persist policy before acknowledging escalation. If earlier authorization already permits transmission, record possible exposure and request cancellation; keep its physical and financial obligations until reconciliation. Keep file, authority and network I/O outside scheduling gates. An unrelated group can progress.
+
+For private transport validate trust and revision before every attempt, including retries and auxiliary requests. Exercise the commercial side with controlled permit and liability receipts only. Race delayed persistence and send in each order. Crash or an uncertain external write must deny new authorizations until reconciled. Check status and Pi-facing responses disclose the effective scope and revision. Paid sending and external credential issuance retain their existing owners.
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+The revision and final-send plan is under independent review against the private-policy candidate. Platform authority for real lowering remains separately gated.
+<!-- SECTION:NOTES:END -->

@@ -3,11 +3,11 @@ id: TASK-25
 title: >-
   Reserve the switch's own ticket before a lifecycle transaction drains an
   engine
-status: Ready for Review
+status: In Progress
 assignee:
-  - '@gpt-6.2-astra'
+  - '@gpt-6.2-sol-lifecycle'
 created_date: '2026-11-17T02:41:00Z'
-updated_date: '2026-11-28T12:29:00Z'
+updated_date: '2026-11-28T12:37:29Z'
 labels:
   - engine
   - lifecycle
@@ -52,5 +52,5 @@ Through ordinary server construction, capture the original queued ticket and exa
 <!-- SECTION:NOTES:BEGIN -->
 The review found that the current admission check rejects a busy incumbent and that lifecycle staging closes before drain. The historical drain also treated an absent tracker as zero. Capture the original tracker and seal before discarding staging. Recheck its authoritative zero and the exact serving process before any mutation. TASK-25 and TASK-118 consume the same production-composition evidence.
 
-[Host-manager drain](https://github.com/ArborealML/Inference-Router/pull/99) at d84dccc passed 346 focused tests. The ordinary HTTP fixture supplies a controlled host authority. A client disconnect released its logical slot and the incumbent remained active through physical retirement. The shipping executable still requires the positive authority adapter. Review at d84dccc found default HTTP stream credit could grow to nearly 2 GiB per ticket and affect a legacy route serving the same model. The correction aef5e2a applies 64 KiB default credit at commissioned selection and preserves legacy behavior. All 77 affected tests passed, including dual stalled consumers and held terminal flushes.
+[Host-manager drain](https://github.com/ArborealML/Inference-Router/pull/99) at d84dccc passed 346 focused tests. The ordinary HTTP fixture supplies a controlled host authority. A client disconnect released its logical slot and the incumbent remained active through physical retirement. The shipping executable still requires the positive authority adapter. At aef5e2a, 77 checks passed for selected 64 KiB credit, shared-model legacy behavior and held terminal flushes. Review at 5e163f5 found an earlier heartbeat write can stall across selection. Bound that handoff and qualify cancellation, late writer settlement and physical retirement.
 <!-- SECTION:NOTES:END -->
