@@ -5,7 +5,7 @@ namespace Arboreal.InferenceRouter;
 // Internal enrollment is supplied by a trusted composition root. Public configuration cannot
 // create a controller, a verified issuer, or evidence that they own the physical domain.
 internal sealed record HostManagerEnrollment(ExactTicketAdmission.DomainIdentity Domain, HostLifecycleCoordinator Controller,
-    HostClosedRouteStaging Staging, IVerifiedDispatchIssuer Issuer, IReadOnlyDictionary<string, HostStagedRuntimeFixture> Members,
+    HostClosedRouteStaging Staging, IVerifiedDispatchIssuer Issuer, IReadOnlyDictionary<string, HostStagedRuntimeFixture?> Members,
     Func<HostClosedRouteStage, VerifiedDispatchResident?> ObserveResident,
     Func<EngineDefinition, LifecycleTarget, VerifiedDispatchTarget?> ResolveRecipe);
 
@@ -45,8 +45,9 @@ internal sealed class InProcessHostManager
                     throw InvalidEnrollment();
                 _commissioned.Add(enrollment.Domain, new(authority, enrollment.Staging));
             }
-            foreach (var engine in enrollment.Members.Keys)
-                if (!_members.TryAdd(engine, enrollment)) throw InvalidEnrollment();
+            foreach (var (engine, fixture) in enrollment.Members)
+                if (fixture is null && !enrollment.Controller.UsesCommissionedDriver || !_members.TryAdd(engine, enrollment))
+                    throw InvalidEnrollment();
         }
     }
 
@@ -77,7 +78,8 @@ internal sealed class InProcessHostManager
         if (_engines is not null || _members.Count == 0) throw InvalidEnrollment();
         foreach (var (engine, enrollment) in _members)
             if (!config.Engines.TryGetValue(engine, out var definition) || definition.Name != engine ||
-                definition.LifecycleGroup is null || !definition.HasExplicitRouterLifecycle ||
+                definition.LifecycleGroup is null && !_commissioned.ContainsKey(enrollment.Domain) ||
+                !definition.HasExplicitRouterLifecycle ||
                 definition.Lifecycle != EngineLifecycleKind.Docker ||
                 !_commissioned.ContainsKey(enrollment.Domain) && definition.Docker?.Resources is not null ||
                 !enrollment.Members.ContainsKey(engine)) throw InvalidEnrollment();
@@ -127,6 +129,23 @@ internal sealed class InProcessHostManager
             }
         }
         return _members.ToDictionary(static entry => entry.Key, static entry => entry.Value.Domain, StringComparer.Ordinal);
+    }
+
+    internal bool TryAttachInitial(VerifiedDispatchResident resident, EnrolledInitialReadiness evidence,
+        Func<bool> authorize, CancellationToken ct)
+    {
+        var route = resident.Route;
+        if (ct.IsCancellationRequested || _engines?.GetValueOrDefault(route.Engine) is not { } engine ||
+            !_members.TryGetValue(route.Engine, out var enrollment) ||
+            !_commissioned.TryGetValue(enrollment.Domain, out var issuer) ||
+            !ReferenceEquals(resident.Issuer, enrollment.Issuer) || evidence.Route != route ||
+            evidence.CanonicalModel != resident.Target.Model || evidence.Serving.Model != resident.Target.Model ||
+            evidence.Serving.Profile != resident.Target.Tier || evidence.Serving.TotalSlots != resident.TotalSlots ||
+            evidence.Serving.ContextWindow != resident.MeasuredWindow || !resident.Fits(resident.TierWindow) ||
+            Recipe(route.Engine, resident.Target.Model, resident.Target.Tier) != resident.Target ||
+            engine.GetProfile(resident.Target.Model, resident.Target.Tier)?.MaxContext != resident.TierWindow) return false;
+        return Admission.TryAttachInitial(enrollment.Domain, resident, issuer, enrollment.Staging,
+            () => authorize() && engine.TryPublishAttachedResident(evidence, ct));
     }
 
     internal HostEngineEnrollment? Bind(EngineDefinition definition)

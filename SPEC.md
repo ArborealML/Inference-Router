@@ -1,12 +1,13 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.175)
+Status: draft, continuously revised (v0.12.176)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
 
 ## 0. Revision log
 
+- v0.12.176 — connect the executable to the protected catalog, operation head, serving broker, and exact native terminal sources. Attach a checked resident before dispatch and bind the successor before closing its incumbent. The original issuer epoch confirms the cutoff and the anchored journal checks the frozen recipe on replay. Bounded broker snapshots and an authenticated writer generation preserve replay fences through initial-resident restart (§§4, 7.6, 12.1).
 - v0.12.175 — qualify managed local routing with a full remote provider and publish request-scoped, bounded, revision-checked queue observations (§§5.4–5.5, 10, 14).
 - v0.12.174 — bind owned private inference to verified external scope and durable policy, qualify direct private transport and bounded streaming, and scope catalog, status, events and ticket controls (§§5.6, 6).
 - v0.12.173 — compose enrolled exact dispatch in the standard web application and require generation-specific physical retirement before mutation, and bound commissioned SSE output at route selection, including a pending first heartbeat (§§4, 7.6, 12.1).
@@ -4359,11 +4360,42 @@ existing host (`--host`), start a local host (`--local`), or start the
 listener (`--listen-only`). v1 keeps the interfaces (`IInferenceRouter`,
 event feed) host-agnostic; the wire contract lands when host mode lands.
 
-The commissioned server fixture uses in-process calls to the enrolled controller and issuer per
-physical domain. The shipping executables refuse an explicit `--commissioned` selection before
-ordinary configuration is loaded. A protected adapter for installed broker and operation heads,
-held-partition evidence and the serving handler's native terminal reports is required to enable
-that selection. Separate manager processes and remote transport require further qualification.
+Both server binaries accept `serve --commissioned <protected-authority-directory>`. They read
+the fixed protected `bootstrap.json` and `router.toml` and inherit one listening Unix socket for
+native terminal evidence. Catalog, operation head, broker head and the held partition must
+corroborate the approved initial resident, handler and worker, serving profile, actual listener
+and exact issuer epoch before HTTP starts. The runtime serves through the same queue and
+verified application transport. Direct engine health polls do not supply enrolled readiness.
+
+The accepted successor uses one protected checkpoint and worker history. The broker records
+its closed cutoff against the installed incumbent, the proposed stop ID, and the approved
+successor recipe and create digests before stop intent is persisted. The same issuer epoch
+must confirm the cutoff. The operation journal also verifies the frozen recipe when it replays
+the anchored history. The worker subsequently
+checks that cutoff and exact incumbent, observes vacancy separately, and binds the installed
+launch to the next broker generation. A committed close survives lost physical readback.
+A restarted writer can attach the same initial resident when the approved checkpoint and
+operation head still match, the held process and listener corroborate the exact binding, and
+every previous physical use is settled. The original enrolled reservation excludes a second
+startup owner. The new writer closes ingress before repeating bound readiness and installs a
+fresh application writer identity. A changed scope, outstanding use, successor checkpoint
+or durable cutoff refuses automatic startup.
+
+The broker retains outstanding uses, the current readiness proof and a bounded durable
+application replay window. A new use must carry the current writer identity and a sequence
+that has neither been consumed nor fallen behind the window. Terminal application details
+can be released without enabling a replay. The head selects one of two bounded snapshots
+by exact digest and revision. A refused advance leaves the preceding snapshot authoritative.
+A lost reply needs a fresh head read identifying the exact candidate before it can authorize
+the caller. An unanchored suffix in a previously installed append-only prefix supplies no
+authority.
+
+Commissioned operation requires the separately installed authority peers, distinct handler
+identity, supported Linux kernel evidence and instrumented serving process. Build the
+`air-operation-head` and `air-successor-observer` peers from the same source revision.
+The held partition and retirement readers must understand the pre-stop cutoff and its frozen
+successor binding. The server and peers attach to existing commissioning. Installation,
+end-to-end qualification of the installed roles, and automatic post-crash recovery remain open.
 
 ### 12.2 Cross-host prefix prioritization
 Scheduler gains a peer-level trie: prefer the peer whose trie already holds

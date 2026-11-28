@@ -70,6 +70,27 @@ internal sealed class HostClosedRouteStaging(
     internal bool MatchesEnrollment(ExactTicketAdmission.DomainIdentity domain) => Enrollment == domain;
     internal Lock IssuerGate => _gate;
 
+    internal bool AttachInitial(VerifiedInstanceRoute route, Func<bool> attach)
+    {
+        lock (_gate)
+        {
+            if (_opening || _generation != 0 || _owner is not null || _openRoute is not null ||
+                route.RouteIncarnation <= 0 || Enrollment is not { } enrollment ||
+                route.HostGroup != enrollment.Name || route.EnrollmentGeneration != enrollment.Generation) return false;
+            _openRoute = route;
+            try
+            {
+                if (!attach()) return false;
+                _generation = route.RouteIncarnation;
+                return true;
+            }
+            finally
+            {
+                if (_generation == 0) _openRoute = null;
+            }
+        }
+    }
+
     internal bool SealCommissionedRoute(VerifiedInstanceRoute expected)
     {
         if (!_gate.IsHeldByCurrentThread || _opening || _openRoute != expected) return false;
@@ -146,13 +167,19 @@ internal sealed class HostClosedRouteStaging(
         public async ValueTask<LifecycleResult> VerifyAndPublishAsync(string reservationPath, HostReservationState state,
             HostMutation operation, string containerId, Func<CancellationToken, Task<bool>> verifyIdentity, CancellationToken ct)
         {
-            var publication = deadlinePublication!;
             var launch = LoadExactLaunch(state, operation, containerId);
-            if (launch is null || !publication.MatchesLaunch(launch.Plan)) return Refused();
-
-            using var deadline = ReadinessDeadline.Start(publication.Clock,
+            if (launch is null) return Refused();
+            using var deadline = ReadinessDeadline.Start(deadlinePublication!.Clock,
                 TimeSpan.FromMilliseconds(launch.Plan.ReadinessTimeoutMs), ct);
-            if (ReserveClosedStage(reservationPath, launch) is not { } stage) return Refused();
+            return await VerifyEnrolledPublicationAsync(reservationPath, launch, verifyIdentity, deadline).ConfigureAwait(false);
+        }
+
+        internal async ValueTask<LifecycleResult> VerifyEnrolledPublicationAsync(string reservationPath,
+            HostCheckpointLaunchEffect launch, Func<CancellationToken, Task<bool>> verifyIdentity, ReadinessDeadline deadline)
+        {
+            var publication = deadlinePublication!;
+            if (!launch.IsValid() || !publication.MatchesLaunch(launch.Plan) ||
+                ReserveClosedStage(reservationPath, launch) is not { } stage) return Refused();
 
             var identity = await deadline.ObserveAsync(verifyIdentity).ConfigureAwait(false);
             if (identity.Outcome != ReadinessStepOutcome.Completed)

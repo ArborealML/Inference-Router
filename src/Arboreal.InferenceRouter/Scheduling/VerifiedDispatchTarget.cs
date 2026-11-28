@@ -18,6 +18,23 @@ internal sealed record VerifiedDispatchTarget(string Engine, string Model, strin
 /// <summary>Resolves offline launch intent using one captured parsed catalog and its pure Docker projection.</summary>
 internal sealed class VerifiedDispatchTargetResolver
 {
+    internal (string Model, string Tier) SelectConfiguredTier(string requestedModel, string? selectedTier, long requiredTokens)
+    {
+        if (requiredTokens < 0 || !_spellings.TryGetValue(requestedModel, out var model))
+            throw new VerifiedDispatchBindingException(VerifiedDispatchRefusal.Target);
+
+        if (selectedTier is null && requiredTokens > 0)
+            selectedTier = PrefixAwareScheduler.SmallestFittingProfile(model.ServingProfiles, requiredTokens)?.Name
+                ?? throw new VerifiedDispatchBindingException(VerifiedDispatchRefusal.Target);
+
+        var launch = _plans.Resolve(_engine, requestedModel, selectedTier)
+            ?? throw new VerifiedDispatchBindingException(VerifiedDispatchRefusal.Target);
+        var tier = model.ServingProfiles.FirstOrDefault(profile => profile.Name == launch.Profile);
+        if (tier is null || tier.MaxContext < requiredTokens)
+            throw new VerifiedDispatchBindingException(VerifiedDispatchRefusal.Target);
+        return (launch.Model, tier.Name);
+    }
+
     private readonly string _engine;
     private readonly DockerTargetPlans _plans;
     private readonly DockerImageIdentity _image;

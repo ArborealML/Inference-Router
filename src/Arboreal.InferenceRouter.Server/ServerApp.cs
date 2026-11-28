@@ -21,7 +21,7 @@ public static partial class ServerApp
         foreach (var arg in args)
         {
             if (arg != "--commissioned" && !arg.StartsWith("--commissioned=", StringComparison.Ordinal)) continue;
-            Console.Error.WriteLine("error: this executable has no protected commissioned authority adapter");
+            Console.Error.WriteLine("error: --commissioned must be handled by protected startup");
             return false;
         }
         for (var i = 0; i < args.Length; i++)
@@ -62,7 +62,8 @@ public static partial class ServerApp
         TimeProvider streamClock, Func<EngineDefinition, Lifecycle.IEngineLifecycleProvider>? lifecycleFactory = null,
         Func<EngineDefinition, HttpMessageHandler>? httpHandlerFactoryForTests = null, string? reloadTokenForTests = null,
         Func<string?>? readTargetResetOptInForTests = null, TimeProvider? adminSwitchClockForTests = null,
-        OwnedPrivateServerComposition? ownedComposition = null, InProcessHostManager? hostManager = null)
+        OwnedPrivateServerComposition? ownedComposition = null, InProcessHostManager? hostManager = null,
+        bool startDispatcher = true)
     {
         configPath = RouterConfigLoader.ResolveFilePath(configPath);
         var credential = configOverride is null && hostManager is null
@@ -138,7 +139,7 @@ public static partial class ServerApp
 #pragma warning restore IL3050
 #pragma warning restore IL2026
 
-        app.Services.GetRequiredService<RouterCore>().Start();
+        if (startDispatcher) app.Services.GetRequiredService<RouterCore>().Start();
         return app;
     }
 

@@ -58,22 +58,36 @@ internal interface IHostLifecycleProvider
 
 /// <summary>Serializes one host transaction through readiness and leaves uncertain effects recorded
 /// for the next holder. Every cooperating launcher uses the same local reservation file.</summary>
-internal sealed partial class HostLifecycleCoordinator(string reservationPath, IHostLifecycleProvider provider,
-    HostClosedRouteStaging? stagingForTests = null, IHostInitialLaunchAuthority? initialLaunch = null)
+internal interface ICommissionedSwitchDriver
+{
+    string? ReadPlanDigest(LifecycleTarget target);
+    ValueTask<HostStagedSwitchResult> SwitchAsync(LifecycleTarget target, HostStagedDeadlinePublication publication, CancellationToken ct);
+}
+
+internal sealed partial class HostLifecycleCoordinator(string reservationPath, IHostLifecycleProvider? provider,
+    HostClosedRouteStaging? stagingForTests = null, IHostInitialLaunchAuthority? initialLaunch = null,
+    ICommissionedSwitchDriver? commissioned = null)
 {
     private readonly string _reservationPath = reservationPath;
     private readonly IHostInitialLaunchAuthority? _initialLaunch = initialLaunch;
+
+    internal bool UsesCommissionedDriver => commissioned is not null;
 
     internal bool OwnsStaging(HostClosedRouteStaging staging) => ReferenceEquals(stagingForTests, staging);
 
     internal bool MatchesScope(HostReservationScope scope) => Path.GetFullPath(_reservationPath) == scope.Slot;
 
-    internal bool MatchesRecipe(LifecycleTarget target, string digest) => provider.GetLaunchPlanDigest(target) == digest;
+    private IHostLifecycleProvider Provider => provider
+        ?? throw new InvalidOperationException("This host coordinator requires the enrolled switch driver.");
+
+    internal bool MatchesRecipe(LifecycleTarget target, string digest) =>
+        (commissioned is null ? Provider.GetLaunchPlanDigest(target) : commissioned.ReadPlanDigest(target)) == digest;
 
     public async ValueTask<LifecycleResult> SwitchAsync(
         LifecycleTarget target, CancellationToken ct, HostSwitchPublication? publication = null,
         HostStagedPublication? stagedPublicationForTests = null)
     {
+        if (commissioned is not null) return PublicationRefusal();
         if ((stagingForTests is null) != (stagedPublicationForTests is null) ||
             (stagedPublicationForTests is not null && (publication is not null || stagedPublicationForTests.ClaimId == Guid.Empty)))
             return PublicationRefusal();
@@ -99,6 +113,10 @@ internal sealed partial class HostLifecycleCoordinator(string reservationPath, I
         if (stagingForTests is null || publication.ClaimId == Guid.Empty ||
             publication.ExpectedPlanDigest is { } expected && !MatchesRecipe(target, expected))
             return new(PublicationRefusal(), default);
+
+        if (commissioned is not null)
+            return publication.CommissionedCut is null ? new(PublicationRefusal(), default)
+                : await commissioned.SwitchAsync(target, publication, ct).ConfigureAwait(false);
 
         using var staged = stagingForTests.Begin(publication);
         try
@@ -153,7 +171,7 @@ internal sealed partial class HostLifecycleCoordinator(string reservationPath, I
                 reservation.Settle(pending);
             else if (reservation.State.Phase == HostMutationPhase.Dispatching)
             {
-                var outcome = await ReadOutcomeAsync(() => provider.ReconcileAsync(pending, ct)).ConfigureAwait(false);
+                var outcome = await ReadOutcomeAsync(() => Provider.ReconcileAsync(pending, ct)).ConfigureAwait(false);
                 if (!TryRecordOutcome(reservation, pending, outcome)) return PendingOperation();
             }
 
@@ -183,9 +201,9 @@ internal sealed partial class HostLifecycleCoordinator(string reservationPath, I
         }
         else if (!IsVacant(occupancy)) return OccupancyRefusal();
 
-        var preflight = await provider.PreflightAsync(target, ct).ConfigureAwait(false);
+        var preflight = await Provider.PreflightAsync(target, ct).ConfigureAwait(false);
         if (!preflight.Succeeded) return preflight;
-        var planDigest = staged?.ExpectedPlanDigest ?? provider.GetLaunchPlanDigest(target);
+        var planDigest = staged?.ExpectedPlanDigest ?? Provider.GetLaunchPlanDigest(target);
         if (!HostMutation.IsPlanDigest(planDigest))
             return LifecycleResult.Fail("host_plan_unbound", "the host authority did not bind the full launch plan");
 
@@ -200,7 +218,7 @@ internal sealed partial class HostLifecycleCoordinator(string reservationPath, I
         staged?.Close();
         // The physical port may still return a guard after expiry. This helper keeps
         // ownership of that guard until the caller either accepts it or abandons it.
-        var providerDrain = provider.CloseAndDrainAsync(occupancy.Resident, ct);
+        var providerDrain = Provider.CloseAndDrainAsync(occupancy.Resident, ct);
         using var drain = deadline is null ? await providerDrain.ConfigureAwait(false)
             : await AwaitGuardAsync(providerDrain.AsTask(), deadline, ct).ConfigureAwait(false);
         if (drain is null) return UnprovenDrain();
@@ -208,8 +226,8 @@ internal sealed partial class HostLifecycleCoordinator(string reservationPath, I
 
         if (occupancy.Resident is { } owned)
         {
-            var revalidated = deadline is null ? await provider.PreflightAsync(target, ct).ConfigureAwait(false)
-                : await deadline.ObserveAsync(token => provider.PreflightAsync(target, token).AsTask()).ConfigureAwait(false) switch
+            var revalidated = deadline is null ? await Provider.PreflightAsync(target, ct).ConfigureAwait(false)
+                : await deadline.ObserveAsync(token => Provider.PreflightAsync(target, token).AsTask()).ConfigureAwait(false) switch
                 {
                     { Outcome: ReadinessStepOutcome.Completed, Observation: { } result } => result,
                     _ => UnprovenDrain(),
@@ -228,7 +246,7 @@ internal sealed partial class HostLifecycleCoordinator(string reservationPath, I
             reservation.MarkDispatching(stop);
             drain.WithdrawIncumbent();
             var stopped = await ReadOutcomeAsync(() => permit is null ?
-                provider.StopAsync(stop, ct) : permit.StopAsync(stop, ct)).ConfigureAwait(false);
+                Provider.StopAsync(stop, ct) : permit.StopAsync(stop, ct)).ConfigureAwait(false);
             if (!TryRecordOutcome(reservation, stop, stopped)) return PendingOperation();
             if (stopped.Status != HostMutationStatus.Applied)
                 return LifecycleResult.Fail("host_stop_refused", "the host refused to stop the incumbent; check its state before retrying");
@@ -243,7 +261,7 @@ internal sealed partial class HostLifecycleCoordinator(string reservationPath, I
         var launch = reservation.Begin(epoch, HostMutationKind.Launch, target.EngineName, target.Model,
             target.Profile?.Name ?? target.Definition.Profile, planDigest);
         reservation.MarkDispatching(launch);
-        var launched = await ReadOutcomeAsync(() => provider.LaunchAsync(launch, target, ct)).ConfigureAwait(false);
+        var launched = await ReadOutcomeAsync(() => Provider.LaunchAsync(launch, target, ct)).ConfigureAwait(false);
         if (!TryRecordOutcome(reservation, launch, launched)) return PendingOperation();
         if (launched.Status != HostMutationStatus.Applied)
             return LifecycleResult.Fail("host_launch_refused", "the host refused the launch; check the target launch configuration");
@@ -284,17 +302,17 @@ internal sealed partial class HostLifecycleCoordinator(string reservationPath, I
     private bool MatchesRequest(HostMutation launch, LifecycleTarget target, string? expectedDigest = null) =>
         launch.Engine == target.EngineName && launch.Target == target.Model &&
         launch.Profile == (target.Profile?.Name ?? target.Definition.Profile) &&
-        launch.PlanDigest == (expectedDigest ?? provider.GetLaunchPlanDigest(target));
+        launch.PlanDigest == (expectedDigest ?? Provider.GetLaunchPlanDigest(target));
 
     private async ValueTask<LifecycleResult> RecoverLaunchAsync(HostReservation reservation, HostMutation launch,
         string containerId, LifecycleTarget target, HostSwitchPublication? publication, HostClosedRouteStaging.Attempt? staged,
         CancellationToken ct)
     {
         var instance = new HostResident(launch.Engine, containerId);
-        if (!await IsCurrentInstanceAsync(provider, instance, ct).ConfigureAwait(false)) return OccupancyRefusal();
-        using var drain = await provider.CloseAndDrainAsync(instance, ct).ConfigureAwait(false);
+        if (!await IsCurrentInstanceAsync(Provider, instance, ct).ConfigureAwait(false)) return OccupancyRefusal();
+        using var drain = await Provider.CloseAndDrainAsync(instance, ct).ConfigureAwait(false);
         if (!drain.Result.Succeeded) return drain.Result;
-        if (staged?.UsesDeadline != true && !await IsCurrentInstanceAsync(provider, instance, ct).ConfigureAwait(false))
+        if (staged?.UsesDeadline != true && !await IsCurrentInstanceAsync(Provider, instance, ct).ConfigureAwait(false))
             return OccupancyRefusal();
         return await CompleteLaunchAsync(reservation, launch, containerId, target, drain, publication, staged, ct)
             .ConfigureAwait(false);
@@ -312,7 +330,7 @@ internal sealed partial class HostLifecycleCoordinator(string reservationPath, I
     {
         if (staged?.UsesDeadline == true)
         {
-            var observer = provider;
+            var observer = Provider;
             var expected = new HostResident(launch.Engine, containerId);
             var published = await staged.VerifyAndPublishAsync(_reservationPath, reservation.State, launch, containerId,
                 token => IsCurrentInstanceAsync(observer, expected, token), ct).ConfigureAwait(false);
@@ -320,7 +338,7 @@ internal sealed partial class HostLifecycleCoordinator(string reservationPath, I
             return published;
         }
 
-        var ready = await provider.VerifyReadyAsync(launch, containerId, ct).ConfigureAwait(false);
+        var ready = await Provider.VerifyReadyAsync(launch, containerId, ct).ConfigureAwait(false);
         if (!ready.Succeeded) return ready;
 
         ct.ThrowIfCancellationRequested();
@@ -366,7 +384,7 @@ internal sealed partial class HostLifecycleCoordinator(string reservationPath, I
         }
     }
 
-    private ValueTask<HostOccupancy> ObserveFreshAsync(CancellationToken ct) => ObserveFreshAsync(provider, ct);
+    private ValueTask<HostOccupancy> ObserveFreshAsync(CancellationToken ct) => ObserveFreshAsync(Provider, ct);
 
     private static async ValueTask<HostOccupancy> ObserveFreshAsync(IHostLifecycleProvider observer, CancellationToken ct)
     {

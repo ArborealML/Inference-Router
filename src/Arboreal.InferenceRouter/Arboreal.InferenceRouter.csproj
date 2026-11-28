@@ -24,6 +24,8 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="Arboreal.InferenceRouter.Tests" />
+    <InternalsVisibleTo Include="air-operation-head" />
+    <InternalsVisibleTo Include="air-successor-observer" />
     <InternalsVisibleTo Include="Arboreal.InferenceRouter.HostReservationProbe" />
     <!-- The tuning CLI inspects the same framed upstream bytes as the router relay. -->
     <InternalsVisibleTo Include="air" />

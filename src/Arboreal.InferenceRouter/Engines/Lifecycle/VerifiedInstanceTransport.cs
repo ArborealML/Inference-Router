@@ -1,5 +1,6 @@
 using System.Net;
 using System.Runtime.ExceptionServices;
+using System.Text.Json.Serialization;
 
 namespace Arboreal.InferenceRouter.Lifecycle;
 
@@ -8,7 +9,25 @@ internal readonly record struct VerifiedInstanceRoute(
     string HostGroup, long EnrollmentGeneration, string Engine, string EffectiveTarget,
     string ContainerId, string ServingIncarnation, long LaunchEpoch, long RouteIncarnation);
 
-internal readonly record struct VerifiedInstanceInvocation(VerifiedInstanceRoute Route, Guid Id, Uri LogicalUri);
+internal readonly record struct VerifiedInstanceInvocation(VerifiedInstanceRoute Route, Guid Id, Uri LogicalUri,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] long Sequence = 0,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] Guid CommissionedWriter = default)
+{
+    private static long _issuedSequence;
+
+    internal static long IssueSequence() => Interlocked.Increment(ref _issuedSequence);
+
+    internal static void ContinueAfter(long committedSequence)
+    {
+        long previous;
+        do
+        {
+            previous = Interlocked.Read(ref _issuedSequence);
+            if (previous >= committedSequence) return;
+        }
+        while (Interlocked.CompareExchange(ref _issuedSequence, committedSequence, previous) != previous);
+    }
+}
 
 /// <summary>
 /// The issuer owns authentication, route liveness and the physical admission order.
@@ -17,6 +36,10 @@ internal readonly record struct VerifiedInstanceInvocation(VerifiedInstanceRoute
 internal interface IVerifiedInstanceStreamIssuer
 {
     ValueTask<VerifiedInstanceGrant?> CheckoutAsync(VerifiedInstanceInvocation invocation, CancellationToken ct);
+
+    // Protected issuers can refresh external evidence before the short, ordered gate below.
+    ValueTask<bool> CheckBeforeFirstWriteAsync(VerifiedInstanceGrant grant, CancellationToken ct) =>
+        ValueTask.FromResult(true);
 
     // Authorize only the exact, unspent grant that this issuer transferred for the invocation.
     // A non-null permit counts through issuer-confirmed terminal cleanup. This decision shares
@@ -266,14 +289,16 @@ internal sealed class VerifiedInstanceTransport(
         // read. The issuer still owns channel closure, so pass the caller token through until headers.
         private CancellationToken ReadCancellation(CancellationToken ct) => ct.CanBeCanceled ? ct : _headerCancellation;
 
-        internal ValueTask<Stream> ConnectOnceAsync(SocketsHttpConnectionContext context, CancellationToken ct)
+        internal async ValueTask<Stream> ConnectOnceAsync(SocketsHttpConnectionContext context, CancellationToken ct)
         {
             ct.ThrowIfCancellationRequested();
             if (context.DnsEndPoint.Port != 80 ||
                 !string.Equals(context.DnsEndPoint.Host, "instance.invalid", StringComparison.OrdinalIgnoreCase) ||
                 Interlocked.Exchange(ref _connectorUsed, 1) != 0)
-                return ValueTask.FromException<Stream>(new HttpRequestException("The verified stream was already transferred."));
-            return ValueTask.FromResult<Stream>(this);
+                throw new HttpRequestException("The verified stream was already transferred.");
+            if (!await issuer.CheckBeforeFirstWriteAsync(grant, ct).ConfigureAwait(false))
+                throw new HttpRequestException("The issuer could not corroborate the exact application stream.");
+            return this;
         }
 
         private void Authorize(int byteCount)

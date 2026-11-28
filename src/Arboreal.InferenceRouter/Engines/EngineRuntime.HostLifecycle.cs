@@ -5,7 +5,10 @@ namespace Arboreal.InferenceRouter;
 
 internal sealed record HostEngineEnrollment(string RouterId, string Engine, HostLifecycleCoordinator Controller,
     HostStagedRuntimeFixture? StagedForTests = null, HostImmediateRuntimeFixture? ImmediateForTests = null,
-    InProcessHostManager? Manager = null, Action<HostClosedRouteStage, SwitchServingProof>? RouteOpened = null);
+    InProcessHostManager? Manager = null, Action<HostClosedRouteStage, SwitchServingProof>? RouteOpened = null)
+{
+    internal bool UsesStagedSwitch => StagedForTests is not null || Controller.UsesCommissionedDriver;
+}
 
 internal sealed record HostImmediateRuntimeFixture(Action? BeforeComplete = null, Action<LifecycleResult>? AfterResult = null,
     Action? AfterRun = null);
@@ -19,6 +22,19 @@ internal sealed record HostStagedRuntimeFixture(
 public sealed partial class EngineRuntime
 {
     private readonly HostEngineEnrollment? _hostEnrollment;
+
+    internal bool TryPublishAttachedResident(EnrolledInitialReadiness evidence, CancellationToken ct)
+    {
+        var models = new ModelsObservation(ImmutableList.Create(evidence.CanonicalModel),
+            EngineCapability.NoModelContextWindows, evidence.CanonicalModel);
+        var initial = EngineCapability.Initial;
+        var next = WithModelsObservation(initial, models, evidence.Serving);
+        lock (_transitionGate)
+        {
+            return !_stopped && !_retiring && !ct.IsCancellationRequested && _switchState.Model is null &&
+                ReferenceEquals(Interlocked.CompareExchange(ref _cap, next, initial), initial);
+        }
+    }
 
     private async ValueTask RunImmediateHostSwitchAsync(
         HostEngineEnrollment enrollment, SwitchState state, LifecycleTarget target, CancellationToken ct)
@@ -116,7 +132,7 @@ public sealed partial class EngineRuntime
     }
 
     private ValueTask<HostStagedSwitchResult> SwitchStagedHostAsync(
-        HostLifecycleCoordinator controller, HostStagedRuntimeFixture fixture, SwitchState state,
+        HostLifecycleCoordinator controller, HostStagedRuntimeFixture? fixture, SwitchState state,
         LifecycleTarget target, CancellationToken stop)
     {
         var claimId = Guid.NewGuid();
@@ -126,10 +142,11 @@ public sealed partial class EngineRuntime
         var timing = state.Timing!;
         HostClosedRouteStage? openedStage = null;
         SwitchServingProof? openedProof = null;
-        var publication = new HostStagedDeadlinePublication(claimId, timing.Id, timing.Target, ReadinessClockForTests, fixture.ReadAsync,
+        var publication = new HostStagedDeadlinePublication(claimId, timing.Id, timing.Target, ReadinessClockForTests,
+            fixture?.ReadAsync ?? (static (_, _) => Task.FromResult<HostStagedReadiness?>(null)),
             Settle, Deliver, TryOpen, NotifyOpened,
-            fixture.AfterStageInstalled is { } installed ? _ => installed() : null,
-            fixture.CaptureReadinessCleanup, state.HostTransition?.Recipe.PlanDigest, state.HostTransition?.Cut);
+            fixture?.AfterStageInstalled is { } installed ? _ => installed() : null,
+            fixture?.CaptureReadinessCleanup, state.HostTransition?.Recipe.PlanDigest, state.HostTransition?.Cut);
         return controller.SwitchStagedAsync(target, publication, stop);
 
         bool MatchesClaim(HostClosedRouteStage binding) =>
@@ -194,7 +211,7 @@ public sealed partial class EngineRuntime
                 {
                     try
                     {
-                        if (decision.Proof is { } proof) fixture.AfterProof?.Invoke(proof);
+                        if (decision.Proof is { } proof) fixture?.AfterProof?.Invoke(proof);
                     }
                     finally
                     {
@@ -215,7 +232,7 @@ public sealed partial class EngineRuntime
                 finally
                 {
                     delivery.TrySetResult();
-                    if (ready) fixture.AfterComplete?.Invoke();
+                    if (ready) fixture?.AfterComplete?.Invoke();
                 }
             }
         }
