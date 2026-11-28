@@ -488,6 +488,7 @@ public sealed partial class OwnedPrivatePolicyTests : IDisposable
     {
         internal OwnedPolicyHead? Current { get; set; }
         internal bool ThrowOnCommit { get; set; }
+        internal bool LoseConfirmationOnCommit { get; set; }
         private int _hold;
         internal TaskCompletionSource Entered { get; private set; } = NewSignal();
         internal TaskCompletionSource AllowCommit { get; private set; } = NewSignal();
@@ -512,6 +513,7 @@ public sealed partial class OwnedPrivatePolicyTests : IDisposable
             if (ThrowOnCommit) throw new TimeoutException("mock head confirmation is unavailable");
             if (Current != previous) return false;
             Current = proposed;
+            if (LoseConfirmationOnCommit) throw new TimeoutException("mock head committed without a reply");
             return true;
         }
     }
@@ -519,14 +521,19 @@ public sealed partial class OwnedPrivatePolicyTests : IDisposable
     private sealed class Capture
     {
         private int _requests;
+        private int _modelsProbes;
+        private int _servingProbes;
         private int _holdNext;
         internal int Requests => Volatile.Read(ref _requests);
+        internal int ModelsProbes => Volatile.Read(ref _modelsProbes);
+        internal int ServingProbes => Volatile.Read(ref _servingProbes);
         internal (int Status, string Address)? Redirect { get; init; }
         internal Func<HttpContext, Task>? StreamResponse { get; init; }
         internal bool ReportExtraModel { get; init; }
         internal ConcurrentQueue<(string Path, string Hint, string Authority)> Inferences { get; } = new();
         internal TaskCompletionSource InferenceEntered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         internal TaskCompletionSource AllowInference { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        internal TaskCompletionSource InferenceAborted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         internal void HoldNextInference() => Interlocked.Exchange(ref _holdNext, 1);
 
         internal WebApplication Build()
@@ -546,6 +553,7 @@ public sealed partial class OwnedPrivatePolicyTests : IDisposable
             var response = context.Response;
             if (request.Path == "/models")
             {
+                Interlocked.Increment(ref _modelsProbes);
                 await response.WriteAsync(ReportExtraModel
                     ? """{"data":[{"id":"fixture-model"},{"id":"unconfigured-resident"}]}"""
                     : """{"data":[{"id":"fixture-model"}]}""", request.HttpContext.RequestAborted);
@@ -553,6 +561,7 @@ public sealed partial class OwnedPrivatePolicyTests : IDisposable
             }
             if (request.Path == "/props")
             {
+                Interlocked.Increment(ref _servingProbes);
                 await response.WriteAsync("""{"n_ctx":32768,"total_slots":1}""", request.HttpContext.RequestAborted);
                 return;
             }
@@ -560,7 +569,12 @@ public sealed partial class OwnedPrivatePolicyTests : IDisposable
             if (Interlocked.Exchange(ref _holdNext, 0) != 0)
             {
                 InferenceEntered.TrySetResult();
-                await AllowInference.Task.WaitAsync(request.HttpContext.RequestAborted);
+                try { await AllowInference.Task.WaitAsync(request.HttpContext.RequestAborted); }
+                catch (OperationCanceledException) when (request.HttpContext.RequestAborted.IsCancellationRequested)
+                {
+                    InferenceAborted.TrySetResult();
+                    return;
+                }
             }
             if (Redirect is { } target)
             {

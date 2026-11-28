@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.AspNetCore.Http;
 
 namespace Arboreal.InferenceRouter.Server;
@@ -57,7 +58,9 @@ public static partial class ServerApp
         try
         {
             var scope = await composition.Verify(ctx, ctx.RequestAborted).ConfigureAwait(false);
-            if (scope is null || !scope.Permits(operation)) throw RouterCore.ScopeRequired();
+            if (scope is null || !scope.Permits(operation) ||
+                operation == OwnedInferencePermission.EscalateSensitivity && scope.ExistingGroup is null)
+                throw RouterCore.ScopeRequired();
             if (operation != OwnedInferencePermission.Administer)
             {
                 var groupId = ReadPolicyGroupHeader(ctx);
@@ -82,6 +85,52 @@ public static partial class ServerApp
         await next(ctx).ConfigureAwait(false);
     }
 
+    private static async Task HandleOwnedSensitivityAsync(HttpContext ctx, RouterCore router)
+    {
+        if (ReadOwnedRequest(ctx)?.Group is not { } group)
+        {
+            await OwnedScopeError(ctx).ConfigureAwait(false);
+            return;
+        }
+
+        var cancellationToken = ctx.RequestAborted;
+        var body = await ReadBodyAsync(ctx, router, cancellationToken).ConfigureAwait(false);
+        if (body is null) return;
+        try
+        {
+            using var document = JsonDocument.Parse(body, new JsonDocumentOptions { AllowDuplicateProperties = false });
+            var root = document.RootElement;
+            if (root.ValueKind != JsonValueKind.Object || root.EnumerateObject().Any(static property =>
+                    property.Name is not ("operation" or "expectedRevision" or "sensitive")) ||
+                !root.TryGetProperty("operation", out var operation) || operation.ValueKind != JsonValueKind.String ||
+                !OwnedPrivatePolicy.IsIdentifier(operation.GetString()) ||
+                !root.TryGetProperty("expectedRevision", out var revision) || revision.ValueKind != JsonValueKind.Number ||
+                !revision.TryGetInt64(out var expected) || expected <= 0 ||
+                !root.TryGetProperty("sensitive", out var target) || target.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+                throw InvalidMutation();
+            if (!target.GetBoolean())
+                throw new RouterRequestException("policy_capability_unavailable", "lowering sensitivity is unavailable");
+
+            var outcome = await router.EscalateOwnedSensitivityAsync(group, operation.GetString()!, expected, cancellationToken)
+                .ConfigureAwait(false);
+            await AirJson.WriteAsync(ctx.Response, outcome, AirServerJson.AirServerContext.Default.OwnedSensitivityOutcome,
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (JsonException)
+        {
+            var error = InvalidMutation();
+            await WriteErrorAsync(ctx, 400, error.Code, error.Message).ConfigureAwait(false);
+        }
+        catch (RouterRequestException error)
+        {
+            await WriteErrorAsync(ctx, error.Code == "invalid_request" ? 400 : MapStatus(error.Code), error.Code, error.Message)
+                .ConfigureAwait(false);
+        }
+
+        static RouterRequestException InvalidMutation() =>
+            new("invalid_request", "sensitivity requires an operation, a positive expected revision and a boolean target");
+    }
+
     private static string? ReadPolicyGroupHeader(HttpContext ctx)
     {
         if (!ctx.Request.Headers.TryGetValue(PolicyGroupHeader, out var value)) return null;
@@ -99,6 +148,8 @@ public static partial class ServerApp
             path.Equals("/admin/status", StringComparison.OrdinalIgnoreCase) ||
             path.Equals("/admin/events", StringComparison.OrdinalIgnoreCase)) return OwnedInferencePermission.Read;
         if (path.Equals("/admin/threads", StringComparison.OrdinalIgnoreCase)) return OwnedInferencePermission.ControlThread;
+        if (path.Equals("/admin/policy/sensitivity", StringComparison.OrdinalIgnoreCase) && HttpMethods.IsPost(request.Method))
+            return OwnedInferencePermission.EscalateSensitivity;
         if (path.StartsWithSegments("/admin/tickets", StringComparison.OrdinalIgnoreCase))
             return HttpMethods.IsDelete(request.Method) ? OwnedInferencePermission.Cancel : OwnedInferencePermission.Read;
         return OwnedInferencePermission.Administer;

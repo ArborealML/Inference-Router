@@ -116,7 +116,7 @@ public sealed partial class RouterCore : IInferenceRouter
         var enrollment = _hostManager?.Bind(definition);
         return new(definition, settings, _events, _config.HttpHandlerFactory?.Invoke(definition),
             enrollment is null ? _lifecycleFactory?.Invoke(definition) : null, SignalDispatch, enrollment, _clock, source,
-            localManaged: definition.LifecycleGroup is not null, ownedPrivateTransport: _ownedPolicy is not null);
+            localManaged: definition.LifecycleGroup is not null, ownedPolicy: _ownedPolicy);
     }
 
     private bool UsesExactAdmission(EngineRuntime engine) => _admission is not null && (_hostManager?.Owns(engine.Name) ?? true);
@@ -204,6 +204,7 @@ public sealed partial class RouterCore : IInferenceRouter
             var wait = Volatile.Read(ref t.DispatchWait);
             var upstream = state is TicketState.Completed or TicketState.Cancelled or TicketState.Failed
                 ? t.StreamObservation : null;
+            var effective = t.OwnedPolicy is { } admitted ? _ownedPolicy?.Store.ReadEffectivePolicy(admitted.Key) : null;
             return new TicketSnapshot
             {
                 Id = t.Id,
@@ -219,8 +220,17 @@ public sealed partial class RouterCore : IInferenceRouter
                 UpstreamOutcome = upstream?.OutcomeName,
                 UpstreamEndReason = upstream?.EndReasonName,
                 AttemptPolicyRevision = t.OwnedPolicy?.Group.Revision,
-                CurrentPolicyRevision = t.OwnedPolicy is { } policy && _ownedPolicy?.IsCurrent(policy) == true ? policy.Group.Revision : null,
+                CurrentPolicyRevision = effective?.Revision ??
+                    (t.OwnedPolicy is { } policy && _ownedPolicy?.IsCurrent(policy) == true ? policy.Group.Revision : null),
                 Sensitive = t.OwnedPolicy?.Group.Sensitive,
+                CurrentSensitivity = effective?.Sensitive,
+                PolicyAdmissionState = effective?.AdmissionState,
+                PrivateAttemptMayHaveSent = Volatile.Read(ref t.PrivateAttemptDisposition) switch
+                {
+                    1 => false,
+                    2 => true,
+                    _ => null,
+                },
                 DestinationTrust = t.OwnedPolicy is not null && t.Engine is not null ? "private" : null,
             };
         }
@@ -1548,7 +1558,11 @@ public sealed partial class RouterCore : IInferenceRouter
             }
             finally
             {
-                if (ownsForward) engine.EndForward(candidate.Request.Options?.Profile is not null);
+                if (ownsForward)
+                {
+                    engine.EndForward(candidate.Request.Options?.Profile is not null);
+                    await FinishOwnedPrivateAttemptAsync(ticket).ConfigureAwait(false);
+                }
                 if (!OwnedPolicyEnabled) engine.RecordPrefix(candidate.Messages());
             }
         }
@@ -1598,7 +1612,7 @@ public sealed partial class RouterCore : IInferenceRouter
             Reason = error.Message,
         });
 
-    private static async Task DisposeLateForwardAsync(EngineRuntime engine, Task<HttpResponseMessage> send,
+    private async Task DisposeLateForwardAsync(EngineRuntime engine, Task<HttpResponseMessage> send,
         QueuedRequest candidate)
     {
         try
@@ -1614,6 +1628,7 @@ public sealed partial class RouterCore : IInferenceRouter
         {
             engine.EndForward(candidate.Request.Options?.Profile is not null);
             candidate.LocalLease?.Release();
+            await FinishOwnedPrivateAttemptAsync(candidate.Ticket).ConfigureAwait(false);
         }
     }
 
@@ -1623,6 +1638,14 @@ public sealed partial class RouterCore : IInferenceRouter
         if (!AllowsOwnedRoute(candidate.Ticket, engine.Name))
             throw new RouterRequestException("policy_route_denied", "the owned private route is no longer eligible");
         using var req = MakeUpstreamRequest(engine, body, suffix, candidate.Ticket);
+        if (_ownedPolicy is { Store.UsesGroupJournals: true } policy)
+        {
+            var attempt = policy.FreezeAttempt(candidate.Ticket, engine, req, body);
+            Volatile.Write(ref candidate.Ticket.PrivateAttempt, attempt);
+            Volatile.Write(ref candidate.Ticket.PrivateAttemptDisposition, 1);
+            await policy.Store.RecordIntentAsync(attempt, ct).ConfigureAwait(false);
+            req.Options.Set(OwnedPrivateAttempt.RequestOption, attempt);
+        }
         engine.ObserveFirstForward(proof, candidate.Ticket.Model, ct);
         try
         {
@@ -1691,6 +1714,7 @@ public sealed partial class RouterCore : IInferenceRouter
             ticket.ObserveStreamRefusal();
             if (OwnedPolicyEnabled)
             {
+                // Response status alone is not proof that an ambiguous private attempt settled.
                 gate?.Pass();
                 Fail(ticket, "engine_error", "the private upstream refused the request");
                 return;
@@ -1732,6 +1756,7 @@ public sealed partial class RouterCore : IInferenceRouter
         else
         {
             var bytes = await res.Content.ReadAsByteArrayAsync(bodyCt).ConfigureAwait(false);
+            ticket.PrivateAttempt?.ObserveTerminal();
             gate?.Pass();      // owed bytes delivered: the ceiling is spent before any terminal work
             Complete(ticket, bytes);
         }
@@ -2198,6 +2223,12 @@ public sealed record TicketSnapshot
     public string? UpstreamEndReason { get; init; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public long? CurrentPolicyRevision { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? CurrentSensitivity { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? PolicyAdmissionState { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? PrivateAttemptMayHaveSent { get; init; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public long? AttemptPolicyRevision { get; init; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
