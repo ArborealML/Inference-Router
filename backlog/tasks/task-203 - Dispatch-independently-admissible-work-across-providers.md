@@ -35,9 +35,11 @@ Fix the existing dispatcher before clustering. A full preferred route masks free
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Capture finite published-ticket rounds in existing depth/ordinal and priority/FIFO order; arrivals cannot extend them. Enumerate currently usable built-in routes before cold choices. Pure feasibility checks and resource-aware exact take revalidate live competing predecessors, ticket/config generations and real caps without I/O under gates. Preserve custom scheduler compatibility and narrow measured-switch ordering. Continue after refusal, invalidation and success without restarting the round.
+Capture finite published-ticket rounds in existing order, excluding later arrivals. Prefer usable built-in routes. Pure probes and exact take revalidate competing predecessors, generations and caps without I/O under gates. Preserve custom schedulers and measured-switch ordering. Continue after refusal, invalidation and success.
 
-Separate local-group observation from explicit ticket/domain drain intent; retire before reassignment and on queue end. Reuse DispatchWake revision/arm/recheck and deadline hooks. Add bounded blocking-scope/alternative observations to existing tickets/events/monitor. Fixtures cover same/different-model remote progress during local holds, inverse saturation, independent/shared groups, long blocked prefixes, hot arrivals, cancellation, reorder and exact-take races. Amend SPEC §§5.4–5.5/14 and README; no parallel scheduler.
+Separate observation from explicit ticket/domain drain intent; retire on reassignment/end. Reuse revision/arm/recheck wake and deadlines. Add bounded wait observations; fixture independent/shared groups, remote progress during holds, blocked prefixes, hot arrivals, cancellation and exact-take races. Amend SPEC/README.
+
+Independently reviewed integration plan: isolated actual-ancestry merges of verified 205/203, 187 and 202 receipts; preserve PR #86, keep #83 separate. Resolve additive wait/upstream ticket projections and SPEC entries only. Inspect automatic source merges; run the affected test union including exact admission and review the pinned merge. No main merge.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
