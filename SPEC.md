@@ -4399,6 +4399,12 @@ successor binding. The operation-head v2 bootstrap accepts distinct reader UIDs 
 (`SuccessorReaderUid`) and automatic serving registration (`RegistrarReaderUid`). Each can read
 the anchored successor history. Only the producer can advance that history. The server and peers attach to existing commissioning. Installation,
 end-to-end qualification of the installed roles, and automatic post-crash recovery remain open.
+The dedicated Linux CI fixture runs the stock router entrypoints and the stock observer,
+ingress, retirement and operation-head executables under separate disposable process
+identities. Controlled catalog, held-partition and Docker peers provide the approved
+fixture scope and report the actual fixture processes and socket identities. The fixture
+checks a buffered incumbent response, a queued successor SSE response and a stale
+same-address refusal across those executable boundaries.
 
 ### 12.2 Cross-host prefix prioritization
 Scheduler gains a peer-level trie: prefer the peer whose trie already holds

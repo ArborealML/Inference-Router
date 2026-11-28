@@ -169,27 +169,29 @@ public sealed partial class HostClosedRouteStagingTests
         var bodyA = StockBody(a, "held-original");
         using var replyA = await PostStockAsync(http, a, bodyA, ct);
         Assert.Equal(HttpStatusCode.OK, replyA.StatusCode);
-        _ = await replyA.Content.ReadAsByteArrayAsync(ct);
+        await ValidateStockBufferedAsync(replyA, a.Key.Model, ct);
         var ticketA = Assert.Single(replyA.Headers.GetValues("X-Inference-Ticket"));
         var aUse = Assert.Single(Assert.IsType<ServingBrokerSnapshot>(readBroker()).Record.Uses,
             use => use.Kind == ServingBrokerUseKind.Application && use.Phase == ServingBrokerUsePhase.Issued);
         Assert.NotNull(aUse.Accepted);
 
-        var bodyB = StockBody(b, "queued-original");
-        var queued = PostStockAsync(http, b, bodyB, ct);
-        var observedTicket = ReadQueuedTicketAsync(http, b, ct);
-        Assert.Same(observedTicket, await Task.WhenAny(observedTicket, queued).WaitAsync(ct));
-        var ticketB = await observedTicket;
+        var bodyB = StockBody(b, "queued-original", stream: true);
+        using var replyB = await PostStockAsync(http, b, bodyB, ct);
+        Assert.Equal(HttpStatusCode.OK, replyB.StatusCode);
+        Assert.Equal("text/event-stream", replyB.Content.Headers.ContentType?.MediaType);
+        var firstPayload = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var streamed = ValidateStockStreamAsync(replyB, b.Key.Model, firstPayload, ct);
+        var ticketB = await ReadQueuedTicketAsync(http, b, ct);
+        Assert.Equal(ticketB, Assert.Single(replyB.Headers.GetValues("X-Inference-Ticket")));
         await WaitAsync(() => readBroker()?.Record.Close is { Conclusive: false }, "sealed cutoff with A still held", ct, router);
         Assert.Empty(daemon.Effects);
-        Assert.False(queued.IsCompleted);
+        Assert.False(firstPayload.Task.IsCompleted);
+        Assert.False(streamed.IsCompleted);
         Assert.Empty(File.ReadAllLines(receiptsB));
         await File.WriteAllBytesAsync(release, [], ct);
 
-        using var replyB = await queued.WaitAsync(ct);
-        Assert.Equal(HttpStatusCode.OK, replyB.StatusCode);
-        _ = await replyB.Content.ReadAsByteArrayAsync(ct);
-        Assert.Equal(ticketB, Assert.Single(replyB.Headers.GetValues("X-Inference-Ticket")));
+        var firstResult = await Task.WhenAny(firstPayload.Task, streamed).WaitAsync(ct);
+        if (firstResult == streamed) await streamed;
         Assert.Equal(StockExpectedEffects, daemon.Effects);
         Assert.Equal(seed.Scope.Commission.Approvals.Single(approval => approval.Plan.Key == b.Key).Launch.Intent.CreateDigest,
             daemon.CreatedBytesDigest);
@@ -199,22 +201,37 @@ public sealed partial class HostClosedRouteStagingTests
             use => use.Kind == ServingBrokerUseKind.Application && use.Phase == ServingBrokerUsePhase.Issued);
         ValidateReceipt(receiptsB, bodyB, finalBackend, bUse);
         await File.WriteAllBytesAsync(releaseSuccessor, [], ct);
-        await AssertOneCompletionAsync(http, ticketA, ct);
-        await AssertOneCompletionAsync(http, ticketB, ct);
+        await streamed.WaitAsync(ct);
         Assert.True(operation.Read(seed.Scope.Reservation)?.Revision > seed.OperationHead.Revision);
         await WaitAsync(() => readBroker()?.Record.Uses.All(use => use.Kind != ServingBrokerUseKind.Application) == true,
             "successor terminal retirement", ct, router);
+        var terminalCutoff = await AssertRequestDispositionsAsync(http, ticketA, ticketB, ct);
+        var ready = Assert.IsType<ServingBrokerSnapshot>(readBroker()).Record.Binding;
+        Assert.Equal(finalBackend.Identity.Listener.Bound.Port, b.Endpoint.Port);
+        using var oldHandler = CommissionedServingPins.TryPin(finalBackend.Identity.Handler);
+        Assert.NotNull(oldHandler);
+        Assert.True(LinuxServingAcceptedSocket.MatchesListener(finalBackend.Identity.Listener, oldHandler));
 
         await finalBackend.StopAsync();
+        Assert.False(LinuxServingAcceptedSocket.MatchesListener(finalBackend.Identity.Listener, oldHandler));
         var staleBytes = await PrepareReceiptAsync("stale-bytes", ct);
         await using var replacement = StockChild.StartRole(BackendUid, "python3", StockChild.SocketScript, "stale",
             b.Endpoint.Port.ToString(CultureInfo.InvariantCulture), staleBytes);
         _ = await replacement.ReadReadyAsync(ct);
+        using (var reachable = new TcpClient())
+            await reachable.ConnectAsync(IPAddress.Loopback, b.Endpoint.Port, ct);
         using var stale = await PostStockAsync(http, b, StockBody(b, "must-not-reach-replacement"), ct);
-        Assert.True((int)stale.StatusCode >= 400);
+        Assert.Equal(HttpStatusCode.BadGateway, stale.StatusCode);
+        using var refusal = JsonDocument.Parse(await stale.Content.ReadAsByteArrayAsync(ct));
+        Assert.Equal("engine_unreachable", refusal.RootElement.GetProperty("error").GetProperty("code").GetString());
         Assert.Empty(File.ReadAllLines(staleBytes));
         Assert.Equal(StockExpectedEffects, daemon.Effects);
         var anchored = Assert.IsType<ServingBrokerSnapshot>(readBroker());
+        Assert.Equal(ready, anchored.Record.Binding);
+        var refusedCheckout = Assert.Single(anchored.Record.Uses, use => use.Kind == ServingBrokerUseKind.Application);
+        Assert.Equal(ready.Route, refusedCheckout.Route);
+        Assert.Equal(ServingBrokerUsePhase.Issued, refusedCheckout.Phase);
+        Assert.Null(refusedCheckout.Accepted);
         await File.WriteAllLinesAsync(Path.Combine(artifacts, standalone ? "standalone.proof" : "air.proof"),
         [
             "router=" + Path.GetFileName(binary) + " " + router.Identity(0),
@@ -226,7 +243,7 @@ public sealed partial class HostClosedRouteStagingTests
             FormattableString.Invariant($"successor uid={BackendUid} handler={finalBackend.Identity.Handler} worker={finalBackend.Identity.Worker} listener={finalBackend.Identity.Listener.Inode}/{finalBackend.Identity.Listener.Cookie}"),
             "replacement " + replacement.Identity(BackendUid),
             FormattableString.Invariant($"before={seed.OperationHead.Revision} after={operation.Read(seed.Scope.Reservation)!.Revision} broker={anchored.Record.Revision} route={anchored.Record.Binding.Route.RouteIncarnation}"),
-            FormattableString.Invariant($"ticket_a={ticketA} ticket_b={ticketB} sealed_use={aUse.Id} successor_use={bUse.Id} cutoff_stop={daemon.StopOperation}"),
+            FormattableString.Invariant($"ticket_a={ticketA} ticket_b={ticketB} sealed_use={aUse.Id} successor_use={bUse.Id} cutoff_stop={daemon.StopOperation} terminal_seq={terminalCutoff} refused_use={refusedCheckout.Id}"),
             "initial " + Assert.Single(File.ReadAllLines(receiptsA)),
             "successor " + Assert.Single(File.ReadAllLines(receiptsB)),
             "effects=" + string.Join(',', daemon.Effects) + " stale_bytes=0 workers_reaped=2",

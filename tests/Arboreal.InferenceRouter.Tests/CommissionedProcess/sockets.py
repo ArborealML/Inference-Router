@@ -76,8 +76,10 @@ def backend(port, model, context, slots, terminal, release, receipts, stop):
         def log_message(self, *args):
             pass
 
-        def answer(self, kind, value, application=None):
+        def answer(self, kind, value, application=None, stream=False):
             result = json.dumps(value, separators=(",", ":")).encode()
+            if stream:
+                result = b"data: " + result + b"\n\ndata: [DONE]\n\n"
             with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as peer:
                 peer.settimeout(30)
                 inode = os.fstat(self.connection.fileno()).st_ino
@@ -92,7 +94,7 @@ def backend(port, model, context, slots, terminal, release, receipts, stop):
                             "use": use.hex(), "sha256": hashlib.sha256(application).hexdigest()
                         }) + "\n")
                 self.send_response(200)
-                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Type", "text/event-stream" if stream else "application/json")
                 self.send_header("Content-Length", str(len(result)))
                 self.send_header("Connection", "close")
                 self.end_headers()
@@ -123,9 +125,14 @@ def backend(port, model, context, slots, terminal, release, receipts, stop):
 
         def do_POST(self):
             body = self.rfile.read(int(self.headers["Content-Length"]))
-            self.answer(4, {"id": "fixture", "object": "chat.completion", "model": model,
-                            "choices": [{"index": 0, "message": {"role": "assistant", "content": "fixture"},
-                                         "finish_reason": "stop"}]}, body)
+            if json.loads(body).get("stream"):
+                self.answer(4, {"id": "fixture-successor", "object": "chat.completion.chunk", "model": model,
+                                "choices": [{"index": 0, "delta": {"content": "successor-only"},
+                                             "finish_reason": "stop"}]}, body, stream=True)
+            else:
+                self.answer(4, {"id": "fixture-incumbent", "object": "chat.completion", "model": model,
+                                "choices": [{"index": 0, "message": {"role": "assistant", "content": "incumbent-only"},
+                                             "finish_reason": "stop"}]}, body)
 
     with ThreadingHTTPServer(("127.0.0.1", port), Handler) as server:
         ns = os.stat("/proc/self/ns/net")
