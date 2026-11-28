@@ -1,11 +1,11 @@
 ---
 id: TASK-210
 title: Configure commercial chat providers in the existing AOT transport
-status: In Progress
+status: Ready for Review
 assignee:
-  - '@gpt-6.2-sol-config'
+  - '@gpt-6.2-astra'
 created_date: '2026-11-27'
-updated_date: '2026-11-28T14:18:17Z'
+updated_date: '2026-11-28T14:34:28Z'
 labels: []
 milestone: m-20
 dependencies:
@@ -46,7 +46,5 @@ Extend the existing SSE observer to verify the served model before releasing sem
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Disabled providers are inert. Controlled fixtures cover strict declarations, projection and served identity. TASK-211–213 own account controls.
-
-[Controlled direct transport](https://github.com/ArborealML/Inference-Router/pull/105) passed 180 source checks and a two-provider Native AOT loopback run. Integrated Release qualification passed 159 tests. Review at d045d69 found two configured error categories collapsed, no finite stream bound after first output, and partial terminal frames exceeding the configured tail limit. Correct all three and qualify physical slot release with a waiting successor. Live provider qualification and spending authority remain open.
+[Controlled direct transport](https://github.com/ArborealML/Inference-Router/pull/105) qualified buffered and streaming chat with two loopback providers in one Native AOT binary. Review at d045d69 identified collapsed error categories, indefinite post-output stalls and excess partial terminal bytes. The correction distinguishes all three categories, separates idle and absolute deadlines, and bounds fragmented tails. A queued successor served after physical abort. Source qualification passed 232 tests. TASK-211–213 own account controls. Live provider qualification remains open.
 <!-- SECTION:NOTES:END -->
