@@ -23,7 +23,7 @@ public sealed class StatelessAdmissionTests
         await using var app = await StartAsync(first, second, ct);
         var router = app.Services.GetRequiredService<RouterCore>();
         var namedRequest = new InferenceRequest { Body = "{}"u8.ToArray(), Options = new() };
-        Assert.Throws<ArgumentNullException>(() => { _ = router.EnqueueAsync(null!, namedRequest); });
+        await Assert.ThrowsAsync<ArgumentNullException>(async () => await router.EnqueueAsync(null!, namedRequest, ct));
         using var http = Client(app);
         using var heldRequest = Request("shared", "held");
         var held = http.SendAsync(heldRequest, ct);
