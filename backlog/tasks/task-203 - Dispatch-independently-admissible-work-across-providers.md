@@ -5,7 +5,7 @@ status: To Do
 assignee:
   - '@gpt-6.2-astra'
 created_date: '2026-11-27'
-updated_date: '2026-11-28T11:50:00Z'
+updated_date: '2026-11-28T11:56:00Z'
 labels: []
 milestone: m-17
 dependencies: []
@@ -50,4 +50,6 @@ Independent plan/source review passed after the cross-engine last-thread-slot ra
 [Hosted CI](https://github.com/ArborealML/Inference-Router/actions/runs/46112027567) passed on this actual head: 2,160 tests, zero failed/skipped, build, Linux AOT/config smoke, strict board and release harness. The synthetic merge tree equals the head tree.
 
 The dispatcher and its qualified fixtures landed in the [main integration](https://github.com/ArborealML/Inference-Router/commit/1bf85d3495ab2517a921d78013ffe69bbefb4325). [PR 94](https://github.com/ArborealML/Inference-Router/pull/94) exercised held preparations in either private domain for shared and distinct models. Its shared-thread control identified the limiting credit and allowed a separate thread through. Commercial backoff, explicit ownership across reassignment and full operator diagnostics retain their acceptance here.
+
+Review of the remaining reverse-dispatch and operator checks is pending. The existing full-remote fixture configures both endpoints as delegated. Add managed-local captures behind a saturated remote for warm and cold cases. Capture the alternative routes and limiting scope from the same scheduling observation.
 <!-- SECTION:NOTES:END -->
