@@ -37,7 +37,9 @@ public static partial class ServerApp
         Console.CancelKeyPress += Cancel;
         try { return await CommissionedServer.RunAsync([.. hostArgs], directory, stop.Token).ConfigureAwait(false); }
         catch (OperationCanceledException) when (stop.IsCancellationRequested) { return 0; }
-        catch (Exception error) when (OperationHeadTransport.IsUnavailable(error) || error is InvalidOperationException)
+        catch (Exception error) when (OperationHeadTransport.IsUnavailable(error) ||
+            error is InvalidOperationException or RouterConfigException or PlatformNotSupportedException or
+                DllNotFoundException or EntryPointNotFoundException)
         {
             Console.Error.WriteLine("The commissioned server could not bind or retain the protected serving authority.");
             return 1;
