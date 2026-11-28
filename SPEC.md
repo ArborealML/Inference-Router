@@ -2177,7 +2177,8 @@ route uses the configured positive output credit, or 64 KiB per ticket when the 
 credit is zero. Selection installs this credit before publishing the stream reader. Ordinary
 routes sharing the model keep the configured legacy default. An initial keepalive write or flush
 that was already pending acquires the watchdog when the commissioned route is selected. Its
-30-second budget starts at the original writer call. Queued output across admitted streams is
+30-second budget starts at the original writer call. An ended or faulted preselection writer
+cancels commissioned delivery before any payload or flush acknowledgment. Queued output across admitted streams is
 bounded by the sum of their byte credits. Each admitted stream also owns its separately bounded
 SSE frame stage. After a relay aborts and discards its queue, a detached downstream write
 retains at most its one slice until that writer settles. A logical timeout or caller terminal

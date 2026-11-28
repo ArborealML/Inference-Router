@@ -147,7 +147,7 @@ public sealed partial class RouterCore
         {
             if (BeforeOptInTransportStartForTests is { } before)
                 await before(ticket.Id).ConfigureAwait(false);
-            if (ticket.IsTerminal) return;
+            if (ticket.IsTerminal || invocation?.IsCommissioned == true && ticket.HttpOutputEnded) return;
             var body = ModelRewriter.Rewrite(candidate.Request.Body, upstreamModel, stream: true, out expectedChoices);
             var suffix = LooksLikeCompletion(candidate.Request.Body) ? "completions" : "chat/completions";
             if (invocation is not null)

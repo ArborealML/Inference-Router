@@ -35,10 +35,26 @@ public static partial class ServerApp
                 return;
             }
 
-            var started = Clock.GetTimestamp();
-            Output.Observe(await FinishKeepaliveAsync(Writer.WriteAsync(frame, ct), frame, started, ct).ConfigureAwait(false));
-            started = Clock.GetTimestamp();
-            Output.Observe(await FinishKeepaliveAsync(Writer.FlushAsync(ct), frame, started, ct).ConfigureAwait(false));
+            try
+            {
+                var started = Clock.GetTimestamp();
+                ObserveKeepalive(await FinishKeepaliveAsync(Writer.WriteAsync(frame, ct), frame, started, ct).ConfigureAwait(false), ct);
+                started = Clock.GetTimestamp();
+                ObserveKeepalive(await FinishKeepaliveAsync(Writer.FlushAsync(ct), frame, started, ct).ConfigureAwait(false), ct);
+            }
+            catch
+            {
+                Ticket.MarkHttpOutputEnded();
+                throw;
+            }
+        }
+
+        private void ObserveKeepalive(FlushResult result, CancellationToken ct)
+        {
+            Output!.Observe(result);
+            if (!result.IsCanceled && !result.IsCompleted) return;
+            Ticket.MarkHttpOutputEnded();
+            if (Ticket.HttpDelivery is not null) throw new OperationCanceledException(ct);
         }
 
         private async ValueTask<FlushResult> FinishKeepaliveAsync(ValueTask<FlushResult> write,
@@ -53,6 +69,12 @@ public static partial class ServerApp
             // A keepalive can start before selection. Delivery is installed before StreamReady
             // publishes a commissioned reader. Apply the original write's remaining budget.
             if (Ticket.HttpDelivery is not { } delivery) return await pending.ConfigureAwait(false);
+            if (Ticket.HttpOutputEnded && !pending.IsCompleted)
+            {
+                _ = RetirePendingWriteAsync(Writer, pending, delivery, frame, charged: false);
+                Writer.CancelPendingFlush();
+                throw new OperationCanceledException(ct);
+            }
             var remaining = WriteTimeout - Clock.GetElapsedTime(started);
             return await ObserveWriteAsync(delivery, new ValueTask<FlushResult>(pending), frame, charged: false,
                 remaining > TimeSpan.Zero ? remaining : TimeSpan.Zero, ct).ConfigureAwait(false);
