@@ -1199,7 +1199,7 @@ public sealed partial class RouterCore : IInferenceRouter
 
                 if (invocation is not null)
                 {
-                    using var request = MakeUpstreamRequest(engine, body, suffix, ticket.ThreadId);
+                    using var request = MakeUpstreamRequest(engine, body, suffix, ticket);
                     await invocation.RunAsync(request, response =>
                     {
                         cts.Token.ThrowIfCancellationRequested();
@@ -1377,7 +1377,7 @@ public sealed partial class RouterCore : IInferenceRouter
     private static async Task<HttpResponseMessage> SendAsync(
         EngineRuntime engine, byte[] body, string suffix, QueuedRequest candidate, SwitchServingProof? proof, CancellationToken ct)
     {
-        using var req = MakeUpstreamRequest(engine, body, suffix, candidate.Ticket.ThreadId);
+        using var req = MakeUpstreamRequest(engine, body, suffix, candidate.Ticket);
         engine.ObserveFirstForward(proof, candidate.Ticket.Model, ct);
         try
         {
@@ -1390,15 +1390,15 @@ public sealed partial class RouterCore : IInferenceRouter
         }
     }
 
-    private static HttpRequestMessage MakeUpstreamRequest(EngineRuntime engine, byte[] body, string suffix, string threadId)
+    private static HttpRequestMessage MakeUpstreamRequest(EngineRuntime engine, byte[] body, string suffix, RouterTicket ticket)
     {
         // The suffix is composed against the endpoint path (EngineRuntime.Combine), so an endpoint
         // mounted under /v1 keeps it.
         var req = new HttpRequestMessage(HttpMethod.Post, engine.CompletionUri(suffix));
         if (engine.ApiKey is not null)
             req.Headers.TryAddWithoutValidation("Authorization", $"Bearer {engine.ApiKey}");
-        if (engine.SendsThreadCacheHint && !string.IsNullOrWhiteSpace(threadId) && threadId != "anon")
-            req.Headers.Add("X-Inference-Thread", ThreadCacheHint(engine.Name, threadId));
+        if (engine.SendsThreadCacheHint && !ticket.IsStateless && !string.IsNullOrWhiteSpace(ticket.ThreadId) && ticket.ThreadId != "anon")
+            req.Headers.Add("X-Inference-Thread", ThreadCacheHint(engine.Name, ticket.ThreadId));
         req.Content = new ByteArrayContent(body);
         req.Content.Headers.TryAddWithoutValidation("Content-Type", "application/json");
         return req;
@@ -1710,6 +1710,7 @@ public sealed partial class RouterCore : IInferenceRouter
 
     private RouterThread? TicketThread(RouterTicket ticket)
     {
+        if (ticket.IsStateless) return null;
         lock (_gate) return _threads.GetValueOrDefault(ticket.ThreadId);
     }
 

@@ -1,12 +1,13 @@
 # Arboreal Inference Router — Specification
 
-Status: draft, continuously revised (v0.12.166)
+Status: draft, continuously revised (v0.12.167)
 Target: .NET 11 (10 acceptable; 11 SDK 11.0.100 installed), Native AOT everywhere.
 Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 `~/src/arboreal/inference-router`. Working notes live in `.local/`, which is gitignored.
 
 ## 0. Revision log
 
+- v0.12.167 — give each inference call with an omitted thread header a request-scoped scheduling identity. The CLI omits the header by default. Explicit names retain their thread limits and ambiguous identity is refused before admission (§§5.1, 6, 11, 14).
 - v0.12.166 — validate admin thread and switch JSON object roots and string fields before registration or switch admission. Malformed shapes return 400 in the route's existing error envelope. Target reset keeps its `invalid_target_reset` contract (§§6, 6.1, 14).
 - v0.12.165 — refresh inherited priorities in pending queues when callers update a thread and validate the new order at exact take (§§5.1, 5.5, 14).
 - v0.12.164 — report the upstream outcome and end reason on terminal streaming tickets and events. One bounded SSE observer supplies raw-byte and semantic-output timing, reported model identity, and usage availability. An upstream error followed by `[DONE]` fails the ticket and preserves the original bytes (§§6, 10, 14).
@@ -1604,6 +1605,14 @@ publication and dispatch wake. Registration of a new thread publishes `thread.re
 publishes priority changes in mutation order, including updates deferred during registration and reentrant
 updates. Thread weight, affinity and active admission stay in effect through a priority change.
 
+An omitted HTTP thread header creates one unattached scheduling thread using the configured default
+priority and that request's optional override. It uses the default model when the request omits a model.
+The request carries this identity through queueing, execution and cleanup. The named-thread registry,
+status counters and registration feed track registered and explicitly supplied names. The retained ticket
+and its events identify an omitted-thread call with `request:<ticket-id>`. A deliberately named thread
+with the same text has its own affinity, priority, cap and counters. The public library `EnqueueAsync`
+accepts an explicit thread name.
+
 `RouterRequestTicket` exposes: `TicketId`, `State`
 (Queued|SelectingEngine|WaitingForModel|Executing|Completed|Cancelled|Failed),
 `QueuedAt`, `Model`, `Engine`, and a `Task<OpenAiChatResult>`-style completion
@@ -3002,10 +3011,16 @@ transport ownership lasts through actual cleanup under §5.5. These settings app
 HTTP SSE. Direct library callers retain producer-side stream completion and may drain after
 awaiting `CompletionTask`.
 
-**Threading through HTTP**: clients convey thread + priority via headers:
-`X-Inference-Thread: agent-42`, `X-Inference-Priority: high:200`
-(`class[:sub]`), `X-Inference-Affinity: <normalized-prefix-hash>` (optional,
-server-side prefix normalization is authoritative anyway (§7.6),
+**Threading through HTTP.** Omit `X-Inference-Thread` for a request-scoped identity. An explicit
+`X-Inference-Thread: agent-42` supplies a case-sensitive named identity and its associated queue cap.
+One non-blank value is required when the header is present. AIR refuses repeated values, comma-joined
+values and control characters with 400 `invalid_request` before it reads the body or creates a ticket.
+Priority header validation still runs first. `anon` supplied explicitly remains a named thread with its
+existing limit. A legacy client can migrate to request-scoped admission by omitting that header.
+
+`X-Inference-Priority` carries the optional priority override. `X-Inference-Affinity` carries an
+optional normalized-prefix hash. Server-side prefix normalization is authoritative (§7.6).
+
 `X-Inference-Profile: <name>` selects one case-sensitive named serving tier for this inference
 request. AIR resolves the model or alias in the applied generation. The tier on a candidate
 engine must fit both the estimated prompt tokens and any explicit minimum. Malformed, unknown
@@ -3022,8 +3037,8 @@ The issuer then enforces its existing route and first-write authorization. Witho
 For ordinary and streaming completions on a loopback Docker engine with explicit router ownership and a local
 lifecycle group, AIR sets the upstream `X-Inference-Thread` to a 64-character lowercase SHA-256 digest.
 The hash input is the UTF-8 bytes of `AIR local inference thread v1`, the four-byte big-endian byte length
-of the engine name, the UTF-8 engine name, and the UTF-8 ticket thread ID. Anonymous (`anon`) and blank
-threads omit the header. Other engines, verified dispatch, and probes receive no hint. The built-in HTTP
+of the engine name, the UTF-8 engine name, and the UTF-8 ticket thread ID. Stateless requests, explicit
+`anon` and blank library names omit the header. Other engines, verified dispatch, and probes receive no hint. The built-in HTTP
 transport for eligible engines connects directly and returns redirect responses to AIR. A backend can use
 the hint to replace a conversation's parked state after checking the prompt and its cached tensors.
 
@@ -3031,7 +3046,7 @@ the hint to replace a conversation's parked state after checking the prompt and 
 request. With the header absent, the prompt estimate informs serving-tier selection (§7.6). Every admitted request
 carries its ticket id back on the response as `X-Inference-Ticket`, which is how a client reaches
 `GET|DELETE /admin/tickets/{id}` (watch / cancel) without scraping the event stream. Body-only
-callers (default thread `anon`, priority Normal) work unchanged.
+callers use request-scoped admission and the configured default priority.
 
 `X-Inference-Priority` carries one value, and the whole value has to match the grammar: one of the five
 class names `background`, `low`, `normal`, `high`, `interactive` written in lowercase exactly as spelled
@@ -3938,14 +3953,16 @@ three omitted they open `~/arboreal/inference-router/router.toml` in the user's 
 read the router's responses directly.
 
 `air chat` and its alias `air complete` send `POST /v1/chat/completions`. Use `-s` or `--server`
-for the base URL. `-m` or `--model` supplies the JSON `model` when nonempty. `-t` or `--thread`
-sets `X-Inference-Thread`, which defaults to `anon`. `-p` or `--priority` sets the optional
+for the base URL. `-m` or `--model` supplies the JSON `model` when nonempty. With no `-t` or `--thread`
+option the client omits `X-Inference-Thread`. An explicit option supplies one valid name, including
+`anon` when requested. A missing, invalid or repeated option value exits 2 before sending the request.
+`-p` or `--priority` sets the optional
 `X-Inference-Priority` header. The request streams by default. `--no-stream` sets `stream` to
 `false`, and `--json` controls output rendering.
 
 Options can appear before, between or after positional words. Value options take a separate
-following argument with no leading dash. The first eligible value supplies each option, and
-the parser consumes every eligible operand, including repeated ones. The CLI joins the remaining
+following argument with no leading dash. For options allowing repetition, the first eligible value
+supplies the option and the parser consumes every eligible operand. The CLI joins the remaining
 positional arguments with single spaces. If none remain, it reads stdin to EOF and trims leading
 and trailing whitespace. The resulting prompt fills one `user` message. A nonempty `--system`
 value fills a separate `system` message before it.
@@ -4317,6 +4334,10 @@ and cohort/residency hysteresis in the scheduler (§12.3 hook).
   requests through all thread update entry points, preserve explicit overrides and FIFO, and verify
   that a change racing an exact take or measured switch comparison follows the updated order. Verify
   that the feed and dispatcher wake survive a throwing thread observer.
+- **Stateless admission** (`StatelessAdmissionTests`, `CliCompletionProcessTests`, `ThreadCacheHintTests`):
+  send omitted-header HTTP and CLI calls to available backends while another request holds a slot.
+  Preserve explicit named caps and reject malformed identities before queue effects. Verify diagnostic-label
+  collisions, cancellation and refusal leave named counters, registration and cache hints scoped correctly.
 - **SSE observation** (`SemanticStreamObservationTests`, `StreamFrameIdentityTests`, `StreamRelayTests`,
   `StreamingFailureTests`): split SSE lines and unchanged relay bytes, timing, identity and usage
   availability, outcome precedence, one terminal event for upstream error plus `[DONE]`, sibling stream

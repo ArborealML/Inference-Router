@@ -123,6 +123,7 @@ public sealed class RouterTicket
     internal readonly TaskCompletionSource<byte[]> CompletionTcs =
         new(TaskCreationOptions.RunContinuationsAsynchronously);
     internal CancellationTokenSource? ExecCts;
+    internal bool IsStateless { get; init; }
     internal bool IsStreamingRequest { get; init; }
     internal bool IsHttpStream { get; init; }
     internal HttpStreamDelivery? HttpDelivery { get; init; }

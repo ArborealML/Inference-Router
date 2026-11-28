@@ -90,9 +90,9 @@ Send a stable id on every request:
 X-Inference-Thread: claude-session-7
 ```
 
-Absent header means the anonymous thread, which always runs at the configured default priority.
-Registered threads get a priority class capped by the router's default, so an agent can be
-deprioritised but cannot escalate itself:
+An omitted header gives each request its own scheduling identity. Explicit names share the named
+thread's cap. This includes legacy clients that send `anon`. Omit the header to migrate those clients
+to request-scoped admission. Register a named thread to set its priority and affinity.
 
 ```bash
 curl -X POST http://127.0.0.1:8321/admin/threads \
@@ -165,7 +165,7 @@ returns `503 too_many_switch_operations`.
 
 | Header | Effect |
 | --- | --- |
-| `X-Inference-Thread` | Conversation identity for priority and queueing |
+| `X-Inference-Thread` | Optional named conversation identity for priority and queueing |
 | `X-Inference-Required-Context` | Requested context in tokens for profile choice and switching |
 | `X-Inference-Priority` | per-request priority override (not clamped today — see the caveat above) |
 | `X-Inference-Affinity` | opaque hash the scheduler uses to keep a request on an engine that already holds its prefix |

@@ -168,10 +168,14 @@ public static class Program
     private static async Task<int> RunChatAsync(string[] args, bool json)
     {
         var model = GetOpt(args, ["-m", "--model"]);
-        var thread = GetOpt(args, ["-t", "--thread"]) ?? "anon";
         if (!TryGetPriorityOption(args, out var priority, out var priorityUsage))
         {
             Console.Error.WriteLine(priorityUsage);
+            return 2;
+        }
+        if (!TryGetInferenceThreadOption(args, out var thread))
+        {
+            Console.Error.WriteLine("invalid thread: --thread requires one non-blank thread name without commas or control characters");
             return 2;
         }
         var system = GetOpt(args, ["--system"]);
@@ -210,7 +214,7 @@ public static class Program
         using var req = new HttpRequestMessage(HttpMethod.Post, Url(server, "/v1/chat/completions"));
         req.Content = new ByteArrayContent(body.ToArray());
         req.Content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
-        req.Headers.TryAddWithoutValidation("X-Inference-Thread", thread);
+        if (thread is not null) req.Headers.TryAddWithoutValidation("X-Inference-Thread", thread);
         // The value is forwarded unread: this caller asks the router, so the router's own 400 is what it
         // reads (§6). Only the option's own shape is checked here, in TryGetPriorityOption.
         if (priority is not null) req.Headers.TryAddWithoutValidation("X-Inference-Priority", priority);
@@ -613,6 +617,21 @@ public static class Program
         if (usage.Length == 0) usage = $"--priority given {given} times, expected one value";
         usage = $"invalid priority: {usage}; expected {PriorityGrammar}";
         return false;
+    }
+
+    private static bool TryGetInferenceThreadOption(string[] args, out string? thread)
+    {
+        thread = null;
+        for (var i = 0; i < args.Length; i++)
+        {
+            if (args[i] is not ("-t" or "--thread")) continue;
+            if (thread is not null || ++i >= args.Length) return false;
+            var name = args[i];
+            if (string.IsNullOrWhiteSpace(name) || name.StartsWith('-') || name.Contains(',') || name.Any(char.IsControl))
+                return false;
+            thread = name;
+        }
+        return true;
     }
 
     private static bool HasFlag(string[] args, string flag) => args.Contains(flag);

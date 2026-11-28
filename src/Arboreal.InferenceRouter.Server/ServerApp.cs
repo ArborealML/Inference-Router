@@ -137,15 +137,13 @@ public static partial class ServerApp
     {
         var ct = ctx.RequestAborted;
 
-        // §6: the priority refusal is a header defect, so it is written while the headers are still being
-        // read — before ReadBodyAsync consumes a byte. Reading the body first let the body's own refusal
-        // answer instead (413 for an oversized body, 400 invalid_request for malformed JSON), so a caller
-        // that sent a malformed priority was told about the wrong defect. Only this header moves; the body
-        // probe and every other header keep their place and their precedence.
+        // Priority and identity defects are decided before consuming the body (§6).
         ThreadPriority? declaredPriority;
+        string? threadId;
         try
         {
             declaredPriority = PriorityFromHeader(ctx);
+            threadId = InferenceThreadFromHeader(ctx);
         }
         catch (RouterRequestException ex)
         {
@@ -177,7 +175,6 @@ public static partial class ServerApp
             return;
         }
 
-        var threadId = ctx.Request.Headers["X-Inference-Thread"].ToString() is { Length: > 0 } t ? t : "anon";
         var affinity = ctx.Request.Headers["X-Inference-Affinity"].ToString() is { Length: > 0 } a ? a : null;
 
         RouterTicket ticket;
@@ -253,6 +250,15 @@ public static partial class ServerApp
     /// fails the same way, because two values for one request is not a choice the router gets to make.
     /// The refusal happens while the headers are still being read, before the body is read and before the
     /// ticket exists (§6.1).</summary>
+    private static string? InferenceThreadFromHeader(HttpContext ctx)
+    {
+        if (!ctx.Request.Headers.TryGetValue("X-Inference-Thread", out var header)) return null;
+        if (header.Count != 1 || header[0] is not { } name || string.IsNullOrWhiteSpace(name) ||
+            name.Contains(',') || name.Any(char.IsControl))
+            throw new RouterRequestException("invalid_request", "X-Inference-Thread requires one non-blank thread name without commas or control characters.");
+        return name;
+    }
+
     private static ThreadPriority? PriorityFromHeader(HttpContext ctx)
     {
         if (!ctx.Request.Headers.TryGetValue("X-Inference-Priority", out var values)) return null;

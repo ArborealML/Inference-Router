@@ -168,13 +168,16 @@ public sealed partial class RouterCore
         return largest;
     }
 
-    public ValueTask<RouterTicket> EnqueueAsync(string threadId, InferenceRequest request, CancellationToken ct = default) =>
-        EnqueueAsync(threadId, request, httpStream: false, ct);
+    public ValueTask<RouterTicket> EnqueueAsync(string threadId, InferenceRequest request, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(threadId);
+        return EnqueueAsync(threadId, request, httpStream: false, ct);
+    }
 
-    internal ValueTask<RouterTicket> EnqueueHttpAsync(string threadId, InferenceRequest request, CancellationToken ct) =>
+    internal ValueTask<RouterTicket> EnqueueHttpAsync(string? threadId, InferenceRequest request, CancellationToken ct) =>
         EnqueueAsync(threadId, request, request.Stream, ct);
 
-    private ValueTask<RouterTicket> EnqueueAsync(string threadId, InferenceRequest request, bool httpStream, CancellationToken ct)
+    private ValueTask<RouterTicket> EnqueueAsync(string? threadId, InferenceRequest request, bool httpStream, CancellationToken ct)
     {
         var opts = request.Options;
         var explicitContext = opts?.RequiredContext ?? 0;
@@ -190,7 +193,7 @@ public sealed partial class RouterCore
             {
                 if (_closing) throw new RouterRequestException("cancelled", "router shutting down");
                 generation = CurrentGeneration;
-                observedThread = _threads.GetValueOrDefault(threadId);
+                observedThread = threadId is null ? null : _threads.GetValueOrDefault(threadId);
                 affinity = observedThread?.ModelAffinity;
             }
 
@@ -213,7 +216,7 @@ public sealed partial class RouterCore
             lock (_gate)
             {
                 if (_closing) throw new RouterRequestException("cancelled", "router shutting down");
-                var thread = _threads.GetValueOrDefault(threadId);
+                var thread = threadId is null ? null : _threads.GetValueOrDefault(threadId);
                 if (!ReferenceEquals(generation, CurrentGeneration) ||
                     !ReferenceEquals(thread, observedThread) ||
                     !string.Equals(affinity, thread?.ModelAffinity, StringComparison.Ordinal)) continue;
@@ -222,12 +225,17 @@ public sealed partial class RouterCore
                     throw new RouterRequestException("invalid_profile", FormattableString.Invariant(
                         $"Model '{WireText.Ident(model)}' has no serving profile '{WireText.Ident(opts!.Profile!)}' that fits {required} tokens."));
 
-                publishRegistration = thread is null;
-                thread ??= AddThread(threadId, opts?.Priority ?? generation.Settings.DefaultPriority, 1.0, null);
+                var ticketId = NewTicketId();
+                var diagnosticThreadId = threadId ?? $"request:{ticketId}";
+                publishRegistration = threadId is not null && thread is null;
+                thread ??= threadId is null
+                    ? new RouterThread(diagnosticThreadId, generation.Settings.DefaultPriority, 1.0, null)
+                    : AddThread(threadId, opts?.Priority ?? generation.Settings.DefaultPriority, 1.0, null);
                 priority = opts?.Priority ?? thread.Priority;
                 var bufferLimit = generation.Settings.StreamBufferLimitBytes;
-                var ticket = new RouterTicket(NewTicketId(), threadId, model, createdAt)
+                var ticket = new RouterTicket(ticketId, diagnosticThreadId, model, createdAt)
                 {
+                    IsStateless = threadId is null,
                     IsStreamingRequest = request.Stream,
                     IsHttpStream = httpStream,
                     HttpDelivery = httpStream && bufferLimit > 0 ? new HttpStreamDelivery(bufferLimit, ct, _shutdownToken) : null,
@@ -277,7 +285,7 @@ public sealed partial class RouterCore
                     }
                 }
 
-                var publication = _threadPublications.GetValueOrDefault(threadId)?.Enqueues;
+                var publication = threadId is null ? null : _threadPublications.GetValueOrDefault(threadId)?.Enqueues;
                 publishItem = publication is null;
                 publication?.Add(queued);
             }
