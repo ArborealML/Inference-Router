@@ -167,9 +167,13 @@ internal sealed class DirectChatMetrics(DirectChatResponseMapping mapping, HttpR
         var code = root.ValueKind == JsonValueKind.Object && root.TryGetProperty("error", out var error) && error.ValueKind == JsonValueKind.Object &&
             error.TryGetProperty("code", out var raw) && raw.ValueKind == JsonValueKind.String && raw.GetString() is { Length: <= 64 } name
             ? mapping.Codes.GetValueOrDefault(name) : null;
-        return code == "rate_limited" || code is null && status == 429
-            ? new RouterRequestException("commercial_rate_limited", "the configured chat provider requested backoff")
-            : DirectChatProtocol.BadResponse();
+        return (code ?? (status switch { 400 => "bad_request", 429 => "rate_limited", 503 => "unavailable", _ => null })) switch
+        {
+            "bad_request" => new("commercial_provider_bad_request", "the configured chat provider rejected the request"),
+            "rate_limited" => new("commercial_rate_limited", "the configured chat provider requested backoff"),
+            "unavailable" => new("commercial_provider_unavailable", "the configured chat provider is unavailable"),
+            _ => DirectChatProtocol.BadResponse(),
+        };
     }
 
     private DirectChatMetric Read(DirectChatScalar scalar, JsonElement root)

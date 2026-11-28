@@ -21,6 +21,8 @@ public sealed class DirectChatProviderDto
     public long? OutputPrice { get; set; }
     [JsonPropertyName("maximum_attempt_microusd")][TomlPropertyName("maximum_attempt_microusd")] public long? AttemptCap { get; set; }
     [JsonPropertyName("first_output_ms")][TomlPropertyName("first_output_ms")] public int? FirstOutputMs { get; set; }
+    [JsonPropertyName("semantic_idle_ms")][TomlPropertyName("semantic_idle_ms")] public int? SemanticIdleMs { get; set; }
+    [JsonPropertyName("maximum_stream_ms")][TomlPropertyName("maximum_stream_ms")] public int? MaximumStreamMs { get; set; }
     [JsonPropertyName("identity_buffer_bytes")][TomlPropertyName("identity_buffer_bytes")] public int? IdentityBufferBytes { get; set; }
     [JsonPropertyName("response_body_bytes")][TomlPropertyName("response_body_bytes")] public int? ResponseBodyBytes { get; set; }
     [JsonPropertyName("model")][TomlPropertyName("model")] public Dictionary<string, DirectChatModelDto>? Models { get; set; }

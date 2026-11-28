@@ -101,7 +101,7 @@ internal sealed class SemanticStreamObserver(TimeProvider clock, string expected
         lock (_gate) _end = end;
     }
 
-    internal void ObserveData(ReadOnlySpan<byte> payload)
+    internal bool ObserveData(ReadOnlySpan<byte> payload)
     {
         if (payload.IsEmpty)
         {
@@ -109,7 +109,7 @@ internal sealed class SemanticStreamObserver(TimeProvider clock, string expected
             {
                 lock (_gate) exact.Invalid = true;
             }
-            return;
+            return false;
         }
         if (payload.SequenceEqual("[DONE]"u8))
         {
@@ -122,7 +122,7 @@ internal sealed class SemanticStreamObserver(TimeProvider clock, string expected
                 }
                 _sawDone = true;
             }
-            return;
+            return false;
         }
 
         var chunk = new Chunk();
@@ -145,7 +145,7 @@ internal sealed class SemanticStreamObserver(TimeProvider clock, string expected
         {
             _sawError |= chunk.Error;
             _invalidPayload |= chunk.InvalidPayload;
-            if (chunk.Error || chunk.InvalidPayload) return;
+            if (chunk.Error || chunk.InvalidPayload) return false;
             if (chunk.SemanticOutput && (_firstSemanticOutput is null || _exact is not null))
             {
                 var at = clock.GetElapsedTime(_started);
@@ -158,6 +158,7 @@ internal sealed class SemanticStreamObserver(TimeProvider clock, string expected
             _unverifiedChoice |= chunk.UnverifiedChoice;
             RecordModel(chunk.Model, chunk.InvalidModel);
             RecordUsage(chunk);
+            return chunk.SemanticOutput;
         }
     }
 

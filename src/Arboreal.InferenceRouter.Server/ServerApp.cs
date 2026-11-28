@@ -546,7 +546,7 @@ public static partial class ServerApp
 
     private static int MapStatus(string code) => code switch
     {
-        "invalid_profile" or "invalid_priority" or "commercial_request_unsupported" => 400,
+        "invalid_profile" or "invalid_priority" or "commercial_request_unsupported" or "commercial_provider_bad_request" => 400,
         "policy_revision_conflict" or "policy_transition_pending" => 409,
         "policy_journal_full" or "commercial_rate_limited" => 429,
         "verified_scope_required" or "policy_group_unavailable" or "policy_route_denied" or
@@ -555,8 +555,8 @@ public static partial class ServerApp
         "queue_overflow" => 429,
         "deadline_exceeded" => 408,
         "cancelled" => 499,
-        "switch_failed" or "model_unavailable" or "commercial_transport_unavailable" => 503,
-        "commercial_identity_timeout" => 504,
+        "switch_failed" or "model_unavailable" or "commercial_transport_unavailable" or "commercial_provider_unavailable" => 503,
+        "commercial_identity_timeout" or "commercial_stream_idle_timeout" or "commercial_stream_deadline" => 504,
         "commercial_identity_invalid" or "commercial_exchange_failed" => 502,
         "engine_error" or "engine_unreachable" => 502,
         "engine_timeout" => 504,

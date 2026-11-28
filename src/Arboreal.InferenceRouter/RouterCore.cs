@@ -1852,6 +1852,7 @@ public sealed partial class RouterCore : IInferenceRouter
             ? null
             : CancellationTokenSource.CreateLinkedTokenSource(ct, gate.Token);
         var firstReadCt = directChat?.Token ?? firstReadLink?.Token ?? ct;
+        var relayToken = directChat?.Token ?? ct;
         var buffer = new byte[16384];
         var blocks = new SseBlockBuffer(observer: observer, filter: directChat is null ? null : directChat.Filter);
         // Stream acquisition is inside the ceiling too: with ResponseHeadersRead the content object exists
@@ -1876,7 +1877,7 @@ public sealed partial class RouterCore : IInferenceRouter
         while (true)
         {
             if (delivery is not null)
-                await delivery.WaitForSpaceAsync(ct).ConfigureAwait(false);
+                await delivery.WaitForSpaceAsync(relayToken).ConfigureAwait(false);
             int read;
             long arm = 0;
             try
@@ -1974,8 +1975,8 @@ public sealed partial class RouterCore : IInferenceRouter
 
         async ValueTask PublishAsync(ReadOnlyMemory<byte> bytes)
         {
-            if (delivery is null) await channel.Writer.WriteAsync(bytes, ct).ConfigureAwait(false);
-            else await delivery.PublishAsync(channel.Writer, bytes, ct).ConfigureAwait(false);
+            if (delivery is null) await channel.Writer.WriteAsync(bytes, relayToken).ConfigureAwait(false);
+            else await delivery.PublishAsync(channel.Writer, bytes, relayToken).ConfigureAwait(false);
         }
     }
 
