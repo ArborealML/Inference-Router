@@ -5,8 +5,9 @@ status: Waiting
 assignee:
   - '@chatswarm'
 created_date: '2026-11-25T07:54:00Z'
-updated_date: '2026-11-26T22:33:00Z'
+updated_date: '2026-11-28T11:08:00Z'
 labels: []
+milestone: m-7
 dependencies: []
 priority: high
 ordinal: 177000

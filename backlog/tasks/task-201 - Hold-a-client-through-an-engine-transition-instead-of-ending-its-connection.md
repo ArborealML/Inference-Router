@@ -5,9 +5,11 @@ status: To Do
 assignee:
   - '@gpt-6.2-astra'
 created_date: '2026-11-26T12:20:00Z'
+updated_date: '2026-11-28T11:08:00Z'
 labels:
   - wire
   - scheduling
+milestone: m-2
 dependencies:
   - TASK-190
   - TASK-187
