@@ -24,11 +24,12 @@ public sealed partial class ServingBrokerDirectSocketTests
             var lifetime = new ServingHostLifetime(Environment.ProcessId, ulong.Parse(fields[19], CultureInfo.InvariantCulture));
             var binding = FixtureBinding(Path.Combine(scratch.FullName, "reservation"));
             var epoch = Guid.NewGuid();
+            var writer = Guid.NewGuid();
             var store = new MemoryStore(new(ServingBrokerRecord.CurrentFormat, binding.Scope, 0, null, epoch,
-                binding, Open: true, Close: null, []));
+                binding, Open: true, Close: null, [], ApplicationWriter: writer));
             var ledger = new ServingBrokerLedger(binding.Scope, epoch, store);
             var invocation = new VerifiedInstanceInvocation(binding.Route, Guid.NewGuid(),
-                new Uri("http://127.0.0.1/v1/chat/completions"));
+                new Uri("http://127.0.0.1/v1/chat/completions"), 1, writer);
             var reserved = Assert.IsType<ServingBrokerUse>(ledger.Reserve(binding, ServingBrokerUseKind.Application,
                 invocation.Id, invocation));
             var issued = Assert.IsType<ServingBrokerUse>(ledger.Issue(reserved));

@@ -37,7 +37,7 @@ internal sealed partial class CommissionedServerBootstrapJson : JsonSerializerCo
 
 internal sealed record CommissionedServerAuthority(CheckedEnrolledConfiguration Configured, EnrolledSuccessorScope Scope,
     CheckedEnrolledTarget InitialTarget, ServingBrokerBinding Binding, ServingBrokerLedger Ledger,
-    string CheckpointLock, HeldServingGeneration InitialGeneration, Guid IssuerEpoch);
+    string CheckpointLock, HeldServingGeneration InitialGeneration, Guid IssuerEpoch, Guid ApplicationWriter);
 
 internal static class CommissionedServer
 {
@@ -47,8 +47,15 @@ internal static class CommissionedServer
     {
         var (bootstrap, toml) = ReadBootstrap(authorityDirectory);
         using var listener = OpenTerminalListener(bootstrap);
+        var intake = new CatalogAuthorityIntake(bootstrap.Catalog, TimeProvider.System);
+        if (await intake.ReadStartupAsync(toml, bootstrap.Claim, ct).ConfigureAwait(false) is not { } startup)
+            throw Unavailable();
+
+        // Reuse the enrolled reservation's original holder fence until all serving work retires.
+        // The successor controller still uses its separate checkpoint and issue fences.
+        using var writer = HostReservation.OpenEnrolled(startup.Authority.Scope.Reservation);
         await using var native = new CommissionedNativeProgram(bootstrap, listener, ct);
-        var app = await BuildAsync(args, toml, bootstrap, native, native.StopToken).ConfigureAwait(false);
+        var app = await BuildAsync(args, bootstrap, startup, intake, native, native.StopToken).ConfigureAwait(false);
         try
         {
             await app.StartAsync(native.StopToken).ConfigureAwait(false);
@@ -117,17 +124,11 @@ internal static class CommissionedServer
         }
     }
 
-    internal static async ValueTask<WebApplication> BuildAsync(string[] args, string toml, CommissionedServerBootstrap bootstrap,
-        CommissionedNativeProgram native,
-        CancellationToken ct)
+    private static async ValueTask<WebApplication> BuildAsync(string[] args, CommissionedServerBootstrap bootstrap,
+        CheckedEnrolledStartup startup, CatalogAuthorityIntake intake, CommissionedNativeProgram native, CancellationToken ct)
     {
-        if (!OperatingSystem.IsLinux() || !bootstrap.IsValid() ||
-            await new CatalogAuthorityIntake(bootstrap.Catalog, TimeProvider.System)
-                .ReadStartupAsync(toml, bootstrap.Claim, ct).ConfigureAwait(false) is not { } checkedStartup)
-            throw Unavailable();
-
-        var configured = checkedStartup.Configured;
-        var trusted = checkedStartup.Authority;
+        var configured = startup.Configured;
+        var trusted = startup.Authority;
         var scope = new EnrolledSuccessorScope(trusted.Scope.Reservation, trusted.Catalog);
         var checkpoint = HostEffectCheckpoint.ReadInstalledCommitment(bootstrap.CheckpointLock);
         if (checkpoint.State is not { Phase: HostCheckpointPhase.Resident, Epoch: 1, AppliedLaunch: { } launch } ||
@@ -145,22 +146,23 @@ internal static class CommissionedServer
         var brokerHead = OperationHeadServingBrokerAnchor.ForWriter(scope.Reservation,
             new UnixDomainSocketEndPoint(bootstrap.OperationHead.SocketPath), bootstrap.OperationHead.LeafSha256);
         var store = ServingBrokerFileStore.OpenWriter(scope.Reservation, brokerHead);
-        if (store.Read()?.Record is not { Revision: 0, Open: false, Close: null, Uses.IsEmpty: true, Binding: { } binding } broker ||
+        if (store.Read()?.Record is not { Close: null, Binding: { } binding } broker ||
             broker.IssuerEpoch != bootstrap.IssuerEpoch || binding.Scope != scope.Reservation || binding.CatalogHead != scope.Commission.Head ||
             binding.Applied != checkpoint || binding.AppliedJournalDigest is not null || !binding.IsValid() ||
             !target.Target.Matches(binding.Route))
             throw Unavailable();
 
         var ledger = new ServingBrokerLedger(scope.Reservation, bootstrap.IssuerEpoch, store);
-        if (!ledger.IsCurrentClosed(binding) ||
-            await SuccessorPhysicalWitnessClient.ReadHeldServingAsync(scope, bootstrap.HeldPartition, target, binding, ct)
-                .ConfigureAwait(false) is not { } generation)
+        if (await SuccessorPhysicalWitnessClient.ReadHeldServingAsync(scope, bootstrap.HeldPartition, target, binding, broker.Open, ct)
+                .ConfigureAwait(false) is not { } generation ||
+            !await intake.IsCurrentAsync(trusted, ct).ConfigureAwait(false) ||
+            HostEffectCheckpoint.ReadInstalledCommitment(bootstrap.CheckpointLock) != checkpoint ||
+            ledger.BeginInitialProof(binding, broker.Open) is not { } applicationWriter)
             throw Unavailable();
         ct.ThrowIfCancellationRequested();
 
         var authority = new CommissionedServerAuthority(configured, scope, target, binding, ledger,
-            bootstrap.CheckpointLock, generation, bootstrap.IssuerEpoch);
-        var intake = new CatalogAuthorityIntake(bootstrap.Catalog, TimeProvider.System);
+            bootstrap.CheckpointLock, generation, bootstrap.IssuerEpoch, applicationWriter);
         return await native.ConnectAsync(args, authority, token => intake.IsCurrentAsync(trusted, token), ct).ConfigureAwait(false);
     }
 

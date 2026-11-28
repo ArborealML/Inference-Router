@@ -145,7 +145,8 @@ internal sealed class EnrolledSuccessorFileJournal(HostReservationScope scope, E
             binding.Checkpoint.State.AppliedLaunch != binding.Retirement.Incumbent || transition.Stop != binding.Retirement.Stop ||
             !EnrolledSuccessorScope.BindsResidentRoute(previous.Scope, binding.Retirement.SealedRoute, binding.Retirement.Incumbent) ||
             binding.Attempt.RuntimeEpoch == Guid.Empty || binding.Attempt.Sequence <= 0 || binding.QueryId == Guid.Empty ||
-            binding.CoverageGeneration <= 0 || !binding.Successor.IsValid()) return false;
+            binding.CoverageGeneration <= 0 || !binding.Successor.IsValid() ||
+            !binding.Retirement.Approves(binding.Successor)) return false;
 
         var isStop = operation.Kind == HostMutationKind.Stop;
         if (isStop ? binding.Checkpoint.State.Phase != HostCheckpointPhase.StopDispatching || transition.Stop != operation

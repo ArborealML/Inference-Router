@@ -10,6 +10,7 @@ internal interface ICommissionedServingAuthority : IVerifiedDispatchIssuer
     bool Approves(VerifiedDispatchTarget target);
     bool IsDisjointFromLocalController(EngineDefinition engine);
     long ResourceEpoch { get; }
+    Guid ApplicationWriter => Guid.Empty;
     bool IsKnownVacant(long resourceEpoch);
     CommissionedServingStamp? ReadServing(VerifiedInstanceRoute route);
 
@@ -50,6 +51,7 @@ internal sealed class CommissionedRouteIssuer(ICommissionedServingAuthority auth
     internal HostReservationScope Scope => _scope;
     internal bool IsCurrentScope => authority.Scope == _scope;
     internal Lock Gate => staging.IssuerGate;
+    internal Guid ApplicationWriter => authority.ApplicationWriter;
 
     internal CommissionedServingStamp? Attach(VerifiedInstanceRoute route)
     {
