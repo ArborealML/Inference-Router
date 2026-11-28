@@ -3,11 +3,11 @@ id: TASK-187
 title: >-
   Report why a ticket ended: upstream end, missing terminator, or a writer that
   gave up
-status: To Do
+status: In Progress
 assignee:
   - '@gpt-6.2-sol-shutdown'
 created_date: '2026-11-25T10:49:00Z'
-updated_date: '2026-11-26T22:35:00Z'
+updated_date: '2026-11-27'
 labels: []
 dependencies:
   - TASK-189
@@ -35,11 +35,15 @@ A stream that ends with no finish_reason and no [DONE] sentinel currently ends a
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-One bounded observer in the existing framing path records blank-delimited terminator, finish evidence per choice, structured error, clean EOF, partial tail, idle and cancellation. Precedence: structured error, then transport fault/idle, then terminator, then clean EOF with finish evidence; otherwise incomplete. Cancellation is orthogonal. Preserve PascalCase additive fields, existing event order and §6.1 codes. Pin one terminal event, identical error-then-terminator bytes, and sibling isolation. Legacy state stays compatible; commercial and Tune consumers use authoritative outcome separately. Define shared observation DTO/fixture contract early with the Tune runner; defer writer accounting and provider usage normalization to TASK-210. Missing data stays unavailable; no second framing parser. Drain/retry TASK-190/201, switch explanation TASK-196, limits TASK-30, client budgets/provenance TASK-186/188.
+Extend existing SSE framing with one bounded UTF-8 semantic observer; remove the separate raw terminator scan. Preserve frame bytes, writer acknowledgment and cancellation axis. Freeze one shared record with monotonic raw/semantic timing, bounded model identity, usage availability and authoritative complete/incomplete/failed/unknown outcome. Expose additive terminal ticket/event fields.
+
+Precedence: structured error, transport/idle failure, committed terminator, then clean finish evidence for every requested/observed choice; otherwise incomplete. Malformed/over-limit evidence cannot prove success. Cap staged payload, JSON depth, choices and identity; retain no output history. Publish at the existing terminal winner and carry upstream failure through opt-in final acknowledgment without appending duplicate frames. Pin byte identity, error-plus-terminator, split delimiters, EOF/torn frames, missing/zero metrics, sibling isolation and writer/cancellation races. Update SPEC §§6/10/14 and README. Nonstreaming, writer accounting, normalization and retries remain separately owned.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Design-pass verdict REVISE; corrections are in the plan. Three implementer scope questions are settled: an in-band upstream end gets no second terminal frame, so bytes stay identical while the ticket settles Failed; a boundary end with no terminator records its end name and changes nothing else; the runtime-versus-probe disagreement criterion moved to the launch-conformance family. Accepted gap: a clean boundary end with no terminator still settles Completed on the state axis while its end name reads otherwise — a wire decision, pinned by the frame-identity test asserting empty terminal bytes with a null finish reason. Naming frozen: complete, upstream_closed_without_terminator, stream_incomplete, failed, unknown; cancellation orthogonal. Two implementer runs timed out and one was stopped with nothing committed; the deliverable is cut to the observer, precedence and the two priority pins, with write accounting deferred. Implementation resumes when the fleet returns to the Flash Next model.
+Implementing against main 62f1c79 after independent plan PASS with bounded conditions. Malformed/over-limit data disables positive completion even after DONE; stronger failures remain authoritative. Usage requires unambiguous nonnegative prompt/completion counts and checked optional total; invalid reports remain sticky-invalid. Terminal CAS freezes a synchronized snapshot; late work cannot rewrite it. Protocol work owns forwarding/completion, observation DTOs and terminal projection; TASK-203 owns dispatch/queue ranges. Preserve PR #83 progress fields and PR #86 parsing ownership.
+
+Historical failed attempts and accepted wire disposition remain at [planning baseline](https://github.com/ArborealML/Inference-Router/commit/62f1c79de7b25486cf8669de654a2fd57d8993a2). Boundary EOF without a terminator may retain legacy Completed while authoritative outcome is incomplete. Frozen end names: complete, upstream_closed_without_terminator, stream_incomplete, failed, unknown; cancellation stays orthogonal. No second terminal frame after upstream error. TASK-170/210 consume the shared contract, without implying tuning/commercial qualification. Local SDK/Backlog CLI unavailable; strict board validation and hosted exact-head build/test/AOT remain required.
 <!-- SECTION:NOTES:END -->
