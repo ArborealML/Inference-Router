@@ -708,9 +708,12 @@ public partial class StreamRelayTests
             base.ReadAsync(buffer[..1], cancellationToken);
     }
 
-    internal sealed class GatedWriter(int blockWrite, bool ignoreCancel = false) : PipeWriter
+    internal sealed class GatedWriter(int blockWrite, bool ignoreCancel = false, bool blockFirstFlush = false) : PipeWriter
     {
         private int _writes;
+        private int _flushes;
+        private int _cancelPending;
+        internal int CancelPendingCalls => Volatile.Read(ref _cancelPending);
         public TaskCompletionSource<int> Blocked { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource<FlushResult> Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public List<byte[]> Received { get; } = [];
@@ -725,14 +728,19 @@ public partial class StreamRelayTests
 
         public override void CancelPendingFlush()
         {
+            Interlocked.Increment(ref _cancelPending);
             if (!ignoreCancel) Release.TrySetResult(new FlushResult(true, false));
         }
         public override void Complete(Exception? exception = null) { }
         public override void Advance(int bytes) => throw new NotSupportedException();
         public override Memory<byte> GetMemory(int sizeHint = 0) => throw new NotSupportedException();
         public override Span<byte> GetSpan(int sizeHint = 0) => throw new NotSupportedException();
-        public override ValueTask<FlushResult> FlushAsync(CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult(new FlushResult(false, false));
+        public override ValueTask<FlushResult> FlushAsync(CancellationToken cancellationToken = default)
+        {
+            if (!blockFirstFlush || ++_flushes != 1) return ValueTask.FromResult(new FlushResult(false, false));
+            Blocked.TrySetResult(0);
+            return new ValueTask<FlushResult>(Release.Task);
+        }
     }
 
     private sealed class PassiveLifetime : IHttpRequestLifetimeFeature
