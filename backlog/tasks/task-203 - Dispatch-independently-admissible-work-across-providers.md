@@ -5,7 +5,7 @@ status: To Do
 assignee:
   - '@gpt-6.2-astra'
 created_date: '2026-11-27'
-updated_date: '2026-11-28T11:56:00Z'
+updated_date: '2026-11-28T12:06:00Z'
 labels: []
 milestone: m-17
 dependencies: []
@@ -16,7 +16,7 @@ ordinal: 203000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-An available provider must serve eligible requests while an independent provider is occupied. Priority and original enqueue order govern requests competing for the same capacity. The dispatcher integration is on main. The remaining work covers reverse blocking, provider backoff, scoped ownership and the operator view.
+Eligible requests must progress while an independent provider is occupied. Preserve original priority and enqueue order among requests competing for capacity. Remaining evidence covers reverse blocking, provider backoff, scoped ownership and operator diagnostics.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -35,9 +35,11 @@ An available provider must serve eligible requests while an independent provider
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Reuse the merged finite-round and domain-preparation fixtures. Hold remote capacity while eligible same-model and distinct-model requests finish locally. Attach account-scoped backoff checks when the provider rate-limit contract lands. Assert original ticket identity, exactly one send, and the genuine shared-cap control.
+Post to the normal chat endpoint with a delegated remote full and a router-managed local engine. Hold one remote body, then cover warm and cold local service for both the held model and a different one. Observe the original ticket, model, bytes, lifecycle operations and terminal disposition before release. Check again after cleanup for duplicate writes. Reuse the two-domain preparation and shared-thread controls. Account backoff requires the actual provider contract.
 
-Exercise a pure eligibility probe and a ticket that changes domains before first write. Count acquired, retired and outstanding drain intents at each boundary. Carry the blocking resource, alternative availability and wait reason from the same bounded snapshot through status, events and the monitor. Reuse existing wake and ordering checks.
+Exercise pure probes separately from full rounds. Count one accepted drain intent per ticket and domain and demonstrate retirement before a replacement reservation, including caller expiry. Retain pending physical uses until confirmed cleanup. Preserve original deadlines and competitor ordering.
+
+Publish a bounded immutable observation of the blocker and evaluated alternatives. Verify ticket, queue membership, configuration, route and group generations before publication. Derive status, events and monitor output from that observation. Indicate truncation and unevaluated alternatives, suppress equivalent reports, clear obsolete ones and verify no diagnostic wake loop or secret exposure.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
@@ -45,11 +47,9 @@ Exercise a pure eligibility probe and a ticket that changes domains before first
 <!-- SECTION:NOTES:BEGIN -->
 Published [PR #88](https://github.com/ArborealML/Inference-Router/pull/88), head cb595b2d96646fe038261ff57f6041e813aacd6f, implements finite rounds, alternatives, exact competing order, explicit drain ownership and bounded wait scope. [Source mappings](../milestones/wave1-publication-map.json) connect reviewed 5beaaa7..9f023f3 to the identical published tree under TASK-220's explicit provenance exception.
 
-Independent plan/source review passed after the cross-engine last-thread-slot race correction: release shares the router gate and competing route evidence is revalidated. A post-probe barrier verifies earlier-ticket precedence. Accepted drain scope stays visible. Local Release verification at 9f023f3 passed 263 tests with no failures/skips; fixture/diagnostic and injected cap/window corrections retained assertions. SPEC v0.12.163 states scope.
-
-[Hosted CI](https://github.com/ArborealML/Inference-Router/actions/runs/46112027567) passed on this actual head: 2,160 tests, zero failed/skipped, build, Linux AOT/config smoke, strict board and release harness. The synthetic merge tree equals the head tree.
+The last-thread-slot race correction revalidates competing routes under the router gate. A post-probe barrier verifies precedence. Release at 9f023f3 passed 263 tests. [Hosted CI](https://github.com/ArborealML/Inference-Router/actions/runs/46112027567) passed 2,160 tests, Linux AOT and smoke. SPEC v0.12.163 records the scope.
 
 The dispatcher and its qualified fixtures landed in the [main integration](https://github.com/ArborealML/Inference-Router/commit/1bf85d3495ab2517a921d78013ffe69bbefb4325). [PR 94](https://github.com/ArborealML/Inference-Router/pull/94) exercised held preparations in either private domain for shared and distinct models. Its shared-thread control identified the limiting credit and allowed a separate thread through. Commercial backoff, explicit ownership across reassignment and full operator diagnostics retain their acceptance here.
 
-Review of the remaining reverse-dispatch and operator checks is pending. The existing full-remote fixture configures both endpoints as delegated. Add managed-local captures behind a saturated remote for warm and cold cases. Capture the alternative routes and limiting scope from the same scheduling observation.
+Plan review at f66ae74 verified that both endpoints in the existing full-remote fixture are delegated. It also found the wait publication lacks the originating route and group revisions. The revised plan exercises actual managed ingress and stale-observation rejection.
 <!-- SECTION:NOTES:END -->
