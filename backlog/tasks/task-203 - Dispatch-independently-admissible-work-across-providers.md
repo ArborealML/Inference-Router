@@ -1,9 +1,9 @@
 ---
 id: TASK-203
 title: Dispatch independently admissible work across providers
-status: In Progress
+status: To Do
 assignee:
-  - '@gpt-6.2-sol-lifecycle'
+  - '@gpt-6.2-astra'
 created_date: '2026-11-27'
 updated_date: '2026-11-28T12:43:07Z'
 labels: []
@@ -16,7 +16,7 @@ ordinal: 203000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Eligible requests must progress while an independent provider is occupied. Preserve original priority and enqueue order among requests competing for capacity. Remaining evidence covers reverse blocking, provider backoff, scoped ownership and operator diagnostics.
+Eligible requests must progress while an independent provider is occupied. Preserve original priority and enqueue order among requests competing for capacity. Provider backoff, scoped ownership and remaining diagnostic cases retain their acceptance here.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -45,11 +45,11 @@ Publish a bounded immutable observation of the blocker and evaluated alternative
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Published [PR #88](https://github.com/ArborealML/Inference-Router/pull/88), head cb595b2d96646fe038261ff57f6041e813aacd6f, implements finite rounds, alternatives, exact competing order, explicit drain ownership and bounded wait scope. [Source mappings](../milestones/wave1-publication-map.json) connect reviewed 5beaaa7..9f023f3 to the identical published tree under TASK-220's explicit provenance exception.
+[PR #88](https://github.com/ArborealML/Inference-Router/pull/88), head cb595b2d96646fe038261ff57f6041e813aacd6f, implements finite rounds, alternatives, exact competing order, explicit drain ownership and bounded wait scope. [Source mappings](../milestones/wave1-publication-map.json) connect reviewed 5beaaa7..9f023f3 to the identical published tree under TASK-220's explicit provenance exception.
 
-A post-probe barrier qualifies precedence for the last thread slot. Release at 9f023f3 passed 263 tests. [Hosted CI](https://github.com/ArborealML/Inference-Router/actions/runs/46112027567) passed 2,160 tests, Linux AOT and smoke. SPEC v0.12.163 records the scope.
+Last-slot precedence passed at 9f023f3 (263 tests). [Hosted CI](https://github.com/ArborealML/Inference-Router/actions/runs/46112027567) passed 2,160 tests, Linux AOT and smoke. SPEC v0.12.163 records the scope.
 
-The dispatcher and its qualified fixtures landed in the [main integration](https://github.com/ArborealML/Inference-Router/commit/1bf85d3495ab2517a921d78013ffe69bbefb4325). [PR 94](https://github.com/ArborealML/Inference-Router/pull/94) exercised held preparations in either private domain for shared and distinct models. Its shared-thread control identified the limiting credit and allowed a separate thread through. Commercial backoff, explicit ownership across reassignment and full operator diagnostics retain their acceptance here.
+The dispatcher landed in the [main integration](https://github.com/ArborealML/Inference-Router/commit/1bf85d3495ab2517a921d78013ffe69bbefb4325). [PR 94](https://github.com/ArborealML/Inference-Router/pull/94) exercised held preparations in either private domain for shared and distinct models. Another thread progressed under shared credit. Commercial backoff, explicit ownership across reassignment and full operator diagnostics retain their acceptance here.
 
-[Provider progress](https://github.com/ArborealML/Inference-Router/pull/101) at f7529cd passed 139 focused checks. Four normal HTTP cases served warm and cold managed requests for the same or a different model before the remote slot released. Review found unrelated engines could exhaust the alternatives list. Filter by eligibility and demonstrate ticket/event HTTP agreement and zero claims when a predecessor wins. Hosted CI passed.
+[Provider progress](https://github.com/ArborealML/Inference-Router/pull/101) at f7529cd passed 139 focused checks. Four normal HTTP cases served warm and cold managed requests for the same or a different model before the remote slot released. [Merged qualification](https://github.com/ArborealML/Inference-Router/actions/runs/46146451622) passed 2,423 tests. At 8ebb7b4, 141 focused checks included ticket/event HTTP agreement and zero new claims when a predecessor wins. Review accepted these as model-scoped, unevaluated candidates. Full profile eligibility and diagnostic publication under unrelated engine churn remain unqualified. Paid-account backoff stays open.
 <!-- SECTION:NOTES:END -->

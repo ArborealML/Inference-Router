@@ -1,9 +1,9 @@
 ---
 id: TASK-207
 title: Persist authenticated owned inference thread policy
-status: In Progress
+status: Ready for Review
 assignee:
-  - '@gpt-6.2-sol-config'
+  - '@gpt-6.2-astra'
 created_date: '2026-11-27'
 updated_date: '2026-11-28T12:37:29Z'
 labels: []
@@ -52,5 +52,5 @@ Authorize both inference endpoints, catalog/status, tickets, cancel, events, thr
 <!-- SECTION:NOTES:BEGIN -->
 Review at 3c7ae3e added redirect, proxy, catalog caching, thread scope and post-eviction event checks. External authority, sensitivity transitions and commercial liability remain with TASK-217, TASK-208 and TASK-212 respectively.
 
-[Private policy integration](https://github.com/ArborealML/Inference-Router/pull/100) at 461b3c7 passed 154 focused checks. Real HTTP exercised private delivery, cancellation, redirect and proxy confinement, and a store write whose external confirmation was lost. An external Native AOT host served a fixture request at the confirmed revision. Review found the writer-fault path called unscoped cancel, default streams lacked credit and scoped observations exposed shared residency. Qualify physical cancellation, slow sinks and two owners sharing one engine.
+[Private policy integration](https://github.com/ArborealML/Inference-Router/pull/100) at 461b3c7 passed 154 focused checks. Real HTTP exercised private delivery, cancellation, redirect and proxy confinement, and a store write whose external confirmation was lost. An external Native AOT host served a fixture request at the confirmed revision. Five regressions reproduced writer-fault and shared-engine visibility gaps at 461b3c7. The correction 8bedd29 passed 159 tests and the external Native AOT fixture confirmed scoped status and catalog after delivery. Owned streams use bounded credit and cancel the admitted execution on writer failure. Shared live occupancy stays private.
 <!-- SECTION:NOTES:END -->

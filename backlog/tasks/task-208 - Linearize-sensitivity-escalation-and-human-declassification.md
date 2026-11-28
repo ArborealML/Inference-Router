@@ -1,9 +1,9 @@
 ---
 id: TASK-208
 title: Linearize sensitivity escalation and human declassification
-status: To Do
+status: In Progress
 assignee:
-  - '@gpt-6.2-astra'
+  - '@gpt-6.2-sol-config'
 created_date: '2026-11-27'
 updated_date: '2026-11-28T12:31:00Z'
 labels: []
@@ -33,15 +33,15 @@ Implement durable autonomous escalation and privileged revision-bound de-escalat
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Use the verified owner and policy-group store from TASK-207. Add durable escalation and revision-bound lowering. Expose lowering only when the external authority explicitly supplies the separate human privilege for that group, revision and target. Retried escalation is idempotent; concurrent stale lowering fails. Preserve restrictions across restore and derived sessions.
+Use per-group durable revisions and a short authorization gate. Authenticate and deduplicate escalation, fence new authorizations, capture unresolved consumed attempts and request cancellation outside the gate. Keep confirmed and proposed snapshots until durable storage and the external head confirm the same operation and predecessor. Acknowledge only after publication. A slow group cannot serialize independent groups’ intent writes. Loss of global authority closes all grants.
 
-Order policy publication with the last reversible dispatch decision for the same group. Bind a one-use authorization to the exact provider, body, attempt, configuration and policy revision. Persist policy before acknowledging escalation. If earlier authorization already permits transmission, record possible exposure and request cancellation; keep its physical and financial obligations until reconciliation. Keep file, authority and network I/O outside scheduling gates. An unrelated group can progress.
+Persist an owner-bound attempt intent before transmission. At the last reversible HTTP handoff, validate and consume once under the group gate and register possible exposure. Bind exact projected bytes, destination, scope, writer, trust, credential and policy revisions. A prior fence means zero bytes. Prior consumption means possible exposure even if the actual write comes later. Require fresh authorization for retries and request-derived probes. Reconcile ambiguous writes, cancellation and physical settlement separately across restart. Hold possible paid liability until separately settled. Use only controlled commercial receipts here.
 
-For private transport validate trust and revision before every attempt, including retries and auxiliary requests. Exercise the commercial side with controlled permit and liability receipts only. Race delayed persistence and send in each order. Crash or an uncertain external write must deny new authorizations until reconciled. Check status and Pi-facing responses disclose the effective scope and revision. Paid sending and external credential issuance retain their existing owners.
+Keep lowering disabled without independent human privilege bound to owner, group, expected revision, operation and target. Historical mutation retries return the previous outcome and current effective policy. Qualify both authorization orders on real loopback HTTP, buffered and streamed, across delayed persistence, lost head confirmation, restart and independent-group progress. Report attempt and current policy separately; Pi owns client presentation.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-The revision and final-send plan is under independent review against the private-policy candidate. Platform authority for real lowering remains separately gated.
+Review of 461b3c7 found a check-before-send gap and one global store writer. Qualify group-local recovery, the final transmission handoff and separately authorized probe traffic. Actual paid egress and human lowering retain their existing owners.
 <!-- SECTION:NOTES:END -->
