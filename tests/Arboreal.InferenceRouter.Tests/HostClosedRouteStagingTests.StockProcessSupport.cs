@@ -154,6 +154,13 @@ public sealed partial class HostClosedRouteStagingTests
         Console.WriteLine(FormattableString.Invariant($"application pid={backend.Identity.Handler.ProcessId} inode={inode} cookie={cookie} use={use} sha256={receipt.GetProperty("sha256").GetString()}"));
     }
 
+    private static uint ReadEffectiveUid(int pid)
+    {
+        var uid = File.ReadLines(FormattableString.Invariant($"/proc/{pid}/status"))
+            .Single(line => line.StartsWith("Uid:", StringComparison.Ordinal));
+        return uint.Parse(uid.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)[2], CultureInfo.InvariantCulture);
+    }
+
     private sealed class StockPeerKey : IDisposable
     {
         private readonly ECDsa _key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
@@ -236,6 +243,17 @@ public sealed partial class HostClosedRouteStagingTests
             _errors = _process.StandardError.ReadToEndAsync();
         }
 
+        internal string Identity(uint expectedUid)
+        {
+            var pid = _process.Id;
+            var root = FormattableString.Invariant($"/proc/{pid}");
+            var statLine = File.ReadAllText(Path.Combine(root, "stat"));
+            var fields = statLine[(statLine.AsSpan().LastIndexOf(')') + 1)..].Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            var uid = ReadEffectiveUid(pid);
+            Assert.Equal(expectedUid, uid);
+            return FormattableString.Invariant($"pid={pid} start={fields[19]} uid={uid}");
+        }
+
         internal static string SocketScript => Path.Combine(
             Environment.GetEnvironmentVariable("AIR_STOCK_PROCESS_BINARIES") ?? AppContext.BaseDirectory, "sockets.py");
 
@@ -296,7 +314,7 @@ public sealed partial class HostClosedRouteStagingTests
     internal sealed record StockBackendIdentity(ServingHostLifetime Handler, ServingHostLifetime Worker,
         ServingHostNamespace Namespace, ServingHostListenerDescriptor Listener);
 
-    private sealed class StockBackend(StockChild child, StockBackendIdentity identity, ServingBackendProfile profile) : IAsyncDisposable
+    private sealed class StockBackend(StockChild child, StockBackendIdentity identity, ServingBackendProfile profile, string stop) : IAsyncDisposable
     {
         internal StockBackendIdentity Identity { get; } = identity;
         internal ServingBackendProfile Profile { get; } = profile;
@@ -305,14 +323,15 @@ public sealed partial class HostClosedRouteStagingTests
             string release, string receipts, CancellationToken ct)
         {
             var window = target.Key.Engine == DeepSeekEngineName ? 32768 : 262144;
+            var stop = receipts + ".stop";
             var process = StockChild.StartRole(BackendUid, "python3", "-I", StockChild.SocketScript, "backend",
                 target.Endpoint.Port.ToString(CultureInfo.InvariantCulture), target.Key.Model, window.ToString(CultureInfo.InvariantCulture),
-                slots.ToString(CultureInfo.InvariantCulture), terminal, release, receipts);
+                slots.ToString(CultureInfo.InvariantCulture), terminal, release, receipts, stop);
             try
             {
                 var witness = Assert.IsType<StockBackendIdentity>(
                     JsonSerializer.Deserialize(await process.ReadReadyAsync(ct), StockBackendJson.Default.StockBackendIdentity));
-                return new StockBackend(process, witness, new(target.Key.Model, target.Key.Profile, window, slots));
+                return new StockBackend(process, witness, new(target.Key.Model, target.Key.Profile, window, slots), stop);
             }
             catch
             {
@@ -323,9 +342,8 @@ public sealed partial class HostClosedRouteStagingTests
 
         internal void RequireKernelWitness(uint expectedUid)
         {
-            var uid = File.ReadLines(FormattableString.Invariant($"/proc/{Identity.Handler.ProcessId}/status"))
-                .Single(line => line.StartsWith("Uid:", StringComparison.Ordinal));
-            Assert.Equal(expectedUid, uint.Parse(uid.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)[2], CultureInfo.InvariantCulture));
+            Assert.Equal(expectedUid, ReadEffectiveUid(Identity.Handler.ProcessId));
+            Assert.Equal(expectedUid, ReadEffectiveUid(Identity.Worker.ProcessId));
             using var pin = CommissionedServingPins.TryPin(Identity.Handler);
             Assert.NotNull(pin);
             Assert.True(LinuxServingAcceptedSocket.MatchesListener(Identity.Listener, pin),
@@ -365,7 +383,14 @@ public sealed partial class HostClosedRouteStagingTests
             new(new(ServingBrokerIssuer.ServingIdentity(binding), Identity.Namespace, Identity.Handler, Identity.Worker,
                 Identity.Listener.Bound, Identity.Listener, binding.Applied.State.Revision, binding.Route.ServingIncarnation), Profile);
 
-        internal Task StopAsync() => child.StopAsync();
+        internal async Task StopAsync()
+        {
+            using var cleanup = new CancellationTokenSource(TimeSpan.FromSeconds(8));
+            await File.WriteAllBytesAsync(stop, [], cleanup.Token);
+            Assert.Equal(0, await child.WaitForExitAsync(cleanup.Token));
+            using var survivingWorker = CommissionedServingPins.TryPin(Identity.Worker);
+            Assert.Null(survivingWorker);
+        }
 
         public ValueTask DisposeAsync() => child.DisposeAsync();
     }

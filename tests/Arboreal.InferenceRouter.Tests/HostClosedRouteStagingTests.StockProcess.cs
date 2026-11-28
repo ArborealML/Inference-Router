@@ -217,12 +217,19 @@ public sealed partial class HostClosedRouteStagingTests
         var anchored = Assert.IsType<ServingBrokerSnapshot>(readBroker());
         await File.WriteAllLinesAsync(Path.Combine(artifacts, standalone ? "standalone.proof" : "air.proof"),
         [
-            FormattableString.Invariant($"router={Path.GetFileName(binary)} head_uid={HeadUid} ingress_uid={IngressUid} registrar_uid={RegistrarUid} handler_uid={BackendUid}"),
+            "router=" + Path.GetFileName(binary) + " " + router.Identity(0),
+            "operation_head " + head.Identity(HeadUid) + " pin=" + headKey.Pin,
+            "ingress " + ingress.Identity(IngressUid),
+            "observer " + observer.Identity(ObserverUid),
+            "retirement " + retirement.Identity(RegistrarUid),
+            FormattableString.Invariant($"initial uid={BackendUid} handler={initial.Identity.Handler} worker={initial.Identity.Worker} listener={initial.Identity.Listener.Inode}/{initial.Identity.Listener.Cookie}"),
+            FormattableString.Invariant($"successor uid={BackendUid} handler={finalBackend.Identity.Handler} worker={finalBackend.Identity.Worker} listener={finalBackend.Identity.Listener.Inode}/{finalBackend.Identity.Listener.Cookie}"),
+            "replacement " + replacement.Identity(BackendUid),
             FormattableString.Invariant($"before={seed.OperationHead.Revision} after={operation.Read(seed.Scope.Reservation)!.Revision} broker={anchored.Record.Revision} route={anchored.Record.Binding.Route.RouteIncarnation}"),
             FormattableString.Invariant($"ticket_a={ticketA} ticket_b={ticketB} sealed_use={aUse.Id} successor_use={bUse.Id} cutoff_stop={daemon.StopOperation}"),
             "initial " + Assert.Single(File.ReadAllLines(receiptsA)),
             "successor " + Assert.Single(File.ReadAllLines(receiptsB)),
-            "effects=" + string.Join(',', daemon.Effects) + " stale_bytes=0",
+            "effects=" + string.Join(',', daemon.Effects) + " stale_bytes=0 workers_reaped=2",
         ], ct);
 
         Task WriteHeadBootstrapAsync(Head.OperationHeadBootstrap boot) => WritePrivateAsync(headAuthority, Head.Program.BootstrapName,

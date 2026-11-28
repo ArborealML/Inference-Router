@@ -56,7 +56,7 @@ def exact(peer, count):
     return data
 
 
-def backend(port, model, context, slots, terminal, release, receipts):
+def backend(port, model, context, slots, terminal, release, receipts, stop):
     port, context, slots = map(int, (port, context, slots))
     # This CPU child stands in for one completed worker leg. It never receives weights.
     dispatch, compute = socket.socketpair()
@@ -136,7 +136,13 @@ def backend(port, model, context, slots, terminal, release, receipts):
                          "Inode": os.fstat(server.socket.fileno()).st_ino, "Cookie": cookie(server.socket)}
         }
         print(json.dumps(identity), flush=True)
-        server.serve_forever()
+        server.timeout = 0.1
+        try:
+            while not Path(stop).exists():
+                server.handle_request()
+        finally:
+            dispatch.close()
+            os.waitpid(worker, 0)
 
 
 def stale_listener(port, receipts):
