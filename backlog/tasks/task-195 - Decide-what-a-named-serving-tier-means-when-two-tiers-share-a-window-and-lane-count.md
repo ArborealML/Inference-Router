@@ -1,11 +1,11 @@
 ---
 id: TASK-195
 title: Bind exact recipe identity when context and lane counts coincide
-status: Ready for Review
+status: Done
 assignee:
   - '@gpt-6.2-astra'
 created_date: '2026-11-26T07:34:00Z'
-updated_date: '2026-11-28T11:31:00Z'
+updated_date: '2026-11-28T11:46:00Z'
 labels:
   - config
   - scheduling
@@ -47,10 +47,10 @@ Equal window/lane recipes may differ in weights, quantization, KV or resource se
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Distinct effective settings have distinct stable identities; equivalent resolved aliases/defaults share identity.
-- [ ] #2 Ambiguous exact launch selection refuses before mutation; selected recipe identity is frozen through the operation.
-- [ ] #3 Numeric context-only selection can reuse a verified fitting resident without interpreting ambiguous display labels as proof.
-- [ ] #4 SPEC §§5 and 7.6 distinguish suitability, display inference and exact identity; fixture tests cover equal numeric pairs.
+- [x] #1 Distinct effective settings have distinct stable identities; equivalent resolved aliases/defaults share identity.
+- [x] #2 Ambiguous exact launch selection refuses before mutation; selected recipe identity is frozen through the operation.
+- [x] #3 Numeric context-only selection can reuse a verified fitting resident without interpreting ambiguous display labels as proof.
+- [x] #4 SPEC §§5 and 7.6 distinguish suitability, display inference and exact identity; fixture tests cover equal numeric pairs.
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -66,5 +66,7 @@ Test the real equal-capacity Strata pair with differing cache settings in projec
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Review against 3c7ae3e confirmed the named-tier pre-enqueue lookup, conflicting numeric rank versus exact admission, resident-derived sender binding, and the need to reject ambiguity before mutation. The plan now names each gate, the separate compatibility modes, and end-to-end controls. [The candidate](https://github.com/ArborealML/Inference-Router/pull/97) passed 223 focused tests at a1c2498. The base failed all four streaming and non-streaming controls: two alias requests were refused and two canonical requests used the wrong equally sized recipe. The cold numeric path skips unsupported equal-window choices. Source review and hosted CI are active. Existing instance and launch-capacity work retains production qualification.
+Exact recipe selection landed in [PR 97](https://github.com/ArborealML/Inference-Router/pull/97). Native stream and non-stream requests on the base failed alias validation or used a different recipe with identical context and lane counts. Commit a1c2498 corrected all four controls; 223 focused tests passed. Exact-take and issuer checks keep numeric fit separate from verified recipe identity. Independent source review found no demonstrated wrong-write path and requested a replacement test that kept the original ticket live. The follow-up cc9e931 passed six focused cases, including matching-recipe successor delivery and different-recipe refusal with zero checkouts. This does not attribute every refusal to a single gate. Custom scheduler alias combinations and two-host commissioning were outside the focused witness; ordinary and existing scheduler regressions passed.
+
+[Final hosted CI](https://github.com/ArborealML/Inference-Router/actions/runs/46140923601) passed 2,375 Release tests, none failed or skipped, plus Native AOT publish and smoke. The merged integration retains the exact reviewed source, both specification revisions and qualification boundaries. TASK-25/118 own production admission and first write together; TASK-197 owns physical launch conformance.
 <!-- SECTION:NOTES:END -->
