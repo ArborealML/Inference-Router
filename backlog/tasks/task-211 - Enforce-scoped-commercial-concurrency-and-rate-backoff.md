@@ -34,5 +34,7 @@ Keep provider/account outstanding attempts and scoped rate observations separate
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Extend existing route comparison: hard model/fit/trust/filter and scoped capacity, then explicit standing spend permission, wait/service constraints and deterministic expected marginal cost/private preference. No global lock over telemetry or preparation; only deliberately shared caps serialize. TASK-213 adds included preference to this same evaluator; no generic optimizer. Use common backoff/deadline wake and synthetic policy/cost/admission snapshots. TASK-212 integrates real durable reservations and authorization; no live enablement from this task.
+Extend existing route comparison: hard model/fit/trust/filter and scoped capacity, then explicit standing spend permission, wait/service constraints and deterministic expected marginal cost/private preference. No global lock over telemetry or preparation; only deliberately shared caps serialize. Use common backoff/deadline wake and synthetic policy/cost/admission snapshots.
+
+TASK-213 adds included preference to this same evaluator; no generic optimizer. TASK-212 integrates real durable reservations and authorization; no live enablement from this task.
 <!-- SECTION:PLAN:END -->

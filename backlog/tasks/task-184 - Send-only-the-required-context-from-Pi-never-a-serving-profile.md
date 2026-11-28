@@ -17,7 +17,9 @@ ordinal: 176000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Wake when TASK-183 lands additive numeric ingress. Pi separates conversation/compaction ceiling, intentional hard floor and actual per-request fit. Remove Pi's bundled physical-profile selection without changing old third-party wire semantics; policy-aware catalog/compaction belongs to TASK-209.
+Wake when TASK-183 lands additive numeric ingress.
+
+Pi separates conversation/compaction ceiling, intentional hard floor and actual per-request fit. Remove Pi's bundled physical-profile selection without changing old third-party wire semantics; policy-aware catalog/compaction belongs to TASK-209.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

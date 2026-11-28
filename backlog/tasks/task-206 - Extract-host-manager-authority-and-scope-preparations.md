@@ -41,5 +41,7 @@ Reuse TASK-64/68/130 fixtures and the existing issuer/retirement primitives. Est
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-TASK-203 fixes traversal separately; coordinate exact-take and wake semantics. Production enablement needs TASK-25/118/110/190/197/198; this seam can land disabled for uncommissioned domains. TASK-190/198 reuse one operation/disposition authority, not competing recovery controllers. Existing fixtures/same-host evidence are not production enrollment. External resource exclusivity is a deployment prerequisite, not sandboxing or provisioning.
+TASK-203 fixes traversal separately; coordinate exact-take and wake semantics.
+
+Production enablement needs TASK-25/118/110/190/197/198; this seam can land disabled for uncommissioned domains. TASK-190/198 reuse one operation/disposition authority, not competing recovery controllers. Existing fixtures/same-host evidence are not production enrollment. External resource exclusivity is a deployment prerequisite, not sandboxing or provisioning.
 <!-- SECTION:NOTES:END -->

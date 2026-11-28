@@ -21,7 +21,7 @@ Owner chooses whether to permit controlled metered/subscription qualification se
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [ ] #1 Record affirmative per-account/model scope, purpose, maximum exposure, expiry and paid-overflow permission, or explicitly fixture-only/declined.
-- [ ] #2 No account mutation or automatic top-up is implied; separately authorize any necessary change. TASK-214/215 may only exercise affirmatively permitted scope.
+- [ ] #2 No account mutation or automatic top-up is implied; separately authorize any necessary change. Live calls may exercise only affirmatively permitted scope.
 <!-- AC:END -->
 
 ## Implementation Plan
