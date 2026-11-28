@@ -46,8 +46,56 @@ internal sealed record ServingBrokerClose(
         query.ExpectedIncumbentRoute == Retirement.SealedRoute && query.Id == Retirement.QueryId;
 }
 
+// Within the bounded window, admissions can reach the broker out of scheduling order.
+// Any sequence outside the window is already too old to authorize a new physical use.
+internal sealed record ServingBrokerApplicationReplay(long HighWater, ImmutableArray<ulong> Used)
+{
+    private const int Window = 1024;
+
+    private const int WordBits = 64;
+    private const int Words = Window / WordBits;
+
+    internal static readonly ServingBrokerApplicationReplay Empty = new(0, [.. new ulong[Words]]);
+
+    internal bool IsValid() => HighWater >= 0 && !Used.IsDefault && Used.Length == Words &&
+        (HighWater == 0 || Contains(HighWater));
+
+    internal ServingBrokerApplicationReplay? Record(long sequence)
+    {
+        if (sequence <= Math.Max(HighWater - Window, 0) || sequence <= HighWater && Contains(sequence))
+            return null;
+        var high = Math.Max(sequence, HighWater);
+        var words = new ulong[Words];
+        if (high - HighWater < Window)
+        {
+            Used.CopyTo(words);
+            for (var offset = 1L; offset <= high - HighWater; offset++)
+                Set(words, HighWater + offset, set: false);
+        }
+
+        Set(words, sequence, set: true);
+        return new(high, [.. words]);
+    }
+
+    private bool Contains(long sequence) =>
+        (Used[Word(sequence)] & Bit(sequence)) != 0;
+
+    private static void Set(ulong[] words, long sequence, bool set)
+    {
+        var word = Word(sequence);
+        var bit = Bit(sequence);
+        if (set) words[word] |= bit;
+        else words[word] &= ~bit;
+    }
+
+    private static int Word(long sequence) => (int)((sequence % Window) / WordBits);
+    private static ulong Bit(long sequence) => 1UL << (int)(sequence % WordBits);
+}
+
 internal sealed record ServingBrokerRecord(int FormatVersion, HostReservationScope Scope, long Revision, string? Predecessor,
-    Guid IssuerEpoch, ServingBrokerBinding Binding, bool Open, ServingBrokerClose? Close, ImmutableArray<ServingBrokerUse> Uses)
+    Guid IssuerEpoch, ServingBrokerBinding Binding, bool Open, ServingBrokerClose? Close, ImmutableArray<ServingBrokerUse> Uses,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ServingBrokerApplicationReplay? ApplicationReplay = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] Guid ApplicationWriter = default)
 {
     internal const int CurrentFormat = 1;
 }

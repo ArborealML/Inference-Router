@@ -83,7 +83,10 @@ internal sealed class CommissionedHeldPartitionProducer(EnrolledSuccessorScope s
 
             ct.ThrowIfCancellationRequested();
             if (HostEffectCheckpoint.ReadInstalledCommitment(checkpointLock) != installed ||
-                readPolicy().Digest != policyRead.Digest || readBroker()?.Digest != broker.Digest)
+                readPolicy().Digest != policyRead.Digest || readBroker() is not { Record: { } readback } ||
+                readback.Binding != broker.Record.Binding || readback.IssuerEpoch != broker.Record.IssuerEpoch ||
+                readback.ApplicationWriter != broker.Record.ApplicationWriter || readback.Open != broker.Record.Open ||
+                readback.Close != broker.Record.Close)
                 return null;
 
             return new(scope.Reservation, scope.Commission.Head, policy.Revision, policy.OwnerGeneration,

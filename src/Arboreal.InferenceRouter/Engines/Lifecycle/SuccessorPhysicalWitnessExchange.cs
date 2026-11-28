@@ -67,14 +67,14 @@ internal sealed class SuccessorPhysicalWitnessClient(EnrolledSuccessorScope scop
     }
 
     internal static async ValueTask<HeldServingGeneration?> ReadHeldServingAsync(EnrolledSuccessorScope scope,
-        SuccessorAuthorityPeer peer, CheckedEnrolledTarget target, ServingBrokerBinding binding, CancellationToken ct)
+        SuccessorAuthorityPeer peer, CheckedEnrolledTarget target, ServingBrokerBinding binding, bool expectedOpen, CancellationToken ct)
     {
         if (!binding.IsValid() || binding.Applied.State.AppliedLaunch is not { } applied ||
             applied.Plan != target.Plan) return null;
         var partition = await ReadHeldPartitionAsync(scope, peer, ct).ConfigureAwait(false);
         ct.ThrowIfCancellationRequested();
         var identity = ServingBrokerIssuer.ServingIdentity(binding);
-        return partition is { IngressClosed: true, ResidentRunning: true, Serving: { } serving } &&
+        return partition is { ResidentRunning: true, Serving: { } serving } && partition.IngressClosed != expectedOpen &&
             partition.Revision > 0 && partition.OwnerGeneration > 0 && partition.CoverageGeneration > 0 &&
             partition.IngressGeneration > 0 && partition.Resident == applied && partition.ResidentRoute == binding.Route &&
             partition.ResidentImage == target.Image && partition.ResidentBackendRoute == target.Plan.BackendRoute &&

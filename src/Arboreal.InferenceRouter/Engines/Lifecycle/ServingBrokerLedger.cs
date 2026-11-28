@@ -7,21 +7,31 @@ namespace Arboreal.InferenceRouter.Lifecycle;
 // across these calls. A disputed write leaves the durable record untouched by this caller.
 internal sealed class ServingBrokerLedger(HostReservationScope scope, Guid issuerEpoch, IServingBrokerStore store)
 {
+    private readonly Lock _mutate = new();
+
     internal ServingBrokerUse? Reserve(ServingBrokerBinding binding, ServingBrokerUseKind kind, Guid exchangeId,
         VerifiedInstanceInvocation? invocation)
     {
+        using var mutation = _mutate.EnterScope();
         if (!Enum.IsDefined(kind) || exchangeId == Guid.Empty || ReadCurrent() is not { } current ||
             current.Record.IssuerEpoch != issuerEpoch || current.Record.Binding != binding || current.Record.Close is not null ||
             !PermitsUse(current.Record, kind, exchangeId, invocation))
             return null;
 
+        var replay = current.Record.ApplicationReplay;
+        if (invocation is { } application &&
+            (replay = (replay ?? ServingBrokerApplicationReplay.Empty).Record(application.Sequence)) is null)
+            return null;
+
         var use = new ServingBrokerUse(Guid.NewGuid(), binding.Route, kind, exchangeId, invocation,
             ServingBrokerUsePhase.Reserved);
-        return Write(current, current.Record with { Uses = current.Record.Uses.Add(use) }) ? use : null;
+        var uses = kind == ServingBrokerUseKind.Models ? current.Record.Uses.Clear() : current.Record.Uses;
+        return Write(current, current.Record with { Uses = uses.Add(use), ApplicationReplay = replay }) ? use : null;
     }
 
     internal ServingBrokerUse? Issue(ServingBrokerUse expected)
     {
+        using var mutation = _mutate.EnterScope();
         if (expected.Phase != ServingBrokerUsePhase.Reserved || ReadCurrent() is not { } current ||
             current.Record.IssuerEpoch != issuerEpoch || current.Record.Close is not null)
             return null;
@@ -32,6 +42,7 @@ internal sealed class ServingBrokerLedger(HostReservationScope scope, Guid issue
 
     internal ServingBrokerUse? BindAccepted(ServingBrokerUse expected, ServingHostAcceptedSocket accepted)
     {
+        using var mutation = _mutate.EnterScope();
         if (expected is not { Phase: ServingBrokerUsePhase.Issued, Accepted: null } ||
             ReadCurrent() is not { } current || current.Record.IssuerEpoch != issuerEpoch ||
             current.Record.Close is { Conclusive: true } || accepted.AcceptedInode == 0 || accepted.AcceptedCookie is 0 or ulong.MaxValue ||
@@ -51,13 +62,17 @@ internal sealed class ServingBrokerLedger(HostReservationScope scope, Guid issue
 
     // Only the original caller may assert it never entered the connector. An inherited
     // issued use is unresolved even if it has no recorded accepted FD.
-    internal bool CancelBeforeConnect(ServingBrokerUse expected) =>
-        expected.Accepted is null && IsOutstanding(expected) && ReadCurrent() is { } current &&
-        current.Record.IssuerEpoch == issuerEpoch &&
-        ReplaceUse(current, expected, expected with { Phase = ServingBrokerUsePhase.Retired });
+    internal bool CancelBeforeConnect(ServingBrokerUse expected)
+    {
+        using var mutation = _mutate.EnterScope();
+        return expected.Accepted is null && IsOutstanding(expected) && ReadCurrent() is { } current &&
+            current.Record.IssuerEpoch == issuerEpoch &&
+            ReplaceUse(current, expected, expected with { Phase = ServingBrokerUsePhase.Retired });
+    }
 
     internal bool Retire(ServingBrokerUse expected, ServingHostTerminalProof terminal)
     {
+        using var mutation = _mutate.EnterScope();
         if (ReadCurrent() is not { } current || expected is not
             { Phase: ServingBrokerUsePhase.Issued, Accepted: { } accepted } || !terminal.Binds(accepted))
             return false;
@@ -66,11 +81,14 @@ internal sealed class ServingBrokerLedger(HostReservationScope scope, Guid issue
         return ReplaceUse(current, expected, expected with { Phase = ServingBrokerUsePhase.Retired, Terminal = terminal });
     }
 
-    internal bool CompleteProbe(ServingBrokerUse expected, ServingHostTerminalProof terminal) =>
-        expected is { Phase: ServingBrokerUsePhase.Issued, Accepted: { } accepted,
-            Kind: ServingBrokerUseKind.Models or ServingBrokerUseKind.State } &&
-        terminal.Binds(accepted) && ReadCurrent() is { } current &&
-        ReplaceUse(current, expected, expected with { Phase = ServingBrokerUsePhase.ProbeCompleted, Terminal = terminal });
+    internal bool CompleteProbe(ServingBrokerUse expected, ServingHostTerminalProof terminal)
+    {
+        using var mutation = _mutate.EnterScope();
+        return expected is { Phase: ServingBrokerUsePhase.Issued, Accepted: { } accepted,
+                Kind: ServingBrokerUseKind.Models or ServingBrokerUseKind.State } &&
+            terminal.Binds(accepted) && ReadCurrent() is { } current &&
+            ReplaceUse(current, expected, expected with { Phase = ServingBrokerUsePhase.ProbeCompleted, Terminal = terminal });
+    }
 
     internal (ServingHostAcceptedSocket Socket, ServingBrokerHead Head)? ReadIssuedSocket(ulong inode, ulong cookie)
     {
@@ -99,10 +117,26 @@ internal sealed class ServingBrokerLedger(HostReservationScope scope, Guid issue
         ReadCurrent()?.Record is { Open: false, Close: null } record &&
         record.IssuerEpoch == issuerEpoch && record.Binding == binding && !HasOutstandingUses(record);
 
-    internal bool OwnsClosedGenesis(ServingBrokerBinding binding, Guid commissionedEpoch) =>
+    internal Guid? BeginInitialProof(ServingBrokerBinding binding, bool observedOpen)
+    {
+        using var mutation = _mutate.EnterScope();
+        if (ReadCurrent() is not { Record: { Close: null } record } current ||
+            record.IssuerEpoch != issuerEpoch || record.Binding != binding || record.Open != observedOpen ||
+            binding.Applied.State.Epoch != 1 || binding.AppliedJournalDigest is not null ||
+            HasOutstandingUses(record) || record.ApplicationReplay?.HighWater == long.MaxValue)
+            return null;
+
+        // A retained Open refers to the same physically checked incumbent. Close its issuance
+        // before new readiness probes. A successor cutoff is never eligible for this restart.
+        var writer = Guid.NewGuid();
+        if (!Write(current, record with { Open = false, Uses = [], ApplicationWriter = writer })) return null;
+        VerifiedInstanceInvocation.ContinueAfter(record.ApplicationReplay?.HighWater ?? 0);
+        return writer;
+    }
+
+    internal bool OwnsClosedInitial(ServingBrokerBinding binding, Guid commissionedEpoch) =>
         commissionedEpoch != Guid.Empty && commissionedEpoch == issuerEpoch &&
-        ReadCurrent()?.Record is { Revision: 0, Open: false, Close: null, Uses.IsEmpty: true } record &&
-        record.IssuerEpoch == commissionedEpoch && record.Binding == binding;
+        binding.Applied.State.Epoch == 1 && binding.AppliedJournalDigest is null && IsCurrentClosed(binding);
 
     // Startup consumes a delegation earned by ordered probes in this exact issuer epoch.
     internal bool CanAttachInitial(ServingBrokerBinding binding) =>
@@ -113,6 +147,7 @@ internal sealed class ServingBrokerLedger(HostReservationScope scope, Guid issue
     internal bool InstallClosedSuccessor(ServingBrokerBinding binding, EnrolledSuccessorApplied applied,
         EnrolledSuccessorAppliedWitness witness)
     {
+        using var mutation = _mutate.EnterScope();
         var prior = applied.Retirement;
         var journal = witness.Journal;
         if (!binding.IsValid() || binding.Scope != scope || binding.Scope != applied.Scope.Reservation ||
@@ -140,6 +175,7 @@ internal sealed class ServingBrokerLedger(HostReservationScope scope, Guid issue
     // admission/issuer Open. It never exposes a route or mints a grant by itself.
     internal bool TryDelegateOpen(ServingBrokerBinding binding, Guid completedExchange)
     {
+        using var mutation = _mutate.EnterScope();
         if (completedExchange == Guid.Empty || ReadCurrent() is not { } current ||
             current.Record is not { Open: false, Close: null } record || record.IssuerEpoch != issuerEpoch ||
             record.Binding != binding || HasOutstandingUses(record) ||
@@ -155,6 +191,7 @@ internal sealed class ServingBrokerLedger(HostReservationScope scope, Guid issue
     internal ServingBrokerClose? Seal(EnrolledSuccessorQuery query, HostEffectCheckpointCommitment checkpoint,
         long ownerGeneration, long ingressGeneration)
     {
+        using var mutation = _mutate.EnterScope();
         if (ownerGeneration <= 0 || ingressGeneration <= 0 || query.Id == Guid.Empty || !query.Scope.Approves(query.Successor) ||
             query.Scope.Reservation != scope || checkpoint.State != query.Checkpoint ||
             checkpoint.State.AppliedLaunch is not { } incumbent || query.ProposedStop is not { } stop ||
@@ -181,6 +218,7 @@ internal sealed class ServingBrokerLedger(HostReservationScope scope, Guid issue
     // The operation owner also requires zero holds in the corresponding local admission generation.
     internal EnrolledSuccessorRetirement? CompleteClose(ServingBrokerClose expected, VerifiedInstanceRoute localZeroRoute)
     {
+        using var mutation = _mutate.EnterScope();
         if (expected.Retirement.SealedRoute != localZeroRoute || ReadCurrent() is not { } current ||
             current.Record.IssuerEpoch != issuerEpoch || current.Record.Open || current.Record.Close is not { } close ||
             close != (expected with { Conclusive = close.Conclusive }) || HasOutstandingUses(current.Record))
@@ -210,13 +248,17 @@ internal sealed class ServingBrokerLedger(HostReservationScope scope, Guid issue
         return current is not null && current.Record.FormatVersion == ServingBrokerRecord.CurrentFormat &&
             current.Record.Scope == scope && current.Record.Binding.Scope == scope &&
             current.Record.Revision >= 0 && current.Record.IssuerEpoch != Guid.Empty && current.Record.Binding.IsValid() &&
-            !current.Record.Uses.IsDefault && HostMutation.IsPlanDigest(current.Digest) ? current : null;
+            !current.Record.Uses.IsDefault && current.Record.ApplicationReplay?.IsValid() != false &&
+            HostMutation.IsPlanDigest(current.Digest) ? current : null;
     }
 
     private bool ReplaceUse(ServingBrokerSnapshot current, ServingBrokerUse expected, ServingBrokerUse next)
     {
         var index = current.Record.Uses.IndexOf(expected);
-        return index >= 0 && Write(current, current.Record with { Uses = current.Record.Uses.SetItem(index, next) });
+        if (index < 0) return false;
+        var uses = next.Phase == ServingBrokerUsePhase.Retired
+            ? current.Record.Uses.RemoveAt(index) : current.Record.Uses.SetItem(index, next);
+        return Write(current, current.Record with { Uses = uses });
     }
 
     private bool Write(ServingBrokerSnapshot prior, ServingBrokerRecord proposed)
@@ -239,6 +281,7 @@ internal sealed class ServingBrokerLedger(HostReservationScope scope, Guid issue
     {
         if (kind == ServingBrokerUseKind.Application)
             return record.Open && invocation is { } application && application.Id == exchangeId &&
+                record.ApplicationWriter != Guid.Empty && application.CommissionedWriter == record.ApplicationWriter &&
                 application.Route == record.Binding.Route &&
                 !record.Uses.Any(use => use.Invocation?.Id == application.Id) &&
                 record.Uses.Count(use => use.Kind == ServingBrokerUseKind.Application &&

@@ -29,6 +29,7 @@ internal sealed class CommissionedNativeProgram(CommissionedServerBootstrap boot
     public string Daemon => Authority.Scope.Commission.Head.Daemon;
     public string Partition => Authority.Scope.Commission.Head.Partition;
     public long ResourceEpoch => Interlocked.Read(ref _epoch);
+    public Guid ApplicationWriter => Authority.ApplicationWriter;
     public bool Approves(VerifiedDispatchTarget target) =>
         Authority.Configured.Catalog.Resolve(target.Engine, target.Model, target.Tier)?.Target == target;
     public bool IsDisjointFromLocalController(EngineDefinition engine) => false;
@@ -44,7 +45,7 @@ internal sealed class CommissionedNativeProgram(CommissionedServerBootstrap boot
         var initialTarget = authority.InitialTarget;
         var config = configured.Configuration;
         if (!config.Engines.TryGetValue(initialTarget.Key.Engine, out var engine) ||
-            await ReadPartitionAsync(token).ConfigureAwait(false) is not { } held ||
+            await ReadPartitionAsync(token).ConfigureAwait(false) is not { IngressClosed: true } held ||
             !TryBind(held, authority.Binding, initialTarget, authority.InitialGeneration, out var generation))
             throw Unavailable();
         Interlocked.Exchange(ref _epoch, generation.Stamp.ResourceEpoch);
@@ -274,15 +275,18 @@ internal sealed class CommissionedNativeProgram(CommissionedServerBootstrap boot
     {
         try
         {
-            if (await CheckCatalogAsync(token).ConfigureAwait(false) &&
-                await ReadPartitionAsync(token).ConfigureAwait(false) is { IngressClosed: false } held &&
-                MatchesResident(held, current, current.Stamp.IngressGeneration) &&
+            if (!await CheckCatalogAsync(token).ConfigureAwait(false) ||
+                await ReadPartitionAsync(token).ConfigureAwait(false) is not { } held)
+                return false;
+            if (!held.IngressClosed && MatchesResident(held, current, current.Stamp.IngressGeneration) &&
                 HostEffectCheckpoint.ReadInstalledCommitment(Authority.CheckpointLock) == current.Binding.Applied)
                 return ReferenceEquals(Volatile.Read(ref _current), current);
         }
         catch (Exception error) when (OperationHeadTransport.IsUnavailable(error))
         {
-            // A missing observation cannot authorize a new physical checkout.
+            // Unavailable observation refuses this checkout. It supplies no change of generation.
+            token.ThrowIfCancellationRequested();
+            return false;
         }
 
         token.ThrowIfCancellationRequested();

@@ -172,8 +172,9 @@ public sealed partial class ServingBrokerDirectSocketTests
             var path = Path.Combine(authority.FullName, ServingBrokerFileStore.RecordsName);
             var lockPath = Path.Combine(authority.FullName, ServingBrokerFileStore.FenceName);
             var epoch = Guid.NewGuid();
+            var writer = Guid.NewGuid();
             var initial = new ServingBrokerRecord(ServingBrokerRecord.CurrentFormat, binding.Scope, 0, null, epoch,
-                binding, Open: true, Close: null, []);
+                binding, Open: true, Close: null, [], ApplicationWriter: writer);
             var body = JsonSerializer.SerializeToUtf8Bytes(initial,
                 ServingBrokerRecordJsonContext.Default.ServingBrokerRecord);
             var framed = new byte[sizeof(int) + body.Length];
@@ -184,7 +185,7 @@ public sealed partial class ServingBrokerDirectSocketTests
             var anchor = new Anchor(new(binding.Scope, 0, Convert.ToHexString(SHA256.HashData(body))));
             var ledger = new ServingBrokerLedger(binding.Scope, epoch, OpenStore());
             var invocation = new VerifiedInstanceInvocation(binding.Route, Guid.NewGuid(),
-                new Uri("http://127.0.0.1/v1/chat/completions"));
+                new Uri("http://127.0.0.1/v1/chat/completions"), 1, writer);
             ServingBrokerUse? issued = null;
             if (issueUse)
             {
@@ -283,12 +284,31 @@ public sealed partial class ServingBrokerDirectSocketTests
     private sealed class Anchor(ServingBrokerHead initial) : IServingBrokerAnchor
     {
         private ServingBrokerHead _current = initial;
-        public ServingBrokerHead? Read(HostReservationScope scope) => _current.Scope == scope ? _current : null;
+        internal bool RefuseNext { private get; set; }
+        internal bool LoseNextReply { private get; set; }
+        internal bool LoseReadback { get; set; }
+        internal bool LoseReadbackOnCommit { private get; set; }
+        public ServingBrokerHead? Read(HostReservationScope scope) => !LoseReadback && _current.Scope == scope ? _current : null;
 
         public bool TryAdvance(ServingBrokerHead predecessor, ServingBrokerHead next)
         {
+            if (RefuseNext)
+            {
+                RefuseNext = false;
+                return false;
+            }
             if (_current != predecessor) return false;
             _current = next;
+            if (LoseReadbackOnCommit)
+            {
+                LoseReadbackOnCommit = false;
+                LoseReadback = true;
+            }
+            if (LoseNextReply)
+            {
+                LoseNextReply = false;
+                throw new IOException("fixture lost CAS reply");
+            }
             return true;
         }
     }

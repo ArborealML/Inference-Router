@@ -7,7 +7,7 @@ Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 
 ## 0. Revision log
 
-- v0.12.176 — connect the executable to the protected catalog, operation head, serving broker, and exact native terminal sources. Attach a checked resident before dispatch and bind the successor before closing its incumbent. The original issuer epoch confirms the cutoff and the anchored journal checks the frozen recipe on replay (§§4, 7.6, 12.1).
+- v0.12.176 — connect the executable to the protected catalog, operation head, serving broker, and exact native terminal sources. Attach a checked resident before dispatch and bind the successor before closing its incumbent. The original issuer epoch confirms the cutoff and the anchored journal checks the frozen recipe on replay. Bounded broker snapshots and an authenticated writer generation preserve replay fences through initial-resident restart (§§4, 7.6, 12.1).
 - v0.12.173 — compose enrolled exact dispatch in the standard web application and require generation-specific physical retirement before mutation, and bound commissioned SSE output at route selection (§§4, 7.6, 12.1).
 - v0.12.171 — fit deterministic short-grid prompts using exact backend counts and search the full next-record tail within the count budget (§11.2).
 - v0.12.170 — bind named managed recipes through selection and exact admission, resolve engine-local aliases before queue validation, and preserve numeric reuse of a fitting resident (§§5.3.1, 7.6, 14).
@@ -4216,7 +4216,22 @@ must confirm the cutoff. The operation journal also verifies the frozen recipe w
 the anchored history. The worker subsequently
 checks that cutoff and exact incumbent, observes vacancy separately, and binds the installed
 launch to the next broker generation. A committed close survives lost physical readback.
-An advanced or ambiguous startup has no automatic authority to reopen an old resident.
+A restarted writer can attach the same initial resident when the approved checkpoint and
+operation head still match, the held process and listener corroborate the exact binding, and
+every previous physical use is settled. The original enrolled reservation excludes a second
+startup owner. The new writer closes ingress before repeating bound readiness and installs a
+fresh application writer identity. A changed scope, outstanding use, successor checkpoint
+or durable cutoff refuses automatic startup.
+
+The broker retains outstanding uses, the current readiness proof and a bounded durable
+application replay window. A new use must carry the current writer identity and a sequence
+that has neither been consumed nor fallen behind the window. Terminal application details
+can be released without enabling a replay. The head selects one of two bounded snapshots
+by exact digest and revision. A refused advance leaves the preceding snapshot authoritative.
+A lost reply needs a fresh head read identifying the exact candidate before it can authorize
+the caller. An unanchored suffix in a previously installed append-only prefix supplies no
+authority.
+
 Commissioned operation requires the separately installed authority peers, distinct handler
 identity, supported Linux kernel evidence and instrumented serving process. Build the
 `air-operation-head` and `air-successor-observer` peers from the same source revision.
