@@ -517,10 +517,10 @@ public sealed partial class RouterCore
             SettleQueueEnd(head.Ticket, end, head.Request.Options?.MaxQueueTime);
     }
 
-    private void SettleQueueEnd(RouterTicket ticket, string code, TimeSpan? window)
+    private void SettleQueueEnd(RouterTicket ticket, string code, TimeSpan? window, string? failureReason = null)
     {
         if (_admission?.Invalidate(ticket) == true) _ = CancelQueuedActivationAsync(ticket);
-        var reason = code switch
+        var reason = failureReason ?? code switch
         {
             "cancelled" => "cancelled while queued",
             "slow_consumer" => HttpStreamOutcome.SlowConsumer.Message,

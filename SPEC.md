@@ -8,6 +8,7 @@ Repository: `ArborealML/Inference-Router` on GitHub (public); local checkout
 ## 0. Revision log
 
 - v0.12.174 — bind owned private inference to verified external scope and durable policy, qualify direct private transport, and scope catalog, status, events and ticket controls (§5.6).
+- v0.12.173 — compose enrolled exact dispatch in the standard web application and require generation-specific physical retirement before mutation, and bound commissioned SSE output at route selection (§§4, 7.6, 12.1).
 - v0.12.172 — exercise the singleton tuning runner through CLI dispatch with a controlled private resident, retain semantic, physical settlement and failed lease release evidence, and publish run evidence and its comparison summary together (§§11.1, 11.3).
 - v0.12.171 — fit deterministic short-grid prompts using exact backend counts and search the full next-record tail within the count budget (§11.2).
 - v0.12.170 — bind named managed recipes through selection and exact admission, resolve engine-local aliases before queue validation, and preserve numeric reuse of a fitting resident (§§5.3.1, 7.6, 14).
@@ -1565,6 +1566,14 @@ verified issuer. `RouterCore` still owns the pending queues and selects the next
 manager owns accepted lifecycle work and binds the authorized send to the current staged resident.
 Two engine or configuration-group names can resolve to the same enrolled domain and generation.
 
+The standard web application accepts commissioned composition from a protected bootstrap. It
+uses the same HTTP handlers, queue and ticket as local serving. The bootstrap supplies a
+current reservation scope, physical daemon and partition, approved recipe identities, lifecycle
+controller, and certified issuer. A configuration group must be fully enrolled under one owner
+or use its local controller. Local controllers need independent proof that their physical scope is
+disjoint from the commissioned routes. Forward-only routes must use distinct endpoints.
+A caller-supplied configuration alone grants no commissioned authority.
+
 ## 5. Domain model (library API)
 
 ### 5.1 Threads and priority
@@ -2158,6 +2167,24 @@ fresh vacancy to create the frozen successor. The replacement route remains clos
 identity is checked for consistency within the issuer's fixture binding. Independent process
 attestation remains a production host and verified-dispatch requirement. Enrolled admission, issuer
 crash recovery and live host authority remain outside this qualification.
+
+In commissioned server composition, queue acceptance captures the incumbent route, resource and
+serving-process incarnations and that route's physical-use counter. Staging and first-write
+authorization share one local gate. The switch ticket stays on the ordinary queue while the
+manager seals that incumbent and waits for preparation cleanup, the exact route's zero counter
+and an independent issuer and ingress retirement cutoff. The response remains borrowed until
+stream delivery acknowledges flush or decides departure. The selected commissioned HTTP SSE
+route uses the configured positive output credit, or 64 KiB per ticket when the configured
+credit is zero. Selection installs this credit before publishing the stream reader. Ordinary
+routes sharing the model keep the configured legacy default. A logical timeout or caller terminal
+can release the engine slot while the physical use remains charged.
+
+The coordinator rechecks fresh physical occupancy and reserves a one-use stop permit for the
+same cutoff, tracker and process before persisting an exact-target stop. It requires fresh
+vacancy before launch. Expiry leaves ingress and checkout closed. A later transition needs a
+fresh stop reservation. A restarted manager with an occupied slot and no tracked generation
+cannot spend an incumbent's authority. Recovery of persisted uncertain effects belongs to the
+enrolled recovery path.
 
 The offline host coordinator fixture can start a fresh switch or recover a matching applied
 launch. A fresh switch preserves the old route through untouched preflight. Exact applied-launch
@@ -4297,9 +4324,11 @@ existing host (`--host`), start a local host (`--local`), or start the
 listener (`--listen-only`). v1 keeps the interfaces (`IInferenceRouter`,
 event feed) host-agnostic; the wire contract lands when host mode lands.
 
-The internal combined host-manager fixture uses in-process calls to the one enrolled controller
-and issuer per physical domain. Separate manager processes, remote transport and production
-commissioning require further qualification.
+The commissioned server fixture uses in-process calls to the enrolled controller and issuer per
+physical domain. The shipping executables refuse an explicit `--commissioned` selection before
+ordinary configuration is loaded. A protected adapter for installed broker and operation heads,
+held-partition evidence and the serving handler's native terminal reports is required to enable
+that selection. Separate manager processes and remote transport require further qualification.
 
 ### 12.2 Cross-host prefix prioritization
 Scheduler gains a peer-level trie: prefer the peer whose trie already holds

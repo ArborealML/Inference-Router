@@ -708,7 +708,7 @@ public partial class StreamRelayTests
             base.ReadAsync(buffer[..1], cancellationToken);
     }
 
-    private sealed class GatedWriter(int blockWrite, bool ignoreCancel = false) : PipeWriter
+    internal sealed class GatedWriter(int blockWrite, bool ignoreCancel = false) : PipeWriter
     {
         private int _writes;
         public TaskCompletionSource<int> Blocked { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -732,7 +732,7 @@ public partial class StreamRelayTests
         public override Memory<byte> GetMemory(int sizeHint = 0) => throw new NotSupportedException();
         public override Span<byte> GetSpan(int sizeHint = 0) => throw new NotSupportedException();
         public override ValueTask<FlushResult> FlushAsync(CancellationToken cancellationToken = default) =>
-            throw new NotSupportedException();
+            ValueTask.FromResult(new FlushResult(false, false));
     }
 
     private sealed class PassiveLifetime : IHttpRequestLifetimeFeature
@@ -742,7 +742,7 @@ public partial class StreamRelayTests
         public void Abort() => Aborted = true;
     }
 
-    private sealed class BodyFeature(PipeWriter writer) : IHttpResponseBodyFeature
+    internal sealed class BodyFeature(PipeWriter writer) : IHttpResponseBodyFeature
     {
         public Stream Stream => Stream.Null;
         public PipeWriter Writer => writer;

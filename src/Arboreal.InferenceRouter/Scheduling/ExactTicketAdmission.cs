@@ -30,6 +30,7 @@ internal sealed class ExactTicketAdmission(
         internal bool Open;
         internal long Window;
         internal VerifiedDispatchResident? Resident;
+        internal CommissionedRouteUses? Uses;
     }
 
     private sealed class DomainState(DomainIdentity identity)
@@ -42,6 +43,7 @@ internal sealed class ExactTicketAdmission(
         internal long RouteGeneration;
         internal VerifiedDispatchResident? ActiveResident;
         internal RouterTicket? ActivationOwner;
+        internal RouteState? CommissionedIncumbent;
     }
 
     private sealed class EngineAdmissionState(DomainState domain)
@@ -57,6 +59,14 @@ internal sealed class ExactTicketAdmission(
             OpeningOwner = null;
             OwnerPreparationPending = false;
         }
+    }
+
+    internal sealed class CommissionedRouteUses(CommissionedServingStamp stamp)
+    {
+        internal CommissionedServingStamp Stamp => stamp;
+        internal int Count;
+        internal TaskCompletionSource Zero { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        internal bool Sealed;
     }
 
     private sealed class Preparation(Claim claim, DomainState domain)
@@ -135,19 +145,78 @@ internal sealed class ExactTicketAdmission(
     private readonly Dictionary<DomainIdentity, DomainState> _domains = [];
 
     // Called under the admission gate at the queue acceptance cut. No provider work starts here.
-    internal bool TryBeginTransition(DomainIdentity identity, RouterTicket? ticket)
+    internal bool TryBeginTransition(DomainIdentity identity, RouterTicket? ticket, CommissionedRouteIssuer? issuer,
+        TimeSpan drainBudget, out CommissionedHostCut? cut)
     {
         lock (Gate)
         {
+            cut = null;
             if (_stopped || !_domains.TryGetValue(identity, out var domain) || domain.Transitioning ||
-                domain.ActivationOwner is not null || domain.Preparations != 0 ||
-                domain.Engines.Exists(static engine => engine.PhysicalUses != 0) ||
-                ticket is not null && (_preparations.ContainsKey(ticket) || HasActivationOwner(ticket))) return false;
+                domain.ActivationOwner is not null || ticket is not null &&
+                (_preparations.ContainsKey(ticket) || HasActivationOwner(ticket))) return false;
+            if (issuer is null)
+            {
+                if (domain.Preparations != 0 || domain.Engines.Exists(static engine => engine.PhysicalUses != 0)) return false;
+            }
+            else
+            {
+                var incumbent = domain.CommissionedIncumbent;
+                var uses = incumbent?.Uses;
+                var authority = issuer.Authority;
+                var epoch = authority.ResourceEpoch;
+                if (!issuer.IsCurrentScope || epoch <= 0 || (uses is null ? !authority.IsKnownVacant(epoch) :
+                    uses.Stamp.ResourceEpoch != epoch)) return false;
+
+                List<Preparation> cleanup = [];
+                cut = new(issuer, epoch, uses?.Stamp, ReserveStop, Seal, AwaitZeroAsync, _clock, drainBudget);
+
+                bool Seal()
+                {
+                    lock (Gate)
+                    lock (issuer.Gate)
+                    {
+                        if (_stopped || !domain.Transitioning || !ReferenceEquals(domain.CommissionedIncumbent, incumbent) ||
+                            uses is null || uses.Count < 0 || !issuer.Seal(uses.Stamp)) return false;
+                        incumbent!.Open = false;
+                        Volatile.Write(ref domain.ActiveResident, null);
+                        uses.Sealed = true;
+                        if (uses.Count == 0) uses.Zero.TrySetResult();
+                        foreach (var entry in _preparations.Values)
+                        {
+                            if (!ReferenceEquals(incumbent?.Resident, entry.Claim.Resident)) continue;
+                            _ = Retire(entry);
+                            cleanup.Add(entry);
+                        }
+                    }
+                    foreach (var entry in cleanup) entry.RequestRetirement();
+                    return true;
+                }
+
+                ICommissionedStopPermit? ReserveStop(CommissionedServingRetirement retirement)
+                {
+                    lock (Gate)
+                    lock (issuer.Gate)
+                        return !_stopped && domain.Transitioning && ReferenceEquals(domain.CommissionedIncumbent, incumbent) &&
+                            uses is { Sealed: true, Count: 0 } && issuer.IsSealed(uses.Stamp) &&
+                            authority.ResourceEpoch == epoch ? authority.TryReserveStop(retirement) : null;
+                }
+
+                async Task<bool> AwaitZeroAsync(CancellationToken ct)
+                {
+                    foreach (var entry in cleanup)
+                        if (await entry.CleanupFinished.Task.WaitAsync(ct).ConfigureAwait(false) is not null) return false;
+                    await uses!.Zero.Task.WaitAsync(ct).ConfigureAwait(false);
+                    return true;
+                }
+            }
             domain.Transitioning = true;
             domain.ActivationOwner = ticket;
-            Volatile.Write(ref domain.ActiveResident, null);
-            foreach (var route in _verifiedRoutes.Values)
-                if (ReferenceEquals(route.Engine.Domain, domain)) route.Open = false;
+            if (issuer is null)
+            {
+                Volatile.Write(ref domain.ActiveResident, null);
+                foreach (var route in _verifiedRoutes.Values)
+                    if (ReferenceEquals(route.Engine.Domain, domain)) route.Open = false;
+            }
         }
         return true;
     }
@@ -218,7 +287,7 @@ internal sealed class ExactTicketAdmission(
 
     // Only the offline issuer adapter publishes these proofs. A replacement/availability event
     // advances the generation and fences the old preparation without rearming a spent generation.
-    internal bool PublishVerified(VerifiedDispatchResident resident)
+    internal bool PublishVerified(VerifiedDispatchResident resident, CommissionedServingStamp? stamp = null)
     {
         List<Preparation> cleanup = [];
         lock (Gate)
@@ -236,6 +305,13 @@ internal sealed class ExactTicketAdmission(
             }
             if (resident.Route.RouteIncarnation <= route.Generation) return false;
 
+            if (stamp is not null)
+            {
+                if (stamp.Route != resident.Route || (domain.CommissionedIncumbent is { Uses: { } previous } &&
+                    (!previous.Sealed || previous.Count != 0))) return false;
+                _verifiedRoutes[engineName] = route = new(engine) { Uses = new(stamp) };
+                domain.CommissionedIncumbent = route;
+            }
             route.Generation = resident.Route.RouteIncarnation;
             route.Resident = resident;
             route.Open = true;
@@ -635,18 +711,21 @@ internal sealed class ExactTicketAdmission(
         var prepared = _preparations[claim.Ticket];
         prepared.Borrowed = true;
         RemovePreparation(prepared);
-        var state = StateFor(claim)!.Engine;
+        var route = StateFor(claim)!;
+        var state = route.Engine;
+        var uses = route.Uses;
+        if (uses is not null) uses.Count++;
         if (ReferenceEquals(state.Domain.ActivationOwner, claim.Ticket)) state.Domain.ActivationOwner = null;
         if (state.OpeningOwner == claim) state.ClearOpeningOwner();
         state.PhysicalUses++;
         if (!detachedOwner) state.LogicalOverlap++;
         if (claim.Request.Request.Options?.Profile is not null) engine.RetainNamedUse();
-        return new Invocation(this, claim, engine, prepared.FinishAsync, detachedOwner, prepared.VerifiedSender);
+        return new Invocation(this, claim, engine, prepared.FinishAsync, detachedOwner, prepared.VerifiedSender, uses);
     }
 
     internal sealed class Invocation(ExactTicketAdmission admission, Claim claim, EngineRuntime runtime,
                                      Func<ValueTask> finishPreparation, bool detachedOwner,
-                                     VerifiedPreparedSender? verifiedSender)
+                                     VerifiedPreparedSender? verifiedSender, CommissionedRouteUses? uses)
     {
         private const int Authorized = 0;
         private const int Submitting = 1;
@@ -657,7 +736,10 @@ internal sealed class ExactTicketAdmission(
         private readonly TaskCompletionSource _abortFinished = new(TaskCreationOptions.RunContinuationsAsynchronously);
         private int _state;
         private int _owner;
+        private int _physicalReleased;
         private bool _overlapsLogical = !detachedOwner; // guarded by the admission gate
+
+        internal bool IsCommissioned => uses is not null;
 
         internal long VerifiedCredentialEpoch => claim.Resident?.Credential.Epoch ?? 0;
 
@@ -679,11 +761,13 @@ internal sealed class ExactTicketAdmission(
 
         private void ReleasePhysicalUse()
         {
+            if (Interlocked.Exchange(ref _physicalReleased, 1) != 0) return;
             lock (admission.Gate)
             {
                 var state = admission._engines[claim.Target.Engine];
                 RemoveOverlap(state);
                 state.PhysicalUses--;
+                if (uses is not null && --uses.Count == 0 && uses.Sealed) uses.Zero.TrySetResult();
                 if (claim.Request.Request.Options?.Profile is not null) runtime.ReleaseNamedUse();
                 admission._releases++;
             }
@@ -785,7 +869,7 @@ internal sealed class ExactTicketAdmission(
 
         private void CancelBeforeSubmit()
         {
-            if (Interlocked.CompareExchange(ref _state, Released, Authorized) == Authorized)
+            if (Interlocked.CompareExchange(ref _state, Released, Authorized) == Authorized && uses is null)
                 ReleasePhysicalUse();
         }
 
@@ -802,7 +886,7 @@ internal sealed class ExactTicketAdmission(
 
             if (terminal.Conclusive && preparationFailure is null)
             {
-                if (Interlocked.CompareExchange(ref _state, Released, Submitting) == Submitting)
+                if (Interlocked.CompareExchange(ref _state, Released, Submitting) == Submitting || uses is not null)
                     ReleasePhysicalUse();
             }
             if (!terminal.Conclusive || preparationFailure is not null || terminal.ResponseCleanupFailure is not null)

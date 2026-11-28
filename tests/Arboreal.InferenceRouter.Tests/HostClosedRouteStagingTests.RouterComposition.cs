@@ -114,9 +114,10 @@ public sealed partial class HostClosedRouteStagingTests
         Assert.Single(router.Events.Replay(0), row => row.TicketId == ticket.Id && row.Kind == "request.selected");
     }
 
-    private static EngineDefinition ManagedEngine(string engine, string model, string group, int port, bool equalRecipes = false) => new()
+    private static EngineDefinition ManagedEngine(string engine, string model, string group, int port, bool equalRecipes = false, int responseTimeoutMs = 600_000, int maxSlots = 1) => new()
     {
         Name = engine,
+        ResponseTimeoutMs = responseTimeoutMs,
         Endpoint = new UriBuilder(Uri.UriSchemeHttp, "127.0.0.1", port, "/v1").Uri,
         LifecycleGroup = group,
         LifecycleOwner = EngineLifecycleOwner.Router,
@@ -128,12 +129,12 @@ public sealed partial class HostClosedRouteStagingTests
             [model] = new()
             {
                 Name = model, Aliases = equalRecipes ? ["model-alias"] : [], Profile = equalRecipes ? "alternate" : "small",
-                ServingProfiles = equalRecipes ? [ManagedTier("unsupported"), ManagedTier("small"), ManagedTier("alternate")] : [ManagedTier("small")],
+                ServingProfiles = equalRecipes ? [ManagedTier("unsupported", maxSlots), ManagedTier("small", maxSlots), ManagedTier("alternate", maxSlots)] : [ManagedTier("small", maxSlots)],
             },
         },
     };
 
-    private static ServingProfile ManagedTier(string name) => new() { Name = name, MaxContext = 8_192, MaxSlots = 1 };
+    private static ServingProfile ManagedTier(string name, int maxSlots = 1) => new() { Name = name, MaxContext = 8_192, MaxSlots = maxSlots };
 
     private static InferenceRequest ManagedRequest(string model, string prompt, bool named = true) => new()
     {

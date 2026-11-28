@@ -40,7 +40,7 @@ internal sealed record HostStagedDeadlinePublication(
     Action Opened,
     Action<HostClosedRouteStage>? AfterStageInstalledForTests = null,
     Action<Task>? CaptureReadinessCleanupForTests = null,
-    string? ExpectedPlanDigest = null)
+    string? ExpectedPlanDigest = null, CommissionedHostCut? CommissionedCut = null)
 {
     public bool MatchesLaunch(HostCheckpointPlan plan) =>
         ExpectedAttempt.RuntimeEpoch != Guid.Empty && ExpectedAttempt.Sequence > 0 &&
@@ -68,6 +68,14 @@ internal sealed class HostClosedRouteStaging(
 
     private ExactTicketAdmission.DomainIdentity? Enrollment => enrolledDomain;
     internal bool MatchesEnrollment(ExactTicketAdmission.DomainIdentity domain) => Enrollment == domain;
+    internal Lock IssuerGate => _gate;
+
+    internal bool SealCommissionedRoute(VerifiedInstanceRoute expected)
+    {
+        if (!_gate.IsHeldByCurrentThread || _opening || _openRoute != expected) return false;
+        _openRoute = null;
+        return true;
+    }
 
     public bool CanMint(VerifiedInstanceRoute route)
     {
@@ -96,6 +104,7 @@ internal sealed class HostClosedRouteStaging(
         private HostClosedRouteStage? _completedStage;
         public bool UsesDeadline => deadlinePublication is not null;
         public string? ExpectedPlanDigest => deadlinePublication?.ExpectedPlanDigest;
+        internal CommissionedHostCut? CommissionedCut => deadlinePublication?.CommissionedCut;
         public HostStagedDecision Decision { get; private set; }
         public bool Opened { get; private set; }
 

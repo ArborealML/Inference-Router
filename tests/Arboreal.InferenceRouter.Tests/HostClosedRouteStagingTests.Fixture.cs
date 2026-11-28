@@ -4,9 +4,10 @@ namespace Arboreal.InferenceRouter.Tests;
 
 public sealed partial class HostClosedRouteStagingTests
 {
-    private sealed class FakeHost(int readinessTimeoutMs = 1000) : IHostLifecycleProvider
+    private sealed class FakeHost(int readinessTimeoutMs = 1000, bool vacant = false) : IHostLifecycleProvider
     {
-        private HostResident? _resident = new("a", "instance-a");
+        private HostResident? _resident = vacant ? null : new("a", "instance-a");
+        internal HostResident? Resident => Volatile.Read(ref _resident);
         private HostCheckpointLaunchEffect? _applied;
         public int Observations { get; private set; }
         public int Verified { get; private set; }
@@ -215,10 +216,10 @@ public sealed partial class HostClosedRouteStagingTests
         }
     }
 
-    private sealed class RecordedChannel : Stream
+    private sealed class RecordedChannel(byte[]? response = null, Func<ValueTask>? beforeRead = null) : Stream
     {
         private readonly MemoryStream _request = new();
-        private readonly MemoryStream _response = new("HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nOK"u8.ToArray());
+        private readonly MemoryStream _response = new(response ?? "HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nOK"u8.ToArray());
         public byte[] Bytes => _request.ToArray();
         public override bool CanRead => true;
         public override bool CanWrite => true;
@@ -228,7 +229,11 @@ public sealed partial class HostClosedRouteStagingTests
         public override void Flush() { }
         public override int Read(byte[] buffer, int offset, int count) => _response.Read(buffer, offset, count);
         public override int Read(Span<byte> buffer) => _response.Read(buffer);
-        public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken ct = default) => _response.ReadAsync(buffer, ct);
+        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken ct = default)
+        {
+            if (beforeRead is not null) await beforeRead();
+            return await _response.ReadAsync(buffer, ct);
+        }
         public override void Write(byte[] buffer, int offset, int count) => _request.Write(buffer, offset, count);
         public override void Write(ReadOnlySpan<byte> buffer) => _request.Write(buffer);
         public override ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken ct = default) => _request.WriteAsync(buffer, ct);

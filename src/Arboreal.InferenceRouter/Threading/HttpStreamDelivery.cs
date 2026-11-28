@@ -5,6 +5,8 @@ namespace Arboreal.InferenceRouter;
 /// <summary>One producer reserves output bytes. The HTTP writer returns them after flush or discard.</summary>
 internal sealed class HttpStreamDelivery(int limit, CancellationToken caller = default, CancellationToken shutdown = default)
 {
+    internal const int CommissionedDefaultLimit = 64 * 1024;
+
     private readonly object _gate = new();
     private readonly object _outcomeGate = new();
     private readonly TaskCompletionSource<HttpStreamOutcome> _sealed = new(TaskCreationOptions.RunContinuationsAsynchronously);

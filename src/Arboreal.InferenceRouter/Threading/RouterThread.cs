@@ -130,7 +130,12 @@ public sealed class RouterTicket
     internal bool IsStateless { get; init; }
     internal bool IsStreamingRequest { get; init; }
     internal bool IsHttpStream { get; init; }
-    internal HttpStreamDelivery? HttpDelivery { get; init; }
+    private HttpStreamDelivery? _httpDelivery;
+    internal HttpStreamDelivery? HttpDelivery
+    {
+        get => Volatile.Read(ref _httpDelivery);
+        set => Volatile.Write(ref _httpDelivery, value);
+    }
     internal bool SuppressTerminalFrame { get; set; }
     internal bool DefaultStreamReadShutdown { get; set; }
     /// <summary>Wiring from the caller's cancellation token to this ticket's cancel path. Dropped
