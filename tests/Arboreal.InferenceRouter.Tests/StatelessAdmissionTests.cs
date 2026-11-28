@@ -22,7 +22,8 @@ public sealed class StatelessAdmissionTests
         using var second = new FakeEngineHandler { LoadedModels = ["shared", "different"] };
         await using var app = await StartAsync(first, second, ct);
         var router = app.Services.GetRequiredService<RouterCore>();
-        Assert.Throws<ArgumentNullException>(() => { _ = router.EnqueueAsync(null!, new InferenceRequest { Body = "{}"u8.ToArray() }); });
+        var namedRequest = new InferenceRequest { Body = "{}"u8.ToArray(), Options = new() };
+        Assert.Throws<ArgumentNullException>(() => { _ = router.EnqueueAsync(null!, namedRequest); });
         using var http = Client(app);
         using var heldRequest = Request("shared", "held");
         var held = http.SendAsync(heldRequest, ct);

@@ -627,7 +627,8 @@ public static class Program
             if (args[i] is not ("-t" or "--thread")) continue;
             if (thread is not null || ++i >= args.Length) return false;
             var name = args[i];
-            if (string.IsNullOrWhiteSpace(name) || name.StartsWith('-') || name.Contains(',') || name.Any(char.IsControl))
+            if (string.IsNullOrWhiteSpace(name) || name.StartsWith('-') ||
+                name.Contains(',', StringComparison.Ordinal) || name.Any(char.IsControl))
                 return false;
             thread = name;
         }

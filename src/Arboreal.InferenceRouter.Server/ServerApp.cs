@@ -242,6 +242,15 @@ public static partial class ServerApp
         return long.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var v) && v > 0 ? v : null;
     }
 
+    private static string? InferenceThreadFromHeader(HttpContext ctx)
+    {
+        if (!ctx.Request.Headers.TryGetValue("X-Inference-Thread", out var header)) return null;
+        if (header.Count != 1 || header[0] is not { } name || string.IsNullOrWhiteSpace(name) ||
+            name.Contains(',', StringComparison.Ordinal) || name.Any(char.IsControl))
+            throw new RouterRequestException("invalid_request", "X-Inference-Thread requires one non-blank thread name without commas or control characters.");
+        return name;
+    }
+
     /// <summary>X-Inference-Priority: the request's own priority as `class[:sub]` (§6). Absent → the
     /// configured default, which is the only way a caller asks for nothing. A value that is present but
     /// outside the grammar is refused with 400 `invalid_priority` rather than dropped: a caller that asked
@@ -250,15 +259,6 @@ public static partial class ServerApp
     /// fails the same way, because two values for one request is not a choice the router gets to make.
     /// The refusal happens while the headers are still being read, before the body is read and before the
     /// ticket exists (§6.1).</summary>
-    private static string? InferenceThreadFromHeader(HttpContext ctx)
-    {
-        if (!ctx.Request.Headers.TryGetValue("X-Inference-Thread", out var header)) return null;
-        if (header.Count != 1 || header[0] is not { } name || string.IsNullOrWhiteSpace(name) ||
-            name.Contains(',') || name.Any(char.IsControl))
-            throw new RouterRequestException("invalid_request", "X-Inference-Thread requires one non-blank thread name without commas or control characters.");
-        return name;
-    }
-
     private static ThreadPriority? PriorityFromHeader(HttpContext ctx)
     {
         if (!ctx.Request.Headers.TryGetValue("X-Inference-Priority", out var values)) return null;
